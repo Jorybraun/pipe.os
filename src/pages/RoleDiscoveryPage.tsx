@@ -28,6 +28,7 @@ import { MatchConfigWizard, type MatchConfigOutput } from '../components/RoleDis
 import { AIChat } from '../components/AIChat/AIChat';
 import { DomainBars } from '../components/AIChat';
 import { EQVisualizer } from '../components/AIChat/EQVisualizer';
+import { RoleDiscoveryLayout } from '../components/ChatLayout/RoleDiscoveryLayout';
 import { useTTS } from '../hooks/useTTS';
 import { useRoleDiscovery } from '../hooks/useRoleDiscovery';
 import { usePipelineCreate } from '../hooks/usePipelineCreate';
@@ -742,32 +743,54 @@ export default function RoleDiscoveryPage(): JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentScriptedQ?.id, scriptedVoiceOn]);
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 40 }}>
+  // ── Sidebar baseline — human-friendly keys for the context panel ──
+  const sidebarBaseline: Record<string, string> = {};
+  if (scripted.answers['sq-title']) sidebarBaseline['Role'] = scripted.answers['sq-title'];
+  if (scripted.answers['sq-company']) sidebarBaseline['Company'] = scripted.answers['sq-company'];
+  if (scripted.answers['sq-salary']) sidebarBaseline['Salary'] = scripted.answers['sq-salary'];
+  if (scripted.answers['sq-stack']) sidebarBaseline['Stack'] = scripted.answers['sq-stack'].split('|||').join(', ');
 
-      {/* Page header — consistent throughout */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            ROLE_DISCOVERY
+  const showSidebar = initConfig !== null || rd.phase === 'COMPLETE';
+
+  const layoutProps = {
+    ...(scripted.answers['sq-title'] ? { title: scripted.answers['sq-title'] } : {}),
+    ...(scripted.answers['sq-company'] ? { company: scripted.answers['sq-company'] } : {}),
+    ...(rd.domainCompletion !== undefined && { domainCompletion: rd.domainCompletion }),
+    ...(rd.currentDomain !== undefined && { currentDomain: rd.currentDomain }),
+    baseline: sidebarBaseline,
+    showSidebar,
+    className: 'h-[calc(100vh-150px)]',
+  };
+
+  return (
+    <RoleDiscoveryLayout
+      {...layoutProps}
+      header={
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+              ROLE_DISCOVERY
+            </span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
+              New Role
+            </span>
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em', margin: 0 }}>
-            New Role
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {isInScriptedPhase && scripted.hasProgress && (
+              <button
+                onClick={handleStartOver}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
+              >
+                <RotateCcw size={9} />
+                START OVER
+              </button>
+            )}
+            <StepIndicator active={currentStep} {...(currentStep === 'interview' ? {} : { onStepClick: handleStepClick })} />
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          {isInScriptedPhase && scripted.hasProgress && (
-            <button
-              onClick={handleStartOver}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: 'transparent', border: '1px solid var(--pipe-border)', color: 'var(--pipe-text-dim)', fontSize: 9, letterSpacing: '0.12em', fontFamily: '"Space Mono", monospace', cursor: 'pointer', borderRadius: 4 }}
-            >
-              <RotateCcw size={9} />
-              START OVER
-            </button>
-          )}
-          <StepIndicator active={currentStep} {...(currentStep === 'interview' ? {} : { onStepClick: handleStepClick })} />
-        </div>
-      </div>
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 24 }}>
 
       {/* ── Resume prompt — ask user to resume or start fresh ──
           Suppress once the interview/review is under way so a stale
@@ -1209,6 +1232,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+      </div>
+    </RoleDiscoveryLayout>
   );
 }

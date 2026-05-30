@@ -33,6 +33,8 @@ export interface RoleDiscoveryLayoutProps {
   header?: ReactNode;
   /** Whether to show the sidebar by default. */
   showSidebar?: boolean;
+  /** Additional class on the root UniversalChat wrapper. */
+  className?: string;
 }
 
 export function RoleDiscoveryLayout({
@@ -44,6 +46,7 @@ export function RoleDiscoveryLayout({
   baseline,
   header,
   showSidebar = true,
+  className,
 }: RoleDiscoveryLayoutProps): JSX.Element {
   const panelProps = {
     ...(title !== undefined && { title }),
@@ -53,12 +56,15 @@ export function RoleDiscoveryLayout({
     ...(baseline !== undefined && { baseline }),
   };
 
+  const chatProps = {
+    sidebar: <RoleContextPanel {...panelProps} />,
+    defaultSidebarOpen: showSidebar,
+    ...(header !== undefined && { header }),
+    ...(className !== undefined && { className }),
+  };
+
   return (
-    <UniversalChat
-      sidebar={<RoleContextPanel {...panelProps} />}
-      header={header}
-      defaultSidebarOpen={showSidebar}
-    >
+    <UniversalChat {...chatProps}>
       {children}
     </UniversalChat>
   );

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — RoleDiscoveryPage Layout Migration (Part 2 Step 2)
+
+- `src/pages/RoleDiscoveryPage.tsx`: Migrated to use `RoleDiscoveryLayout` (UniversalChat three-panel layout). Domain progress sidebar shows during AI interview and synthesis phases. Page header moved to the layout header slot. Step indicator and controls consolidated in the header bar.
+- `src/components/ChatLayout/RoleDiscoveryLayout.tsx`: Added `className` prop passthrough to `UniversalChat` for height control.
+
 ### Fixed — Immediate Candidate Ingestion
 
 - `workers/api/src/routes/rpc.ts`: INTAKE challenge submission and upload-media now run resume ingestion immediately via `waitUntil(processResumeFromR2())` instead of queuing for the 2-hour cron. Candidate graph is live before proceeding to next stage. GitHub enrichment still uses cron queue (external API batching). See handoff `docs/handoffs/2026-05-10-immediate-candidate-ingestion.md`.
