@@ -33,6 +33,8 @@ import { reviewSessions } from './routes/assessment/reviewSessions';
 import { voiceSessions } from './routes/voice/voiceSessions';
 // TTS — Google Cloud Text-to-Speech proxy
 import { ttsRouter } from './routes/tts';
+// Waitlist — public email signup from marketing site
+import { waitlist } from './routes/waitlist';
 // Internal tooling — scorer calibration (CAL-5 spine, ADR-036 / STRATEGY CAL-2+)
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
@@ -60,11 +62,16 @@ app.use(
       const allowed = [
         'https://pipe.dev',
         'https://www.pipe.dev',
+        'https://pipe.build',
+        'https://www.pipe.build',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,
+        // Marketing site (deployed via Devin / static host)
+        /https:\/\/.*\.devinapps\.com$/,
         // Local dev
         'http://localhost:5173',
         'http://localhost:4173',
+        'http://localhost:8080',
       ];
 
       for (const pattern of allowed) {
@@ -155,6 +162,9 @@ app.route('/api/v1/tts', ttsRouter);
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
+
+// Waitlist: public email signup from marketing site (no auth)
+app.route('/api/v1/waitlist', waitlist);
 
 // Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
 // disabled entirely when CALIBRATE_TOKEN is unset in env)
