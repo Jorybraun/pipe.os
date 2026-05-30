@@ -352,6 +352,9 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
     questionBudget: number;
     currentDomain?: string | null | undefined;
     domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
+    domainQuestions?: Record<string, unknown[]> | undefined;
+    domainQuestionsDelivered?: Record<string, number> | undefined;
+    domainFollowUpsDelivered?: number | undefined;
   }): void => {
     contextIdRef.current = data.id;
     participantIdRef.current = data.participantId;
@@ -376,6 +379,15 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
       why: 'pending',
     };
 
+    const domainQuestionsDelivered = data.domainQuestionsDelivered ?? {
+      team: 0,
+      work: 0,
+      bar: 0,
+      codebase: 0,
+      process: 0,
+      why: 0,
+    };
+
       const reconstructedState: InterviewState = {
       baseline: data.baseline as unknown as Record<string, unknown>,
       participantRole: data.participantRole,
@@ -395,16 +407,9 @@ export function useRoleDiscovery(): UseRoleDiscoveryResult {
       questionStack: [],
       currentDomain: (data.currentDomain ?? null) as import('../lib/api/types').Domain | null,
       domainCompletion,
-      domainQuestions: {},
-      domainQuestionsDelivered: {
-        team: 0,
-        work: 0,
-        bar: 0,
-        codebase: 0,
-        process: 0,
-        why: 0,
-      },
-      domainFollowUpsDelivered: 0,
+      domainQuestions: (data.domainQuestions ?? {}) as Record<string, Array<{ id: string; text: string; intent: string; drillingHints?: string[]; ladderingTarget?: string }>>,
+      domainQuestionsDelivered,
+      domainFollowUpsDelivered: data.domainFollowUpsDelivered ?? 0,
     };
 
     (roleDiscoveryAdapter as { hydrateInterviewState(state: InterviewState): void }).hydrateInterviewState(reconstructedState);

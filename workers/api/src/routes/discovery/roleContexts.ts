@@ -23,7 +23,6 @@ import { mergeKnowledgeState } from '../../lib/agents/interview/reducer';
 import { callGapFillingAgent } from '../../lib/agents/calibration/gapFilling';
 import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered, readSoulProbesDelivered, readEnableSoulTrack } from '../../lib/agents/interview/reducer';
 import { DOMAIN_COLUMN_ORDER } from '../../lib/agents/interview/types';
-import { generateQuestion } from '../../lib/agents/question/generator';
 import { analyzeFeedback } from '../../lib/agents/question/feedbackAnalyzer';
 // synthesizeRcd replaces the legacy synthesize() — removed in migration
 import { synthesizeRcd, type SynthesizeRcdResult } from '../../lib/roleAgent/synthesizeRcd';
@@ -94,12 +93,37 @@ function reconstructInterviewStateFromDb(
     enableSoulTrack: readEnableSoulTrack(knowledgeState, baseline),
   });
 
-  // Initialize per-domain tracking for column-by-column flow
-  const domainCompletion: Record<string, import('../../lib/agents/interview/types').DomainCompletionStatus> = {};
-  const domainQuestionsDelivered: Record<string, number> = {};
-  for (const d of DOMAIN_COLUMN_ORDER) {
-    domainCompletion[d] = 'pending';
-    domainQuestionsDelivered[d] = 0;
+  // Restore persisted domain state (column-by-column tracking) or initialize fresh
+  const persistedDomainState = parseJsonColumn<{
+    currentDomain: string | null;
+    domainCompletion: Record<string, string>;
+    domainQuestions: Record<string, unknown[]>;
+    domainQuestionsDelivered: Record<string, number>;
+    domainFollowUpsDelivered: number;
+  } | null>(participant.domain_state, null);
+
+  let currentDomain: import('../../lib/agents/interview/types').InterviewState['currentDomain'] = null;
+  let domainCompletion: Record<string, import('../../lib/agents/interview/types').DomainCompletionStatus> = {};
+  let domainQuestions: Record<string, import('../../lib/agents/interview/types').GeneratedQuestion[]> = {};
+  let domainQuestionsDelivered: Record<string, number> = {};
+  let domainFollowUpsDelivered = 0;
+
+  if (persistedDomainState) {
+    currentDomain = (persistedDomainState.currentDomain as import('../../lib/agents/interview/types').InterviewState['currentDomain']) ?? null;
+    domainCompletion = (persistedDomainState.domainCompletion ?? {}) as Record<string, import('../../lib/agents/interview/types').DomainCompletionStatus>;
+    domainQuestions = (persistedDomainState.domainQuestions ?? {}) as Record<string, import('../../lib/agents/interview/types').GeneratedQuestion[]>;
+    domainQuestionsDelivered = persistedDomainState.domainQuestionsDelivered ?? {};
+    domainFollowUpsDelivered = persistedDomainState.domainFollowUpsDelivered ?? 0;
+    // Ensure all domains have entries
+    for (const d of DOMAIN_COLUMN_ORDER) {
+      if (!domainCompletion[d]) domainCompletion[d] = 'pending';
+      if (domainQuestionsDelivered[d] === undefined) domainQuestionsDelivered[d] = 0;
+    }
+  } else {
+    for (const d of DOMAIN_COLUMN_ORDER) {
+      domainCompletion[d] = 'pending';
+      domainQuestionsDelivered[d] = 0;
+    }
   }
 
   return {
@@ -115,11 +139,11 @@ function reconstructInterviewStateFromDb(
     reasoning: phaseResult.reasoning,
     urgentGaps: phaseResult.urgentGaps,
     questionStack: [],
-    currentDomain: null,
+    currentDomain,
     domainCompletion,
-    domainQuestions: {},
+    domainQuestions,
     domainQuestionsDelivered,
-    domainFollowUpsDelivered: 0,
+    domainFollowUpsDelivered,
   };
 }
 
@@ -716,6 +740,14 @@ roleContexts.get('/:id', async (c) => {
     enableSoulTrack: readEnableSoulTrack(sharedKnowledgeState, {}),
     });
 
+    const domainState = parseJsonColumn<{
+      currentDomain: string | null;
+      domainCompletion: Record<string, string>;
+      domainQuestions: Record<string, unknown[]>;
+      domainQuestionsDelivered: Record<string, number>;
+      domainFollowUpsDelivered: number;
+    } | null>(p.domain_state, null);
+
     return {
       id: p.id,
       name: p.name,
@@ -727,6 +759,11 @@ roleContexts.get('/:id', async (c) => {
       status: p.status,
       exchanges,
       phase: phaseResult.phase,
+      currentDomain: domainState?.currentDomain ?? null,
+      domainCompletion: domainState?.domainCompletion ?? undefined,
+      domainQuestions: domainState?.domainQuestions ?? undefined,
+      domainQuestionsDelivered: domainState?.domainQuestionsDelivered ?? undefined,
+      domainFollowUpsDelivered: domainState?.domainFollowUpsDelivered ?? undefined,
     };
   });
 
@@ -856,6 +893,17 @@ roleContexts.post('/:id/start', async (c) => {
 
 // ─── POST /:id/respond — Submit answer, get next question ───────────────────
 
+/** Serialize domain-driven state for DB persistence. */
+function serializeDomainState(state: import('../../lib/agents/interview/types').InterviewState): string {
+  return JSON.stringify({
+    currentDomain: state.currentDomain,
+    domainCompletion: state.domainCompletion,
+    domainQuestions: state.domainQuestions,
+    domainQuestionsDelivered: state.domainQuestionsDelivered,
+    domainFollowUpsDelivered: state.domainFollowUpsDelivered,
+  });
+}
+
 /** Persist a newly-generated question to D1 (calibration or mid-interview). */
 async function persistQuestionTurn(
   db: D1Database,
@@ -865,17 +913,20 @@ async function persistQuestionTurn(
   isCalibration: boolean,
   participantRole: string | null,
 ): Promise<void> {
+  const domainStateJson = serializeDomainState(turn.state);
+
   if (isCalibration) {
     await db.batch([
       db.prepare(
         `UPDATE role_context_participants
          SET participant_role = ?1, status = 'INTERVIEWING', exchanges = ?2,
-             questions_asked = ?3, updated_at = ?4
-         WHERE id = ?5`,
+             questions_asked = ?3, domain_state = ?4, updated_at = ?5
+         WHERE id = ?6`,
       ).bind(
         participantRole,
         JSON.stringify(turn.state.exchanges),
         turn.state.questionsAsked,
+        domainStateJson,
         now(),
         participantId,
       ),
@@ -891,11 +942,12 @@ async function persistQuestionTurn(
     await db.batch([
       db.prepare(
         `UPDATE role_context_participants
-         SET exchanges = ?1, questions_asked = ?2, updated_at = ?3
-         WHERE id = ?4`,
+         SET exchanges = ?1, questions_asked = ?2, domain_state = ?3, updated_at = ?4
+         WHERE id = ?5`,
       ).bind(
         JSON.stringify(turn.state.exchanges),
         turn.state.questionsAsked,
+        domainStateJson,
         now(),
         participantId,
       ),
@@ -918,14 +970,17 @@ async function persistSynthesisTurn(
   participantId: string,
   turn: NewTurnResult,
 ): Promise<void> {
+  const domainStateJson = serializeDomainState(turn.state);
   await db.batch([
     db.prepare(
       `UPDATE role_context_participants
-       SET status = 'COMPLETE', exchanges = ?1, questions_asked = ?2, updated_at = ?3
-       WHERE id = ?4`,
+       SET status = 'COMPLETE', exchanges = ?1, questions_asked = ?2,
+           domain_state = ?3, updated_at = ?4
+       WHERE id = ?5`,
     ).bind(
       JSON.stringify(turn.state.exchanges),
       turn.state.questionsAsked,
+      domainStateJson,
       now(),
       participantId,
     ),
