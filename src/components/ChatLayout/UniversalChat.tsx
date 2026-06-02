@@ -68,7 +68,7 @@ export function UniversalChat({
   return (
     <div
       className={[
-        'flex h-full w-full overflow-hidden',
+        'flex h-full w-full overflow-hidden relative z-[1]',
         'bg-[var(--color-bg)] text-[var(--color-text)]',
         className,
       ].join(' ')}

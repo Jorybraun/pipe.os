@@ -39,7 +39,7 @@ const DEFAULTS: ThemeSettings = {
     opacity: 0.4,
     speed: 0.3,
     scale: 0.6,
-    overlay: 0,
+    overlay: 1,
     animateForever: false,
   },
 };
