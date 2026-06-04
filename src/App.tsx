@@ -432,7 +432,9 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
-                    <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                    {FEATURE_FLAGS.FEATURE_FLAG_ROLE_DISCOVERY && (
+                      <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                    )}
                     <Route
                       path="/candidates/:id"
                       element={<CandidateProfilePage />}

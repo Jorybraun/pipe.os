@@ -10,10 +10,10 @@ import type { InterviewStatus } from '../../lib/scheduling/types';
 // pre-fetches candidates and pipelines.
 interface InterviewCardProps {
   interview: ScheduledInterview;
-  candidateName: string;
+  candidateName: string | null;
   candidateEmail?: string | null;
-  pipelineTitle: string;
-  stageTitle: string;
+  pipelineTitle: string | null;
+  stageTitle: string | null;
   updateStatus: (
     id: string,
     patch: {

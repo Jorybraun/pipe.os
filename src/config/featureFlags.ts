@@ -19,4 +19,8 @@ export const FEATURE_FLAGS = {
   FEATURE_FLAG_COPILOT_AGENT: false,
   /** Real-time voice interview (Vertex AI Live WebSocket) — off by default due to cost. */
   FEATURE_FLAG_LIVE_VOICE: false,
+  /** Role discovery feature — multi-stakeholder role intake (ADR-028) */
+  FEATURE_FLAG_ROLE_DISCOVERY: false,
+  /** Pipeline builder — auto-stage construction from role context (post-MVP) */
+  FEATURE_FLAG_PIPELINE_BUILDER: false,
 } as const;

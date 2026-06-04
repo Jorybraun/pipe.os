@@ -144,7 +144,7 @@ function CallListView({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <User size={14} style={{ color: '#888' }} />
               <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {interview.candidateId.slice(0, 8)}...
+                {interview.recipientName ?? interview.recipientEmail ?? interview.candidateId?.slice(0, 8) ?? 'Unknown'}
               </span>
               <span
                 style={{
@@ -226,12 +226,16 @@ function CallDetailView({
       <div style={{ padding: 20, flex: 1 }}>
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>CANDIDATE</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{interview.candidateId.slice(0, 8)}...</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>
+            {interview.recipientName ?? interview.recipientEmail ?? interview.candidateId?.slice(0, 8) ?? 'Unknown'}
+          </div>
         </div>
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
-          <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
-        </div>
+        {interview.stageId && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
+            <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
+          </div>
+        )}
         {interview.scheduledAt && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>SCHEDULED</div>

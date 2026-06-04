@@ -78,12 +78,25 @@ const callbackSchema = z.object({
 });
 
 const createInterviewSchema = z.object({
-  candidateId: z.string().min(1),
-  pipelineId: z.string().min(1),
-  stageId: z.string().min(1),
+  candidateId: z.string().min(1).optional(),
+  pipelineId: z.string().min(1).optional(),
+  stageId: z.string().min(1).optional(),
+  meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
+  recipientName: z.string().optional(),
+  recipientEmail: z.string().email().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
-});
+}).refine(
+  (data) => {
+    // Either pipeline context OR recipient info must be provided
+    const hasPipelineContext = data.candidateId && data.pipelineId && data.stageId;
+    const hasRecipientInfo = data.recipientName && data.recipientEmail;
+    return hasPipelineContext || hasRecipientInfo;
+  },
+  {
+    message: 'Either candidateId/pipelineId/stageId OR recipientName/recipientEmail must be provided',
+  }
+);
 
 const updateInterviewSchema = z.object({
   status: z.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']).optional(),

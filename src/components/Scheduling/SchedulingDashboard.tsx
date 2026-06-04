@@ -191,10 +191,10 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.candidateId;
-                  const candidateEmail = iv.candidateEmail ?? null;
-                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId;
-                  const stageTitle = iv.stageTitle ?? iv.stageId;
+                  const candidateName: string | null = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown';
+                  const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
+                  const pipelineTitle: string | null = iv.pipelineTitle ?? iv.pipelineId ?? 'N/A';
+                  const stageTitle: string | null = iv.stageTitle ?? iv.stageId ?? 'N/A';
 
                   return (
                     <InterviewCard
