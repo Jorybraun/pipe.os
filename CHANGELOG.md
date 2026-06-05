@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Contact-First Scheduling API
+
+- `workers/api/src/routes/cockpit/scheduling.ts`: POST /interviews now accepts recipientName/recipientEmail for contact-first invites without requiring candidateId/pipelineId/stageId. Added optional scheduledAt and cvProfile payload support. GET /invite/:id public route allows invite link resolution without recruiter auth. GET /interviews returns meeting_type, recipient_name, recipient_email fields. Added ACTIVE status to lifecycle (INVITED -> SCHEDULED -> ACTIVE -> COMPLETED/CANCELLED/NO_SHOW). Webhook matching updated to support both candidate_email and recipient_email. Email notifications handle contact-first recipients.
+- `workers/api/migrations/0075_contact_first_meetings.sql`: Updated CHECK constraint to include ACTIVE status.
+- `src/lib/scheduling/types.ts`: Added ACTIVE to InterviewStatus type.
+- `workers/api/src/routes/cockpit/__tests__/scheduling.rest.test.ts` (new): REST tests for invite creation without candidateId/pipelineId/stageId, validation schema tests, status transition tests, and meeting type classification tests.
+
 ### Fixed — Deterministic Discovery Interview Questions
 
 - `workers/api/src/lib/agents/question/domainOrchestrator.ts`: Domain orchestrator now uses calibrated probes from `probeLibrarian.ts` (ADR-041) instead of LLM-generated questions. Probes are served in deterministic order per domain, with LLM fallback only for domains without matching probes (e.g., `why`). Cross-domain probe deduplication prevents the same probe from being asked twice.

@@ -1,4 +1,4 @@
-export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 

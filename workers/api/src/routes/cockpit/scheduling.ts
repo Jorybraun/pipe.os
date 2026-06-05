@@ -84,6 +84,8 @@ const createInterviewSchema = z.object({
   meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
   recipientName: z.string().optional(),
   recipientEmail: z.string().email().optional(),
+  scheduledAt: z.string().optional(),
+  cvProfile: z.record(z.unknown()).optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
 }).refine(
@@ -99,7 +101,7 @@ const createInterviewSchema = z.object({
 );
 
 const updateInterviewSchema = z.object({
-  status: z.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']).optional(),
+  status: z.enum(['INVITED', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW']).optional(),
   scheduledAt: z.string().optional(),
   meetingUrl: z.string().optional(),
   recruiterNotes: z.string().optional(),
@@ -109,7 +111,8 @@ const updateInterviewSchema = z.object({
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   INVITED: ['SCHEDULED', 'CANCELLED'],
-  SCHEDULED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  SCHEDULED: ['ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  ACTIVE: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
   COMPLETED: [],
   CANCELLED: ['INVITED'],
   NO_SHOW: ['SCHEDULED', 'CANCELLED'],
@@ -478,6 +481,7 @@ schedulingAuth.get('/interviews', async (c) => {
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.recruiter_notes, si.sync_source,
               si.last_synced_at, si.created_at, si.updated_at,
+              si.meeting_type, si.recipient_name, si.recipient_email,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -491,9 +495,9 @@ schedulingAuth.get('/interviews', async (c) => {
     .bind(userId)
     .all<{
       id: string;
-      candidate_id: string;
-      pipeline_id: string;
-      stage_id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
@@ -504,6 +508,9 @@ schedulingAuth.get('/interviews', async (c) => {
       last_synced_at: string | null;
       created_at: string;
       updated_at: string;
+      meeting_type: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -525,6 +532,9 @@ schedulingAuth.get('/interviews', async (c) => {
     lastSyncedAt: r.last_synced_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    meetingType: r.meeting_type,
+    recipientName: r.recipient_name,
+    recipientEmail: r.recipient_email,
     candidateName: r.candidate_name,
     candidateEmail: r.candidate_email,
     pipelineTitle: r.pipeline_title,
@@ -603,13 +613,13 @@ schedulingAuth.post('/interviews/sync', async (c) => {
   // Get all INVITED interviews for this user
   const invited = await db
     .prepare(
-      `SELECT si.id, si.candidate_id, c.email AS candidate_email
+      `SELECT si.id, si.candidate_id, si.recipient_email, c.email AS candidate_email
        FROM scheduled_interviews si
-       JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN candidates c ON c.id = si.candidate_id
        WHERE si.owner_id = ? AND si.status = 'INVITED'`
     )
     .bind(userId)
-    .all<{ id: string; candidate_id: string; candidate_email: string | null }>();
+    .all<{ id: string; candidate_id: string | null; recipient_email: string | null; candidate_email: string | null }>();
 
   // For each event, fetch invitees and try to match to our interviews
   for (const event of events) {
@@ -624,9 +634,10 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     };
 
     for (const invitee of inviteesData.collection ?? []) {
-      // Match by candidate email
+      // Match by candidate email or recipient email
       const match = invited.results?.find(
-        (i) => i.candidate_email?.toLowerCase() === invitee.email.toLowerCase()
+        (i) => i.candidate_email?.toLowerCase() === invitee.email.toLowerCase() ||
+              i.recipient_email?.toLowerCase() === invitee.email.toLowerCase()
       );
       if (!match) continue;
 
@@ -667,28 +678,49 @@ schedulingAuth.post('/interviews', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { candidateId, pipelineId, stageId, schedulingProvider, schedulingUrl } = parsed.data;
+  const {
+    candidateId,
+    pipelineId,
+    stageId,
+    meetingType,
+    recipientName,
+    recipientEmail,
+    scheduledAt,
+    cvProfile,
+    schedulingProvider,
+    schedulingUrl,
+  } = parsed.data;
 
-  // Ownership check
-  const pipeline = await db
-    .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
-    .bind(pipelineId, userId)
-    .first<{ id: string; title: string }>();
-  if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  // Determine meeting type based on provided data
+  const finalMeetingType = meetingType ?? (recipientName && recipientEmail ? 'DIRECT_VIDEO_CALL' : 'SCREENING_INTERVIEW');
+
+  // Ownership check for pipeline-integrated interviews
+  if (pipelineId) {
+    const pipeline = await db
+      .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
+      .bind(pipelineId, userId)
+      .first<{ id: string; title: string }>();
+    if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  }
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+
+  // Store CV/profile as JSON in recruiter_notes for now (can be moved to dedicated column later)
+  const recruiterNotes = cvProfile ? JSON.stringify({ cvProfile }) : null;
 
   await db
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
-        scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
+        meeting_type, recipient_name, recipient_email, scheduled_at,
+        recruiter_notes, scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`
     )
     .bind(
-      id, candidateId, pipelineId, stageId, userId,
-      schedulingProvider ?? null, schedulingUrl ?? null,
+      id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
+      finalMeetingType, recipientName ?? null, recipientEmail ?? null, scheduledAt ?? null,
+      recruiterNotes, schedulingProvider ?? null, schedulingUrl ?? null,
       now, now,
     )
     .run();
@@ -699,6 +731,10 @@ schedulingAuth.post('/interviews', async (c) => {
       candidateId,
       pipelineId,
       stageId,
+      meetingType: finalMeetingType,
+      recipientName,
+      recipientEmail,
+      scheduledAt,
       status: 'INVITED',
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
@@ -774,6 +810,74 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
 
 const schedulingPublic = new Hono<{ Bindings: Env }>();
 
+// GET /invite/:id — public invite link resolution (no auth required)
+schedulingPublic.get('/invite/:id', async (c) => {
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db
+    .prepare(
+      `SELECT si.id, si.meeting_type, si.recipient_name, si.recipient_email,
+              si.status, si.scheduled_at, si.meeting_url, si.scheduling_url,
+              si.recruiter_notes, c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title, s.title AS stage_title
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       WHERE si.id = ?`
+    )
+    .bind(id)
+    .first<{
+      id: string;
+      meeting_type: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_url: string | null;
+      recruiter_notes: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+    }>();
+
+  if (!interview) {
+    return apiError(c, 'NOT_FOUND', 'Invite not found.');
+  }
+
+  // Parse CV/profile from recruiter_notes if present
+  let cvProfile = null;
+  if (interview.recruiter_notes) {
+    try {
+      const parsed = JSON.parse(interview.recruiter_notes);
+      cvProfile = parsed.cvProfile ?? null;
+    } catch {
+      // Not JSON, leave as-is
+    }
+  }
+
+  return c.json({
+    invite: {
+      id: interview.id,
+      meetingType: interview.meeting_type,
+      recipientName: interview.recipient_name,
+      recipientEmail: interview.recipient_email,
+      status: interview.status,
+      scheduledAt: interview.scheduled_at,
+      meetingUrl: interview.meeting_url,
+      schedulingUrl: interview.scheduling_url,
+      cvProfile,
+      candidateName: interview.candidate_name,
+      candidateEmail: interview.candidate_email,
+      pipelineTitle: interview.pipeline_title,
+      stageTitle: interview.stage_title,
+    },
+  });
+});
+
 // POST /webhook — receive Calendly/Cal.com webhook events
 schedulingPublic.post('/webhook', async (c) => {
   const db = c.env.DB;
@@ -847,17 +951,17 @@ schedulingPublic.post('/webhook', async (c) => {
       .first<{ id: string; status: string }>();
   }
 
-  // Fallback: match by candidate email
+  // Fallback: match by candidate email or recipient email
   if (!interview && normalized.candidateEmail) {
     interview = await db
       .prepare(
         `SELECT si.id, si.status
          FROM scheduled_interviews si
-         JOIN candidates c ON c.id = si.candidate_id
-         WHERE c.email = ? AND si.status = 'INVITED'
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+         WHERE (c.email = ? OR si.recipient_email = ?) AND si.status = 'INVITED'
          ORDER BY si.created_at DESC LIMIT 1`
       )
-      .bind(normalized.candidateEmail)
+      .bind(normalized.candidateEmail, normalized.candidateEmail)
       .first<{ id: string; status: string }>();
   }
 
@@ -915,24 +1019,28 @@ schedulingPublic.post('/webhook', async (c) => {
   if (normalized.status === 'SCHEDULED' && c.env.RESEND_API_KEY) {
     const interviewData = await db
       .prepare(
-        `SELECT si.candidate_id, si.pipeline_id, si.stage_id,
+        `SELECT si.candidate_id, si.pipeline_id, si.stage_id, si.meeting_type,
+                si.recipient_name, si.recipient_email,
                 c.name, c.email, p.title AS pipeline_title, s.title AS stage_title,
                 s.notification_templates
          FROM scheduled_interviews si
-         JOIN candidates c ON c.id = si.candidate_id
-         JOIN pipelines p ON p.id = si.pipeline_id
-         JOIN stages s ON s.id = si.stage_id
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+         LEFT JOIN pipelines p ON p.id = si.pipeline_id
+         LEFT JOIN stages s ON s.id = si.stage_id
          WHERE si.id = ?`
       )
       .bind(interview.id)
       .first<{
-        candidate_id: string;
-        pipeline_id: string;
-        stage_id: string;
-        name: string;
-        email: string;
-        pipeline_title: string;
-        stage_title: string;
+        candidate_id: string | null;
+        pipeline_id: string | null;
+        stage_id: string | null;
+        meeting_type: string | null;
+        recipient_name: string | null;
+        recipient_email: string | null;
+        name: string | null;
+        email: string | null;
+        pipeline_title: string | null;
+        stage_title: string | null;
         notification_templates: string | null;
       }>();
 
@@ -945,23 +1053,29 @@ schedulingPublic.post('/webhook', async (c) => {
         : '';
       const meetingUrl = normalized.meetingUrl ?? '';
 
-      // Email the candidate
-      c.executionCtx.waitUntil(
-        sendNotificationEmail({
-          apiKey: c.env.RESEND_API_KEY,
-          trigger: 'SCHEDULED',
-          to: interviewData.email,
-          variables: {
-            name: interviewData.name,
-            email: interviewData.email,
-            pipelineName: interviewData.pipeline_title,
-            stageName: interviewData.stage_title,
-            scheduledTime,
-            bookingUrl: meetingUrl,
-          },
-          stageTemplatesJson: interviewData.notification_templates,
-        }),
-      );
+      // Determine recipient name and email (contact-first or pipeline-integrated)
+      const recipientName = interviewData.recipient_name ?? interviewData.name ?? 'Guest';
+      const recipientEmail = interviewData.recipient_email ?? interviewData.email;
+
+      if (recipientEmail) {
+        // Email the recipient
+        c.executionCtx.waitUntil(
+          sendNotificationEmail({
+            apiKey: c.env.RESEND_API_KEY,
+            trigger: 'SCHEDULED',
+            to: recipientEmail,
+            variables: {
+              name: recipientName,
+              email: recipientEmail,
+              pipelineName: interviewData.pipeline_title ?? 'Direct Call',
+              stageName: interviewData.stage_title ?? 'Meeting',
+              scheduledTime,
+              bookingUrl: meetingUrl,
+            },
+            stageTemplatesJson: interviewData.notification_templates,
+          }),
+        );
+      }
 
       // Email the recruiter
       const recruiter = await db
@@ -984,10 +1098,10 @@ schedulingPublic.post('/webhook', async (c) => {
             trigger: 'SCHEDULED',
             to: recruiterEmail,
             variables: {
-              name: interviewData.name,
-              email: interviewData.email,
-              pipelineName: interviewData.pipeline_title,
-              stageName: interviewData.stage_title,
+              name: recipientName,
+              email: recipientEmail ?? 'unknown',
+              pipelineName: interviewData.pipeline_title ?? 'Direct Call',
+              stageName: interviewData.stage_title ?? 'Meeting',
               scheduledTime,
               bookingUrl: meetingUrl,
             },

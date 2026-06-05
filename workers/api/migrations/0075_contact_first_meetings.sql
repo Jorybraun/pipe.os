@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS scheduled_interviews_new (
   pipeline_id TEXT,
   stage_id TEXT,
   owner_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'INVITED' CHECK (status IN ('INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
+  status TEXT NOT NULL DEFAULT 'INVITED' CHECK (status IN ('INVITED', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
   scheduled_at TEXT,
   meeting_url TEXT,
   scheduling_provider TEXT CHECK (scheduling_provider IN ('CALENDLY', 'CAL_COM', 'MANUAL')),
