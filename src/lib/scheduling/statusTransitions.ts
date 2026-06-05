@@ -8,7 +8,8 @@ import type { InterviewStatus } from './types';
  */
 const VALID_TRANSITIONS: Record<InterviewStatus, InterviewStatus[]> = {
   INVITED:   ['SCHEDULED', 'CANCELLED'],
-  SCHEDULED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  SCHEDULED: ['ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  ACTIVE:    ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
   COMPLETED: [],
   CANCELLED: ['INVITED'],   // Allow re-inviting if cancelled
   NO_SHOW:   ['SCHEDULED', 'CANCELLED'],

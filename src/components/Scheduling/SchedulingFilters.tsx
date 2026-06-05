@@ -117,10 +117,11 @@ export function applySchedulingFilters(
 
 const STATUS_ORDER: Record<InterviewStatus, number> = {
   SCHEDULED: 0,
-  INVITED:   1,
-  COMPLETED: 2,
-  CANCELLED: 3,
-  NO_SHOW:   4,
+  ACTIVE:    1,
+  INVITED:   2,
+  COMPLETED: 3,
+  CANCELLED: 4,
+  NO_SHOW:   5,
 };
 
 export function sortInterviews(interviews: ScheduledInterview[]): ScheduledInterview[] {
