@@ -21,8 +21,8 @@ describe('Create interview validation', () => {
     };
 
     // Should pass validation: recipientName + recipientEmail provided
-    expect(validContactFirst.recipientName).toBeTruthy();
-    expect(validContactFirst.recipientEmail).toBeTruthy();
+    expect(!!validContactFirst.recipientName).toBe(true);
+    expect(!!validContactFirst.recipientEmail).toBe(true);
     expect(validContactFirst.recipientEmail).toContain('@');
   });
 
@@ -36,9 +36,9 @@ describe('Create interview validation', () => {
     };
 
     // Should pass validation: candidateId + pipelineId + stageId provided
-    expect(validPipelineIntegrated.candidateId).toBeTruthy();
-    expect(validPipelineIntegrated.pipelineId).toBeTruthy();
-    expect(validPipelineIntegrated.stageId).toBeTruthy();
+    expect(!!validPipelineIntegrated.candidateId).toBe(true);
+    expect(!!validPipelineIntegrated.pipelineId).toBe(true);
+    expect(!!validPipelineIntegrated.stageId).toBe(true);
   });
 
   it('rejects invite without pipeline context OR recipient info', () => {
@@ -47,8 +47,8 @@ describe('Create interview validation', () => {
       // Missing both pipeline context and recipient info
     };
 
-    const hasPipelineContext = invalid.candidateId && invalid.pipelineId && invalid.stageId;
-    const hasRecipientInfo = invalid.recipientName && invalid.recipientEmail;
+    const hasPipelineContext = !!(invalid.candidateId && invalid.pipelineId && invalid.stageId);
+    const hasRecipientInfo = !!(invalid.recipientName && invalid.recipientEmail);
 
     // Should fail validation: neither pipeline context nor recipient info provided
     expect(hasPipelineContext || hasRecipientInfo).toBe(false);
@@ -64,8 +64,8 @@ describe('Create interview validation', () => {
       meetingType: 'SCREENING_INTERVIEW',
     };
 
-    const hasPipelineContext = validBoth.candidateId && validBoth.pipelineId && validBoth.stageId;
-    const hasRecipientInfo = validBoth.recipientName && validBoth.recipientEmail;
+    const hasPipelineContext = !!(validBoth.candidateId && validBoth.pipelineId && validBoth.stageId);
+    const hasRecipientInfo = !!(validBoth.recipientName && validBoth.recipientEmail);
 
     // Should pass validation: both provided (recipient override case)
     expect(hasPipelineContext || hasRecipientInfo).toBe(true);
@@ -84,7 +84,7 @@ describe('Create interview validation', () => {
       },
     };
 
-    expect(withCvProfile.cvProfile).toBeTruthy();
+    expect(!!withCvProfile.cvProfile).toBe(true);
     expect(typeof withCvProfile.cvProfile).toBe('object');
   });
 });
@@ -149,7 +149,7 @@ describe('Meeting type classification', () => {
       recipientEmail: 'alice@example.com',
     };
 
-    const inferredType = withRecipient.recipientName && withRecipient.recipientEmail
+    const inferredType = (withRecipient.recipientName && withRecipient.recipientEmail)
       ? 'DIRECT_VIDEO_CALL'
       : 'SCREENING_INTERVIEW';
 
@@ -163,7 +163,7 @@ describe('Meeting type classification', () => {
       stageId: 'stage-789',
     };
 
-    const inferredType = withPipeline.recipientName && withPipeline.recipientEmail
+    const inferredType = (withPipeline.recipientName && withPipeline.recipientEmail)
       ? 'DIRECT_VIDEO_CALL'
       : 'SCREENING_INTERVIEW';
 
