@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Calendar, RefreshCw, Video, User, Plus } from 'lucide-react';
+import { Calendar, RefreshCw, Video, User } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';

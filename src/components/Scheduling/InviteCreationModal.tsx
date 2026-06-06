@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, User, Mail, Calendar } from 'lucide-react';
+import { X, Copy, Check, Video, User } from 'lucide-react';
 import type { MeetingType } from '../../lib/scheduling/types';
 
 interface InviteCreationModalProps {
@@ -72,12 +72,20 @@ export function InviteCreationModal({
     setIsCreating(true);
     setCreateError(null);
     try {
-      const result = await onCreateInvite({
+      const payload: {
+        recipientName: string;
+        recipientEmail: string;
+        meetingType: MeetingType;
+        scheduledAt?: string;
+      } = {
         recipientName: recipientName.trim(),
         recipientEmail: recipientEmail.trim(),
         meetingType,
-        scheduledAt: scheduledAt || undefined,
-      });
+      };
+      if (scheduledAt) {
+        payload.scheduledAt = scheduledAt;
+      }
+      const result = await onCreateInvite(payload);
       setCreatedInviteId(result.id);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create invite');

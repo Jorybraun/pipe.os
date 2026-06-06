@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/App.tsx`: Added routes for RecipientInvitePage (public) and RecruiterVideoPage (protected). Imported and lazy-loaded both page components.
 - `src/components/Scheduling/InterviewCard.tsx`: Updated JOIN button to navigate to recruiter video page for contact-first interviews (detected by presence of recipientName/recipientEmail without candidateId). Added useNavigate hook for routing.
 
+### Fixed — TypeScript Compilation Errors in Scheduling Components
+
+- `src/components/Scheduling/InviteCreationModal.tsx`: Removed unused imports (Mail, Calendar), fixed scheduledAt optional property handling to comply with exactOptionalPropertyTypes by conditionally adding property only when present.
+- `src/components/Scheduling/SchedulingDashboard.tsx`: Removed unused Plus import.
+- `src/hooks/useScheduledInterviews.ts`: Fixed meetingType optional property handling to comply with exactOptionalPropertyTypes by using conditional assignment instead of spread operator.
+
 ### Added — Contact-First Scheduling API
 
 - `workers/api/src/routes/cockpit/scheduling.ts`: POST /interviews now accepts recipientName/recipientEmail for contact-first invites without requiring candidateId/pipelineId/stageId. Added optional scheduledAt and cvProfile payload support. GET /invite/:id public route allows invite link resolution without recruiter auth. GET /interviews returns meeting_type, recipient_name, recipient_email fields. Added ACTIVE status to lifecycle (INVITED -> SCHEDULED -> ACTIVE -> COMPLETED/CANCELLED/NO_SHOW). Webhook matching updated to support both candidate_email and recipient_email. Email notifications handle contact-first recipients.

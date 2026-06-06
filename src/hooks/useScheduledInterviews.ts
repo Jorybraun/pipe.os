@@ -59,29 +59,34 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       }>('/api/v1/scheduling/interviews');
 
       setInterviews(
-        result.interviews.map((r) => ({
-          id: r.id,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-          candidateId: r.candidateId,
-          pipelineId: r.pipelineId,
-          stageId: r.stageId,
-          status: r.status,
-          scheduledAt: r.scheduledAt,
-          meetingUrl: r.meetingUrl,
-          schedulingProvider: (r.schedulingProvider as ScheduledInterview['schedulingProvider']) ?? null,
-          schedulingUrl: r.schedulingUrl,
-          recruiterNotes: r.recruiterNotes,
-          syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
-          lastSyncedAt: r.lastSyncedAt,
-          meetingType: r.meetingType as ScheduledInterview['meetingType'],
-          recipientName: r.recipientName,
-          recipientEmail: r.recipientEmail,
-          candidateName: r.candidateName,
-          candidateEmail: r.candidateEmail,
-          pipelineTitle: r.pipelineTitle,
-          stageTitle: r.stageTitle,
-        })),
+        result.interviews.map((r): ScheduledInterview => {
+          const interview: ScheduledInterview = {
+            id: r.id,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+            candidateId: r.candidateId,
+            pipelineId: r.pipelineId,
+            stageId: r.stageId,
+            status: r.status,
+            scheduledAt: r.scheduledAt,
+            meetingUrl: r.meetingUrl,
+            schedulingProvider: (r.schedulingProvider as ScheduledInterview['schedulingProvider']) ?? null,
+            schedulingUrl: r.schedulingUrl,
+            recruiterNotes: r.recruiterNotes,
+            syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
+            lastSyncedAt: r.lastSyncedAt,
+            recipientName: r.recipientName,
+            recipientEmail: r.recipientEmail,
+            candidateName: r.candidateName,
+            candidateEmail: r.candidateEmail,
+            pipelineTitle: r.pipelineTitle,
+            stageTitle: r.stageTitle,
+          };
+          if (r.meetingType !== undefined && r.meetingType !== null) {
+            (interview as { meetingType: ScheduledInterview['meetingType'] }).meetingType = r.meetingType as ScheduledInterview['meetingType'];
+          }
+          return interview;
+        }),
       );
     } catch (err) {
       console.error('[useScheduledInterviews] fetch error:', err);
