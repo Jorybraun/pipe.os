@@ -72,7 +72,7 @@ export function InviteCreationModal({
     setIsCreating(true);
     setCreateError(null);
     try {
-      const payload: {
+      const inviteData: {
         recipientName: string;
         recipientEmail: string;
         meetingType: MeetingType;
@@ -83,9 +83,9 @@ export function InviteCreationModal({
         meetingType,
       };
       if (scheduledAt) {
-        payload.scheduledAt = scheduledAt;
+        inviteData.scheduledAt = scheduledAt;
       }
-      const result = await onCreateInvite(payload);
+      const result = await onCreateInvite(inviteData);
       setCreatedInviteId(result.id);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create invite');
