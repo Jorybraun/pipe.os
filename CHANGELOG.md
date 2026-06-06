@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/components/Scheduling/SchedulingDashboard.tsx`: Added primary action buttons (DIRECT CALL, SCREENING) that open the invite creation modal with pre-selected meeting type.
 - `src/hooks/useScheduledInterviews.ts`: Updated to include contact-first fields (meetingType, recipientName, recipientEmail) from builder's API changes.
 
+### Added — Recipient Video Call Microapp Route
+
+- `src/pages/RecipientInvitePage.tsx` (new): Public route (/invite/:id) for recipients to join video calls. Loads invite data via GET /api/v1/scheduling/invite/:id, implements basic profile/CV intake form (name, email, resume summary), and integrates VideoShell for video room functionality. Supports both DIRECT_VIDEO_CALL and SCREENING_INTERVIEW meeting types.
+- `src/pages/RecruiterVideoPage.tsx` (new): Protected route (/recruiter/video/:id) for recruiters to join contact-first video calls. Uses interview ID as stage/candidate ID for VideoShell signaling.
+- `src/App.tsx`: Added routes for RecipientInvitePage (public) and RecruiterVideoPage (protected). Imported and lazy-loaded both page components.
+- `src/components/Scheduling/InterviewCard.tsx`: Updated JOIN button to navigate to recruiter video page for contact-first interviews (detected by presence of recipientName/recipientEmail without candidateId). Added useNavigate hook for routing.
+
 ### Added — Contact-First Scheduling API
 
 - `workers/api/src/routes/cockpit/scheduling.ts`: POST /interviews now accepts recipientName/recipientEmail for contact-first invites without requiring candidateId/pipelineId/stageId. Added optional scheduledAt and cvProfile payload support. GET /invite/:id public route allows invite link resolution without recruiter auth. GET /interviews returns meeting_type, recipient_name, recipient_email fields. Added ACTIVE status to lifecycle (INVITED -> SCHEDULED -> ACTIVE -> COMPLETED/CANCELLED/NO_SHOW). Webhook matching updated to support both candidate_email and recipient_email. Email notifications handle contact-first recipients.

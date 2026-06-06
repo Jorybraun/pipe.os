@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Video, RefreshCw } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
@@ -44,6 +45,7 @@ export function InterviewCard({
   updateStatus,
 }: InterviewCardProps): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const navigate = useNavigate();
 
   const joinable = isJoinable(interview);
   const now = Date.now();
@@ -148,7 +150,11 @@ export function InterviewCard({
           <button
             disabled={!joinable}
             onClick={() => {
-              if (interview.meetingUrl) {
+              // For contact-first interviews (no candidate/pipeline), navigate to internal recruiter video page
+              if (interview.recipientName && interview.recipientEmail && !interview.candidateId) {
+                navigate(`/recruiter/video/${interview.id}`);
+              } else if (interview.meetingUrl) {
+                // For external provider meetings, open the meeting URL
                 window.open(interview.meetingUrl, '_blank', 'noopener,noreferrer');
               }
             }}

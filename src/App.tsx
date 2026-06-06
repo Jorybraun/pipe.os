@@ -33,6 +33,8 @@ const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
+const RecipientInvitePage = lazy(() => import("./pages/RecipientInvitePage"));
+const RecruiterVideoPage = lazy(() => import("./pages/RecruiterVideoPage"));
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
@@ -392,6 +394,20 @@ function App(): JSX.Element {
           }
         />
 
+        {/* Public Recipient Invite Route */}
+        <Route
+          path="/invite/:id"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <RecipientInvitePage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
         {/* Protected Recruiter Routes */}
         <Route
           path="*"
@@ -446,6 +462,7 @@ function App(): JSX.Element {
                     {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
                       <Route path="/schedule" element={<SchedulingPage />} />
                     )}
+                    <Route path="/recruiter/video/:id" element={<RecruiterVideoPage />} />
                     <Route path="/outreach" element={<OutreachPage />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
