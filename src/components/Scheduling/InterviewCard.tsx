@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Video, RefreshCw } from 'lucide-react';
+import { Video, RefreshCw, FileText } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
+import { TranscriptViewer } from './TranscriptViewer';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -46,6 +47,7 @@ export function InterviewCard({
 }: InterviewCardProps): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const navigate = useNavigate();
+  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
 
   const joinable = isJoinable(interview);
   const now = Date.now();
@@ -145,7 +147,7 @@ export function InterviewCard({
           )}
         </div>
 
-        {/* Right: JOIN button + overflow menu */}
+        {/* Right: JOIN button + transcript button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
             disabled={!joinable}
@@ -180,6 +182,36 @@ export function InterviewCard({
             JOIN
           </button>
 
+          {/* Transcript button */}
+          {interview.transcriptArtifact && (
+            <button
+              onClick={() => setIsTranscriptOpen(true)}
+              title="View transcript"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid var(--pipe-border)',
+                color: interview.transcriptArtifact.status === 'COMPLETED'
+                  ? '#10b981'
+                  : interview.transcriptArtifact.status === 'FAILED'
+                  ? '#ef4444'
+                  : 'var(--pipe-text-dim)',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer',
+                borderRadius: 4,
+                transition: 'all 0.2s',
+              }}
+            >
+              <FileText size={12} />
+              TRANSCRIPT
+            </button>
+          )}
+
           {/* Edit / override status */}
           <button
             onClick={() => setIsModalOpen(true)}
@@ -211,6 +243,14 @@ export function InterviewCard({
           interview={interview}
           updateStatus={updateStatus}
           onClose={() => setIsModalOpen(false)}
+        />
+      )}
+
+      {isTranscriptOpen && (
+        <TranscriptViewer
+          interviewId={interview.id}
+          transcriptArtifact={interview.transcriptArtifact ?? null}
+          onClose={() => setIsTranscriptOpen(false)}
         />
       )}
     </>

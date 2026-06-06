@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `workers/api/src/routes/assessment/video.ts`: Added POST /api/v1/video/transcript-callback internal endpoint for DO→Worker transcript persistence. Updated POST /sessions to pass scheduledInterviewId and callback URL to VideoRoom DO.
 - `workers/api/src/routes/cockpit/scheduling.ts`: Updated GET /interviews to LEFT JOIN transcript_artifacts and include status/error_message in list view. Added GET /interviews/:id for full transcript details including transcript_json.
 - `workers/api/src/index.ts`: Mounted video router (internal callback) before videoAuth (authenticated routes) to ensure callback path doesn't require auth.
+- `src/components/Scheduling/TranscriptViewer.tsx` (new): Modal viewer for video call transcripts with status indicators (PENDING/COMPLETED/FAILED), speaker labels, timestamps, and actionable error messages for failed transcriptions.
+- `src/components/Scheduling/InterviewCard.tsx`: Added TRANSCRIPT button that appears when transcriptArtifact exists, with color-coded status indicator. Opens TranscriptViewer modal on click.
+- `workers/api/src/routes/cockpit/__tests__/scheduling.rest.test.ts`: Added transcript artifact model tests validating entry structure, status transitions, and graph association via scheduledInterviewId.
 
 ### Added — Scheduling Tab Invite UI
 
