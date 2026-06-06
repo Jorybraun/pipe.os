@@ -26,7 +26,7 @@ import { emailOAuth } from './routes/outreach/emailOAuth';
 import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
-import { videoAuth, videoCandidate } from './routes/assessment/video';
+import { video, videoAuth, videoCandidate } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -138,6 +138,8 @@ app.route('/api/v1/screening/culture', cultureRecruiter);
 app.route('/api/v1/phone', phonePublic);
 // Phone: token generation, call CRUD (authenticated)
 app.route('/api/v1/phone', phoneAuth);
+// Video: transcript callback (internal, no auth) — must mount before auth routes
+app.route('/api/v1/video', video);
 // Video: session creation, TURN credentials (recruiter auth)
 app.route('/api/v1/video', videoAuth);
 // Video: candidate WebSocket connection (candidate JWT auth)

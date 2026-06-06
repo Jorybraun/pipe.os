@@ -31,14 +31,19 @@ interface SignalMessage {
   payload?: unknown;
 }
 
+interface VideoRoomMetadata {
+  stageId?: string;
+  candidateId?: string;
+  recruiterId?: string;
+  scheduledInterviewId?: string;  // For transcript artifact association
+}
+
 export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
-  private metadata: {
-    stageId?: string;
-    candidateId?: string;
-    recruiterId?: string;
-  } = {};
+  private metadata: VideoRoomMetadata = {};
+  private transcriptCallbackUrl?: string;
+  private internalSecret?: string;
 
   constructor(state: DurableObjectState) {
     this.state = state;
@@ -47,10 +52,14 @@ export class VideoRoom {
     void state.blockConcurrencyWhile(async () => {
       const stored = await state.storage.get<SessionStatus>('status');
       if (stored) this.sessionStatus = stored;
-      const meta = await state.storage.get<typeof this.metadata>('metadata');
+      const meta = await state.storage.get<VideoRoomMetadata>('metadata');
       if (meta) this.metadata = meta;
       const offer = await state.storage.get<string>('lastOffer');
       if (offer) this._lastOffer = offer;
+      const callbackUrl = await state.storage.get<string>('transcriptCallbackUrl');
+      if (callbackUrl) this.transcriptCallbackUrl = callbackUrl;
+      const secret = await state.storage.get<string>('internalSecret');
+      if (secret) this.internalSecret = secret;
     });
   }
 
@@ -111,16 +120,24 @@ export class VideoRoom {
         stageId: string;
         candidateId: string;
         recruiterId: string;
+        scheduledInterviewId?: string;
+        transcriptCallbackUrl?: string;
+        internalSecret?: string;
       };
       this.metadata = {
         stageId: body.stageId,
         candidateId: body.candidateId,
         recruiterId: body.recruiterId,
+        scheduledInterviewId: body.scheduledInterviewId,
       };
+      this.transcriptCallbackUrl = body.transcriptCallbackUrl;
+      this.internalSecret = body.internalSecret;
       this.sessionStatus = 'WAITING';
       this._lastOffer = null;
       await this.state.storage.put('metadata', this.metadata);
       await this.state.storage.put('status', this.sessionStatus);
+      await this.state.storage.put('transcriptCallbackUrl', this.transcriptCallbackUrl);
+      await this.state.storage.put('internalSecret', this.internalSecret);
       await this.state.storage.delete('lastOffer');
 
       return new Response(JSON.stringify({ status: 'WAITING' }), {
@@ -224,11 +241,13 @@ export class VideoRoom {
         role: senderRole,
       }));
 
-      // If ENDED, clear offer and schedule cleanup
+      // If ENDED, clear offer, schedule cleanup, and trigger transcript callback
       if (this.sessionStatus === 'ENDED') {
         this._lastOffer = null;
         await this.state.storage.delete('lastOffer');
         void this.state.storage.setAlarm(Date.now() + 5000);
+        // Trigger transcript artifact creation/update
+        void this.triggerTranscriptCallback();
       }
       return;
     }
@@ -297,5 +316,37 @@ export class VideoRoom {
   async alarm(): Promise<void> {
     // Clean up storage after session ends
     await this.state.storage.deleteAll();
+  }
+
+  // ── Transcript callback ───────────────────────────────────────────────────
+
+  private async triggerTranscriptCallback(): Promise<void> {
+    if (!this.transcriptCallbackUrl || !this.internalSecret || !this.metadata.scheduledInterviewId) {
+      return;  // No callback configured or no interview association
+    }
+
+    try {
+      // For now, send a placeholder transcript since we don't have actual video transcription
+      // This sets up the infrastructure for when real transcription is added
+      const placeholderTranscript = [
+        { role: 'model' as const, text: 'Video call ended. Transcription not yet implemented.', timestamp: new Date().toISOString() },
+      ];
+
+      await fetch(this.transcriptCallbackUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Secret': this.internalSecret,
+        },
+        body: JSON.stringify({
+          scheduledInterviewId: this.metadata.scheduledInterviewId,
+          transcript: placeholderTranscript,
+          status: 'COMPLETED',
+        }),
+      });
+    } catch (error) {
+      console.error('[VideoRoom] Transcript callback failed:', error);
+      // Optionally retry or mark as failed - for now just log
+    }
   }
 }

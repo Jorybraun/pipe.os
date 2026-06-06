@@ -8,6 +8,31 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK';
 /** Meeting type — distinguishes contact-first from pipeline-integrated meetings */
 export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
 
+/** Transcript artifact status — tracks transcription lifecycle */
+export type TranscriptStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
+
+/**
+ * Transcript entry — single utterance with speaker and optional timestamp
+ */
+export interface TranscriptEntry {
+  role: 'user' | 'model';
+  text: string;
+  timestamp?: string;
+}
+
+/**
+ * Transcript artifact — persisted video call transcript
+ */
+export interface TranscriptArtifact {
+  id: string;
+  scheduledInterviewId: string;
+  status: TranscriptStatus;
+  transcriptJson: string | null;  // JSON string of TranscriptEntry[]
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /**
  * ScheduledInterview — local TypeScript interface.
  * Matches the D1 schema (see workers/api/migrations/).
@@ -42,6 +67,8 @@ export interface ScheduledInterview {
   candidateEmail?: string | null;
   pipelineTitle?: string | null;
   stageTitle?: string | null;
+  // Transcript artifact enrichment
+  transcriptArtifact?: TranscriptArtifact | null;
 }
 
 /**

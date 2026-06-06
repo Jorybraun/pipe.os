@@ -1,4 +1,31 @@
 /**
+ * Transcript artifact status — tracks transcription lifecycle
+ */
+export type TranscriptStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
+
+/**
+ * Transcript entry — single utterance with speaker and optional timestamp
+ */
+export interface TranscriptEntry {
+  role: 'user' | 'model';
+  text: string;
+  timestamp?: string;
+}
+
+/**
+ * Transcript artifact — persisted video call transcript
+ */
+export interface TranscriptArtifact {
+  id: string;
+  scheduledInterviewId: string;
+  status: TranscriptStatus;
+  transcriptJson: string | null;  // JSON string of TranscriptEntry[]
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
  * Environment bindings injected by the Cloudflare Workers runtime.
  * Add new bindings here as they are declared in wrangler.jsonc.
  */

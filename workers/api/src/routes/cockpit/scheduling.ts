@@ -484,11 +484,15 @@ schedulingAuth.get('/interviews', async (c) => {
               si.meeting_type, si.recipient_name, si.recipient_email,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
-              s.title AS stage_title
+              s.title AS stage_title,
+              ta.id AS transcript_artifact_id,
+              ta.status AS transcript_status,
+              ta.error_message AS transcript_error_message
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
        LEFT JOIN stages s ON s.id = si.stage_id
+       LEFT JOIN transcript_artifacts ta ON ta.scheduled_interview_id = si.id
        WHERE si.owner_id = ?
        ORDER BY si.scheduled_at ASC`
     )
@@ -515,6 +519,9 @@ schedulingAuth.get('/interviews', async (c) => {
       candidate_email: string | null;
       pipeline_title: string | null;
       stage_title: string | null;
+      transcript_artifact_id: string | null;
+      transcript_status: string | null;
+      transcript_error_message: string | null;
     }>();
 
   const interviews = (result.results ?? []).map((r) => ({
@@ -539,9 +546,118 @@ schedulingAuth.get('/interviews', async (c) => {
     candidateEmail: r.candidate_email,
     pipelineTitle: r.pipeline_title,
     stageTitle: r.stage_title,
+    transcriptArtifact: r.transcript_artifact_id ? {
+      id: r.transcript_artifact_id,
+      scheduledInterviewId: r.id,
+      status: r.transcript_status,
+      transcriptJson: null,  // Not included in list view for performance
+      errorMessage: r.transcript_error_message,
+      createdAt: r.created_at,  // Use interview created_at as fallback
+      updatedAt: r.updated_at,  // Use interview updated_at as fallback
+    } : null,
   }));
 
   return c.json({ interviews });
+});
+
+// GET /interviews/:id — get single interview with transcript details
+schedulingAuth.get('/interviews/:id', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const result = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
+              si.scheduled_at, si.meeting_url, si.scheduling_provider,
+              si.scheduling_url, si.recruiter_notes, si.sync_source,
+              si.last_synced_at, si.created_at, si.updated_at,
+              si.meeting_type, si.recipient_name, si.recipient_email,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title,
+              ta.id AS transcript_artifact_id,
+              ta.status AS transcript_status,
+              ta.transcript_json AS transcript_json,
+              ta.error_message AS transcript_error_message,
+              ta.created_at AS transcript_created_at,
+              ta.updated_at AS transcript_updated_at
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       LEFT JOIN transcript_artifacts ta ON ta.scheduled_interview_id = si.id
+       WHERE si.id = ? AND si.owner_id = ?`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+      recruiter_notes: string | null;
+      sync_source: string | null;
+      last_synced_at: string | null;
+      created_at: string;
+      updated_at: string;
+      meeting_type: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+      transcript_artifact_id: string | null;
+      transcript_status: string | null;
+      transcript_json: string | null;
+      transcript_error_message: string | null;
+      transcript_created_at: string | null;
+      transcript_updated_at: string | null;
+    }>();
+
+  if (!result) {
+    return apiError(c, 'NOT_FOUND', 'Interview not found.');
+  }
+
+  const interview = {
+    id: result.id,
+    candidateId: result.candidate_id,
+    pipelineId: result.pipeline_id,
+    stageId: result.stage_id,
+    status: result.status,
+    scheduledAt: result.scheduled_at,
+    meetingUrl: result.meeting_url,
+    schedulingProvider: result.scheduling_provider,
+    schedulingUrl: result.scheduling_url,
+    recruiterNotes: result.recruiter_notes,
+    syncSource: result.sync_source,
+    lastSyncedAt: result.last_synced_at,
+    createdAt: result.created_at,
+    updatedAt: result.updated_at,
+    meetingType: result.meeting_type,
+    recipientName: result.recipient_name,
+    recipientEmail: result.recipient_email,
+    candidateName: result.candidate_name,
+    candidateEmail: result.candidate_email,
+    pipelineTitle: result.pipeline_title,
+    stageTitle: result.stage_title,
+    transcriptArtifact: result.transcript_artifact_id ? {
+      id: result.transcript_artifact_id,
+      scheduledInterviewId: result.id,
+      status: result.transcript_status,
+      transcriptJson: result.transcript_json,
+      errorMessage: result.transcript_error_message,
+      createdAt: result.transcript_created_at ?? result.created_at,
+      updatedAt: result.transcript_updated_at ?? result.updated_at,
+    } : null,
+  };
+
+  return c.json({ interview });
 });
 
 // POST /interviews/sync — poll Calendly for recent events and update interviews

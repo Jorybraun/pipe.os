@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Video Transcript Artifacts
+
+- `workers/api/migrations/0076_transcript_artifacts.sql`: New table for persisting video call transcripts with status (PENDING/COMPLETED/FAILED) and error_message for actionable failure status. Links to scheduled_interviews for graph associations (meeting invite, recipient/person nodes).
+- `workers/api/src/types.ts`: Added TranscriptStatus, TranscriptEntry, and TranscriptArtifact types.
+- `src/lib/scheduling/types.ts`: Added transcript types and transcriptArtifact enrichment field to ScheduledInterview.
+- `workers/api/src/durable-objects/VideoRoom.ts`: Updated to accept scheduledInterviewId, transcriptCallbackUrl, and internalSecret on init. Triggers transcript callback on session end (STATUS_UPDATE → ENDED).
+- `workers/api/src/routes/assessment/video.ts`: Added POST /api/v1/video/transcript-callback internal endpoint for DO→Worker transcript persistence. Updated POST /sessions to pass scheduledInterviewId and callback URL to VideoRoom DO.
+- `workers/api/src/routes/cockpit/scheduling.ts`: Updated GET /interviews to LEFT JOIN transcript_artifacts and include status/error_message in list view. Added GET /interviews/:id for full transcript details including transcript_json.
+- `workers/api/src/index.ts`: Mounted video router (internal callback) before videoAuth (authenticated routes) to ensure callback path doesn't require auth.
+
 ### Added — Scheduling Tab Invite UI
 
 - `src/components/Scheduling/InviteCreationModal.tsx` (new): Modal component for creating direct video call and screening interview invites. Includes meeting type selection, recipient name/email inputs, optional scheduled time, and invite link generation with copy functionality.
