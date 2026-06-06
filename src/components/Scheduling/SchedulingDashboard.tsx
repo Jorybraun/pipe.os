@@ -1,11 +1,13 @@
-import { useMemo } from 'react';
-import { Calendar, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Calendar, RefreshCw, Video, User, Plus } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
-import type { ScheduledInterview } from '../../lib/scheduling/types';
+import { InviteCreationModal } from './InviteCreationModal';
+import type { ScheduledInterview, MeetingType } from '../../lib/scheduling/types';
+import { useApiClient } from '../../hooks/useApiClient';
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
@@ -63,8 +65,31 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
  * and renders.
  */
 export function SchedulingDashboard(): JSX.Element {
-  const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
+  const { interviews, isLoading, error, updateStatus, refetch } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
+  const api = useApiClient();
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [initialMeetingType, setInitialMeetingType] = useState<MeetingType>('DIRECT_VIDEO_CALL');
+
+  const handleCreateInvite = async (data: {
+    recipientName: string;
+    recipientEmail: string;
+    meetingType: MeetingType;
+    scheduledAt?: string;
+  }) => {
+    const result = await api.post<{
+      interview: {
+        id: string;
+      };
+    }>('/api/v1/scheduling/interviews', {
+      recipientName: data.recipientName,
+      recipientEmail: data.recipientEmail,
+      meetingType: data.meetingType,
+      scheduledAt: data.scheduledAt,
+    });
+    await refetch();
+    return { id: result.interview.id };
+  };
 
   // Group interviews by timeline, then sort within each group by time
   const groupedInterviews = useMemo(() => {
@@ -127,30 +152,83 @@ export function SchedulingDashboard(): JSX.Element {
             Schedule
           </h1>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
-          <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {interviews.length} total
-          </span>
-          {connection?.lastSyncAt && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                fontSize: 10,
-                color: 'rgba(74,222,128,0.7)',
-                fontFamily: '"Space Mono", monospace',
-                letterSpacing: '0.05em',
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12, marginTop: 8 }}>
+          {/* Primary action buttons */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => {
+                setInitialMeetingType('DIRECT_VIDEO_CALL');
+                setIsInviteModalOpen(true);
               }}
-              title={`Last webhook sync: ${new Date(connection.lastSyncAt).toLocaleString()}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                background: 'rgba(96,165,250,0.15)',
+                border: '1px solid rgba(96,165,250,0.3)',
+                color: '#60a5fa',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer',
+                borderRadius: 4,
+                transition: 'all 0.2s',
+              }}
             >
-              <RefreshCw size={10} />
-              Last sync {new Date(connection.lastSyncAt).toLocaleString(undefined, {
-                dateStyle: 'short',
-                timeStyle: 'short',
-              })}
+              <Video size={12} />
+              DIRECT CALL
+            </button>
+            <button
+              onClick={() => {
+                setInitialMeetingType('SCREENING_INTERVIEW');
+                setIsInviteModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                background: 'rgba(168,85,247,0.15)',
+                border: '1px solid rgba(168,85,247,0.3)',
+                color: '#a855f7',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                cursor: 'pointer',
+                borderRadius: 4,
+                transition: 'all 0.2s',
+              }}
+            >
+              <User size={12} />
+              SCREENING
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
+              {interviews.length} total
             </span>
-          )}
+            {connection?.lastSyncAt && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 10,
+                  color: 'rgba(74,222,128,0.7)',
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.05em',
+                }}
+                title={`Last webhook sync: ${new Date(connection.lastSyncAt).toLocaleString()}`}
+              >
+                <RefreshCw size={10} />
+                Last sync {new Date(connection.lastSyncAt).toLocaleString(undefined, {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                })}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -213,6 +291,14 @@ export function SchedulingDashboard(): JSX.Element {
           ))}
         </div>
       )}
+
+      {/* Invite creation modal */}
+      <InviteCreationModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        onCreateInvite={handleCreateInvite}
+        initialMeetingType={initialMeetingType}
+      />
     </div>
   );
 }

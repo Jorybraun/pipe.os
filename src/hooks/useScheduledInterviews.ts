@@ -35,9 +35,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       const result = await api.get<{
         interviews: Array<{
           id: string;
-          candidateId: string;
-          pipelineId: string;
-          stageId: string;
+          candidateId: string | null;
+          pipelineId: string | null;
+          stageId: string | null;
           status: InterviewStatus;
           scheduledAt: string | null;
           meetingUrl: string | null;
@@ -48,6 +48,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: string | null;
           createdAt: string;
           updatedAt: string;
+          meetingType: string | null;
+          recipientName: string | null;
+          recipientEmail: string | null;
           candidateName: string | null;
           candidateEmail: string | null;
           pipelineTitle: string | null;
@@ -71,6 +74,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           recruiterNotes: r.recruiterNotes,
           syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
           lastSyncedAt: r.lastSyncedAt,
+          meetingType: r.meetingType as ScheduledInterview['meetingType'],
+          recipientName: r.recipientName,
+          recipientEmail: r.recipientEmail,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
           pipelineTitle: r.pipelineTitle,

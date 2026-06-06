@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Scheduling Tab Invite UI
+
+- `src/components/Scheduling/InviteCreationModal.tsx` (new): Modal component for creating direct video call and screening interview invites. Includes meeting type selection, recipient name/email inputs, optional scheduled time, and invite link generation with copy functionality.
+- `src/components/Scheduling/SchedulingDashboard.tsx`: Added primary action buttons (DIRECT CALL, SCREENING) that open the invite creation modal with pre-selected meeting type.
+- `src/hooks/useScheduledInterviews.ts`: Updated to include contact-first fields (meetingType, recipientName, recipientEmail) from builder's API changes.
+
 ### Added — Contact-First Scheduling API
 
 - `workers/api/src/routes/cockpit/scheduling.ts`: POST /interviews now accepts recipientName/recipientEmail for contact-first invites without requiring candidateId/pipelineId/stageId. Added optional scheduledAt and cvProfile payload support. GET /invite/:id public route allows invite link resolution without recruiter auth. GET /interviews returns meeting_type, recipient_name, recipient_email fields. Added ACTIVE status to lifecycle (INVITED -> SCHEDULED -> ACTIVE -> COMPLETED/CANCELLED/NO_SHOW). Webhook matching updated to support both candidate_email and recipient_email. Email notifications handle contact-first recipients.
