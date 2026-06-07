@@ -13,6 +13,8 @@
  *   GET  /api/v1/phone/calls             — List calls for a candidate
  *   PATCH /api/v1/phone/calls/:callId    — Update call (recruiter notes)
  *   GET  /api/v1/phone/calls/:callId/recording — Stream recording from R2
+ *   GET  /api/v1/phone/calls/:callId/transcription — Get transcription markdown from R2
+ *   GET  /api/v1/phone/calls/:callId/metadata — Get transcription metadata from R2
  */
 
 import { Hono } from 'hono';
@@ -21,6 +23,12 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { validateTwilioSignature, generateTwilioAccessToken } from '../../lib/twilioAuth';
 import { transcribeAudioWhisper } from '../../lib/transcribe';
+import {
+  storeTranscriptionFiles,
+  getTranscriptionMarkdown,
+  getTranscriptionMetadata,
+  type TranscriptionMetadata,
+} from '../../lib/transcriptionStorage';
 import type { Env, Variables, PhoneCallRow } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -203,12 +211,57 @@ phonePublic.post('/recording-status', async (c) => {
 
           const transcript = await transcribeAudioWhisper(c.env.AI, audioBuffer);
 
+          const status = transcript ? 'COMPLETED' : 'FAILED';
           await db
             .prepare(
               'UPDATE phone_calls SET transcription = ?, transcription_status = ?, updated_at = ? WHERE id = ?'
             )
-            .bind(transcript, transcript ? 'COMPLETED' : 'FAILED', new Date().toISOString(), call.id)
+            .bind(transcript, status, new Date().toISOString(), call.id)
             .run();
+
+          // Store transcription files in R2 if transcription succeeded
+          if (transcript && c.env.STORAGE) {
+            try {
+              // Fetch full call metadata for file storage
+              const callRecord = await db
+                .prepare(
+                  `SELECT id, candidate_id, pipeline_id, owner_id, direction, from_number, to_number,
+                          twilio_call_sid, duration_seconds, recording_url, recording_s3_key,
+                          transcription_status, started_at, ended_at, created_at, updated_at
+                   FROM phone_calls WHERE id = ?`
+                )
+                .bind(call.id)
+                .first<PhoneCallRow>();
+
+              if (callRecord) {
+                const metadata: TranscriptionMetadata = {
+                  callId: callRecord.id,
+                  candidateId: callRecord.candidate_id,
+                  pipelineId: callRecord.pipeline_id,
+                  ownerId: callRecord.owner_id,
+                  direction: callRecord.direction,
+                  fromNumber: callRecord.from_number,
+                  toNumber: callRecord.to_number,
+                  twilioCallSid: callRecord.twilio_call_sid ?? undefined,
+                  durationSeconds: callRecord.duration_seconds ?? undefined,
+                  recordingUrl: callRecord.recording_url ?? undefined,
+                  recordingS3Key: callRecord.recording_s3_key ?? undefined,
+                  transcriptionStatus: callRecord.transcription_status,
+                  transcriptionService: 'cloudflare-workers-ai',
+                  transcriptionModel: '@cf/openai/whisper-large-v3-turbo',
+                  startedAt: callRecord.started_at ?? undefined,
+                  endedAt: callRecord.ended_at ?? undefined,
+                  createdAt: callRecord.created_at,
+                  updatedAt: callRecord.updated_at,
+                };
+
+                await storeTranscriptionFiles(c.env.STORAGE, call.id, transcript, metadata);
+              }
+            } catch (storageErr) {
+              console.error('[phone/recording-status] Failed to store transcription files:', storageErr);
+              // Don't fail the transcription if file storage fails
+            }
+          }
         } catch (err) {
           console.error('[phone/recording-status] Transcription failed:', err);
           await db
@@ -512,6 +565,65 @@ phoneAuth.get('/calls/:callId/recording', async (c) => {
       'Cache-Control': 'private, max-age=3600',
     },
   });
+});
+
+/**
+ * GET /calls/:callId/transcription — Get transcription markdown from R2.
+ */
+phoneAuth.get('/calls/:callId/transcription', async (c) => {
+  const userId = c.var.userId;
+  const { callId } = c.req.param();
+  const db = c.env.DB;
+
+  // Ownership check
+  const call = await db
+    .prepare('SELECT id FROM phone_calls WHERE id = ? AND owner_id = ?')
+    .bind(callId, userId)
+    .first<{ id: string }>();
+
+  if (!call) return apiError(c, 'NOT_FOUND', 'Call not found.');
+
+  if (!c.env.STORAGE) {
+    return apiError(c, 'INTERNAL_ERROR', 'Storage not configured.');
+  }
+
+  const markdown = await getTranscriptionMarkdown(c.env.STORAGE, callId);
+  if (!markdown) {
+    return apiError(c, 'NOT_FOUND', 'Transcription file not found.');
+  }
+
+  return c.text(markdown, 200, {
+    'Content-Type': 'text/markdown',
+    'Cache-Control': 'private, max-age=3600',
+  });
+});
+
+/**
+ * GET /calls/:callId/metadata — Get transcription metadata from R2.
+ */
+phoneAuth.get('/calls/:callId/metadata', async (c) => {
+  const userId = c.var.userId;
+  const { callId } = c.req.param();
+  const db = c.env.DB;
+
+  // Ownership check
+  const call = await db
+    .prepare('SELECT id FROM phone_calls WHERE id = ? AND owner_id = ?')
+    .bind(callId, userId)
+    .first<{ id: string }>();
+
+  if (!call) return apiError(c, 'NOT_FOUND', 'Call not found.');
+
+  if (!c.env.STORAGE) {
+    return apiError(c, 'INTERNAL_ERROR', 'Storage not configured.');
+  }
+
+  const metadata = await getTranscriptionMetadata(c.env.STORAGE, callId);
+  if (!metadata) {
+    return apiError(c, 'NOT_FOUND', 'Metadata file not found.');
+  }
+
+  return c.json(metadata);
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

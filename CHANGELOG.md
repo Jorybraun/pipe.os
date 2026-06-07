@@ -46,6 +46,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/lib/scheduling/types.ts`: Added ACTIVE to InterviewStatus type.
 - `workers/api/src/routes/cockpit/__tests__/scheduling.rest.test.ts` (new): REST tests for invite creation without candidateId/pipelineId/stageId, validation schema tests, status transition tests, and meeting type classification tests.
 
+### Added — File-Based Transcription Storage
+
+- `workers/api/src/lib/transcriptionStorage.ts` (new): Module for file-based transcription storage in R2. Functions include `formatTranscriptionMarkdown()` (human-readable formatting), `storeTranscriptionFiles()` (writes transcription.md and metadata.json to R2), `getTranscriptionMarkdown()` (retrieves markdown), `getTranscriptionMetadata()` (retrieves JSON), and `transcriptionFilesExist()` (checks file existence).
+- `workers/api/src/routes/screening/phone.ts`: Updated to store transcription files in R2 after successful transcription via Workers AI Whisper. Added `GET /api/v1/phone/calls/:callId/transcription` endpoint to retrieve markdown transcription and `GET /api/v1/phone/calls/:callId/metadata` endpoint to retrieve JSON metadata. R2 path structure: `call-recordings/{callId}/transcription.md` and `call-recordings/{callId}/metadata.json`. File storage is fire-and-forget (doesn't fail transcription if R2 write fails).
+- This complements existing SQLite storage (phone_calls.transcription column) with durable, human-readable backup following CEO Studio's hybrid storage pattern adapted for PIPE-OS's cloud architecture.
+
 ### Fixed — Deterministic Discovery Interview Questions
 
 - `workers/api/src/lib/agents/question/domainOrchestrator.ts`: Domain orchestrator now uses calibrated probes from `probeLibrarian.ts` (ADR-041) instead of LLM-generated questions. Probes are served in deterministic order per domain, with LLM fallback only for domains without matching probes (e.g., `why`). Cross-domain probe deduplication prevents the same probe from being asked twice.
