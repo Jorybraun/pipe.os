@@ -64,8 +64,13 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
+        // Production marketing domain
+        'https://hire-pipe.com',
+        'https://www.hire-pipe.com',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,
+        // Marketing site on Cloudflare Pages (apex + preview deploys)
+        /https:\/\/([a-z0-9-]+\.)?pipe-marketing\.pages\.dev$/,
         // Marketing site (deployed via Devin / static host)
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
@@ -89,6 +94,11 @@ app.use(
 );
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
+// Waitlist: public email signup from marketing site (NO auth).
+// Must be mounted before the broad `/api/v1` mounts below (e.g. devContainerSessions),
+// whose `.use('*', authMiddleware)` would otherwise intercept `/api/v1/waitlist` and 401.
+app.route('/api/v1/waitlist', waitlist);
+
 app.route('/api/v1/pipelines', pipelines);
 // ADR-039 wizard handoff: POST /api/v1/pipelines/auto-build
 app.route('/api/v1/pipelines', pipelinesAutoBuild);
@@ -164,9 +174,6 @@ app.route('/api/v1/tts', ttsRouter);
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
-
-// Waitlist: public email signup from marketing site (no auth)
-app.route('/api/v1/waitlist', waitlist);
 
 // Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
 // disabled entirely when CALIBRATE_TOKEN is unset in env)
