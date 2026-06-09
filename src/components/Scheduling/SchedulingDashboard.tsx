@@ -63,7 +63,7 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
  * and renders.
  */
 export function SchedulingDashboard(): JSX.Element {
-  const { interviews, isLoading, error, updateStatus } = useScheduledInterviews();
+  const { interviews, isLoading, error, updateStatus, sendInvite } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
 
   // Group interviews by timeline, then sort within each group by time
@@ -205,6 +205,7 @@ export function SchedulingDashboard(): JSX.Element {
                       pipelineTitle={pipelineTitle}
                       stageTitle={stageTitle}
                       updateStatus={updateStatus}
+                      sendInvite={sendInvite}
                     />
                   );
                 })}

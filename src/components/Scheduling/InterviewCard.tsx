@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Video, RefreshCw } from 'lucide-react';
+import { Video, RefreshCw, Mail } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
+import { InviteToCallModal } from './InviteToCallModal';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -23,6 +24,7 @@ interface InterviewCardProps {
       recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
+  sendInvite: (id: string, email: string, message?: string) => Promise<void>;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
@@ -42,8 +44,10 @@ export function InterviewCard({
   pipelineTitle,
   stageTitle,
   updateStatus,
+  sendInvite,
 }: InterviewCardProps): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
 
   const joinable = isJoinable(interview);
   const now = Date.now();
@@ -143,8 +147,31 @@ export function InterviewCard({
           )}
         </div>
 
-        {/* Right: JOIN button + overflow menu */}
+        {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => setIsInviteOpen(true)}
+            title="Invite to video call via email"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 16px',
+              background: 'rgba(74,222,128,0.1)',
+              border: '1px solid rgba(74,222,128,0.25)',
+              color: '#4ade80',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer',
+              borderRadius: 4,
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Mail size={12} />
+            INVITE
+          </button>
           <button
             disabled={!joinable}
             onClick={() => {
@@ -205,6 +232,14 @@ export function InterviewCard({
           interview={interview}
           updateStatus={updateStatus}
           onClose={() => setIsModalOpen(false)}
+        />
+      )}
+      {isInviteOpen && (
+        <InviteToCallModal
+          interview={interview}
+          candidateEmail={candidateEmail}
+          onSend={sendInvite}
+          onClose={() => setIsInviteOpen(false)}
         />
       )}
     </>
