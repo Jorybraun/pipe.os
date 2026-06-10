@@ -51,6 +51,8 @@ export interface StageConfigDTO {
   videoConfig?: unknown;
   screeningInputMode?: 'text' | 'voice' | 'video' | null;
   challenges?: Array<{ type: string; order: number; title?: string }>;
+  /** Preview of parts that come after the current stage (e.g. the code review behind a CV intake gate). */
+  upcoming?: Array<{ type: string; title?: string }>;
   currentIndex?: number;
   waitingChallenge?: WaitingChallengeDTO;
 }

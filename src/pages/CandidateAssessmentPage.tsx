@@ -12,6 +12,7 @@ import { InterviewProvider } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
+import { WelcomeScreen } from '../components/Assessment/WelcomeScreen';
 import { WaitingForMatch } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
@@ -103,6 +104,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   } = useAssessment(token || '');
 
   const [currentSubmission, setCurrentSubmission] = useState<unknown>(null);
+  const [intakeWelcomeDismissed, setIntakeWelcomeDismissed] = useState(false);
 
   // Auto-skip empty follow-ups
   useEffect(() => {
@@ -334,6 +336,32 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   const followUpReady = isFollowUp && followUpQuestions && followUpQuestions.length > 0;
   const followUpWaiting = isFollowUp && (followUpLoading || !followUpQuestions || followUpQuestions.length === 0);
   const isIntake = currentType === 'INTAKE';
+
+  // Welcome screen before CV intake — shows the full list of parts
+  // (Profile & Resume, plus any upcoming challenges like the code review)
+  // so the candidate knows what to expect, matching the screener flow.
+  if (isIntake && !intakeWelcomeDismissed && !isPreview) {
+    const welcomeChallenges = [
+      ...(stageConfig.challenges ?? []).map((ch) => ({
+        title: ch.title ?? 'Profile & Resume',
+        type: ch.type,
+        timeLimit: null,
+      })),
+      ...(stageConfig.upcoming ?? []).map((u) => ({
+        title: u.title ?? 'Code Review',
+        type: u.type,
+        timeLimit: null,
+      })),
+    ];
+    return (
+      <WelcomeScreen
+        pipelineName={stageConfig.stageTitle ?? 'Assessment'}
+        stageName="Getting Started"
+        challenges={welcomeChallenges}
+        onStart={() => setIntakeWelcomeDismissed(true)}
+      />
+    );
+  }
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
 

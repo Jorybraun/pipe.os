@@ -646,34 +646,33 @@ rpcAuth.post('/get-stage-config', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!candidateRow.pipeline_id) {
     const needsResume = !candidateRow.resume_s3_key;
+    const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
 
     // Standalone code-review interview: once the CV is in, serve the review stage
-    if (!needsResume) {
-      const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
-      if (standaloneReview) {
-        return c.json({
-          isComplete: false,
-          stageId: 'standalone-code-review',
-          candidateId,
-          stageTitle: 'Code Review',
-          mode: 'ASYNC',
-          timeLimit: null,
-          challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
-          currentIndex: 0,
-        });
-      }
+    if (!needsResume && standaloneReview) {
+      return c.json({
+        isComplete: false,
+        stageId: 'standalone-code-review',
+        candidateId,
+        stageTitle: 'Code Review',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+        currentIndex: 0,
+      });
     }
 
     return c.json({
       isComplete: !needsResume,
       stageId: 'talent-pool-intake',
       candidateId,
-      stageTitle: needsResume ? 'Upload Your CV' : 'Thank You',
+      stageTitle: standaloneReview ? 'Code Review Interview' : needsResume ? 'Upload Your CV' : 'Thank You',
       mode: 'INTAKE',
       timeLimit: null,
       challenges: needsResume
-        ? [{ type: 'INTAKE', order: 0, title: 'Upload Your CV' }]
+        ? [{ type: 'INTAKE', order: 0, title: 'Profile & Resume' }]
         : [],
+      upcoming: needsResume && standaloneReview ? [{ type: 'CODE_REVIEW', title: 'Code Review' }] : [],
       currentIndex: 0,
     });
   }
@@ -827,10 +826,11 @@ rpcAuth.post('/get-stage-config', async (c) => {
           isComplete: false,
           stageId: stage.id,
           candidateId,
-          stageTitle: 'Upload Your CV',
+          stageTitle: stage.title,
           mode: 'INTAKE',
           timeLimit: null,
-          challenges: [{ type: 'INTAKE', order: 0, title: 'Upload Your CV' }],
+          challenges: [{ type: 'INTAKE', order: 0, title: 'Profile & Resume' }],
+          upcoming: stage.challenges.map((ch) => ({ type: ch.type, title: ch.title })),
           currentIndex: 0,
         });
       }
