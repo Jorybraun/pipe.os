@@ -249,10 +249,10 @@ Produce the JSON object now. Nothing else.`;
 export async function runGenerativeTurnPlanner(
   provider: LLMProvider | null,
   ctx: GenerativePlannerContext,
-): Promise<GenerativeTurnResult | null> {
+): Promise<{ result: GenerativeTurnResult | null; reason: string }> {
   if (!provider) {
     // No provider — generative mode cannot run. Caller falls back to static bank.
-    return null;
+    return { result: null, reason: 'no_provider' };
   }
 
   const messages: LLMMessage[] = [
@@ -266,20 +266,24 @@ export async function runGenerativeTurnPlanner(
     content = (completion.content ?? '').trim();
   } catch (err) {
     console.error('[generativePlanner] LLM call failed:', err);
-    return null;
+    return { result: null, reason: 'llm_error' };
   }
 
   if (!content) {
     console.warn('[generativePlanner] LLM returned empty content.');
-    return null;
+    return { result: null, reason: 'empty_content' };
   }
 
   try {
     const parsed = JSON.parse(content) as unknown;
-    return parseGenerativeTurnResult(parsed);
+    const result = parseGenerativeTurnResult(parsed);
+    if (!result) {
+      return { result: null, reason: 'parse_failed' };
+    }
+    return { result, reason: 'success' };
   } catch (err) {
     console.error('[generativePlanner] Failed to parse JSON:', content.slice(0, 300), err);
-    return null;
+    return { result: null, reason: 'parse_error' };
   }
 }
 

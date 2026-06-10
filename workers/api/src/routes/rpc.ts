@@ -539,7 +539,7 @@ rpcPublic.post('/resolve-token', async (c) => {
 
   // Reject already-claimed tokens
   if (trimmed.startsWith('CLAIMED::')) {
-    return c.json({ error: { code: 'NOT_FOUND', message: 'Token already claimed.' } }, 404);
+    return c.json({ error: { code: 'CONFLICT', message: 'Token already claimed.' } }, 409);
   }
 
   // Look up candidate by invite token
@@ -558,6 +558,27 @@ rpcPublic.post('/resolve-token', async (c) => {
     }>();
 
   if (!candidate) {
+    // Check if the token was already claimed (handles sessionStorage loss scenario)
+    const claimedCandidate = await c.env.DB.prepare(
+      `SELECT id, status, name
+       FROM candidates
+       WHERE invite_token = ?1
+       LIMIT 1`,
+    )
+      .bind(`CLAIMED::${trimmed}`)
+      .first<{
+        id: string;
+        status: string;
+        name: string | null;
+      }>();
+
+    if (claimedCandidate) {
+      return c.json({
+        error: { code: 'CONFLICT', message: 'This invite link has already been used. Please contact your recruiter for a new link.' },
+        status: claimedCandidate.status,
+      }, 409);
+    }
+
     return c.json({ error: { code: 'NOT_FOUND', message: 'Invalid invite token.' } }, 404);
   }
 

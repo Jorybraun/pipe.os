@@ -240,6 +240,15 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       setState((prev) => ({ ...prev, candidate, isLoading: false }));
     } catch (err) {
       const error = err instanceof Error ? err : new Error('An unexpected error occurred');
+      
+      // Handle 409 CONFLICT (token already claimed) with a user-friendly message
+      if (error.message.includes('409') || error.message.includes('CONFLICT')) {
+        const conflictError = new Error('TOKEN_ALREADY_CLAIMED');
+        console.error('[useAssessment] Token already claimed:', error);
+        setState((prev) => ({ ...prev, isLoading: false, error: conflictError }));
+        return;
+      }
+      
       console.error('[useAssessment] Error:', error);
       setState((prev) => ({ ...prev, isLoading: false, error }));
     }

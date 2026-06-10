@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Contextual Graph Testing Issues (ADR-050 Handoff)
+
+- `workers/api/src/lib/cultureContextualDecomposition.ts`: Added JSON repair pass and retry logic with shorter phrases instruction to handle LLM output truncation. Increased maxTokens from 1024 to 2048. Reduces silent data loss from malformed JSON.
+- `workers/api/src/lib/cultureGenerativePlanner.ts`: Changed return type to include `reason` field for better failure diagnostics. Returns `{ result, reason }` instead of just `result`.
+- `workers/api/src/lib/cultureAgent.ts`: Added metric logging for planner fallbacks with reason codes (no_provider, llm_error, parse_error, etc.). Logs conversation graph state when fallback occurs.
+- `workers/api/src/lib/contextualTurnPersistence.ts`: Added exponential backoff retry logic (3 retries, 1s base delay) for Neo4j operations. Added `pending_graph_backfill` marking for D1 nodes when Neo4j writes fail, enabling future backfill. Improved error logging to distinguish D1 vs Neo4j failures.
+- `workers/api/migrations/0080_candidate_nodes_pending_backfill.sql`: Added `pending_graph_backfill` column to `candidate_nodes` table for tracking nodes that need Neo4j backfill.
+- `workers/api/src/routes/rpc.ts`: Changed claimed token error from 404 to 409 CONFLICT. Added lookup for `CLAIMED::` prefixed tokens to handle sessionStorage loss scenario with user-friendly message.
+- `src/hooks/useAssessment.ts`: Added handling for 409 CONFLICT response to show "TOKEN_ALREADY_CLAIMED" error.
+- `src/pages/CandidateAssessmentPage.tsx`: Added "Link Already Used" error state with user-friendly message for claimed tokens.
+- `workers/api/src/lib/__tests__/cultureGenerativePlanner.test.ts`: Updated tests to handle new return type with `reason` field.
+
 ### Fixed — Contextual node types rejected by candidate_nodes CHECK constraint
 
 - `workers/api/migrations/0079_candidate_nodes_contextual_types.sql`: rebuilds `candidate_nodes` so the `node_type` CHECK constraint accepts the ADR-050 contextual types (Action/Tech/Org/Person/Reason/Outcome/Situation). Without this, `persistContextualTurn` failed with `SQLITE_CONSTRAINT` on every interview turn and no contextual graph was persisted.

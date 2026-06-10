@@ -118,8 +118,9 @@ describe('runGenerativeTurnPlanner', () => {
       minQuestions: 5,
     };
 
-    const result = await runGenerativeTurnPlanner(null, ctx);
+    const { result, reason } = await runGenerativeTurnPlanner(null, ctx);
     expect(result).toBeNull();
+    expect(reason).toBe('no_provider');
   });
 
   it('parses a valid LLM response', async () => {
@@ -159,8 +160,9 @@ describe('runGenerativeTurnPlanner', () => {
       minQuestions: 5,
     };
 
-    const result = await runGenerativeTurnPlanner(mockProvider, ctx);
+    const { result, reason } = await runGenerativeTurnPlanner(mockProvider, ctx);
     expect(result).not.toBeNull();
+    expect(reason).toBe('success');
     expect(result!.question).toContain('Stripe');
     expect(result!.targetDimension).toBe('ownership');
     expect(result!.personalizationAnchors.length).toBeGreaterThan(0);
@@ -188,8 +190,9 @@ describe('runGenerativeTurnPlanner', () => {
       minQuestions: 5,
     };
 
-    const result = await runGenerativeTurnPlanner(mockProvider, ctx);
+    const { result, reason } = await runGenerativeTurnPlanner(mockProvider, ctx);
     expect(result).toBeNull();
+    expect(reason).toBe('parse_error');
   });
 
   it('returns null when question field is empty', async () => {
@@ -222,7 +225,8 @@ describe('runGenerativeTurnPlanner', () => {
       minQuestions: 5,
     };
 
-    const result = await runGenerativeTurnPlanner(mockProvider, ctx);
+    const { result, reason } = await runGenerativeTurnPlanner(mockProvider, ctx);
     expect(result).toBeNull();
+    expect(reason).toBe('parse_failed');
   });
 });

@@ -203,18 +203,20 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // Error state
   // ---------------------------------------------------------------------------
 
-  // Terminal errors (invalid token, completed, expired) show a full-page error.
+  // Terminal errors (invalid token, completed, expired, claimed) show a full-page error.
   // Non-terminal errors (submission failures) are shown inline so the candidate can retry.
   const isTerminalError = error && (
     error.message === 'INVALID_TOKEN' ||
     error.message === 'ALREADY_COMPLETED' ||
-    error.message === 'SESSION_EXPIRED'
+    error.message === 'SESSION_EXPIRED' ||
+    error.message === 'TOKEN_ALREADY_CLAIMED'
   );
 
   if (isTerminalError) {
     const isInvalid = error.message === 'INVALID_TOKEN';
     const isCompleted = error.message === 'ALREADY_COMPLETED';
     const isSessionExpired = error.message === 'SESSION_EXPIRED';
+    const isTokenClaimed = error.message === 'TOKEN_ALREADY_CLAIMED';
 
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0c0c0e', padding: 24 }}>
@@ -225,12 +227,14 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             {isInvalid ? 'Invalid Invite Link'
               : isCompleted ? 'Assessment Completed'
               : isSessionExpired ? 'Session Expired'
+              : isTokenClaimed ? 'Link Already Used'
               : 'Connection Error'}
           </h2>
           <p style={{ fontSize: 14, color: 'var(--pipe-text-dim)', lineHeight: 1.6, marginBottom: 32, fontFamily: '"Space Mono", monospace' }}>
             {isInvalid ? 'This invitation link is invalid or has expired. Please contact your recruiter for a new link.'
               : isCompleted ? 'You have already submitted this assessment. Thank you for your time!'
               : isSessionExpired ? 'Your session has expired. Please contact your recruiter for a new invite link.'
+              : isTokenClaimed ? 'This invite link has already been used. Please contact your recruiter for a new link.'
               : 'There was an error connecting to our secure servers. Please try refreshing the page or clicking the button below.'}
           </p>
           <button onClick={() => reset()} style={{

@@ -29,6 +29,33 @@ export interface PersistContextualTurnInput {
   decomposition: ContextualDecomposition;
 }
 
+/**
+ * Retry a function with exponential backoff.
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 1000,
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      
+      if (attempt < maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.warn(`[retryWithBackoff] Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, lastError.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
 export async function persistContextualTurn(
   env: Env,
   db: D1Database,
@@ -37,7 +64,12 @@ export async function persistContextualTurn(
   const { candidateId, sessionId, decomposition } = input;
   if (decomposition.statements.length === 0) return;
 
+  let d1Success = false;
+  let neo4jSuccess = false;
+  let d1NodeIds: string[] = [];
+
   try {
+    // Step 1: Embed and write to D1
     const phrases = decomposition.statements.map((s) => s.phrase);
     const vectors = await embedCandidateNodes(
       phrases,
@@ -69,6 +101,7 @@ export async function persistContextualTurn(
         decomposition_version: contextualDecompositionVersion(),
       });
       idMap.set(statement.id, row.id);
+      d1NodeIds.push(row.id);
       graphNodes.push({
         id: row.id,
         nodeType: statement.type,
@@ -79,6 +112,9 @@ export async function persistContextualTurn(
       });
     }
 
+    d1Success = true;
+    console.log('[persistContextualTurn] D1 write succeeded:', { nodeCount: d1NodeIds.length });
+
     const graphEdges: ContextualGraphEdgeInput[] = decomposition.edges.flatMap((e) => {
       const fromId = e.from === 'candidate' ? 'candidate' : idMap.get(e.from);
       const toId = idMap.get(e.to);
@@ -86,38 +122,80 @@ export async function persistContextualTurn(
       return [{ fromId, toId, type: e.type }];
     });
 
+    // Step 2: Write to Neo4j with retry
     const config = buildNeo4jConfig(env);
     if (!config) {
       console.warn('[persistContextualTurn] Neo4j config missing — D1 nodes written, graph skipped.');
+      // Mark D1 nodes as pending graph for backfill
+      await markNodesPendingGraph(db, d1NodeIds);
       return;
     }
-    const driver = getNeo4jDriver(config);
 
-    const written = await writeContextualTurnGraph(driver, {
-      candidateId,
-      nodes: graphNodes,
-      edges: graphEdges,
-    });
-    const grounded = await materializeGroundedEdges(
-      driver,
-      candidateId,
-      graphNodes.map((n) => n.id),
-    );
+    try {
+      const driver = getNeo4jDriver(config);
 
-    console.log(
-      JSON.stringify({
-        event: 'culture.contextualTurnPersisted',
-        candidateId,
+      const written = await retryWithBackoff(async () => {
+        return await writeContextualTurnGraph(driver, {
+          candidateId,
+          nodes: graphNodes,
+          edges: graphEdges,
+        });
+      }, 3, 1000);
+
+      const grounded = await retryWithBackoff(async () => {
+        return await materializeGroundedEdges(
+          driver,
+          candidateId,
+          graphNodes.map((n) => n.id),
+        );
+      }, 3, 1000);
+
+      neo4jSuccess = true;
+
+      console.log(
+        JSON.stringify({
+          event: 'culture.contextualTurnPersisted',
+          candidateId,
+          sessionId,
+          nodesWritten: written.nodesWritten,
+          contextualEdgesWritten: written.edgesWritten,
+          groundedEdgesWritten: grounded.edgesWritten,
+        }),
+      );
+    } catch (neo4jErr) {
+      console.error('[persistContextualTurn] Neo4j write failed after retries:', {
         sessionId,
-        nodesWritten: written.nodesWritten,
-        contextualEdgesWritten: written.edgesWritten,
-        groundedEdgesWritten: grounded.edgesWritten,
-      }),
-    );
+        error: neo4jErr instanceof Error ? neo4jErr.message : String(neo4jErr),
+      });
+      // Mark D1 nodes as pending graph for backfill
+      await markNodesPendingGraph(db, d1NodeIds);
+    }
   } catch (err) {
     console.error('[persistContextualTurn] failed:', {
       sessionId,
+      d1Success,
+      neo4jSuccess,
       error: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+/**
+ * Mark D1 nodes as pending graph backfill.
+ * This allows a backfill job to retry Neo4j writes later.
+ */
+async function markNodesPendingGraph(db: D1Database, nodeIds: string[]): Promise<void> {
+  if (nodeIds.length === 0) return;
+  
+  try {
+    const placeholders = nodeIds.map(() => '?').join(',');
+    await db.prepare(
+      `UPDATE candidate_nodes SET pending_graph_backfill = 1 WHERE id IN (${placeholders})`,
+    )
+      .bind(...nodeIds)
+      .run();
+    console.log('[markNodesPendingGraph] Marked nodes for backfill:', { count: nodeIds.length });
+  } catch (err) {
+    console.error('[markNodesPendingGraph] Failed to mark nodes:', err);
   }
 }

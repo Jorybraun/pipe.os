@@ -590,12 +590,25 @@ export async function advanceCultureInterview(
         minQuestions,
         conversationGraph: graphView,
       };
-      const generated = await runGenerativeTurnPlanner(input.provider, plannerCtx);
+      const { result: generated, reason } = await runGenerativeTurnPlanner(input.provider, plannerCtx);
+      
       if (!generated) {
-        console.warn('[cultureAgent] Generative planner returned no question — falling back to static bank.');
+        console.warn('[cultureAgent] Generative planner returned no question — falling back to static bank.', { reason });
+        // Log metric for monitoring
+        console.log(JSON.stringify({
+          event: 'culture.planner_fallback',
+          reason,
+          hasConversationGraph: graphView !== null,
+          missingContextCount: graphView?.missingContext.length ?? 0,
+        }));
       } else if (askedTexts.has(normalizeQuestionText(generated.question))) {
         console.warn('[cultureAgent] Generative planner produced a duplicate question — falling back to static bank.');
+        console.log(JSON.stringify({
+          event: 'culture.planner_duplicate',
+          question: generated.question,
+        }));
       }
+      
       if (
         generated &&
         !askedTexts.has(normalizeQuestionText(generated.question))

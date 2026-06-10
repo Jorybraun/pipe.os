@@ -212,6 +212,48 @@ export function parseContextualDecomposition(
 // ─── LLM call ────────────────────────────────────────────────────────────────
 
 /**
+ * Attempt to repair common JSON truncation patterns.
+ * This is a simple heuristic to recover from LLM output truncation.
+ */
+function attemptJsonRepair(content: string): string | null {
+  const trimmed = content.trim();
+  
+  // If it's already valid JSON, return as-is
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Continue to repair attempts
+  }
+
+  // Try to close open brackets/braces
+  const openBraces = (trimmed.match(/\{/g) || []).length;
+  const closeBraces = (trimmed.match(/\}/g) || []).length;
+  const openBrackets = (trimmed.match(/\[/g) || []).length;
+  const closeBrackets = (trimmed.match(/\]/g) || []).length;
+
+  let repaired = trimmed;
+  
+  // Close missing brackets
+  for (let i = 0; i < openBrackets - closeBrackets; i++) {
+    repaired += ']';
+  }
+  for (let i = 0; i < openBraces - closeBraces; i++) {
+    repaired += '}';
+  }
+
+  // Try parsing the repaired version
+  try {
+    JSON.parse(repaired);
+    return repaired;
+  } catch {
+    // Repair failed
+  }
+
+  return null;
+}
+
+/**
  * Decompose one answer into contextual statements + edges.
  * Returns null on provider absence or any LLM/parse failure — callers fall
  * back to the legacy STAR analysis path.
@@ -222,34 +264,61 @@ export async function decomposeAnswerContextually(
 ): Promise<ContextualDecomposition | null> {
   if (!provider) return null;
 
-  const messages: LLMMessage[] = [
-    { role: 'system', content: buildSystemPrompt() },
-    { role: 'user', content: buildUserMessage(input) },
-  ];
+  const attemptDecomposition = async (
+    messages: LLMMessage[],
+    maxTokens: number,
+  ): Promise<ContextualDecomposition | null> => {
+    let content: string;
+    try {
+      const completion = await provider.complete(messages, {
+        forceJson: true,
+        maxTokens,
+      });
+      content = (completion.content ?? '').trim();
+    } catch (err) {
+      console.error('[contextualDecomposition] LLM call failed:', err);
+      return null;
+    }
 
-  let content: string;
-  try {
-    const completion = await provider.complete(messages, {
-      forceJson: true,
-      maxTokens: 1024,
-    });
-    content = (completion.content ?? '').trim();
-  } catch (err) {
-    console.error('[contextualDecomposition] LLM call failed:', err);
+    if (!content) {
+      console.warn('[contextualDecomposition] LLM returned empty content.');
+      return null;
+    }
+
+    // Try direct parse first
+    try {
+      const parsed = JSON.parse(content) as unknown;
+      return parseAndDedup(parsed, input);
+    } catch (err) {
+      console.warn(
+        '[contextualDecomposition] Direct JSON parse failed, attempting repair:',
+        content.slice(0, 300),
+      );
+    }
+
+    // Try JSON repair
+    const repaired = attemptJsonRepair(content);
+    if (repaired) {
+      try {
+        const parsed = JSON.parse(repaired) as unknown;
+        console.log('[contextualDecomposition] JSON repair succeeded');
+        return parseAndDedup(parsed, input);
+      } catch (err) {
+        console.warn('[contextualDecomposition] Repaired JSON still invalid:', err);
+      }
+    }
+
     return null;
-  }
+  };
 
-  if (!content) {
-    console.warn('[contextualDecomposition] LLM returned empty content.');
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(content) as unknown;
+  const parseAndDedup = (
+    parsed: unknown,
+    inp: DecomposeAnswerInput,
+  ): ContextualDecomposition => {
     const decomposition = parseContextualDecomposition(parsed);
     // Dedup against prior phrases: drop statements whose phrase already exists.
     const prior = new Set(
-      input.priorPhrases.map((p) => normalizePhrase(p)),
+      inp.priorPhrases.map((p) => normalizePhrase(p)),
     );
     const fresh = decomposition.statements.filter(
       (s) => !prior.has(normalizePhrase(s.phrase)),
@@ -268,14 +337,34 @@ export async function decomposeAnswerContextually(
       };
     }
     return { ...decomposition, statements: fresh, edges: freshEdges };
-  } catch (err) {
-    console.error(
-      '[contextualDecomposition] Failed to parse JSON:',
-      content.slice(0, 300),
-      err,
-    );
-    return null;
+  };
+
+  // First attempt with increased token limit
+  const messages: LLMMessage[] = [
+    { role: 'system', content: buildSystemPrompt() },
+    { role: 'user', content: buildUserMessage(input) },
+  ];
+
+  const firstAttempt = await attemptDecomposition(messages, 2048);
+  if (firstAttempt) {
+    return firstAttempt;
   }
+
+  // Retry with shorter phrases instruction
+  console.warn('[contextualDecomposition] First attempt failed, retrying with shorter phrases instruction');
+  const retryMessages: LLMMessage[] = [
+    { role: 'system', content: buildSystemPrompt() + '\n\nIMPORTANT: Keep phrases SHORT and CONCISE. Use fewer words per phrase to avoid truncation.' },
+    { role: 'user', content: buildUserMessage(input) },
+  ];
+
+  const retryAttempt = await attemptDecomposition(retryMessages, 2048);
+  if (retryAttempt) {
+    console.log('[contextualDecomposition] Retry with shorter phrases succeeded');
+    return retryAttempt;
+  }
+
+  console.error('[contextualDecomposition] Both attempts failed, returning null');
+  return null;
 }
 
 export function normalizePhrase(phrase: string): string {
