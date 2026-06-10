@@ -25,6 +25,7 @@ import { buildCultureInterviewContext } from '../../lib/cultureAgentContext';
 import type { GenerativePlannerContext } from '../../lib/cultureGenerativePlanner';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { createCultureAgentProvider } from '../../lib/llm/createProvider';
+import { persistContextualTurn } from '../../lib/contextualTurnPersistence';
 import { withCultureMetering } from '../../lib/llm/meteredProvider';
 import { runScoringJob } from '../screening/culture';
 import type {
@@ -533,6 +534,19 @@ async function doRespond(
         break;
       }
     }
+  }
+
+  // ADR-050: persist this answer's contextual decomposition (D1 nodes +
+  // Neo4j conversation graph + grounded SIMILAR_TO edges) in the background.
+  const decomposition = result.contextualDecomposition ?? null;
+  if (decomposition && decomposition.statements.length > 0) {
+    ctx.executionCtx.waitUntil(
+      persistContextualTurn(ctx.env, db, {
+        candidateId: session.candidate_id,
+        sessionId: session.id,
+        decomposition,
+      }),
+    );
   }
 
   if (result.action === 'terminate') {

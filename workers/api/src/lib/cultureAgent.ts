@@ -61,6 +61,12 @@ import {
   seedQuestionsAsked,
   findPendingTurnIndex,
 } from './cultureInterviewState';
+import type { ContextualTurnRecord } from './cultureInterviewState';
+import {
+  decomposeAnswerContextually,
+  buildConversationGraphView,
+  type ContextualDecomposition,
+} from './cultureContextualDecomposition';
 import { cultureInterviewReducer } from './cultureInterviewReducer';
 import { buildPhaseDirective } from './culturePhaseDirective';
 
@@ -96,6 +102,10 @@ export interface CultureScratchpad {
   runningThemes: string[];
   mode?: 'profile_builder' | 'role_fit';
   questionMetadata?: QuestionMetadata[];
+  /** Contextual conversation graph accumulated across turns (ADR-050). */
+  contextualTurns?: ContextualTurnRecord[];
+  /** Consecutive answers that yielded no new contextual material. */
+  noNewMaterialStreak?: number;
   /** V2 FSM fields (optional — added by culture-agent redesign). */
   phase?: InterviewPhase;
   phaseHistory?: Array<{ phase: InterviewPhase; enteredAt: number }>;
@@ -249,6 +259,7 @@ export type AdvanceCultureInterviewResult =
       probeQuestion: { questionId: string; text: string };
       acknowledgment: string;
       reasoning: string;
+      contextualDecomposition?: ContextualDecomposition | null;
     }
   | {
       action: 'next';
@@ -256,12 +267,18 @@ export type AdvanceCultureInterviewResult =
       nextQuestion: { questionId: string; text: string };
       acknowledgment: string;
       reasoning: string;
+      contextualDecomposition?: ContextualDecomposition | null;
     }
   | {
       action: 'terminate';
       transcript: CultureTranscript;
-      terminationReason: 'hard_cap' | 'coverage_complete' | 'bank_exhausted';
+      terminationReason:
+        | 'hard_cap'
+        | 'coverage_complete'
+        | 'bank_exhausted'
+        | 'no_new_material';
       reasoning: string;
+      contextualDecomposition?: ContextualDecomposition | null;
     };
 
 const DEFAULT_MAX_QUESTIONS = CULTURE_BANK_SIZE;
@@ -317,7 +334,21 @@ export async function advanceCultureInterview(
     minQuestions,
     runningThemes: state.scratchpad.runningThemes,
   };
-  let llmResult = await runTurnAnalysis(input.provider, turnContext);
+  // Contextual decomposition (ADR-050) runs alongside the legacy STAR
+  // analysis: every answer is broken into typed semantic statements; generic
+  // answers are discarded and the discard is what triggers the probe.
+  const priorPhrases = (input.transcript.scratchpad.contextualTurns ?? []).flatMap(
+    (t) => t.statements.map((s) => s.phrase),
+  );
+  const [llmResultRaw, decomposition] = await Promise.all([
+    runTurnAnalysis(input.provider, turnContext),
+    decomposeAnswerContextually(input.provider, {
+      question: pendingTurn.questionText,
+      answer: input.candidateAnswer,
+      priorPhrases,
+    }),
+  ]);
+  let llmResult = llmResultRaw;
 
   // Sanitize probe_text: smaller models (Llama 3.1 8B) sometimes return the
   // probe key (e.g. "missing_A") instead of the human-readable text.
@@ -359,6 +390,28 @@ export async function advanceCultureInterview(
     };
   }
 
+  // 6b. Record the contextual decomposition + no-new-material streak.
+  if (decomposition) {
+    state = {
+      ...state,
+      scratchpad: {
+        ...state.scratchpad,
+        contextualTurns: [
+          ...(state.scratchpad.contextualTurns ?? []),
+          {
+            turnIdx: pendingTurnIdx,
+            statements: decomposition.statements,
+            edges: decomposition.edges,
+            discarded: decomposition.discarded,
+          },
+        ],
+        noNewMaterialStreak: decomposition.discarded
+          ? (state.scratchpad.noNewMaterialStreak ?? 0) + 1
+          : 0,
+      },
+    };
+  }
+
   // 7. Decide whether to drill based on LLM result + budget + phase.
   const probesRemaining =
     currentQuestion.maxProbes - state.scratchpad.probesUsedForCurrentQ;
@@ -371,14 +424,26 @@ export async function advanceCultureInterview(
   // Without this, the LLM (or mock fallback) can paste the same probe-library
   // template verbatim after each answer, repeating the probe back-to-back.
   const askedTexts = new Set(state.turns.map((t) => normalizeQuestionText(t.questionText)));
+
+  // ADR-050: when contextual decomposition ran, IT owns the probe decision —
+  // probe only when the answer was discarded (no concrete material), using
+  // the decomposition's own probe text (quotes the candidate's words). The
+  // legacy STAR-gap probe path applies only when decomposition is unavailable.
+  const probeText = decomposition
+    ? decomposition.discarded
+      ? decomposition.probe
+      : null
+    : llmResult.probe_text;
+  const probeWanted = decomposition
+    ? decomposition.discarded && decomposition.probe !== null
+    : llmResult.probe_needed;
   const probeIsDuplicate =
-    llmResult.probe_text !== null &&
-    askedTexts.has(normalizeQuestionText(llmResult.probe_text));
+    probeText !== null && askedTexts.has(normalizeQuestionText(probeText));
 
   if (
-    llmResult.probe_needed &&
+    probeWanted &&
     probesRemaining > 0 &&
-    llmResult.probe_text &&
+    probeText &&
     !probeIsDuplicate &&
     canProbe
   ) {
@@ -402,7 +467,7 @@ export async function advanceCultureInterview(
         {
           idx: state.turns.length,
           questionId: pendingTurn.questionId,
-          questionText: llmResult.probe_text,
+          questionText: probeText,
           probeOf: pendingTurn.questionId,
           candidateResponse: null,
           starSlots: null,
@@ -420,10 +485,11 @@ export async function advanceCultureInterview(
       transcript: serializeStateToTranscript(state) as CultureTranscript,
       probeQuestion: {
         questionId: pendingTurn.questionId,
-        text: llmResult.probe_text,
+        text: probeText,
       },
       acknowledgment: llmResult.acknowledgment,
       reasoning: llmResult.reasoning,
+      contextualDecomposition: decomposition,
     };
   }
 
@@ -451,6 +517,7 @@ export async function advanceCultureInterview(
       transcript: serializeStateToTranscript(state) as CultureTranscript,
       terminationReason: 'coverage_complete',
       reasoning: llmResult.reasoning,
+      contextualDecomposition: decomposition,
     };
   }
 
@@ -468,6 +535,24 @@ export async function advanceCultureInterview(
       transcript: serializeStateToTranscript(state) as CultureTranscript,
       terminationReason: termination,
       reasoning: llmResult.reasoning,
+      contextualDecomposition: decomposition,
+    };
+  }
+
+  // 10b. ADR-050 stop rule: consecutive answers that decompose to nothing new
+  // mean the conversation has stopped yielding material — stop asking, within
+  // the existing min/max caps.
+  if (
+    decomposition &&
+    (state.scratchpad.noNewMaterialStreak ?? 0) >= 2 &&
+    questionsAsked >= minQuestions
+  ) {
+    return {
+      action: 'terminate',
+      transcript: serializeStateToTranscript(state) as CultureTranscript,
+      terminationReason: 'no_new_material',
+      reasoning: llmResult.reasoning,
+      contextualDecomposition: decomposition,
     };
   }
 
@@ -485,6 +570,14 @@ export async function advanceCultureInterview(
     // question grounded in candidate background + RCD. Falls back to the
     // static bank on provider absence, parse failure, or duplicate output.
     if (input.generativeContext && input.provider) {
+      // ADR-050: hand the planner the live conversation graph so the next
+      // question targets missing context (Action w/o BECAUSE, Outcome w/o
+      // owning Action, …) instead of a generic dimension sweep.
+      const contextualTurns = state.scratchpad.contextualTurns ?? [];
+      const graphView =
+        contextualTurns.length > 0
+          ? buildConversationGraphView(contextualTurns)
+          : null;
       const plannerCtx: GenerativePlannerContext = {
         ...input.generativeContext,
         coverage: { ...state.scratchpad.dimensionCoverage },
@@ -495,6 +588,7 @@ export async function advanceCultureInterview(
         runningThemes: [...state.scratchpad.runningThemes],
         maxQuestions,
         minQuestions,
+        conversationGraph: graphView,
       };
       const generated = await runGenerativeTurnPlanner(input.provider, plannerCtx);
       if (!generated) {
@@ -550,6 +644,7 @@ export async function advanceCultureInterview(
       transcript: serializeStateToTranscript(state) as CultureTranscript,
       terminationReason: 'bank_exhausted',
       reasoning: llmResult.reasoning,
+      contextualDecomposition: decomposition,
     };
   }
 
@@ -581,6 +676,7 @@ export async function advanceCultureInterview(
     nextQuestion: { questionId: next.id, text: next.text },
     acknowledgment: llmResult.acknowledgment,
     reasoning: llmResult.reasoning,
+    contextualDecomposition: decomposition,
   };
 }
 

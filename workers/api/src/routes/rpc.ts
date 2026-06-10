@@ -23,6 +23,8 @@ import { scoreImplementationSubmission } from '../lib/implementationScorer/imple
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
+import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
+import { parseEmbeddingJson } from '../lib/embedding/cosine';
 import { matchRepos } from '../lib/repoDiscovery/matchRepos';
 import { pickReviewPr, pickImplementationIssue, buildMatchRequest } from '../lib/match/autoStageBuilder';
 import { createNeo4jDriver, buildNeo4jConfig } from '../lib/neo4j/driver';
@@ -39,6 +41,20 @@ interface WaitingChallenge {
     refreshIntervalSeconds: number;
     estimatedSecondsRemaining: number;
   };
+}
+
+/** Candidate CV embedding for semantic PR selection — null when not ingested yet. */
+async function loadCandidateVector(db: D1Database, candidateId: string): Promise<number[] | null> {
+  try {
+    const row = await db
+      .prepare(`SELECT embedding_json FROM candidate_ingestion WHERE candidate_id = ?1`)
+      .bind(candidateId)
+      .first<{ embedding_json: string | null }>();
+    return parseEmbeddingJson(row?.embedding_json);
+  } catch (err) {
+    console.error(`[loadCandidateVector] lookup failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 interface GateResult {
@@ -94,11 +110,21 @@ async function checkMatchingGate(
     let driver;
     try {
       driver = createNeo4jDriver(neo4jConfig);
-      const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-      if (neo4jResults.length > 0) {
-        const top = neo4jResults[0]!;
-        repoId = top.repo_id;
-        githubRepoUrl = `https://github.com/${top.full_name}`;
+      // ADR-050: prefer grounded SIMILAR_TO edge traversal (multi-region
+      // structural overlap); fall back to cosine ranking when the candidate
+      // has no grounded edges yet.
+      const groundedResults = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
+      if (groundedResults.length > 0) {
+        const top = groundedResults[0]!;
+        repoId = top.repoId;
+        githubRepoUrl = `https://github.com/${top.fullName}`;
+      } else {
+        const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+        if (neo4jResults.length > 0) {
+          const top = neo4jResults[0]!;
+          repoId = top.repo_id;
+          githubRepoUrl = `https://github.com/${top.full_name}`;
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -159,7 +185,8 @@ async function checkMatchingGate(
   let issueNumber: number | null = null;
 
   if (nextChallengeType === 'CODE_REVIEW') {
-    const prResult = await pickReviewPr(db, repoId);
+    const candidateVec = await loadCandidateVector(db, candidateId);
+    const prResult = await pickReviewPr(db, repoId, candidateVec);
     if (!prResult) {
       return {
         blocked: true,
@@ -316,9 +343,17 @@ async function matchStandaloneReview(
     let driver;
     try {
       driver = createNeo4jDriver(neo4jConfig);
-      const results = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-      for (const result of results) {
-        candidates.push({ repoId: result.repo_id, repoUrl: `https://github.com/${result.full_name}` });
+      // ADR-050: grounded edge traversal first, cosine ranking fallback.
+      const grounded = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
+      if (grounded.length > 0) {
+        for (const result of grounded) {
+          candidates.push({ repoId: result.repoId, repoUrl: `https://github.com/${result.fullName}` });
+        }
+      } else {
+        const results = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+        for (const result of results) {
+          candidates.push({ repoId: result.repo_id, repoUrl: `https://github.com/${result.full_name}` });
+        }
       }
     } catch (err) {
       console.error(`[standaloneReview] Neo4j matching failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
@@ -351,8 +386,9 @@ async function matchStandaloneReview(
   }
 
   // Walk the ranked repos until one yields a reviewable PR.
+  const candidateVec = await loadCandidateVector(db, candidateId);
   for (const candidate of candidates) {
-    const prResult = await pickReviewPr(db, candidate.repoId);
+    const prResult = await pickReviewPr(db, candidate.repoId, candidateVec);
     if (!prResult) {
       console.log(`[standaloneReview] repo ${candidate.repoId} has no eligible PR, trying next`);
       continue;
