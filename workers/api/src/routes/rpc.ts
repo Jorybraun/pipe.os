@@ -365,6 +365,21 @@ async function matchStandaloneReview(
   return { repoUrl, prNumber: prResult.prNumber };
 }
 
+/** Parse a submission (object or JSON string) and return it if it is a CV intake payload. */
+function parseIntakePayload(submission: unknown): Record<string, unknown> | null {
+  let obj: unknown = submission;
+  if (typeof submission === 'string') {
+    try {
+      obj = JSON.parse(submission);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof obj !== 'object' || obj === null) return null;
+  const record = obj as Record<string, unknown>;
+  return typeof record.resumeR2Key === 'string' ? record : null;
+}
+
 /** Persist intake form data (resume / github / linkedin) and kick off enrichment. */
 async function handleIntakePayload(
   env: Env,
@@ -1215,10 +1230,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
-    const submissionObj = typeof submission === 'object' && submission !== null ? (submission as Record<string, unknown>) : null;
-    const isIntakePayload = !!submissionObj && typeof submissionObj.resumeR2Key === 'string';
-
-    if (isIntakePayload) {
+    if (parseIntakePayload(submission)) {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
       return c.json({ success: true, message: 'INTAKE submission received' });
     }
@@ -1261,8 +1273,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   // Synthetic CV intake submission (code-stage gate): the stage has no INTAKE
   // challenge row, so persist the intake data directly.
-  const intakeObj = typeof submission === 'object' && submission !== null ? (submission as Record<string, unknown>) : null;
-  if (intakeObj && typeof intakeObj.resumeR2Key === 'string') {
+  if (parseIntakePayload(submission)) {
     const codeChallenge = await c.env.DB.prepare(
       `SELECT id FROM challenges WHERE stage_id = ?1 AND type IN ('CODE_REVIEW', 'CODE_IMPLEMENTATION') LIMIT 1`,
     ).bind(stageId).first<{ id: string }>();
