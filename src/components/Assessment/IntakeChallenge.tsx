@@ -100,7 +100,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
 
   const validateGithub = (handle: string): boolean => {
     if (!handle) return true;
-    return /^[a-zA-Z0-9\-]{1,39}$/.test(handle);
+    return /^[a-zA-Z0-9-]{1,39}$/.test(handle);
   };
 
   const validateLinkedIn = (url: string): boolean => {

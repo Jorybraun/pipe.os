@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Assessment page** (`workers/api/src/routes/rpc.ts`): `get-stage-config` returns INTAKE challenge for pipeline-free candidates; `get-challenge` returns CV upload config. Candidates without a pipeline see a resume upload screen at `/assess/:token`.
 - **Type updates**: `ScheduledInterview.pipelineId`/`stageId` now optional; `InterviewType` type exported; JWT `pid` nullable; `CandidateVariables.pipelineId` nullable.
 
+### Added — Contacts & Meetings Architecture (ADR-049)
+
+- `knowledge/docs/decisions/current/ADR-049-contacts-meetings-separation.md`: Architecture decision for separating meetings into its own Worker + SPA. Introduces `contacts`, `meetings`, `meeting_participants` tables. Domain: `meet.hire-pipe.com`.
+- `knowledge/docs/decisions/current/TASKS-meetings.md`: Phased implementation plan (5 phases, 30 tasks) — schema, Worker scaffold, SPA, video calls, transcription, scheduling bridge.
+
 ### Fixed — Deterministic Discovery Interview Questions
 
 - `workers/api/src/lib/agents/question/domainOrchestrator.ts`: Domain orchestrator now uses calibrated probes from `probeLibrarian.ts` (ADR-041) instead of LLM-generated questions. Probes are served in deterministic order per domain, with LLM fallback only for domains without matching probes (e.g., `why`). Cross-domain probe deduplication prevents the same probe from being asked twice.

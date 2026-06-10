@@ -16,6 +16,7 @@ interface UseScheduledInterviewsResult {
       recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
+  sendInvite: (id: string, email: string, message?: string) => Promise<void>;
   refetch: () => Promise<void>;
 }
 
@@ -126,5 +127,21 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     [api, fetchInterviews],
   );
 
-  return { interviews, isLoading, error, updateStatus, refetch: fetchInterviews };
+  const sendInvite = useCallback(
+    async (id: string, email: string, message?: string): Promise<void> => {
+      try {
+        await api.post(`/api/v1/scheduling/interviews/${id}/invite`, {
+          email,
+          ...(message ? { message } : {}),
+        });
+        await fetchInterviews();
+      } catch (err) {
+        console.error('[useScheduledInterviews] sendInvite failed:', err);
+        throw err instanceof Error ? err : new Error('Failed to send invite');
+      }
+    },
+    [api, fetchInterviews],
+  );
+
+  return { interviews, isLoading, error, updateStatus, sendInvite, refetch: fetchInterviews };
 }
