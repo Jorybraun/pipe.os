@@ -15,7 +15,7 @@
  * context panel become slide-over drawers.
  */
 
-import { useState, useCallback, type ReactNode, type JSX } from 'react';
+import { useState, useEffect, useCallback, type ReactNode, type JSX } from 'react';
 import { PanelLeft, PanelRight, X } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -61,6 +61,13 @@ export function UniversalChat({
     defaultSidebarOpen ?? !!sidebar,
   );
   const [contextOpen, setContextOpen] = useState(defaultContextOpen);
+
+  // Sync sidebar state when the parent signals a visibility change
+  useEffect(() => {
+    if (defaultSidebarOpen !== undefined) {
+      setSidebarOpen(defaultSidebarOpen);
+    }
+  }, [defaultSidebarOpen]);
 
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
   const toggleContext = useCallback(() => setContextOpen((v) => !v), []);
