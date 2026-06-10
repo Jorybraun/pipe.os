@@ -33,7 +33,7 @@ module.exports = {
         allowHigherOrderFunctions: true,
       },
     ],
-    'local-rules/recording-shell-rule': 'error',
+
   },
   overrides: [
     {
