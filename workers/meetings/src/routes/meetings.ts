@@ -58,9 +58,19 @@ meetings.post('/', async (c) => {
     .bind(id, userId, title, description ?? null, meeting_type, scheduled_at ?? null, scheduled_interview_id ?? null, now, now)
     .run();
 
-  // Add participants if provided
-  if (participant_contact_ids.length > 0) {
-    const stmts = participant_contact_ids.map((contactId) => {
+  // Add participants if provided (deduplicate + verify ownership)
+  const uniqueContactIds = [...new Set(participant_contact_ids)];
+  if (uniqueContactIds.length > 0) {
+    const placeholders = uniqueContactIds.map(() => '?').join(', ');
+    const owned = await c.env.DB.prepare(
+      `SELECT id FROM contacts WHERE id IN (${placeholders}) AND owner_id = ?`
+    ).bind(...uniqueContactIds, userId).all<{ id: string }>();
+
+    if (owned.results.length !== uniqueContactIds.length) {
+      return apiError(c, 'VALIDATION_ERROR', 'One or more participant contact_ids not found.');
+    }
+
+    const stmts = uniqueContactIds.map((contactId) => {
       const participantId = crypto.randomUUID();
       return c.env.DB.prepare(
         `INSERT INTO meeting_participants (id, meeting_id, contact_id, role, created_at, updated_at)

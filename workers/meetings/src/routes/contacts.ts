@@ -123,10 +123,10 @@ contacts.get('/:id', async (c) => {
   const meetings = await c.env.DB.prepare(
     `SELECT m.* FROM meetings m
      INNER JOIN meeting_participants mp ON mp.meeting_id = m.id
-     WHERE mp.contact_id = ?
+     WHERE mp.contact_id = ? AND m.owner_id = ?
      ORDER BY m.scheduled_at DESC
      LIMIT 20`
-  ).bind(contactId).all();
+  ).bind(contactId, userId).all();
 
   return c.json({ contact, meetings: meetings.results });
 });
