@@ -12,15 +12,15 @@
 
 | # | Task | Details | Status |
 |---|------|---------|--------|
-| 1.1 | Create `workers/meetings/` directory | `package.json`, `tsconfig.json`, `wrangler.jsonc` — binds to same `pipe-db` D1 + `pipe-assets` R2 | ⬜ |
-| 1.2 | Write D1 migration: `contacts` table | `id`, `owner_id`, `type` (PROSPECT/CANDIDATE/HIRING_MANAGER/RECRUITER/OTHER), `name`, `email`, `phone`, `company`, `title`, `notes`, `candidate_id` (optional FK), `tags` (JSON), timestamps | ⬜ |
-| 1.3 | Write D1 migration: `meetings` table | `id`, `owner_id`, `title`, `description`, `status`, `scheduled_at`, `started_at`, `ended_at`, `duration_secs`, `meeting_url`, `meeting_type` (DISCOVERY/INTERVIEW/FOLLOW_UP/DEMO/OTHER), `transcript_status`, `transcript_json`, `transcript_summary`, `recording_r2_key`, `scheduled_interview_id` (optional FK), timestamps | ⬜ |
-| 1.4 | Write D1 migration: `meeting_participants` table | `meeting_id` FK, `contact_id` FK, `role` (HOST/ATTENDEE/OBSERVER), `invite_sent_at`, `joined_at`, `left_at` | ⬜ |
-| 1.5 | Auth middleware | Copy Clerk JWT verification from `workers/api/src/middleware/auth.ts`, adapt for meetings Worker | ⬜ |
-| 1.6 | Contacts CRUD routes | `POST /api/v1/contacts`, `GET /api/v1/contacts`, `GET /api/v1/contacts/:id`, `PATCH /api/v1/contacts/:id`, `DELETE /api/v1/contacts/:id` | ⬜ |
-| 1.7 | Meetings CRUD routes | `POST /api/v1/meetings`, `GET /api/v1/meetings`, `GET /api/v1/meetings/:id`, `PATCH /api/v1/meetings/:id` | ⬜ |
-| 1.8 | Meeting participants routes | `POST /api/v1/meetings/:id/participants`, `DELETE /api/v1/meetings/:id/participants/:contactId` | ⬜ |
-| 1.9 | Local dev setup | `wrangler dev` runs meetings Worker on port 8788 (API Worker stays on 8787) | ⬜ |
+| 1.1 | Create `workers/meetings/` directory | `package.json`, `tsconfig.json`, `wrangler.jsonc` — binds to same `pipe-db` D1 + `pipe-assets` R2 | ✅ |
+| 1.2 | Write D1 migration: `contacts` table | `id`, `owner_id`, `type` (PROSPECT/CANDIDATE/HIRING_MANAGER/RECRUITER/OTHER), `name`, `email`, `phone`, `company`, `title`, `notes`, `candidate_id` (optional FK), `tags` (JSON), timestamps | ✅ |
+| 1.3 | Write D1 migration: `meetings` table | `id`, `owner_id`, `title`, `description`, `status`, `scheduled_at`, `started_at`, `ended_at`, `duration_secs`, `meeting_url`, `meeting_type` (DISCOVERY/INTERVIEW/FOLLOW_UP/DEMO/OTHER), `transcript_status`, `transcript_json`, `transcript_summary`, `recording_r2_key`, `scheduled_interview_id` (optional FK), timestamps | ✅ |
+| 1.4 | Write D1 migration: `meeting_participants` table | `meeting_id` FK, `contact_id` FK, `role` (HOST/ATTENDEE/OBSERVER), `invite_sent_at`, `joined_at`, `left_at` | ✅ |
+| 1.5 | Auth middleware | Copy Clerk JWT verification from `workers/api/src/middleware/auth.ts`, adapt for meetings Worker | ✅ |
+| 1.6 | Contacts CRUD routes | `POST /api/v1/contacts`, `GET /api/v1/contacts`, `GET /api/v1/contacts/:id`, `PATCH /api/v1/contacts/:id`, `DELETE /api/v1/contacts/:id` | ✅ |
+| 1.7 | Meetings CRUD routes | `POST /api/v1/meetings`, `GET /api/v1/meetings`, `GET /api/v1/meetings/:id`, `PATCH /api/v1/meetings/:id` | ✅ |
+| 1.8 | Meeting participants routes | `POST /api/v1/meetings/:id/participants`, `DELETE /api/v1/meetings/:id/participants/:contactId` | ✅ |
+| 1.9 | Local dev setup | `wrangler dev` runs meetings Worker on port 8788 (API Worker stays on 8787) | ✅ |
 | 1.10 | Deploy to Cloudflare | `npx wrangler deploy` for meetings Worker, verify routes work in production | ⬜ |
 
 ---

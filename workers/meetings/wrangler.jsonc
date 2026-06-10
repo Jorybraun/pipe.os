@@ -1,0 +1,46 @@
+{
+	"name": "pipe-meetings",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-03-28",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "pipe-db",
+			"database_id": "15afd1c5-640f-4ffc-b675-82d58c0eb548",
+			"migrations_dir": "../api/migrations"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "STORAGE",
+			"bucket_name": "pipe-assets"
+		}
+	],
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	// Service Binding to the API Worker — used to reach the VideoRoom DO (Phase 3)
+	// "services": [
+	// 	{
+	// 		"binding": "PIPE_API",
+	// 		"service": "pipe-api"
+	// 	}
+	// ],
+	"vars": {
+		"APP_BASE_URL": "http://localhost:5174",
+		"MEETINGS_APP_URL": "http://localhost:5174"
+	},
+	"env": {
+		"production": {
+			"name": "pipe-meetings",
+			"vars": {
+				"APP_BASE_URL": "https://meet.hire-pipe.com",
+				"MEETINGS_APP_URL": "https://meet.hire-pipe.com"
+			}
+		}
+	}
+}
