@@ -412,10 +412,10 @@ candidateOps.get('/:candidateId', async (c) => {
               c.skills, c.years_of_experience, c.current_role, c.education,
               c.created_at, c.updated_at
        FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId)
+    .bind(candidateId, userId, userId)
     .first<{
       id: string;
       name: string | null;
@@ -975,10 +975,10 @@ candidateOps.post('/:candidateId/resume', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
@@ -1108,10 +1108,10 @@ candidateOps.get('/:candidateId/resume', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.resume_s3_key FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ resume_s3_key: string | null }>();
 
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
@@ -1145,10 +1145,10 @@ candidateOps.patch('/:candidateId', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id, c.pipeline_id FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
@@ -1220,10 +1220,10 @@ candidateOps.get('/:candidateId/assignments', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ id: string }>();
 
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
@@ -1270,10 +1270,10 @@ candidateOps.post('/:candidateId/refresh-link', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id, c.status FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ id: string; status: string }>();
 
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
@@ -1313,10 +1313,10 @@ candidateOps.get('/:candidateId/media', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ id: string }>();
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
 
@@ -1344,10 +1344,10 @@ candidateOps.delete('/:candidateId', async (c) => {
   const candidate = await db
     .prepare(
       `SELECT c.id FROM candidates c
-       JOIN pipelines p ON p.id = c.pipeline_id
-       WHERE c.id = ? AND p.owner_id = ?`
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+       WHERE c.id = ? AND (c.owner_id = ? OR p.owner_id = ?)`
     )
-    .bind(candidateId, userId)
+    .bind(candidateId, userId, userId)
     .first<{ id: string }>();
 
   if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');

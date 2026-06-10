@@ -57,7 +57,14 @@ export const participantAuth = createMiddleware<{
 
   // sub = participantId, pid = roleContextId (always non-null for participants)
   c.set('participantId', payload.sub);
-  c.set('roleContextId', payload.pid ?? '');
+  if (!payload.pid) {
+    c.res = c.json(
+      { error: { code: 'UNAUTHORIZED', message: 'Invalid session token for participant routes.' } },
+      401,
+    );
+    return;
+  }
+  c.set('roleContextId', payload.pid);
 
   await next();
 });

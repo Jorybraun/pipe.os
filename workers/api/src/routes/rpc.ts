@@ -394,7 +394,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
   }
 
   // At this point pipeline_id is guaranteed non-null (early return above handles null)
-  const effectivePipelineId = pipelineId as string;
+  // Use DB value rather than JWT — candidate may have been assigned a pipeline after token issuance
+  const effectivePipelineId = candidateRow.pipeline_id as string;
 
   // Fetch all stages with challenges in a single JOIN query
   // Include config so we can filter out empty/unconfigured challenges
@@ -888,6 +889,11 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
       { error: { code: 'BAD_REQUEST', message: 'submission is required.' } },
       400,
     );
+  }
+
+  // Pipeline-free candidate (talent pool): INTAKE challenge submission handled separately
+  if (!pipelineId) {
+    return c.json({ success: true, message: 'INTAKE submission received' });
   }
 
   // Find candidate's current stage
