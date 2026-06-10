@@ -1232,7 +1232,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
   if (!pipelineId) {
     if (parseIntakePayload(submission)) {
       await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
-      return c.json({ success: true, message: 'INTAKE submission received' });
+      return c.json({ success: true, next: true, message: 'INTAKE submission received' });
     }
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
@@ -1243,10 +1243,10 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
          SET submission_json = ?1, status = 'COMPLETED', completed_at = ?2, updated_at = ?2
          WHERE id = ?3`,
       ).bind(JSON.stringify(submission), now, standaloneReview.id).run();
-      return c.json({ success: true, message: 'Code review submission received' });
+      return c.json({ success: true, next: true, message: 'Code review submission received' });
     }
 
-    return c.json({ success: true, message: 'INTAKE submission received' });
+    return c.json({ success: true, next: true, message: 'INTAKE submission received' });
   }
 
   // Find candidate's current stage
