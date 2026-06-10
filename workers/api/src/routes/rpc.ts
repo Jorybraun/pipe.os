@@ -212,6 +212,253 @@ async function checkMatchingGate(
   return { blocked: false };
 }
 
+// ─── Standalone CV intake & code review (no pipeline / no stage rows) ───────
+
+const INTAKE_CHALLENGE_CONTENT = {
+  id: 'intake-upload',
+  type: 'INTAKE',
+  title: 'Upload Your CV',
+  instructions: 'Please upload your CV/resume so we can learn more about your background.',
+  config: JSON.stringify({ acceptedFormats: ['pdf', 'docx', 'doc'], maxSizeMb: 10 }),
+};
+
+const STANDALONE_WAITING_CHALLENGE = {
+  id: 'waiting-for-match',
+  type: 'WAITING_FOR_MATCH',
+  title: 'Building your personalized challenge',
+  instructions: 'We are analyzing your profile to find the best open-source project match.',
+  config: {
+    autoRefresh: true,
+    refreshIntervalSeconds: 30,
+  },
+};
+
+interface StandaloneReviewRow {
+  id: string;
+  status: string;
+  matched_repo_id: number | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  submission_json: string | null;
+}
+
+async function getPendingStandaloneReview(
+  db: D1Database,
+  candidateId: string,
+): Promise<StandaloneReviewRow | null> {
+  try {
+    return await db.prepare(
+      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number, submission_json
+       FROM scheduled_interviews
+       WHERE candidate_id = ?1 AND interview_type = 'CODE_REVIEW' AND stage_id IS NULL
+         AND status NOT IN ('COMPLETED', 'CANCELLED')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(candidateId).first<StandaloneReviewRow>();
+  } catch (err) {
+    console.error('[standaloneReview] lookup failed:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+/** True when the candidate has neither a stored resume nor any graph nodes yet. */
+async function candidateNeedsCvIntake(db: D1Database, candidateId: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT c.resume_s3_key,
+            (SELECT COUNT(*) FROM candidate_nodes cn WHERE cn.candidate_id = c.id) AS node_count
+     FROM candidates c WHERE c.id = ?1`,
+  ).bind(candidateId).first<{ resume_s3_key: string | null; node_count: number }>();
+  if (!row) return false;
+  return !row.resume_s3_key && (row.node_count ?? 0) === 0;
+}
+
+/** True when a pipeline code stage should be gated behind CV intake for this candidate. */
+async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageId: string): Promise<boolean> {
+  const assignment = await db.prepare(
+    `SELECT id FROM candidate_challenge_assignment WHERE candidate_id = ?1 AND stage_id = ?2`,
+  ).bind(candidateId, stageId).first<{ id: string }>();
+  if (assignment) return false;
+  return candidateNeedsCvIntake(db, candidateId);
+}
+
+/**
+ * Match a standalone code-review interview to a repo + PR from the candidate's
+ * graph alone (no role context). The match is cached on the scheduled_interviews
+ * row because standalone sessions have no stage/challenge rows to hold an
+ * assignment.
+ */
+async function matchStandaloneReview(
+  db: D1Database,
+  env: Env,
+  candidateId: string,
+  interview: StandaloneReviewRow,
+): Promise<{ repoUrl: string; prNumber: number } | null> {
+  if (interview.github_repo_url && interview.github_pr_number) {
+    return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+  }
+
+  let repoId: number | null = interview.matched_repo_id;
+  let repoUrl: string | null = null;
+
+  if (repoId) {
+    const repo = await db.prepare(`SELECT github_url FROM qualified_repos WHERE id = ?1`)
+      .bind(repoId)
+      .first<{ github_url: string | null }>();
+    repoUrl = repo?.github_url ?? null;
+  }
+
+  if (!repoId || !repoUrl) {
+    let neo4jConfig = buildNeo4jConfig(env);
+    if (!neo4jConfig) {
+      neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
+    }
+    let driver;
+    try {
+      driver = createNeo4jDriver(neo4jConfig);
+      const results = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+      if (results.length > 0) {
+        const top = results[0]!;
+        repoId = top.repo_id;
+        repoUrl = `https://github.com/${top.full_name}`;
+      }
+    } catch (err) {
+      console.error(`[standaloneReview] Neo4j matching failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
+    } finally {
+      if (driver) {
+        try {
+          await driver.close();
+        } catch {
+          // ignore close errors
+        }
+      }
+    }
+  }
+
+  // Fallback: the ingestion pipeline may have already matched a repo
+  if (!repoId || !repoUrl) {
+    try {
+      const ingestion = await db.prepare(
+        `SELECT ci.matched_repo_id, qr.github_url
+         FROM candidate_ingestion ci
+         JOIN qualified_repos qr ON qr.id = ci.matched_repo_id
+         WHERE ci.candidate_id = ?1`,
+      ).bind(candidateId).first<{ matched_repo_id: number | null; github_url: string | null }>();
+      if (ingestion?.matched_repo_id && ingestion.github_url) {
+        repoId = ingestion.matched_repo_id;
+        repoUrl = ingestion.github_url;
+      }
+    } catch (err) {
+      console.error('[standaloneReview] ingestion fallback lookup failed:', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  if (!repoId || !repoUrl) return null;
+
+  const prResult = await pickReviewPr(db, repoId);
+  if (!prResult) return null;
+
+  await db.prepare(
+    `UPDATE scheduled_interviews
+     SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
+     WHERE id = ?5`,
+  ).bind(repoId, repoUrl, prResult.prNumber, new Date().toISOString(), interview.id).run();
+
+  return { repoUrl, prNumber: prResult.prNumber };
+}
+
+/** Persist intake form data (resume / github / linkedin) and kick off enrichment. */
+async function handleIntakePayload(
+  env: Env,
+  executionCtx: ExecutionContext,
+  candidateId: string,
+  submission: unknown,
+  now: string,
+): Promise<void> {
+  let intakePayload: Record<string, unknown> = {};
+  try {
+    intakePayload = typeof submission === 'string' ? (JSON.parse(submission) as Record<string, unknown>) : (submission as Record<string, unknown>);
+  } catch {
+    intakePayload = {};
+  }
+
+  const resumeR2Key = typeof intakePayload.resumeR2Key === 'string' ? intakePayload.resumeR2Key : '';
+  const githubHandle = typeof intakePayload.githubHandle === 'string' ? intakePayload.githubHandle : '';
+  const linkedinUrl = typeof intakePayload.linkedinUrl === 'string' ? intakePayload.linkedinUrl : '';
+
+  // 1. Update candidate record with resume key + run ingestion immediately
+  if (resumeR2Key) {
+    try {
+      await env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
+        .bind(resumeR2Key, now, candidateId)
+        .run();
+    } catch (err) {
+      console.error(`[rpc/intake] failed to update candidate resume key:`, err);
+    }
+
+    // Run ingestion immediately — candidate graph must be live before they proceed
+    executionCtx.waitUntil(
+      (async () => {
+        try {
+          const result = await processResumeFromR2({
+            env,
+            db: env.DB,
+            candidateId,
+            r2Key: resumeR2Key,
+          });
+          console.log(`[rpc/intake] resume ingestion for candidate ${candidateId}:`, result.success);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[rpc/intake] resume ingestion failed for ${candidateId}:`, msg);
+        }
+      })(),
+    );
+  }
+
+  // 2. Queue GitHub enrichment
+  if (githubHandle) {
+    const githubUrl = `https://github.com/${githubHandle}`;
+    try {
+      await env.DB.prepare(
+        `INSERT INTO candidate_ingestion (candidate_id, github_url, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?3)
+         ON CONFLICT(candidate_id) DO UPDATE SET
+           github_url = excluded.github_url,
+           updated_at = excluded.updated_at`,
+      )
+        .bind(candidateId, githubUrl, now)
+        .run();
+
+      await env.DB.prepare(
+        `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
+         VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
+      )
+        .bind(crypto.randomUUID(), candidateId, githubUrl)
+        .run();
+
+      console.log(`[rpc/intake] queued github enrichment for candidate ${candidateId}`);
+    } catch (err) {
+      console.error(`[rpc/intake] failed to queue github enrichment:`, err);
+    }
+  }
+
+  // 3. Store LinkedIn URL
+  if (linkedinUrl) {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO candidate_ingestion (candidate_id, linkedin_url, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?3)
+         ON CONFLICT(candidate_id) DO UPDATE SET
+           linkedin_url = excluded.linkedin_url,
+           updated_at = excluded.updated_at`,
+      )
+        .bind(candidateId, linkedinUrl, now)
+        .run();
+      console.log(`[rpc/intake] stored linkedin url for candidate ${candidateId}`);
+    } catch (err) {
+      console.error(`[rpc/intake] failed to store linkedin url:`, err);
+    }
+  }
+}
+
 // ─── Public routes (no auth) ────────────────────────────────────────────────
 
 const rpcPublic = new Hono<{ Bindings: Env }>();
@@ -376,9 +623,27 @@ rpcAuth.post('/get-stage-config', async (c) => {
   }
   const candidateRow = candidate; // narrow for nested function capture
 
-  // Pipeline-free candidate (talent pool): show CV intake challenge
+  // Pipeline-free candidate (talent pool / standalone code review)
   if (!candidateRow.pipeline_id) {
     const needsResume = !candidateRow.resume_s3_key;
+
+    // Standalone code-review interview: once the CV is in, serve the review stage
+    if (!needsResume) {
+      const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+      if (standaloneReview) {
+        return c.json({
+          isComplete: false,
+          stageId: 'standalone-code-review',
+          candidateId,
+          stageTitle: 'Code Review',
+          mode: 'ASYNC',
+          timeLimit: null,
+          challenges: [{ type: 'CODE_REVIEW', order: 0, title: 'Code Review' }],
+          currentIndex: 0,
+        });
+      }
+    }
+
     return c.json({
       isComplete: !needsResume,
       stageId: 'talent-pool-intake',
@@ -527,6 +792,29 @@ rpcAuth.post('/get-stage-config', async (c) => {
       if (!nextChallenge) {
         return null;
       }
+      // Code stages need a candidate graph before matching can run — if the
+      // candidate has no CV and no graph yet, gate the stage behind CV intake.
+      if (
+        ['CODE_REVIEW', 'CODE_IMPLEMENTATION'].includes(nextChallenge.type) &&
+        (await stageRequiresCvIntake(c.env.DB, candidateId, stage.id))
+      ) {
+        await c.env.DB.prepare(
+          `UPDATE candidates SET current_stage_id = ?1 WHERE id = ?2`,
+        )
+          .bind(stage.id, candidateId)
+          .run();
+        return c.json({
+          isComplete: false,
+          stageId: stage.id,
+          candidateId,
+          stageTitle: 'Upload Your CV',
+          mode: 'INTAKE',
+          timeLimit: null,
+          challenges: [{ type: 'INTAKE', order: 0, title: 'Upload Your CV' }],
+          currentIndex: 0,
+        });
+      }
+
       const gateResult = await checkMatchingGate(c.env.DB, candidateId, effectivePipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
       if (gateResult.blocked && gateResult.syntheticChallenge) {
         return c.json({
@@ -625,14 +913,48 @@ rpcAuth.post('/get-challenge', async (c) => {
     );
   }
 
-  // Pipeline-free candidate: return INTAKE challenge content
+  // Pipeline-free candidate: INTAKE first, then standalone code review if invited
   if (!pipelineId) {
+    if (await candidateNeedsCvIntake(c.env.DB, candidateId)) {
+      return c.json(INTAKE_CHALLENGE_CONTENT);
+    }
+
+    const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+    if (!standaloneReview) {
+      return c.json(INTAKE_CHALLENGE_CONTENT);
+    }
+
+    const match = await matchStandaloneReview(c.env.DB, c.env, candidateId, standaloneReview);
+    if (!match) {
+      return c.json(STANDALONE_WAITING_CHALLENGE);
+    }
+
+    let cachedDiffJson: unknown = null;
+    let githubPrTitle: string | null = null;
+    try {
+      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+      const result = await fetchGitHubDiff(match.repoUrl, match.prNumber, token);
+      if (result) {
+        cachedDiffJson = result.diff;
+        const meta = result.metadata as { title?: string } | undefined;
+        githubPrTitle = meta?.title ?? null;
+      }
+    } catch (err) {
+      console.error('[standaloneReview] diff fetch failed:', err instanceof Error ? err.message : String(err));
+    }
+
     return c.json({
-      id: 'intake-upload',
-      type: 'INTAKE',
-      title: 'Upload Your CV',
-      instructions: 'Please upload your CV/resume so we can learn more about your background.',
-      config: JSON.stringify({ acceptedFormats: ['pdf', 'docx', 'doc'], maxSizeMb: 10 }),
+      id: `standalone-review-${standaloneReview.id}`,
+      type: 'CODE_REVIEW',
+      title: 'Code Review',
+      instructions: 'Review this pull request as if a teammate opened it: call out bugs, risks, design concerns, and suggestions.',
+      config: null,
+      cachedDiffJson,
+      githubPrTitle,
+      githubPrNumber: match.prNumber,
+      githubRepoUrl: match.repoUrl,
+      githubPrDescription: null,
+      devContainerRepoUrl: null,
     });
   }
 
@@ -891,8 +1213,27 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     );
   }
 
-  // Pipeline-free candidate (talent pool): INTAKE challenge submission handled separately
+  // Pipeline-free candidate (talent pool / standalone code review)
   if (!pipelineId) {
+    const submissionObj = typeof submission === 'object' && submission !== null ? (submission as Record<string, unknown>) : null;
+    const isIntakePayload = !!submissionObj && typeof submissionObj.resumeR2Key === 'string';
+
+    if (isIntakePayload) {
+      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
+      return c.json({ success: true, message: 'INTAKE submission received' });
+    }
+
+    const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+    if (standaloneReview) {
+      const now = new Date().toISOString();
+      await c.env.DB.prepare(
+        `UPDATE scheduled_interviews
+         SET submission_json = ?1, status = 'COMPLETED', completed_at = ?2, updated_at = ?2
+         WHERE id = ?3`,
+      ).bind(JSON.stringify(submission), now, standaloneReview.id).run();
+      return c.json({ success: true, message: 'Code review submission received' });
+    }
+
     return c.json({ success: true, message: 'INTAKE submission received' });
   }
 
@@ -917,6 +1258,22 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     .first<{ mode: string | null }>();
 
   const syntheticCount = 1 + (stageInfo?.mode === 'LIVE_VIDEO' ? 1 : 0);
+
+  // Synthetic CV intake submission (code-stage gate): the stage has no INTAKE
+  // challenge row, so persist the intake data directly.
+  const intakeObj = typeof submission === 'object' && submission !== null ? (submission as Record<string, unknown>) : null;
+  if (intakeObj && typeof intakeObj.resumeR2Key === 'string') {
+    const codeChallenge = await c.env.DB.prepare(
+      `SELECT id FROM challenges WHERE stage_id = ?1 AND type IN ('CODE_REVIEW', 'CODE_IMPLEMENTATION') LIMIT 1`,
+    ).bind(stageId).first<{ id: string }>();
+    const intakeChallenge = await c.env.DB.prepare(
+      `SELECT id FROM challenges WHERE stage_id = ?1 AND type = 'INTAKE' LIMIT 1`,
+    ).bind(stageId).first<{ id: string }>();
+    if (codeChallenge && !intakeChallenge) {
+      await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, new Date().toISOString());
+      return c.json({ success: true, next: true });
+    }
+  }
 
   // Synthetic challenges (WELCOME, LIVE_VIDEO) — no DB write needed
   if (order < syntheticCount) {
@@ -1030,90 +1387,7 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
   // ── INTAKE challenge: trigger background enrichment ────────────────────────
   if (challenge.type === 'INTAKE') {
-    let intakePayload: Record<string, unknown> = {};
-    try {
-      intakePayload = typeof submission === 'string' ? (JSON.parse(submission) as Record<string, unknown>) : (submission as Record<string, unknown>);
-    } catch {
-      intakePayload = {};
-    }
-
-    const resumeR2Key = typeof intakePayload.resumeR2Key === 'string' ? intakePayload.resumeR2Key : '';
-    const githubHandle = typeof intakePayload.githubHandle === 'string' ? intakePayload.githubHandle : '';
-    const linkedinUrl = typeof intakePayload.linkedinUrl === 'string' ? intakePayload.linkedinUrl : '';
-
-    // 1. Update candidate record with resume key + run ingestion immediately
-    if (resumeR2Key) {
-      try {
-        await c.env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
-          .bind(resumeR2Key, now, candidateId)
-          .run();
-      } catch (err) {
-        console.error(`[rpc/intake] failed to update candidate resume key:`, err);
-      }
-
-      // Run ingestion immediately — candidate graph must be live before they proceed
-      c.executionCtx.waitUntil(
-        (async () => {
-          try {
-            const result = await processResumeFromR2({
-              env: c.env,
-              db: c.env.DB,
-              candidateId,
-              r2Key: resumeR2Key,
-            });
-            console.log(`[rpc/intake] resume ingestion for candidate ${candidateId}:`, result.success);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[rpc/intake] resume ingestion failed for ${candidateId}:`, msg);
-          }
-        })(),
-      );
-    }
-
-    // 2. Queue GitHub enrichment
-    if (githubHandle) {
-      const githubUrl = `https://github.com/${githubHandle}`;
-      try {
-        await c.env.DB.prepare(
-          `INSERT INTO candidate_ingestion (candidate_id, github_url, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?3)
-           ON CONFLICT(candidate_id) DO UPDATE SET
-             github_url = excluded.github_url,
-             updated_at = excluded.updated_at`,
-        )
-          .bind(candidateId, githubUrl, now)
-          .run();
-
-        await c.env.DB.prepare(
-          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
-           VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
-        )
-          .bind(crypto.randomUUID(), candidateId, githubUrl)
-          .run();
-
-        console.log(`[rpc/intake] queued github enrichment for candidate ${candidateId}`);
-      } catch (err) {
-        console.error(`[rpc/intake] failed to queue github enrichment:`, err);
-      }
-    }
-
-    // 3. Store LinkedIn URL
-    if (linkedinUrl) {
-      try {
-        await c.env.DB.prepare(
-          `INSERT INTO candidate_ingestion (candidate_id, linkedin_url, created_at, updated_at)
-           VALUES (?1, ?2, ?3, ?3)
-           ON CONFLICT(candidate_id) DO UPDATE SET
-             linkedin_url = excluded.linkedin_url,
-             updated_at = excluded.updated_at`,
-        )
-          .bind(candidateId, linkedinUrl, now)
-          .run();
-        console.log(`[rpc/intake] stored linkedin url for candidate ${candidateId}`);
-      } catch (err) {
-        console.error(`[rpc/intake] failed to store linkedin url:`, err);
-      }
-    }
+    await handleIntakePayload(c.env, c.executionCtx, candidateId, submission, now);
   }
 
   return c.json({

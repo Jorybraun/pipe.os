@@ -284,7 +284,7 @@ candidateOps.use('*', authMiddleware);
 const createStandaloneCandidateSchema = z.object({
   name: z.string().min(1, 'name is required').max(200),
   email: z.string().email('valid email required'),
-  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
   scheduledAt: z.string().optional(),
   message: z.string().max(2000).optional(),
   skipEmail: z.boolean().optional(),
