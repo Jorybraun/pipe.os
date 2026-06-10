@@ -155,7 +155,7 @@ export async function verifyJwt(
   // Validate required fields
   if (
     typeof decoded.sub !== 'string' ||
-    typeof decoded.pid !== 'string' ||
+    (typeof decoded.pid !== 'string' && decoded.pid !== null) ||
     typeof decoded.iat !== 'number' ||
     typeof decoded.exp !== 'number'
   ) {
