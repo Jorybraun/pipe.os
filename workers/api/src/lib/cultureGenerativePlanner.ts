@@ -21,6 +21,7 @@
  */
 
 import type { LLMProvider, LLMMessage } from './llm/types';
+import type { ConversationGraphView } from './cultureContextualDecomposition';
 import type { CompetencyDimension, StarSlot } from './cultureQuestionBank';
 import { COMPETENCY_DIMENSIONS } from './cultureQuestionBank';
 
@@ -77,6 +78,12 @@ export interface GenerativePlannerContext {
   maxQuestions: number;
   /** Min questions before termination is allowed. */
   minQuestions: number;
+  /**
+   * Live contextual conversation graph (ADR-050) — typed statements extracted
+   * from answers so far plus the missing-context gaps to walk next. Null when
+   * no answers have decomposed yet.
+   */
+  conversationGraph?: ConversationGraphView | null;
 }
 
 export interface PriorScreeningSummary {
@@ -166,6 +173,16 @@ export function buildGenerativePlannerUserMessage(ctx: GenerativePlannerContext)
     ? runningThemes.map((t) => `  - ${t}`).join('\n')
     : '  (none yet)';
 
+  const graph = ctx.conversationGraph ?? null;
+  const graphStatementsBlock =
+    graph && graph.statements.length > 0
+      ? graph.statements.map((s) => `  - [${s.type}] ${s.phrase}`).join('\n')
+      : '  (nothing extracted yet)';
+  const graphGapsBlock =
+    graph && graph.missingContext.length > 0
+      ? graph.missingContext.map((g) => `  - ${g}`).join('\n')
+      : '  (no open gaps)';
+
   const priorScreeningBlock = candidate.priorScreening
     ? `Prior screening covered: ${candidate.priorScreening.coveredDimensions.join(', ')}
 Thin dimensions from prior screening: ${candidate.priorScreening.thinDimensions.join(', ')}
@@ -208,8 +225,16 @@ ${priorBlock}
 # Running themes from earlier turns
 ${themesBlock}
 
+# Conversation graph so far (concrete statements extracted from their answers)
+${graphStatementsBlock}
+
+# Missing context in the conversation graph (highest-value targets)
+${graphGapsBlock}
+
 # Your task
 Generate the NEXT question for this candidate. It must:
+- If the conversation graph has missing-context gaps, prefer a question that fills one of them, quoting the candidate's own phrase — e.g. an Action with no BECAUSE → ask why they made that choice; an Action with no ACHIEVED → ask what concretely happened; an Outcome with no owning Action → ask what they personally did
+- If the graph is dense around one topic, move to a region of their background not yet discussed
 - Reference at least one specific detail from their background OR the team's context
 - Target an uncovered or thin dimension
 - Be phrased as a single, natural question (not a list)

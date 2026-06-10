@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Contextual Conversation Graph for Culture Interviews (ADR-050)
+
+- `workers/api/src/lib/cultureContextualDecomposition.ts`: Decomposes each interview answer into a typed semantic graph (Action/Tech/Org/Person/Reason/Outcome/Situation nodes; DID/OBSERVED/WITH/REPLACED/BECAUSE/ACHIEVED/IN_SITUATION/AT/WITH_PERSON edges). Phrases carry their context ("chose Kafka for ordered clickstream replay", never "kafka"). Generic answers are discarded — the discard triggers an LLM-written probe quoting the candidate's own words. `buildConversationGraphView` surfaces missing-context gaps (Action without BECAUSE/ACHIEVED, unowned Outcomes) for the planner.
+- `workers/api/src/lib/neo4j/contextualGraph.ts`: Mirrors the conversation graph into Neo4j and materializes grounded `(:CandidateNode)-[:SIMILAR_TO {similarity, grounding}]->(:RepoNode)` edges only at ≥0.84 cosine similarity AND shared concrete grounding tokens. `matchReposByGroundedEdges` ranks repos by multi-region grounded overlap (distinct repo node types, then edge count) — explainable by listing the actual edges, no scores surfaced.
+- `workers/api/src/lib/contextualTurnPersistence.ts`: Per-turn fire-and-forget pipeline — embeds statement phrases, stores them as `candidate_nodes` (source_type `culture_contextual`), writes the typed graph to Neo4j, and materializes grounded edges.
+- `workers/api/src/lib/cultureAgent.ts` + `cultureGenerativePlanner.ts`: Decomposition runs in parallel with turn analysis; probes come from the decomposition's discard rule (template STAR probes only as fallback); the planner receives the live conversation graph and targets missing-context gaps; interviews terminate with `no_new_material` when answers stop yielding new statements (streak ≥ 2 within min/max caps).
+- `workers/api/src/routes/rpc.ts`: Repo matching now prefers grounded-edge traversal (`matchReposByGroundedEdges`) with cosine ranking as fallback, and passes the candidate CV embedding into `pickReviewPr` on the pipeline gate and standalone review paths (semantic PR selection instead of smallest-PR fallback).
+
 ### Added — Talent Pool MVP: Pipeline-Free Candidate Invites
 
 - **Schema migration** (`workers/api/migrations/0075_optional_pipeline.sql`): `pipeline_id` nullable on `candidates` and `scheduled_interviews` tables; `interview_type` column (`VIDEO`|`TECHNICAL`|`SCREENING`) added to `scheduled_interviews`.
