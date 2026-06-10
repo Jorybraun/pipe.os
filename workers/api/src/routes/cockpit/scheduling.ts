@@ -92,6 +92,11 @@ const updateInterviewSchema = z.object({
   recruiterNotes: z.string().optional(),
 });
 
+const inviteToCallSchema = z.object({
+  email: z.string().email(),
+  message: z.string().max(1000).optional(),
+});
+
 // ─── Status transition validation ───────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -755,6 +760,157 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
     .run();
 
   return c.json({ success: true });
+});
+
+// POST /interviews/:id/invite — send a video call invitation email
+schedulingAuth.post('/interviews/:id/invite', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  if (!c.env.RESEND_API_KEY) {
+    return apiError(c, 'SERVICE_UNAVAILABLE', 'Email service not configured.');
+  }
+
+  const body = await c.req.json();
+  const parsed = inviteToCallSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
+  }
+
+  const { email, message: customMessage } = parsed.data;
+
+  // Fetch interview with enriched data
+  const interview = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
+              si.scheduled_at, si.meeting_url,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       WHERE si.id = ? AND si.owner_id = ?`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string;
+      pipeline_id: string;
+      stage_id: string;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+    }>();
+
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  // Build the meeting link — prefer existing meetingUrl, else generate app video link
+  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+  const meetingUrl = interview.meeting_url
+    ?? `${baseUrl}/video/${interview.stage_id}--${interview.candidate_id}`;
+
+  const scheduledTime = interview.scheduled_at
+    ? new Date(interview.scheduled_at).toLocaleString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+      })
+    : null;
+
+  const escapeHtml = (str: string): string =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const candidateName = escapeHtml(interview.candidate_name ?? email.split('@')[0] ?? 'there');
+  const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
+  const stageTitle = escapeHtml(interview.stage_title ?? '');
+  const safeMeetingUrl = encodeURI(meetingUrl);
+
+  // Build HTML email
+  const customBlock = customMessage
+    ? `<p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px; padding: 16px; background: rgba(255,255,255,0.05); border-left: 3px solid rgba(96,165,250,0.4); border-radius: 4px;">${escapeHtml(customMessage)}</p>`
+    : '';
+
+  const timeBlock = scheduledTime
+    ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">When:</strong> ${scheduledTime}</p>`
+    : '';
+
+  const html = `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
+  <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi ${candidateName},</h1>
+  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+    You've been invited to a video call for <strong>${pipelineTitle}</strong>.
+  </p>
+  ${customBlock}
+  <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
+    ${stageTitle ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> ${stageTitle}</p>` : ''}
+    ${timeBlock}
+    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="${safeMeetingUrl}" style="color: #60a5fa;">Join Video Call</a></p>
+  </div>
+  <a href="${safeMeetingUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
+    JOIN VIDEO CALL →
+  </a>
+  <p style="font-size: 12px; color: #666; margin-top: 40px;">
+    If the button doesn't work, copy this link:<br/>
+    <a href="${safeMeetingUrl}" style="color: #888;">${escapeHtml(meetingUrl)}</a>
+  </p>
+</div>`;
+
+  const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
+  const subject = scheduledTime
+    ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
+    : `Video call invitation — ${rawPipelineTitle}`;
+
+  // Send the email via Resend with our custom video-call HTML
+  const { Resend } = await import('resend');
+  const resend = new Resend(c.env.RESEND_API_KEY);
+  let result: { id: string } | null = null;
+  try {
+    const sendResult = await resend.emails.send({
+      from: 'Pipe <onboarding@resend.dev>',
+      to: email,
+      subject,
+      html,
+    });
+    result = sendResult.error ? null : (sendResult.data ?? null);
+  } catch (err) {
+    console.error('[scheduling/invite] Email send failed:', err);
+  }
+
+  // Update the interview to track the invite
+  const now = new Date().toISOString();
+  if (result) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, email_sent_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .bind(now, now, now, id)
+      .run();
+  }
+
+  // If the meeting URL wasn't previously set, store it
+  if (!interview.meeting_url) {
+    await db
+      .prepare('UPDATE scheduled_interviews SET meeting_url = ?, updated_at = ? WHERE id = ?')
+      .bind(meetingUrl, now, id)
+      .run();
+  }
+
+  if (!result) {
+    return c.json({ success: false, emailSent: false, meetingUrl }, 502);
+  }
+
+  return c.json({
+    success: true,
+    emailSent: true,
+    meetingUrl,
+  });
 });
 
 // ─── Public webhook route ───────────────────────────────────────────────────
