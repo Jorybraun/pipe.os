@@ -144,7 +144,7 @@ function CallListView({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <User size={14} style={{ color: '#888' }} />
               <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {interview.candidateId.slice(0, 8)}...
+                {interview.candidateId?.slice(0, 8) ?? 'Unknown'}...
               </span>
               <span
                 style={{
@@ -255,7 +255,7 @@ function CallDetailView({
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>CANDIDATE</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>
-            {interview.candidateName ?? interview.candidateId.slice(0, 8) + '...'}
+            {interview.candidateName ?? interview.recipientName ?? interview.candidateId?.slice(0, 8) ?? 'Unknown'}
           </div>
         </div>
         {interview.stageId && (

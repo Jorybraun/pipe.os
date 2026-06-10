@@ -214,10 +214,10 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.candidateId;
-                  const candidateEmail = iv.candidateEmail ?? null;
+                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown';
+                  const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
                   const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId ?? 'Talent Pool';
-                  const stageTitle = iv.stageTitle ?? iv.stageId ?? (iv.interviewType ?? 'Interview');
+                  const stageTitle = iv.stageTitle ?? iv.stageId ?? iv.interviewType ?? 'Interview';
 
                   return (
                     <InterviewCard

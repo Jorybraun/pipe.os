@@ -1,4 +1,22 @@
-export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+
+export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
+
+export interface TranscriptEntry {
+  role: 'recruiter' | 'candidate' | 'model' | 'user';
+  text: string;
+  timestamp?: string | null;
+}
+
+export interface TranscriptArtifact {
+  id: string;
+  interviewId: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  transcriptJson?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 
@@ -15,10 +33,11 @@ export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
-  candidateId: string;
+  candidateId?: string | null;
   pipelineId?: string | null;
   stageId?: string | null;
   interviewType?: InterviewType | null;
+  meetingType?: MeetingType | null;
   status?: InterviewStatus | null;
   scheduledAt?: string | null;
   meetingUrl?: string | null;
@@ -31,11 +50,16 @@ export interface ScheduledInterview {
   inviteLinkSentAt?: string | null;
   emailSentAt?: string | null;
   owner?: string | null;
+  // Contact-first fields
+  recipientName?: string | null;
+  recipientEmail?: string | null;
   // Enriched fields (from JOIN with candidates, pipelines, stages)
   candidateName?: string | null;
   candidateEmail?: string | null;
   pipelineTitle?: string | null;
   stageTitle?: string | null;
+  // Transcript artifact
+  transcriptArtifact?: TranscriptArtifact | null;
 }
 
 /**

@@ -267,7 +267,7 @@ function ContactRow({ contact, isSelected, onClick }: {
 }): JSX.Element {
   const initials = contact.name
     ? contact.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
-    : contact.email[0].toUpperCase();
+    : (contact.email[0] ?? '?').toUpperCase();
 
   return (
     <div
