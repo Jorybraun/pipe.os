@@ -823,13 +823,17 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       })
     : null;
 
-  const candidateName = interview.candidate_name ?? email.split('@')[0] ?? 'there';
-  const pipelineTitle = interview.pipeline_title ?? 'Interview';
-  const stageTitle = interview.stage_title ?? '';
+  const escapeHtml = (str: string): string =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const candidateName = escapeHtml(interview.candidate_name ?? email.split('@')[0] ?? 'there');
+  const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
+  const stageTitle = escapeHtml(interview.stage_title ?? '');
+  const safeMeetingUrl = encodeURI(meetingUrl);
 
   // Build HTML email
   const customBlock = customMessage
-    ? `<p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px; padding: 16px; background: rgba(255,255,255,0.05); border-left: 3px solid rgba(96,165,250,0.4); border-radius: 4px;">${customMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
+    ? `<p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px; padding: 16px; background: rgba(255,255,255,0.05); border-left: 3px solid rgba(96,165,250,0.4); border-radius: 4px;">${escapeHtml(customMessage)}</p>`
     : '';
 
   const timeBlock = scheduledTime
@@ -845,20 +849,21 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
     ${stageTitle ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> ${stageTitle}</p>` : ''}
     ${timeBlock}
-    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="${meetingUrl}" style="color: #60a5fa;">Join Video Call</a></p>
+    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="${safeMeetingUrl}" style="color: #60a5fa;">Join Video Call</a></p>
   </div>
-  <a href="${meetingUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
+  <a href="${safeMeetingUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
     JOIN VIDEO CALL →
   </a>
   <p style="font-size: 12px; color: #666; margin-top: 40px;">
     If the button doesn't work, copy this link:<br/>
-    <a href="${meetingUrl}" style="color: #888;">${meetingUrl}</a>
+    <a href="${safeMeetingUrl}" style="color: #888;">${escapeHtml(meetingUrl)}</a>
   </p>
 </div>`;
 
+  const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
   const subject = scheduledTime
-    ? `Video call invitation — ${pipelineTitle} (${scheduledTime})`
-    : `Video call invitation — ${pipelineTitle}`;
+    ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
+    : `Video call invitation — ${rawPipelineTitle}`;
 
   // Send the email via Resend with our custom video-call HTML
   const { Resend } = await import('resend');
@@ -878,14 +883,16 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   // Update the interview to track the invite
   const now = new Date().toISOString();
-  await db
-    .prepare(
-      `UPDATE scheduled_interviews
-       SET invite_link_sent_at = ?, email_sent_at = ?, updated_at = ?
-       WHERE id = ?`
-    )
-    .bind(now, now, now, id)
-    .run();
+  if (result) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, email_sent_at = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .bind(now, now, now, id)
+      .run();
+  }
 
   // If the meeting URL wasn't previously set, store it
   if (!interview.meeting_url) {
@@ -895,9 +902,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .run();
   }
 
+  if (!result) {
+    return c.json({ success: false, emailSent: false, meetingUrl }, 502);
+  }
+
   return c.json({
     success: true,
-    emailSent: !!result,
+    emailSent: true,
     meetingUrl,
   });
 });

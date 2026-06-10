@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Email Invite Security & Error Handling
+
+- `workers/api/src/routes/cockpit/scheduling.ts`: HTML-escape all user-controlled values (`candidateName`, `pipelineTitle`, `stageTitle`, `meetingUrl`) in the invite email template to prevent HTML injection. Added `escapeHtml()` helper and `encodeURI()` for href attributes.
+- `workers/api/src/routes/cockpit/scheduling.ts`: Only record `email_sent_at` and `invite_link_sent_at` timestamps when the email is actually delivered — previously these were written unconditionally even on send failure.
+- `workers/api/src/routes/cockpit/scheduling.ts`: Return HTTP 502 with `success: false` when email delivery fails, so the frontend correctly shows an error state instead of a false success.
+
 ### Fixed — Deterministic Discovery Interview Questions
 
 - `workers/api/src/lib/agents/question/domainOrchestrator.ts`: Domain orchestrator now uses calibrated probes from `probeLibrarian.ts` (ADR-041) instead of LLM-generated questions. Probes are served in deterministic order per domain, with LLM fallback only for domains without matching probes (e.g., `why`). Cross-domain probe deduplication prevents the same probe from being asked twice.
