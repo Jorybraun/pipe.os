@@ -272,29 +272,29 @@ describe('validatePass3 — digit regex (repo_searchable_profile)', () => {
 // ─── Group 3: length gates ────────────────────────────────────────────────────
 
 describe('validatePass3 — length gates', () => {
-  it('engineering_narrative 199 words → fails with "too short"', () => {
-    const output = baseOutput({ engineering_narrative: 'TypeScript ' + words(198) });
+  it('engineering_narrative 149 words → fails with "too short"', () => {
+    const output = baseOutput({ engineering_narrative: 'TypeScript ' + words(148) });
     const result = validatePass3(baseInput(), output);
     expect(result.valid).toBe(false);
     expect(result.failures.some((f) => f.includes('too short'))).toBe(true);
   });
 
-  it('engineering_narrative 401 words → fails with "too long"', () => {
-    const output = baseOutput({ engineering_narrative: 'TypeScript ' + words(400) });
+  it('engineering_narrative 601 words → fails with "too long"', () => {
+    const output = baseOutput({ engineering_narrative: 'TypeScript ' + words(600) });
     const result = validatePass3(baseInput(), output);
     expect(result.valid).toBe(false);
     expect(result.failures.some((f) => f.includes('too long'))).toBe(true);
   });
 
-  it('repo_searchable_profile 399 words → fails with "too short"', () => {
-    const output = baseOutput({ repo_searchable_profile: words(399) });
+  it('repo_searchable_profile 119 words → fails with "too short"', () => {
+    const output = baseOutput({ repo_searchable_profile: words(119) });
     const result = validatePass3(baseInput(), output);
     expect(result.valid).toBe(false);
     expect(result.failures.some((f) => f.includes('too short'))).toBe(true);
   });
 
-  it('repo_searchable_profile 601 words → fails with "too long"', () => {
-    const output = baseOutput({ repo_searchable_profile: words(601) });
+  it('repo_searchable_profile 801 words → fails with "too long"', () => {
+    const output = baseOutput({ repo_searchable_profile: words(801) });
     const result = validatePass3(baseInput(), output);
     expect(result.valid).toBe(false);
     expect(result.failures.some((f) => f.includes('too long'))).toBe(true);

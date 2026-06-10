@@ -38,8 +38,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
+      - name: Unit tests (frontend)
         run: npm run test
+
+      - name: Unit tests (worker)
+        working-directory: workers/api
+        run: npx vitest run
 
       - name: Build frontend
         run: npm run build

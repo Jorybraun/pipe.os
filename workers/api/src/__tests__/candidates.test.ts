@@ -68,6 +68,8 @@ function fakeD1(firstResponders: Array<{ match: string; value: unknown }> = []):
 function buildEnv(db: FakeD1): Env {
   return {
     CLERK_SECRET_KEY: 'test',
+    DEV_AUTH_BYPASS: 'true',
+    DEV_BYPASS_USER_ID: 'test-user',
     DB: db as unknown as D1Database,
   } as unknown as Env;
 }
@@ -151,7 +153,7 @@ describe('GET /api/v1/candidates/:candidateId', () => {
   it('returns ingestion object even when optional columns are null', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: {
           id: 'cand_1',
           name: 'Bob',
@@ -222,7 +224,7 @@ describe('PATCH /api/v1/candidates/:candidateId', () => {
   it('rejects names containing forbidden XSS patterns with 400 on PATCH', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: { id: 'cand_1', pipeline_id: 'pipe_1' },
       },
     ]);
@@ -246,7 +248,7 @@ describe('PATCH /api/v1/candidates/:candidateId', () => {
   it('strips benign < and > characters from names on PATCH', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: { id: 'cand_1', pipeline_id: 'pipe_1' },
       },
     ]);
@@ -277,7 +279,7 @@ describe('DELETE /api/v1/candidates/:candidateId', () => {
   it('hard deletes a candidate and all related rows', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: { id: 'cand_1' },
       },
     ]);
@@ -304,7 +306,7 @@ describe('DELETE /api/v1/candidates/:candidateId', () => {
   it('returns 404 when deleting a non-existent candidate', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: null,
       },
     ]);
@@ -326,7 +328,7 @@ describe('GET /api/v1/candidates/:candidateId/assignments', () => {
   it('returns a list of candidate challenge assignments', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: { id: 'cand_1' },
       },
       {
@@ -377,7 +379,7 @@ describe('GET /api/v1/candidates/:candidateId/assignments', () => {
   it('returns 404 when candidate does not exist', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: null,
       },
     ]);
@@ -399,7 +401,7 @@ describe('POST /api/v1/candidates/:candidateId/refresh-link', () => {
   it('regenerates invite token and wipes previous attempts', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: { id: 'cand_1', status: 'COMPLETED' },
       },
     ]);
@@ -427,7 +429,7 @@ describe('POST /api/v1/candidates/:candidateId/refresh-link', () => {
   it('returns 404 when candidate does not exist', async () => {
     const db = fakeD1([
       {
-        match: 'c.id = ? AND p.owner_id',
+        match: 'FROM candidates c',
         value: null,
       },
     ]);
