@@ -22,7 +22,7 @@ function createApp(row: Record<string, unknown> | null) {
   const app = new Hono<{ Bindings: Env }>();
   app.use('*', async (c, next) => {
     // @ts-expect-error — override bindings in tests
-    c.env = { DB: createMockDB(row), CLERK_SECRET_KEY: 'test' };
+    c.env = { DB: createMockDB(row), CLERK_SECRET_KEY: 'test', DEV_AUTH_BYPASS: 'true', DEV_BYPASS_USER_ID: 'test-user' };
     await next();
   });
   app.route('/', ingestionStatus);

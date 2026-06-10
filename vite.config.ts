@@ -26,6 +26,7 @@ export default defineConfig({
       '.hermes/**',
       'e2e/**',
       '.claude/**',
+      'workers/**',
     ],
   },
 })

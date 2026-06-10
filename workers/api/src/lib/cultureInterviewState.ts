@@ -54,6 +54,9 @@ export interface CultureScratchpadV2 {
     questionText: string;
     targetDimension: string;
     personalizationAnchors: string[];
+    questionId?: string;
+    expectedSlots?: StarSlot[];
+    probes?: Record<string, string>;
   }>;
 }
 
@@ -104,6 +107,9 @@ export interface CultureTranscriptLike {
       questionText: string;
       targetDimension: string;
       personalizationAnchors: string[];
+      questionId?: string;
+      expectedSlots?: StarSlot[];
+      probes?: Record<string, string>;
     }>;
     /** V2 FSM fields (optional — added by culture-agent redesign). */
     phase?: InterviewPhase;
@@ -119,8 +125,10 @@ function getTurnDimension(
   mode: 'profile_builder' | 'role_fit',
 ): string {
   if (turn.questionId.startsWith('gen-')) {
-    const parts = turn.questionId.split('-');
-    return parts[1] ?? 'ownership';
+    // IDs are `gen-<dimension>-<n>` where dimension may itself be hyphenated
+    // (e.g. gen-learning-orientation-3).
+    const dim = turn.questionId.slice(4).replace(/-\d+$/, '');
+    return dim.length > 0 ? dim : 'ownership';
   }
 
   if (mode === 'profile_builder') {

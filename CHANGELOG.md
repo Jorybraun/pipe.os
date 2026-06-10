@@ -7,68 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — Contacts CRM, Dialpad & Phone Drawer
+### Added — Talent Pool MVP: Pipeline-Free Candidate Invites
 
-- `src/pages/ContactsPage.tsx`: New unified Contacts page — list/search/filter by type (lead/candidate/customer/other), add/edit/delete contacts with full profile fields (email, name, company, role, phone, LinkedIn, notes).
-- `workers/api/migrations/0077_contacts.sql`: New `contacts` table with owner-scoped CRUD.
-- `workers/api/src/routes/cockpit/contacts.ts`: REST API for contacts (GET list, POST, GET by id, PATCH, DELETE) with duplicate-email guard.
-- `src/components/SidebarNav.tsx`: Added Contacts nav item (Users icon).
-- `src/components/Phone/PhoneCallDrawer.tsx`: Replaced pre-call view with a full 3×4 dialpad + editable number input; added in-call DTMF keypad toggle (PAD button) for navigating IVR menus.
-- `src/hooks/useTwilioDevice.ts`: Added `sendDigits` method for DTMF tones.
-- `src/pages/CandidateProfilePage.tsx`: Moved phone drawer from fixed right overlay to left grid column so it opens inline with the candidate profile.
+- **Schema migration** (`workers/api/migrations/0075_optional_pipeline.sql`): `pipeline_id` nullable on `candidates` and `scheduled_interviews` tables; `interview_type` column (`VIDEO`|`TECHNICAL`|`SCREENING`) added to `scheduled_interviews`.
+- **Standalone candidate endpoint** (`POST /api/v1/candidates`): Invite candidates without pipeline/role. Creates candidate, ingestion row, optional interview, sends invitation email with conditional templates.
+- **Email template** (`workers/api/src/lib/email.ts`): `pipelineName` now optional; inverted conditionals (`{{^pipelineName}}`) render standalone invite copy; `customMessage` block support.
+- **Ingestion orchestrator** (`workers/api/src/lib/candidateDiscovery/orchestrate.ts`): Skips match/assign (steps 6-11) when `pipeline_id` is NULL. Candidate stays at "embedded" status — searchable in talent pool without requiring a pipeline.
+- **Frontend invite modal** (`src/components/Scheduling/InviteCandidateModal.tsx`): "INVITE CANDIDATE" button on scheduling dashboard; form with name, email, interview type selector, optional schedule, custom message.
+- **Assessment page** (`workers/api/src/routes/rpc.ts`): `get-stage-config` returns INTAKE challenge for pipeline-free candidates; `get-challenge` returns CV upload config. Candidates without a pipeline see a resume upload screen at `/assess/:token`.
+- **Type updates**: `ScheduledInterview.pipelineId`/`stageId` now optional; `InterviewType` type exported; JWT `pid` nullable; `CandidateVariables.pipelineId` nullable.
 
-### Added — Compliance Guard Rules & Question Probe Refinements
+### Added — Meetings Worker & Schema (Phase 1, ADR-049)
 
-- `workers/api/src/lib/agents/question/guard.ts`: Added Tier-4 BLOCKED compliance rules covering protected classes (race/ethnicity, age, disability, religion, sex/gender/marital status, genetic information), salary history, immigration/visa status, and arrest/conviction history per Title VII, ADA, ADEA, GINA, PDA, CA FEHA, NYC LL 144, and EU AI Act Annex III.
-- `workers/api/src/lib/agents/question/probeLibrarian.ts`: Reordered and rewrote signal probes — moved feedback-style and thrives/struggles probes earlier in the interview flow; updated role-variant phrasing and drilling hints.
-- `workers/api/src/lib/agents/roleDiscovery/plugin.ts`: Updated role discovery plugin logic.
-- `workers/api/src/routes/discovery/roleContexts.ts`: Minor addition to role contexts route.
-- `workers/api/migrations/0071_repo_confidence_score.sql`: Added idempotency comments for SQLite-safe column addition.
+- `workers/meetings/`: New Cloudflare Worker (`pipe-meetings`) for contacts and meetings — separate deployable from the main API Worker, sharing the same D1 database.
+- `workers/meetings/src/routes/contacts.ts`: Full CRUD for contacts (`POST/GET/GET:id/PATCH/DELETE /api/v1/contacts`) with search, type filtering, and pagination. Contacts have type (PROSPECT, CANDIDATE, HIRING_MANAGER, RECRUITER, OTHER), optional `candidate_id` FK, and JSON tags.
+- `workers/meetings/src/routes/meetings.ts`: Full CRUD for meetings (`POST/GET/GET:id/PATCH /api/v1/meetings`) with status/type filtering and participant management (`POST/DELETE /api/v1/meetings/:id/participants`). Meetings track lifecycle (SCHEDULED→IN_PROGRESS→COMPLETED), type (DISCOVERY, INTERVIEW, FOLLOW_UP, DEMO, OTHER), and transcription status.
+- `workers/api/migrations/0075_contacts.sql`: D1 migration for `contacts` table.
+- `workers/api/migrations/0076_meetings.sql`: D1 migration for `meetings` table with transcript and recording fields.
+- `workers/api/migrations/0077_meeting_participants.sql`: D1 migration for `meeting_participants` join table with unique constraint on (meeting_id, contact_id).
+- Clerk JWT auth middleware for the meetings Worker (mirrors `workers/api/src/middleware/auth.ts`).
+- CORS configured for `meet.hire-pipe.com`, `pipe.build`, and local dev origins.
 
-### Added — Video Transcript Artifacts
+### Added — Contacts & Meetings Architecture (ADR-049)
 
-- `workers/api/migrations/0076_transcript_artifacts.sql`: New table for persisting video call transcripts with status (PENDING/COMPLETED/FAILED) and error_message for actionable failure status. Links to scheduled_interviews for graph associations (meeting invite, recipient/person nodes).
-- `workers/api/src/types.ts`: Added TranscriptStatus, TranscriptEntry, and TranscriptArtifact types.
-- `src/lib/scheduling/types.ts`: Added transcript types and transcriptArtifact enrichment field to ScheduledInterview.
-- `workers/api/src/durable-objects/VideoRoom.ts`: Updated to accept scheduledInterviewId, transcriptCallbackUrl, and internalSecret on init. Triggers transcript callback on session end (STATUS_UPDATE → ENDED).
-- `workers/api/src/routes/assessment/video.ts`: Added POST /api/v1/video/transcript-callback internal endpoint for DO→Worker transcript persistence. Updated POST /sessions to pass scheduledInterviewId and callback URL to VideoRoom DO.
-- `workers/api/src/routes/cockpit/scheduling.ts`: Updated GET /interviews to LEFT JOIN transcript_artifacts and include status/error_message in list view. Added GET /interviews/:id for full transcript details including transcript_json.
-- `workers/api/src/index.ts`: Mounted video router (internal callback) before videoAuth (authenticated routes) to ensure callback path doesn't require auth.
-- `src/components/Scheduling/TranscriptViewer.tsx` (new): Modal viewer for video call transcripts with status indicators (PENDING/COMPLETED/FAILED), speaker labels, timestamps, and actionable error messages for failed transcriptions.
-- `src/components/Scheduling/InterviewCard.tsx`: Added TRANSCRIPT button that appears when transcriptArtifact exists, with color-coded status indicator. Opens TranscriptViewer modal on click.
-- `workers/api/src/routes/cockpit/__tests__/scheduling.rest.test.ts`: Added transcript artifact model tests validating entry structure, status transitions, and graph association via scheduledInterviewId.
-
-### Added — Scheduling Tab Invite UI
-
-- `src/components/Scheduling/InviteCreationModal.tsx` (new): Modal component for creating direct video call and screening interview invites. Includes meeting type selection, recipient name/email inputs, optional scheduled time, and invite link generation with copy functionality.
-- `src/components/Scheduling/SchedulingDashboard.tsx`: Added primary action buttons (DIRECT CALL, SCREENING) that open the invite creation modal with pre-selected meeting type.
-- `src/hooks/useScheduledInterviews.ts`: Updated to include contact-first fields (meetingType, recipientName, recipientEmail) from builder's API changes.
-
-### Added — Recipient Video Call Microapp Route
-
-- `src/pages/RecipientInvitePage.tsx` (new): Public route (/invite/:id) for recipients to join video calls. Loads invite data via GET /api/v1/scheduling/invite/:id, implements basic profile/CV intake form (name, email, resume summary), and integrates VideoShell for video room functionality. Supports both DIRECT_VIDEO_CALL and SCREENING_INTERVIEW meeting types.
-- `src/pages/RecruiterVideoPage.tsx` (new): Protected route (/recruiter/video/:id) for recruiters to join contact-first video calls. Uses interview ID as stage/candidate ID for VideoShell signaling.
-- `src/App.tsx`: Added routes for RecipientInvitePage (public) and RecruiterVideoPage (protected). Imported and lazy-loaded both page components.
-- `src/components/Scheduling/InterviewCard.tsx`: Updated JOIN button to navigate to recruiter video page for contact-first interviews (detected by presence of recipientName/recipientEmail without candidateId). Added useNavigate hook for routing.
-
-### Fixed — TypeScript Compilation Errors in Scheduling Components
-
-- `src/components/Scheduling/InviteCreationModal.tsx`: Removed unused imports (Mail, Calendar), fixed scheduledAt optional property handling to comply with exactOptionalPropertyTypes by conditionally adding property only when present.
-- `src/components/Scheduling/SchedulingDashboard.tsx`: Removed unused Plus import.
-- `src/hooks/useScheduledInterviews.ts`: Fixed meetingType optional property handling to comply with exactOptionalPropertyTypes by using conditional assignment instead of spread operator.
-
-### Added — Contact-First Scheduling API
-
-- `workers/api/src/routes/cockpit/scheduling.ts`: POST /interviews now accepts recipientName/recipientEmail for contact-first invites without requiring candidateId/pipelineId/stageId. Added optional scheduledAt and cvProfile payload support. GET /invite/:id public route allows invite link resolution without recruiter auth. GET /interviews returns meeting_type, recipient_name, recipient_email fields. Added ACTIVE status to lifecycle (INVITED -> SCHEDULED -> ACTIVE -> COMPLETED/CANCELLED/NO_SHOW). Webhook matching updated to support both candidate_email and recipient_email. Email notifications handle contact-first recipients.
-- `workers/api/migrations/0075_contact_first_meetings.sql`: Updated CHECK constraint to include ACTIVE status.
-- `src/lib/scheduling/types.ts`: Added ACTIVE to InterviewStatus type.
-- `workers/api/src/routes/cockpit/__tests__/scheduling.rest.test.ts` (new): REST tests for invite creation without candidateId/pipelineId/stageId, validation schema tests, status transition tests, and meeting type classification tests.
-
-### Added — File-Based Transcription Storage
-
-- `workers/api/src/lib/transcriptionStorage.ts` (new): Module for file-based transcription storage in R2. Functions include `formatTranscriptionMarkdown()` (human-readable formatting), `storeTranscriptionFiles()` (writes transcription.md and metadata.json to R2), `getTranscriptionMarkdown()` (retrieves markdown), `getTranscriptionMetadata()` (retrieves JSON), and `transcriptionFilesExist()` (checks file existence).
-- `workers/api/src/routes/screening/phone.ts`: Updated to store transcription files in R2 after successful transcription via Workers AI Whisper. Added `GET /api/v1/phone/calls/:callId/transcription` endpoint to retrieve markdown transcription and `GET /api/v1/phone/calls/:callId/metadata` endpoint to retrieve JSON metadata. R2 path structure: `call-recordings/{callId}/transcription.md` and `call-recordings/{callId}/metadata.json`. File storage is fire-and-forget (doesn't fail transcription if R2 write fails).
-- This complements existing SQLite storage (phone_calls.transcription column) with durable, human-readable backup following CEO Studio's hybrid storage pattern adapted for PIPE-OS's cloud architecture.
+- `knowledge/docs/decisions/current/ADR-049-contacts-meetings-separation.md`: Architecture decision for separating meetings into its own Worker + SPA. Introduces `contacts`, `meetings`, `meeting_participants` tables. Domain: `meet.hire-pipe.com`.
+- `knowledge/docs/decisions/current/TASKS-meetings.md`: Phased implementation plan (5 phases, 30 tasks) — schema, Worker scaffold, SPA, video calls, transcription, scheduling bridge.
 
 ### Fixed — Deterministic Discovery Interview Questions
 

@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Video, RefreshCw, FileText } from 'lucide-react';
+import { Video, RefreshCw, Mail } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
-import { TranscriptViewer } from './TranscriptViewer';
+import { InviteToCallModal } from './InviteToCallModal';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -12,10 +11,10 @@ import type { InterviewStatus } from '../../lib/scheduling/types';
 // pre-fetches candidates and pipelines.
 interface InterviewCardProps {
   interview: ScheduledInterview;
-  candidateName: string | null;
+  candidateName: string;
   candidateEmail?: string | null;
-  pipelineTitle: string | null;
-  stageTitle: string | null;
+  pipelineTitle: string;
+  stageTitle: string;
   updateStatus: (
     id: string,
     patch: {
@@ -25,13 +24,17 @@ interface InterviewCardProps {
       recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
+  sendInvite: (id: string, email: string, message?: string) => Promise<void>;
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
 function isJoinable(interview: ScheduledInterview): boolean {
-  if (interview.status !== 'SCHEDULED') return false;
-  if (!interview.scheduledAt)            return false;
+  // Allow host to join for both INVITED and SCHEDULED statuses
+  if (interview.status !== 'SCHEDULED' && interview.status !== 'INVITED') return false;
+  // INVITED interviews are always joinable (manual/direct calls)
+  if (interview.status === 'INVITED') return true;
+  if (!interview.scheduledAt) return false;
   const diff = new Date(interview.scheduledAt).getTime() - Date.now();
   // Joinable within 15 minutes before or any time after the start
   return diff <= FIFTEEN_MINUTES_MS;
@@ -44,10 +47,10 @@ export function InterviewCard({
   pipelineTitle,
   stageTitle,
   updateStatus,
+  sendInvite,
 }: InterviewCardProps): JSX.Element {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const navigate = useNavigate();
-  const [isTranscriptOpen, setIsTranscriptOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
 
   const joinable = isJoinable(interview);
   const now = Date.now();
@@ -147,16 +150,35 @@ export function InterviewCard({
           )}
         </div>
 
-        {/* Right: JOIN button + transcript button + overflow menu */}
+        {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => setIsInviteOpen(true)}
+            title="Invite to video call via email"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 16px',
+              background: 'rgba(74,222,128,0.1)',
+              border: '1px solid rgba(74,222,128,0.25)',
+              color: '#4ade80',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer',
+              borderRadius: 4,
+              transition: 'all 0.2s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Mail size={12} />
+            INVITE
+          </button>
           <button
             disabled={!joinable}
             onClick={() => {
-              // For contact-first interviews (no candidate/pipeline), navigate to internal recruiter video page
-              if (interview.recipientName && interview.recipientEmail && !interview.candidateId) {
-                navigate(`/recruiter/video/${interview.id}`);
-              } else if (interview.meetingUrl) {
-                // For external provider meetings, open the meeting URL
+              if (interview.meetingUrl) {
                 window.open(interview.meetingUrl, '_blank', 'noopener,noreferrer');
               }
             }}
@@ -181,36 +203,6 @@ export function InterviewCard({
             <Video size={12} />
             JOIN
           </button>
-
-          {/* Transcript button */}
-          {interview.transcriptArtifact && (
-            <button
-              onClick={() => setIsTranscriptOpen(true)}
-              title="View transcript"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 12px',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid var(--pipe-border)',
-                color: interview.transcriptArtifact.status === 'COMPLETED'
-                  ? '#10b981'
-                  : interview.transcriptArtifact.status === 'FAILED'
-                  ? '#ef4444'
-                  : 'var(--pipe-text-dim)',
-                fontSize: 10,
-                letterSpacing: '0.1em',
-                fontFamily: '"Space Mono", monospace',
-                cursor: 'pointer',
-                borderRadius: 4,
-                transition: 'all 0.2s',
-              }}
-            >
-              <FileText size={12} />
-              TRANSCRIPT
-            </button>
-          )}
 
           {/* Edit / override status */}
           <button
@@ -245,12 +237,12 @@ export function InterviewCard({
           onClose={() => setIsModalOpen(false)}
         />
       )}
-
-      {isTranscriptOpen && (
-        <TranscriptViewer
-          interviewId={interview.id}
-          transcriptArtifact={interview.transcriptArtifact ?? null}
-          onClose={() => setIsTranscriptOpen(false)}
+      {isInviteOpen && (
+        <InviteToCallModal
+          interview={interview}
+          candidateEmail={candidateEmail}
+          onSend={sendInvite}
+          onClose={() => setIsInviteOpen(false)}
         />
       )}
     </>

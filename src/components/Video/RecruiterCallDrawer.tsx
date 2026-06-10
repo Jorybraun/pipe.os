@@ -144,7 +144,7 @@ function CallListView({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <User size={14} style={{ color: '#888' }} />
               <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {interview.recipientName ?? interview.recipientEmail ?? interview.candidateId?.slice(0, 8) ?? 'Unknown'}
+                {interview.candidateId.slice(0, 8)}...
               </span>
               <span
                 style={{
@@ -183,10 +183,38 @@ function CallDetailView({
   onCallStarted: () => void;
 }): React.ReactElement {
   const [candidatePresent, setCandidatePresent] = useState(false);
+  const [sessionInitialized, setSessionInitialized] = useState(false);
+
+  // Initialize the DO session on mount so the recruiter is registered as present
+  useEffect(() => {
+    let cancelled = false;
+    const initSession = async (): Promise<void> => {
+      try {
+        const clerkToken = await getClerkTokenForRoom();
+        await fetch(`${API_BASE}/api/v1/video/sessions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(clerkToken ? { Authorization: `Bearer ${clerkToken}` } : {}),
+          },
+          body: JSON.stringify({
+            stageId: interview.stageId ?? interview.id,
+            candidateId: interview.candidateId,
+          }),
+        });
+      } catch (err) {
+        console.error('[CallDetailView] Failed to init session:', err);
+      }
+      if (!cancelled) setSessionInitialized(true);
+    };
+    void initSession();
+    return () => { cancelled = true; };
+  }, [interview.stageId, interview.id, interview.candidateId]);
 
   // Poll DO /status to detect candidate presence
   useEffect(() => {
-    const sessionId = `${interview.stageId}--${interview.candidateId}`;
+    if (!sessionInitialized) return;
+    const sessionId = `${interview.stageId ?? interview.id}--${interview.candidateId}`;
     let cancelled = false;
 
     const checkPresence = async (): Promise<void> => {
@@ -207,7 +235,7 @@ function CallDetailView({
     void checkPresence();
     const interval = setInterval(() => void checkPresence(), 3000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [interview.stageId, interview.candidateId]);
+  }, [interview.stageId, interview.id, interview.candidateId, sessionInitialized]);
 
   return (
     <>
@@ -227,14 +255,14 @@ function CallDetailView({
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>CANDIDATE</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>
-            {interview.recipientName ?? interview.recipientEmail ?? interview.candidateId?.slice(0, 8) ?? 'Unknown'}
+            {interview.candidateName ?? interview.candidateId.slice(0, 8) + '...'}
           </div>
         </div>
         {interview.stageId && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
-            <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
-          </div>
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
+          <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
+        </div>
         )}
         {interview.scheduledAt && (
           <div style={{ marginBottom: 20 }}>
@@ -266,21 +294,21 @@ function CallDetailView({
             : 'Waiting for candidate to join...'}
         </div>
 
+        {/* Always allow the host to start the call — they can wait inside the room */}
         <button
-          onClick={candidatePresent ? onCallStarted : undefined}
-          disabled={!candidatePresent}
+          onClick={onCallStarted}
           style={{
             width: '100%', padding: '12px 0',
-            background: candidatePresent ? '#4ade80' : '#333',
-            color: candidatePresent ? '#0c0c0e' : '#666',
+            background: '#4ade80',
+            color: '#0c0c0e',
             border: 'none', borderRadius: 4,
             fontFamily: '"Space Mono", monospace',
             fontWeight: 700, fontSize: 13,
-            cursor: candidatePresent ? 'pointer' : 'not-allowed',
+            cursor: 'pointer',
             letterSpacing: '0.5px',
           }}
         >
-          {candidatePresent ? 'START CALL' : 'WAITING FOR CANDIDATE...'}
+          {candidatePresent ? 'START CALL' : 'JOIN AS HOST'}
         </button>
       </div>
     </>
@@ -301,7 +329,7 @@ function ActiveCallView({
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   // Defer WS connect until after DO /init completes to avoid stale state
-  const computedSessionId = `${interview.stageId}--${interview.candidateId}`;
+  const computedSessionId = `${interview.stageId ?? interview.id}--${interview.candidateId}`;
   const [sessionReady, setSessionReady] = useState(false);
 
   const room = useVideoRoom({
@@ -323,7 +351,7 @@ function ActiveCallView({
             'Content-Type': 'application/json',
             ...(clerkToken ? { Authorization: `Bearer ${clerkToken}` } : {}),
           },
-          body: JSON.stringify({ stageId: interview.stageId, candidateId: interview.candidateId }),
+          body: JSON.stringify({ stageId: interview.stageId ?? interview.id, candidateId: interview.candidateId }),
         });
       } catch (err) {
         console.error('[ActiveCallView] Failed to create session:', err);

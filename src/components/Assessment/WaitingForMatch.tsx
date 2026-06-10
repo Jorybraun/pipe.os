@@ -10,7 +10,6 @@ interface WaitingForMatchProps {
   config: {
     autoRefresh?: boolean;
     refreshIntervalSeconds?: number;
-    estimatedSecondsRemaining?: number;
   };
   onRefresh: () => void;
   sessionToken?: string | null;
@@ -39,19 +38,11 @@ export function WaitingForMatch({
   sessionToken,
 }: WaitingForMatchProps): JSX.Element {
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
-  const estimatedSeconds = config.estimatedSecondsRemaining ?? 180;
 
-  const [elapsed, setElapsed] = useState(0);
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
-
-  // Count-up timer
-  useEffect(() => {
-    const t = setInterval(() => setElapsed((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   // Animated ellipsis
   useEffect(() => {
@@ -78,11 +69,6 @@ export function WaitingForMatch({
     setProfileLoading(false);
     setShowProfile(true);
   };
-
-  const progressPercent = Math.min((elapsed / estimatedSeconds) * 100, 95);
-  const remaining = Math.max(estimatedSeconds - elapsed, 0);
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
 
   if (showProfile && profile) {
     return (
@@ -168,28 +154,6 @@ export function WaitingForMatch({
           {instructions}
         </p>
 
-        {/* Progress bar */}
-        <div
-          style={{
-            width: '100%',
-            height: 4,
-            background: 'rgba(255,255,255,0.06)',
-            borderRadius: 2,
-            overflow: 'hidden',
-            marginBottom: 16,
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              width: `${progressPercent}%`,
-              background: 'linear-gradient(90deg, #60a5fa, #a78bfa)',
-              borderRadius: 2,
-              transition: 'width 1s linear',
-            }}
-          />
-        </div>
-
         <div
           style={{
             display: 'flex',
@@ -212,9 +176,7 @@ export function WaitingForMatch({
               letterSpacing: '0.05em',
             }}
           >
-            {elapsed < estimatedSeconds
-              ? `ESTIMATED ${minutes}:${seconds.toString().padStart(2, '0')} REMAINING${dots}`
-              : `FINALIZING${dots}`}
+            {`MATCHING IN PROGRESS${dots}`}
           </span>
         </div>
 

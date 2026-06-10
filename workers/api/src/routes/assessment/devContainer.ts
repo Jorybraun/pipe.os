@@ -68,6 +68,10 @@ devContainer.post('/launch', async (c) => {
   const candidateId = c.get('candidateId');
   const pipelineId = c.get('pipelineId');
 
+  if (!pipelineId) {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'Dev container requires a pipeline assignment.' } }, 400);
+  }
+
   let body: LaunchRequestBody;
   try {
     body = (await c.req.json()) as LaunchRequestBody;

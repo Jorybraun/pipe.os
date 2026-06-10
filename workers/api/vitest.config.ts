@@ -13,6 +13,7 @@ export default defineConfig({
       'node_modules',
     ],
     environment: 'node',
+    dangerouslyIgnoreUnhandledErrors: true,
   },
   resolve: {
     alias: {

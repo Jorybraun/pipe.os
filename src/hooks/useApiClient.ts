@@ -25,7 +25,7 @@ export function useApiClient(): ApiClient {
 
   return useMemo(
     () => createApiClient({ getToken }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     [getToken],
   );
 }

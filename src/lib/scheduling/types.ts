@@ -1,52 +1,24 @@
-export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 
 /** Sync source for status updates — manual (recruiter) or automated (webhook) */
 export type SyncSource = 'MANUAL' | 'WEBHOOK';
 
-/** Meeting type — distinguishes contact-first from pipeline-integrated meetings */
-export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
-
-/** Transcript artifact status — tracks transcription lifecycle */
-export type TranscriptStatus = 'PENDING' | 'COMPLETED' | 'FAILED';
-
-/**
- * Transcript entry — single utterance with speaker and optional timestamp
- */
-export interface TranscriptEntry {
-  role: 'user' | 'model';
-  text: string;
-  timestamp?: string;
-}
-
-/**
- * Transcript artifact — persisted video call transcript
- */
-export interface TranscriptArtifact {
-  id: string;
-  scheduledInterviewId: string;
-  status: TranscriptStatus;
-  transcriptJson: string | null;  // JSON string of TranscriptEntry[]
-  errorMessage: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 /**
  * ScheduledInterview — local TypeScript interface.
  * Matches the D1 schema (see workers/api/migrations/).
- * 
- * Contact-first model: candidateId, pipelineId, and stageId are optional.
- * For direct video calls, use recipientName and recipientEmail instead.
  */
+export type InterviewType = 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW';
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
-  candidateId?: string | null;
+  candidateId: string;
   pipelineId?: string | null;
   stageId?: string | null;
+  interviewType?: InterviewType | null;
   status?: InterviewStatus | null;
   scheduledAt?: string | null;
   meetingUrl?: string | null;
@@ -58,17 +30,12 @@ export interface ScheduledInterview {
   lastSyncedAt?: string | null;
   inviteLinkSentAt?: string | null;
   emailSentAt?: string | null;
-  meetingType?: MeetingType | null;
-  recipientName?: string | null;
-  recipientEmail?: string | null;
   owner?: string | null;
   // Enriched fields (from JOIN with candidates, pipelines, stages)
   candidateName?: string | null;
   candidateEmail?: string | null;
   pipelineTitle?: string | null;
   stageTitle?: string | null;
-  // Transcript artifact enrichment
-  transcriptArtifact?: TranscriptArtifact | null;
 }
 
 /**

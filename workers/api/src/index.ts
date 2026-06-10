@@ -12,12 +12,12 @@ import { agentRoutes } from './routes/cockpit/agent';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
-import { contacts } from './routes/cockpit/contacts';
 import { devContainerSessions } from './routes/cockpit/devContainerSessions';
 import { ingestion } from './routes/cockpit/ingestion';
 import { ingestionStatus } from './routes/cockpit/ingestionStatus';
 import { search } from './routes/search';
 import { schedulingAuth, schedulingPublic } from './routes/cockpit/scheduling';
+import { contacts } from './routes/cockpit/contacts';
 // Discovery — Role Discovery Agent
 import { roleContexts } from './routes/discovery/roleContexts';
 // Outreach — invites + result emails + email OAuth
@@ -27,7 +27,7 @@ import { emailOAuth } from './routes/outreach/emailOAuth';
 import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
-import { video, videoAuth, videoCandidate } from './routes/assessment/video';
+import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -65,18 +65,12 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
-        // Production marketing domain
-        'https://hire-pipe.com',
-        'https://www.hire-pipe.com',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,
-        // Marketing site on Cloudflare Pages (apex + preview deploys)
-        /https:\/\/([a-z0-9-]+\.)?pipe-marketing\.pages\.dev$/,
         // Marketing site (deployed via Devin / static host)
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
         'http://localhost:5173',
-        'http://localhost:5174',
         'http://localhost:4173',
         'http://localhost:8080',
       ];
@@ -96,11 +90,6 @@ app.use(
 );
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
-// Waitlist: public email signup from marketing site (NO auth).
-// Must be mounted before the broad `/api/v1` mounts below (e.g. devContainerSessions),
-// whose `.use('*', authMiddleware)` would otherwise intercept `/api/v1/waitlist` and 401.
-app.route('/api/v1/waitlist', waitlist);
-
 app.route('/api/v1/pipelines', pipelines);
 // ADR-039 wizard handoff: POST /api/v1/pipelines/auto-build
 app.route('/api/v1/pipelines', pipelinesAutoBuild);
@@ -128,8 +117,6 @@ app.route('/api/v1/pipelines', overview);
 app.route('/api/v1/pipelines', pipelineCandidates);
 // Candidate ops: GET/PATCH /api/v1/candidates/:candidateId
 app.route('/api/v1/candidates', candidateOps);
-// Contacts: unified address book (leads, candidates, customers)
-app.route('/api/v1/contacts', contacts);
 // Ingestion: GET/POST /api/v1/pipelines/:pipelineId/ingestion
 app.route('/api/v1/pipelines', ingestion);
 // Ingestion status: SSE stream for a single candidate's ingestion progress
@@ -146,18 +133,19 @@ app.route('/api/v1/email', emailOAuth);
 app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)
 app.route('/api/v1/scheduling', schedulingAuth);
+app.route('/api/v1/contacts', contacts);
 // Culture interview: recruiter config + report + HITL review
 app.route('/api/v1/screening/culture', cultureRecruiter);
 // Phone: Twilio webhooks (public, signature validation)
 app.route('/api/v1/phone', phonePublic);
 // Phone: token generation, call CRUD (authenticated)
 app.route('/api/v1/phone', phoneAuth);
-// Video: transcript callback (internal, no auth) — must mount before auth routes
-app.route('/api/v1/video', video);
 // Video: session creation, TURN credentials (recruiter auth)
 app.route('/api/v1/video', videoAuth);
 // Video: candidate WebSocket connection (candidate JWT auth)
 app.route('/rpc/video', videoCandidate);
+// Video: public WebSocket connection (candidate via invite link, no auth)
+app.route('/api/v1/video/public', videoPublic);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
@@ -178,6 +166,9 @@ app.route('/api/v1/tts', ttsRouter);
 // RPC: Candidate-facing routes (custom JWT auth, no Clerk)
 app.route('/rpc', rpcPublic);
 app.route('/rpc', rpcAuth);
+
+// Waitlist: public email signup from marketing site (no auth)
+app.route('/api/v1/waitlist', waitlist);
 
 // Internal: scorer calibration endpoint (shared-secret auth via X-Calibrate-Token;
 // disabled entirely when CALIBRATE_TOKEN is unset in env)

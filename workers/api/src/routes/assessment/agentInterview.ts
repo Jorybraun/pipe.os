@@ -21,6 +21,8 @@ import {
   advanceCultureInterview,
 } from '../../lib/cultureAgent';
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
+import { buildCultureInterviewContext } from '../../lib/cultureAgentContext';
+import type { GenerativePlannerContext } from '../../lib/cultureGenerativePlanner';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { createCultureAgentProvider } from '../../lib/llm/createProvider';
 import { withCultureMetering } from '../../lib/llm/meteredProvider';
@@ -490,6 +492,24 @@ async function doRespond(
   const mode = session.screener_mode ?? transcript.scratchpad.mode ?? 'role_fit';
   const useStaticFallback = ctx.env.USE_STATIC_QUESTION_BANK === 'true';
 
+  // Build planner context for generative questioning (ADR-029 v2). Skipped
+  // when the static-bank env flag is set or when there is no LLM provider.
+  let generativeContext: GenerativePlannerContext | null = null;
+  if (!useStaticFallback && provider !== null) {
+    try {
+      generativeContext = await buildCultureInterviewContext({
+        db,
+        candidateId: session.candidate_id,
+        assessmentId: session.assessment_id,
+        mode,
+        transcript,
+        teamContext: roleContext.teamContext,
+      });
+    } catch (err) {
+      console.warn('[agentInterview] Failed to build generative context — falling back to static bank:', err);
+    }
+  }
+
   const result = await advanceCultureInterview({
     provider,
     transcript,
@@ -499,6 +519,7 @@ async function doRespond(
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
+    generativeContext,
   });
 
   // Attach video R2 key to the most recent answered turn

@@ -16,6 +16,7 @@ interface UseScheduledInterviewsResult {
       recruiterNotes?: string | undefined;
     }
   ) => Promise<void>;
+  sendInvite: (id: string, email: string, message?: string) => Promise<void>;
   refetch: () => Promise<void>;
 }
 
@@ -35,9 +36,10 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       const result = await api.get<{
         interviews: Array<{
           id: string;
-          candidateId: string | null;
+          candidateId: string;
           pipelineId: string | null;
           stageId: string | null;
+          interviewType: string | null;
           status: InterviewStatus;
           scheduledAt: string | null;
           meetingUrl: string | null;
@@ -48,9 +50,6 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           lastSyncedAt: string | null;
           createdAt: string;
           updatedAt: string;
-          meetingType: string | null;
-          recipientName: string | null;
-          recipientEmail: string | null;
           candidateName: string | null;
           candidateEmail: string | null;
           pipelineTitle: string | null;
@@ -66,6 +65,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           candidateId: r.candidateId,
           pipelineId: r.pipelineId,
           stageId: r.stageId,
+          interviewType: (r.interviewType as ScheduledInterview['interviewType']) ?? null,
           status: r.status,
           scheduledAt: r.scheduledAt,
           meetingUrl: r.meetingUrl,
@@ -74,14 +74,11 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           recruiterNotes: r.recruiterNotes,
           syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
           lastSyncedAt: r.lastSyncedAt,
-          meetingType: (r.meetingType as ScheduledInterview['meetingType']) ?? null,
-          recipientName: r.recipientName,
-          recipientEmail: r.recipientEmail,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
           pipelineTitle: r.pipelineTitle,
           stageTitle: r.stageTitle,
-        }))
+        })),
       );
     } catch (err) {
       console.error('[useScheduledInterviews] fetch error:', err);
@@ -130,5 +127,21 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     [api, fetchInterviews],
   );
 
-  return { interviews, isLoading, error, updateStatus, refetch: fetchInterviews };
+  const sendInvite = useCallback(
+    async (id: string, email: string, message?: string): Promise<void> => {
+      try {
+        await api.post(`/api/v1/scheduling/interviews/${id}/invite`, {
+          email,
+          ...(message ? { message } : {}),
+        });
+        await fetchInterviews();
+      } catch (err) {
+        console.error('[useScheduledInterviews] sendInvite failed:', err);
+        throw err instanceof Error ? err : new Error('Failed to send invite');
+      }
+    },
+    [api, fetchInterviews],
+  );
+
+  return { interviews, isLoading, error, updateStatus, sendInvite, refetch: fetchInterviews };
 }

@@ -109,7 +109,7 @@ export function useTTS(enabled: boolean): UseTTSResult {
       processQueue();
     }
   // Reads mutable refs only — no deps required.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   const speak = useCallback((text: string): void => {

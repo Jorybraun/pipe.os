@@ -46,10 +46,7 @@ describe('retryWithBackoff', () => {
 
     const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onCircuitOpen });
 
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(2000);
-    await vi.advanceTimersByTimeAsync(4000);
-    await vi.advanceTimersByTimeAsync(8000);
+    await vi.runAllTimersAsync();
 
     await expect(promise).rejects.toThrow('persistent failure');
     expect(fn).toHaveBeenCalledTimes(4);
@@ -64,15 +61,13 @@ describe('retryWithBackoff', () => {
     // Fix Math.random to a known value so jitter is deterministic
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
-    retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+    const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
 
-    await vi.advanceTimersByTimeAsync(0); // attempt 0 fails, delay = 1000 * 1 * (0.5 + 0.5*0.5) = 1000 * 0.75 = 750
+    await vi.runAllTimersAsync();
+    await expect(promise).rejects.toThrow('fail');
+
     expect(onRetry).toHaveBeenNthCalledWith(1, 1, 750);
-
-    await vi.advanceTimersByTimeAsync(750); // attempt 1 fails, delay = 1000 * 2 * 0.75 = 1500
     expect(onRetry).toHaveBeenNthCalledWith(2, 2, 1500);
-
-    await vi.advanceTimersByTimeAsync(1500); // attempt 2 fails, delay = 1000 * 4 * 0.75 = 3000
     expect(onRetry).toHaveBeenNthCalledWith(3, 3, 3000);
 
     randomSpy.mockRestore();
@@ -86,12 +81,10 @@ describe('retryWithBackoff', () => {
       delays.push(delay);
     };
 
-    retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+    const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
 
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(5000);
-    await vi.advanceTimersByTimeAsync(5000);
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.runAllTimersAsync();
+    await expect(promise).rejects.toThrow('fail');
 
     // Nominal delays for attempts 0,1,2 are 1000, 2000, 4000
     expect(delays[0]).toBeGreaterThanOrEqual(500);

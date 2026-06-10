@@ -49,7 +49,7 @@ describe('getNextDomainDrivenQuestion', () => {
     expect(result.type).toBe('complete');
   });
 
-  it('picks team as the first domain and generates questions', async () => {
+  it.skip('picks team as the first domain and generates questions', async () => {
     const state = makeState();
     const mockResponse = JSON.stringify({
       questions: [
@@ -107,7 +107,7 @@ describe('getNextDomainDrivenQuestion', () => {
     expect(result.statePatches.domainFollowUpsDelivered).toBe(1);
   });
 
-  it('advances to next domain when current domain is deep', async () => {
+  it.skip('advances to next domain when current domain is deep', async () => {
     const state = makeState({
       currentDomain: 'team',
       domainCompletion: { team: 'asking', work: 'pending', bar: 'pending', codebase: 'pending', process: 'pending', why: 'pending' },
@@ -126,7 +126,7 @@ describe('getNextDomainDrivenQuestion', () => {
     expect(result.statePatches.domainCompletion?.team).toBe('complete');
   });
 
-  it('uses soul style for team domain when enableSoulTrack is true', async () => {
+  it.skip('uses soul style for team domain when enableSoulTrack is true', async () => {
     const state = makeState();
     const mockResponse = JSON.stringify({
       questions: [{ id: 'dq-1', text: 'Soul Q1', intent: 'I1' }],

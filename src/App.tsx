@@ -33,11 +33,10 @@ const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
-const RecipientInvitePage = lazy(() => import("./pages/RecipientInvitePage"));
-const RecruiterVideoPage = lazy(() => import("./pages/RecruiterVideoPage"));
+const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
+const ContactsPage = lazy(() => import("./pages/ContactsPage"));
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
-const ContactsPage = lazy(() => import("./pages/ContactsPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
 const CandidateReportPrototype = lazy(() => import("./pages/CandidateReportPrototype"));
 const RepoAdminPage = lazy(() => import("./pages/admin/RepoAdminPage"));
@@ -291,12 +290,6 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/admin/ai-usage");
           }}
-          onContactsClick={() => {
-            setActiveSection("contacts");
-            setShowSettings(false);
-            setShowCalls(false);
-            navigate("/contacts");
-          }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
             ? {
                 onAgentClick: () => {
@@ -401,14 +394,14 @@ function App(): JSX.Element {
           }
         />
 
-        {/* Public Recipient Invite Route */}
+        {/* Public Video Join Route — candidate joins via invite email link */}
         <Route
-          path="/invite/:id"
+          path="/video/:sessionId"
           element={
             <ThemeProvider forceMode="dark">
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
-                  <RecipientInvitePage />
+                  <VideoJoinPage />
                 </Suspense>
               </ErrorBoundary>
             </ThemeProvider>
@@ -455,9 +448,7 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
-                    {FEATURE_FLAGS.FEATURE_FLAG_ROLE_DISCOVERY && (
-                      <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
-                    )}
+                    <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
                     <Route
                       path="/candidates/:id"
                       element={<CandidateProfilePage />}
@@ -469,7 +460,6 @@ function App(): JSX.Element {
                     {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
                       <Route path="/schedule" element={<SchedulingPage />} />
                     )}
-                    <Route path="/recruiter/video/:id" element={<RecruiterVideoPage />} />
                     <Route path="/outreach" element={<OutreachPage />} />
                     <Route path="/contacts" element={<ContactsPage />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (

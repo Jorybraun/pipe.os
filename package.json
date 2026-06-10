@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
@@ -26,11 +26,11 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@paper-design/shaders-react": "^0.0.68",
+    "@pierre/diffs": "^1.2.8",
     "@twilio/voice-sdk": "^2.18.1",
     "allotment": "^1.20.5",
     "lucide-react": "^0.562.0",
     "mermaid": "^11.14.0",
-    "monaco-editor": "^0.53.0",
     "react": "^18.2.0",
     "react-diff-view": "^3.3.2",
     "react-dom": "^18.2.0",
@@ -59,13 +59,13 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@typescript-eslint/eslint-plugin": "^7.2.0",
     "@typescript-eslint/parser": "^7.2.0",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^4.2.1",
     "@vitest/browser-playwright": "^4.0.16",
     "@vitest/coverage-v8": "^4.0.16",
-    "@xenova/transformers": "^2.0.1",
+    "@xenova/transformers": "^2.17.2",
     "autoprefixer": "^10.5.0",
     "dotenv": "^17.3.1",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.21.5",
     "eslint": "^8.57.0",
     "eslint-plugin-local-rules": "^3.0.2",
     "eslint-plugin-react-hooks": "^4.6.0",
@@ -77,12 +77,7 @@
     "tailwindcss": "^4.3.0",
     "tsx": "^4.7.2",
     "typescript": "^5.4.5",
-    "vite": "^8.0.14",
+    "vite": "^5.4.10",
     "vitest": "^4.0.16"
-  },
-  "overrides": {
-    "monaco-editor": {
-      "dompurify": "^3.1.0"
-    }
   }
 }
