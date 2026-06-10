@@ -30,8 +30,11 @@ interface InterviewCardProps {
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
 function isJoinable(interview: ScheduledInterview): boolean {
-  if (interview.status !== 'SCHEDULED') return false;
-  if (!interview.scheduledAt)            return false;
+  // Allow host to join for both INVITED and SCHEDULED statuses
+  if (interview.status !== 'SCHEDULED' && interview.status !== 'INVITED') return false;
+  // INVITED interviews are always joinable (manual/direct calls)
+  if (interview.status === 'INVITED') return true;
+  if (!interview.scheduledAt) return false;
   const diff = new Date(interview.scheduledAt).getTime() - Date.now();
   // Joinable within 15 minutes before or any time after the start
   return diff <= FIFTEEN_MINUTES_MS;

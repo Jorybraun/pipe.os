@@ -100,7 +100,11 @@ export function useVideoRoom({
     // Both roles need token in query param — WebSocket upgrades can't carry headers
     const buildWsPath = async (): Promise<string> => {
       if (role === 'CANDIDATE') {
-        return `${WS_BASE}/rpc/video/sessions/${sessionId}/ws${sessionToken ? `?token=${sessionToken}` : ''}`;
+        // Use authenticated route when we have a session token, public route otherwise
+        if (sessionToken) {
+          return `${WS_BASE}/rpc/video/sessions/${sessionId}/ws?token=${sessionToken}`;
+        }
+        return `${WS_BASE}/api/v1/video/public/sessions/${sessionId}/ws`;
       }
       // Recruiter: get Clerk token
       let clerkToken: string | null = null;

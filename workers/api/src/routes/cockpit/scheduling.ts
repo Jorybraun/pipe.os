@@ -546,7 +546,9 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     .first<{ id: string; access_token: string; provider_id: string; token_expiry: string | null; refresh_token: string | null }>();
 
   if (!conn) {
-    return apiError(c, 'NOT_FOUND', 'No active Calendly connection.');
+    // No scheduling provider connected — return empty sync result instead of 404.
+    // The frontend calls this as a best-effort background sync.
+    return c.json({ synced: 0, message: 'No active scheduling connection.' });
   }
 
   // Refresh token if expired

@@ -33,6 +33,7 @@ const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
+const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
@@ -386,6 +387,20 @@ function App(): JSX.Element {
               <ErrorBoundary>
                 <Suspense fallback={<PageLoader />}>
                   <CultureInterviewPage />
+                </Suspense>
+              </ErrorBoundary>
+            </ThemeProvider>
+          }
+        />
+
+        {/* Public Video Join Route — candidate joins via invite email link */}
+        <Route
+          path="/video/:sessionId"
+          element={
+            <ThemeProvider forceMode="dark">
+              <ErrorBoundary>
+                <Suspense fallback={<PageLoader />}>
+                  <VideoJoinPage />
                 </Suspense>
               </ErrorBoundary>
             </ThemeProvider>
