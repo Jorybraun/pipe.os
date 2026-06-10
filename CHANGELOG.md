@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Meetings Worker & Schema (Phase 1, ADR-049)
+
+- `workers/meetings/`: New Cloudflare Worker (`pipe-meetings`) for contacts and meetings — separate deployable from the main API Worker, sharing the same D1 database.
+- `workers/meetings/src/routes/contacts.ts`: Full CRUD for contacts (`POST/GET/GET:id/PATCH/DELETE /api/v1/contacts`) with search, type filtering, and pagination. Contacts have type (PROSPECT, CANDIDATE, HIRING_MANAGER, RECRUITER, OTHER), optional `candidate_id` FK, and JSON tags.
+- `workers/meetings/src/routes/meetings.ts`: Full CRUD for meetings (`POST/GET/GET:id/PATCH /api/v1/meetings`) with status/type filtering and participant management (`POST/DELETE /api/v1/meetings/:id/participants`). Meetings track lifecycle (SCHEDULED→IN_PROGRESS→COMPLETED), type (DISCOVERY, INTERVIEW, FOLLOW_UP, DEMO, OTHER), and transcription status.
+- `workers/api/migrations/0075_contacts.sql`: D1 migration for `contacts` table.
+- `workers/api/migrations/0076_meetings.sql`: D1 migration for `meetings` table with transcript and recording fields.
+- `workers/api/migrations/0077_meeting_participants.sql`: D1 migration for `meeting_participants` join table with unique constraint on (meeting_id, contact_id).
+- Clerk JWT auth middleware for the meetings Worker (mirrors `workers/api/src/middleware/auth.ts`).
+- CORS configured for `meet.hire-pipe.com`, `pipe.build`, and local dev origins.
+
 ### Added — Contacts & Meetings Architecture (ADR-049)
 
 - `knowledge/docs/decisions/current/ADR-049-contacts-meetings-separation.md`: Architecture decision for separating meetings into its own Worker + SPA. Introduces `contacts`, `meetings`, `meeting_participants` tables. Domain: `meet.hire-pipe.com`.
