@@ -67,19 +67,11 @@ export function DiffReviewCanvas({
     }
   }, [currentSnippet]);
 
-  if (!currentSnippet || !diff) {
-    return (
-      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
-        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
-          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
-        </div>
-      </LiquidMetalCard>
-    );
-  }
+  const snippetId = currentSnippet?.id ?? '';
 
   const handleLineClick = useCallback((line: number) => {
-    setActiveLine({ snippetId: currentSnippet.id, line });
-    const existing = (annotations[currentSnippet.id] || []).find(a => a.line === line);
+    setActiveLine({ snippetId, line });
+    const existing = (annotations[snippetId] || []).find(a => a.line === line);
     if (existing) {
       setComment(existing.comment);
       setSeverity(existing.severity);
@@ -87,11 +79,11 @@ export function DiffReviewCanvas({
       setComment('');
       setSeverity('major');
     }
-  }, [annotations, currentSnippet.id]);
+  }, [annotations, snippetId]);
 
   const saveAnnotation = useCallback(() => {
     if (!activeLine) return;
-    const snippetAnnotations = annotations[currentSnippet.id] || [];
+    const snippetAnnotations = annotations[snippetId] || [];
     const otherAnnotations = snippetAnnotations.filter(a => a.line !== activeLine.line);
     
     let newSnippetAnnotations;
@@ -104,11 +96,11 @@ export function DiffReviewCanvas({
       ];
     }
 
-    const newAnnotations = { ...annotations, [currentSnippet.id]: newSnippetAnnotations };
+    const newAnnotations = { ...annotations, [snippetId]: newSnippetAnnotations };
     setAnnotations(newAnnotations);
     onAnnotationsChange(newAnnotations);
     setActiveLine(null);
-  }, [activeLine, annotations, comment, currentSnippet.id, onAnnotationsChange, severity]);
+  }, [activeLine, annotations, comment, snippetId, onAnnotationsChange, severity]);
 
   const handleNext = useCallback(() => {
     if (currentSnippetIndex < snippets.length - 1) {
@@ -126,7 +118,7 @@ export function DiffReviewCanvas({
 
   // Create widgets array for react-diff-view
   const widgets = useMemo(() => {
-    const currentSnippetAnnotations = annotations[currentSnippet.id] || [];
+    const currentSnippetAnnotations = annotations[snippetId] || [];
     const widgetList: Record<string, JSX.Element> = {};
 
     currentSnippetAnnotations.forEach(a => {
@@ -162,7 +154,7 @@ export function DiffReviewCanvas({
       );
     });
 
-    if (activeLine && activeLine.snippetId === currentSnippet.id) {
+    if (activeLine && activeLine.snippetId === snippetId) {
       widgetList[`+${activeLine.line}`] = (
         <div key="editor" style={{
           padding: 24,
@@ -243,7 +235,17 @@ export function DiffReviewCanvas({
     }
 
     return widgetList;
-  }, [annotations, currentSnippet.id, activeLine, comment, severity, handleLineClick, saveAnnotation]);
+  }, [annotations, snippetId, activeLine, comment, severity, handleLineClick, saveAnnotation]);
+
+  if (!currentSnippet || !diff) {
+    return (
+      <LiquidMetalCard variant="dark" style={{ padding: 40, textAlign: 'center' }}>
+        <div style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12 }}>
+          NO_SNIPPETS_AVAILABLE_FOR_REVIEW
+        </div>
+      </LiquidMetalCard>
+    );
+  }
 
   return (
     <div className="diff-review-container">

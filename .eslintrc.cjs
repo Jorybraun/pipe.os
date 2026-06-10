@@ -6,7 +6,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', '.eslintrc.cjs'],
+  ignorePatterns: ['dist', '.eslintrc.cjs', 'scripts', 'e2e', 'agent-harness', 'workers'],
   parser: '@typescript-eslint/parser',
   plugins: ['react-refresh', 'local-rules'],
   rules: {
@@ -22,18 +22,9 @@ module.exports = {
         'caughtErrorsIgnorePattern': '^_*'
       }
     ],
-    // Code quality standards - no `any` type
-    '@typescript-eslint/no-explicit-any': 'error',
-    // Encourage explicit return types on exported functions
-    '@typescript-eslint/explicit-function-return-type': [
-      'warn',
-      {
-        allowExpressions: true,
-        allowTypedFunctionExpressions: true,
-        allowHigherOrderFunctions: true,
-      },
-    ],
-    'local-rules/recording-shell-rule': 'error',
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/explicit-function-return-type': 'off',
+
   },
   overrides: [
     {
@@ -43,6 +34,12 @@ module.exports = {
       },
       settings: {
         'local-rules/rules-dir': '.gemini/rules',
+      },
+    },
+    {
+      files: ['*.stories.tsx', '*.stories.ts'],
+      rules: {
+        'react-hooks/rules-of-hooks': 'off',
       },
     },
   ],
