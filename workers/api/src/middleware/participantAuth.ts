@@ -55,9 +55,9 @@ export const participantAuth = createMiddleware<{
     return;
   }
 
-  // sub = participantId, pid = roleContextId
+  // sub = participantId, pid = roleContextId (always non-null for participants)
   c.set('participantId', payload.sub);
-  c.set('roleContextId', payload.pid);
+  c.set('roleContextId', payload.pid ?? '');
 
   await next();
 });

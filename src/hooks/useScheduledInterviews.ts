@@ -36,8 +36,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
         interviews: Array<{
           id: string;
           candidateId: string;
-          pipelineId: string;
-          stageId: string;
+          pipelineId: string | null;
+          stageId: string | null;
+          interviewType: string | null;
           status: InterviewStatus;
           scheduledAt: string | null;
           meetingUrl: string | null;
@@ -63,6 +64,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           candidateId: r.candidateId,
           pipelineId: r.pipelineId,
           stageId: r.stageId,
+          interviewType: (r.interviewType as ScheduledInterview['interviewType']) ?? null,
           status: r.status,
           scheduledAt: r.scheduledAt,
           meetingUrl: r.meetingUrl,

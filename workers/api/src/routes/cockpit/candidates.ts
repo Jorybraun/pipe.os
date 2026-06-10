@@ -279,6 +279,124 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
 const candidateOps = new Hono<{ Bindings: Env; Variables: Variables }>();
 candidateOps.use('*', authMiddleware);
 
+// ─── Standalone candidate creation (no pipeline required) ────────────────────
+
+const createStandaloneCandidateSchema = z.object({
+  name: z.string().min(1, 'name is required').max(200),
+  email: z.string().email('valid email required'),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
+  scheduledAt: z.string().optional(),
+  message: z.string().max(2000).optional(),
+  skipEmail: z.boolean().optional(),
+});
+
+// POST / — create a standalone candidate (talent pool, no pipeline)
+candidateOps.post('/', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json();
+  const parsed = createStandaloneCandidateSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
+  }
+
+  let { name, email, interviewType, scheduledAt, message: customMessage, skipEmail } = parsed.data;
+  try {
+    name = sanitizeCandidateName(name);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg === 'FORBIDDEN_PATTERN') {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'Name contains forbidden pattern' } }, 400);
+    }
+    return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
+  }
+
+  // Duplicate-email guard scoped to owner (no pipeline scope)
+  const existing = await db
+    .prepare('SELECT id FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
+    .bind(userId, email)
+    .first<{ id: string }>();
+  if (existing) {
+    return apiError(c, 'CONFLICT', 'Candidate with this email already exists in your talent pool');
+  }
+
+  const id = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
+         VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`
+      )
+      .bind(id, userId, name, email, inviteToken, now, now)
+      .run();
+
+    // Ensure ingestion tracking row exists
+    await db
+      .prepare(
+        `INSERT INTO candidate_ingestion (candidate_id, status, created_at, updated_at)
+         VALUES (?1, 'pending', ?2, ?2)
+         ON CONFLICT(candidate_id) DO NOTHING`
+      )
+      .bind(id, now)
+      .run();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('UNIQUE constraint failed')) {
+      return apiError(c, 'CONFLICT', 'Candidate with this email already exists');
+    }
+    throw err;
+  }
+
+  // Create scheduled_interviews row if interview type specified
+  if (interviewType) {
+    const interviewId = crypto.randomUUID();
+    await db
+      .prepare(
+        `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, interview_type, status, scheduled_at, created_at, updated_at)
+         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?)`
+      )
+      .bind(interviewId, id, userId, interviewType, scheduledAt ?? null, now, now)
+      .run();
+  }
+
+  // Fire-and-forget invitation email
+  if (c.env.RESEND_API_KEY && !skipEmail) {
+    const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+    const assessUrl = `${baseUrl}/assess/${inviteToken}`;
+
+    c.executionCtx.waitUntil(
+      sendNotificationEmail({
+        apiKey: c.env.RESEND_API_KEY,
+        trigger: 'INVITATION',
+        to: email,
+        variables: {
+          name,
+          email,
+          assessUrl,
+          ...(customMessage ? { customMessage } : {}),
+        },
+        stageTemplatesJson: null,
+      }),
+    );
+  }
+
+  return c.json({
+    candidate: {
+      id,
+      name,
+      email,
+      inviteToken,
+      status: 'INVITED',
+      interviewType: interviewType ?? null,
+      pipelineId: null,
+    },
+  }, 201);
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;

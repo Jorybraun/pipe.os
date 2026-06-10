@@ -15,11 +15,13 @@ export type EmailTrigger = 'INVITATION' | 'SCHEDULED' | 'SUCCESS' | 'FAILURE';
 export interface EmailVariables {
   name: string;
   email: string;
-  pipelineName: string;
+  pipelineName?: string;
   stageName?: string;
   assessUrl?: string;
   bookingUrl?: string;
   scheduledTime?: string;
+  /** Custom message from recruiter (standalone invites) */
+  customMessage?: string;
 }
 
 interface NotificationTemplate {
@@ -39,12 +41,24 @@ interface SendEmailParams {
 
 const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }> = {
   INVITATION: {
-    subject: 'You\'re invited to interview for {{pipelineName}}',
+    subject: '{{#pipelineName}}You\'re invited to interview for {{pipelineName}}{{/pipelineName}}{{^pipelineName}}You\'re invited to an interview{{/pipelineName}}',
     body: `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi {{name}},</h1>
+  {{#pipelineName}}
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
     You've been invited to complete an assessment for <strong>{{pipelineName}}</strong>.
   </p>
+  {{/pipelineName}}
+  {{^pipelineName}}
+  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+    You've been invited to an interview.
+  </p>
+  {{/pipelineName}}
+  {{#customMessage}}
+  <div style="padding: 16px; background: rgba(255,255,255,0.05); border-left: 3px solid rgba(255,255,255,0.2); margin-bottom: 24px;">
+    <p style="font-size: 14px; line-height: 1.6; margin: 0; color: #ccc;">{{customMessage}}</p>
+  </div>
+  {{/customMessage}}
   {{#bookingUrl}}
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 32px;">
     Please schedule your interview by clicking below.
@@ -121,22 +135,28 @@ const DEFAULT_TEMPLATES: Record<EmailTrigger, { subject: string; body: string }>
 
 function substituteVariables(template: string, vars: EmailVariables): string {
   // Process conditional blocks: {{#var}}...{{/var}} — keep block if var is truthy, remove if not
+  // Also handle inverted blocks: {{^var}}...{{/var}} — keep block if var is falsy
   let result = template;
-  const conditionalKeys = ['bookingUrl', 'assessUrl', 'stageName', 'scheduledTime'] as const;
+  const conditionalKeys = ['bookingUrl', 'assessUrl', 'stageName', 'scheduledTime', 'pipelineName', 'customMessage'] as const;
   for (const key of conditionalKeys) {
-    const re = new RegExp(`\\{\\{#${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`, 'g');
-    result = result.replace(re, vars[key] ? '$1' : '');
+    // Positive conditional: {{#key}}...{{/key}}
+    const posRe = new RegExp(`\\{\\{#${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`, 'g');
+    result = result.replace(posRe, vars[key as keyof EmailVariables] ? '$1' : '');
+    // Inverted conditional: {{^key}}...{{/key}}
+    const negRe = new RegExp(`\\{\\{\\^${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`, 'g');
+    result = result.replace(negRe, vars[key as keyof EmailVariables] ? '' : '$1');
   }
 
   // Simple variable substitution
   return result
     .replace(/\{\{name\}\}/g, vars.name)
     .replace(/\{\{email\}\}/g, vars.email)
-    .replace(/\{\{pipelineName\}\}/g, vars.pipelineName)
+    .replace(/\{\{pipelineName\}\}/g, vars.pipelineName ?? '')
     .replace(/\{\{stageName\}\}/g, vars.stageName ?? '')
     .replace(/\{\{assessUrl\}\}/g, vars.assessUrl ?? '')
     .replace(/\{\{bookingUrl\}\}/g, vars.bookingUrl ?? '')
-    .replace(/\{\{scheduledTime\}\}/g, vars.scheduledTime ?? '');
+    .replace(/\{\{scheduledTime\}\}/g, vars.scheduledTime ?? '')
+    .replace(/\{\{customMessage\}\}/g, vars.customMessage ?? '');
 }
 
 // ─── Template resolution ────────────────────────────────────────────────────

@@ -228,10 +228,12 @@ function CallDetailView({
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>CANDIDATE</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{interview.candidateId.slice(0, 8)}...</div>
         </div>
+        {interview.stageId && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
           <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
         </div>
+        )}
         {interview.scheduledAt && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>SCHEDULED</div>

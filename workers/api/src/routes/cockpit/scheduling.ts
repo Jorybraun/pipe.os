@@ -79,8 +79,9 @@ const callbackSchema = z.object({
 
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1),
-  pipelineId: z.string().min(1),
-  stageId: z.string().min(1),
+  pipelineId: z.string().optional(),
+  stageId: z.string().optional(),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
 });
@@ -461,7 +462,8 @@ schedulingAuth.get('/interviews', async (c) => {
 
   const result = await db
     .prepare(
-      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.interview_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.recruiter_notes, si.sync_source,
               si.last_synced_at, si.created_at, si.updated_at,
@@ -479,8 +481,9 @@ schedulingAuth.get('/interviews', async (c) => {
     .all<{
       id: string;
       candidate_id: string;
-      pipeline_id: string;
-      stage_id: string;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
@@ -502,6 +505,7 @@ schedulingAuth.get('/interviews', async (c) => {
     candidateId: r.candidate_id,
     pipelineId: r.pipeline_id,
     stageId: r.stage_id,
+    interviewType: r.interview_type,
     status: r.status,
     scheduledAt: r.scheduled_at,
     meetingUrl: r.meeting_url,

@@ -249,7 +249,7 @@ rpcPublic.post('/resolve-token', async (c) => {
     .bind(trimmed)
     .first<{
       id: string;
-      pipeline_id: string;
+      pipeline_id: string | null;
       status: string;
       name: string | null;
     }>();
@@ -366,15 +366,35 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
   // Fetch candidate to get owner_id and current_stage_id for Assessment creation
   const candidate = await c.env.DB.prepare(
-    `SELECT id, pipeline_id, owner_id, current_stage_id FROM candidates WHERE id = ?1`,
+    `SELECT id, pipeline_id, owner_id, current_stage_id, resume_s3_key FROM candidates WHERE id = ?1`,
   )
     .bind(candidateId)
-    .first<{ id: string; pipeline_id: string; owner_id: string | null; current_stage_id: string | null }>();
+    .first<{ id: string; pipeline_id: string | null; owner_id: string | null; current_stage_id: string | null; resume_s3_key: string | null }>();
 
   if (!candidate) {
     return c.json({ isComplete: false, error: 'Candidate not found' });
   }
   const candidateRow = candidate; // narrow for nested function capture
+
+  // Pipeline-free candidate (talent pool): show CV intake challenge
+  if (!candidateRow.pipeline_id) {
+    const needsResume = !candidateRow.resume_s3_key;
+    return c.json({
+      isComplete: !needsResume,
+      stageId: 'talent-pool-intake',
+      candidateId,
+      stageTitle: needsResume ? 'Upload Your CV' : 'Thank You',
+      mode: 'INTAKE',
+      timeLimit: null,
+      challenges: needsResume
+        ? [{ type: 'INTAKE', order: 0, title: 'Upload Your CV' }]
+        : [],
+      currentIndex: 0,
+    });
+  }
+
+  // At this point pipeline_id is guaranteed non-null (early return above handles null)
+  const effectivePipelineId = pipelineId as string;
 
   // Fetch all stages with challenges in a single JOIN query
   // Include config so we can filter out empty/unconfigured challenges
@@ -398,7 +418,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     WHERE s.pipeline_id = ?1
     ORDER BY s.sort_order ASC, ch.sort_order ASC
   `)
-    .bind(pipelineId)
+    .bind(effectivePipelineId)
     .all();
 
   if (!rows.results || rows.results.length === 0) {
@@ -506,7 +526,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       if (!nextChallenge) {
         return null;
       }
-      const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
+      const gateResult = await checkMatchingGate(c.env.DB, candidateId, effectivePipelineId, stage.id, nextChallenge.id, nextChallenge.type, c.env);
       if (gateResult.blocked && gateResult.syntheticChallenge) {
         return c.json({
           isComplete: false,
@@ -604,6 +624,17 @@ rpcAuth.post('/get-challenge', async (c) => {
     );
   }
 
+  // Pipeline-free candidate: return INTAKE challenge content
+  if (!pipelineId) {
+    return c.json({
+      id: 'intake-upload',
+      type: 'INTAKE',
+      title: 'Upload Your CV',
+      instructions: 'Please upload your CV/resume so we can learn more about your background.',
+      config: JSON.stringify({ acceptedFormats: ['pdf', 'docx', 'doc'], maxSizeMb: 10 }),
+    });
+  }
+
   // Find candidate's current stage
   const candidate = await c.env.DB.prepare(
     `SELECT current_stage_id FROM candidates WHERE id = ?1`,
@@ -676,7 +707,7 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Use the LEFT JOIN result to skip matching when an assignment already exists
   const hasAssignment = !!(ch.effective_repo_url as string | null);
   if (!hasAssignment) {
-    const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
+    const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId as string, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
     if (gateResult.blocked && gateResult.syntheticChallenge) {
       return c.json(gateResult.syntheticChallenge);
     }

@@ -9,13 +9,16 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK';
  * ScheduledInterview — local TypeScript interface.
  * Matches the D1 schema (see workers/api/migrations/).
  */
+export type InterviewType = 'VIDEO' | 'TECHNICAL' | 'SCREENING';
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   candidateId: string;
-  pipelineId: string;
-  stageId: string;
+  pipelineId?: string | null;
+  stageId?: string | null;
+  interviewType?: InterviewType | null;
   status?: InterviewStatus | null;
   scheduledAt?: string | null;
   meetingUrl?: string | null;

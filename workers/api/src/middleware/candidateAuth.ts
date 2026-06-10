@@ -13,7 +13,7 @@ import type { Env } from '../types';
 
 export interface CandidateVariables {
   candidateId: string;
-  pipelineId: string;
+  pipelineId: string | null;
 }
 
 export const candidateAuth = createMiddleware<{
