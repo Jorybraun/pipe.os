@@ -875,7 +875,7 @@ export function AIChat({
                 }}>
                   {conv.phase === 'IDLE'
                     ? 'STARTING YOUR INTERVIEW...'
-                    : conv.pastExchanges.length === 0
+                    : conv.currentQuestion === null && conv.pastExchanges.length === 0
                       ? 'PREPARING YOUR FIRST QUESTION...'
                       : 'THINKING...'}
                 </span>

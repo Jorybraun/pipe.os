@@ -37,6 +37,8 @@ import {
 } from '../../lib/cultureAgent';
 
 import { resolveCultureRoleContext } from '../../lib/cultureRoleResolution';
+import { buildCultureInterviewContext } from '../../lib/cultureAgentContext';
+import type { GenerativePlannerContext } from '../../lib/cultureGenerativePlanner';
 import { loadRoleProbeBank, EMPTY_PROBE_BANK } from '../../lib/cultureProbeBank';
 import { runInterviewTerminationPipeline } from '../../lib/cultureAgentPipeline';
 import { decomposeCultureScoreToGraph } from '../../lib/candidateDiscovery/decomposeCultureScore';
@@ -157,14 +159,22 @@ export async function runScoringJob(env: Env, sessionId: string): Promise<void> 
     {},
   );
 
-  const orgBenchmark = serverConfig.orgBenchmark as OrgCultureBenchmark | undefined;
+  // A missing benchmark (recruiter never calibrated) should not hard-fail the
+  // session — score against a neutral midpoint benchmark instead so the report
+  // and downstream graph/matching pipeline still run.
+  let orgBenchmark = serverConfig.orgBenchmark as OrgCultureBenchmark | undefined;
   if (!orgBenchmark) {
-    console.error('[cultureScoringJob] No orgBenchmark in challenge server_config:', session.challenge_id);
-    await db
-      .prepare(`UPDATE culture_interview_sessions SET state = 'error', updated_at = ?1 WHERE id = ?2`)
-      .bind(now(), sessionId)
-      .run();
-    return;
+    console.warn(
+      '[cultureScoringJob] No orgBenchmark in challenge server_config — using neutral default:',
+      session.challenge_id,
+    );
+    orgBenchmark = {
+      autonomy: 3,
+      riskTolerance: 3,
+      workPace: 3,
+      collaborationStyle: 3,
+      feedbackOrientation: 3,
+    };
   }
 
   const transcript = parseJsonColumn<CultureTranscript>(
@@ -956,6 +966,24 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
   const mode = session.screener_mode ?? transcript.scratchpad.mode ?? 'role_fit';
   const useStaticFallback = c.env.USE_STATIC_QUESTION_BANK === 'true';
 
+  // Build planner context for generative questioning (ADR-029 v2). Skipped
+  // when the static-bank env flag is set or when there is no LLM provider.
+  let generativeContext: GenerativePlannerContext | null = null;
+  if (!useStaticFallback && provider !== null) {
+    try {
+      generativeContext = await buildCultureInterviewContext({
+        db: c.env.DB,
+        candidateId: session.candidate_id,
+        assessmentId: session.assessment_id,
+        mode,
+        transcript,
+        teamContext: roleContext.teamContext,
+      });
+    } catch (err) {
+      console.warn('[cultureRespond] Failed to build generative context — falling back to static bank:', err);
+    }
+  }
+
   const result = await advanceCultureInterview({
     provider,
     transcript,
@@ -965,6 +993,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     seniority: roleContext.seniority,
     roleOverlayId: roleContext.roleOverlayId,
     probeBank,
+    generativeContext,
   });
 
   // ─── Audit: question_generated for new generative questions ─────────────────

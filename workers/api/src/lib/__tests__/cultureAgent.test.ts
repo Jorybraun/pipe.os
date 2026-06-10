@@ -142,6 +142,150 @@ describe('cultureAgent — profile_builder mode', () => {
   });
 });
 
+describe('cultureAgent — probe dedup guard', () => {
+  it('never asks the same probe text twice in a session', async () => {
+    const q = CULTURE_QUESTION_BANK[0]!;
+    const probeText = 'What did you specifically do in that situation?';
+    const transcript: CultureTranscript = {
+      turns: [
+        {
+          idx: 0,
+          questionId: q.id,
+          questionText: q.text,
+          probeOf: null,
+          candidateResponse: 'A short first answer.',
+          starSlots: {
+            S: { present: true, specificity: 1 },
+            T: { present: false, specificity: 0 },
+            A: { present: false, specificity: 0 },
+            R: { present: false, specificity: 0 },
+          },
+          timestamp: new Date().toISOString(),
+        },
+        {
+          idx: 1,
+          questionId: `probe-${q.id}-1`,
+          questionText: probeText,
+          probeOf: q.id,
+          candidateResponse: null,
+          starSlots: null,
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      scratchpad: {
+        dimensionCoverage: { ownership: 0, collaboration: 0, 'learning-orientation': 0, 'conflict-handling': 0, 'self-awareness': 0 },
+        probesUsedForCurrentQ: 1,
+        runningThemes: [],
+        mode: 'role_fit',
+        questionMetadata: [],
+      },
+    };
+
+    const result = await advanceCultureInterview({
+      provider: makeMockProvider({
+        ...ADEQUATE_STAR,
+        probe_needed: true,
+        probe_text: probeText,
+      }) as unknown as import('../llm/types').LLMProvider,
+      transcript,
+      candidateAnswer: 'Another short answer.',
+    });
+
+    const occurrences = result.transcript.turns.filter(
+      (t) => t.questionText === probeText,
+    );
+    expect(occurrences.length).toBe(1);
+  });
+});
+
+describe('cultureAgent — generative planner wiring', () => {
+  const PLANNER_JSON = {
+    question: 'You mentioned migrating Acme to Kubernetes — what part of that was yours alone to own?',
+    targetDimension: 'ownership',
+    targetSlots: ['S', 'T', 'A', 'R'],
+    probeStrategy: { missing_A: 'What did you personally do there?' },
+    personalizationAnchors: ['Acme Kubernetes migration'],
+    reasoning: 'Ownership is uncovered.',
+  };
+
+  function makeGenerativeContext() {
+    return {
+      mode: 'role_fit' as const,
+      candidate: { experiences: [], projects: [], skills: [], priorScreening: null },
+      role: { teamStories: [], conflicts: [], dealbreakers: [], cultureProfile: {}, barsOverrides: [] },
+      coverage: {},
+      turnsUsed: 0,
+      priorQuestions: [],
+      runningThemes: [],
+      maxQuestions: 15,
+      minQuestions: 5,
+    };
+  }
+
+  // Routes planner calls (identified by the dedup block in the planner prompt)
+  // to planner JSON, and turn-analysis calls to the STAR analysis JSON.
+  function makeDualProvider() {
+    return {
+      complete: async (messages: Array<{ role: string; content: string }>) => {
+        const user = messages.find((m) => m.role === 'user')?.content ?? '';
+        if (user.includes('DO NOT REPEAT')) {
+          return { content: JSON.stringify(PLANNER_JSON) };
+        }
+        return { content: JSON.stringify(ADEQUATE_STAR) };
+      },
+    } as unknown as import('../llm/types').LLMProvider;
+  }
+
+  it('uses the generative planner for the next question when context is provided', async () => {
+    let result = startCultureInterview({ mode: 'role_fit' });
+
+    result = await advanceCultureInterview({
+      provider: makeDualProvider(),
+      transcript: result.transcript,
+      candidateAnswer: 'A full STAR answer about a project I led at my last company.',
+      generativeContext: makeGenerativeContext(),
+    });
+
+    expect(result.action).toBe('next');
+    const pending = [...result.transcript.turns].reverse().find((t) => t.candidateResponse === null)!;
+    expect(pending.questionId.startsWith('gen-')).toBe(true);
+    expect(pending.questionText).toBe(PLANNER_JSON.question);
+
+    const meta = result.transcript.scratchpad.questionMetadata?.find(
+      (m) => m.questionId === pending.questionId,
+    );
+    expect(meta).toBeDefined();
+    expect(meta!.targetDimension).toBe('ownership');
+    expect(meta!.probes?.missing_A).toBe('What did you personally do there?');
+  });
+
+  it('falls back to the static bank when the planner output is unparseable', async () => {
+    let result = startCultureInterview({ mode: 'role_fit' });
+
+    const brokenPlannerProvider = {
+      complete: async (messages: Array<{ role: string; content: string }>) => {
+        const user = messages.find((m) => m.role === 'user')?.content ?? '';
+        if (user.includes('DO NOT REPEAT')) {
+          return { content: 'not json at all' };
+        }
+        return { content: JSON.stringify(ADEQUATE_STAR) };
+      },
+    } as unknown as import('../llm/types').LLMProvider;
+
+    result = await advanceCultureInterview({
+      provider: brokenPlannerProvider,
+      transcript: result.transcript,
+      candidateAnswer: 'A full STAR answer.',
+      generativeContext: makeGenerativeContext(),
+    });
+
+    expect(result.action).toBe('next');
+    const pending = [...result.transcript.turns].reverse().find((t) => t.candidateResponse === null)!;
+    expect(pending.questionId.startsWith('gen-')).toBe(false);
+    expect(CULTURE_QUESTION_BANK.some((q) => q.id === pending.questionId)).toBe(true);
+  });
+});
+
 describe('cultureAgent — role_fit mode', () => {
   it('startCultureInterview returns a competency question', () => {
     const result = startCultureInterview({ mode: 'role_fit' });
