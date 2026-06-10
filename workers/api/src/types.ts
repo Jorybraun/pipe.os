@@ -1411,7 +1411,15 @@ export type CandidateNodeType =
   | 'CommunicationStyle'
   | 'CareerArc'
   | 'Motivation'
-  | 'Context';
+  | 'Context'
+  // Contextual conversation graph (ADR-050)
+  | 'Action'
+  | 'Tech'
+  | 'Org'
+  | 'Person'
+  | 'Reason'
+  | 'Outcome'
+  | 'Situation';
 
 export type CoverageAspect = 'experience' | 'cultural' | 'technical' | 'motivation' | 'context';
 

@@ -6,6 +6,10 @@
  */
 
 import type { StarSlot } from './cultureQuestionBank';
+import type {
+  ContextualStatement,
+  ContextualEdge,
+} from './cultureContextualDecomposition';
 import type { CoverageState, StarCoverageTurn } from './candidateCoverage';
 import { computeCoverageState } from './candidateCoverage';
 import { COMPETENCY_DIMENSIONS, getQuestionById } from './cultureQuestionBank';
@@ -34,6 +38,14 @@ export interface ScoreReport {
   [key: string]: unknown;
 }
 
+/** One answer's contextual decomposition (ADR-050), kept on the scratchpad. */
+export interface ContextualTurnRecord {
+  turnIdx: number;
+  statements: ContextualStatement[];
+  edges: ContextualEdge[];
+  discarded: boolean;
+}
+
 export interface CultureTurnV2 {
   idx: number;
   questionId: string;
@@ -58,6 +70,10 @@ export interface CultureScratchpadV2 {
     expectedSlots?: StarSlot[];
     probes?: Record<string, string>;
   }>;
+  /** Contextual conversation graph accumulated across turns (ADR-050). */
+  contextualTurns?: ContextualTurnRecord[];
+  /** Consecutive answers that yielded no new contextual material. */
+  noNewMaterialStreak?: number;
 }
 
 export interface InterviewStateV2 {
@@ -111,6 +127,8 @@ export interface CultureTranscriptLike {
       expectedSlots?: StarSlot[];
       probes?: Record<string, string>;
     }>;
+    contextualTurns?: ContextualTurnRecord[];
+    noNewMaterialStreak?: number;
     /** V2 FSM fields (optional — added by culture-agent redesign). */
     phase?: InterviewPhase;
     phaseHistory?: Array<{ phase: InterviewPhase; enteredAt: number }>;
@@ -223,6 +241,10 @@ export function reconstructStateFromTranscript(
     questionMetadata: transcript.scratchpad.questionMetadata
       ? [...transcript.scratchpad.questionMetadata]
       : undefined,
+    contextualTurns: transcript.scratchpad.contextualTurns
+      ? [...transcript.scratchpad.contextualTurns]
+      : undefined,
+    noNewMaterialStreak: transcript.scratchpad.noNewMaterialStreak,
   };
 
   const coverage = computeCoverageState(
@@ -280,6 +302,10 @@ export function serializeStateToTranscript(
     questionMetadata: state.scratchpad.questionMetadata
       ? [...state.scratchpad.questionMetadata]
       : undefined,
+    contextualTurns: state.scratchpad.contextualTurns
+      ? [...state.scratchpad.contextualTurns]
+      : undefined,
+    noNewMaterialStreak: state.scratchpad.noNewMaterialStreak,
     phase: state.phase,
     phaseHistory: [...state.phaseHistory],
     currentDrill: state.currentDrill,
