@@ -296,17 +296,19 @@ async function matchStandaloneReview(
     return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
   }
 
-  let repoId: number | null = interview.matched_repo_id;
-  let repoUrl: string | null = null;
+  // Candidate repos in priority order: cached match, Neo4j ranked top-K, ingestion fallback.
+  const candidates: Array<{ repoId: number; repoUrl: string }> = [];
 
-  if (repoId) {
+  if (interview.matched_repo_id) {
     const repo = await db.prepare(`SELECT github_url FROM qualified_repos WHERE id = ?1`)
-      .bind(repoId)
+      .bind(interview.matched_repo_id)
       .first<{ github_url: string | null }>();
-    repoUrl = repo?.github_url ?? null;
+    if (repo?.github_url) {
+      candidates.push({ repoId: interview.matched_repo_id, repoUrl: repo.github_url });
+    }
   }
 
-  if (!repoId || !repoUrl) {
+  if (candidates.length === 0) {
     let neo4jConfig = buildNeo4jConfig(env);
     if (!neo4jConfig) {
       neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
@@ -315,10 +317,8 @@ async function matchStandaloneReview(
     try {
       driver = createNeo4jDriver(neo4jConfig);
       const results = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-      if (results.length > 0) {
-        const top = results[0]!;
-        repoId = top.repo_id;
-        repoUrl = `https://github.com/${top.full_name}`;
+      for (const result of results) {
+        candidates.push({ repoId: result.repo_id, repoUrl: `https://github.com/${result.full_name}` });
       }
     } catch (err) {
       console.error(`[standaloneReview] Neo4j matching failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
@@ -334,7 +334,7 @@ async function matchStandaloneReview(
   }
 
   // Fallback: the ingestion pipeline may have already matched a repo
-  if (!repoId || !repoUrl) {
+  if (candidates.length === 0) {
     try {
       const ingestion = await db.prepare(
         `SELECT ci.matched_repo_id, qr.github_url
@@ -343,26 +343,31 @@ async function matchStandaloneReview(
          WHERE ci.candidate_id = ?1`,
       ).bind(candidateId).first<{ matched_repo_id: number | null; github_url: string | null }>();
       if (ingestion?.matched_repo_id && ingestion.github_url) {
-        repoId = ingestion.matched_repo_id;
-        repoUrl = ingestion.github_url;
+        candidates.push({ repoId: ingestion.matched_repo_id, repoUrl: ingestion.github_url });
       }
     } catch (err) {
       console.error('[standaloneReview] ingestion fallback lookup failed:', err instanceof Error ? err.message : String(err));
     }
   }
 
-  if (!repoId || !repoUrl) return null;
+  // Walk the ranked repos until one yields a reviewable PR.
+  for (const candidate of candidates) {
+    const prResult = await pickReviewPr(db, candidate.repoId);
+    if (!prResult) {
+      console.log(`[standaloneReview] repo ${candidate.repoId} has no eligible PR, trying next`);
+      continue;
+    }
 
-  const prResult = await pickReviewPr(db, repoId);
-  if (!prResult) return null;
+    await db.prepare(
+      `UPDATE scheduled_interviews
+       SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
+       WHERE id = ?5`,
+    ).bind(candidate.repoId, candidate.repoUrl, prResult.prNumber, new Date().toISOString(), interview.id).run();
 
-  await db.prepare(
-    `UPDATE scheduled_interviews
-     SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
-     WHERE id = ?5`,
-  ).bind(repoId, repoUrl, prResult.prNumber, new Date().toISOString(), interview.id).run();
+    return { repoUrl: candidate.repoUrl, prNumber: prResult.prNumber };
+  }
 
-  return { repoUrl, prNumber: prResult.prNumber };
+  return null;
 }
 
 /** Parse a submission (object or JSON string) and return it if it is a CV intake payload. */
