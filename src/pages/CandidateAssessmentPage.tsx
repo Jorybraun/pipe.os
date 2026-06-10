@@ -317,7 +317,6 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
           config={{
             autoRefresh: waitConfig.autoRefresh === true,
             refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
-            estimatedSecondsRemaining: typeof waitConfig.estimatedSecondsRemaining === 'number' ? waitConfig.estimatedSecondsRemaining : 180,
           }}
           onRefresh={() => void refresh()}
           sessionToken={sessionToken}

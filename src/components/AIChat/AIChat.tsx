@@ -800,7 +800,7 @@ export function AIChat({
                   <ChevronUp size={12} />
                 </button>
                 <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>
-                  {carouselIdx + 1}/{pastCount}
+                  {editIdx === null ? `${pastCount} ANSWERED` : `${carouselIdx + 1} OF ${pastCount}`}
                 </div>
                 <button
                   onClick={goDown}

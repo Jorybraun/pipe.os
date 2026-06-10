@@ -497,6 +497,11 @@ export async function advanceCultureInterview(
         minQuestions,
       };
       const generated = await runGenerativeTurnPlanner(input.provider, plannerCtx);
+      if (!generated) {
+        console.warn('[cultureAgent] Generative planner returned no question — falling back to static bank.');
+      } else if (askedTexts.has(normalizeQuestionText(generated.question))) {
+        console.warn('[cultureAgent] Generative planner produced a duplicate question — falling back to static bank.');
+      }
       if (
         generated &&
         !askedTexts.has(normalizeQuestionText(generated.question))
@@ -524,6 +529,9 @@ export async function advanceCultureInterview(
     }
 
     if (!next) {
+      if (!input.generativeContext || !input.provider) {
+        console.warn('[cultureAgent] Generative path unavailable (context or provider missing) — using static bank.');
+      }
       // Static bank fallback — selector biases toward least-covered dimensions.
       next = pickNextQuestion({
         coverage: state.scratchpad.dimensionCoverage,
