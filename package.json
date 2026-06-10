@@ -26,6 +26,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@paper-design/shaders-react": "^0.0.68",
+    "@pierre/diffs": "^1.2.8",
     "@twilio/voice-sdk": "^2.18.1",
     "allotment": "^1.20.5",
     "lucide-react": "^0.562.0",
