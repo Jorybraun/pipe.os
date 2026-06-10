@@ -14,8 +14,8 @@
 export interface JwtPayload {
   /** Subject — candidateId */
   sub: string;
-  /** Pipeline ID */
-  pid: string;
+  /** Pipeline ID (null for talent-pool / standalone candidates) */
+  pid: string | null;
   /** Issued at (unix seconds) */
   iat: number;
   /** Expires at (unix seconds) */

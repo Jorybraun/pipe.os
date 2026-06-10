@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Talent Pool MVP: Pipeline-Free Candidate Invites
+
+- **Schema migration** (`workers/api/migrations/0075_optional_pipeline.sql`): `pipeline_id` nullable on `candidates` and `scheduled_interviews` tables; `interview_type` column (`VIDEO`|`TECHNICAL`|`SCREENING`) added to `scheduled_interviews`.
+- **Standalone candidate endpoint** (`POST /api/v1/candidates`): Invite candidates without pipeline/role. Creates candidate, ingestion row, optional interview, sends invitation email with conditional templates.
+- **Email template** (`workers/api/src/lib/email.ts`): `pipelineName` now optional; inverted conditionals (`{{^pipelineName}}`) render standalone invite copy; `customMessage` block support.
+- **Ingestion orchestrator** (`workers/api/src/lib/candidateDiscovery/orchestrate.ts`): Skips match/assign (steps 6-11) when `pipeline_id` is NULL. Candidate stays at "embedded" status — searchable in talent pool without requiring a pipeline.
+- **Frontend invite modal** (`src/components/Scheduling/InviteCandidateModal.tsx`): "INVITE CANDIDATE" button on scheduling dashboard; form with name, email, interview type selector, optional schedule, custom message.
+- **Assessment page** (`workers/api/src/routes/rpc.ts`): `get-stage-config` returns INTAKE challenge for pipeline-free candidates; `get-challenge` returns CV upload config. Candidates without a pipeline see a resume upload screen at `/assess/:token`.
+- **Type updates**: `ScheduledInterview.pipelineId`/`stageId` now optional; `InterviewType` type exported; JWT `pid` nullable; `CandidateVariables.pipelineId` nullable.
+
 ### Added — Meetings Worker & Schema (Phase 1, ADR-049)
 
 - `workers/meetings/`: New Cloudflare Worker (`pipe-meetings`) for contacts and meetings — separate deployable from the main API Worker, sharing the same D1 database.

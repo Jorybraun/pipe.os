@@ -1,0 +1,214 @@
+# MVP: Pipeline-Free Candidate Invites → Talent Pool
+
+## Goal
+
+Remove the pipeline dependency for inviting candidates. Recruiters can invite anyone (by email) to a video or technical interview — no pipeline, no role, no stage configuration required. Candidates get ingested into a searchable talent pool.
+
+---
+
+## Current State (what exists)
+
+| Layer | Constraint | File |
+|-------|-----------|------|
+| `candidates` table | `pipeline_id TEXT NOT NULL` | `migrations/0002_recruiter_core.sql:55` |
+| `scheduled_interviews` table | `pipeline_id NOT NULL`, `stage_id NOT NULL` | `migrations/0007_scheduling.sql:28-29` |
+| Create candidate endpoint | `POST /api/v1/pipelines/:pipelineId/candidates` — pipeline is the URL path | `routes/cockpit/candidates.ts:62` |
+| Create interview schema | Requires `candidateId`, `pipelineId`, `stageId` | `routes/cockpit/scheduling.ts:80-86` |
+| Ingestion orchestrator | Steps 6-9 assume pipeline role context for repo matching + challenge assignment | `lib/candidateDiscovery/orchestrate.ts:5-15` |
+| Frontend scheduling | Dashboard shows interviews grouped by timeline, joined with pipeline/stage data | `components/Scheduling/SchedulingDashboard.tsx` |
+| Email invite (PR #34) | Tied to scheduled interview → pipeline | `routes/cockpit/scheduling.ts` (PR #34 branch) |
+
+**Key existing assets that stay unchanged:**
+- CV parsing + ingestion pipeline (steps 1-5: parse → extract → profile → embed → vector)
+- `candidate_nodes` graph decomposition (13 node types)
+- Vectorize ANN search (`POST /api/v1/search/candidates`)
+- Email sending via Resend
+- Video call infrastructure (VideoRoom DO, WebSocket signaling)
+
+---
+
+## Target State (MVP)
+
+```
+Recruiter invites candidate (name + email)
+  → Email sent with assessment/meeting link
+  → Candidate arrives → uploads CV (if none on file)
+  → CV ingested → decomposed into graph → embedded → searchable
+  → Optionally: candidate does video call or technical interview
+```
+
+**No pipeline, no role, no stage required.**
+
+---
+
+## Changes Required
+
+### Phase 1: Schema — Make pipeline optional
+
+**Migration: `0076_optional_pipeline.sql`**
+
+```sql
+-- D1 doesn't support ALTER COLUMN, so we need to recreate tables
+
+-- 1. candidates: make pipeline_id nullable
+CREATE TABLE candidates_new (
+  id                  TEXT PRIMARY KEY,
+  pipeline_id         TEXT REFERENCES pipelines(id) ON DELETE CASCADE, -- NOW NULLABLE
+  owner_id            TEXT NOT NULL,
+  name                TEXT,
+  email               TEXT,
+  invite_token        TEXT NOT NULL UNIQUE,
+  status              TEXT NOT NULL DEFAULT 'INVITED'
+                      CHECK (status IN ('INVITED', 'IN_PROGRESS', 'COMPLETED')),
+  current_stage_id    TEXT REFERENCES stages(id) ON DELETE SET NULL,
+  skills              TEXT,
+  years_of_experience INTEGER,
+  current_role        TEXT,
+  education           TEXT,
+  resume_s3_key       TEXT,
+  phone_number        TEXT,
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+INSERT INTO candidates_new SELECT * FROM candidates;
+DROP TABLE candidates;
+ALTER TABLE candidates_new RENAME TO candidates;
+
+CREATE INDEX idx_candidates_pipeline ON candidates(pipeline_id);
+CREATE INDEX idx_candidates_invite_token ON candidates(invite_token);
+CREATE INDEX idx_candidates_owner ON candidates(owner_id);
+CREATE INDEX idx_candidates_email ON candidates(owner_id, email);
+
+-- 2. scheduled_interviews: make pipeline_id and stage_id nullable
+CREATE TABLE scheduled_interviews_new (
+  id TEXT PRIMARY KEY,
+  candidate_id TEXT NOT NULL REFERENCES candidates(id),
+  pipeline_id TEXT REFERENCES pipelines(id),          -- NOW NULLABLE
+  stage_id TEXT REFERENCES stages(id),                -- NOW NULLABLE
+  owner_id TEXT NOT NULL,
+  interview_type TEXT DEFAULT 'VIDEO'
+    CHECK (interview_type IN ('VIDEO', 'TECHNICAL', 'SCREENING')),
+  status TEXT NOT NULL DEFAULT 'INVITED'
+    CHECK (status IN ('INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
+  scheduled_at TEXT,
+  meeting_url TEXT,
+  scheduling_provider TEXT CHECK (scheduling_provider IN ('CALENDLY', 'CAL_COM', 'MANUAL')),
+  scheduling_url TEXT,
+  external_event_id TEXT,
+  recruiter_notes TEXT,
+  sync_source TEXT CHECK (sync_source IN ('MANUAL', 'WEBHOOK')),
+  last_synced_at TEXT,
+  invite_link_sent_at TEXT,
+  email_sent_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+INSERT INTO scheduled_interviews_new
+  SELECT id, candidate_id, pipeline_id, stage_id, owner_id,
+         'VIDEO', status, scheduled_at, meeting_url,
+         scheduling_provider, scheduling_url, external_event_id,
+         recruiter_notes, sync_source, last_synced_at,
+         invite_link_sent_at, email_sent_at, created_at, updated_at
+  FROM scheduled_interviews;
+
+DROP TABLE scheduled_interviews;
+ALTER TABLE scheduled_interviews_new RENAME TO scheduled_interviews;
+
+CREATE INDEX idx_si_candidate ON scheduled_interviews(candidate_id);
+CREATE INDEX idx_si_pipeline ON scheduled_interviews(pipeline_id);
+CREATE INDEX idx_si_external ON scheduled_interviews(external_event_id);
+CREATE INDEX idx_si_owner_status ON scheduled_interviews(owner_id, status);
+```
+
+### Phase 2: Backend — New standalone candidate + invite endpoints
+
+**New endpoint: `POST /api/v1/candidates`** (no pipeline in path)
+
+```ts
+// routes/cockpit/candidates.ts — new top-level route
+const createStandaloneCandidateSchema = z.object({
+  name: z.string().min(1).max(200),
+  email: z.string().email(),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
+  scheduledAt: z.string().datetime().optional(),
+  message: z.string().max(2000).optional(), // custom email message
+});
+```
+
+Logic:
+1. Create candidate with `pipeline_id = NULL`
+2. Create `candidate_ingestion` row (status: `pending`)
+3. If `interviewType` provided → create `scheduled_interviews` row (no pipeline/stage)
+4. Send invite email with assessment link (`/assess/:inviteToken`)
+5. Return `{ id, inviteToken, emailSent }`
+
+**Modify ingestion orchestrator** (`lib/candidateDiscovery/orchestrate.ts`):
+- Steps 1-5 (parse → profile → embed): Run always ✓
+- Steps 6-9 (role alignment → repo match → challenge assign): **Skip when no pipeline_id**
+- Step 10 (mark matched): Mark as `embedded` instead of `matched` when no pipeline
+
+### Phase 3: Frontend — Simplified invite UI
+
+**Modify `SchedulingDashboard.tsx`:**
+- Add "INVITE CANDIDATE" button (top-right, always visible)
+- Opens modal: name, email, interview type (video/technical), optional scheduled time, optional message
+- Calls `POST /api/v1/candidates` directly
+- New interview card shows candidate without pipeline/stage context
+
+**Candidate assessment page (`/assess/:token`)**:
+- Already handles the assessment flow
+- For pipeline-free candidates: show CV upload prompt → then show selected interview type
+- Video: redirect to video room
+- Technical: show code review (requires repo matching — can be deferred or use a default challenge set)
+
+### Phase 4: CV Upload for Pipeline-Free Candidates
+
+The `/assess/:token` route for pipeline-free candidates needs a simple flow:
+1. Resolve token → check if candidate has `resume_s3_key`
+2. If no CV → show upload screen (already exists as INTAKE challenge type)
+3. On upload → trigger `processResumeFromR2` → ingestion runs (stops at embed, no pipeline matching)
+4. Candidate is now searchable in talent pool
+
+---
+
+## What's NOT Changing
+
+- Existing pipeline-based flows continue to work (pipeline_id is now optional, not removed)
+- All existing endpoints keep working — this is additive
+- Graph decomposition logic (candidate_nodes, 13 types) unchanged
+- Vectorize search unchanged — candidates without pipelines are still searchable
+- Video call infrastructure (VideoRoom DO) unchanged
+- PR #34's email invite can be reused (just remove pipeline/stage requirement)
+
+---
+
+## Dependency on Existing PRs
+
+| PR | Relationship |
+|----|-------------|
+| #34 (email invite) | **Reuse + modify** — the email template and Resend integration are reusable, but the endpoint needs pipeline/stage made optional |
+| #35 (meetings architecture) | **Parallel/future** — the contacts table concept aligns with talent pool, but this MVP doesn't need a separate meetings service yet |
+| #36 (@pierre/diffs) | **Independent** — code review rendering works regardless of how candidates are invited |
+
+---
+
+## Implementation Order
+
+1. **Migration 0076** — make pipeline_id nullable (unblocks everything)
+2. **New `POST /api/v1/candidates` endpoint** — standalone candidate creation + email
+3. **Modify ingestion orchestrator** — graceful skip when no pipeline
+4. **Frontend invite modal** — on scheduling dashboard
+5. **Assessment page CV upload** — for pipeline-free candidates without CV
+
+---
+
+## Open Questions
+
+1. **Technical interview without pipeline** — if no role/repo match, what challenge does the candidate get? Options:
+   - Use a default/generic code review challenge
+   - Let recruiter pick from a challenge template library
+   - Defer technical interviews until candidate IS assigned to a pipeline
+2. **Duplicate detection** — currently scoped to pipeline (`WHERE pipeline_id = ? AND email = ?`). For standalone candidates, scope to owner_id instead?
+3. **Assessment URL behavior** — for video-only invites, should `/assess/:token` redirect directly to the video room, or show a waiting room?

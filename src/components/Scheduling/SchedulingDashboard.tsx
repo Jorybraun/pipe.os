@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
-import { Calendar, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Calendar, RefreshCw, UserPlus } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import { InterviewCard } from './InterviewCard';
+import { InviteCandidateModal } from './InviteCandidateModal';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
@@ -63,8 +64,9 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
  * and renders.
  */
 export function SchedulingDashboard(): JSX.Element {
-  const { interviews, isLoading, error, updateStatus, sendInvite } = useScheduledInterviews();
+  const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   // Group interviews by timeline, then sort within each group by time
   const groupedInterviews = useMemo(() => {
@@ -127,7 +129,28 @@ export function SchedulingDashboard(): JSX.Element {
             Schedule
           </h1>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
+          <button
+            onClick={() => setShowInviteModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              background: '#ffffff',
+              color: '#0c0c0e',
+              border: 'none',
+              borderRadius: 6,
+              fontFamily: '"Space Mono", monospace',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              cursor: 'pointer',
+            }}
+          >
+            <UserPlus size={14} />
+            INVITE CANDIDATE
+          </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {interviews.length} total
           </span>
@@ -193,8 +216,8 @@ export function SchedulingDashboard(): JSX.Element {
                 {ivs.map((iv) => {
                   const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.candidateId;
                   const candidateEmail = iv.candidateEmail ?? null;
-                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId;
-                  const stageTitle = iv.stageTitle ?? iv.stageId;
+                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId ?? 'Talent Pool';
+                  const stageTitle = iv.stageTitle ?? iv.stageId ?? (iv.interviewType ?? 'Interview');
 
                   return (
                     <InterviewCard
@@ -213,6 +236,14 @@ export function SchedulingDashboard(): JSX.Element {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Invite candidate modal */}
+      {showInviteModal && (
+        <InviteCandidateModal
+          onClose={() => setShowInviteModal(false)}
+          onSuccess={() => void refetch()}
+        />
       )}
     </div>
   );

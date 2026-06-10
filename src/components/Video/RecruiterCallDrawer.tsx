@@ -186,7 +186,7 @@ function CallDetailView({
 
   // Poll DO /status to detect candidate presence
   useEffect(() => {
-    const sessionId = `${interview.stageId}--${interview.candidateId}`;
+    const sessionId = `${interview.stageId ?? interview.id}--${interview.candidateId}`;
     let cancelled = false;
 
     const checkPresence = async (): Promise<void> => {
@@ -228,10 +228,12 @@ function CallDetailView({
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>CANDIDATE</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{interview.candidateId.slice(0, 8)}...</div>
         </div>
+        {interview.stageId && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>STAGE</div>
           <div style={{ fontSize: 14 }}>{interview.stageId.slice(0, 8)}...</div>
         </div>
+        )}
         {interview.scheduledAt && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>SCHEDULED</div>
@@ -297,7 +299,7 @@ function ActiveCallView({
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   // Defer WS connect until after DO /init completes to avoid stale state
-  const computedSessionId = `${interview.stageId}--${interview.candidateId}`;
+  const computedSessionId = `${interview.stageId ?? interview.id}--${interview.candidateId}`;
   const [sessionReady, setSessionReady] = useState(false);
 
   const room = useVideoRoom({
@@ -319,7 +321,7 @@ function ActiveCallView({
             'Content-Type': 'application/json',
             ...(clerkToken ? { Authorization: `Bearer ${clerkToken}` } : {}),
           },
-          body: JSON.stringify({ stageId: interview.stageId, candidateId: interview.candidateId }),
+          body: JSON.stringify({ stageId: interview.stageId ?? interview.id, candidateId: interview.candidateId }),
         });
       } catch (err) {
         console.error('[ActiveCallView] Failed to create session:', err);

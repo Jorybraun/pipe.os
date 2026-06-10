@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface ResolvedCandidate {
   id: string;
-  pipelineId: string;
+  pipelineId: string | null;
   status: string | null;
   name?: string | null;
   email?: string | null;
@@ -193,10 +193,10 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
       if (cachedToken && cachedCandidateJson) {
         try {
           const parsed = JSON.parse(cachedCandidateJson) as Record<string, unknown>;
-          if (typeof parsed.id === 'string' && typeof parsed.pipelineId === 'string') {
+          if (typeof parsed.id === 'string' && (typeof parsed.pipelineId === 'string' || parsed.pipelineId === null)) {
             candidate = {
               id: parsed.id as string,
-              pipelineId: parsed.pipelineId as string,
+              pipelineId: (parsed.pipelineId as string | null) ?? null,
               status: (parsed.status as string) ?? null,
               name: (parsed.name as string) ?? null,
             };
@@ -213,7 +213,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         // Resolve token via Workers RPC
         const resolved = await rpcPost<{
           id: string;
-          pipelineId: string;
+          pipelineId: string | null;
           status: string;
           name: string | null;
           sessionToken: string;

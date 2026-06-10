@@ -217,6 +217,25 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   // Step 5: Mark embedded — now handled inside embedAndUpsertCandidate
 
   // Step 6-11: Match, triangulate, assign — wrapped in inner try/catch
+  // Skip when candidate has no pipeline (talent pool / standalone invite).
+  const candidatePipelineRow = await db
+    .prepare('SELECT pipeline_id FROM candidates WHERE id = ?1')
+    .bind(candidateId)
+    .first<{ pipeline_id: string | null }>();
+
+  if (!candidatePipelineRow?.pipeline_id) {
+    // Standalone candidate — ingestion stops at "embedded" (searchable in talent pool).
+    console.log('[ingestion] No pipeline for candidate', candidateId, '— skipping match/assign');
+    await recordSessionEvent(db, {
+      sessionId: `ingestion-${candidateId}`,
+      sessionType: 'ingestion',
+      candidateId,
+      eventType: 'completed',
+      payload: { step: 'embedded_no_pipeline', reason: 'talent_pool_only' },
+    });
+    return;
+  }
+
   try {
     await recordSessionEvent(db, {
       sessionId: `ingestion-${candidateId}`,
