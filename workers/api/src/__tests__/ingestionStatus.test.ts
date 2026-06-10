@@ -62,6 +62,8 @@ function fakeD1(firstResponders: Array<{ match: string; value: unknown }> = []):
 function buildEnv(db: FakeD1): Env {
   return {
     CLERK_SECRET_KEY: 'test',
+    DEV_AUTH_BYPASS: 'true',
+    DEV_BYPASS_USER_ID: 'test-user',
     DB: db as unknown as D1Database,
   } as unknown as Env;
 }
