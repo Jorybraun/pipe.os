@@ -566,17 +566,20 @@ export function DiffPanel({
         {viewToggle}
       </div>
 
-      {/* Diff content — powered by @pierre/diffs */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }} data-testid="diff-content">
-        <PierreDiffViewer
-          mode="multi-file"
-          diff={diff}
-          annotations={annotations}
-          readOnly={readOnly}
-          resolvedLines={resolvedLines ?? []}
-          inlineThreads={inlineThreads ?? []}
-          onLineClick={handleLineClick}
-        />
+      {/* Diff content — powered by @pierre/diffs (one PatchDiff per file) */}
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }} data-testid="diff-content">
+        {diff.files.map((file) => (
+          <PierreDiffViewer
+            key={file.path}
+            mode="single-file"
+            file={file}
+            annotations={annotations.filter((a) => a.file === file.path)}
+            readOnly={readOnly}
+            resolvedLines={(resolvedLines ?? []).filter((r) => r.file === file.path)}
+            inlineThreads={(inlineThreads ?? []).filter((t) => t.file === file.path)}
+            onLineClick={handleLineClick}
+          />
+        ))}
 
         {/* Inline annotation form (shown when user clicks to annotate) */}
         {annotatingLine !== null && annotatingFilePath !== null && (

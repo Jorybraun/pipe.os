@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useRef } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { PatchDiff } from '@pierre/diffs/react';
 import type { DiffLineAnnotation } from '@pierre/diffs/react';
 import { MessageSquare, Plus } from 'lucide-react';
@@ -76,6 +76,53 @@ export function PierreDiffViewer({
   onLineClick,
 }: PierreDiffViewerProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Fallback click handler: detect clicks on line numbers inside Pierre's shadow DOM
+  // and trigger annotation flow. This compensates for renderGutterUtility not
+  // rendering React portals into the web component shadow DOM reliably.
+  useEffect(() => {
+    if (readOnly || !onLineClick) return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const handleClick = (e: MouseEvent): void => {
+      // composedPath() traverses shadow DOM boundaries
+      const path = e.composedPath() as HTMLElement[];
+      for (const node of path) {
+        if (node === el) break;
+        // Pierre renders line numbers as spans with data-line-number or as part
+        // of the gutter column. Check for elements that look like line numbers.
+        const lineNum = node?.getAttribute?.('data-line-number');
+        if (lineNum) {
+          const num = parseInt(lineNum, 10);
+          if (!isNaN(num)) {
+            const filePath = file?.path ?? diff?.files[0]?.path ?? 'unknown';
+            onLineClick(filePath, num);
+            return;
+          }
+        }
+        // Also check if clicked element is in the line-number gutter column
+        // (Pierre uses grid layout with line numbers in specific cells)
+        if (
+          node?.classList?.contains?.('line-number') ||
+          node?.getAttribute?.('data-gutter') != null
+        ) {
+          const text = node.textContent?.trim();
+          if (text) {
+            const num = parseInt(text, 10);
+            if (!isNaN(num)) {
+              const filePath = file?.path ?? diff?.files[0]?.path ?? 'unknown';
+              onLineClick(filePath, num);
+              return;
+            }
+          }
+        }
+      }
+    };
+
+    el.addEventListener('click', handleClick);
+    return () => el.removeEventListener('click', handleClick);
+  }, [readOnly, onLineClick, file, diff]);
 
   // Build the patch string from DiffJson
   const patchString = useMemo(() => {
