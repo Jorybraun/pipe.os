@@ -1,0 +1,40 @@
+{
+  "agents": [
+    {
+      "id": "ceo",
+      "name": "ceo",
+      "provider": "hermes",
+      "model": "grok-4.3",
+      "persona": "ceo-orchestrator",
+      "memory_key": "agent:ceo",
+      "tmux_session": "pipe-ceo"
+    },
+    {
+      "id": "discover-pm",
+      "name": "Discover PM",
+      "provider": "devin",
+      "model": "gemini-3-flash",
+      "persona": "project-manager",
+      "capabilities": [
+        "roadmap",
+        "epics",
+        "prioritization"
+      ],
+      "description": "Project Manager for discover",
+      "memory_key": "discover:pm",
+      "tmux_session": "pipe-discover-pm"
+    },
+    {
+      "id": "grok-composer-2.5-architect",
+      "name": "grok composer 2.5 architect",
+      "provider": "grok",
+      "model": "grok-build",
+      "persona": "architect",
+      "capabilities": [
+        "love everyone"
+      ],
+      "memory_key": "grok:composer:architect"
+    }
+  ],
+  "teams": {}
+}

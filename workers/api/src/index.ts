@@ -12,6 +12,7 @@ import { agentRoutes } from './routes/cockpit/agent';
 import { github } from './routes/cockpit/github';
 import { overview } from './routes/cockpit/overview';
 import { pipelineCandidates, candidateOps } from './routes/cockpit/candidates';
+import { contacts } from './routes/cockpit/contacts';
 import { devContainerSessions } from './routes/cockpit/devContainerSessions';
 import { ingestion } from './routes/cockpit/ingestion';
 import { ingestionStatus } from './routes/cockpit/ingestionStatus';
@@ -75,6 +76,7 @@ app.use(
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
         'http://localhost:5173',
+        'http://localhost:5174',
         'http://localhost:4173',
         'http://localhost:8080',
       ];
@@ -126,6 +128,8 @@ app.route('/api/v1/pipelines', overview);
 app.route('/api/v1/pipelines', pipelineCandidates);
 // Candidate ops: GET/PATCH /api/v1/candidates/:candidateId
 app.route('/api/v1/candidates', candidateOps);
+// Contacts: unified address book (leads, candidates, customers)
+app.route('/api/v1/contacts', contacts);
 // Ingestion: GET/POST /api/v1/pipelines/:pipelineId/ingestion
 app.route('/api/v1/pipelines', ingestion);
 // Ingestion status: SSE stream for a single candidate's ingestion progress

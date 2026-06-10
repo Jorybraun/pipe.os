@@ -1,0 +1,8 @@
+{
+  "agent": "planner",
+  "room": "standup-pipe-os-2026-06-08t17-00-00z",
+  "provider": "devin",
+  "model": "swe-1.6",
+  "session_id": "quick-exoplanet",
+  "created_at": 1780844278.408282
+}

@@ -749,6 +749,24 @@ export function AIChat({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* Phase indicator — shows active discovery phase from the controller (Brief 6) */}
+            {conv.progress?.phase && (
+              <div
+                title={conv.progress.phaseReasoning ?? conv.progress.phase}
+                style={{
+                  fontSize: 9,
+                  letterSpacing: '0.12em',
+                  color: 'rgba(74, 222, 128, 0.6)',
+                  background: 'rgba(74, 222, 128, 0.06)',
+                  border: '1px solid rgba(74, 222, 128, 0.15)',
+                  padding: '3px 8px',
+                  fontFamily: '"Space Mono", monospace',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {conv.progress.phase.replace(/_/g, ' ')}
+              </div>
+            )}
             {showDomainBars && conv.progress?.domains && (
               <DomainBars
                 domains={conv.progress.domains}

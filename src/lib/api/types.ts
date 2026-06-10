@@ -318,6 +318,12 @@ export interface RoleContextProgress {
   currentDomain?: string | null | undefined;
   /** Per-domain completion status for the new architecture. */
   domainCompletion?: Record<string, DomainCompletionStatus> | undefined;
+  /** Active phase from the deterministic phase controller (Brief 6). */
+  phase?: string | undefined;
+  /** Human-readable explanation of why the current phase was selected. */
+  phaseReasoning?: string | undefined;
+  /** Internal ReAct reasoning for why this specific question was generated. */
+  questionReasoning?: string | undefined;
 }
 
 export interface CreateRoleContextRequest {

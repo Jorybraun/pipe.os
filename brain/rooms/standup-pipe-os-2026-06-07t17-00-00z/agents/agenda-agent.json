@@ -1,0 +1,8 @@
+{
+  "agent": "agenda-agent",
+  "room": "standup-pipe-os-2026-06-07t17-00-00z",
+  "provider": "grok",
+  "model": null,
+  "session_id": "grok-cwd:agenda-agent",
+  "created_at": 1780844406.593715
+}

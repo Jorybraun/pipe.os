@@ -23,6 +23,7 @@ export interface UseTwilioDeviceReturn {
   disconnect: () => void;
   toggleMute: () => void;
   isMuted: boolean;
+  sendDigits: (digits: string) => void;
 }
 
 export function useTwilioDevice(): UseTwilioDeviceReturn {
@@ -171,6 +172,12 @@ export function useTwilioDevice(): UseTwilioDeviceReturn {
     }
   }, []);
 
+  const sendDigits = useCallback((digits: string): void => {
+    if (callRef.current) {
+      callRef.current.sendDigits(digits);
+    }
+  }, []);
+
   return {
     isReady,
     isConnecting,
@@ -182,5 +189,6 @@ export function useTwilioDevice(): UseTwilioDeviceReturn {
     disconnect,
     toggleMute,
     isMuted,
+    sendDigits,
   };
 }

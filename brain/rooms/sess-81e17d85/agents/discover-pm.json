@@ -1,0 +1,8 @@
+{
+  "agent": "discover-pm",
+  "room": "sess-81e17d85",
+  "provider": "devin",
+  "model": "gemini-3-flash",
+  "session_id": "candle-tumble",
+  "created_at": 1780526627.1110651
+}

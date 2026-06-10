@@ -11,7 +11,7 @@
 
 import React, { useState, useCallback } from 'react';
 import {
-  Phone, PhoneOff, Mic, MicOff, X, Loader,
+  Phone, PhoneOff, Mic, MicOff, X, Loader, Delete,
 } from 'lucide-react';
 import { useAuth } from '@clerk/react';
 import { useTwilioDevice } from '../../hooks/useTwilioDevice';
@@ -48,7 +48,7 @@ export function PhoneCallDrawer({
   const [isSaving, setIsSaving] = useState(false);
   const [dialError, setDialError] = useState<string | null>(null);
 
-  const handleDial = useCallback(async (): Promise<void> => {
+  const handleDial = useCallback(async (numberToCall: string): Promise<void> => {
     setDialError(null);
     try {
       // Create call record in D1 first
@@ -60,13 +60,13 @@ export function PhoneCallDrawer({
       setCallId(result.call.id);
 
       // Initiate browser-to-phone call via Twilio SDK
-      await twilio.connect(phoneNumber);
+      await twilio.connect(numberToCall);
       setView('active');
     } catch (err) {
       console.error('[PhoneCallDrawer] Dial failed:', err);
       setDialError(err instanceof Error ? err.message : 'Failed to initiate call');
     }
-  }, [getToken, candidateId, pipelineId, phoneNumber, twilio]);
+  }, [getToken, candidateId, pipelineId, twilio]);
 
   const handleHangUp = useCallback((): void => {
     twilio.disconnect();
@@ -142,7 +142,7 @@ export function PhoneCallDrawer({
           isReady={twilio.isReady}
           isConnecting={twilio.isConnecting}
           error={twilio.error || dialError}
-          onDial={() => void handleDial()}
+          onDial={(n) => void handleDial(n)}
         />
       )}
       {view === 'active' && (
@@ -153,6 +153,7 @@ export function PhoneCallDrawer({
           isMuted={twilio.isMuted}
           onToggleMute={twilio.toggleMute}
           onHangUp={handleHangUp}
+          onSendDigits={twilio.sendDigits}
         />
       )}
       {view === 'post-call' && (
@@ -170,6 +171,58 @@ export function PhoneCallDrawer({
   );
 }
 
+// ─── Shared Dialpad ─────────────────────────────────────────────────────────
+
+const DIAL_KEYS = [
+  ['1', '2', '3'],
+  ['4', '5', '6'],
+  ['7', '8', '9'],
+  ['*', '0', '#'],
+] as const;
+
+const KEY_SUB: Record<string, string> = {
+  '2': 'ABC', '3': 'DEF', '4': 'GHI', '5': 'JKL', '6': 'MNO',
+  '7': 'PQRS', '8': 'TUV', '9': 'WXYZ', '0': '+', '1': '', '*': '', '#': '',
+};
+
+function Dialpad({ onKey }: { onKey: (k: string) => void }): React.ReactElement {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+      {DIAL_KEYS.flat().map((key) => (
+        <button
+          key={key}
+          onClick={() => onKey(key)}
+          style={{
+            height: 52,
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(255,255,255,0.04)',
+            color: 'var(--pipe-text)',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
+            transition: 'background 0.1s',
+            fontFamily: '"Space Mono", monospace',
+          }}
+          onMouseDown={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.1)'; }}
+          onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)'; }}
+        >
+          <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{key}</span>
+          {KEY_SUB[key] && (
+            <span style={{ fontSize: 7, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>
+              {KEY_SUB[key]}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Pre-Call View ──────────────────────────────────────────────────────────
 
 function PreCallView({ candidateName, phoneNumber, isReady, isConnecting, error, onDial }: {
@@ -178,206 +231,198 @@ function PreCallView({ candidateName, phoneNumber, isReady, isConnecting, error,
   isReady: boolean;
   isConnecting: boolean;
   error: string | null;
-  onDial: () => void;
+  onDial: (number: string) => void;
 }): React.ReactElement {
+  const [input, setInput] = useState(phoneNumber);
+
+  const handleKey = (k: string): void => {
+    setInput((prev) => prev + k);
+  };
+
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 24,
-      padding: 32,
-    }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px', gap: 16, overflowY: 'auto' }}>
       {/* Candidate info */}
-      <div style={{ textAlign: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{
-          width: 64,
-          height: 64,
-          borderRadius: '50%',
-          background: 'rgba(74,222,128,0.12)',
-          border: '2px solid rgba(74,222,128,0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 16px',
-          fontSize: 20,
-          fontWeight: 700,
-          color: '#4ade80',
+          width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+          background: 'rgba(74,222,128,0.12)', border: '1px solid rgba(74,222,128,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 14, fontWeight: 700, color: '#4ade80',
         }}>
           {candidateName.charAt(0).toUpperCase()}
         </div>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
-          {candidateName}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)' }}>
-          {phoneNumber}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700 }}>{candidateName}</div>
         </div>
       </div>
 
-      {/* Status */}
-      {!isReady && !error && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          fontSize: 9,
-          color: 'var(--pipe-text-dim)',
-          letterSpacing: '0.1em',
+      {/* Number display */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '10px 14px',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid var(--pipe-border)',
+        borderRadius: 6,
+      }}>
+        <span style={{
+          flex: 1, fontSize: 18, fontWeight: 700, letterSpacing: '0.06em',
+          fontVariantNumeric: 'tabular-nums', color: 'var(--pipe-text)',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+          {input || <span style={{ color: 'var(--pipe-text-dim)', fontWeight: 400, fontSize: 13 }}>enter number</span>}
+        </span>
+        {input && (
+          <button
+            onClick={() => setInput((prev) => prev.slice(0, -1))}
+            style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 2 }}
+          >
+            <Delete size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Status / error */}
+      {!isReady && !error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.1em' }}>
+          <Loader size={11} style={{ animation: 'spin 1s linear infinite' }} />
           CONNECTING_DEVICE...
         </div>
       )}
-
       {error && (
-        <div style={{
-          padding: '8px 12px',
-          background: 'rgba(248,113,113,0.08)',
-          border: '1px solid rgba(248,113,113,0.2)',
-          borderRadius: 4,
-          fontSize: 9,
-          color: '#f87171',
-          textAlign: 'center',
-          maxWidth: 240,
-        }}>
+        <div style={{ padding: '8px 10px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 9, color: '#f87171' }}>
           {error}
         </div>
       )}
 
-      {/* Dial button */}
+      {/* Dialpad */}
+      <Dialpad onKey={handleKey} />
+
+      {/* Call button */}
       <button
-        onClick={onDial}
-        disabled={!isReady || isConnecting}
+        onClick={() => onDial(input)}
+        disabled={!isReady || isConnecting || !input}
         style={{
-          width: 64,
-          height: 64,
-          borderRadius: '50%',
-          border: 'none',
-          background: isReady && !isConnecting ? '#4ade80' : 'rgba(74,222,128,0.2)',
-          color: '#0c0c0e',
-          cursor: isReady && !isConnecting ? 'pointer' : 'default',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          height: 52, borderRadius: 8, border: 'none',
+          background: isReady && !isConnecting && input ? '#4ade80' : 'rgba(74,222,128,0.15)',
+          color: isReady && !isConnecting && input ? '#0c0c0e' : 'rgba(74,222,128,0.4)',
+          cursor: isReady && !isConnecting && input ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          fontSize: 11, fontWeight: 700, letterSpacing: '0.1em',
+          fontFamily: '"Space Mono", monospace',
           transition: 'all 0.2s',
         }}
       >
-        {isConnecting ? (
-          <Loader size={24} style={{ animation: 'spin 1s linear infinite' }} />
-        ) : (
-          <Phone size={24} />
-        )}
+        {isConnecting
+          ? <><Loader size={16} style={{ animation: 'spin 1s linear infinite' }} /> DIALING...</>
+          : <><Phone size={16} /> CALL</>}
       </button>
-      <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.15em' }}>
-        {isConnecting ? 'DIALING...' : 'TAP_TO_CALL'}
-      </div>
     </div>
   );
 }
 
 // ─── Active Call View ───────────────────────────────────────────────────────
 
-function ActiveCallView({ candidateName, phoneNumber, duration, isMuted, onToggleMute, onHangUp }: {
+function ActiveCallView({ candidateName, phoneNumber, duration, isMuted, onToggleMute, onHangUp, onSendDigits }: {
   candidateName: string;
   phoneNumber: string;
   duration: number;
   isMuted: boolean;
   onToggleMute: () => void;
   onHangUp: () => void;
+  onSendDigits: (digits: string) => void;
 }): React.ReactElement {
+  const [showDialpad, setShowDialpad] = useState(false);
+  const [dtmfInput, setDtmfInput] = useState('');
+
   const mins = Math.floor(duration / 60);
   const secs = duration % 60;
   const timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
+  const handleDtmfKey = (k: string): void => {
+    setDtmfInput((prev) => prev + k);
+    onSendDigits(k);
+  };
+
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 32,
-      padding: 32,
-    }}>
-      {/* Timer */}
-      <div style={{ textAlign: 'center' }}>
-        <div style={{
-          fontSize: 36,
-          fontWeight: 700,
-          color: '#4ade80',
-          letterSpacing: '0.08em',
-          fontVariantNumeric: 'tabular-nums',
-        }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '16px 20px', gap: 16 }}>
+      {/* Timer + caller */}
+      <div style={{ textAlign: 'center', paddingTop: 8 }}>
+        <div style={{ fontSize: 32, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em', fontVariantNumeric: 'tabular-nums' }}>
           {timeStr}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', marginTop: 8 }}>
-          {candidateName}
-        </div>
-        <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', opacity: 0.6, marginTop: 2 }}>
-          {phoneNumber}
-        </div>
+        <div style={{ fontSize: 12, color: 'var(--pipe-text-dim)', marginTop: 4 }}>{candidateName}</div>
+        <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', opacity: 0.6, marginTop: 2 }}>{phoneNumber}</div>
       </div>
 
+      {/* Recording indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 8, color: '#f87171', letterSpacing: '0.12em' }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#f87171', animation: 'pulse 1.5s ease-in-out infinite' }} />
+        RECORDING
+      </div>
+
+      {/* DTMF input display — shown when dialpad is open */}
+      {showDialpad && (
+        <div style={{
+          padding: '8px 14px', background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--pipe-border)', borderRadius: 6,
+          fontSize: 18, fontWeight: 700, letterSpacing: '0.1em',
+          fontVariantNumeric: 'tabular-nums', minHeight: 42,
+          color: dtmfInput ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+          textAlign: 'center',
+        }}>
+          {dtmfInput || <span style={{ fontSize: 11, fontWeight: 400 }}>keypad input</span>}
+        </div>
+      )}
+
+      {/* Dialpad */}
+      {showDialpad && <Dialpad onKey={handleDtmfKey} />}
+
       {/* Controls */}
-      <div style={{ display: 'flex', gap: 24 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 'auto' }}>
         {/* Mute */}
         <button
           onClick={onToggleMute}
+          title={isMuted ? 'Unmute' : 'Mute'}
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            border: 'none',
+            flex: 1, height: 48, borderRadius: 8, border: 'none',
             background: isMuted ? 'rgba(248,113,113,0.15)' : 'rgba(255,255,255,0.06)',
             color: isMuted ? '#f87171' : '#e0e0e0',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace',
           }}
         >
-          {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+          {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
+          {isMuted ? 'MUTED' : 'MUTE'}
+        </button>
+
+        {/* Dialpad toggle */}
+        <button
+          onClick={() => setShowDialpad((v) => !v)}
+          title="Keypad"
+          style={{
+            flex: 1, height: 48, borderRadius: 8, border: 'none',
+            background: showDialpad ? 'rgba(74,222,128,0.12)' : 'rgba(255,255,255,0.06)',
+            color: showDialpad ? '#4ade80' : '#e0e0e0',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace',
+          }}
+        >
+          <span style={{ fontSize: 15 }}>⌨</span> PAD
         </button>
 
         {/* Hang up */}
         <button
           onClick={onHangUp}
+          aria-label="Hang up"
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            border: 'none',
-            background: '#f87171',
-            color: '#0c0c0e',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            flex: 1, height: 48, borderRadius: 8, border: 'none',
+            background: '#f87171', color: '#0c0c0e',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace',
           }}
-         aria-label="Hang up">
-          <PhoneOff size={20} />
+        >
+          <PhoneOff size={15} /> END
         </button>
-      </div>
-
-      {/* Recording indicator */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        fontSize: 8,
-        color: '#f87171',
-        letterSpacing: '0.12em',
-      }}>
-        <div style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: '#f87171',
-          animation: 'pulse 1.5s ease-in-out infinite',
-        }} />
-        RECORDING
       </div>
     </div>
   );

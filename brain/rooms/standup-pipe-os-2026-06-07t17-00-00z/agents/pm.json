@@ -1,0 +1,8 @@
+{
+  "agent": "pm",
+  "room": "standup-pipe-os-2026-06-07t17-00-00z",
+  "provider": "devin",
+  "model": "swe-1.6",
+  "session_id": "snapdragon-parallel",
+  "created_at": 1780844328.9757922
+}

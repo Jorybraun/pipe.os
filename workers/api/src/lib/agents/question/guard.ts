@@ -199,6 +199,137 @@ const RULES: GuardRule[] = [
       return !!match;
     },
   },
+
+  // ── Compliance — Sensitivity Tier 4 (BLOCKED) ─────────────────────────────
+  // Brief 6, ADR-031: Title VII, ADA, ADEA, GINA, PDA, CA FEHA, NYC LL 144,
+  // Colorado SB24-205, Illinois HB 3773, EU AI Act Annex III.
+  // These question patterns MUST NEVER reach a candidate or hiring participant.
+  {
+    id: 'compliance_protected_class_race',
+    severity: 'block',
+    reason:
+      'Asks about or implies race, color, national origin, or ethnicity. Prohibited under Title VII and all state equivalents. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(what (is|are) your (race|ethnicity|national origin)|where (are you|were you) (from|born)|what (country|nationality)|speak english (as a first|natively)|your accent|where did you grow up)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_protected_class_age',
+    severity: 'block',
+    reason:
+      'Asks about or implies age or year of graduation. Prohibited under ADEA (40+), CA FEHA, and EU AI Act Annex III. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(how old are you|what (year|when) did you graduate|what is your age|date of birth|born in|graduation year)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_protected_class_disability',
+    severity: 'block',
+    reason:
+      'Asks about disability, medical history, or health condition. Prohibited under ADA, CA FEHA, EU AI Act Annex III. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(disability|disabled|medical condition|health (issue|problem|condition)|chronic illness|accommodation|physical limitation|mental health)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_protected_class_religion',
+    severity: 'block',
+    reason:
+      'Asks about religion, religious practices, or observances. Prohibited under Title VII, CA FEHA. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(religion|religious|church|mosque|synagogue|worship|sabbath|pray|faith|denomination|attend services)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_protected_class_sex_gender',
+    severity: 'block',
+    reason:
+      'Asks about sex, gender identity, marital status, or pregnancy. Prohibited under Title VII, PDA, CA FEHA, GINA. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(are you (married|pregnant|expecting|planning to have)|marital status|gender identity|sex\b|maiden name|spouse|husband|wife|boyfriend|girlfriend|parental leave|maternity|paternity)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_protected_class_genetic',
+    severity: 'block',
+    reason:
+      'Asks about genetic information or family medical history. Prohibited under GINA. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(genetic|family (medical|health|history)|hereditary|dna test|gene)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_salary_history',
+    severity: 'block',
+    reason:
+      'Asks about current or past salary/compensation. Prohibited in CA, NY, CO, IL, MA, and others. Drives pay gap. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(current (salary|compensation|pay|earnings)|how much (do|did|are) you (make|earn|get paid)|previous (salary|comp)|last (salary|paycheck|comp)|salary history)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_immigration_status',
+    severity: 'block',
+    reason:
+      'Asks about immigration, work authorization status, or citizenship in a discriminatory framing. Prohibited under INA anti-discrimination provisions. Work authorization eligibility may only be asked as "are you authorized to work in [country]." BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(visa status|green card|h[- ]?1b|citizenship status|are you a (citizen|permanent resident)|immigration status|work permit|passport)/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
+  {
+    id: 'compliance_arrest_record',
+    severity: 'block',
+    reason:
+      'Asks about arrest or conviction history outside legally permissible contexts. Prohibited under ban-the-box laws (CA, NY, CO, IL) for pre-offer screening. BLOCKED.',
+    test(input, capture) {
+      const match =
+        /(arrest(ed)?|criminal record|conviction|felony|misdemeanor|background check.*criminal|ever been (charged|convicted|arrested))/i.exec(
+          input.text,
+        );
+      if (match) capture(match[0]);
+      return !!match;
+    },
+  },
 ];
 
 // ─── Public API ──────────────────────────────────────────────────────────────

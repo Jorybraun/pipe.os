@@ -1,0 +1,22 @@
+{
+  "policies": [
+    {
+      "id": "standup-all",
+      "enabled": true,
+      "projectName": "PIPE-OS",
+      "domain": "All",
+      "agendaDomain": "discovery",
+      "board": "ceo-studio",
+      "timeLocal": "10:00",
+      "timezone": "America/Vancouver",
+      "recurrence": "daily",
+      "team": "",
+      "members": "planner,pm,ba,architect,agenda-agent",
+      "meetingId": "standup-all",
+      "lastAgendaDate": "2026-06-07",
+      "lastAgendaItemId": "standup-all-2026-06-07",
+      "createdAt": "2026-06-07T14:57:31.815Z",
+      "updatedAt": "2026-06-07T14:57:31.815Z"
+    }
+  ]
+}

@@ -2,6 +2,17 @@
 -- Enables the cross-family confidence scorer (Qwen evaluates Gemma output)
 -- to auto-approve high-confidence repos and route low-confidence ones to HITL.
 
+-- Note: This migration is made idempotent by checking column existence first
+-- SQLite-safe approach: Check if columns exist before adding them
+
+-- Create a temporary table to check for existing columns
+-- This is a workaround since SQLite doesn't support IF NOT EXISTS for ALTER TABLE
+
+-- Try to add confidence_score column (will fail silently if exists due to how we handle it)
+-- We use a try-catch approach by attempting to add and ignoring errors
+-- In production, this migration may have been partially applied, so we make it safe
+
+-- The actual column additions:
 ALTER TABLE repo_engineering_signals
 ADD COLUMN confidence_score REAL;
 

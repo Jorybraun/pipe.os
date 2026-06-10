@@ -29,6 +29,13 @@
 **Needs-refinement (blocked on decision):** 2  
 **Linked-only (deduplicated to phase0 plan):** 3
 
+## Raw Provenance Link (Phase 0 Extension)
+This plan now linked to raw layer per Task 1 contract:
+- Raw transcript: harness/brain/rooms/discovery/raw-harness-brain-raw-layer-extension-2026-06-05.md
+- Graph core: VisionNode "Role Discovery as source of truth" + RoadmapEdge to Phase 0 tasks (provenance: source_transcript_id=raw-*-2026-06-05.md, room=discovery)
+- Semantic graph schema: harness/brain/rooms/semantic-graph-core-schema.md
+- Enforcement: All future updates require raw + graph commit before synthesis.
+
 ---
 
 ## Dependency graph

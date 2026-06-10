@@ -48,6 +48,7 @@ export interface ProbePlan {
 // ─── Signal Probes (1-8) ─────────────────────────────────────────────────────
 
 const SIGNAL_PROBES: Probe[] = [
+  // TEAM DOMAIN (first in flow)
   {
     id: 'probe_1_code_review',
     text: 'Tell me about a recent code review that got interesting — what happened?',
@@ -68,44 +69,6 @@ const SIGNAL_PROBES: Probe[] = [
     isSoulProbe: false,
   },
   {
-    id: 'probe_2_production_incident',
-    text: "When something breaks in production, what's the first thing the team does?",
-    targetDomains: ['team', 'process'],
-    intent: 'Surface ownership patterns, blame culture, on-call expectations, and operational maturity.',
-    roleVariants: {
-      TEAM_MEMBER: "When something broke in production recently, what did the team actually do?",
-      HIRING_MANAGER: "When something breaks in production, what's the first thing the team does?",
-      INTERNAL_RECRUITER: "How does the team handle production incidents? What's the first thing they do?",
-      EXTERNAL_RECRUITER: "How does this team handle it when something breaks in production?",
-    },
-    drillingHints: [
-      'Who gets paged first?',
-      'Is there a post-mortem process?',
-    ],
-    ladderingTarget: 'What does the team value more: speed of recovery or prevention? Why?',
-    isPersonalityProbe: false,
-    isSoulProbe: false,
-  },
-  {
-    id: 'probe_3_done_definition',
-    text: "When a PR is truly finished on your team — what does that actually look like?",
-    targetDomains: ['codebase', 'bar'],
-    intent: 'Surface quality standards, testing practices, review rigor, and the definition of "done".',
-    roleVariants: {
-      TEAM_MEMBER: "When a PR is truly finished on your team — what does that actually look like from your perspective?",
-      HIRING_MANAGER: "When a PR is truly finished on your team — what does that actually look like?",
-      INTERNAL_RECRUITER: "What does 'done' look like for a PR on this team?",
-      EXTERNAL_RECRUITER: "What does a finished PR look like on this team?",
-    },
-    drillingHints: [
-      'What kind of tests need to pass?',
-      'Who gives the final approval?',
-    ],
-    ladderingTarget: 'Why does the team draw the line there? What would happen if they moved it?',
-    isPersonalityProbe: false,
-    isSoulProbe: false,
-  },
-  {
     id: 'probe_4_feedback_style',
     text: 'How do you usually give feedback to someone you work with?',
     targetDomains: ['team', 'bar'],
@@ -121,44 +84,6 @@ const SIGNAL_PROBES: Probe[] = [
       'What about feedback that did not land well?',
     ],
     ladderingTarget: 'What does the team believe about growth and improvement? How do they act on it?',
-    isPersonalityProbe: false,
-    isSoulProbe: false,
-  },
-  {
-    id: 'probe_5_senior_definition',
-    text: "If I asked your team what 'senior' means here, what would they say?",
-    targetDomains: ['bar', 'work'],
-    intent: 'Surface autonomy level, ownership scope, mentorship dynamics, and the seniority bar.',
-    roleVariants: {
-      TEAM_MEMBER: "If someone asked you what 'senior' means on this team, what would you say?",
-      HIRING_MANAGER: "If I asked your team what 'senior' means here, what would they say?",
-      INTERNAL_RECRUITER: "How would the team define what 'senior' means in this role?",
-      EXTERNAL_RECRUITER: "What does 'senior' mean for this team?",
-    },
-    drillingHints: [
-      'What does a senior person do that a mid-level does not?',
-      'What would make someone NOT senior here?',
-    ],
-    ladderingTarget: 'Why does the team value those specific traits? What business outcome depends on them?',
-    isPersonalityProbe: false,
-    isSoulProbe: false,
-  },
-  {
-    id: 'probe_6_last_shipment',
-    text: 'Walk me through the last thing your team shipped — how did it go from idea to live?',
-    targetDomains: ['work', 'codebase', 'process'],
-    intent: 'Surface stack, architecture, autonomy, shipping cadence, and collaboration patterns through a concrete story.',
-    roleVariants: {
-      TEAM_MEMBER: 'Walk me through the last thing you and your team shipped — how did it go from idea to live?',
-      HIRING_MANAGER: 'Walk me through the last thing your team shipped — how did it go from idea to live?',
-      INTERNAL_RECRUITER: 'Can you walk me through how the team shipped something recently?',
-      EXTERNAL_RECRUITER: 'How does the team typically ship something from idea to production?',
-    },
-    drillingHints: [
-      'What was the biggest technical decision?',
-      'Who made the call?',
-    ],
-    ladderingTarget: 'Why did they choose that approach? What constraints drove the decision?',
     isPersonalityProbe: false,
     isSoulProbe: false,
   },
@@ -198,6 +123,105 @@ const SIGNAL_PROBES: Probe[] = [
     ],
     ladderingTarget: 'Why does the team work this way? What would break if they changed it?',
     isPersonalityProbe: true,
+    isSoulProbe: false,
+  },
+  // WORK DOMAIN (second in flow)
+  {
+    id: 'probe_5_senior_definition',
+    text: "If I asked your team what 'senior' means here, what would they say?",
+    targetDomains: ['work', 'bar'],
+    intent: 'Surface autonomy level, ownership scope, mentorship dynamics, and the seniority bar.',
+    roleVariants: {
+      TEAM_MEMBER: "If someone asked you what 'senior' means on this team, what would you say?",
+      HIRING_MANAGER: "If I asked your team what 'senior' means here, what would they say?",
+      INTERNAL_RECRUITER: "How would the team define what 'senior' means in this role?",
+      EXTERNAL_RECRUITER: "What does 'senior' mean for this team?",
+    },
+    drillingHints: [
+      'What does a senior person do that a mid-level does not?',
+      'What would make someone NOT senior here?',
+    ],
+    ladderingTarget: 'Why does the team value those specific traits? What business outcome depends on them?',
+    isPersonalityProbe: false,
+    isSoulProbe: false,
+  },
+  {
+    id: 'probe_6_last_shipment',
+    text: 'Walk me through the last thing your team shipped — how did it go from idea to live?',
+    targetDomains: ['work', 'codebase', 'process'],
+    intent: 'Surface stack, architecture, autonomy, shipping cadence, and collaboration patterns through a concrete story.',
+    roleVariants: {
+      TEAM_MEMBER: 'Walk me through the last thing you and your team shipped — how did it go from idea to live?',
+      HIRING_MANAGER: 'Walk me through the last thing your team shipped — how did it go from idea to live?',
+      INTERNAL_RECRUITER: 'Can you walk me through how the team shipped something recently?',
+      EXTERNAL_RECRUITER: 'How does the team typically ship something from idea to production?',
+    },
+    drillingHints: [
+      'What was the biggest technical decision?',
+      'Who made the call?',
+    ],
+    ladderingTarget: 'Why did they choose that approach? What constraints drove the decision?',
+    isPersonalityProbe: false,
+    isSoulProbe: false,
+  },
+  // BAR DOMAIN (third in flow)
+  {
+    id: 'probe_3_done_definition',
+    text: "When a PR is truly finished on your team — what does that actually look like?",
+    targetDomains: ['bar', 'codebase'],
+    intent: 'Surface quality standards, testing practices, review rigor, and the definition of "done".',
+    roleVariants: {
+      TEAM_MEMBER: "When a PR is truly finished on your team — what does that actually look like from your perspective?",
+      HIRING_MANAGER: "When a PR is truly finished on your team — what does that actually look like?",
+      INTERNAL_RECRUITER: "What does 'done' look like for a PR on this team?",
+      EXTERNAL_RECRUITER: "What does a finished PR look like on this team?",
+    },
+    drillingHints: [
+      'What kind of tests need to pass?',
+      'Who gives the final approval?',
+    ],
+    ladderingTarget: 'Why does the team draw the line there? What would happen if they moved it?',
+    isPersonalityProbe: false,
+    isSoulProbe: false,
+  },
+  // PROCESS DOMAIN (fifth in flow)
+  {
+    id: 'probe_2_production_incident',
+    text: "When something breaks in production, what's the first thing the team does?",
+    targetDomains: ['process', 'team'],
+    intent: 'Surface ownership patterns, blame culture, on-call expectations, and operational maturity.',
+    roleVariants: {
+      TEAM_MEMBER: "When something broke in production recently, what did the team actually do?",
+      HIRING_MANAGER: "When something breaks in production, what's the first thing the team does?",
+      INTERNAL_RECRUITER: "How does the team handle production incidents? What's the first thing they do?",
+      EXTERNAL_RECRUITER: "How does this team handle it when something breaks in production?",
+    },
+    drillingHints: [
+      'Who gets paged first?',
+      'Is there a post-mortem process?',
+    ],
+    ladderingTarget: 'What does the team value more: speed of recovery or prevention? Why?',
+    isPersonalityProbe: false,
+    isSoulProbe: false,
+  },
+  // CODEBASE DOMAIN (fourth in flow)
+  {
+    id: 'probe_9_codebase_organization',
+    text: 'How is the codebase organized — what are the main areas or modules?',
+    targetDomains: ['codebase', 'work'],
+    intent: 'Surface technical architecture, code organization patterns, and system structure.',
+    roleVariants: {
+      TEAM_MEMBER: 'How is your codebase organized — what are the main areas or modules you work with?',
+      HIRING_MANAGER: 'How is the team\'s codebase organized — what are the main areas or modules?',
+      INTERNAL_RECRUITER: 'How is the codebase organized technically?',
+      EXTERNAL_RECRUITER: 'What\'s the high-level structure of the codebase?',
+    },
+    drillingHints: [
+      'What lives in each major area?',
+      'How do engineers navigate between different parts?',
+    ],
+    ladderingTarget: 'Why is it organized this way? What tradeoffs did they make?',
+    isPersonalityProbe: false,
     isSoulProbe: false,
   },
 ];
@@ -514,8 +538,9 @@ function probeToGeneratedQuestion(
  * Return calibrated signal probes for a domain, excluding already-delivered ones.
  *
  * Probes are returned in their canonical order (1–8). A probe is included if
- * the domain appears anywhere in its `targetDomains` list. Probes whose IDs
- * appear in `deliveredProbeIds` are excluded to prevent cross-domain duplication.
+ * the domain appears as the PRIMARY (first) target in its `targetDomains` list.
+ * This ensures probes respect the domain flow order and prevents illogical jumps.
+ * Probes whose IDs appear in `deliveredProbeIds` are excluded to prevent cross-domain duplication.
  *
  * Adapted to the participant's role for contextual phrasing.
  */
@@ -526,7 +551,7 @@ export function getProbesForDomain(
 ): GeneratedQuestion[] {
   const delivered = new Set(deliveredProbeIds);
   const matching = SIGNAL_PROBES.filter(
-    (p) => p.targetDomains.includes(domain) && !delivered.has(p.id),
+    (p) => p.targetDomains[0] === domain && !delivered.has(p.id),
   );
 
   console.log(
@@ -539,6 +564,7 @@ export function getProbesForDomain(
 /**
  * Return calibrated soul probes for a domain, excluding already-delivered ones.
  * Same semantics as getProbesForDomain but queries the soul probe library.
+ * Uses primary domain matching to respect the domain flow order.
  */
 export function getSoulProbesForDomain(
   domain: Domain,
@@ -547,7 +573,7 @@ export function getSoulProbesForDomain(
 ): GeneratedQuestion[] {
   const delivered = new Set(deliveredProbeIds);
   const matching = SOUL_PROBES.filter(
-    (p) => p.targetDomains.includes(domain) && !delivered.has(p.id),
+    (p) => p.targetDomains[0] === domain && !delivered.has(p.id),
   );
 
   return matching.map((p) => probeToGeneratedQuestion(p, participantRole));

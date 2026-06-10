@@ -1,0 +1,23 @@
+[
+  {
+    "id": "standup-all",
+    "title": "Daily standup - PIPE-OS",
+    "domain": "discovery",
+    "scheduledFor": "2026-06-09T17:00:00.000Z",
+    "recurrence": "daily",
+    "status": "scheduled",
+    "agenda": "Run the morning standup for PIPE-OS.\n\nAgenda:\n1. Review active goals, board state, and work completed since the last standup.\n2. Identify blocked or stale work and decide whether it needs planner, specialist, CEO, or human escalation.\n3. Propose today's concrete next actions as Agenda Items with owner, priority, and verification expectations.\n4. Call out any decision that needs the human; do not bury it in transcript text.\n\nBoard of record: ceo-studio.\nPolicy: proposal-only. Do not dispatch paid workers or promote work to Kanban unless explicitly approved by the human/autonomy policy.",
+    "criteria": "A concise standup summary, blocker list, human-decision requests, and proposal-only Agenda Items for today's work.",
+    "team": "",
+    "members": "planner,pm,ba,architect,agenda-agent",
+    "allowPaid": false,
+    "sourceContext": [],
+    "briefRef": null,
+    "room": "",
+    "roomPrefix": "standup-pipe-os",
+    "lastOccurrenceRoom": "standup-pipe-os-2026-06-08t17-00-00z",
+    "lastStartedAt": "2026-06-07T14:57:37.274Z",
+    "createdAt": "2026-06-07T14:57:31.817Z",
+    "updatedAt": "2026-06-07T14:57:37.274Z"
+  }
+]

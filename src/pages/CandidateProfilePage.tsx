@@ -1363,14 +1363,34 @@ export default function CandidateProfilePage(): JSX.Element {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr 340px",
+        gridTemplateColumns: showPhoneDrawer && candidate.phoneNumber
+          ? "360px 1fr 340px"
+          : "1fr 340px",
         gap: 0,
         height: "calc(100vh - 100px)",
         margin: "-24px 0 -24px 0",
         alignItems: "stretch",
         overflow: "hidden",
+        transition: "grid-template-columns 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
       }}
     >
+      {/* ── Phone Call Drawer — left panel ──────────────────────────────────── */}
+      {showPhoneDrawer && candidate.phoneNumber && (
+        <div style={{
+          borderRight: "1px solid var(--pipe-border)",
+          background: "var(--pipe-bg, #0c0c0e)",
+          overflowY: "auto",
+        }}>
+          <PhoneCallDrawer
+            candidateId={candidate.id}
+            candidateName={candidateLabel}
+            phoneNumber={candidate.phoneNumber}
+            pipelineId={candidate.pipelineId}
+            onClose={() => setShowPhoneDrawer(false)}
+            onCallComplete={() => void refetch()}
+          />
+        </div>
+      )}
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <div
         style={{
@@ -2784,29 +2804,7 @@ export default function CandidateProfilePage(): JSX.Element {
         </div>
       )}
 
-      {/* Phone Call Drawer — fixed overlay */}
-      {showPhoneDrawer && candidate.phoneNumber && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          right: 0,
-          width: 360,
-          height: "100vh",
-          background: "var(--pipe-bg, #0c0c0e)",
-          borderLeft: "1px solid var(--pipe-border)",
-          zIndex: 50,
-          boxShadow: "-4px 0 24px rgba(0,0,0,0.4)",
-        }}>
-          <PhoneCallDrawer
-            candidateId={candidate.id}
-            candidateName={candidateLabel}
-            phoneNumber={candidate.phoneNumber}
-            pipelineId={candidate.pipelineId}
-            onClose={() => setShowPhoneDrawer(false)}
-            onCallComplete={() => void refetch()}
-          />
-        </div>
-      )}
+
     </div>
   );
 }

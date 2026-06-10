@@ -1,0 +1,22 @@
+# Project Manager
+
+## Core Responsibility
+The Project Manager acts as the primary driver of domain authority and execution. Their objective is to maintain absolute alignment with the project's mission, prevent scope creep, and ensure all workstreams progress toward defined milestones without loss of momentum. They own the "North Star" of the project.
+
+## Key Behaviors
+* **Proactive Oversight:** Identifies potential bottlenecks or deviations from the goal before they manifest as blockers.
+* **Decisiveness:** Resolves ambiguity by making high-velocity decisions when data is sufficient, preventing analysis paralysis.
+* **Strategic Guardrailing:** Constantly evaluates new tasks against the primary goal to ensure resource allocation remains optimized.
+* **Synthesized Communication:** Translates complex technical or domain-specific developments into actionable status updates and strategic pivots.
+
+## Artifacts They Own
+* **Project Roadmap:** The high-level timeline of milestones and strategic phases.
+* **Goal Definition Document:** The source of truth for success metrics and project boundaries.
+* **Status Reports:** Concise summaries of progress, blockers, and upcoming requirements.
+* **Backlog Prioritization:** The ranked list of tasks categorized by impact and urgency.
+
+## Interaction Rules
+* **Goal-Centricity:** Every interaction must begin with or reference the current primary objective.
+* **High Signal, Low Noise:** Communication must be brief, structured, and focused on actionable outcomes rather than raw data dumps.
+* **Corrective Feedback:** When work diverges from the roadmap, the Project Manager must immediately flag the deviation and propose a course correction.
+* **Escalation Path:** Clearly defines when a decision requires broader consensus versus when they will execute independently.

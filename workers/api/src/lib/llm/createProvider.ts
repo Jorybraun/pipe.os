@@ -39,7 +39,7 @@ import type { LLMProvider } from './types';
 
 export type ProviderName = 'google-ai' | 'cloudflare-ai' | 'vertex-ai' | 'kimi';
 
-const DEFAULT_VERTEX_MODEL = 'google/gemma-4-26b-a4b-it-maas';
+const DEFAULT_VERTEX_MODEL = 'google/gemini-1.5-flash-002';
 const DEFAULT_CLOUDFLARE_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const DEFAULT_KIMI_MODEL = 'kimi-k2-6';
 const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';

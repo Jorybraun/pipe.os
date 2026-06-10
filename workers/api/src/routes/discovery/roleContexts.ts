@@ -1208,6 +1208,11 @@ roleContexts.post('/:id/respond', async (c) => {
         domains: turnResult.state.coverage,
         currentDomain: turnResult.state.currentDomain,
         domainCompletion: turnResult.state.domainCompletion,
+        phase: turnResult.state.phase,
+        phaseReasoning: turnResult.state.reasoning,
+        questionReasoning: typeof turnResult.question?.metadata?.reasoning === 'string'
+          ? turnResult.question.metadata.reasoning
+          : undefined,
       },
       status: 'INTERVIEWING',
       toolsUsed: turnResult.toolsUsed,

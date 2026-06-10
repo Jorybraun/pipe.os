@@ -37,6 +37,7 @@ const RecipientInvitePage = lazy(() => import("./pages/RecipientInvitePage"));
 const RecruiterVideoPage = lazy(() => import("./pages/RecruiterVideoPage"));
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
+const ContactsPage = lazy(() => import("./pages/ContactsPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
 const CandidateReportPrototype = lazy(() => import("./pages/CandidateReportPrototype"));
 const RepoAdminPage = lazy(() => import("./pages/admin/RepoAdminPage"));
@@ -290,6 +291,12 @@ function AppLayout(): JSX.Element {
             setShowCalls(false);
             navigate("/admin/ai-usage");
           }}
+          onContactsClick={() => {
+            setActiveSection("contacts");
+            setShowSettings(false);
+            setShowCalls(false);
+            navigate("/contacts");
+          }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
             ? {
                 onAgentClick: () => {
@@ -464,6 +471,7 @@ function App(): JSX.Element {
                     )}
                     <Route path="/recruiter/video/:id" element={<RecruiterVideoPage />} />
                     <Route path="/outreach" element={<OutreachPage />} />
+                    <Route path="/contacts" element={<ContactsPage />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
                         path="/sandbox/dev-container"

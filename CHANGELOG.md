@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Contacts CRM, Dialpad & Phone Drawer
+
+- `src/pages/ContactsPage.tsx`: New unified Contacts page — list/search/filter by type (lead/candidate/customer/other), add/edit/delete contacts with full profile fields (email, name, company, role, phone, LinkedIn, notes).
+- `workers/api/migrations/0077_contacts.sql`: New `contacts` table with owner-scoped CRUD.
+- `workers/api/src/routes/cockpit/contacts.ts`: REST API for contacts (GET list, POST, GET by id, PATCH, DELETE) with duplicate-email guard.
+- `src/components/SidebarNav.tsx`: Added Contacts nav item (Users icon).
+- `src/components/Phone/PhoneCallDrawer.tsx`: Replaced pre-call view with a full 3×4 dialpad + editable number input; added in-call DTMF keypad toggle (PAD button) for navigating IVR menus.
+- `src/hooks/useTwilioDevice.ts`: Added `sendDigits` method for DTMF tones.
+- `src/pages/CandidateProfilePage.tsx`: Moved phone drawer from fixed right overlay to left grid column so it opens inline with the candidate profile.
+
+### Added — Compliance Guard Rules & Question Probe Refinements
+
+- `workers/api/src/lib/agents/question/guard.ts`: Added Tier-4 BLOCKED compliance rules covering protected classes (race/ethnicity, age, disability, religion, sex/gender/marital status, genetic information), salary history, immigration/visa status, and arrest/conviction history per Title VII, ADA, ADEA, GINA, PDA, CA FEHA, NYC LL 144, and EU AI Act Annex III.
+- `workers/api/src/lib/agents/question/probeLibrarian.ts`: Reordered and rewrote signal probes — moved feedback-style and thrives/struggles probes earlier in the interview flow; updated role-variant phrasing and drilling hints.
+- `workers/api/src/lib/agents/roleDiscovery/plugin.ts`: Updated role discovery plugin logic.
+- `workers/api/src/routes/discovery/roleContexts.ts`: Minor addition to role contexts route.
+- `workers/api/migrations/0071_repo_confidence_score.sql`: Added idempotency comments for SQLite-safe column addition.
+
 ### Added — Video Transcript Artifacts
 
 - `workers/api/migrations/0076_transcript_artifacts.sql`: New table for persisting video call transcripts with status (PENDING/COMPLETED/FAILED) and error_message for actionable failure status. Links to scheduled_interviews for graph associations (meeting invite, recipient/person nodes).
