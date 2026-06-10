@@ -51,14 +51,7 @@ meetings.post('/', async (c) => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
 
-  await c.env.DB.prepare(
-    `INSERT INTO meetings (id, owner_id, title, description, meeting_type, scheduled_at, scheduled_interview_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(id, userId, title, description ?? null, meeting_type, scheduled_at ?? null, scheduled_interview_id ?? null, now, now)
-    .run();
-
-  // Add participants if provided (deduplicate + verify ownership)
+  // Validate participant ownership BEFORE creating the meeting to prevent orphans
   const uniqueContactIds = [...new Set(participant_contact_ids)];
   if (uniqueContactIds.length > 0) {
     const placeholders = uniqueContactIds.map(() => '?').join(', ');
@@ -69,7 +62,17 @@ meetings.post('/', async (c) => {
     if (owned.results.length !== uniqueContactIds.length) {
       return apiError(c, 'VALIDATION_ERROR', 'One or more participant contact_ids not found.');
     }
+  }
 
+  await c.env.DB.prepare(
+    `INSERT INTO meetings (id, owner_id, title, description, meeting_type, scheduled_at, scheduled_interview_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, userId, title, description ?? null, meeting_type, scheduled_at ?? null, scheduled_interview_id ?? null, now, now)
+    .run();
+
+  // Add validated participants
+  if (uniqueContactIds.length > 0) {
     const stmts = uniqueContactIds.map((contactId) => {
       const participantId = crypto.randomUUID();
       return c.env.DB.prepare(
