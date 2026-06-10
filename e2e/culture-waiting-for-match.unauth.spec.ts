@@ -109,8 +109,8 @@ test.describe("WAITING_FOR_MATCH gate flow", () => {
       timeout: 10_000,
     });
 
-    // Progress bar and timer are visible
-    await expect(page.getByText(/ESTIMATED/i)).toBeVisible();
+    // Status label is visible (no fake countdown timer)
+    await expect(page.getByText(/MATCHING IN PROGRESS/i)).toBeVisible();
 
     // Wait for auto-refresh (2 second interval + buffer)
     await page.waitForTimeout(4000);

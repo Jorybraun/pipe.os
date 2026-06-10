@@ -30,7 +30,6 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswe
 export interface WaitingChallengeConfig {
   autoRefresh: boolean;
   refreshIntervalSeconds: number;
-  estimatedSecondsRemaining: number;
 }
 
 export interface WaitingChallengeDTO {
