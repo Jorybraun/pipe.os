@@ -7,11 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed — Email Invite Security & Error Handling
+### Added — Contacts & Meetings Architecture (ADR-049)
 
-- `workers/api/src/routes/cockpit/scheduling.ts`: HTML-escape all user-controlled values (`candidateName`, `pipelineTitle`, `stageTitle`, `meetingUrl`) in the invite email template to prevent HTML injection. Added `escapeHtml()` helper and `encodeURI()` for href attributes.
-- `workers/api/src/routes/cockpit/scheduling.ts`: Only record `email_sent_at` and `invite_link_sent_at` timestamps when the email is actually delivered — previously these were written unconditionally even on send failure.
-- `workers/api/src/routes/cockpit/scheduling.ts`: Return HTTP 502 with `success: false` when email delivery fails, so the frontend correctly shows an error state instead of a false success.
+- `knowledge/docs/decisions/current/ADR-049-contacts-meetings-separation.md`: Architecture decision for separating meetings into its own Worker + SPA. Introduces `contacts`, `meetings`, `meeting_participants` tables. Domain: `meet.hire-pipe.com`.
+- `knowledge/docs/decisions/current/TASKS-meetings.md`: Phased implementation plan (5 phases, 30 tasks) — schema, Worker scaffold, SPA, video calls, transcription, scheduling bridge.
 
 ### Fixed — Deterministic Discovery Interview Questions
 
