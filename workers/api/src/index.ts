@@ -26,7 +26,7 @@ import { emailOAuth } from './routes/outreach/emailOAuth';
 import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
-import { videoAuth, videoCandidate } from './routes/assessment/video';
+import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/video';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -142,6 +142,8 @@ app.route('/api/v1/phone', phoneAuth);
 app.route('/api/v1/video', videoAuth);
 // Video: candidate WebSocket connection (candidate JWT auth)
 app.route('/rpc/video', videoCandidate);
+// Video: public WebSocket connection (candidate via invite link, no auth)
+app.route('/api/v1/video/public', videoPublic);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}

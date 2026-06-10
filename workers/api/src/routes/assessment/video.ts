@@ -163,4 +163,30 @@ videoCandidate.get('/sessions/:id/ws', async (c) => {
   }));
 });
 
-export { videoAuth, videoCandidate };
+// ─── Public video routes (no auth — for direct meeting link access) ─────────
+
+const videoPublic = new Hono<{ Bindings: Env }>();
+
+// GET /sessions/:id/ws — WebSocket upgrade (candidate via invite link)
+videoPublic.get('/sessions/:id/ws', async (c) => {
+  const { id } = c.req.param();
+  const upgradeHeader = c.req.header('Upgrade');
+
+  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+    return apiError(c, 'VALIDATION_ERROR', 'Expected WebSocket upgrade.');
+  }
+
+  // Validate session ID format (stageId--candidateId, both UUIDs)
+  if (!id.includes('--') || id.split('--').length !== 2) {
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid session ID format.');
+  }
+
+  const doId = c.env.VIDEO_ROOM.idFromName(id);
+  const stub = c.env.VIDEO_ROOM.get(doId);
+
+  return stub.fetch(new Request(`https://do/ws?role=CANDIDATE`, {
+    headers: c.req.raw.headers,
+  }));
+});
+
+export { videoAuth, videoCandidate, videoPublic };
