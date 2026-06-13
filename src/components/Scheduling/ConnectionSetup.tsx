@@ -47,8 +47,8 @@ export function ConnectionSetup(): JSX.Element {
 
   const plugins = getAllPlugins();
 
-  // Build the redirect URI — current page without query params
-  const redirectUri = `${window.location.origin}${window.location.pathname}`;
+  // Build the redirect URI — use fixed path to ensure consistency
+  const redirectUri = `${window.location.origin}/schedule`;
 
   // ---------------------------------------------------------------------------
   // Handle OAuth callback (code + state in URL)

@@ -133,18 +133,24 @@ schedulingAuth.post('/connect', async (c) => {
       return apiError(c, 'SERVICE_UNAVAILABLE', 'Calendly not configured.');
     }
 
+
+
     const params = new URLSearchParams({
       client_id: clientId,
       response_type: 'code',
       redirect_uri: redirectUri,
+      scope: 'scheduled_events:read',
     });
     if (codeChallenge) {
       params.set('code_challenge', codeChallenge);
       params.set('code_challenge_method', 'S256');
     }
 
+    const authUrl = `https://auth.calendly.com/oauth/authorize?${params.toString()}`;
+    console.log('[scheduling] Generated Calendly auth URL:', authUrl);
+
     return c.json({
-      authUrl: `https://auth.calendly.com/oauth/authorize?${params.toString()}`,
+      authUrl,
     });
   }
 
@@ -158,6 +164,7 @@ schedulingAuth.post('/connect', async (c) => {
       client_id: clientId,
       response_type: 'code',
       redirect_uri: redirectUri,
+      scope: 'READ_BOOKING READ_PROFILE',
     });
 
     return c.json({
@@ -185,13 +192,7 @@ schedulingAuth.post('/callback', async (c) => {
     return apiError(c, 'SERVICE_UNAVAILABLE', `${providerId} not configured.`);
   }
 
-  // Debug: log what credentials are being used
-  console.log('[scheduling] Token exchange config', {
-    clientId: config.clientId ? `${config.clientId.slice(0, 8)}...` : 'EMPTY',
-    clientSecretLen: config.clientSecret?.length ?? 0,
-    redirectUri,
-    codeLen: code.length,
-  });
+
 
   // Exchange code for tokens
   const tokenParams: Record<string, string> = {
@@ -404,6 +405,91 @@ schedulingAuth.delete('/connection', async (c) => {
   return c.json({ success: true });
 });
 
+// GET /connection/:id/event-types — list event types for a specific connection
+schedulingAuth.get('/connection/:id/event-types', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+  const { id: connectionId } = c.req.param();
+
+  const connection = await db
+    .prepare(
+      `SELECT id, provider_id, access_token, token_expiry, refresh_token
+       FROM scheduling_connections
+       WHERE id = ? AND owner_id = ? AND status = 'ACTIVE'`
+    )
+    .bind(connectionId, userId)
+    .first<{
+      id: string;
+      provider_id: string;
+      access_token: string;
+      token_expiry: string | null;
+      refresh_token: string | null;
+    }>();
+
+  if (!connection) {
+    return apiError(c, 'NOT_FOUND', 'Connection not found.');
+  }
+
+  // Auto-refresh if needed
+  let accessToken = connection.access_token;
+  if (connection.token_expiry) {
+    const expiryTime = new Date(connection.token_expiry).getTime();
+    const bufferMs = 5 * 60 * 1000;
+    if (Date.now() >= expiryTime - bufferMs && connection.refresh_token) {
+      const refreshed = await refreshToken(connection, c.env);
+      if (refreshed) {
+        accessToken = refreshed;
+      } else {
+        return apiError(c, 'INTERNAL_ERROR', 'Token refresh failed.');
+      }
+    }
+  }
+
+  const config = getProviderConfig(connection.provider_id, c.env);
+  if (!config?.eventTypesUrl) {
+    return apiError(c, 'INTERNAL_ERROR', 'Provider does not support event types.');
+  }
+
+  let eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }> = [];
+
+  if (connection.provider_id === 'CALENDLY') {
+    try {
+      const userRes = await fetch('https://api.calendly.com/users/me', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!userRes.ok) {
+        return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly user.');
+      }
+      const userData = await userRes.json() as { resource?: { uri?: string } };
+      const userUri = userData.resource?.uri;
+      if (!userUri) {
+        return apiError(c, 'INTERNAL_ERROR', 'Could not resolve Calendly user URI.');
+      }
+
+      const etRes = await fetch(
+        `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!etRes.ok) {
+        return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly event types.');
+      }
+      const etData = await etRes.json() as { collection?: Array<{ uri: string; name: string; duration: number; scheduling_url: string }> };
+      eventTypes = (etData.collection || []).map((et) => ({
+        id: et.uri,
+        name: et.name,
+        durationMinutes: et.duration,
+        url: et.uri,
+        schedulingUrl: et.scheduling_url,
+      }));
+    } catch (err) {
+      console.error('[scheduling] Calendly event types fetch error:', err);
+      return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch event types.');
+    }
+  }
+
+  return c.json({ eventTypes });
+});
+
 // GET /event-types — list provider event types
 schedulingAuth.get('/event-types', async (c) => {
   const userId = c.var.userId;
@@ -449,7 +535,7 @@ schedulingAuth.get('/event-types', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', 'Provider does not support event types.');
   }
 
-  let eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string }> = [];
+  let eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }> = [];
 
   if (connection.provider_id === 'CALENDLY') {
     eventTypes = await fetchCalendlyEventTypes(accessToken, config);
@@ -1217,7 +1303,7 @@ async function refreshToken(
 async function fetchCalendlyEventTypes(
   accessToken: string,
   config: ProviderOAuthConfig,
-): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string }>> {
+): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>> {
   const userResp = await fetch(config.userInfoUrl!, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1243,7 +1329,8 @@ async function fetchCalendlyEventTypes(
     id: et.uri ?? '',
     name: et.name ?? 'Unnamed',
     durationMinutes: et.duration ?? 30,
-    url: et.scheduling_url ?? '',
+    url: et.uri ?? '',
+    schedulingUrl: et.scheduling_url ?? '',
   }));
 }
 

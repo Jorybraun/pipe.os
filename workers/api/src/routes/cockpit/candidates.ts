@@ -16,6 +16,10 @@ import { sendNotificationEmail } from '../../lib/email';
 import { checkDealbreakersForCandidate } from '../../lib/neo4j/matchingQueries';
 import { buildNeo4jConfig, createNeo4jDriver } from '../../lib/neo4j/driver';
 import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileSections';
+import {
+  ensureCandidateLivingContext,
+  loadCandidateLivingContext,
+} from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -25,6 +29,8 @@ const createCandidateSchema = z.object({
   email: z.string().email('valid email required'),
   currentStageId: z.string().optional(),
   skipEmail: z.boolean().optional(),
+  schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
+  schedulingUrl: z.string().optional(),
 });
 
 const updateCandidateSchema = z.object({
@@ -78,7 +84,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  let { name, email, currentStageId: requestedStageId, skipEmail } = parsed.data;
+  let { name, email, currentStageId: requestedStageId, skipEmail, schedulingProvider, schedulingUrl } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
   } catch (err) {
@@ -132,6 +138,8 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       )
       .bind(id, now)
       .run();
+
+    await ensureCandidateLivingContext(db, id);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_candidates_pipeline_email')) {
@@ -151,10 +159,10 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       const interviewId = crypto.randomUUID();
       await db
         .prepare(
-          `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?)`
+          `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
         )
-        .bind(interviewId, id, pipelineId, stageId, userId, now, now)
+        .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
         .run();
     }
   }
@@ -180,50 +188,56 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       // If stage is scheduled (LIVE_VIDEO or is_scheduled flag), look up booking URL
       console.log('[candidates] Stage check:', { is_scheduled: stageRow?.is_scheduled, mode: stageRow?.mode, scheduling_event_type_id: stageRow?.scheduling_event_type_id });
       if (stageRow?.is_scheduled || stageRow?.mode === 'LIVE_VIDEO') {
-        const conn = await db
-          .prepare(
-            `SELECT access_token, provider_id FROM scheduling_connections
-             WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`
-          )
-          .bind(userId)
-          .first<{ access_token: string; provider_id: string }>();
+        // Use provided schedulingUrl if available (from frontend Calendly selection)
+        if (schedulingUrl) {
+          bookingUrl = schedulingUrl;
+          console.log('[candidates] Using provided scheduling URL:', bookingUrl);
+        } else {
+          // Fallback to existing logic: fetch from Calendly
+          const conn = await db
+            .prepare(
+              `SELECT access_token, provider_id FROM scheduling_connections
+               WHERE owner_id = ? AND status = 'ACTIVE' LIMIT 1`
+            )
+            .bind(userId)
+            .first<{ access_token: string; provider_id: string }>();
 
-        console.log('[candidates] Scheduling connection:', { found: !!conn, provider: conn?.provider_id });
-        if (conn && conn.provider_id === 'CALENDLY') {
-          try {
-            // Use stage-specific event type or fetch the first available one
-            const eventTypeUri = stageRow.scheduling_event_type_id;
-            if (eventTypeUri) {
-              console.log('[candidates] Fetching event type:', eventTypeUri);
-              const etRes = await fetch(eventTypeUri, {
-                headers: { Authorization: `Bearer ${conn.access_token}` },
-              });
-              console.log('[candidates] Event type response:', { status: etRes.status });
-              if (etRes.ok) {
-                const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
-                console.log('[candidates] Event type scheduling_url:', etData.resource?.scheduling_url);
-                bookingUrl = etData.resource?.scheduling_url;
+          console.log('[candidates] Scheduling connection:', { found: !!conn, provider: conn?.provider_id });
+          if (conn && conn.provider_id === 'CALENDLY') {
+            try {
+              // Use stage-specific event type or fetch the first available one
+              const eventTypeUri = stageRow.scheduling_event_type_id;
+              if (eventTypeUri) {
+                console.log('[candidates] Fetching event type:', eventTypeUri);
+                const etRes = await fetch(eventTypeUri, {
+                  headers: { Authorization: `Bearer ${conn.access_token}` },
+                });
+                console.log('[candidates] Event type response:', { status: etRes.status });
+                if (etRes.ok) {
+                  const etData = await etRes.json() as { resource?: { scheduling_url?: string } };
+                  console.log('[candidates] Event type scheduling_url:', etData.resource?.scheduling_url);
+                  bookingUrl = etData.resource?.scheduling_url;
+                } else {
+                  const errText = await etRes.text();
+                  console.error('[candidates] Event type fetch failed:', errText);
+                }
               } else {
-                const errText = await etRes.text();
-                console.error('[candidates] Event type fetch failed:', errText);
-              }
-            } else {
-              // No event type configured — use first available from the account
-              console.log('[candidates] No event type configured, using fallback');
-              const userRes = await fetch('https://api.calendly.com/users/me', {
-                headers: { Authorization: `Bearer ${conn.access_token}` },
-              });
-              console.log('[candidates] /users/me response:', { status: userRes.status });
-              if (userRes.ok) {
-                const userData = await userRes.json() as { resource?: { uri?: string } };
-                const userUri = userData.resource?.uri;
-                console.log('[candidates] User URI:', userUri);
-                if (userUri) {
-                  const etListRes = await fetch(
-                    `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
-                    { headers: { Authorization: `Bearer ${conn.access_token}` } },
-                  );
-                  console.log('[candidates] Event types list response:', { status: etListRes.status });
+                // No event type configured — use first available from the account
+                console.log('[candidates] No event type configured, using fallback');
+                const userRes = await fetch('https://api.calendly.com/users/me', {
+                  headers: { Authorization: `Bearer ${conn.access_token}` },
+                });
+                console.log('[candidates] /users/me response:', { status: userRes.status });
+                if (userRes.ok) {
+                  const userData = await userRes.json() as { resource?: { uri?: string } };
+                  const userUri = userData.resource?.uri;
+                  console.log('[candidates] User URI:', userUri);
+                  if (userUri) {
+                    const etListRes = await fetch(
+                      `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true&count=1`,
+                      { headers: { Authorization: `Bearer ${conn.access_token}` } },
+                    );
+                    console.log('[candidates] Event types list response:', { status: etListRes.status });
                   if (etListRes.ok) {
                     const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
                     console.log('[candidates] Event types collection:', JSON.stringify(etList.collection?.map(e => e.scheduling_url)));
@@ -343,6 +357,8 @@ candidateOps.post('/', async (c) => {
       )
       .bind(id, now)
       .run();
+
+    await ensureCandidateLivingContext(db, id);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('UNIQUE constraint failed')) {
@@ -395,6 +411,27 @@ candidateOps.post('/', async (c) => {
       pipelineId: null,
     },
   }, 201);
+});
+
+// GET /:candidateId/living-context — source-backed person graph read model
+candidateOps.get('/:candidateId/living-context', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  await ensureCandidateLivingContext(db, candidateId);
+  const livingContext = await loadCandidateLivingContext(db, candidateId);
+  if (!livingContext) {
+    return apiError(c, 'NOT_FOUND', 'Living context not found.');
+  }
+  return c.json({ livingContext });
 });
 
 // GET /:candidateId — full profile with stages + challenge submissions
@@ -1207,6 +1244,8 @@ candidateOps.patch('/:candidateId', async (c) => {
     .prepare(`UPDATE candidates SET ${updates.join(', ')} WHERE id = ?`)
     .bind(...values)
     .run();
+
+  await ensureCandidateLivingContext(db, candidateId);
 
   return c.json({ success: true });
 });

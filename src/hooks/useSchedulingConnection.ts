@@ -19,6 +19,7 @@ export interface SchedulingConnectionInfo {
   accountName: string | null;
   connectedAt: string;
   lastSyncAt: string | null;
+  eventTypes?: ProviderEventType[];
 }
 
 /** Event type as returned by the Worker API */
@@ -27,6 +28,7 @@ export interface ProviderEventType {
   name: string;
   duration: number;
   url: string;
+  schedulingUrl: string;
 }
 
 interface UseSchedulingConnectionResult {
@@ -43,6 +45,19 @@ interface UseSchedulingConnectionResult {
   disconnect: (connectionId: string) => Promise<void>;
   getAuthUrl: (providerId: ProviderId, redirectUri: string, codeChallenge?: string) => Promise<string>;
   refetch: () => Promise<void>;
+}
+
+/**
+ * Helper function to fetch event types for a connection
+ */
+async function fetchEventTypesForConnection(api: ApiClient, connectionId: string): Promise<ProviderEventType[]> {
+  try {
+    const result = await api.get<{ eventTypes: ProviderEventType[] }>(`/api/v1/scheduling/connection/${connectionId}/event-types`);
+    return result.eventTypes || [];
+  } catch (err) {
+    console.error('[fetchEventTypesForConnection] Failed:', err);
+    return [];
+  }
 }
 
 /**
@@ -73,6 +88,14 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
       }>('/api/v1/scheduling/connection');
 
       if (result.connection) {
+        // Fetch event types for the connection
+        let eventTypes: ProviderEventType[] = [];
+        try {
+          eventTypes = await fetchEventTypesForConnection(api, result.connection.id);
+        } catch (err) {
+          console.error('[useSchedulingConnection] Failed to fetch event types:', err);
+        }
+
         setConnection({
           id: result.connection.id,
           providerId: result.connection.providerId,
@@ -81,6 +104,7 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
           accountName: result.connection.accountName,
           connectedAt: result.connection.connectedAt,
           lastSyncAt: result.connection.lastSyncAt,
+          eventTypes,
         });
       } else {
         setConnection(null);
@@ -163,7 +187,7 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
     setError(null);
     try {
       const result = await api.get<{
-        eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string }>;
+        eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>;
       }>('/api/v1/scheduling/event-types');
 
       return result.eventTypes.map((et) => ({
@@ -171,6 +195,7 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         name: et.name,
         duration: et.durationMinutes,
         url: et.url,
+        schedulingUrl: et.schedulingUrl,
       }));
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Fetch event types failed');

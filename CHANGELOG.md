@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Calendly OAuth Scope Error
+
+- `workers/api/src/routes/cockpit/scheduling.ts`: Fixed Calendly OAuth scope parameter format. Changed from `users:read event_types:read scheduled_events:read` (causing malformed error) to `scheduled_events:read` (matching Calendly documentation exactly). Fixed "The requested scope is invalid, unknown, or malformed" error.
+- `src/components/Scheduling/provider/CalendlyProvider.tsx`: Fixed frontend OAuth URL generation to use correct scope format `scheduled_events:read` instead of incorrect `users:read event_types:read scheduled_events:read`.
+- `src/components/Scheduling/ConnectionSetup.tsx`: Fixed redirect URI consistency by using fixed path `/schedule` instead of dynamic page path. Resolved "does not match the redirection URI used in the authorization request" error during token exchange.
+- `src/components/settings/IntegrationsSettings.tsx`: Fixed redirect URI consistency for settings page OAuth flow.
+
+### Added — Calendly Scheduling Link Support
+
+- `src/components/Scheduling/InviteCandidateModal.tsx`: Added Calendly scheduling link option when Calendly is connected. Added scheduling mode selector (Calendly Link vs Manual Time) that auto-selects Calendly when connected. Updated to send `schedulingProvider` and `schedulingUrl` to backend API.
+- `src/hooks/useSchedulingConnection.ts`: Added `eventTypes` field to `SchedulingConnectionInfo` interface. Added `schedulingUrl` field to `ProviderEventType` interface. Added `fetchEventTypesForConnection` helper function to fetch event types for a specific connection.
+- `workers/api/src/routes/cockpit/scheduling.ts`: Added `GET /connection/:id/event-types` endpoint to fetch event types for a specific connection. Updated `fetchCalendlyEventTypes` to return `schedulingUrl` field. Updated event types return type to include `schedulingUrl`.
+- `workers/api/src/routes/cockpit/candidates.ts`: Updated `createCandidateSchema` to accept `schedulingProvider` and `schedulingUrl` parameters. Updated candidate creation to store scheduling provider and URL in `scheduled_interviews` table. Updated email sending logic to use provided `schedulingUrl` if available.
+
+### Added — AI Assistant for Meetings App (CopilotKit-Compatible Custom Agent)
+
+- `workers/meetings/src/lib/copilotAgent.ts`: Custom agent following Pipe's pattern. Uses Cloudflare AI binding with Gemma 4 model. Simple keyword-based tool routing (meeting/contact keywords) with ReAct-style tool execution. Works in Cloudflare Workers runtime without Node.js dependencies.
+- `workers/meetings/src/index.ts`: Added `/api/copilotkit` endpoint implementing CopilotKit v2 API interface. Converts between CopilotKit request/response format and custom agent format. Enables frontend to use CopilotKit hooks while backend uses custom agent.
+- `apps/meetings/src/components/AIAssistant.tsx`: AI assistant panel with AGUI components (`MeetingCard`, `ContactCard`) using `useComponent` from `@copilotkit/react-core/v2`. Agent-controlled UI rendering.
+- `apps/meetings/src/App.tsx`: Integrated CopilotKit v2 provider with `@copilotkit/react-core/v2`. AI assistant as right panel with sliding push effect.
+- `packages/ui/src/Layout.tsx`: Added `rightPanel`, `rightPanelOpen`, `rightPanelWidth` props for sliding panel support with content push effect.
+
+**Technical Notes:**
+- **CopilotKit-compatible custom agent pattern** - Backend implements CopilotKit v2 API interface (`/api/copilotkit`) but uses custom agent that works in Cloudflare Workers
+- Frontend uses CopilotKit v2 hooks (`useChat`, `useComponent`) - complies with project rule
+- Custom agent uses Cloudflare AI binding directly with Gemma 4 model
+- Simple keyword-based tool routing (can be upgraded to full ReAct loop with tool protocol later)
+- Works in Cloudflare Workers runtime without Node.js dependencies
+- **Future upgrade path** - When CopilotKit v2's package structure or Wrangler's bundler is fixed, can swap backend to real CopilotKit v2 without frontend changes
+- Production-ready per Pipe standards
+
+**Lesson Learned: CopilotKit v2 + Cloudflare Workers Incompatibility**
+- CopilotKit v2's package structure includes Node.js dependencies (`@hono/node-server`, `express`, `@segment/analytics-node`) at the package level
+- Wrangler's bundler (Rolldown) automatically injects `createRequire(import.meta.url)` for CommonJS interop
+- `import.meta.url` is `undefined` in Cloudflare Workers bundled output, causing crash at module initialization
+- Neither Wrangler aliases, npm overrides, nodejs_compat flag, nor patch-package can fix this bundler-level issue
+- Root cause: CopilotKit's monolithic package structure + Wrangler's bundler behavior
+- Solution: Implement CopilotKit-compatible API interface with custom agent that works in Workers
+
 ### Fixed — Contextual Graph Testing Issues (ADR-050 Handoff)
 
 - `workers/api/src/lib/cultureContextualDecomposition.ts`: Added JSON repair pass and retry logic with shorter phrases instruction to handle LLM output truncation. Increased maxTokens from 1024 to 2048. Reduces silent data loss from malformed JSON.

@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { X, UserPlus, Send } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, UserPlus, Send, Calendar } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
-import type { InterviewType } from '../../lib/scheduling/types';
+import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
+import type { InterviewType, SchedulingProvider } from '../../lib/scheduling/types';
 
 interface InviteCandidateModalProps {
   onClose: () => void;
@@ -13,17 +14,27 @@ export function InviteCandidateModal({
   onSuccess,
 }: InviteCandidateModalProps): JSX.Element {
   const api = useApiClient();
+  const { connection } = useSchedulingConnection();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [interviewType, setInterviewType] = useState<InterviewType | ''>('');
   const [scheduledAt, setScheduledAt] = useState('');
+  const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   const isValid = name.trim().length > 0 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const hasCalendly = connection?.status === 'ACTIVE' && connection.providerId === 'CALENDLY';
+
+  // Auto-select Calendly mode if Calendly is connected
+  useEffect(() => {
+    if (hasCalendly) {
+      setSchedulingMode('calendly');
+    }
+  }, [hasCalendly]);
 
   const handleSubmit = async (): Promise<void> => {
     if (!isValid || isSending) return;
@@ -31,13 +42,25 @@ export function InviteCandidateModal({
     setError(null);
 
     try {
-      await api.post('/api/v1/candidates', {
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         email: email.trim(),
         ...(interviewType ? { interviewType } : {}),
-        ...(scheduledAt ? { scheduledAt } : {}),
         ...(message.trim() ? { message: message.trim() } : {}),
-      });
+      };
+
+      if (schedulingMode === 'calendly' && hasCalendly) {
+        payload.schedulingProvider = 'CALENDLY' as SchedulingProvider;
+        // Use the first available event type from Calendly
+        const eventTypes = connection.eventTypes || [];
+        if (eventTypes.length > 0 && eventTypes[0]) {
+          payload.schedulingUrl = eventTypes[0].schedulingUrl;
+        }
+      } else if (scheduledAt) {
+        payload.scheduledAt = scheduledAt;
+      }
+
+      await api.post('/api/v1/candidates', payload);
       setSuccess(true);
       setTimeout(() => {
         onSuccess();
@@ -182,29 +205,92 @@ export function InviteCandidateModal({
               </div>
             </div>
 
-            {/* Scheduled At (optional) */}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
-                SCHEDULE FOR (OPTIONAL)
-              </label>
-              <input
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: 6,
-                  color: 'var(--pipe-text)',
-                  fontFamily: '"Space Mono", monospace',
-                  fontSize: 13,
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
+            {/* Scheduling mode selector - only show if Calendly is connected */}
+            {hasCalendly && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
+                  SCHEDULING MODE
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => setSchedulingMode('calendly')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '8px 14px',
+                      borderRadius: 6,
+                      border: `1px solid ${schedulingMode === 'calendly' ? 'rgba(74,222,128,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                      background: schedulingMode === 'calendly' ? 'rgba(74,222,128,0.08)' : 'transparent',
+                      color: schedulingMode === 'calendly' ? '#4ade80' : 'var(--pipe-text-dim)',
+                      fontFamily: '"Space Mono", monospace',
+                      fontSize: 11,
+                      letterSpacing: '0.05em',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <Calendar size={14} />
+                    Calendly Link
+                  </button>
+                  <button
+                    onClick={() => setSchedulingMode('manual')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '8px 14px',
+                      borderRadius: 6,
+                      border: `1px solid ${schedulingMode === 'manual' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.08)'}`,
+                      background: schedulingMode === 'manual' ? 'rgba(255,255,255,0.08)' : 'transparent',
+                      color: schedulingMode === 'manual' ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                      fontFamily: '"Space Mono", monospace',
+                      fontSize: 11,
+                      letterSpacing: '0.05em',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    Manual Time
+                  </button>
+                </div>
+                {schedulingMode === 'calendly' && (
+                  <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
+                    Guest will receive a Calendly link to self-schedule
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Scheduled At (optional) - only show in manual mode */}
+            {schedulingMode === 'manual' && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
+                  SCHEDULE FOR (OPTIONAL)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt}
+                  onChange={(e) => setScheduledAt(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6,
+                    color: 'var(--pipe-text)',
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 13,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            )}
 
             {/* Custom message */}
             <div style={{ marginBottom: 24 }}>

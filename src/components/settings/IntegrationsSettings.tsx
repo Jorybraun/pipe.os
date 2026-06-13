@@ -83,6 +83,7 @@ export function IntegrationsSettings(): JSX.Element {
   const [loadingEventTypes, setLoadingEventTypes] = useState(false);
 
   const plugins = getAllPlugins();
+  // Use fixed redirect URI to ensure consistency between auth and token exchange
   const redirectUri = `${window.location.origin}/schedule`;
 
   // ── Handle OAuth callback ─────────────────────────────────────────────

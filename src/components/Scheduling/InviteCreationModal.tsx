@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, User } from 'lucide-react';
-import type { MeetingType } from '../../lib/scheduling/types';
+import { X, Copy, Check, Video, User, Calendar } from 'lucide-react';
+import type { MeetingType, SchedulingProvider } from '../../lib/scheduling/types';
+import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
 interface InviteCreationModalProps {
   isOpen: boolean;
@@ -10,6 +11,8 @@ interface InviteCreationModalProps {
     recipientEmail: string;
     meetingType: MeetingType;
     scheduledAt?: string;
+    schedulingProvider?: SchedulingProvider;
+    schedulingUrl?: string;
   }) => Promise<{ id: string }>;
   initialMeetingType?: MeetingType;
 }
@@ -25,21 +28,31 @@ export function InviteCreationModal({
   onCreateInvite,
   initialMeetingType = 'DIRECT_VIDEO_CALL',
 }: InviteCreationModalProps): JSX.Element | null {
+  const { connection } = useSchedulingConnection();
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [meetingType, setMeetingType] = useState<MeetingType>(initialMeetingType);
   const [scheduledAt, setScheduledAt] = useState('');
+  const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdInviteId, setCreatedInviteId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Reset meeting type when modal opens with new initial type
+  // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
       setMeetingType(initialMeetingType);
+      setSchedulingMode('manual');
     }
   }, [isOpen, initialMeetingType]);
+
+  // Auto-select Calendly mode if Calendly is connected
+  useEffect(() => {
+    if (isOpen && connection?.status === 'ACTIVE' && connection.providerId === 'CALENDLY') {
+      setSchedulingMode('calendly');
+    }
+  }, [isOpen, connection]);
 
   if (!isOpen) return null;
 
@@ -66,6 +79,7 @@ export function InviteCreationModal({
   };
 
   const canCreate = recipientName.trim().length > 0 && recipientEmail.trim().length > 0;
+  const hasCalendly = connection?.status === 'ACTIVE' && connection.providerId === 'CALENDLY';
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -77,14 +91,25 @@ export function InviteCreationModal({
         recipientEmail: string;
         meetingType: MeetingType;
         scheduledAt?: string;
+        schedulingProvider?: SchedulingProvider;
+        schedulingUrl?: string;
       } = {
         recipientName: recipientName.trim(),
         recipientEmail: recipientEmail.trim(),
         meetingType,
       };
-      if (scheduledAt) {
+      
+      if (schedulingMode === 'calendly' && hasCalendly) {
+        inviteData.schedulingProvider = 'CALENDLY';
+        // Use the first available event type from Calendly
+        const eventTypes = connection.eventTypes || [];
+        if (eventTypes.length > 0 && eventTypes[0]) {
+          inviteData.schedulingUrl = eventTypes[0].schedulingUrl;
+        }
+      } else if (scheduledAt) {
         inviteData.scheduledAt = scheduledAt;
       }
+      
       const result = await onCreateInvite(inviteData);
       setCreatedInviteId(result.id);
     } catch (err) {
@@ -108,6 +133,7 @@ export function InviteCreationModal({
     setRecipientEmail('');
     setMeetingType('DIRECT_VIDEO_CALL');
     setScheduledAt('');
+    setSchedulingMode('manual');
     setCreateError(null);
     setCreatedInviteId(null);
     setCopied(false);
@@ -267,6 +293,65 @@ export function InviteCreationModal({
               </div>
             </div>
 
+            {/* Scheduling mode selector - only show if Calendly is connected */}
+            {hasCalendly && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>SCHEDULING MODE</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => setSchedulingMode('calendly')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '12px 16px',
+                      background: schedulingMode === 'calendly' ? 'rgba(74,222,128,0.15)' : 'var(--pipe-surface)',
+                      border: `1px solid ${schedulingMode === 'calendly' ? 'rgba(74,222,128,0.3)' : 'var(--pipe-border)'}`,
+                      color: schedulingMode === 'calendly' ? '#4ade80' : 'var(--pipe-text-dim)',
+                      fontSize: 11,
+                      letterSpacing: '0.1em',
+                      fontFamily: '"Space Mono", monospace',
+                      cursor: 'pointer',
+                      borderRadius: 4,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <Calendar size={16} />
+                    Calendly Link
+                  </button>
+                  <button
+                    onClick={() => setSchedulingMode('manual')}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      padding: '12px 16px',
+                      background: schedulingMode === 'manual' ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+                      border: `1px solid ${schedulingMode === 'manual' ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+                      color: schedulingMode === 'manual' ? '#60a5fa' : 'var(--pipe-text-dim)',
+                      fontSize: 11,
+                      letterSpacing: '0.1em',
+                      fontFamily: '"Space Mono", monospace',
+                      cursor: 'pointer',
+                      borderRadius: 4,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    Manual Time
+                  </button>
+                </div>
+                {schedulingMode === 'calendly' && (
+                  <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
+                    Guest will receive a Calendly link to self-schedule
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Recipient name */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>RECIPIENT NAME</label>
@@ -291,19 +376,21 @@ export function InviteCreationModal({
               />
             </div>
 
-            {/* Optional scheduled time */}
-            <div style={{ marginBottom: 28 }}>
-              <label style={labelStyle}>SCHEDULED TIME (OPTIONAL)</label>
-              <input
-                type="datetime-local"
-                value={scheduledAt ? scheduledAt.slice(0, 16) : ''}
-                onChange={(e) => setScheduledAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
-                style={inputStyle}
-              />
-              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
-                Leave empty for instant invite
+            {/* Optional scheduled time - only show in manual mode */}
+            {schedulingMode === 'manual' && (
+              <div style={{ marginBottom: 28 }}>
+                <label style={labelStyle}>SCHEDULED TIME (OPTIONAL)</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledAt ? scheduledAt.slice(0, 16) : ''}
+                  onChange={(e) => setScheduledAt(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                  style={inputStyle}
+                />
+                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
+                  Leave empty for instant invite
+                </div>
               </div>
-            </div>
+            )}
 
             {createError && (
               <p style={{ color: '#f87171', fontSize: 12, fontFamily: '"Space Mono", monospace', marginBottom: 16 }}>
