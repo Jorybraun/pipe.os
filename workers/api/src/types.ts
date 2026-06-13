@@ -199,6 +199,8 @@ export interface Env {
   NEO4J_PASSWORD?: string;
   /** 'd1' | 'neo4j' — selects the primary match store during cutover. */
   PRIMARY_MATCH_STORE?: string;
+  /** People Data Labs API key for candidate sourcing and enrichment. */
+  PDL_API_KEY?: string;
 }
 
 /**
@@ -1425,33 +1427,20 @@ export interface MatchFeedbackRow {
 
 // ─── Candidate Living Graph (Phase 3) ────────────────────────────────────────
 
-export type CandidateNodeType =
-  | 'Experience'
-  | 'Project'
-  | 'Accomplishment'
-  | 'Skill'
-  | 'Education'
-  | 'Credential'
-  | 'CulturalSignal'
-  | 'TechnicalDemonstration'
-  | 'WorkingStyle'
-  | 'CommunicationStyle'
-  | 'CareerArc'
-  | 'Motivation'
-  | 'Context'
-  // Contextual conversation graph (ADR-050)
-  | 'Action'
-  | 'Tech'
-  | 'Org'
-  | 'Person'
-  | 'Reason'
-  | 'Outcome'
-  | 'Situation';
+/**
+ * Source-backed semantic classification.
+ *
+ * This is intentionally open-ended. Known values are data, not a code-owned
+ * taxonomy; new extractors may emit new node types without a deployment.
+ */
+export type CandidateNodeType = string;
 
-export type CoverageAspect = 'experience' | 'cultural' | 'technical' | 'motivation' | 'context';
+/** Open concept key used as a candidate coverage dimension. */
+export type CoverageAspect = string;
 
 export interface CandidateNode {
   id: string;
+  ingestion_key?: string | null;
   candidate_id: string;
   node_type: CandidateNodeType;
   narrative_text: string;
@@ -1470,22 +1459,44 @@ export interface CandidateNode {
 
 export interface CandidateCoverage {
   candidate_id: string;
-  experience_coverage: number;
-  cultural_coverage: number;
-  technical_coverage: number;
-  motivation_coverage: number;
-  context_coverage: number;
+  overall_coverage: number;
+  dimension_count: number;
+  evidence_count: number;
+  source_diversity: number;
+  interaction_count: number;
+  first_observed_at: string | null;
+  last_observed_at: string | null;
   last_probed_at: number | null;
-  next_probe_target: CoverageAspect | null;
+  next_probe_concept_id: string | null;
+  policy_version: string;
   updated_at: number;
+  dimensions: CoverageDimension[];
+}
+
+export interface CoverageDimension {
+  conceptId: string;
+  canonicalKey: string;
+  label: string;
+  score: number;
+  confidence: number;
+  evidenceCount: number;
+  assertionCount: number;
+  sourceDiversity: number;
+  interactionCount: number;
+  firstObservedAt: string | null;
+  lastObservedAt: string | null;
 }
 
 export interface CoverageResult {
-  experience: number;
-  cultural: number;
-  technical: number;
-  motivation: number;
-  context: number;
+  candidateId: string;
+  overallScore: number;
+  evidenceCount: number;
+  sourceDiversity: number;
+  interactionCount: number;
+  firstObservedAt: string | null;
+  lastObservedAt: string | null;
+  policyVersion: string;
+  dimensions: CoverageDimension[];
 }
 
 /** Extracted properties for TechnicalDemonstration nodes sourced from code reviews */
@@ -1522,11 +1533,16 @@ export interface CulturalSignalProperties {
 }
 
 export interface RecencyReport {
-  dimensions: Record<
-    CoverageAspect,
-    { lastCapturedAt: number | null; nodeCount: number; staleFlag: boolean }
-  >;
+  dimensions: Record<string, {
+    conceptId: string;
+    canonicalKey: string;
+    label: string;
+    lastObservedAt: string | null;
+    evidenceCount: number;
+    staleFlag: boolean;
+  }>;
   overallStaleness: 'fresh' | 'partial' | 'stale';
+  policyVersion: string;
 }
 
 export interface ReEngagementPlan {

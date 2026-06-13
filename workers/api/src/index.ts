@@ -23,11 +23,13 @@ import { roleContexts } from './routes/discovery/roleContexts';
 // Outreach — invites + result emails + email OAuth
 import { emailRoutes } from './routes/outreach/email';
 import { emailOAuth } from './routes/outreach/emailOAuth';
+import { pdlSearch } from './routes/outreach/pdlSearch';
 // Screening — phone screening + culture interview
 import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
 import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/video';
+import { meetingRooms } from './routes/meetingRooms';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -44,6 +46,7 @@ import neo4jHealth from './routes/internal/neo4jHealth';
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
+import { processProjectionOutbox } from './lib/livingContext';
 
 // Unified Agent Runtime plugin registration (ADR-034)
 import { registerAllPlugins } from './lib/agents';
@@ -71,6 +74,7 @@ app.use(
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
         'http://localhost:5173',
+        'http://localhost:5175',
         'http://localhost:4173',
         'http://localhost:8080',
       ];
@@ -129,6 +133,8 @@ app.route('/api/v1', devContainerSessions);
 app.route('/api/v1/candidates', emailRoutes);
 // Email OAuth: connect Gmail / Microsoft for send-as
 app.route('/api/v1/email', emailOAuth);
+// PDL Search: candidate sourcing and enrichment
+app.route('/api/v1/outreach', pdlSearch);
 // Scheduling: webhook receiver (public, no auth) — must mount before auth routes
 app.route('/api/v1/scheduling', schedulingPublic);
 // Scheduling: OAuth, event types, interviews (authenticated)
@@ -146,6 +152,8 @@ app.route('/api/v1/video', videoAuth);
 app.route('/rpc/video', videoCandidate);
 // Video: public WebSocket connection (candidate via invite link, no auth)
 app.route('/api/v1/video/public', videoPublic);
+// Standalone host/guest meeting room runtime (opaque token auth)
+app.route('/api/v1/meeting-rooms', meetingRooms);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
@@ -228,4 +236,7 @@ export { VoiceSessionDO } from './durable-objects/VoiceSessionDO';
 
 export default {
   fetch: app.fetch,
+  scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(processProjectionOutbox(env));
+  },
 };

@@ -1,12 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
-import { autoStageBuilder, resolveMustHaveSkills, type PipelineMatchConfig } from '../autoStageBuilder';
+import {
+  autoStageBuilder,
+  buildMatchRequest,
+  resolveMustHaveSkills,
+  type PipelineMatchConfig,
+} from '../autoStageBuilder';
 import type { CandidatePersona, RoleContextRow } from '../../../types';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const PERSONA: CandidatePersona = {
-  seniority: 'Mid, 3–5 years',
+  seniority: 'mid',
   archetype: 'Backend-leaning fullstack',
   mustHaveSkills: ['typescript', 'react', 'postgres'],
   niceToHaveSkills: ['kubernetes'],
@@ -141,7 +146,25 @@ function buildStubDb(state: DbState): StubDb {
           },
 
           async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
-            // skill_aliases lookup — return empty so slugifySkills falls back to lowercase.
+            if (normalized.startsWith('SELECT pr_number, quality_score, packet_json FROM review_challenge_packets')) {
+              const [repoId] = args as [number];
+              const repo = state.repos.find((candidate) => candidate.id === repoId);
+              const rows = state.prs
+                .filter((pr) => pr.repo_id === repoId && pr.swe_bench_eligible)
+                .map((pr) => ({
+                  pr_number: pr.pr_number,
+                  quality_score: 0.9,
+                  packet_json: JSON.stringify({
+                    pullRequest: { number: pr.pr_number, title: pr.title },
+                    demands: (repo?.skills ?? []).map((skill) => ({
+                      conceptKeys: [`term:${skill}`],
+                    })),
+                  }),
+                }));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
+            // skill_aliases lookup — return empty so the open term survives unchanged.
             if (normalized.startsWith('SELECT alias, canonical_slug FROM skill_aliases')) {
               return { results: [] as T[], success: true, meta: {} };
             }
@@ -289,6 +312,18 @@ describe('resolveMustHaveSkills', () => {
   });
 });
 
+describe('buildMatchRequest', () => {
+  it('does not invent seniority, language, or domain constraints', () => {
+    const request = buildMatchRequest(makeRoleContext({
+      persona_json: JSON.stringify({ ...PERSONA, seniority: 'Mid, 3-5 years' }),
+    }));
+
+    expect(request.seniority).toBeUndefined();
+    expect(request.primaryLanguage).toBeUndefined();
+    expect(request.domain).toBeUndefined();
+  });
+});
+
 describe('autoStageBuilder', () => {
   function fixtureState(): DbState {
     return {
@@ -348,7 +383,7 @@ describe('autoStageBuilder', () => {
     expect(impl!.type).toBe('CODE_IMPLEMENTATION');
     expect(review!.repoId).toBe(impl!.repoId);
     expect(review!.repoId).toBe(101); // higher pr_quality_score wins
-    expect(review!.githubPrNumber).toBe(42);
+    expect(review!.githubPrNumber).toBe(17); // stable PR-number tie-break after equal evidence
     expect(impl!.issueNumber).toBe(100);
     expect(stub.matchReposCalls).toBe(1);
   });
@@ -401,7 +436,7 @@ describe('autoStageBuilder', () => {
     expect(result.stations[1]!.issueNumber).toBe(100); // not 102 (merged), not 101 (lower score)
   });
 
-  it('throws if no eligible PR for the matched repo', async () => {
+  it('throws if no source-backed role-safe PR exists for the matched repo', async () => {
     const state = fixtureState();
     state.prs = state.prs.map((p) => ({ ...p, swe_bench_eligible: false }));
     const stub = buildStubDb(state);
@@ -411,7 +446,7 @@ describe('autoStageBuilder', () => {
         roleContext: makeRoleContext(),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no SWE-bench-eligible PR/);
+    ).rejects.toThrow(/no source-backed role-safe review challenge/);
   });
 
   it('throws if no eligible implementation issue', async () => {

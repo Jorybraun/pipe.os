@@ -4,6 +4,7 @@ import { contacts } from './routes/contacts';
 import { meetings } from './routes/meetings';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
+import { runCopilotTurn } from './lib/copilotAgent';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
@@ -25,6 +26,7 @@ app.use(
         // Local dev
         'http://localhost:5173',
         'http://localhost:5174',
+        'http://localhost:5175',
         'http://localhost:8080',
       ];
 
@@ -44,6 +46,51 @@ app.use(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.route('/api/v1/contacts', contacts);
 app.route('/api/v1/meetings', meetings);
+
+// ─── CopilotKit-Compatible Endpoint (Custom Agent Implementation) ───────────────
+app.post('/api/copilotkit', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { messages, threadId } = body;
+
+    const ai = c.env.AI;
+    if (!ai) {
+      return c.json({ error: 'AI binding not available' }, 500);
+    }
+
+    // Convert CopilotKit format to our agent format
+    const messagesArray = messages || [];
+    const history = messagesArray
+      .filter((m: any) => m.role !== 'user' || m.role !== 'assistant')
+      .map((m: any) => ({ role: m.role, content: m.content || '' }));
+
+    const lastMessage = messagesArray[messagesArray.length - 1];
+    const userMessage = lastMessage?.content || '';
+
+    const result = await runCopilotTurn({
+      ai,
+      history,
+      userMessage,
+      toolCtx: { db: c.env.DB },
+    });
+
+    // Return CopilotKit-compatible response format
+    return c.json({
+      choices: [{
+        message: {
+          content: result.response,
+          role: 'assistant',
+        },
+      }],
+      toolsUsed: result.toolsUsed,
+      threadId: threadId || 'default',
+      actions: result.actions,
+    });
+  } catch (error) {
+    console.error('CopilotKit endpoint error:', error);
+    return c.json({ error: 'Failed to process request', details: String(error) }, 500);
+  }
+});
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

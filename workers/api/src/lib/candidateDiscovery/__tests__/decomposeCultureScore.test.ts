@@ -43,10 +43,17 @@ function buildMockDb() {
           }),
         };
       }
-      if (sql.includes('FROM candidate_nodes') && sql.includes('superseded_at')) {
+      if (sql.includes('FROM applications app')) {
         return {
           bind: () => ({
             all: async () => ({ results: [] }),
+          }),
+        };
+      }
+      if (sql.includes('DELETE FROM candidate_coverage_dimensions')) {
+        return {
+          bind: () => ({
+            run: async () => ({}),
           }),
         };
       }
@@ -269,6 +276,11 @@ describe('decomposeCultureScoreToGraph', () => {
     const props = JSON.parse(ownershipNode!.extracted_properties_json as string);
     expect(props.dimension_type).toBe('competency');
     expect(props.bars_score).toBe(4);
+    expect(props.semantic_terms).toEqual([{
+      surface: 'ownership',
+      canonical_key: 'term:ownership',
+      evidence_level: 'explained',
+    }]);
 
     const autonomyNode = inserts.find((r) => {
       const p = JSON.parse(r.extracted_properties_json as string);

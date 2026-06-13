@@ -334,6 +334,20 @@ describe('roleFitRerank', () => {
     ).rejects.toThrow(/failed to parse JSON/);
   });
 
+  it('rejects a ranking whose score is missing instead of fabricating zero', async () => {
+    const provider = createMockProvider(JSON.stringify({
+      rankings: [{ repo_id: 1, reasoning: {}, per_signal_scores: {} }],
+    }));
+
+    await expect(
+      roleFitRerank({
+        provider,
+        rcd: buildTestRcd(),
+        candidates: [buildCandidates()[0]!],
+      }),
+    ).rejects.toThrow(/missing valid alignment_score/);
+  });
+
   it('strips markdown code fences before parsing', async () => {
     const fenced = '```json\n' + buildMockResponse() + '\n```';
     const provider = createMockProvider(fenced);

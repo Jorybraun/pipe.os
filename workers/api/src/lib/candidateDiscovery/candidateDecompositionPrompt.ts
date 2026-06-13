@@ -11,6 +11,7 @@
  */
 
 import type { ParsedCV } from '../cvParser';
+import type { OpenSemanticTermRecord } from '../livingContext/openTerms';
 
 export const CANDIDATE_DECOMPOSITION_PROMPT_VERSION = 'decomposition-v1';
 
@@ -34,6 +35,7 @@ export interface DecomposedExperience {
   company_stage?: string;
   /** 1-sentence synthesis of bullet points into business/technical impact */
   impact_summary?: string;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecomposedProject {
@@ -42,6 +44,7 @@ export interface DecomposedProject {
   url?: string;
   skills_demonstrated: string[];
   confidence: number;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecomposedSkill {
@@ -52,6 +55,7 @@ export interface DecomposedSkill {
   confidence: number;
   /** Depth pattern: "primary across N roles" | "secondary at N roles" | "exposure only" */
   depth_pattern?: string;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecomposedEducation {
@@ -60,6 +64,7 @@ export interface DecomposedEducation {
   field?: string;
   year?: string;
   confidence: number;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecomposedCredential {
@@ -67,6 +72,7 @@ export interface DecomposedCredential {
   issuer?: string;
   year?: string;
   confidence: number;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecomposedCareerArc {
@@ -74,6 +80,7 @@ export interface DecomposedCareerArc {
   growth_velocity: 'fast' | 'normal' | 'slow';
   transitions: Array<{ from: string; to: string; at_company: string }>;
   confidence: number;
+  semantic_terms?: OpenSemanticTermRecord[];
 }
 
 export interface DecompositionResult {
@@ -126,7 +133,8 @@ Output schema:
       "confidence": number (0.0–1.0),
       "domain": "string (optional) — inferred business domain: fintech, e-commerce, healthcare, enterprise-software, etc.",
       "company_stage": "string (optional) — inferred stage: seed, series-a, growth, enterprise, agency, etc.",
-      "impact_summary": "string (optional) — 1 sentence synthesizing bullet points into business/technical impact"
+      "impact_summary": "string (optional) — 1 sentence synthesizing bullet points into business/technical impact",
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
     }
   ],
   "projects": [
@@ -135,7 +143,8 @@ Output schema:
       "description": "string",
       "url": "string (optional)",
       "skills_demonstrated": ["skill1"],
-      "confidence": number
+      "confidence": number,
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "demonstrated"}]
     }
   ],
   "skills": [
@@ -145,7 +154,8 @@ Output schema:
       "years_exposure": number (optional — only if explicitly stated),
       "evidence_source": "string (optional — company or project name)",
       "confidence": number,
-      "depth_pattern": "string (optional) — e.g. 'primary across 5 roles', 'secondary at 2 roles', 'exposure only'"
+      "depth_pattern": "string (optional) — e.g. 'primary across 5 roles', 'secondary at 2 roles', 'exposure only'",
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
     }
   ],
   "education": [
@@ -154,7 +164,8 @@ Output schema:
       "degree": "string",
       "field": "string (optional)",
       "year": "string (optional)",
-      "confidence": number
+      "confidence": number,
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
     }
   ],
   "credentials": [
@@ -162,14 +173,16 @@ Output schema:
       "name": "string",
       "issuer": "string (optional)",
       "year": "string (optional)",
-      "confidence": number
+      "confidence": number,
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
     }
   ],
   "career_arc": {
     "narrative": "string — 1 paragraph synthesis of career trajectory",
     "growth_velocity": "fast | normal | slow",
     "transitions": [{"from": "string", "to": "string", "at_company": "string"}],
-    "confidence": number
+    "confidence": number,
+    "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
   },
   "domain_specialization": "string (optional) — synthesized primary domain across all experiences",
   "company_stage_pattern": ["string (optional) — inferred stages the candidate has been exposed to"],

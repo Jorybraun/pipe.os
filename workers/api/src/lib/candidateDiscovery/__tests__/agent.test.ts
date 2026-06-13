@@ -94,7 +94,7 @@ describe('discoverCandidateProfile', () => {
     ).rejects.toThrow(/profile too short/i);
   });
 
-  it('falls back to years-based seniority inference when model returns garbage', async () => {
+  it('does not fabricate seniority when model output is unsupported', async () => {
     const provider = makeStubProvider({
       candidate_searchable_profile: PROFILE_400,
       key_concepts: {
@@ -111,7 +111,7 @@ describe('discoverCandidateProfile', () => {
       parsed: { skills: ['Go'], yearsOfExperience: 12 },
     });
 
-    expect(result.keyConcepts.seniority).toBe('staff');
+    expect(result.keyConcepts.seniority).toBeNull();
   });
 
   it('dedupes and normalizes skill arrays', async () => {

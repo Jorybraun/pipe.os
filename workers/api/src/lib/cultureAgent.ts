@@ -403,6 +403,7 @@ export async function advanceCultureInterview(
             statements: decomposition.statements,
             edges: decomposition.edges,
             discarded: decomposition.discarded,
+            missingContext: decomposition.missingContext,
           },
         ],
         noNewMaterialStreak: decomposition.discarded

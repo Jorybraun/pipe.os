@@ -38,6 +38,10 @@ import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { slugifySkills } from '../skills/slugifySkills';
 import { attributeSkillTenure } from './attributeSkillTenure';
 import {
+  openSemanticTermRecord,
+  type OpenSemanticTermRecord,
+} from '../livingContext/openTerms';
+import {
   type DecompositionResult,
   type DecomposedExperience,
   type DecomposedProject,
@@ -75,6 +79,25 @@ function nowEpoch(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+function mergeSemanticTerms(
+  explicit: OpenSemanticTermRecord[] | undefined,
+  sourceSurfaces: readonly string[],
+  evidenceLevel: string,
+): OpenSemanticTermRecord[] {
+  const terms = new Map<string, OpenSemanticTermRecord>();
+  for (const term of explicit ?? []) {
+    const normalized = openSemanticTermRecord(term.surface, term.evidence_level);
+    if (normalized) terms.set(normalized.canonical_key, normalized);
+  }
+  for (const surface of sourceSurfaces) {
+    const term = openSemanticTermRecord(surface, evidenceLevel);
+    if (term && !terms.has(term.canonical_key)) {
+      terms.set(term.canonical_key, term);
+    }
+  }
+  return [...terms.values()];
+}
+
 function experienceToNode(
   candidateId: string,
   exp: DecomposedExperience,
@@ -94,6 +117,11 @@ function experienceToNode(
       domain: exp.domain,
       company_stage: exp.company_stage,
       impact_summary: exp.impact_summary,
+      semantic_terms: mergeSemanticTerms(
+        exp.semantic_terms,
+        exp.skills_demonstrated,
+        'demonstrated',
+      ),
       index,
     }),
     embedding_json: null,
@@ -121,6 +149,11 @@ function projectToNode(
       description: proj.description,
       url: proj.url,
       skills_demonstrated: proj.skills_demonstrated,
+      semantic_terms: mergeSemanticTerms(
+        proj.semantic_terms,
+        proj.skills_demonstrated,
+        'demonstrated',
+      ),
       index,
     }),
     embedding_json: null,
@@ -149,6 +182,11 @@ function skillToNode(
       years_exposure: skill.years_exposure,
       evidence_source: skill.evidence_source,
       depth_pattern: skill.depth_pattern,
+      semantic_terms: mergeSemanticTerms(
+        skill.semantic_terms,
+        [skill.name],
+        'mentioned',
+      ),
       index,
     }),
     embedding_json: null,
@@ -176,6 +214,7 @@ function educationToNode(
       degree: edu.degree,
       field: edu.field,
       year: edu.year,
+      semantic_terms: mergeSemanticTerms(edu.semantic_terms, [], 'mentioned'),
       index,
     }),
     embedding_json: null,
@@ -202,6 +241,7 @@ function credentialToNode(
       name: cred.name,
       issuer: cred.issuer,
       year: cred.year,
+      semantic_terms: mergeSemanticTerms(cred.semantic_terms, [], 'mentioned'),
       index,
     }),
     embedding_json: null,
@@ -231,6 +271,7 @@ function careerArcToNode(
       company_stage_pattern: decomposition.company_stage_pattern,
       ownership_progression: decomposition.ownership_progression,
       impact_themes: decomposition.impact_themes,
+      semantic_terms: mergeSemanticTerms(arc.semantic_terms, [], 'mentioned'),
     }),
     embedding_json: null,
     source_type: 'resume',
@@ -273,6 +314,7 @@ async function writeParserOnlyNodes(
         canonical_slug: skill,
         source: 'cv_parser_fallback',
         years_exposure: null,
+        semantic_terms: mergeSemanticTerms(undefined, [skill], 'mentioned'),
         index: i,
       }),
       embedding_json: null,

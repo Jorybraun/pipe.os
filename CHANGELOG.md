@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — PDL Candidate Sourcing + Unified Contacts
+
+- `workers/api/src/lib/pdl.ts`: People Data Labs client — Person Search API (SQL queries) and Person Enrichment API. Pay-as-you-go candidate discovery.
+- `workers/api/src/routes/outreach/pdlSearch.ts`: `POST /api/v1/outreach/search` queries PDL by role/level/company/location/phone/email. `POST /api/v1/outreach/save` persists a PDL result as a Contact with living context graph integration. `POST /api/v1/outreach/enrich` enriches a known person.
+- `src/pages/ContactsPage.tsx`: New "Source" tab with PDL search form (job role, level, company, country, has phone/email). Results show name, title, company, email, phone, location. One-click "Save" creates a Contact.
+- `src/App.tsx`: Sidebar now routes to Contacts (`/contacts`) instead of Outreach. Contacts page reachable from sidebar.
+- `workers/api/src/types.ts`: Added `PDL_API_KEY` to Env bindings.
+
+### Added — Meeting Rooms + Living Context Graph Foundations
+
+- `workers/api/src/routes/meetingRooms.ts`: Standalone video room lifecycle with transcript ingestion into living context graph. Semantic assertion extraction from meeting transcripts.
+- `workers/api/src/durable-objects/VideoRoom.ts`: Generalized from recruiter/candidate to host/guest roles. Added `/ensure` endpoint for idempotent meeting room initialization.
+- `workers/api/src/lib/livingContext/`: Full living context graph persistence — Person, WorkspacePerson, Application, Interaction, Artifact, ArtifactVersion, SourceSpan, Episode, SemanticAssertion, SignalEvidence, SignalSnapshot, SemanticRelationship. Deterministic entity IDs via SHA-256 ingestion keys.
+- `workers/api/src/lib/livingContext/compatibility.ts`: `ensureContactLivingContext` and `ensureCandidateLivingContext` adapters — mirror legacy contacts and candidates into the unified person graph.
+- `workers/api/src/lib/livingContext/meetingTranscript.ts`: Ingest meeting transcripts into the living context graph with canonical segments, semantic assertions, and signal evidence.
+- `workers/api/migrations/0082_living_context_graph.sql`: D1 schema for the full living context graph (people, workspace_people, applications, interactions, artifacts, source_spans, episodes, semantic_assertions, signal_evidence, signal_snapshots, semantic_relationships, projection_jobs).
+- `workers/meetings/`: New standalone Worker for meeting management with room token generation and video room orchestration.
+
 ### Fixed — Calendly OAuth Scope Error
 
 - `workers/api/src/routes/cockpit/scheduling.ts`: Fixed Calendly OAuth scope parameter format. Changed from `users:read event_types:read scheduled_events:read` (causing malformed error) to `scheduled_events:read` (matching Calendly documentation exactly). Fixed "The requested scope is invalid, unknown, or malformed" error.

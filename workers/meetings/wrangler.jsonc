@@ -32,14 +32,16 @@
 	// ],
 	"vars": {
 		"APP_BASE_URL": "http://localhost:5174",
-		"MEETINGS_APP_URL": "http://localhost:5174"
+		"MEETINGS_APP_URL": "http://localhost:5174",
+		"VIDEO_ROOM_APP_URL": "http://localhost:5175"
 	},
 	"env": {
 		"production": {
 			"name": "pipe-meetings",
 			"vars": {
 				"APP_BASE_URL": "https://meet.hire-pipe.com",
-				"MEETINGS_APP_URL": "https://meet.hire-pipe.com"
+				"MEETINGS_APP_URL": "https://meet.hire-pipe.com",
+				"VIDEO_ROOM_APP_URL": "https://room.hire-pipe.com"
 			}
 		}
 	}

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import type { Env, Variables, Meeting, MeetingStatus, MeetingType, MeetingParticipant } from '../types';
+import { createRoomToken, hashRoomToken } from '../lib/roomTokens';
 
 const MEETING_STATUSES: readonly MeetingStatus[] = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'];
 const MEETING_TYPES: readonly MeetingType[] = ['DISCOVERY', 'INTERVIEW', 'FOLLOW_UP', 'DEMO', 'OTHER'];
@@ -210,6 +211,119 @@ meetings.patch('/:id', async (c) => {
 
   const updated = await c.env.DB.prepare('SELECT * FROM meetings WHERE id = ?').bind(meetingId).first<Meeting>();
   return c.json({ meeting: updated });
+});
+
+/** POST /api/v1/meetings/:id/room — Create or reopen the standalone video room. */
+meetings.post('/:id/room', async (c) => {
+  const userId = c.var.userId;
+  const meetingId = c.req.param('id');
+  const meeting = await c.env.DB.prepare(
+    'SELECT id, meeting_url FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(meetingId, userId).first<{ id: string; meeting_url: string | null }>();
+
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  let room = await c.env.DB.prepare(
+    'SELECT id, session_id FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(meetingId).first<{ id: string; session_id: string }>();
+
+  if (!room) {
+    room = {
+      id: crypto.randomUUID(),
+      session_id: `meeting--${meetingId}`,
+    };
+    await c.env.DB.prepare(
+      `INSERT INTO meeting_rooms
+        (id, meeting_id, session_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+    ).bind(room.id, meetingId, room.session_id, now, now).run();
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE meeting_room_tokens
+     SET revoked_at = ?
+     WHERE room_id = ? AND role = 'HOST' AND revoked_at IS NULL`,
+  ).bind(now, room.id).run();
+
+  const hostToken = createRoomToken();
+  const hostTokenHash = await hashRoomToken(hostToken);
+  await c.env.DB.prepare(
+    `INSERT INTO meeting_room_tokens
+      (id, room_id, token_hash, role, expires_at, created_at)
+     VALUES (?, ?, ?, 'HOST', ?, ?)`,
+  ).bind(crypto.randomUUID(), room.id, hostTokenHash, expiresAt, now).run();
+
+  const roomAppUrl = (c.env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175').replace(/\/$/, '');
+  const meetingParticipants = await c.env.DB.prepare(
+    `SELECT id
+       FROM meeting_participants
+      WHERE meeting_id = ?
+      ORDER BY created_at, id`,
+  ).bind(meetingId).all<{ id: string }>();
+  const guestParticipantId = meetingParticipants.results.length === 1
+    ? meetingParticipants.results[0]?.id ?? null
+    : null;
+  let guestToken: string | null = null;
+  if (meeting.meeting_url) {
+    try {
+      const existingUrl = new URL(meeting.meeting_url);
+      guestToken = existingUrl.pathname.split('/').filter(Boolean).pop() ?? null;
+      if (guestToken) {
+        const existingHash = await hashRoomToken(guestToken);
+        const valid = await c.env.DB.prepare(
+          `SELECT id FROM meeting_room_tokens
+           WHERE room_id = ? AND token_hash = ? AND role = 'GUEST'
+             AND revoked_at IS NULL AND expires_at > ?`,
+        ).bind(room.id, existingHash, now).first();
+        if (!valid) {
+          guestToken = null;
+        } else if (guestParticipantId) {
+          await c.env.DB.prepare(
+            `UPDATE meeting_room_tokens
+                SET participant_id = ?
+              WHERE id = ? AND participant_id IS NULL`,
+          ).bind(guestParticipantId, (valid as { id: string }).id).run();
+        }
+      }
+    } catch {
+      guestToken = null;
+    }
+  }
+
+  if (!guestToken) {
+    guestToken = createRoomToken();
+    const guestTokenHash = await hashRoomToken(guestToken);
+    await c.env.DB.prepare(
+      `INSERT INTO meeting_room_tokens
+        (id, room_id, token_hash, role, participant_id, expires_at, created_at)
+       VALUES (?, ?, ?, 'GUEST', ?, ?, ?)`,
+    ).bind(
+      crypto.randomUUID(),
+      room.id,
+      guestTokenHash,
+      guestParticipantId,
+      expiresAt,
+      now,
+    ).run();
+  }
+
+  const hostUrl = `${roomAppUrl}/room/${hostToken}`;
+  const guestUrl = `${roomAppUrl}/room/${guestToken}`;
+  await c.env.DB.prepare(
+    'UPDATE meetings SET meeting_url = ?, updated_at = ? WHERE id = ?',
+  ).bind(guestUrl, now, meetingId).run();
+
+  return c.json({
+    room: {
+      id: room.id,
+      sessionId: room.session_id,
+      hostUrl,
+      guestUrl,
+      expiresAt,
+    },
+  });
 });
 
 // ─── Participants ──────────────────────────────────────────────────────────────

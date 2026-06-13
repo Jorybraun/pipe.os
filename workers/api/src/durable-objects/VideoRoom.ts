@@ -21,7 +21,7 @@
 
 import type { DurableObjectState } from '@cloudflare/workers-types';
 
-type VideoRole = 'RECRUITER' | 'CANDIDATE';
+type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 
 interface SignalMessage {
@@ -36,6 +36,8 @@ interface VideoRoomMetadata {
   candidateId?: string;
   recruiterId?: string;
   scheduledInterviewId?: string;  // For transcript artifact association
+  meetingId?: string;
+  hostId?: string;
 }
 
 export class VideoRoom {
@@ -77,7 +79,20 @@ export class VideoRoom {
     const tags = this.state.getTags(ws);
     if (tags.includes('RECRUITER')) return 'RECRUITER';
     if (tags.includes('CANDIDATE')) return 'CANDIDATE';
+    if (tags.includes('HOST')) return 'HOST';
+    if (tags.includes('GUEST')) return 'GUEST';
     return null;
+  }
+
+  private isHostRole(role: VideoRole): boolean {
+    return role === 'RECRUITER' || role === 'HOST';
+  }
+
+  private remoteRole(role: VideoRole): VideoRole {
+    if (role === 'RECRUITER') return 'CANDIDATE';
+    if (role === 'CANDIDATE') return 'RECRUITER';
+    if (role === 'HOST') return 'GUEST';
+    return 'HOST';
   }
 
   /** Get all active WebSockets */
@@ -117,10 +132,12 @@ export class VideoRoom {
     // POST /init — initialize session metadata (called before WebSocket)
     if (request.method === 'POST' && url.pathname === '/init') {
       const body = await request.json() as {
-        stageId: string;
-        candidateId: string;
-        recruiterId: string;
+        stageId?: string;
+        candidateId?: string;
+        recruiterId?: string;
         scheduledInterviewId?: string;
+        meetingId?: string;
+        hostId?: string;
         transcriptCallbackUrl?: string;
         internalSecret?: string;
       };
@@ -129,6 +146,8 @@ export class VideoRoom {
         candidateId: body.candidateId,
         recruiterId: body.recruiterId,
         scheduledInterviewId: body.scheduledInterviewId,
+        meetingId: body.meetingId,
+        hostId: body.hostId,
       };
       this.transcriptCallbackUrl = body.transcriptCallbackUrl;
       this.internalSecret = body.internalSecret;
@@ -145,6 +164,22 @@ export class VideoRoom {
       });
     }
 
+    // POST /ensure — idempotently initialize a standalone meeting room.
+    if (request.method === 'POST' && url.pathname === '/ensure') {
+      const body = await request.json() as { meetingId: string; hostId: string };
+      if (!this.metadata.meetingId) {
+        this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
+        await this.state.storage.put('metadata', this.metadata);
+      }
+      if (!await this.state.storage.get<SessionStatus>('status')) {
+        this.sessionStatus = 'WAITING';
+        await this.state.storage.put('status', this.sessionStatus);
+      }
+      return new Response(JSON.stringify({ status: this.sessionStatus }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // GET /status — return current session status
     if (request.method === 'GET' && url.pathname === '/status') {
       const peerCount = this.getAllWebSockets().length;
@@ -157,10 +192,10 @@ export class VideoRoom {
       });
     }
 
-    // WebSocket upgrade for /ws?role=RECRUITER|CANDIDATE
+    // WebSocket upgrade for legacy recruiter/candidate and meeting host/guest roles.
     if (url.pathname === '/ws') {
       const role = url.searchParams.get('role') as VideoRole | null;
-      if (!role || !['RECRUITER', 'CANDIDATE'].includes(role)) {
+      if (!role || !['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(role)) {
         return new Response('Missing or invalid role parameter', { status: 400 });
       }
 
@@ -197,7 +232,7 @@ export class VideoRoom {
       }));
 
       // Replay stored OFFER to late-joining candidates
-      if (role === 'CANDIDATE' && this._lastOffer && this.sessionStatus === 'CALLING') {
+      if (!this.isHostRole(role) && this._lastOffer && this.sessionStatus === 'CALLING') {
         server.send(this._lastOffer);
       }
 
@@ -253,7 +288,7 @@ export class VideoRoom {
     }
 
     // Store OFFER for replay to late-joining candidates
-    if (message.type === 'OFFER' && senderRole === 'RECRUITER') {
+    if (message.type === 'OFFER' && this.isHostRole(senderRole)) {
       this._lastOffer = JSON.stringify({
         type: 'OFFER',
         role: senderRole,
@@ -263,7 +298,7 @@ export class VideoRoom {
     }
 
     // Route signaling messages to the remote peer
-    const remoteRole: VideoRole = senderRole === 'RECRUITER' ? 'CANDIDATE' : 'RECRUITER';
+    const remoteRole = this.remoteRole(senderRole);
     const remotePeers = this.getWebSocketsByRole(remoteRole);
 
     for (const remotePeer of remotePeers) {
@@ -283,7 +318,7 @@ export class VideoRoom {
     const role = this.getRoleFromWs(ws);
 
     // Clear stale OFFER if recruiter disconnects
-    if (role === 'RECRUITER') {
+    if (role && this.isHostRole(role)) {
       this._lastOffer = null;
       this.sessionStatus = 'WAITING';
       await this.state.storage.delete('lastOffer');

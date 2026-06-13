@@ -13,7 +13,6 @@
 import type { LLMTool } from './llm/types';
 import { fetchDependentRepos } from './repoDiscovery/librariesIo';
 import { checkRepoQuality } from './repoDiscovery/qualityFilter';
-import { mapSkillsToPackages } from './repoDiscovery/skillToPackage';
 import { fetchGitHubDiff } from './fetchGitHubDiff';
 
 // ─── Tool definitions ───────────────────────────────────────────────────────
@@ -205,27 +204,25 @@ async function executeSearchRepos(
   }
 
   const skills = skillsStr.split(',').map((s) => s.trim()).filter(Boolean);
-  const packages = mapSkillsToPackages(skills);
 
-  if (packages.length === 0) {
-    return `[No known package mappings for skills: ${skills.join(', ')}. Try more specific framework names like "React", "Django", "Express".]`;
+  // Use the first skill as a direct search term for Libraries.io
+  const searchTerm = skills[0] ?? '';
+  if (!searchTerm) {
+    return '[Error: No valid search term provided]';
   }
 
-  // Query top 2 most specific packages
-  const queries = packages.slice(0, 2);
+  // Search for npm packages by name (most common case)
+  const depRepos = await fetchDependentRepos(ctx.librariesIoApiKey, 'npm', searchTerm, { maxPages: 1 });
   const results: Array<Record<string, unknown>> = [];
 
-  for (const q of queries) {
-    const depRepos = await fetchDependentRepos(ctx.librariesIoApiKey, q.platform, q.packageName, { maxPages: 1 });
-    for (const repo of depRepos.repos.slice(0, maxResults)) {
-      if (!results.some((r) => r.full_name === repo.full_name)) {
-        results.push({
-          full_name: repo.full_name,
-          stars: repo.stars_count,
-          language: repo.language,
-          description: repo.description?.slice(0, 120),
-        });
-      }
+  for (const repo of depRepos.repos.slice(0, maxResults)) {
+    if (!results.some((r) => r.full_name === repo.full_name)) {
+      results.push({
+        full_name: repo.full_name,
+        stars: repo.stars_count,
+        language: repo.language,
+        description: repo.description?.slice(0, 120),
+      });
     }
   }
 
@@ -233,7 +230,7 @@ async function executeSearchRepos(
   results.sort((a, b) => ((b.stars as number) ?? 0) - ((a.stars as number) ?? 0));
 
   return JSON.stringify({
-    queried_packages: queries.map((q) => `${q.platform}/${q.packageName}`),
+    queried_term: searchTerm,
     repos: results.slice(0, maxResults),
   }, null, 2);
 }

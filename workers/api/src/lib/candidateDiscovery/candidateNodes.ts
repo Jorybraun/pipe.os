@@ -2,12 +2,25 @@ import type { CandidateNode, CandidateNodeType } from '../../types';
 import { preprocessForEmbedding } from '../embedding/preprocess';
 import type { Driver } from 'neo4j-driver';
 import { getActiveCandidateNodesFromNeo4j } from '../neo4j/candidateGraphQueries';
+import {
+  deterministicEntityId,
+  mirrorCandidateNodeToLivingContext,
+} from '../livingContext';
 
 export async function insertCandidateNode(
   db: D1Database,
   node: Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>,
+  options: { mirrorLivingContext?: boolean } = {},
 ): Promise<CandidateNode> {
-  const id = crypto.randomUUID();
+  const ingestionKey = [
+    node.candidate_id,
+    node.source_type,
+    node.source_reference ?? '',
+    node.node_type,
+    node.narrative_text,
+    node.decomposition_version ?? '',
+  ].join('\u0000');
+  const id = await deterministicEntityId('candidate_node', ingestionKey);
 
   const row = await db
     .prepare(
@@ -15,15 +28,24 @@ export async function insertCandidateNode(
          id, candidate_id, node_type, narrative_text,
          extracted_properties_json, embedding_json, source_type,
          source_reference, captured_at, confidence,
-         supersedes, superseded_at, decomposition_version,
+         supersedes, superseded_at, decomposition_version, ingestion_key,
          created_at, updated_at
        ) VALUES (
          ?1, ?2, ?3, ?4,
          ?5, ?6, ?7,
          ?8, ?9, ?10,
-         ?11, ?12, ?13,
+         ?11, ?12, ?13, ?14,
          unixepoch(), unixepoch()
-       ) RETURNING *`,
+       )
+       ON CONFLICT(id) DO UPDATE SET
+         extracted_properties_json = excluded.extracted_properties_json,
+         embedding_json = excluded.embedding_json,
+         captured_at = excluded.captured_at,
+         confidence = excluded.confidence,
+         supersedes = excluded.supersedes,
+         superseded_at = excluded.superseded_at,
+         updated_at = unixepoch()
+       RETURNING *`,
     )
     .bind(
       id,
@@ -39,6 +61,7 @@ export async function insertCandidateNode(
       node.supersedes,
       node.superseded_at,
       node.decomposition_version,
+      ingestionKey,
     )
     .first<CandidateNode>();
 
@@ -46,6 +69,18 @@ export async function insertCandidateNode(
     throw new Error(
       `[insertCandidateNode] failed to insert node for candidate ${node.candidate_id}`,
     );
+  }
+
+  if (options.mirrorLivingContext !== false) {
+    try {
+      await mirrorCandidateNodeToLivingContext(db, row);
+    } catch (error) {
+      console.error('[insertCandidateNode] living-context mirror failed:', {
+        candidateId: node.candidate_id,
+        nodeId: row.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   return row;

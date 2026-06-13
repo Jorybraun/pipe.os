@@ -67,14 +67,13 @@ and structure.
      demonstrably worked with, based on the resume text
    - niceToHaveSkills: string[] (max 10) — technologies the candidate has
      exposure to but may not be core
-   - seniority: "junior" | "mid" | "senior" | "staff" — map from years of
-     experience and role titles: junior (0–2 years), mid (3–5), senior (6–9),
-     staff (10+ or explicit staff/principal/lead titles)
-   - primary_language: string — the programming language the candidate uses
-     most or most recently (lowercase, e.g. "typescript", "go")
-   - detected_domain: string — the business/technical domain most evident
-     from the resume (e.g. "fintech", "developer-tools", "healthcare", "ecommerce",
-     "infrastructure", "ml-platform", "general" if unclear)
+   - seniority: "junior" | "mid" | "senior" | "staff" | null — only emit a
+     band when the source explicitly supports it; do not infer one from a
+     code-owned years-of-experience rule
+   - primary_language: string | null — the source-backed primary programming
+     language, or null when the resume does not establish one
+   - detected_domain: string | null — the source-backed business or technical
+     domain, or null when the resume does not establish one
 
 3. career_context: structured career trajectory and company exposure:
    - company_stages: string[] — inferred funding stages of companies worked at

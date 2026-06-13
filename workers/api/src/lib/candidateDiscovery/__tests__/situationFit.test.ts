@@ -174,6 +174,22 @@ describe('candidateSituationFit', () => {
     expect(result.rankings[0]!.fit_score).toBe(1);
   });
 
+  it('rejects a ranking whose score is missing instead of fabricating zero', async () => {
+    const provider = makeStubProvider({
+      rankings: [{ repo_id: 101, reasoning: {}, per_signal_scores: {} }],
+    });
+    const candidateResult = makeCandidateResult();
+
+    await expect(
+      candidateSituationFit({
+        provider,
+        candidateResult,
+        candidateKeyConcepts: candidateResult.keyConcepts,
+        repos: [{ repo_id: 101, full_name: 'acme/widgets', signals: makeRepoSignals(101) }],
+      }),
+    ).rejects.toThrow(/missing valid fit_score/);
+  });
+
   it('derives fit_band from score when band is missing/invalid', async () => {
     const provider = makeStubProvider({
       rankings: [

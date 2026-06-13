@@ -22,6 +22,26 @@ import { createApiClient } from '../lib/api/client';
 
 type ContactType = 'lead' | 'candidate' | 'customer' | 'other';
 
+interface PdlPerson {
+  id: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  job_title_role: string | null;
+  job_title_levels: string[] | null;
+  job_company_name: string | null;
+  job_company_website: string | null;
+  location_name: string | null;
+  location_country: string | null;
+  emails: Array<{ address: string; type: string }> | null;
+  phone_numbers: Array<{ number: string; type: string }> | null;
+  linkedin_url: string | null;
+  github_url: string | null;
+  skills: string[] | null;
+  industry: string | null;
+}
+
 interface Contact {
   id:         string;
   email:      string;
@@ -62,6 +82,7 @@ export default function ContactsPage(): JSX.Element {
   const [typeFilter, setTypeFilter] = useState<ContactType | 'all'>('all');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [activeTab, setActiveTab] = useState<'contacts' | 'source'>('contacts');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -110,19 +131,21 @@ export default function ContactsPage(): JSX.Element {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-              CONTACTS
+              {activeTab === 'contacts' ? 'CONTACTS' : 'SOURCE'}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {contacts.length} {contacts.length === 1 ? 'person' : 'people'}
+              {activeTab === 'contacts'
+                ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'}`
+                : 'Find candidates'}
             </div>
           </div>
 
-          {/* Type filter pills */}
+          {/* Tabs */}
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['all', 'lead', 'candidate', 'customer', 'other'] as const).map((t) => (
+            {(['contacts', 'source'] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => setTypeFilter(t)}
+                onClick={() => { setActiveTab(t); setSelected(null); setShowAdd(false); }}
                 style={{
                   padding: '4px 10px',
                   fontSize: 9,
@@ -132,15 +155,9 @@ export default function ContactsPage(): JSX.Element {
                   border: '1px solid',
                   borderRadius: 3,
                   cursor: 'pointer',
-                  borderColor: typeFilter === t
-                    ? (t === 'all' ? 'rgba(255,255,255,0.3)' : TYPE_COLORS[t as ContactType])
-                    : 'var(--pipe-border)',
-                  background: typeFilter === t
-                    ? (t === 'all' ? 'rgba(255,255,255,0.06)' : `${TYPE_COLORS[t as ContactType]}18`)
-                    : 'transparent',
-                  color: typeFilter === t
-                    ? (t === 'all' ? 'var(--pipe-text)' : TYPE_COLORS[t as ContactType])
-                    : 'var(--pipe-text-dim)',
+                  borderColor: activeTab === t ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
+                  background: activeTab === t ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                 }}
               >
                 {t.toUpperCase()}
@@ -148,79 +165,90 @@ export default function ContactsPage(): JSX.Element {
             ))}
           </div>
 
-          <button
-            onClick={() => { setShowAdd(true); setSelected(null); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 14px', fontSize: 9, fontWeight: 700,
-              letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace',
-              background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)',
-              borderRadius: 4, color: '#4ade80', cursor: 'pointer',
-            }}
-          >
-            <UserPlus size={13} /> ADD
-          </button>
-        </div>
-
-        {/* Search */}
-        <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--pipe-border)', flexShrink: 0 }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={12} style={{
-              position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
-              color: 'var(--pipe-text-dim)',
-            }} />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="SEARCH BY NAME, EMAIL, COMPANY..."
+          {activeTab === 'contacts' && (
+            <button
+              onClick={() => { setShowAdd(true); setSelected(null); }}
               style={{
-                width: '100%', padding: '8px 8px 8px 30px',
-                fontSize: 9, fontFamily: '"Space Mono", monospace',
-                letterSpacing: '0.08em',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--pipe-border)',
-                borderRadius: 4, color: 'var(--pipe-text)', outline: 'none',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 14px', fontSize: 9, fontWeight: 700,
+                letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace',
+                background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)',
+                borderRadius: 4, color: '#4ade80', cursor: 'pointer',
               }}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} style={{
-                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 0,
-              }}>
-                <X size={11} />
-              </button>
-            )}
-          </div>
+            >
+              <UserPlus size={13} /> ADD
+            </button>
+          )}
         </div>
 
-        {/* Contact list */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {isLoading && (
-            <div style={{ padding: 40, display: 'flex', justifyContent: 'center', color: 'var(--pipe-text-dim)' }}>
-              <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} />
-            </div>
-          )}
-          {!isLoading && filtered.length === 0 && (
-            <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
-              <div style={{ fontSize: 11, marginBottom: 8 }}>
-                {search || typeFilter !== 'all' ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
+        {activeTab === 'contacts' ? (
+          <>
+            {/* Search */}
+            <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--pipe-border)', flexShrink: 0 }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={12} style={{
+                  position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                  color: 'var(--pipe-text-dim)',
+                }} />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="SEARCH BY NAME, EMAIL, COMPANY..."
+                  style={{
+                    width: '100%', padding: '8px 8px 8px 30px',
+                    fontSize: 9, fontFamily: '"Space Mono", monospace',
+                    letterSpacing: '0.08em',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--pipe-border)',
+                    borderRadius: 4, color: 'var(--pipe-text)', outline: 'none',
+                  }}
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 0,
+                  }}>
+                    <X size={11} />
+                  </button>
+                )}
               </div>
-              {!search && typeFilter === 'all' && (
-                <div style={{ fontSize: 9, opacity: 0.6 }}>
-                  Add someone by clicking ADD above
+            </div>
+
+            {/* Contact list */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {isLoading && (
+                <div style={{ padding: 40, display: 'flex', justifyContent: 'center', color: 'var(--pipe-text-dim)' }}>
+                  <Loader size={18} style={{ animation: 'spin 1s linear infinite' }} />
                 </div>
               )}
+              {!isLoading && filtered.length === 0 && (
+                <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
+                  <div style={{ fontSize: 11, marginBottom: 8 }}>
+                    {search || typeFilter !== 'all' ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
+                  </div>
+                  {!search && typeFilter === 'all' && (
+                    <div style={{ fontSize: 9, opacity: 0.6 }}>
+                      Add someone by clicking ADD above
+                    </div>
+                  )}
+                </div>
+              )}
+              {filtered.map((contact) => (
+                <ContactRow
+                  key={contact.id}
+                  contact={contact}
+                  isSelected={selected?.id === contact.id}
+                  onClick={() => { setSelected(contact); setShowAdd(false); }}
+                />
+              ))}
             </div>
-          )}
-          {filtered.map((contact) => (
-            <ContactRow
-              key={contact.id}
-              contact={contact}
-              isSelected={selected?.id === contact.id}
-              onClick={() => { setSelected(contact); setShowAdd(false); }}
-            />
-          ))}
-        </div>
+          </>
+        ) : (
+          <SourceSearchPanel
+            api={api}
+            onSaved={(c) => { setContacts((prev) => [c, ...prev]); }}
+          />
+        )}
       </div>
 
       {/* ── Detail / Add panel ────────────────────────────────────────────── */}
@@ -589,6 +617,236 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
             ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SAVING...</>
             : <><Save size={12} /> {saveLabel}</>}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Source Search Panel ─────────────────────────────────────────────────────
+
+function SourceSearchPanel({ api, onSaved }: {
+  api: ReturnType<typeof createApiClient>;
+  onSaved: (c: Contact) => void;
+}): JSX.Element {
+  const [filters, setFilters] = useState({
+    jobTitleRole: '',
+    jobTitleLevel: '',
+    jobCompanyName: '',
+    locationCountry: '',
+    hasPhone: false,
+    hasEmail: true,
+    size: 10,
+  });
+  const [results, setResults] = useState<PdlPerson[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+
+  const handleSearch = async (): Promise<void> => {
+    setIsSearching(true);
+    setSearchError(null);
+    try {
+      const payload: Record<string, unknown> = { size: filters.size };
+      if (filters.jobTitleRole) payload.jobTitleRole = filters.jobTitleRole;
+      if (filters.jobTitleLevel) payload.jobTitleLevel = filters.jobTitleLevel;
+      if (filters.jobCompanyName) payload.jobCompanyName = filters.jobCompanyName;
+      if (filters.locationCountry) payload.locationCountry = filters.locationCountry;
+      if (filters.hasPhone) payload.hasPhone = true;
+      if (filters.hasEmail) payload.hasEmail = true;
+
+      const res = await api.post<{ results: PdlPerson[]; total: number }>('/api/v1/outreach/search', payload);
+      setResults(res.results);
+      setTotal(res.total);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'Search failed');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSave = async (person: PdlPerson): Promise<void> => {
+    setSavingIds((prev) => new Set(prev).add(person.id));
+    try {
+      const res = await api.post<{ contact: Contact }>('/api/v1/outreach/save', {
+        pdlRecord: person,
+        type: 'lead',
+      });
+      onSaved(res.contact);
+    } catch (err) {
+      console.error('[SourceSearchPanel] save failed:', err);
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(person.id);
+        return next;
+      });
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '8px 10px', fontSize: 11,
+    fontFamily: '"Space Mono", monospace',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid var(--pipe-border)', borderRadius: 4,
+    color: 'var(--pipe-text)', outline: 'none',
+  };
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 8, fontWeight: 700, letterSpacing: '0.12em',
+    color: 'var(--pipe-text-dim)', marginBottom: 4,
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+      {/* Search form */}
+      <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--pipe-border)', flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={labelStyle}>JOB ROLE</div>
+            <input
+              value={filters.jobTitleRole}
+              onChange={(e) => setFilters((p) => ({ ...p, jobTitleRole: e.target.value }))}
+              placeholder="e.g. engineering"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={labelStyle}>LEVEL</div>
+            <input
+              value={filters.jobTitleLevel}
+              onChange={(e) => setFilters((p) => ({ ...p, jobTitleLevel: e.target.value }))}
+              placeholder="e.g. senior"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={labelStyle}>COMPANY</div>
+            <input
+              value={filters.jobCompanyName}
+              onChange={(e) => setFilters((p) => ({ ...p, jobCompanyName: e.target.value }))}
+              placeholder="e.g. Stripe"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <div style={labelStyle}>COUNTRY</div>
+            <input
+              value={filters.locationCountry}
+              onChange={(e) => setFilters((p) => ({ ...p, locationCountry: e.target.value }))}
+              placeholder="e.g. united states"
+              style={inputStyle}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filters.hasEmail}
+              onChange={(e) => setFilters((p) => ({ ...p, hasEmail: e.target.checked }))}
+            />
+            Has email
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filters.hasPhone}
+              onChange={(e) => setFilters((p) => ({ ...p, hasPhone: e.target.checked }))}
+            />
+            Has phone
+          </label>
+        </div>
+
+        <button
+          onClick={() => void handleSearch()}
+          disabled={isSearching}
+          style={{
+            width: '100%', padding: '10px 0',
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
+            fontFamily: '"Space Mono", monospace',
+            background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)',
+            borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          }}
+        >
+          {isSearching
+            ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</>
+            : <><Search size={12} /> SEARCH</>}
+        </button>
+
+        {searchError && (
+          <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>
+            {searchError}
+          </div>
+        )}
+      </div>
+
+      {/* Results */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {results.length === 0 && !isSearching && !searchError && (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
+            <div style={{ fontSize: 11 }}>Enter filters and click SEARCH</div>
+          </div>
+        )}
+        {results.length > 0 && (
+          <div style={{ padding: '8px 24px', fontSize: 9, color: 'var(--pipe-text-dim)', borderBottom: '1px solid var(--pipe-border)' }}>
+            {results.length} of {total} results
+          </div>
+        )}
+        {results.map((person) => (
+          <div
+            key={person.id}
+            style={{
+              padding: '14px 24px',
+              borderBottom: '1px solid var(--pipe-border)',
+              display: 'flex', alignItems: 'flex-start', gap: 12,
+            }}
+          >
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+              background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700, color: '#60a5fa',
+            }}>
+              {(person.full_name ?? '?').charAt(0).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
+                {person.full_name ?? 'Unknown'}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
+                {person.job_title ?? 'No title'}
+                {person.job_company_name && ` @ ${person.job_company_name}`}
+              </div>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {person.emails && person.emails[0] && (
+                  <span>{person.emails[0].address}</span>
+                )}
+                {person.phone_numbers && person.phone_numbers[0] && (
+                  <span>{person.phone_numbers[0].number}</span>
+                )}
+                {person.location_name && <span>{person.location_name}</span>}
+              </div>
+            </div>
+            <button
+              onClick={() => void handleSave(person)}
+              disabled={savingIds.has(person.id)}
+              style={{
+                padding: '6px 12px', fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                background: savingIds.has(person.id) ? 'rgba(255,255,255,0.04)' : 'rgba(74,222,128,0.1)',
+                border: '1px solid rgba(74,222,128,0.3)', borderRadius: 3,
+                color: savingIds.has(person.id) ? 'var(--pipe-text-dim)' : '#4ade80',
+                cursor: savingIds.has(person.id) ? 'default' : 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              {savingIds.has(person.id) ? 'SAVED' : 'SAVE'}
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

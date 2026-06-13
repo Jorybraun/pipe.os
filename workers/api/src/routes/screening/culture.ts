@@ -49,6 +49,7 @@ import {
 } from '../../lib/cultureScorer';
 import { createCultureAgentProvider } from '../../lib/llm/createProvider';
 import { withCultureMetering } from '../../lib/llm/meteredProvider';
+import { persistContextualTurn } from '../../lib/contextualTurnPersistence';
 import type { Env, Variables } from '../../types';
 import type { CompetencyDimension } from '../../lib/cultureQuestionBank';
 import { CULTURE_BANK_SIZE } from '../../lib/cultureQuestionBank';
@@ -948,6 +949,10 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     session.transcript,
     defaultCultureTranscript(),
   );
+  const answeredTurn = [...transcript.turns]
+    .reverse()
+    .find((turn) => turn.candidateResponse === null);
+  const observedAt = now();
 
   const rawProvider = createCultureAgentProvider(c.env);
   // Wrap with metering so each conversation turn is cost-tracked.
@@ -996,6 +1001,21 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     generativeContext,
   });
 
+  const enqueueAnsweredTurnPersistence = (): void => {
+    if (!answeredTurn) return;
+    c.executionCtx.waitUntil(
+      persistContextualTurn(c.env, c.env.DB, {
+        candidateId: session.candidate_id,
+        sessionId: session.id,
+        turnIndex: answeredTurn.idx,
+        question: answeredTurn.questionText,
+        answer,
+        observedAt,
+        decomposition: result.contextualDecomposition,
+      }),
+    );
+  };
+
   // ─── Audit: question_generated for new generative questions ─────────────────
   const latestTurn = [...result.transcript.turns].reverse().find((t) => t.probeOf === null && t.candidateResponse === null);
   if (latestTurn && latestTurn.questionId.startsWith('gen-')) {
@@ -1030,6 +1050,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
     )
       .bind(JSON.stringify(result.transcript), now(), session.id)
       .run();
+    enqueueAnsweredTurnPersistence();
 
     // Compliance audit
     await c.env.DB.prepare(
@@ -1081,6 +1102,7 @@ cultureCandidate.post('/session/:token/respond', async (c) => {
   )
     .bind(JSON.stringify(result.transcript), turnsAsked, now(), session.id)
     .run();
+  enqueueAnsweredTurnPersistence();
 
   return c.json({
     state: 'in_progress',

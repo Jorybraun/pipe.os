@@ -19,6 +19,8 @@ export interface Env {
   RESEND_API_KEY?: string;
   /** Base URL for the meetings app (e.g. https://meet.hire-pipe.com). */
   MEETINGS_APP_URL?: string;
+  /** Base URL for the standalone video room app. */
+  VIDEO_ROOM_APP_URL?: string;
   /** Base URL for the main app (e.g. https://pipe.build). */
   APP_BASE_URL?: string;
 }
@@ -68,6 +70,8 @@ export interface Meeting {
   transcript_json: string | null;
   transcript_summary: string | null;
   recording_r2_key: string | null;
+  transcript_analysis_json: string | null;
+  transcript_error: string | null;
   scheduled_interview_id: string | null;
   created_at: string;
   updated_at: string;

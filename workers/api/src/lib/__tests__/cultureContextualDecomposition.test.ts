@@ -22,11 +22,12 @@ describe('parseContextualDecomposition', () => {
         { id: 'n2', type: 'Tech', phrase: 'chose Kafka for ordered clickstream replay', surface: 'Kafka' },
       ],
       edges: [
-        { from: 'candidate', to: 'n1', type: 'DID' },
-        { from: 'n1', to: 'n2', type: 'WITH' },
+        { from: 'candidate', to: 'n1', predicate: 'personally implemented' },
+        { from: 'n1', to: 'n2', predicate: 'used for ordered replay' },
       ],
       discarded: false,
       probe: null,
+      missingContext: [],
     });
 
     expect(result.statements).toHaveLength(2);
@@ -36,30 +37,32 @@ describe('parseContextualDecomposition', () => {
     expect(result.probe).toBeNull();
   });
 
-  it('drops statements with unknown node types and empty phrases', () => {
+  it('preserves unseen semantic node types and drops malformed statements', () => {
     const result = parseContextualDecomposition({
       statements: [
-        { id: 'n1', type: 'Skill', phrase: 'kafka' },
+        { id: 'n1', type: 'OperationalTradeoff', phrase: 'accepted duplicate delivery during failover' },
         { id: 'n2', type: 'Tech', phrase: '   ' },
         { id: 'n3', type: 'Tech', phrase: 'migrated auth to OAuth2', surface: 'OAuth2' },
       ],
       edges: [],
     });
-    expect(result.statements).toHaveLength(1);
-    expect(result.statements[0]!.id).toBe('n3');
+    expect(result.statements).toHaveLength(2);
+    expect(result.statements[0]!.type).toBe('OperationalTradeoff');
   });
 
-  it('drops edges referencing missing statements or unknown edge types', () => {
+  it('preserves unseen predicates and drops malformed or dangling edges', () => {
     const result = parseContextualDecomposition({
       statements: [{ id: 'n1', type: 'Action', phrase: 'rewrote the billing cron', surface: null }],
       edges: [
-        { from: 'n1', to: 'n9', type: 'WITH' },
-        { from: 'n1', to: 'n1', type: 'CAUSED' },
-        { from: 'candidate', to: 'n1', type: 'DID' },
+        { from: 'n1', to: 'n9', predicate: 'used' },
+        { from: 'n1', to: 'n1', predicate: '' },
+        { from: 'candidate', to: 'n1', predicate: 'took direct ownership of' },
       ],
       discarded: false,
     });
-    expect(result.edges).toEqual([{ from: 'candidate', to: 'n1', type: 'DID' }]);
+    expect(result.edges).toEqual([
+      { from: 'candidate', to: 'n1', predicate: 'took direct ownership of' },
+    ]);
   });
 
   it('forces discarded=true when no statements survive, and keeps probe only then', () => {
@@ -102,9 +105,10 @@ describe('decomposeAnswerContextually', () => {
       statements: [
         { id: 'n1', type: 'Tech', phrase: 'Chose Kafka for ordered clickstream replay', surface: 'Kafka' },
       ],
-      edges: [{ from: 'candidate', to: 'n1', type: 'DID' }],
+      edges: [{ from: 'candidate', to: 'n1', predicate: 'personally selected' }],
       discarded: false,
       probe: null,
+      missingContext: [],
     });
     const result = await decomposeAnswerContextually(makeProvider(payload), {
       question: 'q',
@@ -122,9 +126,10 @@ describe('decomposeAnswerContextually', () => {
         { id: 'n1', type: 'Action', phrase: 'rebuilt ingestion layer at Streamline', surface: null },
         { id: 'n2', type: 'Reason', phrase: 'needed ordered replay of clickstream data', surface: null },
       ],
-      edges: [{ from: 'n1', to: 'n2', type: 'BECAUSE' }],
+      edges: [{ from: 'n1', to: 'n2', predicate: 'chosen because' }],
       discarded: false,
       probe: null,
+      missingContext: ['What tradeoff did ordered replay impose?'],
     });
     const result = await decomposeAnswerContextually(makeProvider(payload), {
       question: 'q',
@@ -132,7 +137,7 @@ describe('decomposeAnswerContextually', () => {
       priorPhrases: [],
     });
     expect(result!.statements).toHaveLength(2);
-    expect(result!.edges).toEqual([{ from: 'n1', to: 'n2', type: 'BECAUSE' }]);
+    expect(result!.edges).toEqual([{ from: 'n1', to: 'n2', predicate: 'chosen because' }]);
   });
 });
 
@@ -143,39 +148,41 @@ describe('normalizePhrase', () => {
 });
 
 describe('buildConversationGraphView', () => {
-  it('surfaces missing BECAUSE/ACHIEVED on Actions and unowned Outcomes', () => {
+  it('uses source-grounded missing-context questions without interpreting labels', () => {
     const view = buildConversationGraphView([
       {
         statements: [
-          { id: 'n1', type: 'Action', phrase: 'rebuilt ingestion layer', surface: null },
-          { id: 'n2', type: 'Outcome', phrase: 'p99 dropped to 9ms', surface: null },
+          { id: 'n1', type: 'PreviouslyUnseenDecision', phrase: 'rebuilt ingestion layer', surface: null },
+          { id: 'n2', type: 'MeasuredEffect', phrase: 'p99 dropped to 9ms', surface: null },
         ],
         edges: [],
+        missingContext: [
+          'Why was rebuilding preferable to changing the existing consumer?',
+          'What did you personally implement?',
+        ],
       },
     ]);
     expect(view.statements).toHaveLength(2);
     expect(view.missingContext).toEqual([
-      'Action "rebuilt ingestion layer" has no BECAUSE — ask why they made that choice.',
-      'Action "rebuilt ingestion layer" has no ACHIEVED — ask what concretely happened as a result.',
-      'Outcome "p99 dropped to 9ms" has no owning Action — ask what they personally did to cause it.',
+      'Why was rebuilding preferable to changing the existing consumer?',
+      'What did you personally implement?',
     ]);
   });
 
-  it('reports no gaps when context is complete', () => {
+  it('deduplicates missing-context questions across turns', () => {
     const view = buildConversationGraphView([
       {
-        statements: [
-          { id: 'n1', type: 'Action', phrase: 'rebuilt ingestion layer', surface: null },
-          { id: 'n2', type: 'Reason', phrase: 'needed ordered replay', surface: null },
-          { id: 'n3', type: 'Outcome', phrase: 'p99 dropped to 9ms', surface: null },
-        ],
-        edges: [
-          { from: 'n1', to: 'n2', type: 'BECAUSE' },
-          { from: 'n1', to: 'n3', type: 'ACHIEVED' },
-        ],
+        statements: [{ id: 'n1', type: 'Decision', phrase: 'rebuilt ingestion layer', surface: null }],
+        edges: [],
+        missingContext: ['What constraint made this necessary?'],
+      },
+      {
+        statements: [{ id: 'n2', type: 'Constraint', phrase: 'ordered replay was required', surface: null }],
+        edges: [],
+        missingContext: ['What constraint made this necessary?'],
       },
     ]);
-    expect(view.missingContext).toEqual([]);
+    expect(view.missingContext).toEqual(['What constraint made this necessary?']);
   });
 });
 

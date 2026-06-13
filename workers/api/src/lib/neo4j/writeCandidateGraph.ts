@@ -1,20 +1,14 @@
 /**
  * writeCandidateGraph.ts — ADR-044 Candidate Ingestion Neo4j Write
  *
- * MERGEs a Candidate and their active CandidateNode sub-elements into Neo4j
- * with typed labels per the ADR-046 graph model.
- *
- * Typed labels:
- *   - Experience            → :CandidateNode:Experience
- *   - Skill                 → :CandidateNode:Skill
- *   - TechnicalDemonstration → :CandidateNode:TechnicalDemonstration
- *   - CulturalSignal        → :CandidateNode:CulturalSignal
- *   - All others            → :CandidateNode (with node_type property)
+ * MERGEs a Candidate and their active CandidateNode sub-elements into Neo4j.
+ * CandidateNode is a structural label; open semantic classifications remain
+ * in node_type and extracted_properties_json.
  *
  * Idempotent: running twice with the same data produces no duplicates.
  */
 
-import type { CandidateNode, CandidateNodeType } from '../../types';
+import type { CandidateNode } from '../../types';
 import { buildNeo4jConfig, getNeo4jDriver } from './driver';
 import { runWriteQuery } from './query';
 
@@ -61,7 +55,7 @@ interface NodeParam {
   narrative_text: string;
   embedding: number[] | null;
   confidence: number;
-  node_type: CandidateNodeType;
+  node_type: string;
   source_type: string;
   source_reference: string | null;
   captured_at: number;
@@ -69,55 +63,10 @@ interface NodeParam {
   extracted_properties_json: string | null;
   decomposition_version: string | null;
   supersedes: string | null;
-  // Type-specific properties
-  esco_id?: string | null;
-  bars_score?: number | null;
-  dimension?: string | null;
-  dimension_name?: string | null;
-  is_role_specific?: boolean | null;
-  role_context_id?: string | null;
-}
-
-/**
- * Parse type-specific properties from extracted_properties_json.
- */
-function parseTypeSpecificProperties(
-  node: CandidateNode,
-): Partial<Pick<NodeParam, 'esco_id' | 'bars_score' | 'dimension' | 'dimension_name' | 'is_role_specific' | 'role_context_id'>> {
-  if (!node.extracted_properties_json) return {};
-  try {
-    const props = JSON.parse(node.extracted_properties_json) as Record<string, unknown>;
-    switch (node.node_type) {
-      case 'Skill':
-        return { esco_id: typeof props.esco_id === 'string' ? props.esco_id : null };
-      case 'TechnicalDemonstration':
-        return {
-          bars_score: typeof props.bars_score === 'number' ? props.bars_score : null,
-          dimension: typeof props.dimension === 'string' ? props.dimension : null,
-        };
-      case 'CulturalSignal':
-        return {
-          bars_score:
-            typeof props.bars_score === 'number'
-              ? props.bars_score
-              : typeof props.scoreEstimate === 'number'
-                ? props.scoreEstimate
-                : null,
-          dimension_name: typeof props.dimension === 'string' ? props.dimension : null,
-          is_role_specific: typeof props.is_role_specific === 'boolean' ? props.is_role_specific : null,
-          role_context_id: typeof props.role_context_id === 'string' ? props.role_context_id : null,
-        };
-      default:
-        return {};
-    }
-  } catch {
-    return {};
-  }
 }
 
 function buildNodeParam(node: CandidateNode): NodeParam {
   const embedding = parseEmbedding(node.embedding_json);
-  const typeSpecific = parseTypeSpecificProperties(node);
   return {
     id: node.id,
     narrative_text: node.narrative_text,
@@ -131,7 +80,6 @@ function buildNodeParam(node: CandidateNode): NodeParam {
     extracted_properties_json: node.extracted_properties_json,
     decomposition_version: node.decomposition_version,
     supersedes: node.supersedes,
-    ...typeSpecific,
   };
 }
 
@@ -200,158 +148,9 @@ export async function writeCandidateGraph(
     }
   }
 
-  // Partition nodes by type for label-typed writes
-  const experiences = nodeParams.filter((n) => n.node_type === 'Experience');
-  const skills = nodeParams.filter((n) => n.node_type === 'Skill');
-  const technicalDemonstrations = nodeParams.filter((n) => n.node_type === 'TechnicalDemonstration');
-  const culturalSignals = nodeParams.filter((n) => n.node_type === 'CulturalSignal');
-  const others = nodeParams.filter(
-    (n) =>
-      n.node_type !== 'Experience' &&
-      n.node_type !== 'Skill' &&
-      n.node_type !== 'TechnicalDemonstration' &&
-      n.node_type !== 'CulturalSignal',
-  );
-
   let totalResult: WriteCandidateGraphResult = { nodesCreated: 0, nodesSet: 0, relationshipsCreated: 0 };
 
-  // Experience nodes with :CandidateNode:Experience
-  if (experiences.length > 0) {
-    const result = await runWriteQuery(
-      driver,
-      `
-        MATCH (c:Candidate {candidate_id: $candidate_id})
-        WITH c
-        UNWIND $nodes AS node
-        MERGE (n:CandidateNode:Experience {id: node.id})
-        SET n.narrative_text = node.narrative_text,
-            n.embedding = node.embedding,
-            n.confidence = node.confidence,
-            n.source_type = node.source_type,
-            n.source_reference = node.source_reference,
-            n.captured_at = node.captured_at,
-            n.superseded_at = node.superseded_at,
-            n.created_at = node.created_at
-        MERGE (c)-[:HAS]->(n)
-      `,
-      {
-        candidate_id: candidateId,
-        nodes: experiences.map((n) => ({ ...n, created_at: now, updated_at: now })),
-      },
-    );
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // Skill nodes with :CandidateNode:Skill
-  if (skills.length > 0) {
-    const result = await runWriteQuery(
-      driver,
-      `
-        MATCH (c:Candidate {candidate_id: $candidate_id})
-        WITH c
-        UNWIND $nodes AS node
-        MERGE (n:CandidateNode:Skill {id: node.id})
-        SET n.narrative_text = node.narrative_text,
-            n.embedding = node.embedding,
-            n.confidence = node.confidence,
-            n.source_type = node.source_type,
-            n.source_reference = node.source_reference,
-            n.captured_at = node.captured_at,
-            n.superseded_at = node.superseded_at,
-            n.esco_id = node.esco_id,
-            n.extracted_properties_json = node.extracted_properties_json,
-            n.decomposition_version = node.decomposition_version,
-            n.supersedes = node.supersedes,
-            n.created_at = node.created_at,
-            n.updated_at = node.updated_at
-        MERGE (c)-[:HAS]->(n)
-      `,
-      {
-        candidate_id: candidateId,
-        nodes: skills.map((n) => ({ ...n, created_at: now, updated_at: now })),
-      },
-    );
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // TechnicalDemonstration nodes with :CandidateNode:TechnicalDemonstration
-  if (technicalDemonstrations.length > 0) {
-    const result = await runWriteQuery(
-      driver,
-      `
-        MATCH (c:Candidate {candidate_id: $candidate_id})
-        WITH c
-        UNWIND $nodes AS node
-        MERGE (n:CandidateNode:TechnicalDemonstration {id: node.id})
-        SET n.narrative_text = node.narrative_text,
-            n.embedding = node.embedding,
-            n.confidence = node.confidence,
-            n.source_type = node.source_type,
-            n.source_reference = node.source_reference,
-            n.captured_at = node.captured_at,
-            n.superseded_at = node.superseded_at,
-            n.bars_score = node.bars_score,
-            n.dimension = node.dimension,
-            n.extracted_properties_json = node.extracted_properties_json,
-            n.decomposition_version = node.decomposition_version,
-            n.supersedes = node.supersedes,
-            n.created_at = node.created_at,
-            n.updated_at = node.updated_at
-        MERGE (c)-[:HAS]->(n)
-      `,
-      {
-        candidate_id: candidateId,
-        nodes: technicalDemonstrations.map((n) => ({ ...n, created_at: now, updated_at: now })),
-      },
-    );
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // CulturalSignal nodes with :CandidateNode:CulturalSignal
-  if (culturalSignals.length > 0) {
-    const result = await runWriteQuery(
-      driver,
-      `
-        MATCH (c:Candidate {candidate_id: $candidate_id})
-        WITH c
-        UNWIND $nodes AS node
-        MERGE (n:CandidateNode:CulturalSignal {id: node.id})
-        SET n.narrative_text = node.narrative_text,
-            n.embedding = node.embedding,
-            n.confidence = node.confidence,
-            n.source_type = node.source_type,
-            n.source_reference = node.source_reference,
-            n.captured_at = node.captured_at,
-            n.superseded_at = node.superseded_at,
-            n.bars_score = node.bars_score,
-            n.dimension_name = node.dimension_name,
-            n.is_role_specific = node.is_role_specific,
-            n.role_context_id = node.role_context_id,
-            n.extracted_properties_json = node.extracted_properties_json,
-            n.decomposition_version = node.decomposition_version,
-            n.supersedes = node.supersedes,
-            n.created_at = node.created_at,
-            n.updated_at = node.updated_at
-        MERGE (c)-[:HAS]->(n)
-      `,
-      {
-        candidate_id: candidateId,
-        nodes: culturalSignals.map((n) => ({ ...n, created_at: now, updated_at: now })),
-      },
-    );
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // All other node types with plain :CandidateNode
-  if (others.length > 0) {
+  if (nodeParams.length > 0) {
     const result = await runWriteQuery(
       driver,
       `
@@ -376,7 +175,7 @@ export async function writeCandidateGraph(
       `,
       {
         candidate_id: candidateId,
-        nodes: others.map((n) => ({ ...n, created_at: now, updated_at: now })),
+        nodes: nodeParams.map((n) => ({ ...n, created_at: now, updated_at: now })),
       },
     );
     totalResult.nodesCreated += result.nodesCreated;
@@ -390,11 +189,6 @@ export async function writeCandidateGraph(
       event: 'neo4j.candidateWrite',
       candidateId,
       nodesIn: nodeParams.length,
-      experiences: experiences.length,
-      skills: skills.length,
-      technicalDemonstrations: technicalDemonstrations.length,
-      culturalSignals: culturalSignals.length,
-      others: others.length,
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
       durationMs: writeMs,

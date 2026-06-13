@@ -12,11 +12,19 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
+import { ensureContactLivingContext } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
-const CONTACT_TYPES = ['lead', 'candidate', 'customer', 'other'] as const;
+const CONTACT_TYPES = [
+  'lead',
+  'candidate',
+  'customer',
+  'hiring_manager',
+  'recruiter',
+  'other',
+] as const;
 
 const createContactSchema = z.object({
   email:    z.string().email('valid email required'),
@@ -118,6 +126,8 @@ contacts.post('/', async (c) => {
     )
     .run();
 
+  await ensureContactLivingContext(db, id);
+
   const contact = await db
     .prepare('SELECT * FROM contacts WHERE id = ?')
     .bind(id)
@@ -184,6 +194,8 @@ contacts.patch('/:id', async (c) => {
       now, id, userId,
     )
     .run();
+
+  await ensureContactLivingContext(db, id);
 
   const contact = await db
     .prepare('SELECT * FROM contacts WHERE id = ?')

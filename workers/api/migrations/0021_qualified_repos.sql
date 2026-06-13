@@ -4,13 +4,13 @@
 -- queryable at runtime in <200ms (STRATEGY.md CR-13).
 --
 -- Five tables:
---   qualified_repos  — one row per crawled repo (pass1 or pass2)
---   repo_skills      — many-to-many skill join (powers JD→repo matching)
---   repo_constructs  — engineering construct tags (§3 taxonomy)
---   repo_sample_prs  — vetted PRs for AIG bug planting (SWE-bench eligible)
---   skill_aliases    — slug canonicalization for recruiter input normalisation
+--   qualified_repos  - one row per crawled repo (pass1 or pass2)
+--   repo_skills      - open source-observed terms used in repo matching
+--   repo_constructs  - engineering construct tags
+--   repo_sample_prs  - vetted PRs for AIG bug planting (SWE-bench eligible)
+--   skill_aliases    - persisted aliases learned outside application code
 
--- ─── qualified_repos ────────────────────────────────────────────────────────
+-- qualified_repos
 
 CREATE TABLE IF NOT EXISTS qualified_repos (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,7 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_repos_pr_quality
 CREATE INDEX IF NOT EXISTS idx_repos_full_name
   ON qualified_repos(full_name);
 
--- ─── repo_skills ─────────────────────────────────────────────────────────────
+-- repo_skills
 
 CREATE TABLE IF NOT EXISTS repo_skills (
   repo_id    INTEGER NOT NULL REFERENCES qualified_repos(id) ON DELETE CASCADE,
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS repo_skills (
 CREATE INDEX IF NOT EXISTS idx_repo_skills_slug
   ON repo_skills(skill_slug, confidence DESC);
 
--- ─── repo_constructs ─────────────────────────────────────────────────────────
+-- repo_constructs
 
 CREATE TABLE IF NOT EXISTS repo_constructs (
   repo_id        INTEGER NOT NULL REFERENCES qualified_repos(id) ON DELETE CASCADE,
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS repo_constructs (
 CREATE INDEX IF NOT EXISTS idx_repo_constructs_slug
   ON repo_constructs(construct_slug);
 
--- ─── repo_sample_prs ─────────────────────────────────────────────────────────
+-- repo_sample_prs
 
 CREATE TABLE IF NOT EXISTS repo_sample_prs (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,161 +115,11 @@ CREATE TABLE IF NOT EXISTS repo_sample_prs (
 CREATE INDEX IF NOT EXISTS idx_sample_prs_eligible
   ON repo_sample_prs(repo_id, swe_bench_eligible);
 
--- ─── skill_aliases ───────────────────────────────────────────────────────────
--- Canonical slug lookup so recruiter input ("React", "ReactJS", "react.js")
--- all resolve to the same slug ("react") without a code deploy.
+-- skill_aliases
+-- Empty by design. Alias meaning must be learned and persisted with evidence;
+-- this migration must not seed a code-owned semantic vocabulary.
 
 CREATE TABLE IF NOT EXISTS skill_aliases (
   alias          TEXT PRIMARY KEY,
   canonical_slug TEXT NOT NULL
 );
-
--- Seed data — aliases for all keys in skillToPackage.ts
-INSERT OR IGNORE INTO skill_aliases (alias, canonical_slug) VALUES
-  -- JavaScript / TypeScript
-  ('react',             'react'),
-  ('React',             'react'),
-  ('react.js',          'react'),
-  ('React.js',          'react'),
-  ('ReactJS',           'react'),
-  ('reactjs',           'react'),
-  ('next',              'nextjs'),
-  ('Next',              'nextjs'),
-  ('next.js',           'nextjs'),
-  ('Next.js',           'nextjs'),
-  ('nextjs',            'nextjs'),
-  ('NextJS',            'nextjs'),
-  ('vue',               'vue'),
-  ('Vue',               'vue'),
-  ('vue.js',            'vue'),
-  ('Vue.js',            'vue'),
-  ('VueJS',             'vue'),
-  ('nuxt',              'nuxt'),
-  ('nuxt.js',           'nuxt'),
-  ('angular',           'angular'),
-  ('Angular',           'angular'),
-  ('svelte',            'svelte'),
-  ('sveltekit',         'sveltekit'),
-  ('typescript',        'typescript'),
-  ('TypeScript',        'typescript'),
-  ('TS',                'typescript'),
-  ('ts',                'typescript'),
-  ('node',              'nodejs'),
-  ('Node',              'nodejs'),
-  ('node.js',           'nodejs'),
-  ('Node.js',           'nodejs'),
-  ('nodejs',            'nodejs'),
-  ('NodeJS',            'nodejs'),
-  ('express',           'express'),
-  ('Express',           'express'),
-  ('express.js',        'express'),
-  ('fastify',           'fastify'),
-  ('nestjs',            'nestjs'),
-  ('NestJS',            'nestjs'),
-  ('nest',              'nestjs'),
-  ('hono',              'hono'),
-  ('remix',             'remix'),
-  ('astro',             'astro'),
-  ('tailwind',          'tailwind'),
-  ('tailwindcss',       'tailwind'),
-  ('TailwindCSS',       'tailwind'),
-  ('prisma',            'prisma'),
-  ('drizzle',           'drizzle'),
-  ('graphql',           'graphql'),
-  ('GraphQL',           'graphql'),
-  ('trpc',              'trpc'),
-  ('tRPC',              'trpc'),
-  ('jest',              'jest'),
-  ('vitest',            'vitest'),
-  ('playwright',        'playwright'),
-  ('cypress',           'cypress'),
-  ('webpack',           'webpack'),
-  ('vite',              'vite'),
-  ('esbuild',           'esbuild'),
-  ('redux',             'redux'),
-  ('Redux',             'redux'),
-  ('zustand',           'zustand'),
-  ('mobx',              'mobx'),
-  ('mongoose',          'mongoose'),
-  -- Python
-  ('python',            'python'),
-  ('Python',            'python'),
-  ('django',            'django'),
-  ('Django',            'django'),
-  ('flask',             'flask'),
-  ('Flask',             'flask'),
-  ('fastapi',           'fastapi'),
-  ('FastAPI',           'fastapi'),
-  ('pytorch',           'pytorch'),
-  ('PyTorch',           'pytorch'),
-  ('tensorflow',        'tensorflow'),
-  ('TensorFlow',        'tensorflow'),
-  ('pandas',            'pandas'),
-  ('numpy',             'numpy'),
-  ('NumPy',             'numpy'),
-  ('scikit-learn',      'scikit-learn'),
-  ('sklearn',           'scikit-learn'),
-  ('celery',            'celery'),
-  ('sqlalchemy',        'sqlalchemy'),
-  ('SQLAlchemy',        'sqlalchemy'),
-  ('pydantic',          'pydantic'),
-  ('pytest',            'pytest'),
-  ('aiohttp',           'aiohttp'),
-  -- Java / JVM
-  ('java',              'java'),
-  ('Java',              'java'),
-  ('spring',            'spring'),
-  ('Spring',            'spring'),
-  ('spring boot',       'spring-boot'),
-  ('Spring Boot',       'spring-boot'),
-  ('springboot',        'spring-boot'),
-  ('kotlin',            'kotlin'),
-  ('Kotlin',            'kotlin'),
-  ('quarkus',           'quarkus'),
-  -- Go
-  ('go',                'go'),
-  ('Go',                'go'),
-  ('golang',            'go'),
-  ('Golang',            'go'),
-  ('gin',               'gin'),
-  ('fiber',             'fiber'),
-  ('echo',              'echo'),
-  -- Rust
-  ('rust',              'rust'),
-  ('Rust',              'rust'),
-  ('tokio',             'tokio'),
-  ('actix',             'actix'),
-  ('axum',              'axum'),
-  -- Ruby
-  ('ruby',              'ruby'),
-  ('Ruby',              'ruby'),
-  ('rails',             'rails'),
-  ('Rails',             'rails'),
-  ('ruby on rails',     'rails'),
-  ('Ruby on Rails',     'rails'),
-  ('sinatra',           'sinatra'),
-  -- Infra
-  ('docker',            'docker'),
-  ('Docker',            'docker'),
-  ('kubernetes',        'kubernetes'),
-  ('Kubernetes',        'kubernetes'),
-  ('k8s',               'kubernetes'),
-  ('K8s',               'kubernetes'),
-  ('terraform',         'terraform'),
-  ('Terraform',         'terraform'),
-  ('aws',               'aws'),
-  ('AWS',               'aws'),
-  ('gcp',               'gcp'),
-  ('GCP',               'gcp'),
-  -- Databases
-  ('postgresql',        'postgres'),
-  ('PostgreSQL',        'postgres'),
-  ('postgres',          'postgres'),
-  ('Postgres',          'postgres'),
-  ('mysql',             'mysql'),
-  ('MySQL',             'mysql'),
-  ('mongodb',           'mongodb'),
-  ('MongoDB',           'mongodb'),
-  ('redis',             'redis'),
-  ('Redis',             'redis'),
-  ('elasticsearch',     'elasticsearch');

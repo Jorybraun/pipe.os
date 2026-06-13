@@ -28,9 +28,9 @@ export type SeniorityBand = 'junior' | 'mid' | 'senior' | 'staff';
 export interface CandidateKeyConcepts {
   mustHaveSkills: string[];
   niceToHaveSkills: string[];
-  seniority: SeniorityBand;
-  primary_language: string;
-  detected_domain: string;
+  seniority: SeniorityBand | null;
+  primary_language: string | null;
+  detected_domain: string | null;
 }
 
 export interface CareerContext {
@@ -107,17 +107,10 @@ function coerceNumberInRange(value: unknown, min: number, max: number, fallback:
   return Math.max(min, Math.min(max, value));
 }
 
-function coerceSeniority(value: unknown, fallback: SeniorityBand): SeniorityBand {
-  if (typeof value !== 'string') return fallback;
+function coerceSeniority(value: unknown): SeniorityBand | null {
+  if (typeof value !== 'string') return null;
   const v = value.trim().toLowerCase();
-  return (SENIORITY_BANDS as string[]).includes(v) ? (v as SeniorityBand) : fallback;
-}
-
-function inferSeniorityFromYears(years: number | undefined): SeniorityBand {
-  if (typeof years !== 'number' || years < 3) return 'junior';
-  if (years < 6) return 'mid';
-  if (years < 10) return 'senior';
-  return 'staff';
+  return (SENIORITY_BANDS as string[]).includes(v) ? (v as SeniorityBand) : null;
 }
 
 function parseJsonResponse(raw: string): Record<string, unknown> {
@@ -168,18 +161,15 @@ export async function discoverCandidateProfile(
   }
 
   const kcRaw = (parsedResponse.key_concepts ?? {}) as Record<string, unknown>;
-  const seniority = coerceSeniority(
-    kcRaw.seniority,
-    inferSeniorityFromYears(parsed.yearsOfExperience),
-  );
+  const seniority = coerceSeniority(kcRaw.seniority);
   const primaryLanguage =
     typeof kcRaw.primary_language === 'string' && kcRaw.primary_language.trim().length > 0
       ? kcRaw.primary_language.trim().toLowerCase()
-      : 'unknown';
+      : null;
   const detectedDomain =
     typeof kcRaw.detected_domain === 'string' && kcRaw.detected_domain.trim().length > 0
       ? kcRaw.detected_domain.trim().toLowerCase()
-      : 'general';
+      : null;
 
   const keyConcepts: CandidateKeyConcepts = {
     mustHaveSkills: coerceStringArray(kcRaw.mustHaveSkills, MAX_SKILLS),

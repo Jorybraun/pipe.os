@@ -1,38 +1,7 @@
 /**
- * Compute a recency multiplier for a candidate's node set.
- *
- * Nodes older than 2 years get a 0.8× multiplier; nodes older than 4 years
- * get a 0.6× multiplier. Recent nodes keep 1.0×. The result is the average
- * multiplier across all supplied nodes (returns 1.0 for empty input).
- *
- * Used by the matching pipeline to discount fit scores for stale profiles.
- */
-export function computeRecencyMultiplier(
-  nodes: { captured_at: number }[],
-): number {
-  if (nodes.length === 0) return 1.0;
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const TWO_YEARS_SEC = 2 * 365 * 24 * 60 * 60;
-  const FOUR_YEARS_SEC = 4 * 365 * 24 * 60 * 60;
-
-  let total = 0;
-  for (const node of nodes) {
-    const age = nowSec - node.captured_at;
-    if (age > FOUR_YEARS_SEC) total += 0.6;
-    else if (age > TWO_YEARS_SEC) total += 0.8;
-    else total += 1.0;
-  }
-
-  return total / nodes.length;
-}
-
-/**
- * Profile recency analysis and re-engagement triggering for the living candidate graph.
- *
- * Operates on `candidate_nodes` (migration 0052) and `candidate_ingestion`
- * (migration 0038). Computes per-dimension staleness, decides whether a
- * candidate needs re-enrichment or a screener, and can queue enrichment jobs.
+ * Recency and re-engagement policy over open, persisted candidate concepts.
+ * Time windows and thresholds are versioned scoring policy; concept membership
+ * comes entirely from the living context graph.
  */
 
 import type {
@@ -41,151 +10,151 @@ import type {
   ReEngagementPlan,
 } from '../../types';
 
-const STALENESS_THRESHOLD_MS = 365 * 24 * 60 * 60 * 1000; // 12 months
-const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000; // 6 months
+export const CANDIDATE_RECENCY_POLICY = {
+  version: 'open-concept-recency-v1',
+  staleAfterDays: 365,
+  staleProfileRatio: 0.5,
+  reEnrichAfterDays: 180,
+} as const;
 
-const DIMENSION_NODE_TYPES: Record<CoverageAspect, string[]> = {
-  experience: ['Experience', 'Accomplishment', 'Project'],
-  cultural: ['CulturalSignal'],
-  technical: ['Skill', 'TechnicalDemonstration', 'Education', 'Credential'],
-  motivation: ['Motivation', 'WorkingStyle', 'CareerArc'],
-  context: ['Context'],
-};
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const ALL_DIMENSIONS: CoverageAspect[] = [
-  'experience',
-  'cultural',
-  'technical',
-  'motivation',
-  'context',
-];
+export function computeRecencyMultiplier(
+  nodes: { captured_at: number }[],
+): number {
+  if (nodes.length === 0) return 1;
 
-function buildInPlaceholders(count: number): string {
-  return Array.from({ length: count }, () => '?').join(', ');
+  const nowSec = Math.floor(Date.now() / 1000);
+  const twoYearsSec = 2 * 365 * 24 * 60 * 60;
+  const fourYearsSec = 4 * 365 * 24 * 60 * 60;
+
+  let total = 0;
+  for (const node of nodes) {
+    const age = nowSec - node.captured_at;
+    if (age > fourYearsSec) total += 0.6;
+    else if (age > twoYearsSec) total += 0.8;
+    else total += 1;
+  }
+  return total / nodes.length;
 }
 
-/**
- * Analyse per-dimension recency for a candidate's living graph.
- *
- * Queries `candidate_nodes` for active (non-superseded) nodes grouped by
- * coverage aspect. Returns the latest `captured_at`, active node count, and
- * a stale flag per dimension.
- */
 export async function analyzeProfileRecency(
   db: D1Database,
   candidateId: string,
 ): Promise<RecencyReport> {
-  const now = Date.now();
-  const dimensions = {} as RecencyReport['dimensions'];
+  const result = await db.prepare(
+    `SELECT
+       c.id AS concept_id,
+       c.canonical_key,
+       c.label,
+       MAX(COALESCE(se.observed_at, sa.observed_at)) AS last_observed_at,
+       COUNT(DISTINCT COALESCE(se.id, sa.id)) AS evidence_count
+     FROM applications app
+     JOIN workspace_people wp ON wp.id = app.workspace_person_id
+     JOIN semantic_assertions sa ON sa.workspace_person_id = wp.id
+     JOIN assertion_concepts ac ON ac.assertion_id = sa.id
+     JOIN concepts c ON c.id = ac.concept_id
+     JOIN signal_evidence se
+       ON se.assertion_id = sa.id
+      AND se.concept_id = c.id
+     WHERE app.legacy_candidate_id = ?1
+     GROUP BY c.id, c.canonical_key, c.label
+     ORDER BY c.canonical_key`,
+  ).bind(candidateId).all<{
+    concept_id: string;
+    canonical_key: string;
+    label: string;
+    last_observed_at: string | null;
+    evidence_count: number;
+  }>();
 
-  await Promise.all(
-    ALL_DIMENSIONS.map(async (dim) => {
-      const types = DIMENSION_NODE_TYPES[dim];
-      const placeholders = buildInPlaceholders(types.length);
-
-      const row = await db
-        .prepare(
-          `SELECT MAX(captured_at) AS last_captured_at, COUNT(*) AS node_count
-           FROM candidate_nodes
-           WHERE candidate_id = ?1
-             AND node_type IN (${placeholders})
-             AND superseded_at IS NULL`,
-        )
-        .bind(candidateId, ...types)
-        .first<{
-          last_captured_at: number | null;
-          node_count: number;
-        }>();
-
-      const lastCapturedAt = row?.last_captured_at ?? null;
-      const nodeCount = row?.node_count ?? 0;
-      const staleFlag =
-        lastCapturedAt !== null && lastCapturedAt < now - STALENESS_THRESHOLD_MS;
-
-      dimensions[dim] = { lastCapturedAt, nodeCount, staleFlag };
-    }),
-  );
-
-  const staleCount = ALL_DIMENSIONS.filter((d) => dimensions[d].staleFlag).length;
-  const motivationStale = dimensions.motivation.staleFlag;
-  const contextStale = dimensions.context.staleFlag;
-
-  let overallStaleness: RecencyReport['overallStaleness'];
-  if (staleCount >= 3 || (motivationStale && contextStale)) {
-    overallStaleness = 'stale';
-  } else if (staleCount >= 1) {
-    overallStaleness = 'partial';
-  } else {
-    overallStaleness = 'fresh';
+  const staleBefore = Date.now() - CANDIDATE_RECENCY_POLICY.staleAfterDays * DAY_MS;
+  const dimensions: RecencyReport['dimensions'] = {};
+  for (const row of result.results ?? []) {
+    const observedTime = row.last_observed_at
+      ? Date.parse(row.last_observed_at)
+      : Number.NaN;
+    dimensions[row.canonical_key] = {
+      conceptId: row.concept_id,
+      canonicalKey: row.canonical_key,
+      label: row.label,
+      lastObservedAt: row.last_observed_at,
+      evidenceCount: row.evidence_count,
+      staleFlag: !Number.isFinite(observedTime) || observedTime < staleBefore,
+    };
   }
 
-  return { dimensions, overallStaleness };
+  const values = Object.values(dimensions);
+  const staleCount = values.filter((dimension) => dimension.staleFlag).length;
+  const staleRatio = values.length > 0 ? staleCount / values.length : 1;
+  const overallStaleness: RecencyReport['overallStaleness'] =
+    staleRatio >= CANDIDATE_RECENCY_POLICY.staleProfileRatio
+      ? 'stale'
+      : staleCount > 0
+        ? 'partial'
+        : 'fresh';
+
+  return {
+    dimensions,
+    overallStaleness,
+    policyVersion: CANDIDATE_RECENCY_POLICY.version,
+  };
 }
 
-/**
- * Check recency and candidate state, then build (and optionally execute) a
- * re-engagement plan.
- *
- * - Queues an `enrichment_jobs` row when the profile is old enough and a
- *   `github_url` is available.
- * - Logs the plan to stderr for observability.
- * - Always returns a plan; never throws for missing `enrichment_jobs` table.
- */
 export async function checkAndTriggerReEngagement(
   db: D1Database,
   candidateId: string,
   newRoleId: string,
 ): Promise<ReEngagementPlan> {
   const recency = await analyzeProfileRecency(db, candidateId);
-
-  const ingestionRow = await db
-    .prepare(
-      `SELECT last_enriched_at, github_url
-       FROM candidate_ingestion
-       WHERE candidate_id = ?1`,
-    )
-    .bind(candidateId)
-    .first<{
-      last_enriched_at: number | null;
-      github_url: string | null;
-    }>();
+  const ingestionRow = await db.prepare(
+    `SELECT last_enriched_at, github_url
+     FROM candidate_ingestion
+     WHERE candidate_id = ?1`,
+  ).bind(candidateId).first<{
+    last_enriched_at: number | null;
+    github_url: string | null;
+  }>();
 
   const lastEnrichedAt = ingestionRow?.last_enriched_at ?? null;
   const githubUrl = ingestionRow?.github_url ?? null;
-
-  const thinDimensions = ALL_DIMENSIONS.filter(
-    (d) => recency.dimensions[d].staleFlag,
-  );
-
+  const thinDimensions = Object.values(recency.dimensions)
+    .filter((dimension) => dimension.staleFlag)
+    .map((dimension) => dimension.canonicalKey)
+    .sort();
   const needsScreener = recency.overallStaleness === 'stale';
   const needsReEnrichment =
-    (lastEnrichedAt === null || lastEnrichedAt < Date.now() - SIX_MONTHS_MS) &&
-    githubUrl !== null;
-  const shouldRecomputeMatch = true;
+    (
+      lastEnrichedAt === null
+      || lastEnrichedAt
+        < Date.now() - CANDIDATE_RECENCY_POLICY.reEnrichAfterDays * DAY_MS
+    )
+    && githubUrl !== null;
 
   const plan: ReEngagementPlan = {
     needsReEnrichment,
     needsScreener,
     thinDimensions,
-    shouldRecomputeMatch,
+    shouldRecomputeMatch: true,
   };
 
   if (needsReEnrichment) {
     try {
-      await db
-        .prepare(
-          `INSERT INTO enrichment_jobs (id, candidate_id, source_type, source_url, status, created_at)
-           VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
-        )
-        .bind(crypto.randomUUID(), candidateId, githubUrl)
-        .run();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      await db.prepare(
+        `INSERT INTO enrichment_jobs (
+           id, candidate_id, source_type, source_url, status, created_at
+         )
+         VALUES (?1, ?2, 'github', ?3, 'PENDING', unixepoch())`,
+      ).bind(crypto.randomUUID(), candidateId, githubUrl).run();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       if (message.includes('no such table')) {
-        console.error('[reEngagement] enrichment_jobs table does not exist, skipping insert. TODO: create migration.');
+        console.error(
+          '[reEngagement] enrichment_jobs table does not exist, skipping insert.',
+        );
       } else {
-        console.error('[reEngagement] failed to insert enrichment job:', err);
-        throw err;
+        console.error('[reEngagement] failed to insert enrichment job:', error);
+        throw error;
       }
     }
   }
@@ -193,16 +162,12 @@ export async function checkAndTriggerReEngagement(
   console.error('[reEngagement]', {
     candidateId,
     newRoleId,
+    recencyPolicyVersion: recency.policyVersion,
     ...plan,
   });
-
   return plan;
 }
 
-/**
- * Return the full trajectory (active + superseded) for a single coverage
- * dimension and compute a trend from the active nodes' confidence scores.
- */
 export async function getDimensionTrajectory(
   db: D1Database,
   candidateId: string,
@@ -210,58 +175,61 @@ export async function getDimensionTrajectory(
 ): Promise<{
   nodes: Array<{
     id: string;
-    node_type: string;
+    concept_id: string;
+    canonical_key: string;
     narrative_text: string;
-    captured_at: number;
+    observed_at: string | null;
     confidence: number | null;
-    superseded_at: number | null;
+    polarity: number;
   }>;
   dimensionTrend: 'improving' | 'stable' | 'declining' | 'insufficient_data';
 }> {
-  const types = DIMENSION_NODE_TYPES[dimension];
-  const placeholders = buildInPlaceholders(types.length);
+  const result = await db.prepare(
+    `SELECT
+       sa.id,
+       c.id AS concept_id,
+       c.canonical_key,
+       sa.narrative AS narrative_text,
+       COALESCE(se.observed_at, sa.observed_at) AS observed_at,
+       COALESCE(se.strength, sa.confidence) AS confidence,
+       COALESCE(se.polarity, sa.polarity) AS polarity
+     FROM applications app
+     JOIN workspace_people wp ON wp.id = app.workspace_person_id
+     JOIN semantic_assertions sa ON sa.workspace_person_id = wp.id
+     JOIN assertion_concepts ac ON ac.assertion_id = sa.id
+     JOIN concepts c ON c.id = ac.concept_id
+     JOIN signal_evidence se
+       ON se.assertion_id = sa.id
+      AND se.concept_id = c.id
+     WHERE app.legacy_candidate_id = ?1
+       AND (c.id = ?2 OR c.canonical_key = ?2)
+     ORDER BY COALESCE(se.observed_at, sa.observed_at), sa.id`,
+  ).bind(candidateId, dimension).all<{
+    id: string;
+    concept_id: string;
+    canonical_key: string;
+    narrative_text: string;
+    observed_at: string | null;
+    confidence: number | null;
+    polarity: number;
+  }>();
 
-  const { results } = await db
-    .prepare(
-      `SELECT id, node_type, narrative_text, captured_at, confidence, superseded_at
-       FROM candidate_nodes
-       WHERE candidate_id = ?1
-         AND node_type IN (${placeholders})
-       ORDER BY captured_at ASC`,
-    )
-    .bind(candidateId, ...types)
-    .all<{
-      id: string;
-      node_type: string;
-      narrative_text: string;
-      captured_at: number;
-      confidence: number | null;
-      superseded_at: number | null;
-    }>();
-
-  const nodes = results ?? [];
-
-  const activeNodes = nodes.filter((n) => n.superseded_at === null);
-
-  if (activeNodes.length < 3) {
+  const nodes = result.results ?? [];
+  if (nodes.length < 3) {
     return { nodes, dimensionTrend: 'insufficient_data' };
   }
 
-  const firstConfidence = activeNodes[0]!.confidence;
-  const lastConfidence = activeNodes[activeNodes.length - 1]!.confidence;
-
+  const firstConfidence = nodes[0]!.confidence;
+  const lastConfidence = nodes.at(-1)!.confidence;
   if (firstConfidence === null || lastConfidence === null) {
     return { nodes, dimensionTrend: 'insufficient_data' };
   }
 
-  let dimensionTrend: 'improving' | 'stable' | 'declining';
-  if (lastConfidence > firstConfidence + 0.15) {
-    dimensionTrend = 'improving';
-  } else if (lastConfidence < firstConfidence - 0.15) {
-    dimensionTrend = 'declining';
-  } else {
-    dimensionTrend = 'stable';
-  }
-
+  const dimensionTrend =
+    lastConfidence > firstConfidence + 0.15
+      ? 'improving'
+      : lastConfidence < firstConfidence - 0.15
+        ? 'declining'
+        : 'stable';
   return { nodes, dimensionTrend };
 }

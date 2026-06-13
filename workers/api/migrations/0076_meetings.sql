@@ -22,8 +22,8 @@ CREATE TABLE IF NOT EXISTS meetings (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX idx_meetings_owner ON meetings(owner_id);
-CREATE INDEX idx_meetings_owner_status ON meetings(owner_id, status);
-CREATE INDEX idx_meetings_owner_type ON meetings(owner_id, meeting_type);
-CREATE INDEX idx_meetings_scheduled_at ON meetings(scheduled_at);
-CREATE INDEX idx_meetings_scheduled_interview ON meetings(scheduled_interview_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_owner ON meetings(owner_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_owner_status ON meetings(owner_id, status);
+CREATE INDEX IF NOT EXISTS idx_meetings_owner_type ON meetings(owner_id, meeting_type);
+CREATE INDEX IF NOT EXISTS idx_meetings_scheduled_at ON meetings(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_meetings_scheduled_interview ON meetings(scheduled_interview_id);

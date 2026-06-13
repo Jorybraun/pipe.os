@@ -44,6 +44,7 @@ export interface ContextualTurnRecord {
   statements: ContextualStatement[];
   edges: ContextualEdge[];
   discarded: boolean;
+  missingContext?: string[];
 }
 
 export interface CultureTurnV2 {

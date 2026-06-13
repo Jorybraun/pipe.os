@@ -381,11 +381,11 @@ describe('validatePass3 — language fingerprint', () => {
     expect(result.failures.some((f) => f.includes('language fingerprint'))).toBe(true);
   });
 
-  it('primary_language "C#", narrative contains ".NET" → passes (alias)', () => {
+  it('does not use a code-owned alias to accept a different language surface', () => {
     const output = baseOutput({
       engineering_narrative: '.NET framework ' + words(198),
     });
     const result = validatePass3(baseInput({ primary_language: 'C#' }), output);
-    expect(result.failures.some((f) => f.includes('language fingerprint'))).toBe(false);
+    expect(result.failures.some((f) => f.includes('language fingerprint'))).toBe(true);
   });
 });

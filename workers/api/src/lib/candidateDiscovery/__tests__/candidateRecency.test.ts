@@ -1,17 +1,11 @@
-/**
- * Candidate recency analysis unit tests.
- *
- * Exercises analyzeProfileRecency, checkAndTriggerReEngagement, and
- * getDimensionTrajectory with a lightweight in-memory D1Database stub.
- */
-
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { D1Database } from '@cloudflare/workers-types';
 import {
+  CANDIDATE_RECENCY_POLICY,
   analyzeProfileRecency,
   checkAndTriggerReEngagement,
-  getDimensionTrajectory,
   computeRecencyMultiplier,
+  getDimensionTrajectory,
 } from '../candidateRecency';
 
 beforeEach(() => {
@@ -19,343 +13,222 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function daysAgo(days: number): number {
-  return Date.now() - days * DAY_MS;
-}
-
-interface MockNode {
-  node_type: string;
-  captured_at: number;
-  confidence: number | null;
-  superseded_at?: number | null;
+function isoDaysAgo(days: number): string {
+  return new Date(Date.now() - days * DAY_MS).toISOString();
 }
 
 function buildMockDb(fixture: {
-  candidateNodes?: MockNode[];
+  recencyRows?: Array<{
+    concept_id: string;
+    canonical_key: string;
+    label: string;
+    last_observed_at: string | null;
+    evidence_count: number;
+  }>;
+  trajectoryRows?: Array<{
+    id: string;
+    concept_id: string;
+    canonical_key: string;
+    narrative_text: string;
+    observed_at: string | null;
+    confidence: number | null;
+    polarity: number;
+  }>;
   ingestion?: { last_enriched_at: number | null; github_url: string | null } | null;
 }): D1Database {
-  const nodes = fixture.candidateNodes ?? [];
-  const ingestion = fixture.ingestion ?? null;
-
-  const prepare = (sql: string): unknown => {
-    const statement = {
-      bind: (...args: unknown[]) => {
-        const boundTypes = args.slice(1) as string[];
-
-        return {
-          first: async <T>(): Promise<T | null> => {
-            if (sql.includes('candidate_ingestion')) {
-              return ingestion as T | null;
-            }
-            if (sql.includes('candidate_nodes') && sql.includes('MAX(captured_at)')) {
-              const matchingNodes = nodes.filter(
-                (n) => (n.superseded_at ?? null) === null && boundTypes.includes(n.node_type),
-              );
-              const last_captured_at =
-                matchingNodes.length > 0
-                  ? Math.max(...matchingNodes.map((n) => n.captured_at))
-                  : null;
-              const node_count = matchingNodes.length;
-              return { last_captured_at, node_count } as T;
-            }
-            return null;
-          },
-          all: async <T>(): Promise<{ results: T[] }> => {
-            if (sql.includes('candidate_nodes') && sql.includes('ORDER BY captured_at')) {
-              const matchingNodes = nodes
-                .filter((n) => boundTypes.includes(n.node_type))
-                .sort((a, b) => a.captured_at - b.captured_at);
-              return {
-                results: matchingNodes.map((n) => ({
-                  id: `${n.node_type}-${n.captured_at}`,
-                  node_type: n.node_type,
-                  narrative_text: '',
-                  captured_at: n.captured_at,
-                  confidence: n.confidence,
-                  superseded_at: n.superseded_at ?? null,
-                })) as T[],
-              };
-            }
-            return { results: [] };
-          },
+  return {
+    prepare(sql: string) {
+      return {
+        bind: () => ({
+          all: async () => ({
+            results: sql.includes('GROUP BY c.id')
+              ? fixture.recencyRows ?? []
+              : fixture.trajectoryRows ?? [],
+          }),
+          first: async () =>
+            sql.includes('candidate_ingestion') ? fixture.ingestion ?? null : null,
           run: async () => ({ success: true }),
-        };
-      },
-    };
-    return statement;
-  };
-
-  return { prepare } as unknown as D1Database;
+        }),
+      };
+    },
+  } as unknown as D1Database;
 }
-
-function allDimensionNodes(capturedAt: number): MockNode[] {
-  return [
-    { node_type: 'Experience', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Accomplishment', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Project', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'CulturalSignal', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Skill', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'TechnicalDemonstration', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Education', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Credential', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Motivation', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'WorkingStyle', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'CareerArc', captured_at: capturedAt, confidence: 0.5 },
-    { node_type: 'Context', captured_at: capturedAt, confidence: 0.5 },
-  ];
-}
-
-// ─── analyzeProfileRecency ───────────────────────────────────────────────────
 
 describe('analyzeProfileRecency', () => {
-  it('returns stale when all dimensions are old', async () => {
+  it('tracks previously unseen concepts without node-type registration', async () => {
     const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(400)),
+      recencyRows: [{
+        concept_id: 'concept:unseen',
+        canonical_key: 'term:unseen-database-mechanism',
+        label: 'Unseen database mechanism',
+        last_observed_at: isoDaysAgo(20),
+        evidence_count: 2,
+      }],
     });
-
     const report = await analyzeProfileRecency(db, 'candidate-1');
 
-    expect(report.overallStaleness).toBe('stale');
-    expect(report.dimensions.experience.staleFlag).toBe(true);
-    expect(report.dimensions.cultural.staleFlag).toBe(true);
-    expect(report.dimensions.technical.staleFlag).toBe(true);
-    expect(report.dimensions.motivation.staleFlag).toBe(true);
-    expect(report.dimensions.context.staleFlag).toBe(true);
-  });
-
-  it('returns fresh when all dimensions are recent', async () => {
-    const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(30)),
-    });
-
-    const report = await analyzeProfileRecency(db, 'candidate-1');
-
+    expect(report.policyVersion).toBe(CANDIDATE_RECENCY_POLICY.version);
     expect(report.overallStaleness).toBe('fresh');
-    expect(report.dimensions.experience.staleFlag).toBe(false);
-    expect(report.dimensions.cultural.staleFlag).toBe(false);
-    expect(report.dimensions.technical.staleFlag).toBe(false);
-    expect(report.dimensions.motivation.staleFlag).toBe(false);
-    expect(report.dimensions.context.staleFlag).toBe(false);
+    expect(report.dimensions['term:unseen-database-mechanism']).toMatchObject({
+      conceptId: 'concept:unseen',
+      evidenceCount: 2,
+      staleFlag: false,
+    });
   });
 
-  it('returns partial when 1-2 dimensions are stale', async () => {
+  it('uses the stale ratio across whatever concepts exist', async () => {
     const db = buildMockDb({
-      candidateNodes: [
-        ...allDimensionNodes(daysAgo(30)).filter(
-          (n) => !['Experience', 'Accomplishment', 'Project'].includes(n.node_type),
-        ),
-        { node_type: 'Experience', captured_at: daysAgo(400), confidence: 0.5 },
-        { node_type: 'Accomplishment', captured_at: daysAgo(400), confidence: 0.5 },
-        { node_type: 'Project', captured_at: daysAgo(400), confidence: 0.5 },
+      recencyRows: [
+        {
+          concept_id: 'c1',
+          canonical_key: 'term:a',
+          label: 'A',
+          last_observed_at: isoDaysAgo(400),
+          evidence_count: 1,
+        },
+        {
+          concept_id: 'c2',
+          canonical_key: 'term:b',
+          label: 'B',
+          last_observed_at: isoDaysAgo(10),
+          evidence_count: 1,
+        },
       ],
     });
-
     const report = await analyzeProfileRecency(db, 'candidate-1');
-
-    expect(report.overallStaleness).toBe('partial');
-    expect(report.dimensions.experience.staleFlag).toBe(true);
-    expect(report.dimensions.cultural.staleFlag).toBe(false);
-    expect(report.dimensions.technical.staleFlag).toBe(false);
-    expect(report.dimensions.motivation.staleFlag).toBe(false);
-    expect(report.dimensions.context.staleFlag).toBe(false);
-  });
-
-  it('returns stale when both motivation and context are stale even if only 2 total stale', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        { node_type: 'Motivation', captured_at: daysAgo(400), confidence: 0.5 },
-        { node_type: 'WorkingStyle', captured_at: daysAgo(400), confidence: 0.5 },
-        { node_type: 'CareerArc', captured_at: daysAgo(400), confidence: 0.5 },
-        { node_type: 'Context', captured_at: daysAgo(400), confidence: 0.5 },
-      ],
-    });
-
-    const report = await analyzeProfileRecency(db, 'candidate-1');
-
     expect(report.overallStaleness).toBe('stale');
-    expect(report.dimensions.motivation.staleFlag).toBe(true);
-    expect(report.dimensions.context.staleFlag).toBe(true);
-    expect(report.dimensions.experience.staleFlag).toBe(false);
-    expect(report.dimensions.cultural.staleFlag).toBe(false);
-    expect(report.dimensions.technical.staleFlag).toBe(false);
+    expect(report.dimensions['term:a']!.staleFlag).toBe(true);
+    expect(report.dimensions['term:b']!.staleFlag).toBe(false);
+  });
+
+  it('returns partial when fewer than half of the concepts are stale', async () => {
+    const db = buildMockDb({
+      recencyRows: [
+        {
+          concept_id: 'c1',
+          canonical_key: 'term:a',
+          label: 'A',
+          last_observed_at: isoDaysAgo(400),
+          evidence_count: 1,
+        },
+        ...['b', 'c'].map((key) => ({
+          concept_id: `c:${key}`,
+          canonical_key: `term:${key}`,
+          label: key,
+          last_observed_at: isoDaysAgo(10),
+          evidence_count: 1,
+        })),
+      ],
+    });
+    expect(
+      (await analyzeProfileRecency(db, 'candidate-1')).overallStaleness,
+    ).toBe('partial');
+  });
+
+  it('treats a profile with no source-backed concepts as stale', async () => {
+    const report = await analyzeProfileRecency(buildMockDb({}), 'candidate-1');
+    expect(report.overallStaleness).toBe('stale');
+    expect(report.dimensions).toEqual({});
   });
 });
 
-// ─── checkAndTriggerReEngagement ─────────────────────────────────────────────
-
 describe('checkAndTriggerReEngagement', () => {
-  it('sets needsScreener=true for stale profile', async () => {
+  it('returns stale concept keys as open probe dimensions', async () => {
     const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(400)),
-      ingestion: { last_enriched_at: daysAgo(30), github_url: 'https://github.com/test' },
+      recencyRows: [{
+        concept_id: 'concept:novel',
+        canonical_key: 'term:novel-stream-topology',
+        label: 'Novel stream topology',
+        last_observed_at: isoDaysAgo(400),
+        evidence_count: 1,
+      }],
+      ingestion: {
+        last_enriched_at: Date.now() - 20 * DAY_MS,
+        github_url: null,
+      },
     });
-
     const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
-
     expect(plan.needsScreener).toBe(true);
-    expect(plan.thinDimensions).toContain('experience');
-    expect(plan.thinDimensions).toContain('cultural');
-    expect(plan.thinDimensions).toContain('technical');
-    expect(plan.thinDimensions).toContain('motivation');
-    expect(plan.thinDimensions).toContain('context');
+    expect(plan.thinDimensions).toEqual(['term:novel-stream-topology']);
   });
 
-  it('sets needsReEnrichment=true when last_enriched_at is null', async () => {
+  it('queues enrichment using versioned time policy, independent of concepts', async () => {
     const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(30)),
-      ingestion: { last_enriched_at: null, github_url: 'https://github.com/test' },
+      recencyRows: [],
+      ingestion: {
+        last_enriched_at: Date.now()
+          - (CANDIDATE_RECENCY_POLICY.reEnrichAfterDays + 1) * DAY_MS,
+        github_url: 'https://github.com/example',
+      },
     });
-
     const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
-
     expect(plan.needsReEnrichment).toBe(true);
-  });
-
-  it('sets needsReEnrichment=true when last_enriched_at is > 6 months old', async () => {
-    const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(30)),
-      ingestion: { last_enriched_at: daysAgo(210), github_url: 'https://github.com/test' },
-    });
-
-    const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
-
-    expect(plan.needsReEnrichment).toBe(true);
-  });
-
-  it('does not set needsReEnrichment when github_url is null', async () => {
-    const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(400)),
-      ingestion: { last_enriched_at: daysAgo(30), github_url: null },
-    });
-
-    const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
-
-    expect(plan.needsReEnrichment).toBe(false);
-  });
-
-  it('always sets shouldRecomputeMatch=true', async () => {
-    const db = buildMockDb({
-      candidateNodes: allDimensionNodes(daysAgo(30)),
-      ingestion: { last_enriched_at: daysAgo(30), github_url: 'https://github.com/test' },
-    });
-
-    const plan = await checkAndTriggerReEngagement(db, 'candidate-1', 'role-1');
-
     expect(plan.shouldRecomputeMatch).toBe(true);
   });
 });
 
-// ─── computeRecencyMultiplier ────────────────────────────────────────────────
-
 describe('computeRecencyMultiplier', () => {
-  it('returns 1.0 for empty input', () => {
-    expect(computeRecencyMultiplier([])).toBe(1.0);
+  it('returns 1.0 for empty and recent evidence', () => {
+    expect(computeRecencyMultiplier([])).toBe(1);
+    expect(computeRecencyMultiplier([{
+      captured_at: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60,
+    }])).toBe(1);
   });
 
-  it('returns 1.0 for recent nodes', () => {
-    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60 }];
-    expect(computeRecencyMultiplier(nodes)).toBe(1.0);
-  });
-
-  it('returns 0.8 for nodes older than 2 years', () => {
-    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 3 * 365 * 24 * 60 * 60 }];
-    expect(computeRecencyMultiplier(nodes)).toBe(0.8);
-  });
-
-  it('returns 0.6 for nodes older than 4 years', () => {
-    const nodes = [{ captured_at: Math.floor(Date.now() / 1000) - 5 * 365 * 24 * 60 * 60 }];
-    expect(computeRecencyMultiplier(nodes)).toBe(0.6);
-  });
-
-  it('averages mixed-age nodes', () => {
+  it('discounts old evidence using the temporal scoring policy', () => {
     const now = Math.floor(Date.now() / 1000);
-    const nodes = [
-      { captured_at: now - 30 * 24 * 60 * 60 },
-      { captured_at: now - 3 * 365 * 24 * 60 * 60 },
-    ];
-    expect(computeRecencyMultiplier(nodes)).toBe(0.9); // (1.0 + 0.8) / 2
+    expect(computeRecencyMultiplier([{
+      captured_at: now - 3 * 365 * 24 * 60 * 60,
+    }])).toBe(0.8);
+    expect(computeRecencyMultiplier([{
+      captured_at: now - 5 * 365 * 24 * 60 * 60,
+    }])).toBe(0.6);
   });
 });
 
-// ─── getDimensionTrajectory ──────────────────────────────────────────────────
-
 describe('getDimensionTrajectory', () => {
-  it('returns insufficient_data for < 3 active nodes', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        { node_type: 'CulturalSignal', captured_at: daysAgo(100), confidence: 0.5 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(50), confidence: 0.6 },
-      ],
-    });
+  function trajectory(confidences: number[]) {
+    return confidences.map((confidence, index) => ({
+      id: `assertion-${index}`,
+      concept_id: 'concept:unseen',
+      canonical_key: 'term:unseen-trajectory',
+      narrative_text: `Evidence ${index}`,
+      observed_at: new Date(Date.now() + index * 1000).toISOString(),
+      confidence,
+      polarity: 1,
+    }));
+  }
 
-    const trajectory = await getDimensionTrajectory(db, 'candidate-1', 'cultural');
-
-    expect(trajectory.dimensionTrend).toBe('insufficient_data');
+  it('queries by an open concept key and reports improvement', async () => {
+    const result = await getDimensionTrajectory(
+      buildMockDb({ trajectoryRows: trajectory([0.4, 0.6, 0.8]) }),
+      'candidate-1',
+      'term:unseen-trajectory',
+    );
+    expect(result.dimensionTrend).toBe('improving');
+    expect(result.nodes[0]!.canonical_key).toBe('term:unseen-trajectory');
   });
 
-  it('returns improving when last confidence > first + 0.15', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        { node_type: 'CulturalSignal', captured_at: daysAgo(100), confidence: 0.5 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(50), confidence: 0.6 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(10), confidence: 0.7 },
-      ],
-    });
-
-    const trajectory = await getDimensionTrajectory(db, 'candidate-1', 'cultural');
-
-    expect(trajectory.dimensionTrend).toBe('improving');
-  });
-
-  it('returns declining when last confidence < first - 0.15', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        { node_type: 'CulturalSignal', captured_at: daysAgo(100), confidence: 0.7 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(50), confidence: 0.6 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(10), confidence: 0.5 },
-      ],
-    });
-
-    const trajectory = await getDimensionTrajectory(db, 'candidate-1', 'cultural');
-
-    expect(trajectory.dimensionTrend).toBe('declining');
-  });
-
-  it('returns stable when confidence change is within 0.15', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        { node_type: 'CulturalSignal', captured_at: daysAgo(100), confidence: 0.6 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(50), confidence: 0.65 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(10), confidence: 0.7 },
-      ],
-    });
-
-    const trajectory = await getDimensionTrajectory(db, 'candidate-1', 'cultural');
-
-    expect(trajectory.dimensionTrend).toBe('stable');
-  });
-
-  it('includes superseded nodes in the returned nodes array', async () => {
-    const db = buildMockDb({
-      candidateNodes: [
-        {
-          node_type: 'CulturalSignal',
-          captured_at: daysAgo(200),
-          confidence: 0.4,
-          superseded_at: daysAgo(100),
-        },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(100), confidence: 0.5 },
-        { node_type: 'CulturalSignal', captured_at: daysAgo(50), confidence: 0.6 },
-      ],
-    });
-
-    const trajectory = await getDimensionTrajectory(db, 'candidate-1', 'cultural');
-
-    expect(trajectory.nodes).toHaveLength(3);
-    expect(trajectory.nodes.some((n) => n.superseded_at !== null)).toBe(true);
+  it('reports stable, declining, and insufficient trajectories', async () => {
+    const stable = await getDimensionTrajectory(
+      buildMockDb({ trajectoryRows: trajectory([0.6, 0.65, 0.7]) }),
+      'candidate-1',
+      'term:unseen-trajectory',
+    );
+    const declining = await getDimensionTrajectory(
+      buildMockDb({ trajectoryRows: trajectory([0.8, 0.6, 0.4]) }),
+      'candidate-1',
+      'term:unseen-trajectory',
+    );
+    const thin = await getDimensionTrajectory(
+      buildMockDb({ trajectoryRows: trajectory([0.8, 0.9]) }),
+      'candidate-1',
+      'term:unseen-trajectory',
+    );
+    expect(stable.dimensionTrend).toBe('stable');
+    expect(declining.dimensionTrend).toBe('declining');
+    expect(thin.dimensionTrend).toBe('insufficient_data');
   });
 });

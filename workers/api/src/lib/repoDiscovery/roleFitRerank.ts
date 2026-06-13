@@ -112,7 +112,7 @@ function buildSystemPrompt(): string {
     '      • review_culture_match — repo.review_density bucketed (rigorous ≥ 2.0 comments/PR, lightweight 1–2, solo < 1) vs RCD\'s implied review culture (infer from codebase_expectations language — e.g., "thorough review", "trunk-based", "ship fast").',
     '      • pr_size_match — repo.p90_changed_files bucketed (small < 10, medium 10–30, large > 30) vs RCD\'s implied PR size band.',
     '      • complexity_match — repo.complexity_band vs RCD\'s implied complexity_tolerance (infer from seniority_band + codebase_expectations).',
-    '      • challenge_surface_fit — repo.challenge_surfaces (10 *_potential floats in [0,1]) cosine-aligned to the surfaces the RCD\'s must_have skills imply. If challenge_surfaces is null, return 0.5.',
+    '      • challenge_surface_fit — repo.challenge_surfaces cosine-aligned to source-backed role concepts. If challenge_surfaces is null, return null.',
     '    Use null for any dimension you genuinely cannot judge. Do NOT fabricate scores.',
     '',
     'Hard rules:',
@@ -278,7 +278,11 @@ function normalizeRanking(raw: unknown, idx: number): ParsedRerankItem {
     throw new Error(`[roleFitRerank] ranking[${idx}] missing valid repo_id`);
   }
 
-  const score = clamp01(coerceNumber(obj.alignment_score) ?? 0);
+  const parsedScore = coerceNumber(obj.alignment_score);
+  if (parsedScore === null) {
+    throw new Error(`[roleFitRerank] ranking[${idx}] missing valid alignment_score`);
+  }
+  const score = clamp01(parsedScore);
   const band = coerceBand(obj.alignment_band) ?? deriveBand(score);
 
   const reasoningRaw = isObject(obj.reasoning) ? (obj.reasoning as Record<string, unknown>) : {};

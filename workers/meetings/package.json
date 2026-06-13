@@ -8,10 +8,21 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.69",
     "@clerk/backend": "^1.19.2",
+    "@copilotkit/react-core": "^1.59.5",
+    "@copilotkit/runtime": "^1.59.5",
+    "ag-ui-cloudflare": "^0.1.1",
     "hono": "^4.6.20",
     "resend": "^6.10.0",
-    "zod": "^3.24.1"
+    "zod": "^3.25.76"
+  },
+  "overrides": {
+    "@copilotkit/runtime": {
+      "@hono/node-server": "npm:false",
+      "@segment/analytics-node": "npm:false",
+      "express": "npm:false"
+    }
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241205.0",

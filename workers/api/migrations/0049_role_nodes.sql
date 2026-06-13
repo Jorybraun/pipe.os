@@ -3,11 +3,7 @@ CREATE TABLE IF NOT EXISTS role_nodes (
   id TEXT PRIMARY KEY,
   role_context_id TEXT NOT NULL,
   rcd_version TEXT NOT NULL,
-  node_type TEXT NOT NULL CHECK(node_type IN (
-    'Requirement', 'Responsibility', 'CulturalSignal', 'TeamContext',
-    'Dealbreaker', 'RedFlag', 'TechnicalContext', 'CodebaseExpectation',
-    'ProcessExpectation', 'Conflict', 'BarsOverride'
-  )),
+  node_type TEXT NOT NULL,
   narrative_text TEXT NOT NULL,
   extracted_properties_json TEXT,
   embedding_json TEXT,

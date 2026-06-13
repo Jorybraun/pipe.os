@@ -272,11 +272,11 @@ function AppLayout(): JSX.Element {
                 },
               }
             : {})}
-          onOutreachClick={() => {
-            setActiveSection("outreach");
+          onContactsClick={() => {
+            setActiveSection("contacts");
             setShowSettings(false);
             setShowCalls(false);
-            navigate("/outreach");
+            navigate("/contacts");
           }}
           onRepoAdminClick={() => {
             setActiveSection("repo-admin");

@@ -52,7 +52,7 @@ WHERE owner_id IS NULL;
 -- ── Candidates table ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS candidates (
   id                  TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  pipeline_id         TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+  pipeline_id         TEXT REFERENCES pipelines(id) ON DELETE CASCADE,
   owner_id            TEXT NOT NULL,
   name                TEXT,
   email               TEXT,

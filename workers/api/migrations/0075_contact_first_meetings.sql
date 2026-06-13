@@ -14,9 +14,9 @@ ALTER TABLE scheduled_interviews ADD COLUMN recipient_email TEXT;
 -- SQLite doesn't support dropping constraints directly, so we recreate the table
 CREATE TABLE IF NOT EXISTS scheduled_interviews_new (
   id TEXT PRIMARY KEY,
-  candidate_id TEXT,
-  pipeline_id TEXT,
-  stage_id TEXT,
+  candidate_id TEXT REFERENCES candidates(id),
+  pipeline_id TEXT REFERENCES pipelines(id),
+  stage_id TEXT REFERENCES stages(id),
   owner_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'INVITED' CHECK (status IN ('INVITED', 'SCHEDULED', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW')),
   scheduled_at TEXT,
@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS scheduled_interviews_new (
   meeting_type TEXT CHECK (meeting_type IN ('DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW')),
   recipient_name TEXT,
   recipient_email TEXT,
+  interview_type TEXT DEFAULT 'VIDEO'
+    CHECK (interview_type IN ('VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW')),
+  matched_repo_id INTEGER REFERENCES qualified_repos(id) ON DELETE SET NULL,
+  github_repo_url TEXT,
+  github_pr_number INTEGER,
+  submission_json TEXT,
+  completed_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

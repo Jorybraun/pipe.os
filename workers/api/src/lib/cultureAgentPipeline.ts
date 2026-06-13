@@ -18,13 +18,14 @@
  */
 
 import type { LLMProvider, LLMMessage } from './llm/types';
-import type { Env, CandidateNodeType } from '../types';
+import type { Env } from '../types';
 import type { CultureTranscript } from './cultureAgent';
 import { embedCandidateNode, getActiveCandidateNodesWithFallback } from './candidateDiscovery/candidateNodes';
 import { computeCandidateCoverageWithFallback } from './neo4j/candidateGraphQueries';
 import { meanPoolVectors, parseEmbeddingJson } from './embedding/cosine';
 import { writeCandidateGraph } from './neo4j/writeCandidateGraph';
 import { buildNeo4jConfig, getNeo4jDriver } from './neo4j/driver';
+import { mirrorCandidateNodeToLivingContext } from './livingContext/compatibility';
 
 import { markCandidateEnriching, markCandidateEnriched } from './candidateDiscovery/persist';
 import { runMatchAndAssign, loadDiscoveryResultFromDb } from './candidateDiscovery/orchestrate';
@@ -91,7 +92,7 @@ export interface CandidateProfile {
 }
 
 interface DecomposedNode {
-  nodeType: CandidateNodeType;
+  nodeType: string;
   narrative: string;
   properties: Record<string, unknown>;
   confidence: number;
@@ -208,7 +209,7 @@ Synthesize a rich structured candidate profile from this transcript. Produce the
 // ─── Decomposition prompts ───────────────────────────────────────────────────
 
 function buildDecompositionSystemPrompt(): string {
-  return `You are a structured information extraction system. Read the complete interview transcript and extract typed sub-elements (nodes) for a candidate knowledge graph.
+  return `You are a structured information extraction system. Read the complete interview transcript and extract source-backed semantic statements for a candidate knowledge graph.
 
 # Output contract
 Respond with ONE JSON object. No prose. No markdown fences. Exactly this shape:
@@ -216,40 +217,33 @@ Respond with ONE JSON object. No prose. No markdown fences. Exactly this shape:
 {
   "nodes": [
     {
-      "nodeType": "Experience | Project | Skill | CulturalSignal | WorkingStyle | Motivation",
+      "nodeType": "short, descriptive semantic classification grounded in this statement",
       "narrative": "one-sentence summary suitable for embedding",
-      "properties": { /* type-specific fields */ },
+      "properties": {
+        "semantic_terms": [
+          {
+            "surface": "exact term from the transcript",
+            "canonical_key": "term:normalized-key",
+            "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"
+          }
+        ]
+      },
       "confidence": 0.0-1.0
     }
   ]
 }
 
-Type-specific properties:
-
-Experience:
-  { "company": "string or null", "role": "string or null", "startDate": "string or null", "endDate": "string or null", "teamSize": number or null, "scope": "string", "keyAccomplishments": ["string"], "technologies": ["string"] }
-
-Project:
-  { "name": "string or null", "description": "string", "role": "string", "outcomes": ["string"], "technologies": ["string"] }
-
-Skill:
-  { "skill": "string", "proficiency": "exposure | working | expert", "evidence": "string", "yearsExperience": number or null }
-
-CulturalSignal:
-  { "dimension": "ownership | collaboration | learning-orientation | conflict-handling | self-awareness", "evidence": "string", "scoreEstimate": 1-5 }
-
-WorkingStyle:
-  { "collaborationPreference": "string", "communicationStyle": "string", "decisionMaking": "string", "feedbackReceptiveness": "string" }
-
-Motivation:
-  { "primaryDrivers": ["string"], "dealbreakers": ["string"], "growthTrajectory": "string" }
-
 Rules:
 - Only extract information explicitly stated or strongly implied by the transcript.
 - Use null or empty arrays when information is missing — never hallucinate.
+- Do not force statements into a predefined taxonomy. Use the narrowest useful label supported by the source.
+- Preserve exact named technologies, organizations, mechanisms, business objects, constraints, and outcomes in properties.
+- Put only meaning-bearing terms that should accumulate as candidate signals in properties.semantic_terms. Dates, counts, formatting values, and administrative metadata remain ordinary properties.
+- semantic_terms are open data. Do not choose from a known skill, domain, signal, or concept list.
+- A previously unseen nodeType is valid when the transcript supports it.
 - narrative must be a standalone, embeddable sentence summarizing the node content.
 - confidence reflects your certainty that the information is real (not candidate quality).
-- Limit to the 12 most salient nodes. Prioritize: Experience > Skill > Project > CulturalSignal > WorkingStyle > Motivation.
+- Limit to the 12 most salient source-backed statements.
 - Do NOT duplicate nodes. If the same experience is mentioned multiple times, create it once.`;
 }
 
@@ -472,14 +466,13 @@ function parseDecomposedNodes(raw: unknown): DecomposedNode[] {
   return out;
 }
 
-const VALID_NODE_TYPES: Set<CandidateNodeType> = new Set([
-  'Experience', 'Project', 'Skill', 'CulturalSignal', 'WorkingStyle', 'Motivation',
-]);
-
-function parseNodeType(v: unknown): CandidateNodeType | null {
+function parseNodeType(v: unknown): string | null {
   if (typeof v !== 'string') return null;
-  const t = v.trim() as CandidateNodeType;
-  return VALID_NODE_TYPES.has(t) ? t : null;
+  const nodeType = v.normalize('NFKC').trim();
+  if (nodeType.length === 0 || nodeType.length > 120 || /[\u0000-\u001f\u007f]/.test(nodeType)) {
+    return null;
+  }
+  return nodeType;
 }
 
 function parseStringArray(raw: unknown): string[] {
@@ -534,6 +527,7 @@ async function persistDecomposedNodes(
         created_at: capturedAt,
         updated_at: capturedAt,
       });
+      await mirrorCandidateNodeToLivingContext(db, candidateNodes.at(-1)!);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(

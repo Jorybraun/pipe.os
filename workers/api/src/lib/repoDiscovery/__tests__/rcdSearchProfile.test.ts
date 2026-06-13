@@ -299,4 +299,23 @@ describe('buildRcdSearchProfile', () => {
     const second = buildRcdSearchProfile(rcd);
     expect(first).toBe(second);
   });
+
+  // ── 9. Unseen concepts don't require code changes ─────────────────────────
+  it('RCD with unseen technical stack concepts returns valid profile without code changes', () => {
+    const rcd: RoleContextDocument = {
+      ...makeMinimalRcd(),
+      role_context_id: 'rcd-unseen-concepts',
+      technical_context: makeTechnicalContext({
+        stack: ['TypeScript', 'React', 'Node.js', 'never-before-seen-framework'],
+        constructs: ['event-driven', 'domain-driven design', 'unseen-construct'],
+      }),
+    };
+
+    const result = buildRcdSearchProfile(rcd);
+    expect(typeof result).toBe('string');
+    expect(result.length).toBeGreaterThan(0);
+    // Unseen concepts should be included in the profile
+    expect(result).toContain('never-before-seen-framework');
+    expect(result).toContain('unseen-construct');
+  });
 });

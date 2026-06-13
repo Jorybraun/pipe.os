@@ -184,7 +184,7 @@ describe('decomposeTranscript', () => {
     expect(result!.nodes[1]!.nodeType).toBe('Skill');
   });
 
-  it('filters out invalid node types', async () => {
+  it('preserves previously unseen semantic node types', async () => {
     const decomposition = {
       nodes: [
         { nodeType: 'Experience', narrative: 'Valid', properties: {}, confidence: 0.9 },
@@ -197,8 +197,8 @@ describe('decomposeTranscript', () => {
     const result = await decomposeTranscript(provider, makeTranscript());
 
     expect(result).not.toBeNull();
-    expect(result!.nodes).toHaveLength(2);
-    expect(result!.nodes.every((n) => ['Experience', 'Project', 'Skill', 'CulturalSignal', 'WorkingStyle', 'Motivation'].includes(n.nodeType))).toBe(true);
+    expect(result!.nodes).toHaveLength(3);
+    expect(result!.nodes[1]!.nodeType).toBe('InvalidType');
   });
 
   it('returns null when no provider', async () => {

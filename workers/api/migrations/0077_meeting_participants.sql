@@ -13,6 +13,6 @@ CREATE TABLE IF NOT EXISTS meeting_participants (
   updated_at TEXT NOT NULL
 );
 
-CREATE INDEX idx_meeting_participants_meeting ON meeting_participants(meeting_id);
-CREATE INDEX idx_meeting_participants_contact ON meeting_participants(contact_id);
-CREATE UNIQUE INDEX idx_meeting_participants_unique ON meeting_participants(meeting_id, contact_id);
+CREATE INDEX IF NOT EXISTS idx_meeting_participants_meeting ON meeting_participants(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_meeting_participants_contact ON meeting_participants(contact_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_participants_unique ON meeting_participants(meeting_id, contact_id);

@@ -22,28 +22,6 @@
 import type { Pass3Data } from '../shared/types.js';
 import type { Pass3Input, ValidationResult } from './types.js';
 
-// Language fingerprint aliases — Devstral may reasonably surface a sibling name
-// (React code is JavaScript/TypeScript; .NET is C#). Keeping this list
-// narrow on purpose — a sprawling alias table would mask real hallucinations.
-const LANGUAGE_ALIASES: Record<string, readonly string[]> = {
-  typescript: ['typescript', 'tsx'],
-  javascript: ['javascript', 'jsx'],
-  python: ['python'],
-  go: ['go', 'golang'],
-  rust: ['rust'],
-  'c++': ['c++', 'cpp'],
-  'c#': ['c#', 'csharp', '.net', 'dotnet'],
-  java: ['java'],
-  kotlin: ['kotlin'],
-  swift: ['swift'],
-  ruby: ['ruby'],
-  php: ['php'],
-  elixir: ['elixir'],
-  scala: ['scala'],
-  dart: ['dart'],
-  shell: ['shell', 'bash'],
-};
-
 const COMPLEXITY_BANDS = new Set(['low', 'medium', 'high', 'mixed']);
 const ARCHITECTURE_STYLES = new Set([
   'monolith',
@@ -215,12 +193,12 @@ export function validatePass3(input: Pass3Input, output: Pass3Data): ValidationR
 
   const narrativeLower = narrative.toLowerCase();
   const primaryLangLower = input.primary_language?.toLowerCase() ?? '';
-  const aliases = LANGUAGE_ALIASES[primaryLangLower] ?? [primaryLangLower];
-  const languageMatched = aliases.some((a) => narrativeLower.includes(a));
+  const languageMatched = primaryLangLower.length > 0
+    && narrativeLower.includes(primaryLangLower);
   if (narrativeWords > 0 && !languageMatched) {
     failures.push(
-      `language fingerprint failed: narrative does not mention "${input.primary_language}" ` +
-        `or any known alias (${aliases.join(', ')}). Possible hallucination.`,
+      `language fingerprint failed: narrative does not mention the observed source value ` +
+        `"${input.primary_language}". Possible hallucination.`,
     );
   }
 

@@ -20,8 +20,9 @@
  */
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
+import { openSemanticTerm } from '../livingContext/openTerms';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
-import { cosineSimilarity, parseEmbeddingJson } from '../embedding/cosine';
+import type { ChallengePacket } from '../repoSemanticGraph';
 
 export type StationType = 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
 
@@ -52,7 +53,7 @@ export interface AutoStation {
 export interface PickReviewPrResult {
   prNumber: number;
   prTitle: string;
-  selectionPath: 'semantic' | 'size_fallback';
+  selectionPath: 'source_backed_role_overlap';
 }
 
 export interface AutoStageBuilderResult {
@@ -68,20 +69,16 @@ export interface AutoStageBuilderInput {
   matchConfig: PipelineMatchConfig;
 }
 
-const DEFAULT_LANGUAGE = 'typescript';
-const DEFAULT_DOMAIN = 'general';
-const DEFAULT_SENIORITY: CandidatePersona['seniority'] | string = 'mid';
-
-/**
- * Coerce free-text seniority strings ("Mid-to-senior, 5–8 years") into the
- * 4-band enum matchRepos expects. Conservative: anything ambiguous → 'mid'.
- */
-function normalizeSeniority(raw: string): 'junior' | 'mid' | 'senior' | 'staff' {
-  const s = raw.toLowerCase();
-  if (s.includes('staff') || s.includes('principal')) return 'staff';
-  if (s.includes('senior')) return 'senior';
-  if (s.includes('junior') || s.includes('entry') || s.includes('grad')) return 'junior';
-  return 'mid';
+function exactSeniority(
+  raw: string | null | undefined,
+): MatchRequest['seniority'] {
+  const normalized = raw?.trim().toLowerCase();
+  return normalized === 'junior'
+    || normalized === 'mid'
+    || normalized === 'senior'
+    || normalized === 'staff'
+    ? normalized
+    : undefined;
 }
 
 function parseRcd(roleContext: RoleContextRow): RoleContextDocument | null {
@@ -135,35 +132,6 @@ export function resolveMustHaveSkills(roleContext: RoleContextRow): string[] {
   return persona?.mustHaveSkills ?? [];
 }
 
-const COVERAGE_RANK: Record<string, number> = {
-  deep: 4,
-  covered: 3,
-  partial: 2,
-  sparse: 1,
-  not_probed: 0,
-};
-
-/** Derive the primary domain from the RCD domain matrix. */
-function deriveDomainFromRcd(rcd: RoleContextDocument): string {
-  let bestDomain = DEFAULT_DOMAIN;
-  let bestRank = -1;
-
-  for (const stakeholder of Object.keys(rcd.domain_matrix)) {
-    const cells = rcd.domain_matrix[stakeholder as keyof typeof rcd.domain_matrix];
-    if (!cells) continue;
-    for (const [domain, cell] of Object.entries(cells)) {
-      if (!cell || !cell.primary_authority) continue;
-      const rank = COVERAGE_RANK[cell.coverage] ?? 0;
-      if (rank > bestRank) {
-        bestRank = rank;
-        bestDomain = domain;
-      }
-    }
-  }
-
-  return bestDomain;
-}
-
 export function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
   const persona = parsePersona(roleContext);
   const mustHaveSkills = resolveMustHaveSkills(roleContext);
@@ -171,115 +139,83 @@ export function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
   const rcd = parseRcd(roleContext);
   if (rcd) {
     const tc = rcd.technical_context;
-    const primaryLanguage = tc.stack[0] ? tc.stack[0].toLowerCase() : DEFAULT_LANGUAGE;
-    const seniority = normalizeSeniority(tc.seniority_band || DEFAULT_SENIORITY);
-    const domain = deriveDomainFromRcd(rcd);
     const niceToHaveSkills = persona?.niceToHaveSkills ?? [];
 
     return {
       mustHaveSkills,
       niceToHaveSkills,
-      seniority,
-      domain,
-      primaryLanguage,
+      seniority: exactSeniority(tc.seniority_band),
       limit: 5,
     };
   }
 
-  // Legacy fallback: pull primary language + domain from persona if available.
   const niceToHaveSkills = persona?.niceToHaveSkills ?? [];
-  const seniority = normalizeSeniority(persona?.seniority ?? DEFAULT_SENIORITY);
 
   return {
     mustHaveSkills,
     niceToHaveSkills,
-    seniority,
-    domain: DEFAULT_DOMAIN,
-    primaryLanguage: DEFAULT_LANGUAGE,
+    seniority: exactSeniority(persona?.seniority),
     limit: 5,
   };
 }
 
 /**
- * Pick the top PR for a given repo from repo_sample_prs, preferring SWE-bench
- * eligible PRs (`swe_bench_eligible = 1`).
+ * Pick a production-ready challenge packet that overlaps persisted role
+ * concepts. The packet already passed source-provenance and reviewability
+ * gates during repository graph extraction.
  */
-const SEMANTIC_THRESHOLD = 0.6;
-
 export async function pickReviewPr(
   db: D1Database,
   repoId: number,
-  candidateEmbedding?: number[] | null,
+  roleConcepts: string[],
+  requiredConcepts: string[] = [],
 ): Promise<PickReviewPrResult | null> {
-  // Fast fallback when no candidate embedding is available.
-  if (!candidateEmbedding) {
-    const row = await db
-      .prepare(
-        `SELECT pr_number, title
-           FROM repo_sample_prs
-          WHERE repo_id = ?
-            AND swe_bench_eligible = 1
-          ORDER BY changed_file_count ASC, pr_number DESC
-          LIMIT 1`,
-      )
-      .bind(repoId)
-      .first<{ pr_number: number; title: string }>();
-
-    if (!row) return null;
-    return { prNumber: row.pr_number, prTitle: row.title, selectionPath: 'size_fallback' };
-  }
-
-  // Semantic path: load all eligible PRs with embeddings and compute cosine similarity.
+  if (roleConcepts.length === 0) return null;
   const rows = await db
     .prepare(
-      `SELECT pr_number, title, pr_narrative_embedding_json
-         FROM repo_sample_prs
+      `SELECT pr_number, quality_score, packet_json
+         FROM review_challenge_packets
         WHERE repo_id = ?
-          AND swe_bench_eligible = 1`,
+          AND production_ready = 1
+          AND quality_score >= 0.70
+        ORDER BY quality_score DESC, pr_number`,
     )
     .bind(repoId)
-    .all<{ pr_number: number; title: string; pr_narrative_embedding_json: string | null }>();
+    .all<{ pr_number: number; quality_score: number; packet_json: string }>();
 
-  let bestPr: { pr_number: number; title: string } | null = null;
-  let bestScore = -1;
-
-  for (const row of rows.results ?? []) {
-    const prEmbedding = parseEmbeddingJson(row.pr_narrative_embedding_json);
-    if (!prEmbedding) continue;
+  const relevant = new Set(roleConcepts);
+  const required = new Set(requiredConcepts);
+  const ranked = (rows.results ?? []).flatMap((row) => {
+    let packet: ChallengePacket;
     try {
-      const sim = cosineSimilarity(candidateEmbedding, prEmbedding);
-      if (sim > bestScore) {
-        bestScore = sim;
-        bestPr = row;
-      }
+      packet = JSON.parse(row.packet_json) as ChallengePacket;
     } catch {
-      continue;
+      return [];
     }
-  }
+    const concepts = new Set(packet.demands.flatMap((demand) => demand.conceptKeys));
+    if ([...required].some((concept) => !concepts.has(concept))) return [];
+    const overlap = [...relevant].filter((concept) => concepts.has(concept)).length;
+    if (overlap === 0) return [];
+    return [{
+      prNumber: row.pr_number,
+      prTitle: packet.pullRequest.title,
+      overlap,
+      qualityScore: row.quality_score,
+    }];
+  }).sort((left, right) =>
+    right.overlap - left.overlap
+    || right.qualityScore - left.qualityScore
+    || left.prNumber - right.prNumber
+  );
 
-  if (bestPr && bestScore >= SEMANTIC_THRESHOLD) {
-    console.log(
-      `[pickReviewPr] semantic match repoId=${repoId} pr=${bestPr.pr_number} score=${bestScore.toFixed(3)}`,
-    );
-    return { prNumber: bestPr.pr_number, prTitle: bestPr.title, selectionPath: 'semantic' };
-  }
-
-  // Fallback to size ordering when no semantic match clears the threshold.
-  const row = await db
-    .prepare(
-      `SELECT pr_number, title
-         FROM repo_sample_prs
-        WHERE repo_id = ?
-          AND swe_bench_eligible = 1
-        ORDER BY changed_file_count ASC, pr_number DESC
-        LIMIT 1`,
-    )
-    .bind(repoId)
-    .first<{ pr_number: number; title: string }>();
-
-  if (!row) return null;
-  console.log(`[pickReviewPr] size_fallback repoId=${repoId} pr=${row.pr_number}`);
-  return { prNumber: row.pr_number, prTitle: row.title, selectionPath: 'size_fallback' };
+  const selected = ranked[0];
+  return selected
+    ? {
+        prNumber: selected.prNumber,
+        prTitle: selected.prTitle,
+        selectionPath: 'source_backed_role_overlap',
+      }
+    : null;
 }
 
 /**
@@ -292,11 +228,10 @@ export async function pickReviewPr(
 export async function pickImplementationIssue(
   db: D1Database,
   repoId: number,
-  seniority: 'junior' | 'mid' | 'senior' | 'staff',
+  seniority?: 'junior' | 'mid' | 'senior' | 'staff',
 ): Promise<{ issueNumber: number; issueTitle: string } | null> {
-  // issue_challenge_signals.difficulty_band only carries 'junior' | 'mid' | 'senior'.
-  // 'staff' rolls up to 'senior'.
   const band = seniority === 'staff' ? 'senior' : seniority;
+  const difficultyClause = band ? 'AND ics.difficulty_band = ?' : '';
 
   const row = await db
     .prepare(
@@ -306,11 +241,11 @@ export async function pickImplementationIssue(
         WHERE ri.repo_id = ?
           AND ri.has_merged_pr = 0
           AND ics.disqualified = 0
-          AND ics.difficulty_band = ?
+          ${difficultyClause}
         ORDER BY ics.implementability_score DESC, ics.clarity_score DESC
         LIMIT 1`,
     )
-    .bind(repoId, band)
+    .bind(repoId, ...(band ? [band] : []))
     .first<{ issue_number: number; title: string }>();
 
   if (!row) return null;
@@ -352,16 +287,28 @@ export async function autoStageBuilder(
   }
 
   // 3. Pick PR + issue.
-  const pr = await pickReviewPr(db, reviewRepo.id);
+  const roleSurfaces = [
+    ...baseRequest.mustHaveSkills,
+    ...baseRequest.niceToHaveSkills,
+  ];
+  const roleConcepts = roleSurfaces.flatMap((surface) => {
+    const term = openSemanticTerm(surface);
+    return term ? [term.canonicalKey] : [];
+  });
+  const requiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
+    const term = openSemanticTerm(surface);
+    return term ? [term.canonicalKey] : [];
+  });
+  const pr = await pickReviewPr(db, reviewRepo.id, roleConcepts, requiredConcepts);
   if (!pr) {
     throw new Error(
-      `autoStageBuilder: no SWE-bench-eligible PR found for repo ${reviewRepo.fullName} (id=${reviewRepo.id})`,
+      `autoStageBuilder: no source-backed role-safe review challenge found for repo ${reviewRepo.fullName} (id=${reviewRepo.id})`,
     );
   }
   const issue = await pickImplementationIssue(db, implRepo.id, baseRequest.seniority);
   if (!issue) {
     throw new Error(
-      `autoStageBuilder: no eligible implementation issue found for repo ${implRepo.fullName} (id=${implRepo.id}, seniority=${baseRequest.seniority})`,
+      `autoStageBuilder: no eligible implementation issue found for repo ${implRepo.fullName} (id=${implRepo.id})`,
     );
   }
 

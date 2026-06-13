@@ -25,8 +25,10 @@ import type { Env } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import type { DecompositionResult } from './candidateDecompositionPrompt';
 import { createCandidateAgentProvider } from '../llm/createProvider';
-import { pickReviewPr, pickImplementationIssue } from '../match/autoStageBuilder';
+import { pickImplementationIssue } from '../match/autoStageBuilder';
 import { matchRepos, type MatchRequest } from '../repoDiscovery/matchRepos';
+import { matchCandidateToReviewChallenge } from '../challengeMatching/d1Matcher';
+import { loadRoleChallengeSemantics } from '../challengeMatching/roleGuardrails';
 import { discoverCandidateProfile, type CandidateDiscoveryResult } from './agent';
 import { embedAndUpsertCandidate, upsertCandidateVector } from './embed';
 import {
@@ -43,7 +45,6 @@ import { cosineSimilarity, parseEmbeddingJson, meanPoolVectors } from '../embedd
 import { getActiveCandidateNodesWithFallback } from './candidateNodes';
 import { decomposeResumeToGraph } from './resumeDecomposition';
 // computeRecencyMultiplier removed — simplified matching path post-Neo4j cutover
-import { getCandidateCoverage } from './candidateCoverage';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { buildProfileSections } from './buildProfileSections';
@@ -176,15 +177,22 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
   try {
     embedResult = await trackStep(db, candidateId, 'embed_profile', async () => {
       const aggregateVector = meanPoolVectors(decompositionEmbeddings);
+      const evidenceMetadata = {
+        ...(discoveryResult.keyConcepts.seniority
+          ? { seniority: discoveryResult.keyConcepts.seniority }
+          : {}),
+        ...(discoveryResult.keyConcepts.primary_language
+          ? { primary_language: discoveryResult.keyConcepts.primary_language }
+          : {}),
+        profile_version: discoveryResult.profileVersion,
+      };
       if (aggregateVector) {
         const result = await upsertCandidateVector({
           vectorize: env.CANDIDATE_INDEX,
           candidateId,
           vector: aggregateVector,
           metadata: {
-            seniority: discoveryResult.keyConcepts.seniority,
-            primary_language: discoveryResult.keyConcepts.primary_language,
-            profile_version: discoveryResult.profileVersion,
+            ...evidenceMetadata,
             aggregate_source: 'node_mean_pool',
           },
           db,
@@ -198,11 +206,7 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
           vectorize: env.CANDIDATE_INDEX,
           candidateId,
           profile: discoveryResult.candidateSearchableProfile,
-          metadata: {
-            seniority: discoveryResult.keyConcepts.seniority,
-            primary_language: discoveryResult.keyConcepts.primary_language,
-            profile_version: discoveryResult.profileVersion,
-          },
+          metadata: evidenceMetadata,
           db,
         });
       }
@@ -311,29 +315,41 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
 
   // Step 6: Simple repo matching via catalog query (legacy Vectorize path removed)
   const seniorityRaw = discoveryResult.keyConcepts.seniority;
-  const normalizedSeniority = ['junior', 'mid', 'senior', 'staff'].includes(seniorityRaw)
+  const candidateSeniority = seniorityRaw
+    && ['junior', 'mid', 'senior', 'staff'].includes(seniorityRaw)
     ? (seniorityRaw as 'junior' | 'mid' | 'senior' | 'staff')
-    : 'mid';
+    : undefined;
+  const primaryLanguage = discoveryResult.keyConcepts.primary_language?.trim().toLowerCase();
+  const domain = discoveryResult.keyConcepts.detected_domain?.trim().toLowerCase();
 
   const matchRequest: MatchRequest = {
     mustHaveSkills: discoveryResult.keyConcepts.mustHaveSkills,
     niceToHaveSkills: discoveryResult.keyConcepts.niceToHaveSkills,
-    seniority: normalizedSeniority,
-    domain: discoveryResult.keyConcepts.detected_domain || 'general',
-    primaryLanguage: discoveryResult.keyConcepts.primary_language || 'typescript',
+    seniority: candidateSeniority,
+    domain: domain && domain !== 'general' && domain !== 'unknown' ? domain : undefined,
+    primaryLanguage:
+      primaryLanguage && primaryLanguage !== 'unknown' ? primaryLanguage : undefined,
     limit: 10,
   };
 
   const matchedRepos = await matchRepos(db, matchRequest);
-  if (matchedRepos.length === 0) {
-    throw new Error('No repos matched for candidate');
-  }
 
   // Step 7: Load role_repo_alignment for pipeline's role_context
   const roleContextRow = await db
-    .prepare(`SELECT id FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`)
+    .prepare(
+      `SELECT id, rcd_version, rcd_json, non_negotiable_skills_json
+         FROM role_contexts
+        WHERE pipeline_id = ?1
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+    )
     .bind(pipelineId)
-    .first<{ id: string }>();
+    .first<{
+      id: string;
+      rcd_version: string | null;
+      rcd_json: string | null;
+      non_negotiable_skills_json: string | null;
+    }>();
 
   let roleRepoAlignments = new Map<number, number>();
   let roleCandidateCosine: number | null = null;
@@ -379,10 +395,12 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
           env.REPO_INDEX.query(roleVec, { topK: 20 }),
           env.CANDIDATE_INDEX.query(roleVec, { topK: 20 }),
         ]);
-        const winnerRepoId = matchedRepos[0]!.id;
-        const repoMatch = repoQuery.matches.find((m) => m.id === `repo_${winnerRepoId}`);
-        if (repoMatch) {
-          vectorRoleRepo = repoMatch.score;
+        const catalogWinner = matchedRepos[0];
+        if (catalogWinner) {
+          const repoMatch = repoQuery.matches.find((m) => m.id === `repo_${catalogWinner.id}`);
+          if (repoMatch) {
+            vectorRoleRepo = repoMatch.score;
+          }
         }
         const candMatch = candidateQuery.matches.find((m) => m.id === `candidate_${candidateId}`);
         if (candMatch) {
@@ -395,28 +413,58 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     }
   }
 
-  // Step 8: Pick winner repo and challenges
-  let winnerRepoId = matchedRepos[0]!.id;
-  let winnerRepoUrl = matchedRepos[0]!.githubUrl;
+  // Step 8: Select a source-backed PR from the living candidate graph.
+  const roleSemantics = roleContextRow
+    ? await loadRoleChallengeSemantics(db, roleContextRow)
+    : null;
+  const reviewMatch = await matchCandidateToReviewChallenge(db, candidateId, {
+    roleContextId: roleContextRow?.id,
+    roleSnapshotId: roleSemantics?.roleSnapshotId,
+    roleConcepts: roleSemantics?.relevantConcepts,
+    requiredConcepts: roleSemantics?.requiredConcepts,
+    conceptResolverVersion: roleSemantics?.resolverVersion,
+    roleSourceReferences: roleSemantics?.sources.map((source) => ({
+      entityId: source.roleNodeId,
+      locator: source.sourceSection ?? 'role_context',
+      conceptKeys: source.conceptKeys,
+    })),
+  });
+  if (
+    reviewMatch.status !== 'MATCHED'
+    || !reviewMatch.repoId
+    || !reviewMatch.prNumber
+    || !reviewMatch.explanation
+  ) {
+    throw new Error(`Deterministic challenge matcher returned ${reviewMatch.status}`);
+  }
 
-  const [winnerReview, winnerImplementation] = await Promise.all([
-    pickReviewPr(db, winnerRepoId, candidateVec),
-    pickImplementationIssue(db, winnerRepoId, normalizedSeniority),
-  ]);
+  const winnerRepoId = reviewMatch.repoId;
+  const winnerRepo = await db.prepare(
+    `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+  ).bind(winnerRepoId).first<{ github_url: string | null }>();
+  if (!winnerRepo?.github_url) {
+    throw new Error(`Matched challenge repository ${winnerRepoId} is unavailable`);
+  }
+  const winnerRepoUrl = winnerRepo.github_url;
+  const winnerReview = { prNumber: reviewMatch.prNumber };
+  const winnerImplementation = await pickImplementationIssue(
+    db,
+    winnerRepoId,
+    candidateSeniority,
+  );
+  const catalogWinner = matchedRepos.find((repo) => repo.id === winnerRepoId);
 
-  // Step 9: Build placeholder triangulated result (legacy triangulateMatch removed)
+  // Step 9: Persist only measured match signals.
   const triangulated = {
     repo_id: winnerRepoId,
-    triangulated_score: matchedRepos[0]!.score,
+    triangulated_score: reviewMatch.explanation.score,
     dimensions: {
-      skill_coverage: 0.5,
-      semantic_similarity: 0.5,
-      situation_fit: 0.5,
-      role_alignment: roleCandidateCosine ?? 0.5,
+      challenge_alignment: reviewMatch.explanation.score,
+      ...(roleCandidateCosine !== null ? { role_candidate_cosine: roleCandidateCosine } : {}),
     },
     raw_signals: {
       role_repo_alignment: roleRepoAlignments.get(winnerRepoId) ?? null,
-      candidate_repo_fit: matchedRepos[0]!.score,
+      candidate_repo_fit: catalogWinner?.score ?? null,
       role_candidate_cosine: roleCandidateCosine,
       vector_role_repo: vectorRoleRepo,
       vector_cand_repo: null,
@@ -427,33 +475,21 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
   // Empty situation rankings (legacy candidateSituationFit removed)
   const situationRankings = { rankings: [] as Array<never>, rawText: '' };
 
-  // Step 9.5: Load coverage for evidence density multiplier
+  // Step 9.5: Recompute open-concept coverage for evidence density.
   let evidenceDensity: number | null = null;
   try {
-    const coverage = await getCandidateCoverage(db, candidateId);
-    if (coverage) {
-      evidenceDensity =
-        coverage.experience_coverage * 0.3 +
-        coverage.technical_coverage * 0.3 +
-        coverage.cultural_coverage * 0.2 +
-        coverage.motivation_coverage * 0.1 +
-        coverage.context_coverage * 0.1;
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[ingestion] failed to load coverage for ${candidateId}:`, msg);
-  }
-
-  // Ensure coverage is up-to-date in D1 (Neo4j-primary with D1 fallback)
-  try {
-    await computeCandidateCoverageWithFallback(db, candidateId, neo4jDriver);
+    const coverage = await computeCandidateCoverageWithFallback(
+      db,
+      candidateId,
+      neo4jDriver,
+    );
+    evidenceDensity = coverage.overallScore;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[ingestion] failed to compute coverage for ${candidateId}:`, msg);
   }
 
-  // No reasoning from situation fit (legacy path removed)
-  const reasoningJson = undefined;
+  const reasoningJson = JSON.stringify(reviewMatch.explanation);
 
   // Telemetry: record vector vs LLM signal correlation for empirical calibration
   // NOTE: match_feedback table (migration 0040) currently lacks columns for
@@ -569,22 +605,33 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       }
     }
 
-    const top3 = matchedRepos.slice(0, 3);
-
-    const matchRows = top3.map((repo, idx) => {
-      const isWinner = repo.id === winnerRepoId;
-      return {
+    const alternatives = matchedRepos
+      .filter((repo) => repo.id !== winnerRepoId)
+      .slice(0, 2);
+    const matchRows = [
+      {
+        id: cryptoRandomId(),
+        candidateId,
+        repoId: winnerRepoId,
+        rank: 1,
+        triangulatedScore: reviewMatch.explanation.score,
+        rationale: reasoningJson,
+        prNumber: winnerReview.prNumber,
+        issueNumber: winnerImplementation?.issueNumber ?? null,
+        locationTag,
+      },
+      ...alternatives.map((repo, index) => ({
         id: cryptoRandomId(),
         candidateId,
         repoId: repo.id,
-        rank: idx + 1,
+        rank: index + 2,
         triangulatedScore: repo.score,
-        rationale: isWinner ? reasoningJson : undefined,
-        prNumber: isWinner ? (winnerReview?.prNumber ?? null) : null,
-        issueNumber: isWinner ? (winnerImplementation?.issueNumber ?? null) : null,
+        rationale: null,
+        prNumber: null,
+        issueNumber: null,
         locationTag,
-      };
-    });
+      })),
+    ];
 
     await upsertCandidateRepoMatches(db, matchRows);
   } catch (err) {
@@ -599,15 +646,9 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
 
   // Step 12: Persist profile sections for dynamic frontend rendering
   try {
-    const dims = triangulated.dimensions as Record<string, number>;
     const matchData = {
       score: triangulated.triangulated_score,
-      dimensions: {
-        skillCoverage: dims.skill_coverage ?? 0,
-        semanticSimilarity: dims.semantic_similarity ?? 0,
-        situationFit: dims.situation_fit ?? 0,
-        roleAlignment: dims.role_alignment ?? 0,
-      },
+      dimensions: undefined,
       reasoning: undefined,
       philosophy,
       repoName: winnerRepoUrl ? winnerRepoUrl.replace('https://github.com/', '') : undefined,
@@ -735,9 +776,9 @@ export async function loadDiscoveryResultFromDb(
     keyConcepts: safeJson(row.key_concepts_json, {
       mustHaveSkills: [],
       niceToHaveSkills: [],
-      seniority: 'mid' as const,
-      primary_language: '',
-      detected_domain: '',
+      seniority: null,
+      primary_language: null,
+      detected_domain: null,
     }),
     careerContext: safeJson(row.career_context_json, {
       company_stages: [],

@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Mono', monospace;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--pipe-bg, #0c0c0e);
+  color: var(--pipe-text, #e0e0e0);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* CSS Variables for dark theme */
+:root {
+  --pipe-bg: #0c0c0e;
+  --pipe-text: #ffffff;
+  --pipe-text-muted: rgba(255,255,255,0.65);
+  --pipe-text-dim: rgba(255,255,255,0.45);
+  --pipe-border: rgba(255,255,255,0.08);
+  --pipe-border-light: rgba(255,255,255,0.04);
+  --pipe-surface: rgba(255,255,255,0.04);
+  --pipe-surface-hover: rgba(255,255,255,0.08);
+  --pipe-surface-solid: #1e1e25;
+  --pipe-surface-solid-hover: #26262e;
+  --pipe-surface-elevated: #1e1e25;
+  --pipe-overlay: rgba(12,12,14,0.93);
+  --pipe-shadow: rgba(0,0,0,0.3);
+  --pipe-accent: #ffffff;
+  --pipe-accent-surface: rgba(255,255,255,0.08);
+  --pipe-accent-border: rgba(255,255,255,0.2);
+}

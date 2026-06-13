@@ -297,6 +297,11 @@ describe('decomposeCodeReviewToGraph', () => {
     expect(props.effectiveness_metrics.bugs_found_pct).toBe(66.7);
     expect(props.implementer_persona).toBe('senior-rust');
     expect(props.challenge_repo_id).toBe('challenge-1');
+    expect(props.semantic_terms).toEqual([{
+      surface: 'prioritization',
+      canonical_key: 'term:prioritization',
+      evidence_level: 'demonstrated',
+    }]);
   });
 
   it('sets confidence = bars_score / 5', async () => {

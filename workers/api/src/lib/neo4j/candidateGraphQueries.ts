@@ -8,7 +8,7 @@
 import type { Driver, Record as Neo4jRecord } from 'neo4j-driver';
 import type { CandidateNode, CandidateNodeType, CoverageResult } from '../../types';
 import { runReadQuery } from './query';
-import { computeCoverageFromRows, persistCandidateCoverage } from '../candidateDiscovery/candidateCoverage';
+import { computeCandidateCoverage } from '../candidateDiscovery/candidateCoverage';
 
 function neo4jNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -30,7 +30,7 @@ function recordToCandidateNode(record: Neo4jRecord, candidateId: string): Candid
   return {
     id: (record.get('id') as string) ?? '',
     candidate_id: candidateId,
-    node_type: (record.get('node_type') as CandidateNodeType) ?? 'Experience',
+    node_type: String(record.get('node_type') ?? ''),
     narrative_text: (record.get('narrative_text') as string) ?? '',
     extracted_properties_json: (record.get('extracted_properties_json') as string | null) ?? null,
     embedding_json: Array.isArray(embedding) ? JSON.stringify(embedding) : null,
@@ -56,25 +56,10 @@ export async function getActiveCandidateNodesFromNeo4j(
     `
     MATCH (c:Candidate {candidate_id: $candidate_id})-[:HAS]->(n:CandidateNode)
     WHERE n.superseded_at IS NULL
-      AND ($node_type IS NULL OR $node_type IN labels(n) OR n.node_type = $node_type)
+      AND ($node_type IS NULL OR n.node_type = $node_type)
     RETURN
       n.id AS id,
-      CASE
-        WHEN 'Experience' IN labels(n) THEN 'Experience'
-        WHEN 'Project' IN labels(n) THEN 'Project'
-        WHEN 'Accomplishment' IN labels(n) THEN 'Accomplishment'
-        WHEN 'Skill' IN labels(n) THEN 'Skill'
-        WHEN 'Education' IN labels(n) THEN 'Education'
-        WHEN 'Credential' IN labels(n) THEN 'Credential'
-        WHEN 'CulturalSignal' IN labels(n) THEN 'CulturalSignal'
-        WHEN 'TechnicalDemonstration' IN labels(n) THEN 'TechnicalDemonstration'
-        WHEN 'WorkingStyle' IN labels(n) THEN 'WorkingStyle'
-        WHEN 'CommunicationStyle' IN labels(n) THEN 'CommunicationStyle'
-        WHEN 'CareerArc' IN labels(n) THEN 'CareerArc'
-        WHEN 'Motivation' IN labels(n) THEN 'Motivation'
-        WHEN 'Context' IN labels(n) THEN 'Context'
-        ELSE n.node_type
-      END AS node_type,
+      n.node_type AS node_type,
       n.narrative_text AS narrative_text,
       n.extracted_properties_json AS extracted_properties_json,
       n.embedding AS embedding,
@@ -94,69 +79,14 @@ export async function getActiveCandidateNodesFromNeo4j(
   );
 }
 
-export async function computeCandidateCoverageFromNeo4j(
-  driver: Driver,
-  candidateId: string,
-): Promise<CoverageResult> {
-  const rows = await runReadQuery(
-    driver,
-    `
-    MATCH (c:Candidate {candidate_id: $candidate_id})-[:HAS]->(n:CandidateNode)
-    WHERE n.superseded_at IS NULL
-    RETURN
-      CASE
-        WHEN 'Experience' IN labels(n) THEN 'Experience'
-        WHEN 'Project' IN labels(n) THEN 'Project'
-        WHEN 'Accomplishment' IN labels(n) THEN 'Accomplishment'
-        WHEN 'Skill' IN labels(n) THEN 'Skill'
-        WHEN 'Education' IN labels(n) THEN 'Education'
-        WHEN 'Credential' IN labels(n) THEN 'Credential'
-        WHEN 'CulturalSignal' IN labels(n) THEN 'CulturalSignal'
-        WHEN 'TechnicalDemonstration' IN labels(n) THEN 'TechnicalDemonstration'
-        WHEN 'WorkingStyle' IN labels(n) THEN 'WorkingStyle'
-        WHEN 'CommunicationStyle' IN labels(n) THEN 'CommunicationStyle'
-        WHEN 'CareerArc' IN labels(n) THEN 'CareerArc'
-        WHEN 'Motivation' IN labels(n) THEN 'Motivation'
-        WHEN 'Context' IN labels(n) THEN 'Context'
-        ELSE n.node_type
-      END AS node_type,
-      n.confidence AS confidence,
-      n.extracted_properties_json AS extracted_properties_json,
-      n.source_type AS source_type
-    `,
-    { candidate_id: candidateId },
-    (record) => ({
-      node_type: (record.get('node_type') as CandidateNodeType) ?? 'Experience',
-      confidence: neo4jNumber(record.get('confidence')),
-      extracted_properties_json: (record.get('extracted_properties_json') as string | null) ?? null,
-      source_type: (record.get('source_type') as string | null) ?? null,
-    }),
-  );
-
-  return computeCoverageFromRows(rows);
-}
-
 export async function computeCandidateCoverageWithFallback(
   db: D1Database,
   candidateId: string,
-  driver: Driver | null,
+  _driver: Driver | null,
 ): Promise<CoverageResult> {
-  if (driver) {
-    try {
-      const coverage = await computeCandidateCoverageFromNeo4j(driver, candidateId);
-      await persistCandidateCoverage(db, candidateId, coverage);
-      return coverage;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[candidateCoverage] Neo4j failed for ${candidateId}, falling back to D1:`,
-        msg,
-      );
-    }
-  }
-  return import('../candidateDiscovery/candidateCoverage').then((mod) =>
-    mod.computeCandidateCoverage(db, candidateId),
-  );
+  // Coverage depends on living-context assertions, concepts, and evidence.
+  // D1 is authoritative; Neo4j is only a rebuildable graph projection.
+  return computeCandidateCoverage(db, candidateId);
 }
 
 export async function candidateHasNodesFromSourceType(

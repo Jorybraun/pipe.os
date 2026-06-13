@@ -2,11 +2,7 @@
 CREATE TABLE IF NOT EXISTS candidate_nodes (
   id TEXT PRIMARY KEY,
   candidate_id TEXT NOT NULL,
-  node_type TEXT NOT NULL CHECK(node_type IN (
-    'Experience', 'Project', 'Accomplishment', 'Skill', 'Education', 'Credential',
-    'CulturalSignal', 'TechnicalDemonstration', 'WorkingStyle', 'CommunicationStyle',
-    'CareerArc', 'Motivation', 'Context'
-  )),
+  node_type TEXT NOT NULL,
   narrative_text TEXT NOT NULL,
   extracted_properties_json TEXT,
   embedding_json TEXT,
@@ -17,6 +13,7 @@ CREATE TABLE IF NOT EXISTS candidate_nodes (
   supersedes TEXT REFERENCES candidate_nodes(id),
   superseded_at INTEGER,
   decomposition_version TEXT,
+  pending_graph_backfill INTEGER DEFAULT 0 CHECK(pending_graph_backfill IN (0, 1)),
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );

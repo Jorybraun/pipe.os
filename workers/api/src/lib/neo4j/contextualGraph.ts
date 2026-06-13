@@ -1,12 +1,11 @@
 /**
- * contextualGraph.ts — ADR-050 typed conversation-graph writes + grounded
+ * contextualGraph.ts — ADR-050 open conversation-graph writes + grounded
  * edge materialization + structural (multi-region) repo matching.
  *
  * Three responsibilities:
  *   1. writeContextualTurnGraph — persist one answer's contextual statements
- *      as CandidateNode nodes connected by typed edges (DID/WITH/BECAUSE/…).
- *      Cypher cannot parametrize relationship types, so edges are written in
- *      per-edge-type UNWIND batches against the whitelist.
+ *      as CandidateNode nodes connected by structural RELATES_TO edges whose
+ *      open semantic predicates are stored as relationship data.
  *   2. materializeGroundedEdges — write (:CandidateNode)-[:SIMILAR_TO
  *      {grounding}]->(:RepoNode) edges only when cosine similarity ≥ 0.84 AND
  *      the two narratives share concrete grounding (lexical overlap check).
@@ -18,11 +17,6 @@
 
 import type { Driver } from 'neo4j-driver';
 import { runQuery, runReadQuery, runWriteQuery } from './query';
-import {
-  CONTEXTUAL_EDGE_TYPES,
-  type ContextualEdgeType,
-} from '../cultureContextualDecomposition';
-
 export const GROUNDED_EDGE_MIN_SIMILARITY = 0.84;
 
 export interface ContextualGraphNodeInput {
@@ -38,7 +32,7 @@ export interface ContextualGraphNodeInput {
 export interface ContextualGraphEdgeInput {
   fromId: string;
   toId: string;
-  type: ContextualEdgeType;
+  predicate: string;
 }
 
 export interface WriteContextualTurnGraphInput {
@@ -84,43 +78,46 @@ export async function writeContextualTurnGraph(
   );
 
   let edgesWritten = 0;
-  // Relationship types cannot be parametrized in Cypher — batch per type
-  // against the whitelist.
-  for (const edgeType of CONTEXTUAL_EDGE_TYPES) {
-    const batch = input.edges.filter(
-      (e) => e.type === edgeType && e.fromId !== 'candidate',
+  const nodeEdges = input.edges.filter((edge) => edge.fromId !== 'candidate');
+  if (nodeEdges.length > 0) {
+    const result = await runWriteQuery(
+      driver,
+      `UNWIND $edges AS edge
+       MATCH (a:CandidateNode {id: edge.from_id})
+       MATCH (b:CandidateNode {id: edge.to_id})
+       MERGE (a)-[r:RELATES_TO {predicate: edge.predicate}]->(b)
+       SET r.updated_at = $updated_at`,
+      {
+        edges: nodeEdges.map((edge) => ({
+          from_id: edge.fromId,
+          to_id: edge.toId,
+          predicate: edge.predicate,
+        })),
+        updated_at: Math.floor(Date.now() / 1000),
+      },
     );
-    if (batch.length > 0) {
-      const result = await runWriteQuery(
-        driver,
-        `UNWIND $edges AS edge
-         MATCH (a:CandidateNode {id: edge.from_id})
-         MATCH (b:CandidateNode {id: edge.to_id})
-         MERGE (a)-[:${edgeType}]->(b)`,
-        {
-          edges: batch.map((e) => ({ from_id: e.fromId, to_id: e.toId })),
-        },
-      );
-      edgesWritten += result.relationshipsCreated;
-    }
+    edgesWritten += result.relationshipsCreated;
+  }
 
-    const candidateBatch = input.edges.filter(
-      (e) => e.type === edgeType && e.fromId === 'candidate',
+  const candidateEdges = input.edges.filter((edge) => edge.fromId === 'candidate');
+  if (candidateEdges.length > 0) {
+    const result = await runWriteQuery(
+      driver,
+      `MATCH (c:Candidate {candidate_id: $candidate_id})
+       UNWIND $edges AS edge
+       MATCH (b:CandidateNode {id: edge.to_id})
+       MERGE (c)-[r:RELATES_TO {predicate: edge.predicate}]->(b)
+       SET r.updated_at = $updated_at`,
+      {
+        candidate_id: input.candidateId,
+        edges: candidateEdges.map((edge) => ({
+          to_id: edge.toId,
+          predicate: edge.predicate,
+        })),
+        updated_at: Math.floor(Date.now() / 1000),
+      },
     );
-    if (candidateBatch.length > 0) {
-      const result = await runWriteQuery(
-        driver,
-        `MATCH (c:Candidate {candidate_id: $candidate_id})
-         UNWIND $edges AS edge
-         MATCH (b:CandidateNode {id: edge.to_id})
-         MERGE (c)-[:${edgeType}]->(b)`,
-        {
-          candidate_id: input.candidateId,
-          edges: candidateBatch.map((e) => ({ to_id: e.toId })),
-        },
-      );
-      edgesWritten += result.relationshipsCreated;
-    }
+    edgesWritten += result.relationshipsCreated;
   }
 
   return { nodesWritten: input.nodes.length, edgesWritten };

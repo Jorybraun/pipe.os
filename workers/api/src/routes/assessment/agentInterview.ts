@@ -458,7 +458,7 @@ agentInterviewRouter.post('/:challengeId/respond', async (c) => {
       return c.json({ error: { code: 'NOT_FOUND', message: 'Session lost after auto-start.' } }, 404);
     }
     // Fall through to respond with refreshed session
-    return doRespond(c, db, refreshed, answer.trim(), videoR2Key);
+    return doRespond(c, db, refreshed, answer, videoR2Key);
   }
 
   if (session.state !== 'in_progress') {
@@ -468,7 +468,7 @@ agentInterviewRouter.post('/:challengeId/respond', async (c) => {
     );
   }
 
-  return doRespond(c, db, session, answer.trim(), videoR2Key);
+  return doRespond(c, db, session, answer, videoR2Key);
 });
 
 async function doRespond(
@@ -479,6 +479,10 @@ async function doRespond(
   videoR2Key?: string,
 ) {
   const transcript = parseJsonColumn<CultureTranscript>(session.transcript, defaultCultureTranscript());
+  const answeredTurn = [...transcript.turns]
+    .reverse()
+    .find((turn) => turn.candidateResponse === null);
+  const observedAt = now();
 
   const rawProvider = createCultureAgentProvider(ctx.env);
   const provider = rawProvider !== null
@@ -514,7 +518,7 @@ async function doRespond(
   const result = await advanceCultureInterview({
     provider,
     transcript,
-    candidateAnswer: answer,
+    candidateAnswer: answer.trim(),
     maxQuestions: CULTURE_BANK_SIZE,
     minQuestions: 5,
     seniority: roleContext.seniority,
@@ -526,28 +530,28 @@ async function doRespond(
   // Attach video R2 key to the most recent answered turn
   // (advanceCultureInterview may append a probe turn at the end, so we walk
   // backwards to find the last turn with a non-null candidateResponse.)
-  if (videoR2Key && result.transcript.turns.length > 0) {
-    for (let i = result.transcript.turns.length - 1; i >= 0; i--) {
-      const turn = result.transcript.turns[i]!;
-      if (turn.candidateResponse !== null) {
-        turn.videoR2Key = videoR2Key;
-        break;
-      }
-    }
+  if (videoR2Key && answeredTurn) {
+    const persistedTurn = result.transcript.turns.find(
+      (turn) => turn.idx === answeredTurn.idx,
+    );
+    if (persistedTurn) persistedTurn.videoR2Key = videoR2Key;
   }
 
-  // ADR-050: persist this answer's contextual decomposition (D1 nodes +
-  // Neo4j conversation graph + grounded SIMILAR_TO edges) in the background.
-  const decomposition = result.contextualDecomposition ?? null;
-  if (decomposition && decomposition.statements.length > 0) {
+  const enqueueAnsweredTurnPersistence = (): void => {
+    if (!answeredTurn) return;
     ctx.executionCtx.waitUntil(
       persistContextualTurn(ctx.env, db, {
         candidateId: session.candidate_id,
         sessionId: session.id,
-        decomposition,
+        turnIndex: answeredTurn.idx,
+        question: answeredTurn.questionText,
+        answer,
+        observedAt,
+        decomposition: result.contextualDecomposition,
+        videoStorageKey: videoR2Key ?? null,
       }),
     );
-  }
+  };
 
   if (result.action === 'terminate') {
     await db
@@ -560,6 +564,7 @@ async function doRespond(
       )
       .bind(JSON.stringify(result.transcript), now(), session.id)
       .run();
+    enqueueAnsweredTurnPersistence();
 
     ctx.executionCtx.waitUntil(runScoringJob(ctx.env, session.id));
 
@@ -595,6 +600,7 @@ async function doRespond(
     )
     .bind(JSON.stringify(result.transcript), turnsAsked, now(), session.id)
     .run();
+  enqueueAnsweredTurnPersistence();
 
   return ctx.json(toQuestionTurnResult(nextQuestion, turnsAsked, result.acknowledgment));
 }

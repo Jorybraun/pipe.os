@@ -562,7 +562,11 @@ function normalizeRanking(raw: unknown, idx: number): ParsedFitItem {
     throw new Error(`[candidateSituationFit] ranking[${idx}] missing valid repo_id`);
   }
 
-  const score = clamp01(coerceNumber(obj.fit_score) ?? 0);
+  const parsedScore = coerceNumber(obj.fit_score);
+  if (parsedScore === null) {
+    throw new Error(`[candidateSituationFit] ranking[${idx}] missing valid fit_score`);
+  }
+  const score = clamp01(parsedScore);
   const band = coerceBand(obj.fit_band) ?? deriveBand(score);
 
   const reasoningRaw = isObject(obj.reasoning) ? (obj.reasoning as Record<string, unknown>) : {};

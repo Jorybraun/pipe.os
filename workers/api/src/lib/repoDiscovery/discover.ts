@@ -18,6 +18,7 @@ import { buildRcdSearchProfile } from './rcdSearchProfile';
 import { preprocessForEmbedding } from '../embedding/preprocess';
 import type { CandidatePersona, RoleContextDocument, RepoRoleAlignmentRow } from '../../types';
 import type { LLMProvider } from '../llm/types';
+import { slugifySkills } from '../skills/slugifySkills';
 
 export interface DiscoverOptions {
   db: D1Database;
@@ -76,10 +77,12 @@ export async function runDiscovery(opts: DiscoverOptions): Promise<void> {
       `UPDATE discovery_jobs SET skills_queried = ?1 WHERE id = ?2`,
     ).bind(JSON.stringify(skills), jobId).run();
 
-    // Derive primary language from the first recognizable skill
-    const primaryLanguage = derivePrimaryLanguage(skills);
-    const domain = deriveDomain(persona);
-    const seniority = (persona.seniority ?? 'mid').toLowerCase() as 'junior' | 'mid' | 'senior' | 'staff';
+    const primaryLanguage = await derivePrimaryLanguage(db, skills);
+    const normalizedSeniority = persona.seniority?.trim().toLowerCase();
+    const seniority = normalizedSeniority
+      && ['junior', 'mid', 'senior', 'staff'].includes(normalizedSeniority)
+      ? normalizedSeniority as 'junior' | 'mid' | 'senior' | 'staff'
+      : undefined;
 
     // Load RCD once — shared by Vectorize recall and Gemma rerank.
     const rcd = await loadRcd(db, roleContextId);
@@ -88,10 +91,18 @@ export async function runDiscovery(opts: DiscoverOptions): Promise<void> {
       mustHaveSkills: skills,
       niceToHaveSkills: persona.niceToHaveSkills ?? [],
       seniority,
-      domain,
+      domain: undefined,
       primaryLanguage,
       limit: 50,
     });
+
+    // If no repos matched via SQL, skip discovery (no fallback)
+    if (sqlMatched.length === 0 && (!opts.vectorize || !opts.ai)) {
+      await db.prepare(
+        `UPDATE discovery_jobs SET status = 'COMPLETED', completed_at = ?1, error_message = 'No repos matched must-have skills' WHERE id = ?2`,
+      ).bind(new Date().toISOString(), jobId).run();
+      return;
+    }
 
     // ── Hybrid recall (STRATEGY Decision Log 2026-04-14) ─────────────────
     // SQL gives skill-tag precision; Vectorize gives narrative-prose recall.
@@ -230,16 +241,24 @@ export async function runDiscoveryBySkills(opts: DiscoverBySkillsOptions): Promi
       return;
     }
 
-    const primaryLanguage = derivePrimaryLanguage(skills);
+    const primaryLanguage = await derivePrimaryLanguage(db, skills);
 
     const matched = await matchRepos(db, {
       mustHaveSkills: skills,
       niceToHaveSkills: [],
-      seniority: 'mid',
-      domain: 'web-backend',
+      seniority: undefined,
+      domain: undefined,
       primaryLanguage,
       limit: 20,
     });
+
+    // If no repos matched, skip discovery (no fallback)
+    if (matched.length === 0) {
+      await db.prepare(
+        `UPDATE discovery_jobs SET status = 'COMPLETED', completed_at = ?1, error_message = 'No repos matched skills' WHERE id = ?2`,
+      ).bind(new Date().toISOString(), jobId).run();
+      return;
+    }
 
     await db.prepare(
       `UPDATE discovery_jobs SET total_candidates = ?1 WHERE id = ?2`,
@@ -491,28 +510,22 @@ function mergeCandidates(sqlMatched: MatchedRepo[], vectorMatched: MatchedRepo[]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const PYTHON_SKILLS = new Set(['python', 'django', 'flask', 'fastapi', 'pytorch', 'tensorflow']);
-const GO_SKILLS = new Set(['go', 'golang', 'gin', 'fiber', 'echo']);
-const RUST_SKILLS = new Set(['rust', 'tokio', 'actix', 'axum']);
-const JAVA_SKILLS = new Set(['java', 'spring', 'spring-boot', 'kotlin', 'quarkus']);
-const RUBY_SKILLS = new Set(['ruby', 'rails', 'sinatra']);
-
-function derivePrimaryLanguage(skills: string[]): string {
-  const lower = skills.map((s) => s.toLowerCase());
-  if (lower.some((s) => PYTHON_SKILLS.has(s))) return 'python';
-  if (lower.some((s) => GO_SKILLS.has(s))) return 'go';
-  if (lower.some((s) => RUST_SKILLS.has(s))) return 'rust';
-  if (lower.some((s) => JAVA_SKILLS.has(s))) return 'java';
-  if (lower.some((s) => RUBY_SKILLS.has(s))) return 'ruby';
-  return 'typescript'; // default — covers React, Next.js, Node, etc.
-}
-
-function deriveDomain(persona: CandidatePersona): string {
-  const all = [...(persona.mustHaveSkills ?? []), ...(persona.niceToHaveSkills ?? [])].map(
-    (s) => s.toLowerCase(),
-  );
-  if (all.some((s) => ['react', 'vue', 'svelte', 'angular', 'nextjs'].includes(s))) return 'web-frontend';
-  if (all.some((s) => ['express', 'fastify', 'nestjs', 'hono', 'django', 'fastapi', 'flask'].includes(s))) return 'web-backend';
-  if (all.some((s) => ['graphql'].includes(s))) return 'web-backend';
-  return 'web-backend';
+async function derivePrimaryLanguage(
+  db: D1Database,
+  skills: string[],
+): Promise<string | undefined> {
+  const slugs = await slugifySkills(db, skills);
+  if (slugs.length === 0) return undefined;
+  const placeholders = slugs.map(() => '?').join(', ');
+  const row = await db.prepare(
+    `SELECT qr.primary_language, COUNT(DISTINCT rs.repo_id) AS evidence_count
+       FROM repo_skills rs
+       JOIN qualified_repos qr ON qr.id = rs.repo_id
+      WHERE rs.skill_slug IN (${placeholders})
+        AND qr.disqualified = 0
+      GROUP BY qr.primary_language
+      ORDER BY evidence_count DESC, qr.primary_language
+      LIMIT 1`,
+  ).bind(...slugs).first<{ primary_language: string }>();
+  return row?.primary_language || undefined;
 }

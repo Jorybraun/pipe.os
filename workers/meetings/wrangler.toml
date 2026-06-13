@@ -1,0 +1,19 @@
+name = "pipe-meetings"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pipe-db"
+database_id = "local"
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "pipe-assets"
+
+[ai]
+binding = "AI"
+
+[vars]
+APP_BASE_URL = "http://localhost:5174"
+MEETINGS_APP_URL = "http://localhost:5174"

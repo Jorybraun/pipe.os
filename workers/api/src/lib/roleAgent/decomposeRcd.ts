@@ -21,21 +21,13 @@ import type {
 } from '../../types';
 import type { Env } from '../../types';
 import { writeRoleGraphFireAndForget, resolvePolicyFromConfig } from '../neo4j/writeRoleGraph';
+import { deterministicEntityId } from '../livingContext/persistence';
+import { openSemanticTerm } from '../livingContext/openTerms';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type RoleNodeType =
-  | 'Requirement'
-  | 'Responsibility'
-  | 'CulturalSignal'
-  | 'TeamContext'
-  | 'Dealbreaker'
-  | 'RedFlag'
-  | 'TechnicalContext'
-  | 'CodebaseExpectation'
-  | 'ProcessExpectation'
-  | 'Conflict'
-  | 'BarsOverride';
+/** Open, source-backed semantic classification. */
+export type RoleNodeType = string;
 
 export interface RoleNodeRow {
   id: string;
@@ -82,13 +74,64 @@ export async function persistRoleNodes(
   if (nodes.length === 0) return;
 
   const roleContextId = nodes[0]!.role_context_id;
+  const persistedNodes = await Promise.all(nodes.map(async (node) => {
+    const ingestionKey = [
+      node.role_context_id,
+      node.rcd_version,
+      node.node_type,
+      node.source_section,
+      node.source_stakeholder ?? '',
+      node.narrative_text,
+    ].join('\u0000');
+    return {
+      ...node,
+      id: await deterministicEntityId('role_node', ingestionKey),
+      ingestion_key: ingestionKey,
+    };
+  }));
+
+  await db.prepare(
+    `UPDATE role_nodes
+        SET superseded_at = unixepoch(), updated_at = unixepoch()
+      WHERE role_context_id = ?1
+        AND superseded_at IS NULL
+        AND (rcd_version != ?2 OR ingestion_key IS NULL)`,
+  ).bind(roleContextId, persistedNodes[0]!.rcd_version).run();
+
+  await db.batch(persistedNodes.map((node) => db.prepare(
+    `INSERT INTO role_nodes (
+       id, ingestion_key, role_context_id, rcd_version, node_type,
+       narrative_text, extracted_properties_json, embedding_json,
+       source_section, source_stakeholder, weight, superseded_at,
+       created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9, ?10, NULL, unixepoch(), unixepoch())
+     ON CONFLICT(ingestion_key) DO UPDATE SET
+       narrative_text = excluded.narrative_text,
+       extracted_properties_json = excluded.extracted_properties_json,
+       source_section = excluded.source_section,
+       source_stakeholder = excluded.source_stakeholder,
+       weight = excluded.weight,
+       superseded_at = NULL,
+       updated_at = unixepoch()`,
+  ).bind(
+    node.id,
+    node.ingestion_key,
+    node.role_context_id,
+    node.rcd_version,
+    node.node_type,
+    node.narrative_text,
+    node.extracted_properties_json,
+    node.source_section,
+    node.source_stakeholder,
+    node.weight,
+  )));
 
   // 1. Generate embeddings in batches of 10 (BGE rate-limit friendly)
   const batchSize = 10;
-  const embeddedNodes: Array<RoleNodeRow & { embedding_json: string }> = [];
+  const embeddedNodes: Array<RoleNodeRow & { ingestion_key: string; embedding_json: string }> = [];
 
-  for (let i = 0; i < nodes.length; i += batchSize) {
-    const batch = nodes.slice(i, i + batchSize);
+  for (let i = 0; i < persistedNodes.length; i += batchSize) {
+    const batch = persistedNodes.slice(i, i + batchSize);
     const texts = batch.map((n) => preprocessForEmbedding(n.narrative_text, 'document'));
 
     const embedResult = (await env.AI.run(EMBEDDING_MODEL, {
@@ -116,8 +159,14 @@ export async function persistRoleNodes(
     }
   }
 
+  await db.batch(embeddedNodes.map((node) => db.prepare(
+    `UPDATE role_nodes
+        SET embedding_json = ?1, updated_at = unixepoch()
+      WHERE ingestion_key = ?2`,
+  ).bind(node.embedding_json, node.ingestion_key)));
+
   // 3. Write to Neo4j (fire-and-forget, non-blocking)
-  const rcd = nodes[0]!;
+  const rcd = persistedNodes[0]!;
 
   // Load pipeline_id and match config for policy resolution
   let realPipelineId = '';
@@ -360,13 +409,22 @@ function extractTechnicalContexts(rcd: RoleContextDocument, roleContextId: strin
   const nodes: RoleNodeRow[] = [];
 
   for (const stackItem of tc.stack ?? []) {
+    const term = openSemanticTerm(stackItem);
     nodes.push(
       makeNode(
         roleContextId,
         rcd.rcd_version,
         'TechnicalContext',
         `Stack component: ${stackItem}`,
-        { kind: 'stack', value: stackItem },
+        {
+          kind: 'stack',
+          value: stackItem,
+          semantic_terms: term ? [{
+            surface: term.surface,
+            canonical_key: term.canonicalKey,
+            resolver: 'open-source-term-v1',
+          }] : [],
+        },
         'technical_context.stack',
         null,
         null,
@@ -375,13 +433,22 @@ function extractTechnicalContexts(rcd: RoleContextDocument, roleContextId: strin
   }
 
   for (const construct of tc.constructs ?? []) {
+    const term = openSemanticTerm(construct);
     nodes.push(
       makeNode(
         roleContextId,
         rcd.rcd_version,
         'TechnicalContext',
         `Construct: ${construct}`,
-        { kind: 'construct', value: construct },
+        {
+          kind: 'construct',
+          value: construct,
+          semantic_terms: term ? [{
+            surface: term.surface,
+            canonical_key: term.canonicalKey,
+            resolver: 'open-source-term-v1',
+          }] : [],
+        },
         'technical_context.constructs',
         null,
         null,

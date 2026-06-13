@@ -12,6 +12,7 @@ import { insertCandidateNode, embedCandidateNode } from './candidateNodes';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { resolveCultureRoleContext, hasTeamContext } from '../cultureRoleResolution';
+import { openSemanticTermRecord } from '../livingContext/openTerms';
 
 const DECOMPOSITION_VERSION = 'culture_score_v1';
 
@@ -93,9 +94,13 @@ export async function decomposeCultureScoreToGraph(
 
     const narrativeText = buildNarrative(dimName, score, evidenceQuotes, reasoning);
 
-    const extractedProperties: CulturalSignalProperties = {
+    const extractedProperties: CulturalSignalProperties & {
+      semantic_terms: NonNullable<ReturnType<typeof openSemanticTermRecord>>[];
+    } = {
       dimension_type: item.type,
       dimension: dimName,
+      semantic_terms: [openSemanticTermRecord(dimName, 'explained')]
+        .filter((term): term is NonNullable<typeof term> => term !== null),
       bars_score: score,
       evidence_quotes: evidenceQuotes,
       reasoning,

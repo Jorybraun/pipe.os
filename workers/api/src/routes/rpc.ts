@@ -24,10 +24,16 @@ import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
-import { parseEmbeddingJson } from '../lib/embedding/cosine';
 import { matchRepos } from '../lib/repoDiscovery/matchRepos';
-import { pickReviewPr, pickImplementationIssue, buildMatchRequest } from '../lib/match/autoStageBuilder';
+import {
+  pickImplementationIssue,
+  buildMatchRequest,
+} from '../lib/match/autoStageBuilder';
 import { createNeo4jDriver, buildNeo4jConfig } from '../lib/neo4j/driver';
+import {
+  loadRoleChallengeSemantics,
+  matchCandidateToReviewChallenge,
+} from '../lib/challengeMatching';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -43,24 +49,28 @@ interface WaitingChallenge {
   };
 }
 
-/** Candidate CV embedding for semantic PR selection — null when not ingested yet. */
-async function loadCandidateVector(db: D1Database, candidateId: string): Promise<number[] | null> {
-  try {
-    const row = await db
-      .prepare(`SELECT embedding_json FROM candidate_ingestion WHERE candidate_id = ?1`)
-      .bind(candidateId)
-      .first<{ embedding_json: string | null }>();
-    return parseEmbeddingJson(row?.embedding_json);
-  } catch (err) {
-    console.error(`[loadCandidateVector] lookup failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
-    return null;
-  }
-}
-
 interface GateResult {
   blocked: boolean;
   reason?: string;
   syntheticChallenge?: WaitingChallenge;
+}
+
+function waitingForMatch(reason: string): GateResult {
+  return {
+    blocked: true,
+    reason,
+    syntheticChallenge: {
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+      title: 'Building your personalized challenge',
+      instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+      config: {
+        autoRefresh: true,
+        refreshIntervalSeconds: 30,
+        estimatedSecondsRemaining: 180,
+      },
+    },
+  };
 }
 
 async function checkMatchingGate(
@@ -92,6 +102,74 @@ async function checkMatchingGate(
   ).bind(candidateId, stageId).first<{ id: string }>();
 
   if (existingAssignment) {
+    return { blocked: false };
+  }
+
+  if (nextChallengeType === 'CODE_REVIEW') {
+    const roleContext = await db.prepare(
+      `SELECT id, persona_json, rcd_json, non_negotiable_skills_json
+         FROM role_contexts
+        WHERE pipeline_id = ?1
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+    ).bind(pipelineId).first<{
+      id: string;
+      persona_json: string | null;
+      rcd_json: string | null;
+      non_negotiable_skills_json: string | null;
+    }>();
+    if (!roleContext) {
+      return waitingForMatch('Role context is not ready for deterministic challenge matching');
+    }
+
+    const roleSemantics = await loadRoleChallengeSemantics(db, {
+      ...roleContext,
+      rcd_version: (() => {
+        if (!roleContext.rcd_json) return null;
+        try {
+          const parsed = JSON.parse(roleContext.rcd_json) as { rcd_version?: unknown };
+          return typeof parsed.rcd_version === 'string' ? parsed.rcd_version : null;
+        } catch {
+          return null;
+        }
+      })(),
+    });
+    const match = await matchCandidateToReviewChallenge(db, candidateId, {
+      roleContextId: roleContext.id,
+      roleSnapshotId: roleSemantics.roleSnapshotId,
+      roleConcepts: roleSemantics.relevantConcepts,
+      requiredConcepts: roleSemantics.requiredConcepts,
+      conceptResolverVersion: roleSemantics.resolverVersion,
+      roleSourceReferences: roleSemantics.sources.map((source) => ({
+        entityId: source.roleNodeId,
+        locator: source.sourceSection ?? 'role_context',
+        conceptKeys: source.conceptKeys,
+      })),
+    });
+    if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
+      return waitingForMatch(`Deterministic challenge matcher returned ${match.status}`);
+    }
+
+    const repo = await db.prepare(
+      `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+    ).bind(match.repoId).first<{ github_url: string | null }>();
+    if (!repo?.github_url) {
+      return waitingForMatch('Matched challenge repository is unavailable');
+    }
+
+    await db.prepare(
+      `INSERT INTO candidate_challenge_assignment
+         (id, candidate_id, stage_id, challenge_id, repo_id, github_repo_url, github_pr_number, issue_number)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)`,
+    ).bind(
+      crypto.randomUUID(),
+      candidateId,
+      stageId,
+      challengeId,
+      match.repoId,
+      repo.github_url,
+      match.prNumber,
+    ).run();
     return { blocked: false };
   }
 
@@ -163,66 +241,17 @@ async function checkMatchingGate(
   }
 
   if (!repoId || !githubRepoUrl) {
-    return {
-      blocked: true,
-      reason: 'No matching repos found for candidate',
-      syntheticChallenge: {
-        id: 'waiting-for-match',
-        type: 'WAITING_FOR_MATCH',
-        title: 'Building your personalized challenge',
-        instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
-        config: {
-          autoRefresh: true,
-          refreshIntervalSeconds: 30,
-          estimatedSecondsRemaining: 180,
-        },
-      },
-    };
+    return waitingForMatch('No matching repos found for candidate');
   }
 
   // 3. Pick challenge content based on type
   let prNumber: number | null = null;
   let issueNumber: number | null = null;
 
-  if (nextChallengeType === 'CODE_REVIEW') {
-    const candidateVec = await loadCandidateVector(db, candidateId);
-    const prResult = await pickReviewPr(db, repoId, candidateVec);
-    if (!prResult) {
-      return {
-        blocked: true,
-        reason: 'No eligible PR found for matched repo',
-        syntheticChallenge: {
-          id: 'waiting-for-match',
-          type: 'WAITING_FOR_MATCH',
-          title: 'Building your personalized challenge',
-          instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
-          config: {
-            autoRefresh: true,
-            refreshIntervalSeconds: 30,
-            estimatedSecondsRemaining: 180,
-          },
-        },
-      };
-    }
-    prNumber = prResult.prNumber;
-  } else if (nextChallengeType === 'CODE_IMPLEMENTATION') {
-    const issueResult = await pickImplementationIssue(db, repoId, 'mid');
+  if (nextChallengeType === 'CODE_IMPLEMENTATION') {
+    const issueResult = await pickImplementationIssue(db, repoId);
     if (!issueResult) {
-      return {
-        blocked: true,
-        reason: 'No eligible implementation issue found for matched repo',
-        syntheticChallenge: {
-          id: 'waiting-for-match',
-          type: 'WAITING_FOR_MATCH',
-          title: 'Building your personalized challenge',
-          instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
-          config: {
-            autoRefresh: true,
-            refreshIntervalSeconds: 30,
-            estimatedSecondsRemaining: 180,
-          },
-        },
-      };
+      return waitingForMatch('No eligible implementation issue found for matched repo');
     }
     issueNumber = issueResult.issueNumber;
   }
@@ -315,7 +344,6 @@ async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageI
  */
 async function matchStandaloneReview(
   db: D1Database,
-  env: Env,
   candidateId: string,
   interview: StandaloneReviewRow,
 ): Promise<{ repoUrl: string; prNumber: number } | null> {
@@ -323,87 +351,22 @@ async function matchStandaloneReview(
     return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
   }
 
-  // Candidate repos in priority order: cached match, Neo4j ranked top-K, ingestion fallback.
-  const candidates: Array<{ repoId: number; repoUrl: string }> = [];
-
-  if (interview.matched_repo_id) {
-    const repo = await db.prepare(`SELECT github_url FROM qualified_repos WHERE id = ?1`)
-      .bind(interview.matched_repo_id)
-      .first<{ github_url: string | null }>();
-    if (repo?.github_url) {
-      candidates.push({ repoId: interview.matched_repo_id, repoUrl: repo.github_url });
-    }
+  const match = await matchCandidateToReviewChallenge(db, candidateId);
+  if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
+    console.log(`[standaloneReview] deterministic matcher returned ${match.status} for ${candidateId}`);
+    return null;
   }
+  const repo = await db.prepare(
+    `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+  ).bind(match.repoId).first<{ github_url: string | null }>();
+  if (!repo?.github_url) return null;
 
-  if (candidates.length === 0) {
-    let neo4jConfig = buildNeo4jConfig(env);
-    if (!neo4jConfig) {
-      neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
-    }
-    let driver;
-    try {
-      driver = createNeo4jDriver(neo4jConfig);
-      // ADR-050: grounded edge traversal first, cosine ranking fallback.
-      const grounded = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
-      if (grounded.length > 0) {
-        for (const result of grounded) {
-          candidates.push({ repoId: result.repoId, repoUrl: `https://github.com/${result.fullName}` });
-        }
-      } else {
-        const results = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-        for (const result of results) {
-          candidates.push({ repoId: result.repo_id, repoUrl: `https://github.com/${result.full_name}` });
-        }
-      }
-    } catch (err) {
-      console.error(`[standaloneReview] Neo4j matching failed for candidate ${candidateId}:`, err instanceof Error ? err.message : String(err));
-    } finally {
-      if (driver) {
-        try {
-          await driver.close();
-        } catch {
-          // ignore close errors
-        }
-      }
-    }
-  }
-
-  // Fallback: the ingestion pipeline may have already matched a repo
-  if (candidates.length === 0) {
-    try {
-      const ingestion = await db.prepare(
-        `SELECT ci.matched_repo_id, qr.github_url
-         FROM candidate_ingestion ci
-         JOIN qualified_repos qr ON qr.id = ci.matched_repo_id
-         WHERE ci.candidate_id = ?1`,
-      ).bind(candidateId).first<{ matched_repo_id: number | null; github_url: string | null }>();
-      if (ingestion?.matched_repo_id && ingestion.github_url) {
-        candidates.push({ repoId: ingestion.matched_repo_id, repoUrl: ingestion.github_url });
-      }
-    } catch (err) {
-      console.error('[standaloneReview] ingestion fallback lookup failed:', err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  // Walk the ranked repos until one yields a reviewable PR.
-  const candidateVec = await loadCandidateVector(db, candidateId);
-  for (const candidate of candidates) {
-    const prResult = await pickReviewPr(db, candidate.repoId, candidateVec);
-    if (!prResult) {
-      console.log(`[standaloneReview] repo ${candidate.repoId} has no eligible PR, trying next`);
-      continue;
-    }
-
-    await db.prepare(
-      `UPDATE scheduled_interviews
-       SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
-       WHERE id = ?5`,
-    ).bind(candidate.repoId, candidate.repoUrl, prResult.prNumber, new Date().toISOString(), interview.id).run();
-
-    return { repoUrl: candidate.repoUrl, prNumber: prResult.prNumber };
-  }
-
-  return null;
+  await db.prepare(
+    `UPDATE scheduled_interviews
+     SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
+     WHERE id = ?5`,
+  ).bind(match.repoId, repo.github_url, match.prNumber, new Date().toISOString(), interview.id).run();
+  return { repoUrl: repo.github_url, prNumber: match.prNumber };
 }
 
 /** Parse a submission (object or JSON string) and return it if it is a CV intake payload. */
@@ -1001,7 +964,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    const match = await matchStandaloneReview(c.env.DB, c.env, candidateId, standaloneReview);
+    const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
     if (!match) {
       return c.json(STANDALONE_WAITING_CHALLENGE);
     }

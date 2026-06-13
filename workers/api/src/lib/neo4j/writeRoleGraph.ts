@@ -1,19 +1,13 @@
 /**
  * writeRoleGraph.ts — ADR-046 Role Discovery Neo4j Write
  *
- * MERGEs a Role and their RoleNode sub-elements into Neo4j with typed,
- * weighted edges per the ADR-046 graph model.
- *
- * Edge semantics:
- *   - Requirement  → [:HAS_REQUIREMENT {weight}]
- *   - Dealbreaker  → [:HAS_DEALBREAKER {strength}]
- *   - Conflict     → [:HAS_CONFLICT] (plus [:BETWEEN] to affected nodes)
- *   - All others   → [:HAS]
+ * MERGEs a Role and its RoleNode sub-elements into Neo4j. RoleNode and HAS are
+ * structural; open semantic classifications remain properties.
  *
  * Idempotent: running twice with the same data produces no duplicates.
  */
 
-import type { RoleNodeRow, RoleNodeType } from '../roleAgent/decomposeRcd';
+import type { RoleNodeRow } from '../roleAgent/decomposeRcd';
 import { buildNeo4jConfig, getNeo4jDriver } from './driver';
 import { runWriteQuery } from './query';
 
@@ -86,28 +80,6 @@ function nowEpoch(): number {
 }
 
 /**
- * Derive dealbreaker strength from the row.
- * Priority:
- *   1. extracted_properties_json.job_relatedness_strength
- *   2. weight === 1.0 → 'strong', weight === 0.5 → 'moderate'
- *   3. fallback → 'weak'
- */
-function getDealbreakerStrength(node: RoleNodeRow): string {
-  try {
-    const props = JSON.parse(node.extracted_properties_json) as Record<string, unknown>;
-    const strength = props['job_relatedness_strength'];
-    if (strength === 'strong' || strength === 'moderate' || strength === 'weak') {
-      return strength;
-    }
-  } catch {
-    // ignore parse errors
-  }
-  if (node.weight === 1.0) return 'strong';
-  if (node.weight === 0.5) return 'moderate';
-  return 'weak';
-}
-
-/**
  * MERGE role + sub-elements into Neo4j.
  */
 export async function writeRoleGraph(
@@ -129,17 +101,7 @@ export async function writeRoleGraph(
   const driver = getNeo4jDriver(config);
   const now = nowEpoch();
 
-  // Partition nodes by type for edge-typed writes
-  const requirements = nodes.filter((n) => n.node_type === 'Requirement');
-  const dealbreakers = nodes.filter((n) => n.node_type === 'Dealbreaker');
-  const conflicts = nodes.filter((n) => n.node_type === 'Conflict');
-  const others = nodes.filter(
-    (n) => n.node_type !== 'Requirement' && n.node_type !== 'Dealbreaker' && n.node_type !== 'Conflict',
-  );
-
-  // Build parameter arrays with embeddings
-  const buildParams = (nodeList: typeof nodes) =>
-    nodeList
+  const nodeParams = nodes
       .map((n) => {
         const embedding = parseEmbedding(n.embedding_json);
         return {
@@ -155,11 +117,6 @@ export async function writeRoleGraph(
         };
       })
       .filter((n) => n.embedding !== null);
-
-  const reqParams = buildParams(requirements);
-  const dbParams = buildParams(dealbreakers);
-  const conflictParams = buildParams(conflicts);
-  const otherParams = buildParams(others);
 
   const policy = input.policy ?? resolvePolicyFromConfig({});
 
@@ -192,85 +149,7 @@ export async function writeRoleGraph(
 
   let totalResult: WriteRoleGraphResult = { nodesCreated: 0, nodesSet: 0, relationshipsCreated: 0 };
 
-  // Requirements with [:HAS_REQUIREMENT {weight}]
-  if (reqParams.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Role {role_context_id: $role_context_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RoleNode:Requirement {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.weight = node.weight,
-          n.source_section = node.source_section,
-          n.source_stakeholder = node.source_stakeholder,
-          n.created_at = node.created_at
-      MERGE (r)-[e:HAS_REQUIREMENT]->(n)
-      SET e.weight = node.weight
-    `, {
-      role_context_id: roleContextId,
-      nodes: reqParams,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // Dealbreakers with [:HAS_DEALBREAKER {strength}]
-  if (dbParams.length > 0) {
-    // Add strength derived from extracted properties
-    const dbParamsWithStrength = dbParams.map((n) => ({
-      ...n,
-      strength: getDealbreakerStrength(
-        dealbreakers.find((d) => d.id === n.id)!,
-      ),
-    }));
-
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Role {role_context_id: $role_context_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RoleNode:Dealbreaker {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.job_relatedness_strength = node.strength,
-          n.source_section = node.source_section,
-          n.source_stakeholder = node.source_stakeholder,
-          n.created_at = node.created_at
-      MERGE (r)-[e:HAS_DEALBREAKER]->(n)
-      SET e.strength = node.strength
-    `, {
-      role_context_id: roleContextId,
-      nodes: dbParamsWithStrength,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // Conflicts with [:HAS_CONFLICT]
-  if (conflictParams.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Role {role_context_id: $role_context_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RoleNode:Conflict {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.source_section = node.source_section,
-          n.created_at = node.created_at
-      MERGE (r)-[:HAS_CONFLICT]->(n)
-    `, {
-      role_context_id: roleContextId,
-      nodes: conflictParams,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // All other node types with plain [:HAS]
-  if (otherParams.length > 0) {
+  if (nodeParams.length > 0) {
     const result = await runWriteQuery(driver, `
       MATCH (r:Role {role_context_id: $role_context_id})
       WITH r
@@ -279,14 +158,16 @@ export async function writeRoleGraph(
       SET n.narrative_text = node.narrative_text,
           n.embedding = node.embedding,
           n.node_type = node.node_type,
+          n.weight = node.weight,
           n.source_section = node.source_section,
           n.source_stakeholder = node.source_stakeholder,
-          n.weight = node.weight,
+          n.extracted_properties_json = node.extracted_properties_json,
           n.created_at = node.created_at
-      MERGE (r)-[:HAS]->(n)
+      MERGE (r)-[e:HAS]->(n)
+      SET e.weight = node.weight
     `, {
       role_context_id: roleContextId,
-      nodes: otherParams,
+      nodes: nodeParams,
     });
     totalResult.nodesCreated += result.nodesCreated;
     totalResult.nodesSet += result.nodesSet;
@@ -298,10 +179,7 @@ export async function writeRoleGraph(
     JSON.stringify({
       event: 'neo4j.roleWrite',
       roleContextId,
-      requirements: reqParams.length,
-      dealbreakers: dbParams.length,
-      conflicts: conflictParams.length,
-      others: otherParams.length,
+      nodesIn: nodeParams.length,
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
       durationMs: writeMs,

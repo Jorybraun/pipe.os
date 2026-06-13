@@ -1,264 +1,170 @@
 /**
- * Candidate coverage scoring — computes per-dimension completeness scores from
- * active candidate_nodes and persists the result to candidate_coverage.
- *
- * Used by the screener and re-engagement pipelines to decide which dimension
- * to probe next.
+ * Candidate coverage is an open projection over source-backed concepts in the
+ * living context graph. Concepts are dimensions because they are persisted
+ * meaning from the source, not members of a code-owned semantic taxonomy.
  */
 
 import type {
-  CandidateNodeType,
-  CoverageAspect,
-  CoverageResult,
   CandidateCoverage,
+  CoverageAspect,
+  CoverageDimension,
+  CoverageResult,
 } from '../../types';
 
-const TIE_BREAK_ORDER: CoverageAspect[] = [
-  'experience',
-  'technical',
-  'cultural',
-  'motivation',
-  'context',
-];
+export const CANDIDATE_COVERAGE_POLICY = {
+  version: 'open-concept-coverage-v1',
+  evidenceSaturation: 4,
+  sourceSaturation: 3,
+  interactionSaturation: 3,
+  overallEvidenceSaturation: 12,
+  overallSourceSaturation: 4,
+  overallInteractionSaturation: 6,
+  probeCompleteThreshold: 0.9,
+} as const;
 
-const EXPERIENCE_NODE_TYPES: CandidateNodeType[] = [
-  'Experience',
-  'Accomplishment',
-  'Project',
-];
-
-const TECHNICAL_NODE_TYPES: CandidateNodeType[] = [
-  'Skill',
-  'TechnicalDemonstration',
-  'Education',
-  'Credential',
-];
-
-const MOTIVATION_NODE_TYPES: CandidateNodeType[] = [
-  'Motivation',
-  'WorkingStyle',
-  'CareerArc',
-];
-
-const CULTURAL_DIMENSIONS = new Set([
-  // Competency dimensions (5)
-  'ownership',
-  'collaboration',
-  'learning-orientation',
-  'conflict-handling',
-  'self-awareness',
-  // Profile dimensions (5)
-  'autonomy',
-  'risk-tolerance',
-  'work-pace',
-  'collaboration-style',
-  'feedback-orientation',
-]);
-
-const CONTEXT_SUBTYPES = new Set([
-  'location',
-  'availability',
-  'compensation',
-  'timezone',
-]);
-
-const SOURCE_WEIGHTS: Record<string, number> = {
-  code_review_session: 1.0,
-  implementation_challenge: 1.0,
-  culture_interview: 1.0,
-  automated_screener: 0.9,
-  github_enrichment: 0.7,
-  resume: 0.6,
-  recruiter_note: 0.5,
-};
-
-function safeConfidence(value: number | null): number {
-  return value ?? 0;
+export interface CandidateCoverageEvidenceRow {
+  concept_id: string;
+  canonical_key: string;
+  label: string;
+  assertion_id: string;
+  assertion_confidence: number | null;
+  assertion_observed_at: string | null;
+  evidence_id: string | null;
+  evidence_strength: number | null;
+  evidence_polarity: number | null;
+  evidence_observed_at: string | null;
+  source_key: string | null;
+  interaction_id: string | null;
 }
 
-function sourceWeight(sourceType: string | null): number {
-  if (!sourceType) return 0.5;
-  return SOURCE_WEIGHTS[sourceType] ?? 0.5;
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
-function safeParseJson(json: string | null): Record<string, unknown> | null {
-  if (!json) return null;
-  try {
-    return JSON.parse(json) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
+function ratio(value: number, saturation: number): number {
+  return clamp01(value / saturation);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+function observedAt(row: CandidateCoverageEvidenceRow): string | null {
+  return row.evidence_observed_at ?? row.assertion_observed_at;
 }
 
-function computeExperience(
-  nodes: { confidence: number | null; source_type: string | null }[],
-): number {
-  if (nodes.length === 0) return 0.0;
-
-  let totalWeight = 0;
-  let weightedConfidence = 0;
-  for (const node of nodes) {
-    const w = sourceWeight(node.source_type);
-    totalWeight += w;
-    weightedConfidence += safeConfidence(node.confidence) * w;
-  }
-
-  const avgConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
-
-  if (totalWeight >= 3 && avgConfidence >= 0.7) return 1.0;
-
-  // Linear interpolation between 1 node-weight (0.3) and 3 node-weights (1.0)
-  const linear = totalWeight >= 3 ? 1.0 : 0.3 + (totalWeight - 1) * 0.35;
-  return clamp(linear * (avgConfidence / 0.7), 0, 1);
+function evidenceStrength(row: CandidateCoverageEvidenceRow): number | null {
+  const base = row.evidence_strength ?? row.assertion_confidence;
+  if (base === null) return null;
+  const polarity = Math.abs(row.evidence_polarity ?? 1);
+  return clamp01(base * polarity);
 }
 
-function computeCultural(
-  nodes: {
-    confidence: number | null;
-    extracted_properties_json: string | null;
-    source_type: string | null;
-  }[],
-): number {
-  // Track max weight per dimension
-  const dimensionWeights = new Map<string, number>();
-
-  for (const node of nodes) {
-    if (safeConfidence(node.confidence) < 0.6) continue;
-    const props = safeParseJson(node.extracted_properties_json);
-    const dimension =
-      typeof props?.dimension === 'string' ? props.dimension : null;
-    if (dimension && CULTURAL_DIMENSIONS.has(dimension)) {
-      const w = sourceWeight(node.source_type);
-      const existing = dimensionWeights.get(dimension) ?? 0;
-      if (w > existing) {
-        dimensionWeights.set(dimension, w);
-      }
-    }
-  }
-
-  let weightedCoverage = 0;
-  for (const w of dimensionWeights.values()) {
-    weightedCoverage += 0.2 * w;
-  }
-
-  return Math.min(weightedCoverage, 1.0);
+function minTimestamp(values: Array<string | null>): string | null {
+  const present = values.filter((value): value is string => Boolean(value));
+  return present.length > 0 ? present.sort()[0]! : null;
 }
 
-function computeTechnical(
-  nodes: { confidence: number | null; extracted_properties_json: string | null; source_type: string | null }[],
-): number {
-  if (nodes.length === 0) return 0.0;
-
-  let totalWeight = 0;
-  let weightedConfidence = 0;
-  for (const node of nodes) {
-    const w = sourceWeight(node.source_type);
-    totalWeight += w;
-    weightedConfidence += safeConfidence(node.confidence) * w;
-  }
-
-  const avgConfidence = totalWeight > 0 ? weightedConfidence / totalWeight : 0;
-
-  // Tenure bonus: skills with >=1 year attributed contribute more (weighted)
-  let weightedTenure = 0;
-  for (const node of nodes) {
-    if (node.extracted_properties_json) {
-      const props = safeParseJson(node.extracted_properties_json);
-      const years = typeof props?.years_attributed === 'number' ? props.years_attributed : null;
-      if (years !== null && years >= 1) {
-        weightedTenure += sourceWeight(node.source_type);
-      }
-    }
-  }
-
-  const baseScore = Math.min(totalWeight / 5, 1.0) * (avgConfidence / 0.65);
-  const tenureBonus = Math.min(weightedTenure / 5, 0.3); // max 0.3 bonus
-
-  return clamp(baseScore + tenureBonus, 0, 1);
-}
-
-function computeMotivation(
-  nodes: { node_type: CandidateNodeType; confidence: number | null; source_type: string | null }[],
-): number {
-  let motivationWeight = 0;
-  let workingStyleWeight = 0;
-  let careerArcWeight = 0;
-
-  for (const node of nodes) {
-    if (safeConfidence(node.confidence) < 0.6) continue;
-    const w = sourceWeight(node.source_type);
-    if (node.node_type === 'Motivation') motivationWeight = Math.max(motivationWeight, w);
-    else if (node.node_type === 'WorkingStyle') workingStyleWeight = Math.max(workingStyleWeight, w);
-    else if (node.node_type === 'CareerArc') careerArcWeight = Math.max(careerArcWeight, w);
-  }
-
-  const weightedSum = motivationWeight + workingStyleWeight + careerArcWeight;
-
-  if (motivationWeight > 0 && workingStyleWeight > 0 && careerArcWeight > 0) return Math.min(weightedSum, 1.0);
-  if (motivationWeight > 0 && workingStyleWeight > 0) return Math.min(0.8 * (weightedSum / 2), 1.0);
-
-  const typeCount =
-    Number(motivationWeight > 0) + Number(workingStyleWeight > 0) + Number(careerArcWeight > 0);
-  if (typeCount === 1) return 0.4 * weightedSum;
-
-  return 0.0;
-}
-
-function computeContext(
-  nodes: { extracted_properties_json: string | null; source_type: string | null }[],
-): number {
-  if (nodes.length === 0) return 0.0;
-
-  let totalWeight = 0;
-  for (const node of nodes) {
-    totalWeight += sourceWeight(node.source_type);
-  }
-
-  if (totalWeight <= 1) return 0.5 * totalWeight;
-
-  const subtypes = new Set<string>();
-  for (const node of nodes) {
-    const props = safeParseJson(node.extracted_properties_json);
-    const subtype =
-      typeof props?.subtype === 'string' ? props.subtype : null;
-    if (subtype && CONTEXT_SUBTYPES.has(subtype)) {
-      subtypes.add(subtype);
-    }
-  }
-
-  return subtypes.size >= 2 ? 1.0 : 0.5;
+function maxTimestamp(values: Array<string | null>): string | null {
+  const present = values.filter((value): value is string => Boolean(value));
+  return present.length > 0 ? present.sort().at(-1)! : null;
 }
 
 export function computeCoverageFromRows(
-  rows: {
-    node_type: CandidateNodeType;
-    confidence: number | null;
-    extracted_properties_json: string | null;
-    source_type: string | null;
-  }[],
+  rows: CandidateCoverageEvidenceRow[],
+  candidateId = '',
 ): CoverageResult {
-  const experienceNodes = rows.filter((r) =>
-    EXPERIENCE_NODE_TYPES.includes(r.node_type),
+  const grouped = new Map<string, CandidateCoverageEvidenceRow[]>();
+  for (const row of rows) {
+    const existing = grouped.get(row.concept_id);
+    if (existing) existing.push(row);
+    else grouped.set(row.concept_id, [row]);
+  }
+
+  const dimensions: CoverageDimension[] = [...grouped.values()].map((conceptRows) => {
+    const first = conceptRows[0]!;
+    const assertionIds = new Set(conceptRows.map((row) => row.assertion_id));
+    const evidenceIds = new Set(
+      conceptRows.flatMap((row) => (row.evidence_id ? [row.evidence_id] : [])),
+    );
+    const sourceKeys = new Set(
+      conceptRows.flatMap((row) => (row.source_key ? [row.source_key] : [])),
+    );
+    const interactionIds = new Set(
+      conceptRows.flatMap((row) => (row.interaction_id ? [row.interaction_id] : [])),
+    );
+    const strengths = conceptRows.flatMap((row) => {
+      const strength = evidenceStrength(row);
+      return strength === null ? [] : [strength];
+    });
+    const confidence =
+      strengths.length > 0
+        ? strengths.reduce((sum, value) => sum + value, 0) / strengths.length
+        : 0;
+    const evidenceCount = Math.max(evidenceIds.size, assertionIds.size);
+    const score = confidence * (
+      0.5
+      + 0.25 * ratio(evidenceCount, CANDIDATE_COVERAGE_POLICY.evidenceSaturation)
+      + 0.15 * ratio(sourceKeys.size, CANDIDATE_COVERAGE_POLICY.sourceSaturation)
+      + 0.1 * ratio(interactionIds.size, CANDIDATE_COVERAGE_POLICY.interactionSaturation)
+    );
+    const timestamps = conceptRows.map(observedAt);
+
+    return {
+      conceptId: first.concept_id,
+      canonicalKey: first.canonical_key,
+      label: first.label,
+      score: clamp01(score),
+      confidence: clamp01(confidence),
+      evidenceCount,
+      assertionCount: assertionIds.size,
+      sourceDiversity: sourceKeys.size,
+      interactionCount: interactionIds.size,
+      firstObservedAt: minTimestamp(timestamps),
+      lastObservedAt: maxTimestamp(timestamps),
+    };
+  }).sort((left, right) => left.canonicalKey.localeCompare(right.canonicalKey));
+
+  const evidenceIds = new Set(
+    rows.flatMap((row) => (row.evidence_id ? [row.evidence_id] : [row.assertion_id])),
   );
-  const culturalNodes = rows.filter((r) => r.node_type === 'CulturalSignal');
-  const technicalNodes = rows.filter((r) =>
-    TECHNICAL_NODE_TYPES.includes(r.node_type),
+  const sources = new Set(rows.flatMap((row) => (row.source_key ? [row.source_key] : [])));
+  const interactions = new Set(
+    rows.flatMap((row) => (row.interaction_id ? [row.interaction_id] : [])),
   );
-  const motivationNodes = rows.filter((r) =>
-    MOTIVATION_NODE_TYPES.includes(r.node_type),
-  );
-  const contextNodes = rows.filter((r) => r.node_type === 'Context');
+  const strengths = rows.flatMap((row) => {
+    const strength = evidenceStrength(row);
+    return strength === null ? [] : [strength];
+  });
+  const confidence =
+    strengths.length > 0
+      ? strengths.reduce((sum, value) => sum + value, 0) / strengths.length
+      : 0;
+  const overallScore = dimensions.length === 0
+    ? 0
+    : confidence * (
+        0.45
+        + 0.25 * ratio(
+          evidenceIds.size,
+          CANDIDATE_COVERAGE_POLICY.overallEvidenceSaturation,
+        )
+        + 0.15 * ratio(
+          sources.size,
+          CANDIDATE_COVERAGE_POLICY.overallSourceSaturation,
+        )
+        + 0.15 * ratio(
+          interactions.size,
+          CANDIDATE_COVERAGE_POLICY.overallInteractionSaturation,
+        )
+      );
+  const timestamps = rows.map(observedAt);
 
   return {
-    experience: computeExperience(experienceNodes),
-    cultural: computeCultural(culturalNodes),
-    technical: computeTechnical(technicalNodes),
-    motivation: computeMotivation(motivationNodes),
-    context: computeContext(contextNodes),
+    candidateId,
+    overallScore: clamp01(overallScore),
+    evidenceCount: evidenceIds.size,
+    sourceDiversity: sources.size,
+    interactionCount: interactions.size,
+    firstObservedAt: minTimestamp(timestamps),
+    lastObservedAt: maxTimestamp(timestamps),
+    policyVersion: CANDIDATE_COVERAGE_POLICY.version,
+    dimensions,
   };
 }
 
@@ -267,133 +173,191 @@ export async function persistCandidateCoverage(
   candidateId: string,
   coverage: CoverageResult,
 ): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO candidate_coverage (
+  await db.prepare(
+    `INSERT INTO candidate_coverage (
+       candidate_id,
+       overall_coverage,
+       dimension_count,
+       evidence_count,
+       source_diversity,
+       interaction_count,
+       first_observed_at,
+       last_observed_at,
+       policy_version,
+       updated_at
+     )
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, unixepoch())
+     ON CONFLICT(candidate_id) DO UPDATE SET
+       overall_coverage = excluded.overall_coverage,
+       dimension_count = excluded.dimension_count,
+       evidence_count = excluded.evidence_count,
+       source_diversity = excluded.source_diversity,
+       interaction_count = excluded.interaction_count,
+       first_observed_at = excluded.first_observed_at,
+       last_observed_at = excluded.last_observed_at,
+       policy_version = excluded.policy_version,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    candidateId,
+    coverage.overallScore,
+    coverage.dimensions.length,
+    coverage.evidenceCount,
+    coverage.sourceDiversity,
+    coverage.interactionCount,
+    coverage.firstObservedAt,
+    coverage.lastObservedAt,
+    coverage.policyVersion,
+  ).run();
+
+  await db.prepare(
+    `DELETE FROM candidate_coverage_dimensions WHERE candidate_id = ?1`,
+  ).bind(candidateId).run();
+
+  for (const dimension of coverage.dimensions) {
+    await db.prepare(
+      `INSERT INTO candidate_coverage_dimensions (
          candidate_id,
-         experience_coverage,
-         cultural_coverage,
-         technical_coverage,
-         motivation_coverage,
-         context_coverage,
+         concept_id,
+         canonical_key,
+         label,
+         score,
+         confidence,
+         evidence_count,
+         assertion_count,
+         source_diversity,
+         interaction_count,
+         first_observed_at,
+         last_observed_at,
+         policy_version,
          updated_at
        )
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch())
-       ON CONFLICT(candidate_id) DO UPDATE SET
-         experience_coverage = excluded.experience_coverage,
-         cultural_coverage = excluded.cultural_coverage,
-         technical_coverage = excluded.technical_coverage,
-         motivation_coverage = excluded.motivation_coverage,
-         context_coverage = excluded.context_coverage,
-         updated_at = excluded.updated_at`,
-    )
-    .bind(
+       VALUES (
+         ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+         ?8, ?9, ?10, ?11, ?12, ?13, unixepoch()
+       )`,
+    ).bind(
       candidateId,
-      coverage.experience,
-      coverage.cultural,
-      coverage.technical,
-      coverage.motivation,
-      coverage.context,
-    )
-    .run();
+      dimension.conceptId,
+      dimension.canonicalKey,
+      dimension.label,
+      dimension.score,
+      dimension.confidence,
+      dimension.evidenceCount,
+      dimension.assertionCount,
+      dimension.sourceDiversity,
+      dimension.interactionCount,
+      dimension.firstObservedAt,
+      dimension.lastObservedAt,
+      coverage.policyVersion,
+    ).run();
+  }
+}
+
+async function loadCoverageEvidence(
+  db: D1Database,
+  candidateId: string,
+): Promise<CandidateCoverageEvidenceRow[]> {
+  const result = await db.prepare(
+    `SELECT
+       c.id AS concept_id,
+       c.canonical_key,
+       c.label,
+       sa.id AS assertion_id,
+       sa.confidence AS assertion_confidence,
+       sa.observed_at AS assertion_observed_at,
+       se.id AS evidence_id,
+       se.strength AS evidence_strength,
+       se.polarity AS evidence_polarity,
+       se.observed_at AS evidence_observed_at,
+       COALESCE(
+         json_extract(se.metadata_json, '$.sourceType'),
+         i.interaction_type
+       ) AS source_key,
+       se.interaction_id
+     FROM applications app
+     JOIN workspace_people wp ON wp.id = app.workspace_person_id
+     JOIN semantic_assertions sa ON sa.workspace_person_id = wp.id
+     JOIN assertion_concepts ac ON ac.assertion_id = sa.id
+     JOIN concepts c ON c.id = ac.concept_id
+     JOIN signal_evidence se
+       ON se.assertion_id = sa.id
+      AND se.concept_id = c.id
+     LEFT JOIN interactions i ON i.id = se.interaction_id
+     WHERE app.legacy_candidate_id = ?1
+     ORDER BY c.canonical_key, COALESCE(se.observed_at, sa.observed_at), sa.id`,
+  ).bind(candidateId).all<CandidateCoverageEvidenceRow>();
+
+  return result.results ?? [];
 }
 
 export async function computeCandidateCoverage(
   db: D1Database,
   candidateId: string,
 ): Promise<CoverageResult> {
-  let rows: {
-    node_type: CandidateNodeType;
-    confidence: number | null;
-    extracted_properties_json: string | null;
-    source_type: string | null;
-  }[] = [];
-
+  let rows: CandidateCoverageEvidenceRow[];
   try {
-    const result = await db
-      .prepare(
-        `SELECT node_type, confidence, extracted_properties_json, source_type
-         FROM candidate_nodes
-         WHERE candidate_id = ?1
-           AND superseded_at IS NULL`,
-      )
-      .bind(candidateId)
-      .all<{
-        node_type: CandidateNodeType;
-        confidence: number | null;
-        extracted_properties_json: string | null;
-        source_type: string | null;
-      }>();
-
-    rows = result.results ?? [];
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    rows = await loadCoverageEvidence(db, candidateId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(
-      `[candidateCoverage] failed to query candidate_nodes for ${candidateId}:`,
-      msg,
+      `[candidateCoverage] failed to load living-context evidence for ${candidateId}:`,
+      message,
     );
-    throw new Error(`[candidateCoverage] D1 query failed: ${msg}`);
+    throw new Error(`[candidateCoverage] D1 query failed: ${message}`);
   }
 
-  const coverage = computeCoverageFromRows(rows);
-
+  const coverage = computeCoverageFromRows(rows, candidateId);
   try {
     await persistCandidateCoverage(db, candidateId, coverage);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(
       `[candidateCoverage] failed to persist coverage for ${candidateId}:`,
-      msg,
+      message,
     );
-    throw new Error(`[candidateCoverage] D1 persist failed: ${msg}`);
+    throw new Error(`[candidateCoverage] D1 persist failed: ${message}`);
   }
-
   return coverage;
 }
 
 export function identifyNextProbeTarget(
   coverage: CoverageResult,
-  sessionExhaustedDimensions: CoverageAspect[],
-): CoverageAspect | null {
-  const exhausted = new Set(sessionExhaustedDimensions);
-  let best: CoverageAspect | null = null;
-  let bestScore = Infinity;
-
-  for (const dim of TIE_BREAK_ORDER) {
-    if (exhausted.has(dim)) continue;
-    const score = coverage[dim];
-    if (score < bestScore) {
-      bestScore = score;
-      best = dim;
-    }
-  }
-
-  if (best === null) return null;
-  if (bestScore >= 0.9) return null;
-  return best;
+  exhaustedConcepts: CoverageAspect[],
+  targetDimensions: CoverageDimension[] = coverage.dimensions,
+): CoverageDimension | null {
+  const exhausted = new Set(exhaustedConcepts);
+  const eligible = targetDimensions
+    .filter((dimension) =>
+      !exhausted.has(dimension.conceptId)
+      && !exhausted.has(dimension.canonicalKey)
+      && dimension.score < CANDIDATE_COVERAGE_POLICY.probeCompleteThreshold
+    )
+    .sort((left, right) =>
+      left.score - right.score
+      || left.canonicalKey.localeCompare(right.canonicalKey)
+      || left.conceptId.localeCompare(right.conceptId)
+    );
+  return eligible[0] ?? null;
 }
 
 export async function updateNextProbeTarget(
   db: D1Database,
   candidateId: string,
-  nextProbeTarget: CoverageAspect | null,
+  nextProbeConceptId: string | null,
 ): Promise<void> {
   try {
-    await db
-      .prepare(
-        `UPDATE candidate_coverage
-         SET next_probe_target = ?1
-         WHERE candidate_id = ?2`,
-      )
-      .bind(nextProbeTarget, candidateId)
-      .run();
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    await db.prepare(
+      `UPDATE candidate_coverage
+       SET next_probe_concept_id = ?1
+       WHERE candidate_id = ?2`,
+    ).bind(nextProbeConceptId, candidateId).run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(
-      `[candidateCoverage] failed to update next_probe_target for ${candidateId}:`,
-      msg,
+      `[candidateCoverage] failed to update next probe concept for ${candidateId}:`,
+      message,
     );
-    throw new Error(`[candidateCoverage] D1 update failed: ${msg}`);
+    throw new Error(`[candidateCoverage] D1 update failed: ${message}`);
   }
 }
 
@@ -402,31 +366,77 @@ export async function getCandidateCoverage(
   candidateId: string,
 ): Promise<CandidateCoverage | null> {
   try {
-    const row = await db
-      .prepare(
-        `SELECT
-           candidate_id,
-           experience_coverage,
-           cultural_coverage,
-           technical_coverage,
-           motivation_coverage,
-           context_coverage,
-           last_probed_at,
-           next_probe_target,
-           updated_at
-         FROM candidate_coverage
-         WHERE candidate_id = ?1`,
-      )
-      .bind(candidateId)
-      .first<CandidateCoverage>();
+    const row = await db.prepare(
+      `SELECT
+         candidate_id,
+         overall_coverage,
+         dimension_count,
+         evidence_count,
+         source_diversity,
+         interaction_count,
+         first_observed_at,
+         last_observed_at,
+         last_probed_at,
+         next_probe_concept_id,
+         policy_version,
+         updated_at
+       FROM candidate_coverage
+       WHERE candidate_id = ?1`,
+    ).bind(candidateId).first<Omit<CandidateCoverage, 'dimensions'>>();
+    if (!row) return null;
 
-    return row ?? null;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const dimensions = await db.prepare(
+      `SELECT
+         concept_id,
+         canonical_key,
+         label,
+         score,
+         confidence,
+         evidence_count,
+         assertion_count,
+         source_diversity,
+         interaction_count,
+         first_observed_at,
+         last_observed_at
+       FROM candidate_coverage_dimensions
+       WHERE candidate_id = ?1
+       ORDER BY canonical_key`,
+    ).bind(candidateId).all<{
+      concept_id: string;
+      canonical_key: string;
+      label: string;
+      score: number;
+      confidence: number;
+      evidence_count: number;
+      assertion_count: number;
+      source_diversity: number;
+      interaction_count: number;
+      first_observed_at: string | null;
+      last_observed_at: string | null;
+    }>();
+
+    return {
+      ...row,
+      dimensions: (dimensions.results ?? []).map((dimension) => ({
+        conceptId: dimension.concept_id,
+        canonicalKey: dimension.canonical_key,
+        label: dimension.label,
+        score: dimension.score,
+        confidence: dimension.confidence,
+        evidenceCount: dimension.evidence_count,
+        assertionCount: dimension.assertion_count,
+        sourceDiversity: dimension.source_diversity,
+        interactionCount: dimension.interaction_count,
+        firstObservedAt: dimension.first_observed_at,
+        lastObservedAt: dimension.last_observed_at,
+      })),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error(
       `[candidateCoverage] failed to get coverage for ${candidateId}:`,
-      msg,
+      message,
     );
-    throw new Error(`[candidateCoverage] D1 query failed: ${msg}`);
+    throw new Error(`[candidateCoverage] D1 query failed: ${message}`);
   }
 }

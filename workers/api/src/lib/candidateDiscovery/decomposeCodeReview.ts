@@ -13,18 +13,7 @@ import { embedCandidateNode } from './candidateNodes';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { writeCandidateGraph } from '../neo4j/writeCandidateGraph';
 import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
-
-const DIMENSION_TO_EVIDENCE_KEY: Record<
-  string,
-  keyof ScoreReport['evidence']
-> = {
-  issue_identification: 'issue_identification_evidence',
-  reasoning_quality: 'reasoning_quality_evidence',
-  prioritization: 'prioritization_evidence',
-  question_formation: 'question_formation_evidence',
-  revision_evaluation: 'revision_evaluation_evidence',
-  ai_direction: 'ai_direction_evidence',
-};
+import { openSemanticTermRecord } from '../livingContext/openTerms';
 
 /** Serialises candidate (reviewer) text from transcript rounds for LLM narrative generation. */
 function serialiseTranscript(rounds: ReviewRound[]): string {
@@ -216,10 +205,9 @@ export async function decomposeCodeReviewToGraph(
   const candidateNodes: import('../../types').CandidateNode[] = [];
 
   for (const [dimension, barsScore] of dimensionEntries) {
-    const evidenceKey = DIMENSION_TO_EVIDENCE_KEY[dimension];
-    const evidence = evidenceKey
-      ? scoreReport.evidence[evidenceKey]
-      : undefined;
+    const evidence = (
+      scoreReport.evidence as Record<string, ScoreReport['evidence'][keyof ScoreReport['evidence']]>
+    )[`${dimension}_evidence`];
 
     const transcriptNarrative = transcriptNarratives?.[dimension as keyof GeneratedNarratives];
     const narrativeText = buildNarrative(dimension, barsScore, evidence, transcriptNarrative);
@@ -227,6 +215,8 @@ export async function decomposeCodeReviewToGraph(
     const extractedProperties = {
       dimension,
       bars_score: barsScore,
+      semantic_terms: [openSemanticTermRecord(dimension, 'demonstrated')]
+        .filter((term) => term !== null),
       effectiveness_metrics: {
         bugs_found_pct: scoreReport.metrics.bugs_found_pct,
         false_positive_count: scoreReport.metrics.false_positive_count,

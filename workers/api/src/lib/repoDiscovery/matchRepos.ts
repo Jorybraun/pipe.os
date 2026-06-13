@@ -16,9 +16,9 @@
 export interface MatchRequest {
   mustHaveSkills: string[];
   niceToHaveSkills: string[];
-  seniority: 'junior' | 'mid' | 'senior' | 'staff';
-  domain: string;
-  primaryLanguage: string;
+  seniority?: 'junior' | 'mid' | 'senior' | 'staff';
+  domain?: string;
+  primaryLanguage?: string;
   targetConstructs?: string[];
   limit?: number;
 }
@@ -79,25 +79,29 @@ export async function matchRepos(
   const niceTotal = niceSlugs.length;
   const constructTotal = constructSlugs.length;
 
-  // Edge case: no must-haves → return top repos by PR quality + low contamination
+  // Edge case: no must-haves → return empty (no fallback)
   if (mustTotal === 0) {
-    return fallbackTopRepos(db, req, limit);
+    return [];
   }
 
-  // 2. Compute adjacent seniority bands
-  const bands = adjacentBands(req.seniority.toLowerCase());
+  // 2. Apply seniority only when persisted role evidence establishes it.
+  const bands = req.seniority ? adjacentBands(req.seniority.toLowerCase()) : [];
 
   // 3. Build the scoring query dynamically (D1 doesn't support array params in IN)
   const mustPlaceholders = mustSlugs.map(() => '?').join(', ');
   const nicePlaceholders = niceSlugs.length > 0 ? niceSlugs.map(() => '?').join(', ') : "'__none__'";
   const constructPlaceholders = constructSlugs.length > 0 ? constructSlugs.map(() => '?').join(', ') : "'__none__'";
   const bandPlaceholders = bands.map(() => '?').join(', ');
+  const seniorityClause = bands.length > 0
+    ? `AND r.seniority_band IN (${bandPlaceholders})`
+    : '';
 
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const staleCutoff = sixMonthsAgo.toISOString();
 
-  const lang = req.primaryLanguage.toLowerCase();
+  const lang = req.primaryLanguage?.trim().toLowerCase() || null;
+  const languageClause = lang ? 'AND r.primary_language = ?' : '';
 
   const sql = `
     WITH scored AS (
@@ -120,8 +124,8 @@ export async function matchRepos(
       LEFT JOIN repo_constructs rc ON rc.repo_id = r.id
       LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
       WHERE r.disqualified = 0
-        AND r.primary_language = ?
-        AND r.seniority_band IN (${bandPlaceholders})
+        ${languageClause}
+        ${seniorityClause}
         AND r.last_pushed_at >= ?
         -- Canonical RUC: library repos never make it into the candidate pool.
         AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
@@ -150,8 +154,8 @@ export async function matchRepos(
     ...niceSlugs,
     // construct IN
     ...constructSlugs,
-    // WHERE primary_language
-    lang,
+    // WHERE primary_language, when evidence establishes one
+    ...(lang ? [lang] : []),
     // WHERE seniority_band IN
     ...bands,
     // WHERE last_pushed_at >=
@@ -163,7 +167,7 @@ export async function matchRepos(
     // score: nice_total denominator
     Math.max(niceTotal, 1),
     // score: domain match
-    req.domain,
+    req.domain ?? '',
     // score: construct_total denominator
     Math.max(constructTotal, 1),
     // LIMIT
@@ -193,13 +197,8 @@ export async function matchRepos(
     .all<ScoredRow>();
 
   if (!scoredRows || scoredRows.length === 0) {
-    // Fallback: repo_skills may be empty (fresh DB or after reset).
-    // Return top repos by PR quality + low contamination instead of failing.
-    console.warn(
-      `[matchRepos] No repos matched must-haves [${mustSlugs.join(', ')}] — ` +
-      `repo_skills may be empty. Falling back to top repos.`
-    );
-    return fallbackTopRepos(db, req, limit);
+    // No repos matched must-haves — return empty instead of falling back
+    return [];
   }
 
   // 4. Second query: fetch matched skill + construct slugs per repo
@@ -280,59 +279,6 @@ export async function matchRepos(
       })),
     };
   });
-}
-
-// ─── Fallback: no must-haves ──────────────────────────────────────────────────
-
-async function fallbackTopRepos(
-  db: D1Database,
-  req: MatchRequest,
-  limit: number,
-): Promise<MatchedRepo[]> {
-  const lang = req.primaryLanguage.toLowerCase();
-  const bands = adjacentBands(req.seniority.toLowerCase());
-  const bandPlaceholders = bands.map(() => '?').join(', ');
-
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-  const { results } = await db.prepare(`
-    SELECT r.id, r.full_name, r.github_url, r.description, r.seniority_band,
-           r.detected_domain, r.pr_quality_score, r.contamination_risk, r.stars, r.primary_language,
-           r.pr_quality_score * 0.15 + (1 - r.contamination_risk) * 0.05 AS score
-    FROM qualified_repos r
-    LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
-    WHERE r.disqualified = 0
-      AND r.primary_language = ?
-      AND r.seniority_band IN (${bandPlaceholders})
-      AND r.last_pushed_at >= ?
-      AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
-      AND NOT (COALESCE(r.open_pr_count, 0) = 0 AND COALESCE(r.open_feature_issue_count, 0) < 5)
-    ORDER BY score DESC
-    LIMIT ?
-  `).bind(lang, ...bands, sixMonthsAgo.toISOString(), limit)
-    .all<{
-      id: number; full_name: string; github_url: string; description: string | null;
-      seniority_band: string; detected_domain: string; pr_quality_score: number;
-      contamination_risk: number; stars: number; primary_language: string; score: number;
-    }>();
-
-  return (results ?? []).map((r) => ({
-    id: r.id,
-    fullName: r.full_name,
-    githubUrl: r.github_url,
-    description: r.description,
-    seniorityBand: r.seniority_band,
-    detectedDomain: r.detected_domain,
-    prQualityScore: r.pr_quality_score,
-    stars: r.stars,
-    primaryLanguage: r.primary_language,
-    score: r.score,
-    matchedMustSkills: [],
-    matchedNiceSkills: [],
-    matchedConstructs: [],
-    samplePrs: [],
-  }));
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
