@@ -7,11 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — PDL Candidate Sourcing + Unified Contacts
+### Added — PDL Candidate Sourcing + Interaction-First Graph Integration
 
 - `workers/api/src/lib/pdl.ts`: People Data Labs client — Person Search API (SQL queries) and Person Enrichment API. Pay-as-you-go candidate discovery.
-- `workers/api/src/routes/outreach/pdlSearch.ts`: `POST /api/v1/outreach/search` queries PDL by role/level/company/location/phone/email. `POST /api/v1/outreach/save` persists a PDL result as a Contact with living context graph integration. `POST /api/v1/outreach/enrich` enriches a known person.
-- `src/pages/ContactsPage.tsx`: New "Source" tab with PDL search form (job role, level, company, country, has phone/email). Results show name, title, company, email, phone, location. One-click "Save" creates a Contact.
+- `workers/api/migrations/0092_sourcing_pool.sql`: Workspace-scoped cache of discovered people. Ephemeral (30-day expiry). Deduplicated by PDL ID. Tracks status: discovered | flagged | dismissed | contacted | converted.
+- `workers/api/src/routes/outreach/pdlSearch.ts`:
+  - `POST /api/v1/outreach/search` — reads from sourcing_pool cache first, then PDL on miss. Returns results with `poolId` for action tracking.
+  - `POST /api/v1/outreach/flag` — mark a discovered person as interesting.
+  - `POST /api/v1/outreach/dismiss` — remove from active results.
+  - `POST /api/v1/outreach/contact` — first interaction endpoint. Promotes from sourcing pool to living context graph: creates `Person` (deduplicated by email), `WorkspacePerson`, `Interaction` (type: phone|email|invite), and `PersonRole: discovered`. Removed premature `POST /save` that created legacy `Contact` rows.
+  - `POST /api/v1/outreach/enrich` — enrich a known person by name/email/company.
+- `src/pages/ContactsPage.tsx`:
+  - New "Source" tab with PDL search form (job role, level, company, country, has phone/email).
+  - Results show name, title, company, email, phone, location.
+  - Actions per result: `FLAG`, `DISMISS`, `CALL`, `EMAIL`, `INVITE` (interaction-first; no premature "Save").
+  - `CALL` / `EMAIL` / `INVITE` promote the person to the living context graph and create an `Interaction`.
+  - `FLAG` marks for follow-up without creating graph nodes.
+  - `DISMISS` removes from the active view.
+  - Contacted people show "In graph" badge.
 - `src/App.tsx`: Sidebar now routes to Contacts (`/contacts`) instead of Outreach. Contacts page reachable from sidebar.
 - `workers/api/src/types.ts`: Added `PDL_API_KEY` to Env bindings.
 
@@ -38,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/hooks/useSchedulingConnection.ts`: Added `eventTypes` field to `SchedulingConnectionInfo` interface. Added `schedulingUrl` field to `ProviderEventType` interface. Added `fetchEventTypesForConnection` helper function to fetch event types for a specific connection.
 - `workers/api/src/routes/cockpit/scheduling.ts`: Added `GET /connection/:id/event-types` endpoint to fetch event types for a specific connection. Updated `fetchCalendlyEventTypes` to return `schedulingUrl` field. Updated event types return type to include `schedulingUrl`.
 - `workers/api/src/routes/cockpit/candidates.ts`: Updated `createCandidateSchema` to accept `schedulingProvider` and `schedulingUrl` parameters. Updated candidate creation to store scheduling provider and URL in `scheduled_interviews` table. Updated email sending logic to use provided `schedulingUrl` if available.
+
+### Changed — ListingPage UI Cleanup
+
+- `src/pages/ListingPage.tsx`: Removed right sidebar with black background and rounded corners. Removed filter controls (all/active/draft/archived). Simplified layout to single-column view with search and action controls in header. Removed unused `Filter` icon import and filter state management.
+- `src/pages/ContactsPage.tsx`: Removed unused `typeFilter` state and `setTypeFilter` function to fix TypeScript unused variable warning. Simplified contact filtering to search-only.
 
 ### Added — AI Assistant for Meetings App (CopilotKit-Compatible Custom Agent)
 

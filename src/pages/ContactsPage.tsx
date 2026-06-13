@@ -23,6 +23,9 @@ import { createApiClient } from '../lib/api/client';
 type ContactType = 'lead' | 'candidate' | 'customer' | 'other';
 
 interface PdlPerson {
+  poolId: string;
+  status: string;
+  personId: string | null;
   id: string;
   full_name: string | null;
   first_name: string | null;
@@ -79,7 +82,6 @@ export default function ContactsPage(): JSX.Element {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<ContactType | 'all'>('all');
   const [selected, setSelected] = useState<Contact | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [activeTab, setActiveTab] = useState<'contacts' | 'source'>('contacts');
@@ -99,7 +101,6 @@ export default function ContactsPage(): JSX.Element {
   useEffect(() => { void load(); }, [load]);
 
   const filtered = contacts.filter((c) => {
-    if (typeFilter !== 'all' && c.type !== typeFilter) return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -224,9 +225,9 @@ export default function ContactsPage(): JSX.Element {
               {!isLoading && filtered.length === 0 && (
                 <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
                   <div style={{ fontSize: 11, marginBottom: 8 }}>
-                    {search || typeFilter !== 'all' ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
+                    {search ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
                   </div>
-                  {!search && typeFilter === 'all' && (
+                  {!search && (
                     <div style={{ fontSize: 9, opacity: 0.6 }}>
                       Add someone by clicking ADD above
                     </div>
@@ -246,7 +247,7 @@ export default function ContactsPage(): JSX.Element {
         ) : (
           <SourceSearchPanel
             api={api}
-            onSaved={(c) => { setContacts((prev) => [c, ...prev]); }}
+            onContact={() => { setActiveTab('contacts'); void load(); }}
           />
         )}
       </div>
@@ -624,9 +625,9 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
 
 // ─── Source Search Panel ─────────────────────────────────────────────────────
 
-function SourceSearchPanel({ api, onSaved }: {
+function SourceSearchPanel({ api, onContact }: {
   api: ReturnType<typeof createApiClient>;
-  onSaved: (c: Contact) => void;
+  onContact: () => void;
 }): JSX.Element {
   const [filters, setFilters] = useState({
     jobTitleRole: '',
@@ -641,7 +642,7 @@ function SourceSearchPanel({ api, onSaved }: {
   const [total, setTotal] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [actionIds, setActionIds] = useState<Set<string>>(new Set());
 
   const handleSearch = async (): Promise<void> => {
     setIsSearching(true);
@@ -655,7 +656,7 @@ function SourceSearchPanel({ api, onSaved }: {
       if (filters.hasPhone) payload.hasPhone = true;
       if (filters.hasEmail) payload.hasEmail = true;
 
-      const res = await api.post<{ results: PdlPerson[]; total: number }>('/api/v1/outreach/search', payload);
+      const res = await api.post<{ results: PdlPerson[]; total: number; cached: boolean }>('/api/v1/outreach/search', payload);
       setResults(res.results);
       setTotal(res.total);
     } catch (err) {
@@ -665,22 +666,40 @@ function SourceSearchPanel({ api, onSaved }: {
     }
   };
 
-  const handleSave = async (person: PdlPerson): Promise<void> => {
-    setSavingIds((prev) => new Set(prev).add(person.id));
+  const handleFlag = async (person: PdlPerson): Promise<void> => {
+    setActionIds((prev) => new Set(prev).add(person.poolId));
     try {
-      const res = await api.post<{ contact: Contact }>('/api/v1/outreach/save', {
-        pdlRecord: person,
-        type: 'lead',
-      });
-      onSaved(res.contact);
+      await api.post('/api/v1/outreach/flag', { poolId: person.poolId });
+      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'flagged' } : p));
     } catch (err) {
-      console.error('[SourceSearchPanel] save failed:', err);
+      console.error('[SourceSearchPanel] flag failed:', err);
     } finally {
-      setSavingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(person.id);
-        return next;
-      });
+      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
+    }
+  };
+
+  const handleDismiss = async (person: PdlPerson): Promise<void> => {
+    setActionIds((prev) => new Set(prev).add(person.poolId));
+    try {
+      await api.post('/api/v1/outreach/dismiss', { poolId: person.poolId });
+      setResults((prev) => prev.filter((p) => p.poolId !== person.poolId));
+    } catch (err) {
+      console.error('[SourceSearchPanel] dismiss failed:', err);
+    } finally {
+      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
+    }
+  };
+
+  const handleContact = async (person: PdlPerson, channel: 'phone' | 'email' | 'invite'): Promise<void> => {
+    setActionIds((prev) => new Set(prev).add(person.poolId));
+    try {
+      await api.post('/api/v1/outreach/contact', { poolId: person.poolId, channel });
+      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'contacted' } : p));
+      onContact();
+    } catch (err) {
+      console.error('[SourceSearchPanel] contact failed:', err);
+    } finally {
+      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
     }
   };
 
@@ -704,147 +723,80 @@ function SourceSearchPanel({ api, onSaved }: {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
             <div style={labelStyle}>JOB ROLE</div>
-            <input
-              value={filters.jobTitleRole}
-              onChange={(e) => setFilters((p) => ({ ...p, jobTitleRole: e.target.value }))}
-              placeholder="e.g. engineering"
-              style={inputStyle}
-            />
+            <input value={filters.jobTitleRole} onChange={(e) => setFilters((p) => ({ ...p, jobTitleRole: e.target.value }))} placeholder="e.g. engineering" style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>LEVEL</div>
-            <input
-              value={filters.jobTitleLevel}
-              onChange={(e) => setFilters((p) => ({ ...p, jobTitleLevel: e.target.value }))}
-              placeholder="e.g. senior"
-              style={inputStyle}
-            />
+            <input value={filters.jobTitleLevel} onChange={(e) => setFilters((p) => ({ ...p, jobTitleLevel: e.target.value }))} placeholder="e.g. senior" style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>COMPANY</div>
-            <input
-              value={filters.jobCompanyName}
-              onChange={(e) => setFilters((p) => ({ ...p, jobCompanyName: e.target.value }))}
-              placeholder="e.g. Stripe"
-              style={inputStyle}
-            />
+            <input value={filters.jobCompanyName} onChange={(e) => setFilters((p) => ({ ...p, jobCompanyName: e.target.value }))} placeholder="e.g. Stripe" style={inputStyle} />
           </div>
           <div>
             <div style={labelStyle}>COUNTRY</div>
-            <input
-              value={filters.locationCountry}
-              onChange={(e) => setFilters((p) => ({ ...p, locationCountry: e.target.value }))}
-              placeholder="e.g. united states"
-              style={inputStyle}
-            />
+            <input value={filters.locationCountry} onChange={(e) => setFilters((p) => ({ ...p, locationCountry: e.target.value }))} placeholder="e.g. united states" style={inputStyle} />
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={filters.hasEmail}
-              onChange={(e) => setFilters((p) => ({ ...p, hasEmail: e.target.checked }))}
-            />
-            Has email
+            <input type="checkbox" checked={filters.hasEmail} onChange={(e) => setFilters((p) => ({ ...p, hasEmail: e.target.checked }))} /> Has email
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={filters.hasPhone}
-              onChange={(e) => setFilters((p) => ({ ...p, hasPhone: e.target.checked }))}
-            />
-            Has phone
+            <input type="checkbox" checked={filters.hasPhone} onChange={(e) => setFilters((p) => ({ ...p, hasPhone: e.target.checked }))} /> Has phone
           </label>
         </div>
 
-        <button
-          onClick={() => void handleSearch()}
-          disabled={isSearching}
-          style={{
-            width: '100%', padding: '10px 0',
-            fontSize: 9, fontWeight: 700, letterSpacing: '0.1em',
-            fontFamily: '"Space Mono", monospace',
-            background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)',
-            borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          }}
-        >
-          {isSearching
-            ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</>
-            : <><Search size={12} /> SEARCH</>}
+        <button onClick={() => void handleSearch()} disabled={isSearching} style={{ width: '100%', padding: '10px 0', fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          {isSearching ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</> : <><Search size={12} /> SEARCH</>}
         </button>
 
-        {searchError && (
-          <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>
-            {searchError}
-          </div>
-        )}
+        {searchError && <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>{searchError}</div>}
       </div>
 
       {/* Results */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        {results.length === 0 && !isSearching && !searchError && (
-          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
-            <div style={{ fontSize: 11 }}>Enter filters and click SEARCH</div>
-          </div>
-        )}
-        {results.length > 0 && (
-          <div style={{ padding: '8px 24px', fontSize: 9, color: 'var(--pipe-text-dim)', borderBottom: '1px solid var(--pipe-border)' }}>
-            {results.length} of {total} results
-          </div>
-        )}
+        {results.length === 0 && !isSearching && !searchError && <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}><div style={{ fontSize: 11 }}>Enter filters and click SEARCH</div></div>}
+        {results.length > 0 && <div style={{ padding: '8px 24px', fontSize: 9, color: 'var(--pipe-text-dim)', borderBottom: '1px solid var(--pipe-border)' }}>{results.length} of {total} results</div>}
         {results.map((person) => (
-          <div
-            key={person.id}
-            style={{
-              padding: '14px 24px',
-              borderBottom: '1px solid var(--pipe-border)',
-              display: 'flex', alignItems: 'flex-start', gap: 12,
-            }}
-          >
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-              background: 'rgba(96,165,250,0.12)', border: '1px solid rgba(96,165,250,0.3)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 700, color: '#60a5fa',
-            }}>
+          <div key={person.poolId} style={{ padding: '14px 24px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${person.status === 'flagged' ? 'rgba(251,191,36,0.3)' : 'rgba(96,165,250,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: person.status === 'flagged' ? '#fbbf24' : '#60a5fa' }}>
               {(person.full_name ?? '?').charAt(0).toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>
-                {person.full_name ?? 'Unknown'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{person.full_name ?? 'Unknown'}</span>
+                {person.status === 'flagged' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>FLAGGED</span>}
+                {person.status === 'contacted' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(74,222,128,0.12)', color: '#4ade80' }}>CONTACTED</span>}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-                {person.job_title ?? 'No title'}
-                {person.job_company_name && ` @ ${person.job_company_name}`}
-              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>{person.job_title ?? 'No title'}{person.job_company_name && ` @ ${person.job_company_name}`}</div>
               <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {person.emails && person.emails[0] && (
-                  <span>{person.emails[0].address}</span>
-                )}
-                {person.phone_numbers && person.phone_numbers[0] && (
-                  <span>{person.phone_numbers[0].number}</span>
-                )}
+                {person.emails && person.emails[0] && <span>{person.emails[0].address}</span>}
+                {person.phone_numbers && person.phone_numbers[0] && <span>{person.phone_numbers[0].number}</span>}
                 {person.location_name && <span>{person.location_name}</span>}
               </div>
             </div>
-            <button
-              onClick={() => void handleSave(person)}
-              disabled={savingIds.has(person.id)}
-              style={{
-                padding: '6px 12px', fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
-                fontFamily: '"Space Mono", monospace',
-                background: savingIds.has(person.id) ? 'rgba(255,255,255,0.04)' : 'rgba(74,222,128,0.1)',
-                border: '1px solid rgba(74,222,128,0.3)', borderRadius: 3,
-                color: savingIds.has(person.id) ? 'var(--pipe-text-dim)' : '#4ade80',
-                cursor: savingIds.has(person.id) ? 'default' : 'pointer',
-                flexShrink: 0,
-              }}
-            >
-              {savingIds.has(person.id) ? 'SAVED' : 'SAVE'}
-            </button>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              {person.status !== 'contacted' && (
+                <>
+                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
+                    {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
+                  </button>
+                  {person.phone_numbers && person.phone_numbers[0] && (
+                    <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
+                  )}
+                  {person.emails && person.emails[0] && (
+                    <button onClick={() => void handleContact(person, 'email')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>EMAIL</button>
+                  )}
+                  <button onClick={() => void handleContact(person, 'invite')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 3, color: '#60a5fa', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>INVITE</button>
+                  <button onClick={() => void handleDismiss(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'transparent', border: '1px solid var(--pipe-border)', borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>DISMISS</button>
+                </>
+              )}
+              {person.status === 'contacted' && (
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>In graph</span>
+              )}
+            </div>
           </div>
         ))}
       </div>

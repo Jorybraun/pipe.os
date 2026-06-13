@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
-  Filter,
   Check,
   Activity,
   Briefcase,
@@ -66,13 +65,9 @@ export default function ListingPage(): JSX.Element {
     isLoading,
     refetch,
     setPage,
-    setStatusFilter,
     setSearchQuery,
   } = usePipelines();
   const { deletePipeline } = usePipelineDelete();
-  const [filter, setFilter] = useState<"all" | "ACTIVE" | "DRAFT" | "ARCHIVED">(
-    "all"
-  );
   const [searchInput, setSearchInput] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -93,18 +88,11 @@ export default function ListingPage(): JSX.Element {
     return () => clearTimeout(timer);
   }, [searchInput, setSearchQuery]);
 
-  const handleFilterChange = (f: "all" | "ACTIVE" | "DRAFT" | "ARCHIVED") => {
-    setFilter(f);
-    setStatusFilter(f === 'all' ? null : f);
-    setSelectedIds(new Set());
-  };
-
   const stats = useMemo(() => {
     // These stats are approximate when paginated; we could fetch summary stats separately.
     // For now, compute from visible page data as a best-effort display.
     return {
       active: pipelines.filter(p => p.status === 'ACTIVE').length,
-      draft: pipelines.filter(p => p.status === 'DRAFT').length,
       totalCandidates: pipelines.reduce((acc, p) => acc + p.candidateCount, 0)
     };
   }, [pipelines]);
@@ -207,7 +195,7 @@ export default function ListingPage(): JSX.Element {
       </div>
 
       <div style={{ display: "flex", gap: 24, position: 'relative' }}>
-        {/* Main List Area (Pipeline Builder layout) */}
+        {/* Main List Area */}
         <section style={{ flex: 1 }}>
           {/* List Search & Controls */}
           <div style={{ 
@@ -442,101 +430,6 @@ export default function ListingPage(): JSX.Element {
             </div>
           )}
         </section>
-
-        {/* Sidebar Configuration (Discovery Page style) */}
-        <aside style={{ width: 340 }}>
-           <div
-             style={{
-               padding: 24,
-               height: 'fit-content',
-               background: 'var(--pipe-surface-solid)',
-               backdropFilter: 'blur(40px) saturate(150%)',
-               border: '1px solid var(--pipe-border)',
-               borderRadius: 16,
-               boxShadow: '0 4px 12px var(--pipe-shadow)',
-               display: 'flex',
-               flexDirection: 'column',
-               gap: 24
-             }}
-           >
-             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Filter size={14} color="rgba(255, 255, 255, 0.40)" />
-                <h3 style={{
-                  fontSize: 10,
-                  letterSpacing: '0.2em',
-                  color: 'var(--pipe-text-dim)',
-                  textTransform: 'uppercase',
-                  fontFamily: '"Space Mono", monospace',
-                  fontWeight: 700
-                }}>
-                  FILTER_CONTROLS
-                </h3>
-             </div>
-
-             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {(["all", "ACTIVE", "DRAFT", "ARCHIVED"] as const).map((f) => (
-                  <div
-                    key={f}
-                    onClick={() => handleFilterChange(f)}
-                    style={{
-                      padding: '12px 16px',
-                      background: filter === f ? 'rgba(255, 255, 255, 0.06)' : 'var(--pipe-surface)',
-                      border: `1px solid ${filter === f ? 'rgba(255, 255, 255, 0.12)' : 'var(--pipe-border-light)'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      borderRadius: 4
-                    }}
-                  >
-                    <span style={{
-                      fontSize: 10,
-                      color: filter === f ? 'var(--pipe-text)' : 'var(--pipe-text-muted)',
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                      fontFamily: '"Space Mono", monospace'
-                    }}>
-                      {f === 'all' ? 'ALL_STATUS' : f}
-                    </span>
-                    {filter === f && <Check size={12} color="var(--pipe-accent)" />}
-                  </div>
-                ))}
-             </div>
-
-             <div style={{ height: '1px', background: 'var(--pipe-surface)' }} />
-
-             {/* Sidebar Info/Stats */}
-             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>
-                  PIPELINE_INSIGHTS
-                </span>
-                <div style={{ 
-                  padding: 16,
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
-                  borderRadius: 8,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Total Active Roles</span>
-                    <span style={{ fontSize: 10, color: 'var(--pipe-text, #fff)', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.active}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Draft Pipelines</span>
-                    <span style={{ fontSize: 10, color: '#fbbf24', fontWeight: 700, fontFamily: 'Space Mono' }}>{stats.draft}</span>
-                  </div>
-                  <div style={{ height: 1, background: 'var(--pipe-surface)' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>Conversion Rate</span>
-                    <span style={{ fontSize: 10, color: '#34d399', fontWeight: 700, fontFamily: 'Space Mono' }}>24.2%</span>
-                  </div>
-                </div>
-             </div>
-           </div>
-        </aside>
       </div>
       
       <style>{`
