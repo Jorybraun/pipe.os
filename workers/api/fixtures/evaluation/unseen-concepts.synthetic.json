@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "corpusId": "unseen-concepts-synthetic-v1",
+  "createdAt": "2026-06-13T00:00:00.000Z",
+  "description": "Synthetic CLI fixture proving that open concept keys survive deterministic evaluation.",
+  "candidateEvidence": [
+    {
+      "candidateId": "evaluation-candidate-1",
+      "evidenceId": "evaluation-evidence-1",
+      "episodeId": "evaluation-episode-1",
+      "narrative": "Designed a photonic event ledger for orbital inventory reconciliation.",
+      "concepts": [
+        "novel:photonic-event-ledger",
+        "novel:orbital-inventory-reconciliation"
+      ],
+      "evidenceReferences": [
+        {
+          "artifactId": "evaluation-candidate-artifact-1",
+          "artifactVersion": "evaluation-candidate-version-1",
+          "contentHash": "sha256:evaluation-candidate-source",
+          "startOffset": 0,
+          "endOffset": 72,
+          "locator": "fixture:candidate:1"
+        }
+      ]
+    }
+  ],
+  "roleRequirements": [
+    {
+      "roleId": "evaluation-role-1",
+      "requiredLanguages": [],
+      "relevantConcepts": [
+        "novel:photonic-event-ledger"
+      ],
+      "sourceReferences": [
+        {
+          "entityId": "evaluation-role-source-1",
+          "locator": "fixture:role:1",
+          "conceptKeys": [
+            "novel:photonic-event-ledger"
+          ]
+        }
+      ]
+    }
+  ],
+  "expertLabels": [
+    {
+      "labelId": "evaluation-label-relevant-1",
+      "candidateId": "evaluation-candidate-1",
+      "roleId": "evaluation-role-1",
+      "challengeId": "evaluation-challenge-relevant-1",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": [
+        "evaluation-challenge-relevant-1"
+      ],
+      "explanation": "The candidate evidence and challenge both require the same unseen event-ledger mechanism.",
+      "labelVersion": "1",
+      "labeledAt": "2026-06-13T00:00:00.000Z",
+      "labeledBy": "synthetic-fixture"
+    },
+    {
+      "labelId": "evaluation-label-forbidden-1",
+      "candidateId": "evaluation-candidate-1",
+      "roleId": "evaluation-role-1",
+      "challengeId": "evaluation-challenge-forbidden-1",
+      "relevanceGrade": "forbidden",
+      "eligibleChallengeIds": [
+        "evaluation-challenge-relevant-1"
+      ],
+      "guardrailViolations": [
+        "forbidden_concept"
+      ],
+      "explanation": "This challenge is deliberately forbidden to verify fail-closed guardrail evaluation.",
+      "labelVersion": "1",
+      "labeledAt": "2026-06-13T00:00:00.000Z",
+      "labeledBy": "synthetic-fixture"
+    }
+  ],
+  "metadata": {
+    "totalLabels": 2,
+    "totalCandidates": 1,
+    "totalRoles": 1,
+    "totalChallenges": 2,
+    "syntheticFixtureCount": 2
+  }
+}

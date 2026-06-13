@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/pages/ListingPage.tsx`: Removed right sidebar with black background and rounded corners. Removed filter controls (all/active/draft/archived). Simplified layout to single-column view with search and action controls in header. Removed unused `Filter` icon import and filter state management.
 - `src/pages/ContactsPage.tsx`: Removed unused `typeFilter` state and `setTypeFilter` function to fix TypeScript unused variable warning. Simplified contact filtering to search-only.
 
+### Added — PIPE_BLUE Theme
+
+- `src/contexts/ThemeContext.tsx`: Added `pipe-blue` theme mode with blue color scheme matching marketing site. Added CSS custom properties for blue background (`#0a0e1a`), blue text (`#e8f4ff`), and blue accent (`#6cc3ff`). Added `pipe-blue` to `BackgroundSettings` shader types and `ThemeMode` types.
+- `src/components/settings/DisplaySettings.tsx`: Added `PIPE_BLUE` option to theme selector. Added conditional rendering to hide mode toggle and background controls when pipe-blue theme is selected (since it's dark-only). Updated theme switching logic to handle pipe-blue mode.
+- `src/components/ui/AppBackground.tsx`: Added pipe-blue shader rendering with radial gradient background matching marketing site blue aesthetic.
+
 ### Added — AI Assistant for Meetings App (CopilotKit-Compatible Custom Agent)
 
 - `workers/meetings/src/lib/copilotAgent.ts`: Custom agent following Pipe's pattern. Uses Cloudflare AI binding with Gemma 4 model. Simple keyword-based tool routing (meeting/contact keywords) with ReAct-style tool execution. Works in Cloudflare Workers runtime without Node.js dependencies.

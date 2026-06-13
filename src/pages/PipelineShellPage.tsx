@@ -238,7 +238,9 @@ export default function PipelineShellPage(): JSX.Element {
   };
 
   return (
-    <div style={{ padding: '0 0 80px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 32, padding: '0 0 80px' }}>
+      {/* Header - spans both columns */}
+      <div style={{ gridColumn: '1 / -1' }}>
       {autoBuildWarnings.length > 0 && (
         <div
           data-testid="auto-build-warnings-banner"
@@ -362,6 +364,25 @@ export default function PipelineShellPage(): JSX.Element {
         </div>
 
         <div style={{ display: 'flex', gap: 12 }}>
+          <button
+            onClick={() => navigate(`/pipeline/${id}`)}
+            aria-label="Role description"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 20px',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border)',
+              color: 'var(--pipe-text)',
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              fontFamily: '"Space Mono", monospace',
+              cursor: 'pointer',
+            }}
+          >
+            HOME
+          </button>
           <button
             onClick={() => navigate(`/pipeline/${id}/kanban`)}
             aria-label="View kanban"
@@ -504,26 +525,128 @@ export default function PipelineShellPage(): JSX.Element {
           )}
         </div>
       </div>
+      </div>
 
-      {/* Stepper — hidden on the new-stage form route so the form has full focus */}
-      {!newStageMatch && (
-        <StageStepper
-          pipelineId={id}
-          stages={stages}
-          candidates={candidates}
-          canAddStage={isDraft}
-          matchConfig={matchConfig}
-          {...(isDraft
-            ? {
-                onAddStage: () => setShowNewStage(true),
-              }
-            : {})}
-        />
-      )}
+      {/* Main content area */}
+      <div style={{ gridColumn: '1' }}>
+        {/* Outlet — nested routes render their own SectionCards so the shell
+            doesn't need an outer container. */}
+        <Outlet context={outletContext} />
+      </div>
 
-      {/* Outlet — nested routes render their own SectionCards so the shell
-          doesn't need an outer container. */}
-      <Outlet context={outletContext} />
+      {/* Right panel - vertical stage timeline */}
+      <div style={{ 
+        gridColumn: '2',
+        paddingLeft: 24,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 0,
+        position: 'relative',
+      }}>
+        {/* Timeline line */}
+        <div style={{
+          position: 'absolute',
+          left: 6,
+          top: 8,
+          bottom: 8,
+          width: 1,
+          background: 'var(--pipe-border)',
+        }} />
+        
+        {stages.map((stage, index) => {
+          const candidateCount = candidates.filter(c => c.currentStageId === stage.id).length;
+          return (
+            <div
+              key={stage.id}
+              onClick={() => navigate(`/pipeline/${id}/stage/${stage.id}`)}
+              style={{
+                display: 'flex',
+                gap: 16,
+                padding: '12px 0',
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.opacity = '0.7';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = '1';
+              }}
+            >
+              {/* Timeline dot */}
+              <div style={{
+                width: 12,
+                height: 12,
+                borderRadius: '50%',
+                background: 'var(--pipe-accent)',
+                border: '2px solid var(--pipe-bg)',
+                zIndex: 1,
+                flexShrink: 0,
+              }} />
+              
+              {/* Stage info */}
+              <div>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--pipe-text)',
+                  fontFamily: '"Space Mono", monospace',
+                  marginBottom: 2,
+                }}>
+                  {stage.title}
+                </div>
+                <div style={{
+                  fontSize: 9,
+                  color: 'var(--pipe-text-dim)',
+                  fontFamily: '"Space Mono", monospace',
+                }}>
+                  {candidateCount} candidates
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        
+        {isDraft && (
+          <div
+            onClick={() => setShowNewStage(true)}
+            style={{
+              display: 'flex',
+              gap: 16,
+              padding: '12px 0',
+              cursor: 'pointer',
+              position: 'relative',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '0.7';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+            }}
+          >
+            {/* Timeline dot */}
+            <div style={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              background: '#4ade80',
+              border: '2px solid var(--pipe-bg)',
+              zIndex: 1,
+              flexShrink: 0,
+            }} />
+            
+            {/* Add stage text */}
+            <div style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: '#4ade80',
+              fontFamily: '"Space Mono", monospace',
+            }}>
+              + Add Stage
+            </div>
+          </div>
+        )}
+      </div>
 
       {showAddCandidate && id && (
         <CandidateIntakeModal

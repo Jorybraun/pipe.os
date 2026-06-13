@@ -6,15 +6,16 @@ import { RotateCcw } from 'lucide-react';
 import { useTheme, type HeatmapColorTheme } from '../../contexts/ThemeContext';
 
 type ColorScheme = 'dark' | 'light';
-type ThemeName = 'metalic' | 'heatmap' | 'anatomy';
+type ThemeName = 'metalic' | 'heatmap' | 'anatomy' | 'pipe-blue';
 
 function deriveScheme(mode: string): ColorScheme {
-  return mode === 'dark' || mode === 'anatomy-dark' ? 'dark' : 'light';
+  return mode === 'dark' || mode === 'anatomy-dark' || mode === 'pipe-blue' ? 'dark' : 'light';
 }
 
 function deriveThemeName(mode: string, shader: string): ThemeName {
   if (mode === 'anatomy' || mode === 'anatomy-dark') return 'anatomy';
   if (shader === 'heatmap') return 'heatmap';
+  if (shader === 'pipe-blue') return 'pipe-blue';
   return 'metalic';
 }
 
@@ -28,6 +29,8 @@ export function DisplaySettings(): JSX.Element {
   function applyScheme(scheme: ColorScheme) {
     if (themeName === 'anatomy') {
       setMode(scheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else if (themeName === 'pipe-blue') {
+      setMode('pipe-blue');
     } else {
       setMode(scheme === 'dark' ? 'dark' : 'light');
     }
@@ -36,6 +39,8 @@ export function DisplaySettings(): JSX.Element {
   function applyTheme(name: ThemeName) {
     if (name === 'anatomy') {
       setMode(colorScheme === 'dark' ? 'anatomy-dark' : 'anatomy');
+    } else if (name === 'pipe-blue') {
+      setMode('pipe-blue');
     } else {
       setMode(colorScheme === 'dark' ? 'dark' : 'light');
       updateBackground({ shader: name === 'heatmap' ? 'heatmap' : 'liquid-metal' });
@@ -47,35 +52,37 @@ export function DisplaySettings(): JSX.Element {
       <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
         {/* Dark / Light tabs */}
-        <div>
-          <label style={labelStyle}>MODE</label>
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--pipe-border)', marginBottom: -1 }}>
-            {(['dark', 'light'] as ColorScheme[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => applyScheme(s)}
-                style={{
-                  flex: 1,
-                  padding: '8px 0',
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.12em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: colorScheme === s
-                    ? '2px solid var(--pipe-text)'
-                    : '2px solid transparent',
-                  color: colorScheme === s ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {s.toUpperCase()}
-              </button>
-            ))}
+        {themeName !== 'pipe-blue' && (
+          <div>
+            <label style={labelStyle}>MODE</label>
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--pipe-border)', marginBottom: -1 }}>
+              {(['dark', 'light'] as ColorScheme[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => applyScheme(s)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 0',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.12em',
+                    fontFamily: '"Space Mono", monospace',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: colorScheme === s
+                      ? '2px solid var(--pipe-text)'
+                      : '2px solid transparent',
+                    color: colorScheme === s ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Theme select */}
         <div>
@@ -106,14 +113,17 @@ export function DisplaySettings(): JSX.Element {
             <option value="metalic">METALIC</option>
             <option value="heatmap">HEAT_MAP</option>
             <option value="anatomy">ANATOMY</option>
+            <option value="pipe-blue">PIPE_BLUE</option>
           </select>
         </div>
 
         {/* Background toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>BACKGROUND</label>
-          <ToggleSwitch enabled={bg.enabled} onChange={() => updateBackground({ enabled: !bg.enabled })} />
-        </div>
+        {themeName !== 'pipe-blue' && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>BACKGROUND</label>
+            <ToggleSwitch enabled={bg.enabled} onChange={() => updateBackground({ enabled: !bg.enabled })} />
+          </div>
+        )}
 
         {/* Color theme picker (heatmap only) */}
         {themeName === 'heatmap' && (
@@ -159,47 +169,52 @@ export function DisplaySettings(): JSX.Element {
           </div>
         )}
 
-        {/* Overlay slider */}
-        <SliderControl
-          label="DARK_OVERLAY"
-          value={bg.overlay}
-          min={0} max={1} step={0.05}
-          displayValue={`${Math.round(bg.overlay * 100)}%`}
-          onChange={(v) => updateBackground({ overlay: v })}
-        />
+        {/* Hide controls that don't apply to pipe-blue */}
+        {themeName !== 'pipe-blue' && (
+          <>
+            {/* Overlay slider */}
+            <SliderControl
+              label="DARK_OVERLAY"
+              value={bg.overlay}
+              min={0} max={1} step={0.05}
+              displayValue={`${Math.round(bg.overlay * 100)}%`}
+              onChange={(v) => updateBackground({ overlay: v })}
+            />
 
-        {/* Opacity slider */}
-        <SliderControl
-          label="OPACITY"
-          value={bg.opacity}
-          min={0} max={1} step={0.05}
-          displayValue={`${Math.round(bg.opacity * 100)}%`}
-          onChange={(v) => updateBackground({ opacity: v })}
-        />
+            {/* Opacity slider */}
+            <SliderControl
+              label="OPACITY"
+              value={bg.opacity}
+              min={0} max={1} step={0.05}
+              displayValue={`${Math.round(bg.opacity * 100)}%`}
+              onChange={(v) => updateBackground({ opacity: v })}
+            />
 
-        {/* Speed slider */}
-        <SliderControl
-          label="ANIMATION_SPEED"
-          value={bg.speed}
-          min={0} max={1} step={0.05}
-          displayValue={bg.speed === 0 ? 'STATIC' : `${bg.speed.toFixed(2)}`}
-          onChange={(v) => updateBackground({ speed: v })}
-        />
+            {/* Speed slider */}
+            <SliderControl
+              label="ANIMATION_SPEED"
+              value={bg.speed}
+              min={0} max={1} step={0.05}
+              displayValue={bg.speed === 0 ? 'STATIC' : `${bg.speed.toFixed(2)}`}
+              onChange={(v) => updateBackground({ speed: v })}
+            />
 
-        {/* Animate forever toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>KEEP_PLAYING</label>
-          <ToggleSwitch enabled={bg.animateForever} onChange={() => updateBackground({ animateForever: !bg.animateForever })} />
-        </div>
+            {/* Animate forever toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>KEEP_PLAYING</label>
+              <ToggleSwitch enabled={bg.animateForever} onChange={() => updateBackground({ animateForever: !bg.animateForever })} />
+            </div>
 
-        {/* Scale slider */}
-        <SliderControl
-          label="SCALE"
-          value={bg.scale}
-          min={0.1} max={1.5} step={0.05}
-          displayValue={`${bg.scale.toFixed(2)}`}
-          onChange={(v) => updateBackground({ scale: v })}
-        />
+            {/* Scale slider */}
+            <SliderControl
+              label="SCALE"
+              value={bg.scale}
+              min={0.1} max={1.5} step={0.05}
+              displayValue={`${bg.scale.toFixed(2)}`}
+              onChange={(v) => updateBackground({ scale: v })}
+            />
+          </>
+        )}
       </div>
 
       {/* Reset button */}

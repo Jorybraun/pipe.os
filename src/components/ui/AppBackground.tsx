@@ -65,6 +65,16 @@ export function AppBackground(): JSX.Element {
         }}
       />
     )
+    : bg.shader === 'pipe-blue'
+    ? (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          background: 'radial-gradient(ellipse at 50% 50%, rgba(108,195,255,0.15) 0%, rgba(10,14,26,0.8) 50%, rgba(10,14,26,1) 100%)',
+        }}
+      />
+    )
     : <PipeLiquidMetal speed={speed} scale={bg.scale} />;
 
   return (

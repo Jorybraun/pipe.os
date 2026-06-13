@@ -140,31 +140,31 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       .run();
 
     await ensureCandidateLivingContext(db, id);
+
+    // Create scheduled_interviews row for scheduled/LIVE_VIDEO stages
+    if (stageId) {
+      const stageCheck = await db
+        .prepare('SELECT mode, is_scheduled FROM stages WHERE id = ?')
+        .bind(stageId)
+        .first<{ mode: string | null; is_scheduled: number | null }>();
+
+      if (stageCheck?.is_scheduled || stageCheck?.mode === 'LIVE_VIDEO') {
+        const interviewId = crypto.randomUUID();
+        await db
+          .prepare(
+            `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
+          )
+          .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
+          .run();
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('UNIQUE constraint failed') || msg.includes('idx_candidates_pipeline_email')) {
       return apiError(c, 'CONFLICT', 'Email already exists in this pipeline');
     }
     throw err;
-  }
-
-  // Create scheduled_interviews row for scheduled/LIVE_VIDEO stages
-  if (stageId) {
-    const stageCheck = await db
-      .prepare('SELECT mode, is_scheduled FROM stages WHERE id = ?')
-      .bind(stageId)
-      .first<{ mode: string | null; is_scheduled: number | null }>();
-
-    if (stageCheck?.is_scheduled || stageCheck?.mode === 'LIVE_VIDEO') {
-      const interviewId = crypto.randomUUID();
-      await db
-        .prepare(
-          `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
-        )
-        .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
-        .run();
-    }
   }
 
   // Fire-and-forget invitation email via Resend
@@ -238,19 +238,20 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
                       { headers: { Authorization: `Bearer ${conn.access_token}` } },
                     );
                     console.log('[candidates] Event types list response:', { status: etListRes.status });
-                  if (etListRes.ok) {
-                    const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
-                    console.log('[candidates] Event types collection:', JSON.stringify(etList.collection?.map(e => e.scheduling_url)));
-                    bookingUrl = etList.collection?.[0]?.scheduling_url;
+                    if (etListRes.ok) {
+                      const etList = await etListRes.json() as { collection?: { scheduling_url?: string }[] };
+                      console.log('[candidates] Event types collection:', JSON.stringify(etList.collection?.map(e => e.scheduling_url)));
+                      bookingUrl = etList.collection?.[0]?.scheduling_url;
+                    }
                   }
+                } else {
+                  const errText = await userRes.text();
+                  console.error('[candidates] /users/me failed:', errText);
                 }
-              } else {
-                const errText = await userRes.text();
-                console.error('[candidates] /users/me failed:', errText);
               }
+            } catch (err) {
+              console.error('[candidates] Calendly fetch error:', err instanceof Error ? err.message : String(err));
             }
-          } catch (err) {
-            console.error('[candidates] Calendly fetch error:', err instanceof Error ? err.message : String(err));
           }
         }
       }

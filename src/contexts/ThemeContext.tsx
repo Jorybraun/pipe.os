@@ -12,7 +12,7 @@ export type HeatmapColorTheme = 'aurora' | 'neon' | 'calm';
 
 export interface BackgroundSettings {
   enabled: boolean;
-  shader: 'liquid-metal' | 'heatmap' | 'anatomy-spine';
+  shader: 'liquid-metal' | 'heatmap' | 'anatomy-spine' | 'pipe-blue';
   heatmapTheme: HeatmapColorTheme;
   opacity: number;
   speed: number;
@@ -23,7 +23,7 @@ export interface BackgroundSettings {
 
 // ── Full theme ──────────────────────────────────────────────────────────────
 
-export type ThemeMode = 'dark' | 'light' | 'anatomy' | 'anatomy-dark';
+export type ThemeMode = 'dark' | 'light' | 'anatomy' | 'anatomy-dark' | 'pipe-blue';
 
 export interface ThemeSettings {
   mode: ThemeMode;
@@ -145,6 +145,24 @@ const MODE_TOKENS: Record<ThemeMode, Record<string, string>> = {
     '--pipe-accent-surface': 'rgba(0,0,0,0.06)',
     '--pipe-accent-border': 'rgba(0,0,0,0.15)',
   },
+  'pipe-blue': {
+    '--pipe-bg': '#0a0e1a',
+    '--pipe-text': '#e8f4ff',
+    '--pipe-text-muted': 'rgba(232,244,255,0.65)',
+    '--pipe-text-dim': 'rgba(232,244,255,0.45)',
+    '--pipe-border': 'rgba(108,195,255,0.15)',
+    '--pipe-border-light': 'rgba(108,195,255,0.08)',
+    '--pipe-surface': 'rgba(108,195,255,0.05)',
+    '--pipe-surface-hover': 'rgba(108,195,255,0.10)',
+    '--pipe-surface-solid': '#121828',
+    '--pipe-surface-solid-hover': '#1a2238',
+    '--pipe-surface-elevated': '#162035',
+    '--pipe-overlay': 'rgba(10,14,26,0.93)',
+    '--pipe-shadow': 'rgba(0,0,0,0.4)',
+    '--pipe-accent': '#6cc3ff',
+    '--pipe-accent-surface': 'rgba(108,195,255,0.12)',
+    '--pipe-accent-border': 'rgba(108,195,255,0.35)',
+  },
 };
 
 function applyModeTokens(mode: ThemeMode): void {
@@ -189,6 +207,8 @@ export function ThemeProvider({ children, forceMode }: { children: ReactNode; fo
           ? { shader: 'anatomy-spine', enabled: true, opacity: 0.04 }
           : mode === 'anatomy-dark'
           ? { shader: 'anatomy-spine', enabled: true, opacity: 0.06 }
+          : mode === 'pipe-blue'
+          ? { shader: 'pipe-blue', enabled: true, opacity: 0.6 }
           : fromAnatomy
           ? { shader: 'liquid-metal', enabled: true, opacity: 0.4 }
           : {};
