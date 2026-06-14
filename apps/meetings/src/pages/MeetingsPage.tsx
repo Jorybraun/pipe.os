@@ -661,7 +661,7 @@ function MeetingDetailPanel({ meeting, onClose, api }: {
         )}
 
         {(meeting.transcript_summary || meeting.transcript_status !== 'NONE') && (
-          <div style={{ marginBottom: 20 }}>
+          <div data-testid="meeting-intelligence" style={{ marginBottom: 20 }}>
             <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginBottom: 8, letterSpacing: '0.1em' }}>
               MEETING_INTELLIGENCE
             </div>
