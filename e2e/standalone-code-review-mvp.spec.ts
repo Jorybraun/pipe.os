@@ -341,10 +341,13 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
     sessionToken = session.sessionToken;
 
     // Submit minimal resume so candidate passes intake but has thin evidence
-    const intakeRes = await request.post(`${API_BASE}/rpc/submit-intake`, {
+    const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
-        resumeText: 'Minimal resume with no relevant technical background.',
+        order: 0,
+        submission: {
+          resumeText: 'Minimal resume with no relevant technical background.',
+        },
       },
     });
     // Intake submission may succeed or return a specific status —
@@ -461,18 +464,25 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
 
   test('after evidence + matching, get-challenge returns CODE_REVIEW with PR metadata', async ({ request }) => {
     // This test requires the full pipeline: intake → living context → match.
-    // It will FAIL until the intake-to-match pipeline is wired.
+    // The candidate submits text-based evidence via submit-challenge-response,
+    // which triggers ingestion and deterministic matching.
 
-    // Step 1: Submit resume/profile evidence (intake)
-    const intakeRes = await request.post(`${API_BASE}/rpc/submit-intake`, {
+    // Step 1: Submit resume/profile evidence via the challenge-response intake path
+    const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
-        resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
-        githubUsername: 'e2e-test-user',
+        order: 0,
+        submission: {
+          resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
+          githubHandle: 'e2e-test-user',
+        },
       },
     });
     // Intake must be accepted
     expect([200, 201]).toContain(intakeRes.status());
+
+    const intakeBody = await intakeRes.json() as { success?: boolean };
+    expect(intakeBody.success).toBe(true);
 
     // Step 2: Get challenge — should now be CODE_REVIEW or WAITING_FOR_MATCH
     const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
@@ -483,7 +493,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
 
     const challenge = (await challengeRes.json()) as ChallengeResponse;
 
-    // If matched, verify real PR metadata
+    // If matched, verify real PR metadata with source-backed evidence
     if (challenge.type === 'CODE_REVIEW') {
       expect(challenge.githubPrNumber).toBeGreaterThan(0);
       expect(challenge.githubRepoUrl).toBeTruthy();
@@ -495,6 +505,7 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
       const raw = JSON.stringify(challenge);
       expect(raw).not.toContain('groundTruth');
       expect(raw).not.toContain('plantedBugs');
+      expect(raw).not.toContain('scoringRubric');
     } else {
       // WAITING_FOR_MATCH is acceptable — matcher needs more evidence
       expect(challenge.type).toBe('WAITING_FOR_MATCH');
@@ -653,8 +664,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
   test('recruiter can see matched PR information for completed candidate', async ({ request }) => {
     // After a candidate completes the full flow, the recruiter should
-    // be able to see which PR was selected and why.
-    // This will FAIL until match explanation is surfaced on the profile.
+    // be able to see which PR was selected and why via standaloneReviewMatch.
     const res = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -662,19 +672,36 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     const profile = await res.json() as Record<string, unknown>;
 
-    // Match explanation should be present for completed code review candidates
-    const matchResult = profile.matchResult as {
-      repoUrl?: string;
-      prNumber?: number;
-      status?: string;
-      sourceRefs?: unknown[];
-    } | undefined;
+    // standaloneReviewMatch is the actual API field for standalone code review context
+    const standaloneReviewMatch = profile.standaloneReviewMatch as {
+      interviewId?: string;
+      interviewStatus?: string;
+      matchStatus?: string;
+      repoUrl?: string | null;
+      prNumber?: number | null;
+      prTitle?: string | null;
+      score?: number | null;
+      summary?: string;
+      evidence?: Array<{
+        candidateSourceRefs?: unknown[];
+        challengeSourceRefs?: unknown[];
+      }>;
+      gaps?: string[];
+      submitted?: boolean;
+      submission?: unknown;
+    } | null;
 
-    expect(matchResult).toBeDefined();
-    if (matchResult?.status === 'MATCHED') {
-      expect(matchResult.repoUrl).toBeTruthy();
-      expect(matchResult.prNumber).toBeGreaterThan(0);
-      expect(matchResult.sourceRefs).toBeDefined();
+    expect(standaloneReviewMatch).toBeDefined();
+    expect(standaloneReviewMatch).not.toBeNull();
+    if (standaloneReviewMatch?.matchStatus === 'MATCHED') {
+      expect(standaloneReviewMatch.repoUrl).toBeTruthy();
+      expect(standaloneReviewMatch.prNumber).toBeGreaterThan(0);
+      // Evidence alignments must include source refs from both sides
+      expect(standaloneReviewMatch.evidence).toBeDefined();
+      expect(standaloneReviewMatch.evidence!.length).toBeGreaterThan(0);
+      const firstEvidence = standaloneReviewMatch.evidence![0];
+      expect(firstEvidence.candidateSourceRefs).toBeDefined();
+      expect(firstEvidence.challengeSourceRefs).toBeDefined();
     }
   });
 
@@ -688,20 +715,30 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     const profile = await res.json() as Record<string, unknown>;
 
-    const matchResult = profile.matchResult as {
-      candidateSourceRefs?: unknown[];
-      repositorySourceRefs?: unknown[];
-      alignments?: unknown[];
-      missingEvidence?: unknown[];
-    } | undefined;
+    const standaloneReviewMatch = profile.standaloneReviewMatch as {
+      evidence?: Array<{
+        candidateSourceRefs?: unknown[];
+        challengeSourceRefs?: unknown[];
+        sharedConcepts?: string[];
+      }>;
+      gaps?: string[];
+      summary?: string;
+    } | null;
 
-    expect(matchResult).toBeDefined();
-    if (matchResult) {
-      // Source refs from both candidate and repository side
-      expect(matchResult.candidateSourceRefs).toBeDefined();
-      expect(matchResult.repositorySourceRefs).toBeDefined();
-      // Alignment explanations
-      expect(matchResult.alignments).toBeDefined();
+    expect(standaloneReviewMatch).toBeDefined();
+    expect(standaloneReviewMatch).not.toBeNull();
+    if (standaloneReviewMatch) {
+      // Source-backed evidence trail is mandatory
+      expect(standaloneReviewMatch.evidence).toBeDefined();
+      expect(standaloneReviewMatch.gaps).toBeDefined();
+      expect(standaloneReviewMatch.summary).toBeTruthy();
+      // Each evidence entry carries candidate + challenge source refs
+      if (standaloneReviewMatch.evidence && standaloneReviewMatch.evidence.length > 0) {
+        for (const entry of standaloneReviewMatch.evidence) {
+          expect(entry.candidateSourceRefs).toBeDefined();
+          expect(entry.challengeSourceRefs).toBeDefined();
+        }
+      }
     }
   });
 });
