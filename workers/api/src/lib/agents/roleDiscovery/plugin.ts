@@ -16,6 +16,7 @@ import {
   buildSynthesisPrompt,
 } from './prompts';
 import { checkQuestion, buildGuardNudge } from '../question/guard';
+import type { LLMMessage } from '../../llm/types';
 import type { RoleExchange, ConversationPhase } from '../../../types';
 
 const MAX_GUARD_RETRIES = 2;
@@ -49,6 +50,7 @@ export const roleDiscoveryPlugin: AgentPlugin = {
     const exchanges: RoleExchange[] = session.transcript.turns.map((t) => ({
       questionId: t.questionId || `q-${t.idx + 1}`,
       question: t.questionText,
+      input: { type: 'textarea' },
       answer: t.candidateResponse || '',
       acknowledgment: (t.metadata?.acknowledgment as string) || '',
     }));
@@ -85,7 +87,7 @@ export const roleDiscoveryPlugin: AgentPlugin = {
       });
     }
 
-    let messages = [
+    let messages: LLMMessage[] = [
       { role: 'system' as const, content: systemPrompt },
       { role: 'user' as const, content: userMessage },
     ];
@@ -97,6 +99,7 @@ export const roleDiscoveryPlugin: AgentPlugin = {
       const result = await callProvider(provider, messages, {
         forceJson: true,
         maxTokens: 2000,
+        tools: undefined,
         budgetLabel: 'role_discovery',
         signal: undefined,
       });
