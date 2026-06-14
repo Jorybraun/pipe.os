@@ -774,6 +774,7 @@ export interface StandaloneReviewSourceRef {
   startOffset: number;
   endOffset: number;
   locator?: string;
+  exactText?: string;
 }
 
 export interface StandaloneReviewAlignment {

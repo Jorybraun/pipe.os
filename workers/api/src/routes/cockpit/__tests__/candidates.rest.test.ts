@@ -118,6 +118,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
           startOffset: 10,
           endOffset: 20,
           locator: 'resume line 3',
+          exactText: 'Built GraphQL subscriptions for order events.',
         }],
         challengeSourceRefs: [{
           artifactId: 'repo-span',
@@ -126,6 +127,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
           startOffset: 30,
           endOffset: 40,
           locator: 'src/api.ts:9',
+          exactText: 'Add subscription retry handling to the order API.',
         }],
       }],
       rejectionReasons: [],
@@ -134,7 +136,9 @@ describe('Standalone CODE_REVIEW match summary', () => {
     expect(summary.summary).toContain('Matched 2 source-backed demands');
     expect(summary.evidence).toHaveLength(1);
     expect(summary.evidence[0]?.candidateSourceRefs[0]?.locator).toBe('resume line 3');
+    expect(summary.evidence[0]?.candidateSourceRefs[0]?.exactText).toContain('GraphQL subscriptions');
     expect(summary.evidence[0]?.challengeSourceRefs[0]?.locator).toBe('src/api.ts:9');
+    expect(summary.evidence[0]?.challengeSourceRefs[0]?.exactText).toContain('retry handling');
   });
 });
 

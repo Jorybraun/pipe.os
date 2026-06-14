@@ -73,6 +73,7 @@ interface StandaloneReviewSourceRef {
   startOffset: number;
   endOffset: number;
   locator?: string;
+  exactText?: string;
 }
 
 interface StandaloneReviewAlignment {

@@ -95,6 +95,7 @@ function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
     startOffset: start,
     endOffset: Math.max(start + 1, end),
     locator: `assertion:${row.assertion_id}`,
+    exactText: row.exact_text,
   };
 }
 
@@ -173,6 +174,7 @@ function packetSourceRef(span: RepoSpanRow): SourceRef {
     startOffset: start,
     endOffset: Math.max(start + 1, end),
     locator: span.path ? `${span.path}:${start}-${end}` : span.id,
+    exactText: span.exact_text,
   };
 }
 

@@ -16,6 +16,7 @@ export interface SourceRef {
   startOffset: number;
   endOffset: number;
   locator?: string;
+  exactText?: string;
 }
 
 export interface CandidateSignal {

@@ -264,6 +264,34 @@
   overflow-wrap: anywhere;
 }
 
+.living-context__review-source-snippets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.living-context__review-source-snippets blockquote {
+  margin: 0;
+  padding: 8px;
+  border-left: 2px solid rgba(56, 189, 248, 0.45);
+  border-radius: 5px;
+  color: var(--pipe-text-muted);
+  background: rgba(56, 189, 248, 0.06);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.living-context__review-source-snippets span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .living-context__review-gaps {
   margin-top: 14px;
 }

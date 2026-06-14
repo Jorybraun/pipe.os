@@ -75,6 +75,12 @@ function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
     ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
 }
 
+function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | null {
+  return sources
+    .map((source) => source.exactText?.trim())
+    .find((text): text is string => Boolean(text)) ?? null;
+}
+
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
   return status.replace(/_/g, ' ');
 }
@@ -147,31 +153,51 @@ function StandaloneReviewMatchPanel({
 
       {primaryEvidence.length > 0 && (
         <div className="living-context__review-evidence">
-          {primaryEvidence.map((entry) => (
-            <div key={`${entry.atomId}:${entry.demandId}`} className="living-context__review-evidence-row">
-              <div className="living-context__review-evidence-score">
-                {Math.round(entry.pairScore * 100)}%
-              </div>
-              <div>
-                <div className="living-context__review-evidence-title">
-                  {entry.atomId} → {entry.demandId}
+          {primaryEvidence.map((entry) => {
+            const candidateSnippet = reviewSourceSnippet(entry.candidateSourceRefs);
+            const challengeSnippet = reviewSourceSnippet(entry.challengeSourceRefs);
+            return (
+              <div key={`${entry.atomId}:${entry.demandId}`} className="living-context__review-evidence-row">
+                <div className="living-context__review-evidence-score">
+                  {Math.round(entry.pairScore * 100)}%
                 </div>
-                <div className="living-context__review-evidence-sources">
-                  <span>candidate: {entry.candidateSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
-                  <span>PR: {entry.challengeSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
-                </div>
-                {entry.sharedConcepts.length > 0 && (
-                  <div className="living-context__concepts">
-                    {entry.sharedConcepts.slice(0, 4).map((concept) => (
-                      <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
-                        {concept}
-                      </span>
-                    ))}
+                <div>
+                  <div className="living-context__review-evidence-title">
+                    {entry.atomId} → {entry.demandId}
                   </div>
-                )}
+                  <div className="living-context__review-evidence-sources">
+                    <span>candidate: {entry.candidateSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                    <span>PR: {entry.challengeSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                  </div>
+                  {(candidateSnippet || challengeSnippet) && (
+                    <div className="living-context__review-source-snippets">
+                      {candidateSnippet && (
+                        <blockquote>
+                          <span>Candidate evidence</span>
+                          {candidateSnippet}
+                        </blockquote>
+                      )}
+                      {challengeSnippet && (
+                        <blockquote>
+                          <span>PR demand evidence</span>
+                          {challengeSnippet}
+                        </blockquote>
+                      )}
+                    </div>
+                  )}
+                  {entry.sharedConcepts.length > 0 && (
+                    <div className="living-context__concepts">
+                      {entry.sharedConcepts.slice(0, 4).map((concept) => (
+                        <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
+                          {concept}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
