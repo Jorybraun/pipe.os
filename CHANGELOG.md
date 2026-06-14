@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Evaluation Harness
+
+- Migrated evaluation CLI test and `evaluateMatching.ts` script from experimental `node:sqlite` to `better-sqlite3`, fixing test failures on Node 20 (CI) and Node 22 without `--experimental-sqlite`.
+- Added shared `mockD1` helper (`src/__tests__/helpers/mockD1.ts`) for D1-style `?N` parameter rewriting with better-sqlite3.
+- Added test: synthetic labels are rejected when `--allow-synthetic` is omitted (`requireExpertLabels` gate).
+- Added test: forbidden expert labels trigger guardrail violation detection.
+- Added test: missing provenance in ranked results is detected and fails acceptance.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
