@@ -33,6 +33,20 @@ const transcriptProjectionMigration = readFileSync(
   'utf8',
 );
 
+function normalizeD1Params(
+  query: string,
+  bindings: unknown[],
+): { sql: string; params: unknown[] } {
+  const indices: number[] = [];
+  const sql = query.replace(/\?(\d+)/g, (_match, digit: string) => {
+    indices.push(Number(digit));
+    return '?';
+  });
+  if (indices.length === 0) return { sql: query, params: bindings };
+  const params = indices.map((index) => bindings[index - 1]);
+  return { sql, params };
+}
+
 function createMockD1(sqlite: SqliteDatabase): D1Database {
   return {
     prepare(query: string) {
@@ -43,7 +57,8 @@ function createMockD1(sqlite: SqliteDatabase): D1Database {
           return prepared;
         },
         async run() {
-          const result = sqlite.prepare(query).run(...bindings);
+          const { sql, params } = normalizeD1Params(query, bindings);
+          const result = sqlite.prepare(sql).run(...params);
           return {
             success: true,
             meta: { changes: Number(result.changes) },
@@ -51,19 +66,22 @@ function createMockD1(sqlite: SqliteDatabase): D1Database {
           };
         },
         async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
+          const { sql, params } = normalizeD1Params(query, bindings);
+          return (sqlite.prepare(sql).get(...params) as T | undefined) ?? null;
         },
         async all<T>() {
+          const { sql, params } = normalizeD1Params(query, bindings);
           return {
             success: true,
-            results: sqlite.prepare(query).all(...bindings) as T[],
+            results: sqlite.prepare(sql).all(...params) as T[],
             meta: {},
           };
         },
         async raw<T>() {
-          const statement = sqlite.prepare(query);
+          const { sql, params } = normalizeD1Params(query, bindings);
+          const statement = sqlite.prepare(sql);
           statement.setReturnArrays(true);
-          return statement.all(...bindings) as T[];
+          return statement.all(...params) as T[];
         },
       };
       return prepared;
@@ -358,6 +376,211 @@ describe('meeting transcript living-context ingestion', () => {
       evidence_count: 1,
       source_diversity: 1,
     });
+  });
+
+  it('grows a person-centered living context graph from a meeting transcript', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'What did you build?',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I implemented temporal shard knitting for order replay.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.96,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['host-1', 'guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented a mechanism for',
+        narrative: 'Implemented temporal shard knitting for order replay.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'temporal shard knitting' },
+        confidence: 0.91,
+        concepts: [{
+          surface: 'Temporal shard knitting',
+          relationship: 'mechanism used for order replay',
+          weight: 0.87,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.9,
+        }],
+      }],
+      extractorVersion: 'open-meeting-test-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    const result = await ingestMeetingTranscriptToLivingContext(db, input);
+
+    // --- person / workspace person identity ---
+    const person = sqlite.prepare(
+      `SELECT id, display_name, primary_email FROM people`,
+    ).get() as { id: string; display_name: string; primary_email: string };
+    expect(person).toBeTruthy();
+    expect(person.display_name).toBe('Ada Example');
+    expect(person.primary_email).toBe('ada@example.com');
+    expect(count(sqlite, 'people')).toBe(1);
+
+    const workspacePerson = sqlite.prepare(
+      `SELECT id, workspace_id, person_id FROM workspace_people`,
+    ).get() as { id: string; workspace_id: string; person_id: string };
+    expect(workspacePerson).toBeTruthy();
+    expect(workspacePerson.workspace_id).toBe('workspace-1');
+    expect(workspacePerson.person_id).toBe(person.id);
+    expect(count(sqlite, 'workspace_people')).toBe(1);
+
+    // --- meeting interaction ---
+    const interaction = sqlite.prepare(
+      `SELECT id, workspace_person_id, interaction_type, external_reference
+         FROM interactions`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string;
+      interaction_type: string;
+      external_reference: string;
+    };
+    expect(interaction.workspace_person_id).toBe(workspacePerson.id);
+    expect(interaction.interaction_type).toBe('video_meeting');
+    expect(interaction.external_reference).toBe('meeting-1');
+    expect(count(sqlite, 'interactions')).toBe(1);
+
+    // --- immutable transcript artifact version ---
+    expect(count(sqlite, 'artifacts')).toBe(1);
+    expect(count(sqlite, 'artifact_versions')).toBe(1);
+    expect(result.versionNumber).toBe(1);
+    const artifactVersion = sqlite.prepare(
+      `SELECT id, content_hash, media_type FROM artifact_versions`,
+    ).get() as { id: string; content_hash: string; media_type: string };
+    expect(artifactVersion.media_type).toBe('text/plain');
+
+    // --- exact source spans ---
+    expect(result.sourceSpanCount).toBe(2);
+    expect(count(sqlite, 'source_spans')).toBe(2);
+    const spans = sqlite.prepare(
+      `SELECT stable_segment_id, char_start, char_end, exact_text
+         FROM source_spans ORDER BY char_start`,
+    ).all() as Array<{
+      stable_segment_id: string;
+      char_start: number;
+      char_end: number;
+      exact_text: string;
+    }>;
+    expect(spans[0]!.stable_segment_id).toBe('host-1');
+    expect(spans[0]!.exact_text).toBe('What did you build?');
+    expect(spans[1]!.stable_segment_id).toBe('guest-1');
+    expect(spans[1]!.exact_text).toBe(
+      'I implemented temporal shard knitting for order replay.',
+    );
+
+    // --- semantic assertion with open predicate ---
+    expect(result.assertionCount).toBe(1);
+    const assertion = sqlite.prepare(
+      `SELECT predicate, narrative, object_type, confidence
+         FROM semantic_assertions`,
+    ).get() as {
+      predicate: string;
+      narrative: string;
+      object_type: string;
+      confidence: number;
+    };
+    expect(assertion.predicate).toBe('implemented a mechanism for');
+    expect(assertion.narrative).toBe(
+      'Implemented temporal shard knitting for order replay.',
+    );
+    expect(assertion.object_type).toBe('source-described mechanism');
+
+    // --- persisted concept / signal evidence ---
+    expect(sqlite.prepare(
+      `SELECT canonical_key, label FROM concepts`,
+    ).get()).toEqual({
+      canonical_key: 'term:temporal-shard-knitting',
+      label: 'Temporal shard knitting',
+    });
+    expect(count(sqlite, 'signal_evidence')).toBe(1);
+
+    // --- signal snapshot ---
+    expect(count(sqlite, 'signal_snapshots')).toBe(1);
+    expect(sqlite.prepare(
+      `SELECT conversation_score, total_score, evidence_count, source_diversity
+         FROM signal_snapshots`,
+    ).get()).toEqual({
+      conversation_score: 0.9,
+      total_score: 0.9,
+      evidence_count: 1,
+      source_diversity: 1,
+    });
+
+    // --- projection outbox entry for rebuildable graph projection ---
+    expect(count(sqlite, 'projection_outbox')).toBe(1);
+    const outbox = sqlite.prepare(
+      `SELECT projection_type, aggregate_type, aggregate_id, operation
+         FROM projection_outbox`,
+    ).get() as {
+      projection_type: string;
+      aggregate_type: string;
+      aggregate_id: string;
+      operation: string;
+    };
+    expect(outbox.projection_type).toBe('neo4j');
+    expect(outbox.aggregate_type).toBe('workspace_person');
+    expect(outbox.aggregate_id).toBe(workspacePerson.id);
+    expect(outbox.operation).toBe('rebuild');
+
+    // --- idempotency: reprocessing produces identical result ---
+    const replay = await ingestMeetingTranscriptToLivingContext(db, input);
+    expect(replay).toEqual(result);
+    expect(count(sqlite, 'people')).toBe(1);
+    expect(count(sqlite, 'workspace_people')).toBe(1);
+    expect(count(sqlite, 'interactions')).toBe(1);
+    expect(count(sqlite, 'artifact_versions')).toBe(1);
+    expect(count(sqlite, 'source_spans')).toBe(2);
+    expect(count(sqlite, 'semantic_assertions')).toBe(1);
+    expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(count(sqlite, 'signal_snapshots')).toBe(1);
+    expect(count(sqlite, 'projection_outbox')).toBe(1);
+
+    // --- corrected transcript creates new immutable version ---
+    const corrected = await ingestMeetingTranscriptToLivingContext(db, {
+      ...input,
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'What did you build?',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I implemented temporal shard knitting for order-replay pipelines.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.98,
+        },
+      ],
+    });
+    expect(corrected.versionNumber).toBe(2);
+    expect(count(sqlite, 'artifact_versions')).toBe(2);
+    expect(count(sqlite, 'people')).toBe(1);
+    expect(count(sqlite, 'workspace_people')).toBe(1);
   });
 
   it('removes stale derived meaning while preserving the immutable transcript', async () => {
