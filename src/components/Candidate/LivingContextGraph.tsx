@@ -117,6 +117,34 @@ function StandaloneReviewMatchPanel({
         </div>
       )}
 
+      {match.submission && (
+        <div className="living-context__review-submission">
+          <div className="living-context__eyebrow">Candidate review result</div>
+          <div className="living-context__review-submission-meta">
+            {match.submission.verdict && <span>{titleCase(match.submission.verdict)}</span>}
+            <span>{match.submission.annotationCount} annotation{match.submission.annotationCount === 1 ? '' : 's'}</span>
+            {match.completedAt && <span>{formatDate(match.completedAt)}</span>}
+          </div>
+          {match.submission.summary && (
+            <blockquote>{match.submission.summary}</blockquote>
+          )}
+          {match.submission.annotations.length > 0 && (
+            <div className="living-context__review-submission-annotations">
+              {match.submission.annotations.map((annotation, index) => (
+                <div key={`${annotation.file ?? 'annotation'}:${annotation.line ?? index}:${index}`}>
+                  <span>
+                    {[annotation.file, annotation.line !== null ? `line ${annotation.line}` : null, annotation.severity]
+                      .filter((value): value is string => Boolean(value))
+                      .join(' · ') || `annotation ${index + 1}`}
+                  </span>
+                  <p>{annotation.comment}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {primaryEvidence.length > 0 && (
         <div className="living-context__review-evidence">
           {primaryEvidence.map((entry) => (

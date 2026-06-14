@@ -1263,11 +1263,12 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
     if (standaloneReview) {
       const now = new Date().toISOString();
+      const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
       await c.env.DB.prepare(
         `UPDATE scheduled_interviews
          SET submission_json = ?1, status = 'COMPLETED', completed_at = ?2, updated_at = ?2
          WHERE id = ?3`,
-      ).bind(JSON.stringify(submission), now, standaloneReview.id).run();
+      ).bind(responseJson, now, standaloneReview.id).run();
       return c.json({ success: true, next: true, message: 'Code review submission received' });
     }
 

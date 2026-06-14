@@ -786,6 +786,18 @@ export interface StandaloneReviewAlignment {
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
 
+export interface StandaloneReviewSubmissionSummary {
+  verdict: string | null;
+  summary: string | null;
+  annotationCount: number;
+  annotations: Array<{
+    file: string | null;
+    line: number | null;
+    severity: string | null;
+    comment: string;
+  }>;
+}
+
 export interface StandaloneReviewMatchRecord {
   interviewId: string;
   interviewStatus: string;
@@ -802,6 +814,7 @@ export interface StandaloneReviewMatchRecord {
   evidence: StandaloneReviewAlignment[];
   gaps: string[];
   submitted: boolean;
+  submission: StandaloneReviewSubmissionSummary | null;
   completedAt: string | null;
 }
 

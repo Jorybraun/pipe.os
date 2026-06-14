@@ -105,6 +105,18 @@ export interface StandaloneReviewMatchSummary {
   gaps: string[];
 }
 
+export interface StandaloneReviewSubmissionSummary {
+  verdict: string | null;
+  summary: string | null;
+  annotationCount: number;
+  annotations: Array<{
+    file: string | null;
+    line: number | null;
+    severity: string | null;
+    comment: string;
+  }>;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -113,6 +125,46 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+function asOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function parseStandaloneReviewSubmissionSummary(
+  value: string | null,
+): StandaloneReviewSubmissionSummary | null {
+  if (!value) return null;
+  let parsed: unknown = value;
+  for (let depth = 0; depth < 2 && typeof parsed === 'string'; depth += 1) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (!isRecord(parsed)) return null;
+
+  const annotations = Array.isArray(parsed.annotations)
+    ? parsed.annotations.flatMap((annotation) => {
+        if (!isRecord(annotation)) return [];
+        const comment = asOptionalString(annotation.comment);
+        if (!comment) return [];
+        return [{
+          file: asOptionalString(annotation.file),
+          line: typeof annotation.line === 'number' ? annotation.line : null,
+          severity: asOptionalString(annotation.severity),
+          comment,
+        }];
+      })
+    : [];
+
+  return {
+    verdict: asOptionalString(parsed.verdict),
+    summary: asOptionalString(parsed.summary),
+    annotationCount: annotations.length,
+    annotations: annotations.slice(0, 3),
+  };
 }
 
 function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSourceRef[] {
@@ -1024,6 +1076,7 @@ candidateOps.get('/:candidateId', async (c) => {
     evidence: StandaloneReviewAlignment[];
     gaps: string[];
     submitted: boolean;
+    submission: StandaloneReviewSubmissionSummary | null;
     completedAt: string | null;
   } | null = null;
 
@@ -1096,6 +1149,7 @@ candidateOps.get('/:candidateId', async (c) => {
         prUrl = prRow?.pr_url ?? prUrl;
       }
       const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult);
+      const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
         interviewStatus: standaloneInterview.status,
@@ -1112,6 +1166,7 @@ candidateOps.get('/:candidateId', async (c) => {
         evidence: summary.evidence,
         gaps: summary.gaps,
         submitted: standaloneInterview.submission_json !== null,
+        submission,
         completedAt: standaloneInterview.completed_at,
       };
     }

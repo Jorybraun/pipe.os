@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — Standalone CODE_REVIEW Recruiter Context Slice
 
 - `GET /api/v1/candidates/:candidateId`: now returns `standaloneReviewMatch` for pipeline-free CODE_REVIEW invites, including safe pending states, selected PR metadata, match-run score, source-backed alignment refs, and explicit guardrail/evidence gaps.
-- Recruiter `CONTEXT` tab: added a standalone CODE_REVIEW match panel that shows pending intake, matched PRs, source-backed candidate→PR evidence, and safe no-match reasons alongside the living context graph.
+- Recruiter `CONTEXT` tab: added a standalone CODE_REVIEW match panel that shows pending intake, matched PRs, source-backed candidate→PR evidence, submitted review summaries/annotations, and safe no-match reasons alongside the living context graph.
+- Candidate `/assess/:token`: fixed standalone CODE_REVIEW waiting-state rendering so resume intake can safely transition through `WAITING_FOR_MATCH` until deterministic matching has enough source-backed evidence.
 - `e2e/standalone-code-review-mvp.spec.ts`: added BDD coverage for the recruiter-visible pending-intake state after creating a standalone CODE_REVIEW candidate.
 - Workers typecheck: restored strict compatibility for role-discovery guard retries, Cal.com event type normalization, and question reasoning extraction.
 

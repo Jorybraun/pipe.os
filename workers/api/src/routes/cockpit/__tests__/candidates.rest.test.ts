@@ -6,7 +6,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildStandaloneReviewMatchSummary } from '../candidates';
+import {
+  buildStandaloneReviewMatchSummary,
+  parseStandaloneReviewSubmissionSummary,
+} from '../candidates';
 
 // ─── GitHub handle validation ────────────────────────────────────────────────
 
@@ -132,5 +135,48 @@ describe('Standalone CODE_REVIEW match summary', () => {
     expect(summary.evidence).toHaveLength(1);
     expect(summary.evidence[0]?.candidateSourceRefs[0]?.locator).toBe('resume line 3');
     expect(summary.evidence[0]?.challengeSourceRefs[0]?.locator).toBe('src/api.ts:9');
+  });
+});
+
+describe('Standalone CODE_REVIEW submission summary', () => {
+  it('extracts recruiter-visible review verdict, summary, and annotations', () => {
+    const summary = parseStandaloneReviewSubmissionSummary(JSON.stringify({
+      verdict: 'request_changes',
+      summary: 'Main risk is retry idempotency around duplicate events.',
+      annotations: [
+        {
+          file: 'src/orders.ts',
+          line: 42,
+          severity: 'major',
+          comment: 'This retry path can enqueue the same event twice.',
+        },
+      ],
+    }));
+
+    expect(summary).toEqual({
+      verdict: 'request_changes',
+      summary: 'Main risk is retry idempotency around duplicate events.',
+      annotationCount: 1,
+      annotations: [{
+        file: 'src/orders.ts',
+        line: 42,
+        severity: 'major',
+        comment: 'This retry path can enqueue the same event twice.',
+      }],
+    });
+  });
+
+  it('handles legacy double-encoded standalone submissions', () => {
+    const encoded = JSON.stringify(JSON.stringify({
+      verdict: 'comment_only',
+      summary: 'Looks safe after adding test coverage.',
+      annotations: [],
+    }));
+
+    expect(parseStandaloneReviewSubmissionSummary(encoded)).toMatchObject({
+      verdict: 'comment_only',
+      summary: 'Looks safe after adding test coverage.',
+      annotationCount: 0,
+    });
   });
 });
