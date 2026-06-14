@@ -2,8 +2,9 @@
  * Probe Librarian — Deterministic probe lookup and adaptation.
  *
  * Two probe libraries:
- *   - Signal Probes (8): technical reality — review culture, incidents, done definition,
- *     feedback, seniority, shipping, thrives/struggles, new joiner observations.
+ *   - Signal Probes (9): technical reality — review culture, incidents, done definition,
+ *     feedback, seniority, shipping, thrives/struggles, new joiner observations,
+ *     and codebase organization.
  *   - Soul Probes (6): human truth — clone three, interview gap, conflict style,
  *     hidden priority, tradeoff trauma, friction truth.
  *
@@ -45,7 +46,7 @@ export interface ProbePlan {
   secondaryDomains: Domain[];
 }
 
-// ─── Signal Probes (1-8) ─────────────────────────────────────────────────────
+// ─── Signal Probes (1-9) ─────────────────────────────────────────────────────
 
 const SIGNAL_PROBES: Probe[] = [
   // TEAM DOMAIN (first in flow)

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migrated living-context, repo-semantic-graph, and challenge-matching test files from experimental `node:sqlite` to `better-sqlite3`, resolving local/CI runtime failures without `--experimental-sqlite`.
 - Reused shared `src/__tests__/helpers/mockD1.ts` with D1-style `?N` parameter rewriting for `better-sqlite3` compatibility, eliminating duplicated mock D1 adapters across test files.
 - Fixed `normalizeOpenTermSurface` to split CamelCase boundaries (`FluxCapacitorX` → `term:flux-capacitor-x`), enabling proper semantic key generation for dynamically learned concepts.
+- Aligned deterministic probe librarian/planner tests with the 9-probe signal library, including the codebase-organization probe.
 
 ### Changed — E2E Test Reliability
 
