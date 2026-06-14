@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Cloudflare Test Environment
+
+- Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
+
 ### Added — Standalone CODE_REVIEW MVP E2E Skeleton
 
 - `e2e/standalone-code-review-mvp.spec.ts`: Failing Playwright BDD skeleton for the standalone code-review MVP flow

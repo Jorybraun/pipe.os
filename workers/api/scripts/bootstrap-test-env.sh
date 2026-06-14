@@ -15,9 +15,9 @@ echo "==> Creating R2 bucket: pipe-assets-test"
 npx wrangler r2 bucket create pipe-assets-test
 
 echo "==> Creating Vectorize indexes"
-npx wrangler vectorize create repo-profiles-test --dimensions=768 --metric=cosine
-npx wrangler vectorize create candidate-profiles-test --dimensions=768 --metric=cosine
-npx wrangler vectorize create role-profiles-test --dimensions=768 --metric=cosine
+npx wrangler vectorize create repo-profiles-test --dimensions=1024 --metric=cosine
+npx wrangler vectorize create candidate-profiles-test --dimensions=1024 --metric=cosine
+npx wrangler vectorize create role-profiles-test --dimensions=1024 --metric=cosine
 
 cat <<'EOF'
 

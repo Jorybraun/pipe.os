@@ -119,21 +119,24 @@
 			"name": "pipe-api-test",
 			"vars": {
 				"APP_BASE_URL": "https://pipe-app-test.pages.dev",
-				"ENV": "test"
-			}
-			// After running the one-time bootstrap in scripts/bootstrap-test-env.sh,
-			// fill the IDs returned by wrangler and uncomment the bindings below.
-			// "d1_databases": [
-			//   { "binding": "DB", "database_name": "pipe-db-test", "database_id": "<TEST_DB_ID>", "migrations_dir": "migrations" }
-			// ],
-			// "r2_buckets": [
-			//   { "binding": "STORAGE", "bucket_name": "pipe-assets-test" }
-			// ],
-			// "vectorize": [
-			//   { "binding": "REPO_INDEX", "index_name": "repo-profiles-test" },
-			//   { "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-test" },
-			//   { "binding": "ROLE_INDEX", "index_name": "role-profiles-test" }
-			// ]
+				"ENV": "test",
+				"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
+				"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
+				"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60",
+				"PRIMARY_MATCH_STORE": "neo4j"
+			},
+			"d1_databases": [
+				{ "binding": "DB", "database_name": "pipe-db-test", "database_id": "0abe92df-9296-46f5-9f9d-a1fb1bcd3be1", "migrations_dir": "migrations" }
+			],
+			"r2_buckets": [
+				{ "binding": "STORAGE", "bucket_name": "pipe-assets-test" }
+			],
+			"ai": { "binding": "AI", "remote": true },
+			"vectorize": [
+				{ "binding": "REPO_INDEX", "index_name": "repo-profiles-test" },
+				{ "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-test" },
+				{ "binding": "ROLE_INDEX", "index_name": "role-profiles-test" }
+			]
 		},
 		"production": {
 			"name": "pipe-api",
