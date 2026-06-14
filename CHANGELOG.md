@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — E2E Test Reliability
+
+- Centralized `API_BASE` / `APP_BASE` into `e2e/env.ts` (reads `process.env` with localhost fallbacks) so specs work against both local dev and deployed Cloudflare test env.
+- `playwright.config.ts` now skips local `webServer` startup when `IS_REMOTE` (running against deployed test env).
+- `.github/workflows/e2e-test.yml` now passes `E2E_EMAIL`, `E2E_PASSWORD`, and `CLERK_PUBLISHABLE_KEY` to the Playwright step.
+- Added `test:e2e:ci` npm script for consistent CI invocation.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
