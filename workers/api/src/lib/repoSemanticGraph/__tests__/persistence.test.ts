@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   RepoSemanticGraphPersistenceError,
@@ -17,52 +17,14 @@ import {
   persistReviewChallengeGraph,
   type NormalizedPullRequestInput,
 } from '../index';
-
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-}
-
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 const migration = readFileSync(
   new URL('../../../../migrations/0083_repo_semantic_graph_and_match_runs.sql', import.meta.url),
   'utf8',
 );
 const OBSERVED_AT = '2026-06-12T12:00:00.000Z';
 
-function d1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const statement = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return statement;
-        },
-        async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return { success: true, results: [], meta: { changes: Number(result.changes) } };
-        },
-        async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          return { success: true, results: sqlite.prepare(query).all(...bindings) as T[], meta: {} };
-        },
-      };
-      return statement;
-    },
-  } as unknown as D1Database;
-}
+
 
 async function fixture() {
   const snapshot = await buildRepoSnapshot({
@@ -223,10 +185,10 @@ async function fixture() {
 }
 
 describe('persistReviewChallengeGraph semantic persistence', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec('PRAGMA foreign_keys = ON; CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);');
     sqlite.exec('INSERT INTO qualified_repos (id) VALUES (41);');
     sqlite.exec(migration);
@@ -237,8 +199,8 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
   it('persists an open semantic graph with exact provenance and replays idempotently', async () => {
     const data = await fixture();
 
-    await persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, data.graph);
-    await persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, data.graph);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
 
     for (const table of [
       'repo_structural_facts',
@@ -314,9 +276,9 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
 
   it('replaces stale derived semantics when the same snapshot is rebuilt', async () => {
     const data = await fixture();
-    await persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, data.graph);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
 
-    await persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, {
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, {
       structuralFacts: [],
       codeEpisodes: [],
       facets: [],
@@ -368,7 +330,7 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
       data.input.sourceSpans[1]!,
     ];
 
-    await persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, data.graph);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_symbols').get()).toEqual({
       count: 1,
@@ -386,7 +348,7 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
     };
 
     await expect(
-      persistReviewChallengeGraph(d1(sqlite), 41, data.input, data.packet, data.graph),
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph),
     ).rejects.toThrow(RepoSemanticGraphPersistenceError);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
       count: 0,

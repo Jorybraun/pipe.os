@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Living context test infrastructure and CamelCase term normalization
+
+- Migrated all 11 living-context, repo-semantic-graph, and challenge-matching test files from experimental `node:sqlite` to `better-sqlite3`, resolving test failures on Node.js v22 without `--experimental-sqlite`.
+- Created shared `src/__tests__/helpers/mockD1.ts` with D1-style `?N` parameter rewriting for `better-sqlite3` compatibility, eliminating duplicated mock D1 adapters across test files.
+- Fixed `normalizeOpenTermSurface` to split CamelCase boundaries (`FluxCapacitorX` → `term:flux-capacitor-x`), enabling proper semantic key generation for dynamically learned concepts.
+- Converted `scripts/evaluateMatching.ts` from `node:sqlite` to `better-sqlite3` with the same `?N` parameter rewriting, fixing the evaluation CLI test.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.

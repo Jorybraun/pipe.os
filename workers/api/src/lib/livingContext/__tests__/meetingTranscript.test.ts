@@ -1,28 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   canonicalizeMeetingTranscript,
   ingestMeetingTranscriptToLivingContext,
   parseStoredMeetingTranscript,
 } from '../meetingTranscript';
-
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-  setReturnArrays(enabled: boolean): void;
-}
-
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
@@ -33,64 +17,18 @@ const transcriptProjectionMigration = readFileSync(
   'utf8',
 );
 
-function createMockD1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const prepared = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return prepared;
-        },
-        async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return {
-            success: true,
-            meta: { changes: Number(result.changes) },
-            results: [],
-          };
-        },
-        async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          return {
-            success: true,
-            results: sqlite.prepare(query).all(...bindings) as T[],
-            meta: {},
-          };
-        },
-        async raw<T>() {
-          const statement = sqlite.prepare(query);
-          statement.setReturnArrays(true);
-          return statement.all(...bindings) as T[];
-        },
-      };
-      return prepared;
-    },
-    async batch(statements: D1PreparedStatement[]) {
-      return Promise.all(statements.map((statement) => statement.run()));
-    },
-    async exec(query: string) {
-      sqlite.exec(query);
-      return { count: 0, duration: 0 };
-    },
-    async dump() {
-      return new ArrayBuffer(0);
-    },
-  } as unknown as D1Database;
-}
 
-function count(sqlite: SqliteDatabase, table: string): number {
+
+function count(sqlite: BetterSqliteDb, table: string): number {
   return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
 }
 
 describe('meeting transcript living-context ingestion', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
   let db: D1Database;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE candidates (id TEXT PRIMARY KEY);

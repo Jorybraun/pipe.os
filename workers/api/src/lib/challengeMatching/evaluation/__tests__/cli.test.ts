@@ -1,25 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runEvaluationCli } from '../../../../../scripts/evaluateMatching';
-
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-}
-
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
 const evaluationMigration = readFileSync(
   new URL('../../../../../migrations/0093_matching_evaluation.sql', import.meta.url),
   'utf8',
@@ -84,7 +69,7 @@ describe('matching evaluation CLI', () => {
     const databasePath = join(directory, 'evaluation.sqlite');
     const jsonPath = join(directory, 'result.json');
     const reportPath = join(directory, 'result.txt');
-    const sqlite = new DatabaseSync(databasePath);
+    const sqlite = new Database(databasePath);
     sqlite.exec(`
       CREATE TABLE match_runs (
         id TEXT PRIMARY KEY,
@@ -144,7 +129,7 @@ describe('matching evaluation CLI', () => {
     });
     expect(await readFile(reportPath, 'utf8')).toContain('RESULT: PASS');
 
-    const verification = new DatabaseSync(databasePath);
+    const verification = new Database(databasePath);
     expect(verification.prepare(
       'SELECT COUNT(*) AS count FROM evaluation_corpora',
     ).get()).toEqual({ count: 1 });

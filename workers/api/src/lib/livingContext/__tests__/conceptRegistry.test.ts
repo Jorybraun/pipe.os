@@ -1,23 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createConceptRegistry, type ConceptRegistry } from '../conceptRegistry';
-
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-}
-
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
@@ -27,39 +12,6 @@ const conceptRegistryMigration = readFileSync(
   'utf8',
 );
 
-function d1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const statement = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return statement;
-        },
-        async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return {
-            success: true,
-            results: [],
-            meta: { changes: Number(result.changes) },
-          };
-        },
-        async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          return {
-            success: true,
-            results: sqlite.prepare(query).all(...bindings) as T[],
-            meta: {},
-          };
-        },
-      };
-      return statement;
-    },
-  } as unknown as D1Database;
-}
-
 const provenance = {
   evidenceEntityType: 'fixture',
   evidenceEntityId: 'fixture-1',
@@ -67,11 +19,11 @@ const provenance = {
 } as const;
 
 describe('ConceptRegistry', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
   let registry: ConceptRegistry;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec('PRAGMA foreign_keys = ON;');
     sqlite.exec(livingContextMigration);
     sqlite.exec(conceptRegistryMigration);
@@ -85,7 +37,7 @@ describe('ConceptRegistry', () => {
         superseded_at INTEGER
       );
     `);
-    registry = createConceptRegistry(d1(sqlite));
+    registry = createConceptRegistry(createMockD1(sqlite));
   });
 
   afterEach(() => sqlite.close());
@@ -166,7 +118,7 @@ describe('ConceptRegistry', () => {
       ...provenance,
     });
 
-    expect(result.canonicalKey).toBe('term:somenewtechnology');
+    expect(result.canonicalKey).toBe('term:some-new-technology');
     expect(result.confidence).toBeNull();
     expect(await registry.getConcept(result.canonicalKey)).not.toBeNull();
   });
