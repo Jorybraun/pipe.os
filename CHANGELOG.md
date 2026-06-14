@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Standalone CODE_REVIEW MVP E2E Skeleton
+
+- `e2e/standalone-code-review-mvp.spec.ts`: Failing Playwright BDD skeleton for the standalone code-review MVP flow
+  - §MVP.1: Recruiter creates standalone CODE_REVIEW invite (API + UI)
+  - §MVP.2: Candidate token resolution for pipeline-free invite
+  - §MVP.3: Intake before code review (stage config + challenge content)
+  - §MVP.4: Deterministic fail-closed matching — no generic/smallest-PR fallback
+  - §MVP.5: Candidate opens /assess/:token, sees intake before diff
+  - §MVP.6: Matched candidate receives real PR with metadata
+  - §MVP.7: Standalone code review submission + interview completion
+  - §MVP.8: Recruiter inspects context graph, match explanation, source evidence
+
 ### Added — Standalone CODE_REVIEW Recruiter Context Slice
 
 - `GET /api/v1/candidates/:candidateId`: now returns `standaloneReviewMatch` for pipeline-free CODE_REVIEW invites, including safe pending states, selected PR metadata, match-run score, source-backed alignment refs, and explicit guardrail/evidence gaps.
