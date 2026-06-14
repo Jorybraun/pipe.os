@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `e2e/standalone-code-review-mvp.spec.ts`: §MVP.4/§MVP.6 tightened to use correct `submit-challenge-response` endpoint with proper `{ order, submission: { resumeText } }` payload shape (previously referenced non-existent `/rpc/submit-intake`).
 - `e2e/standalone-code-review-mvp.spec.ts`: §MVP.8 assertions now verify `standaloneReviewMatch` (the actual API field) including source-backed `evidence[].candidateSourceRefs` and `evidence[].challengeSourceRefs`, not the previously incorrect `matchResult`.
 
+### Fixed — Security: MCQ scoring ground-truth leak
+
+- `POST /rpc/score-submission`: feedback for incorrect MCQ answers no longer reveals the `correctOptionId` from `server_config`. The response now returns `"Incorrect answer"` instead of `"Incorrect. The correct answer was {id}"`.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
