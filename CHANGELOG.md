@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `POST /rpc/score-submission`: feedback for incorrect MCQ answers no longer reveals the `correctOptionId` from `server_config`. The response now returns `"Incorrect answer"` instead of `"Incorrect. The correct answer was {id}"`.
 
+### Fixed — Repo Semantic Graph Persistence Tests
+
+- Fixed `node:sqlite` compatibility in test D1 shim: numbered params (`?1, ?2`) are normalized to positional `?` placeholders for Node 22.12's experimental `node:sqlite` module.
+- Added `force-rebuild produces byte-identical rows and preserves exact source span text` test proving deterministic, idempotent backfill with full provenance verification.
+- Added `marks ineligible packets when provenance is incomplete` test proving packets below quality thresholds are rejected from matching eligibility.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
