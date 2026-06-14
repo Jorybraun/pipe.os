@@ -45,10 +45,11 @@ describe('retryWithBackoff', () => {
     const onCircuitOpen = vi.fn();
 
     const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onCircuitOpen });
+    const rejection = expect(promise).rejects.toThrow('persistent failure');
 
     await vi.runAllTimersAsync();
 
-    await expect(promise).rejects.toThrow('persistent failure');
+    await rejection;
     expect(fn).toHaveBeenCalledTimes(4);
     expect(onCircuitOpen).toHaveBeenCalledTimes(1);
     expect(onCircuitOpen).toHaveBeenCalledWith(err);
@@ -62,9 +63,10 @@ describe('retryWithBackoff', () => {
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
     const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+    const rejection = expect(promise).rejects.toThrow('fail');
 
     await vi.runAllTimersAsync();
-    await expect(promise).rejects.toThrow('fail');
+    await rejection;
 
     expect(onRetry).toHaveBeenNthCalledWith(1, 1, 750);
     expect(onRetry).toHaveBeenNthCalledWith(2, 2, 1500);
@@ -82,9 +84,10 @@ describe('retryWithBackoff', () => {
     };
 
     const promise = retryWithBackoff(fn, { maxRetries: 3, baseDelayMs: 1000, onRetry });
+    const rejection = expect(promise).rejects.toThrow('fail');
 
     await vi.runAllTimersAsync();
-    await expect(promise).rejects.toThrow('fail');
+    await rejection;
 
     // Nominal delays for attempts 0,1,2 are 1000, 2000, 4000
     expect(delays[0]).toBeGreaterThanOrEqual(500);
