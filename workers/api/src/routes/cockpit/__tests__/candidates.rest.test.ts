@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { buildStandaloneReviewMatchSummary } from '../candidates';
 
 // ─── GitHub handle validation ────────────────────────────────────────────────
 
@@ -78,5 +79,58 @@ describe('Enrichment job SQL shapes', () => {
              updated_at = excluded.updated_at`;
     expect(sql).toContain('ON CONFLICT(candidate_id)');
     expect(sql).toContain('github_url = excluded.github_url');
+  });
+});
+
+describe('Standalone CODE_REVIEW match summary', () => {
+  it('surfaces pending intake as an explicit safe state', () => {
+    const summary = buildStandaloneReviewMatchSummary('PENDING_INTAKE', null);
+
+    expect(summary.summary).toContain('Waiting for candidate resume/profile evidence');
+    expect(summary.evidence).toEqual([]);
+    expect(summary.gaps).toContain('Candidate has not submitted source evidence yet.');
+  });
+
+  it('preserves source-backed alignment and guardrail gaps for matched PRs', () => {
+    const summary = buildStandaloneReviewMatchSummary('MATCHED', {
+      rank: 1,
+      challengeId: 'packet-1',
+      repoId: '7',
+      prNumber: 42,
+      score: 0.82,
+      alignedDemandCount: 2,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [{
+        atomId: 'candidate-atom-1',
+        demandId: 'repo-demand-1',
+        purpose: 'validation',
+        pairScore: 0.9,
+        sharedConcepts: ['graphql'],
+        candidateSourceRefs: [{
+          artifactId: 'resume-artifact',
+          artifactVersion: 'v1',
+          contentHash: 'abc',
+          startOffset: 10,
+          endOffset: 20,
+          locator: 'resume line 3',
+        }],
+        challengeSourceRefs: [{
+          artifactId: 'repo-span',
+          artifactVersion: 'commit-a',
+          contentHash: 'def',
+          startOffset: 30,
+          endOffset: 40,
+          locator: 'src/api.ts:9',
+        }],
+      }],
+      rejectionReasons: [],
+    });
+
+    expect(summary.summary).toContain('Matched 2 source-backed demands');
+    expect(summary.evidence).toHaveLength(1);
+    expect(summary.evidence[0]?.candidateSourceRefs[0]?.locator).toBe('resume line 3');
+    expect(summary.evidence[0]?.challengeSourceRefs[0]?.locator).toBe('src/api.ts:9');
   });
 });

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  ExternalLink,
   FileText,
+  GitPullRequest,
   Network,
   Quote,
   RefreshCw,
@@ -14,6 +16,8 @@ import type {
   LivingContextInteraction,
   LivingContextSignal,
   LivingContextSourceRef,
+  StandaloneReviewMatchRecord,
+  StandaloneReviewSourceRef,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import './LivingContextGraph.css';
@@ -64,6 +68,97 @@ function includesQuery(values: Array<string | null | undefined>, query: string):
 
 function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
+}
+
+function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
+  return source.locator
+    ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
+}
+
+function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
+  return status.replace(/_/g, ' ');
+}
+
+function StandaloneReviewMatchPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord | null;
+}): JSX.Element | null {
+  if (!match) return null;
+  const primaryEvidence = match.evidence.slice(0, 3);
+  return (
+    <section className="living-context__review-match" aria-label="Standalone code review match">
+      <div className="living-context__review-match-head">
+        <div>
+          <div className="living-context__section-title">Standalone CODE_REVIEW match</div>
+          <div className="living-context__review-match-title">
+            {match.repoName ?? match.repoUrl ?? 'No PR selected yet'}
+            {match.prNumber !== null ? ` #${match.prNumber}` : ''}
+          </div>
+        </div>
+        <span className={`living-context__match-status living-context__match-status--${match.matchStatus.toLowerCase()}`}>
+          {matchStatusLabel(match.matchStatus)}
+        </span>
+      </div>
+
+      <div className="living-context__review-match-summary">{match.summary}</div>
+
+      {(match.prUrl || match.score !== null || match.submitted) && (
+        <div className="living-context__review-match-meta">
+          {match.prUrl && (
+            <a href={match.prUrl} target="_blank" rel="noopener noreferrer">
+              <GitPullRequest size={12} />
+              {match.prTitle ?? 'Selected PR'}
+              <ExternalLink size={10} />
+            </a>
+          )}
+          {match.score !== null && <span>{Math.round(match.score * 100)}% match score</span>}
+          {match.submitted && <span>Review submitted</span>}
+        </div>
+      )}
+
+      {primaryEvidence.length > 0 && (
+        <div className="living-context__review-evidence">
+          {primaryEvidence.map((entry) => (
+            <div key={`${entry.atomId}:${entry.demandId}`} className="living-context__review-evidence-row">
+              <div className="living-context__review-evidence-score">
+                {Math.round(entry.pairScore * 100)}%
+              </div>
+              <div>
+                <div className="living-context__review-evidence-title">
+                  {entry.atomId} → {entry.demandId}
+                </div>
+                <div className="living-context__review-evidence-sources">
+                  <span>candidate: {entry.candidateSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                  <span>PR: {entry.challengeSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                </div>
+                {entry.sharedConcepts.length > 0 && (
+                  <div className="living-context__concepts">
+                    {entry.sharedConcepts.slice(0, 4).map((concept) => (
+                      <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
+                        {concept}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {match.gaps.length > 0 && (
+        <div className="living-context__review-gaps">
+          <div className="living-context__eyebrow">Evidence gaps / guardrails</div>
+          <ul>
+            {match.gaps.slice(0, 4).map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function SourceButton({
@@ -221,7 +316,13 @@ function ArtifactNode({
   );
 }
 
-export function LivingContextGraph({ candidateId }: { candidateId: string }): JSX.Element {
+export function LivingContextGraph({
+  candidateId,
+  standaloneReviewMatch,
+}: {
+  candidateId: string;
+  standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
+}): JSX.Element {
   const { livingContext, isLoading, error, refetch } = useLivingContext(candidateId);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
@@ -361,6 +462,8 @@ export function LivingContextGraph({ candidateId }: { candidateId: string }): JS
           <RefreshCw size={14} className={isLoading ? 'spin' : undefined} />
         </button>
       </div>
+
+      <StandaloneReviewMatchPanel match={standaloneReviewMatch ?? null} />
 
       <div className="living-context__summary">
         {summaryMetrics.map(([label, value]) => (

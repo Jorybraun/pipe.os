@@ -669,7 +669,7 @@ export interface CandidateProfileRecord {
   email: string | null;
   phoneNumber: string | null;
   status: string;
-  pipelineId: string;
+  pipelineId: string | null;
   currentStageId: string | null;
   resumeS3Key: string | null;
   inviteToken: string;
@@ -761,6 +761,50 @@ export interface RepoMatchItem {
   locationTag: string | null;
 }
 
+export type StandaloneReviewMatchStatus =
+  | 'PENDING_INTAKE'
+  | 'MATCHED'
+  | 'NEEDS_MORE_EVIDENCE'
+  | 'NO_ROLE_SAFE_CHALLENGE';
+
+export interface StandaloneReviewSourceRef {
+  artifactId: string;
+  artifactVersion: string;
+  contentHash: string;
+  startOffset: number;
+  endOffset: number;
+  locator?: string;
+}
+
+export interface StandaloneReviewAlignment {
+  atomId: string;
+  demandId: string;
+  purpose: string | null;
+  pairScore: number;
+  sharedConcepts: string[];
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
+export interface StandaloneReviewMatchRecord {
+  interviewId: string;
+  interviewStatus: string;
+  matchStatus: StandaloneReviewMatchStatus;
+  matchRunId: string | null;
+  repoId: number | null;
+  repoName: string | null;
+  repoUrl: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  prTitle: string | null;
+  score: number | null;
+  summary: string;
+  evidence: StandaloneReviewAlignment[];
+  gaps: string[];
+  submitted: boolean;
+  completedAt: string | null;
+}
+
 export interface CandidateEnrichmentRecord {
   status: 'pending' | 'profile_generated' | 'embedded' | 'matched' | 'failed';
   candidateSearchableProfile: string | null;
@@ -847,6 +891,7 @@ export interface CandidateProfileResponse {
   phoneCalls: PhoneCallRecord[];
   reviewSessions?: ReviewSessionListItem[];
   ingestion: CandidateEnrichmentRecord | null;
+  standaloneReviewMatch: StandaloneReviewMatchRecord | null;
   profileSections: ProfileSection[];
   cultureInterviewSessions: CultureInterviewSession[];
 }
