@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `force-rebuild produces byte-identical rows and preserves exact source span text` test proving deterministic, idempotent backfill with full provenance verification.
 - Added `marks ineligible packets when provenance is incomplete` test proving packets below quality thresholds are rejected from matching eligibility.
 
+### Added — UI Visualization Plan Handoff
+
+- `knowledge/docs/handoffs/2026-06-14-ui-visualization-plan-handoff.md`: Report-only handoff covering current living context UI surfaces, missing meeting-memory surfaces, proposed IA (person timeline, source evidence drawer, assertion/signal cards, match overlay, repo evidence panel), minimal MVP screen sequence, exact components to touch, and contract changes needed before implementation.
+- `apps/meetings/src/pages/MeetingsPage.tsx`: Added `data-testid="meeting-intelligence"` to the transcript summary section for future E2E testability.
+
 ### Added — Cloudflare Test Environment
 
 - Provisioned test Cloudflare resources and wired `env.test` in `workers/api/wrangler.jsonc` with the `pipe-db-test` D1 binding, `pipe-assets-test` R2 bucket, AI binding, and 1024-dimension test Vectorize indexes for E2E CI.
