@@ -60,6 +60,245 @@ const ALLOWED_RESUME_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ]);
 
+type StandaloneReviewMatchStatus =
+  | 'PENDING_INTAKE'
+  | 'MATCHED'
+  | 'NEEDS_MORE_EVIDENCE'
+  | 'NO_ROLE_SAFE_CHALLENGE';
+
+interface StandaloneReviewSourceRef {
+  artifactId: string;
+  artifactVersion: string;
+  contentHash: string;
+  startOffset: number;
+  endOffset: number;
+  locator?: string;
+  exactText?: string;
+}
+
+interface StandaloneReviewAlignment {
+  atomId: string;
+  demandId: string;
+  purpose: string | null;
+  pairScore: number;
+  sharedConcepts: string[];
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
+interface StandaloneReviewRankedResult {
+  rank: number | null;
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  score: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  provenanceComplete: boolean;
+  eligible: boolean;
+  alignments: StandaloneReviewAlignment[];
+  rejectionReasons: string[];
+}
+
+export interface StandaloneReviewMatchSummary {
+  summary: string;
+  evidence: StandaloneReviewAlignment[];
+  gaps: string[];
+}
+
+export interface StandaloneReviewSubmissionSummary {
+  verdict: string | null;
+  summary: string | null;
+  annotationCount: number;
+  annotations: Array<{
+    file: string | null;
+    line: number | null;
+    severity: string | null;
+    comment: string;
+  }>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function asOptionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function parseStandaloneReviewSubmissionSummary(
+  value: string | null,
+): StandaloneReviewSubmissionSummary | null {
+  if (!value) return null;
+  let parsed: unknown = value;
+  for (let depth = 0; depth < 2 && typeof parsed === 'string'; depth += 1) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  if (!isRecord(parsed)) return null;
+
+  const annotations = Array.isArray(parsed.annotations)
+    ? parsed.annotations.flatMap((annotation) => {
+        if (!isRecord(annotation)) return [];
+        const comment = asOptionalString(annotation.comment);
+        if (!comment) return [];
+        return [{
+          file: asOptionalString(annotation.file),
+          line: typeof annotation.line === 'number' ? annotation.line : null,
+          severity: asOptionalString(annotation.severity),
+          comment,
+        }];
+      })
+    : [];
+
+  return {
+    verdict: asOptionalString(parsed.verdict),
+    summary: asOptionalString(parsed.summary),
+    annotationCount: annotations.length,
+    annotations: annotations.slice(0, 3),
+  };
+}
+
+function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSourceRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const artifactId = item.artifactId;
+    const artifactVersion = item.artifactVersion;
+    const contentHash = item.contentHash;
+    const startOffset = item.startOffset;
+    const endOffset = item.endOffset;
+    if (
+      typeof artifactId !== 'string'
+      || typeof artifactVersion !== 'string'
+      || typeof contentHash !== 'string'
+      || typeof startOffset !== 'number'
+      || typeof endOffset !== 'number'
+    ) {
+      return [];
+    }
+    const locator = typeof item.locator === 'string' ? item.locator : undefined;
+    return [{ artifactId, artifactVersion, contentHash, startOffset, endOffset, locator }];
+  });
+}
+
+function parseStandaloneReviewRankedResults(value: string | null): StandaloneReviewRankedResult[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const challengeId = item.challengeId;
+    const repoId = item.repoId;
+    const prNumber = item.prNumber;
+    const score = item.score;
+    const alignedDemandCount = item.alignedDemandCount;
+    const stretchCount = item.stretchCount;
+    const provenanceComplete = item.provenanceComplete;
+    const eligible = item.eligible;
+    if (
+      typeof challengeId !== 'string'
+      || typeof repoId !== 'string'
+      || typeof prNumber !== 'number'
+      || typeof score !== 'number'
+      || typeof alignedDemandCount !== 'number'
+      || typeof stretchCount !== 'number'
+      || typeof provenanceComplete !== 'boolean'
+      || typeof eligible !== 'boolean'
+    ) {
+      return [];
+    }
+    const rank = typeof item.rank === 'number' ? item.rank : null;
+    const alignments = Array.isArray(item.alignments)
+      ? item.alignments.flatMap((alignment) => {
+          if (!isRecord(alignment)) return [];
+          const atomId = alignment.atomId;
+          const demandId = alignment.demandId;
+          const pairScore = alignment.pairScore;
+          if (
+            typeof atomId !== 'string'
+            || typeof demandId !== 'string'
+            || typeof pairScore !== 'number'
+          ) {
+            return [];
+          }
+          return [{
+            atomId,
+            demandId,
+            purpose: typeof alignment.purpose === 'string' ? alignment.purpose : null,
+            pairScore,
+            sharedConcepts: asStringArray(alignment.sharedConcepts),
+            candidateSourceRefs: parseStandaloneReviewSourceRefs(alignment.candidateSourceRefs),
+            challengeSourceRefs: parseStandaloneReviewSourceRefs(alignment.challengeSourceRefs),
+          }];
+        })
+      : [];
+    return [{
+      rank,
+      challengeId,
+      repoId,
+      prNumber,
+      score,
+      alignedDemandCount,
+      stretchCount,
+      provenanceComplete,
+      eligible,
+      alignments,
+      rejectionReasons: asStringArray(item.rejectionReasons),
+    }];
+  });
+}
+
+export function buildStandaloneReviewMatchSummary(
+  status: StandaloneReviewMatchStatus,
+  selectedResult: StandaloneReviewRankedResult | null,
+): StandaloneReviewMatchSummary {
+  if (status === 'PENDING_INTAKE') {
+    return {
+      summary: 'Waiting for candidate resume/profile evidence before matching to a PR.',
+      evidence: [],
+      gaps: ['Candidate has not submitted source evidence yet.'],
+    };
+  }
+  if (status === 'NEEDS_MORE_EVIDENCE') {
+    return {
+      summary: 'No deterministic challenge can be selected until more candidate evidence is available.',
+      evidence: [],
+      gaps: ['Candidate graph has no sufficient source-backed validation or deepening atoms.'],
+    };
+  }
+  if (status === 'NO_ROLE_SAFE_CHALLENGE') {
+    return {
+      summary: 'Matcher found candidate evidence, but no reviewable PR passed guardrails.',
+      evidence: selectedResult?.alignments ?? [],
+      gaps: selectedResult?.rejectionReasons.length
+        ? selectedResult.rejectionReasons
+        : ['No eligible challenge had complete provenance and non-generic alignment.'],
+    };
+  }
+  return {
+    summary: selectedResult
+      ? `Matched ${selectedResult.alignedDemandCount} source-backed demand${selectedResult.alignedDemandCount === 1 ? '' : 's'} (${selectedResult.stretchCount} stretch).`
+      : 'Matched to a reviewable PR challenge.',
+    evidence: selectedResult?.alignments ?? [],
+    gaps: selectedResult?.rejectionReasons ?? [],
+  };
+}
+
 // ─── Pipeline-scoped routes ──────────────────────────────────────────────────
 
 const pipelineCandidates = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -459,7 +698,7 @@ candidateOps.get('/:candidateId', async (c) => {
       name: string | null;
       email: string | null;
       status: string;
-      pipeline_id: string;
+      pipeline_id: string | null;
       current_stage_id: string | null;
       resume_s3_key: string | null;
       phone_number: string | null;
@@ -822,6 +1061,120 @@ candidateOps.get('/:candidateId', async (c) => {
     }));
   } catch {}
 
+  let standaloneReviewMatch: {
+    interviewId: string;
+    interviewStatus: string;
+    matchStatus: StandaloneReviewMatchStatus;
+    matchRunId: string | null;
+    repoId: number | null;
+    repoName: string | null;
+    repoUrl: string | null;
+    prNumber: number | null;
+    prUrl: string | null;
+    prTitle: string | null;
+    score: number | null;
+    summary: string;
+    evidence: StandaloneReviewAlignment[];
+    gaps: string[];
+    submitted: boolean;
+    submission: StandaloneReviewSubmissionSummary | null;
+    completedAt: string | null;
+  } | null = null;
+
+  try {
+    const standaloneInterview = await db.prepare(
+      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number,
+              submission_json, completed_at
+         FROM scheduled_interviews
+        WHERE candidate_id = ?1
+          AND interview_type = 'CODE_REVIEW'
+          AND stage_id IS NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+    ).bind(candidateId).first<{
+      id: string;
+      status: string;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      submission_json: string | null;
+      completed_at: string | null;
+    }>();
+
+    if (standaloneInterview) {
+      const latestRun = await db.prepare(
+        `SELECT id, status, ranked_results_json, selected_packet_id
+           FROM match_runs
+          WHERE candidate_id = ?1
+            AND role_snapshot_id = 'standalone-code-review-v1'
+          ORDER BY created_at DESC
+          LIMIT 1`,
+      ).bind(candidateId).first<{
+        id: string;
+        status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
+        ranked_results_json: string | null;
+        selected_packet_id: string | null;
+      }>();
+
+      const rankedResults = parseStandaloneReviewRankedResults(latestRun?.ranked_results_json ?? null);
+      const selectedResult = rankedResults.find((result) =>
+        result.challengeId === latestRun?.selected_packet_id
+      ) ?? rankedResults.find((result) => result.rank === 1)
+        ?? rankedResults.find((result) => result.eligible)
+        ?? rankedResults[0]
+        ?? null;
+      const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
+        || latestRun?.status === 'NEEDS_MORE_EVIDENCE'
+        || latestRun?.status === 'NO_ROLE_SAFE_CHALLENGE'
+        ? latestRun.status
+        : 'PENDING_INTAKE';
+      const repoId = standaloneInterview.matched_repo_id
+        ?? (selectedResult ? Number(selectedResult.repoId) : null);
+      let repoName: string | null = null;
+      let repoUrl = standaloneInterview.github_repo_url;
+      if (repoId !== null && Number.isFinite(repoId)) {
+        const repoRow = await db.prepare(
+          `SELECT full_name, github_url FROM qualified_repos WHERE id = ?1`,
+        ).bind(repoId).first<{ full_name: string | null; github_url: string | null }>();
+        repoName = repoRow?.full_name ?? null;
+        repoUrl = repoUrl ?? repoRow?.github_url ?? null;
+      }
+      const prNumber = standaloneInterview.github_pr_number ?? selectedResult?.prNumber ?? null;
+      let prTitle: string | null = null;
+      let prUrl: string | null = repoUrl && prNumber ? `${repoUrl}/pull/${prNumber}` : null;
+      if (repoId !== null && Number.isFinite(repoId) && prNumber !== null) {
+        const prRow = await db.prepare(
+          `SELECT title, pr_url FROM repo_sample_prs WHERE repo_id = ?1 AND pr_number = ?2`,
+        ).bind(repoId, prNumber).first<{ title: string | null; pr_url: string | null }>();
+        prTitle = prRow?.title ?? null;
+        prUrl = prRow?.pr_url ?? prUrl;
+      }
+      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult);
+      const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
+      standaloneReviewMatch = {
+        interviewId: standaloneInterview.id,
+        interviewStatus: standaloneInterview.status,
+        matchStatus,
+        matchRunId: latestRun?.id ?? null,
+        repoId: repoId !== null && Number.isFinite(repoId) ? repoId : null,
+        repoName,
+        repoUrl,
+        prNumber,
+        prUrl,
+        prTitle,
+        score: selectedResult?.score ?? null,
+        summary: summary.summary,
+        evidence: summary.evidence,
+        gaps: summary.gaps,
+        submitted: standaloneInterview.submission_json !== null,
+        submission,
+        completedAt: standaloneInterview.completed_at,
+      };
+    }
+  } catch (err) {
+    console.error('[candidates] Failed to load standalone code review match:', err);
+  }
+
   const ingestion = ingestionRow?.id != null
     ? {
         status: ingestionRow.status as
@@ -998,6 +1351,7 @@ candidateOps.get('/:candidateId', async (c) => {
     stages: stagesWithChallenges,
     phoneCalls,
     ingestion,
+    standaloneReviewMatch,
     profileSections,
     cultureInterviewSessions,
   });

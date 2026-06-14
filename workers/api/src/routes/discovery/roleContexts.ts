@@ -1196,6 +1196,7 @@ roleContexts.post('/:id/respond', async (c) => {
 
     await persistQuestionTurn(c.env.DB, id, participant.id, turnResult, isCalibration, resolvedParticipantRole);
 
+    const questionMetadata = turnResult.question as { metadata?: { reasoning?: unknown } } | undefined;
     const payload: Record<string, unknown> = {
       participantId: participant.id,
       type: 'question',
@@ -1210,8 +1211,8 @@ roleContexts.post('/:id/respond', async (c) => {
         domainCompletion: turnResult.state.domainCompletion,
         phase: turnResult.state.phase,
         phaseReasoning: turnResult.state.reasoning,
-        questionReasoning: typeof turnResult.question?.metadata?.reasoning === 'string'
-          ? turnResult.question.metadata.reasoning
+        questionReasoning: typeof questionMetadata?.metadata?.reasoning === 'string'
+          ? questionMetadata.metadata.reasoning
           : undefined,
       },
       status: 'INTERVIEWING',

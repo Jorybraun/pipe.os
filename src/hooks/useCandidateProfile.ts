@@ -16,6 +16,7 @@ import type {
   CandidateEnrichmentRecord,
   ProfileSection,
   CultureInterviewSession,
+  StandaloneReviewMatchRecord,
 } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';
 
@@ -24,6 +25,7 @@ export interface UseCandidateProfileResult {
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
   ingestion: CandidateEnrichmentRecord | null;
+  standaloneReviewMatch: StandaloneReviewMatchRecord | null;
   profileSections: ProfileSection[];
   cultureInterviewSessions: CultureInterviewSession[];
   isLoading: boolean;
@@ -48,6 +50,7 @@ export function useCandidateProfile(
   const [stages, setStages] = useState<ProfileStage[]>([]);
   const [phoneCalls, setPhoneCalls] = useState<PhoneCallRecord[]>([]);
   const [ingestion, setIngestion] = useState<CandidateEnrichmentRecord | null>(null);
+  const [standaloneReviewMatch, setStandaloneReviewMatch] = useState<StandaloneReviewMatchRecord | null>(null);
   const [profileSections, setProfileSections] = useState<ProfileSection[]>([]);
   const [cultureInterviewSessions, setCultureInterviewSessions] = useState<CultureInterviewSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -69,6 +72,7 @@ export function useCandidateProfile(
       setStages(data.stages);
       setPhoneCalls(data.phoneCalls ?? []);
       setIngestion(data.ingestion ?? null);
+      setStandaloneReviewMatch(data.standaloneReviewMatch ?? null);
       setProfileSections(data.profileSections ?? []);
       setCultureInterviewSessions(data.cultureInterviewSessions ?? []);
     } catch (err) {
@@ -149,6 +153,7 @@ export function useCandidateProfile(
     stages,
     phoneCalls,
     ingestion,
+    standaloneReviewMatch,
     profileSections,
     cultureInterviewSessions,
     isLoading,

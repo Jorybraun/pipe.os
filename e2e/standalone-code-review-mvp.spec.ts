@@ -637,6 +637,24 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await context.close();
   });
 
+  test('recruiter sees source-backed pending match state in CONTEXT tab before intake', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+    const page = await context.newPage();
+
+    await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
+    await page.getByRole('button', { name: 'CONTEXT' }).click();
+
+    const matchPanel = page.getByLabel('Standalone code review match');
+    await expect(matchPanel).toContainText('Standalone CODE_REVIEW match');
+    await expect(matchPanel).toContainText('PENDING INTAKE');
+    await expect(matchPanel).toContainText(
+      'Waiting for candidate resume/profile evidence before matching to a PR.',
+    );
+    await expect(matchPanel).toContainText('Candidate has not submitted source evidence yet.');
+
+    await context.close();
+  });
+
   test('recruiter can see matched PR information for completed candidate', async ({ request }) => {
     // After a candidate completes the full flow, the recruiter should
     // be able to see which PR was selected and why.

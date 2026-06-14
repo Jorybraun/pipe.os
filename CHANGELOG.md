@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - §MVP.7: Standalone code review submission + interview completion
   - §MVP.8: Recruiter inspects context graph, match explanation, source evidence
 
+### Added — Standalone CODE_REVIEW Recruiter Context Slice
+
+- `GET /api/v1/candidates/:candidateId`: now returns `standaloneReviewMatch` for pipeline-free CODE_REVIEW invites, including safe pending states, selected PR metadata, match-run score, source-backed alignment refs, and explicit guardrail/evidence gaps.
+- Recruiter `CONTEXT` tab: added a standalone CODE_REVIEW match panel that shows pending intake, matched PRs, source-backed candidate→PR evidence, submitted review summaries/annotations, and safe no-match reasons alongside the living context graph.
+- Standalone CODE_REVIEW match evidence now carries exact candidate and PR source snippets into recruiter CONTEXT so alignments are inspectable without relying on opaque artifact IDs.
+- Candidate `/assess/:token`: fixed standalone CODE_REVIEW waiting-state rendering so resume intake can safely transition through `WAITING_FOR_MATCH` until deterministic matching has enough source-backed evidence.
+- `e2e/standalone-code-review-mvp.spec.ts`: added BDD coverage for the recruiter-visible pending-intake state after creating a standalone CODE_REVIEW candidate.
+- Workers typecheck: restored strict compatibility for role-discovery guard retries, Cal.com event type normalization, and question reasoning extraction.
+
 ### Changed — Source-backed Candidate-to-PR Matching Proof
 
 - `workers/api/src/lib/repoSemanticGraph/challengePacket.ts`: PR challenge packet concept extraction now preserves source identifier components from paths, symbols, signatures, imports/calls, and test metadata in addition to full open terms. This keeps repository semantics source-backed while allowing terms such as `term:rest` to survive from identifiers like `ts-rest`.

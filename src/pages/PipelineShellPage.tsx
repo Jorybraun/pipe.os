@@ -16,7 +16,7 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
-import { useParams, useNavigate, Outlet, useMatch, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { Rocket, Plus, LayoutGrid, AlertTriangle, X, Pencil, Undo2 } from 'lucide-react';
 import { LiquidMetalCard } from '../components';
 // LiquidMetalCard is used for the error card only. The shell no longer wraps
@@ -26,7 +26,6 @@ import { Skeleton } from '../components/ui/Skeleton';
 import { CandidateIntakeModal } from '../components/Candidate/CandidateIntakeModal';
 import { NewStageModal } from '../components/Pipeline/NewStageModal';
 import EditPipelineModal from '../components/Pipeline/EditPipelineModal';
-import { StageStepper } from '../components/Pipeline/StageStepper';
 import { useOverviewData } from '../hooks/useOverviewData';
 import type {
   OverviewPipeline,
@@ -106,9 +105,6 @@ export default function PipelineShellPage(): JSX.Element {
       window.history.replaceState({}, '');
     }
   }, [location.state]);
-
-  // Hide the stepper on the new-stage form route so the form has full focus.
-  const newStageMatch = useMatch('/pipeline/:id/new-stage');
 
   const handlePublish = useCallback(async (): Promise<void> => {
     try {
@@ -553,7 +549,7 @@ export default function PipelineShellPage(): JSX.Element {
           background: 'var(--pipe-border)',
         }} />
         
-        {stages.map((stage, index) => {
+        {stages.map((stage) => {
           const candidateCount = candidates.filter(c => c.currentStageId === stage.id).length;
           return (
             <div

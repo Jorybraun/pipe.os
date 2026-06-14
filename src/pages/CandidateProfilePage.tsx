@@ -1113,7 +1113,7 @@ export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
-  const { candidate, stages, phoneCalls, ingestion, profileSections, cultureInterviewSessions, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
+  const { candidate, stages, phoneCalls, ingestion, standaloneReviewMatch, profileSections, cultureInterviewSessions, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
     useCandidateProfile(id);
 
   const [selectedTab, setSelectedTab] = useState<string | null>('PROFILE');
@@ -1377,7 +1377,7 @@ export default function CandidateProfilePage(): JSX.Element {
       }}
     >
       {/* ── Phone Call Drawer — left panel ──────────────────────────────────── */}
-      {showPhoneDrawer && candidate.phoneNumber && (
+      {showPhoneDrawer && candidate.phoneNumber && candidate.pipelineId !== null && (
         <div style={{
           borderRight: "1px solid var(--pipe-border)",
           background: "var(--pipe-bg, #0c0c0e)",
@@ -1770,7 +1770,10 @@ export default function CandidateProfilePage(): JSX.Element {
         )}
 
         {selectedTab === 'CONTEXT_GRAPH' && id && (
-          <LivingContextGraph candidateId={id} />
+          <LivingContextGraph
+            candidateId={id}
+            standaloneReviewMatch={standaloneReviewMatch}
+          />
         )}
 
         {/* INTELLIGENCE tab */}

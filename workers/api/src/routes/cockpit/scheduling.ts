@@ -1337,7 +1337,7 @@ async function fetchCalendlyEventTypes(
 async function fetchCalComEventTypes(
   accessToken: string,
   config: ProviderOAuthConfig,
-): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string }>> {
+): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>> {
   const resp = await fetch(config.eventTypesUrl!, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1347,12 +1347,16 @@ async function fetchCalComEventTypes(
     event_types?: Array<{ id?: number; title?: string; length?: number; slug?: string }>;
   };
 
-  return (data.event_types ?? []).map((et) => ({
-    id: String(et.id ?? ''),
-    name: et.title ?? 'Unnamed',
-    durationMinutes: et.length ?? 30,
-    url: et.slug ? `https://cal.com/${et.slug}` : '',
-  }));
+  return (data.event_types ?? []).map((et) => {
+    const url = et.slug ? `https://cal.com/${et.slug}` : '';
+    return {
+      id: String(et.id ?? ''),
+      name: et.title ?? 'Unnamed',
+      durationMinutes: et.length ?? 30,
+      url,
+      schedulingUrl: url,
+    };
+  });
 }
 
 async function registerProviderWebhook(

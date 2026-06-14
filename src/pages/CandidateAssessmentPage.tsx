@@ -121,8 +121,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     return resolveStageConfig(rawStage as any);
   }, [stageConfig, challengeContent, currentOrder]);
 
-  // Current challenge type (from stage config, not content — available before hydration)
-  const currentType = stageConfig?.challenges?.[currentOrder]?.type;
+  const currentType = challengeContent?.type ?? stageConfig?.challenges?.[currentOrder]?.type;
 
   // Review session v2 state (CODE_REVIEW golden path)
   const [reviewSessionMeta, setReviewSessionMeta] = useState<{
