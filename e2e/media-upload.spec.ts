@@ -19,10 +19,7 @@
  */
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-const API_BASE = 'http://localhost:8787';
+import { API_BASE, APP_BASE } from './env';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -167,7 +164,7 @@ test.describe('§M1 — Media upload stores audio/video in R2 and returns r2Key'
   test.beforeAll(async ({ browser, request }) => {
     const ctx = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await ctx.newPage();
-    await page.goto('http://localhost:5173');
+    await page.goto(APP_BASE);
     authToken = await getAuthToken(page);
     await ctx.close();
 
@@ -249,7 +246,7 @@ test.describe('§M2 — Validation rejects invalid input', () => {
   test.beforeAll(async ({ browser, request }) => {
     const ctx = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await ctx.newPage();
-    await page.goto('http://localhost:5173');
+    await page.goto(APP_BASE);
     authToken = await getAuthToken(page);
     await ctx.close();
 
@@ -349,7 +346,7 @@ test.describe('§M3 — Auth enforcement', () => {
     page,
     request,
   }) => {
-    await page.goto('http://localhost:5173');
+    await page.goto(APP_BASE);
     const recruiterToken = await getAuthToken(page);
 
     const res = await request.post(`${API_BASE}/rpc/upload-media`, {

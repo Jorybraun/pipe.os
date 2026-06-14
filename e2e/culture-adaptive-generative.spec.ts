@@ -13,8 +13,7 @@ import { test, expect } from "@playwright/test";
  * Route under test: /culture/:token
  */
 
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
+import { API_BASE, APP_BASE } from './env';
 
 const LONG_ANSWER =
   "In my previous role I owned the end-to-end migration of our monolith to " +

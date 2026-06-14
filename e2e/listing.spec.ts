@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { API_BASE } from './env';
 
 /**
  * Phase 1 BDD: Listing Page
@@ -9,8 +10,6 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * NOTE: These tests assume the authenticated user may have existing
  * pipelines. Tests use unique seeded titles to isolate assertions.
  */
-
-const API_BASE = "http://localhost:8787";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

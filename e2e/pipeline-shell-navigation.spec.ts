@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { API_BASE, APP_BASE } from './env';
 
 /**
  * BDD: Pipeline Overview Shell Navigation
@@ -11,9 +12,6 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * These specs define the target behaviour and will fail until the redesign
  * ships (OverviewPage → PipelineShellPage split).
  */
-
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
 
 interface SeedResult {
   pipelineId: string;

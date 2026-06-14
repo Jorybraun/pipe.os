@@ -17,8 +17,7 @@ import { test, expect } from "@playwright/test";
  * Route under test: /culture/:token
  */
 
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
+import { API_BASE, APP_BASE } from './env';
 
 const SHORT_ANSWER = "I just handled it."; // <200 chars → mock probes
 const LONG_ANSWER =

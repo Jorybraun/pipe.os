@@ -17,10 +17,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const APP_BASE = 'http://localhost:5173';
+import { APP_BASE } from './env';
 
 // ─── Suite: Test-mode feature flag ───────────────────────────────────────────
 
