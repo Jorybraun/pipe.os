@@ -7,9 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Source-backed Candidate-to-PR Matching Proof
+
+- `workers/api/src/lib/repoSemanticGraph/challengePacket.ts`: PR challenge packet concept extraction now preserves source identifier components from paths, symbols, signatures, imports/calls, and test metadata in addition to full open terms. This keeps repository semantics source-backed while allowing terms such as `term:rest` to survive from identifiers like `ts-rest`.
+- `workers/api/scripts/testLocalChallengeMatch.ts`: Added `--commit` for intentionally persisting a local match run; default behavior remains rollback-only for probes.
+- Local D1 proof run: after replaying the living-context backfill, candidate `4c1bee04-264e-4eea-afae-4b2d2dd894ba` matched `mui/base-ui#973` via persisted `match_runs.id = 2346db17-f7d5-415f-95a3-73da39f94751` with complete candidate and challenge source references.
+
+### Added — Persisted Concept Registry
+
+- `workers/api/migrations/0094_concept_registry.sql`: D1 schema for persisted concept registry with versioning, provenance tracking, and replayable resolution
+  - Enhanced `concepts` table with resolver_version, model_version, confidence, observation metadata, and supersession tracking
+  - `concept_surfaces` table for observed surface text with source span and artifact provenance
+  - `concept_resolutions` table for versioned, replayable concept resolution history
+  - `concept_adjacency` table for stretch path relationships (technology, mechanism, domain, scale, review_practice)
+  - Triggers for automatic observation count updates and first_observed_at initialization
+- `workers/api/src/lib/livingContext/conceptRegistry.ts`: Concept registry CRUD operations with versioning
+  - `registerConcept()`: Register new concepts or add surfaces to existing concepts with provenance
+  - `resolveConcept()`: Resolve surface text to canonical keys with versioned, replayable resolution
+  - `getConcept()`, `getConceptFaces()`, `getConceptResolutions()`: Query operations
+  - `addAdjacency()`, `getAdjacencies()`: Stretch path relationship management
+  - `backfillOpenTerms()`: Deterministic backfill from existing semantic assertions
+- `workers/api/src/lib/challengeMatching/roleGuardrails.ts`: Updated to register role concepts in persisted registry during compilation
+- `workers/api/src/lib/challengeMatching/d1Matcher.ts`: Updated to register candidate-discovered concepts during signal loading
+- `workers/api/src/lib/livingContext/__tests__/conceptRegistry.test.ts`: Test suite proving invented concepts survive without code changes (per ADR-043)
+- Per ADR-043: No hard-coded semantic taxonomy; concepts are data-driven with open keys, versioned resolutions, and source-backed provenance
+
+### Added — Matching Evaluation Harness
+
+- `workers/api/src/lib/challengeMatching/evaluation/`: Production evaluation harness for deterministic candidate-to-PR matching
+  - `types.ts`: Versioned expert-label corpus format, evaluation metrics, and acceptance thresholds
+  - `corpus.ts`: Corpus validation, loading, and query functions
+  - `metrics.ts`: Deterministic metrics (Recall@50, Precision@3, nDCG@5, guardrail violations, determinism verification)
+  - `cli.ts`: CLI interface for evaluating persisted match runs with JSON and human-readable reports
+  - `__tests__/evaluation.test.ts`: Comprehensive test suite with previously unseen semantic concepts (per ADR-043)
+- `workers/api/migrations/0093_matching_evaluation.sql`: D1 schema for expert-label corpora and evaluation results
+- `workers/api/scripts/evaluateMatching.ts`: Evaluation script entry point
+- `workers/api/fixtures/evaluation/sample-corpus.json`: Sample synthetic fixture corpus for testing
+- `workers/api/src/lib/challengeMatching/index.ts`: Export evaluation module
+- Production acceptance thresholds: Recall@50 ≥ 0.95, Precision@3 ≥ 0.80, nDCG@5 ≥ 0.80, zero guardrail violations, byte-identical reruns
+- Per ADR-043: No hard-coded semantic taxonomy; corpus uses open concept keys and does not enumerate skills, domains, or semantic edge types
+
 ### Added — PDL Candidate Sourcing + Interaction-First Graph Integration
 
-- `workers/api/src/lib/pdl.ts`: People Data Labs client — Person Search API (SQL queries) and Person Enrichment API. Pay-as-you-go candidate discovery.
+- `workers/api/src/lib/pdl.ts`: People Data Labs client — Person Search API (Elasticsearch queries) and Person Enrichment API. Pay-as-you-go candidate discovery.
 - `workers/api/migrations/0092_sourcing_pool.sql`: Workspace-scoped cache of discovered people. Ephemeral (30-day expiry). Deduplicated by PDL ID. Tracks status: discovered | flagged | dismissed | contacted | converted.
 - `workers/api/src/routes/outreach/pdlSearch.ts`:
   - `POST /api/v1/outreach/search` — reads from sourcing_pool cache first, then PDL on miss. Returns results with `poolId` for action tracking.
@@ -26,6 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DISMISS` removes from the active view.
   - Contacted people show "In graph" badge.
 - `src/App.tsx`: Sidebar now routes to Contacts (`/contacts`) instead of Outreach. Contacts page reachable from sidebar.
+
+### Changed — PDL Search: SQL → Elasticsearch + Natural Language UI
+
+- `workers/api/src/lib/pdl.ts`: Replaced brittle SQL string concatenation with Elasticsearch `query` DSL.
+  - `bool.should` with `minimum_should_match: 1` for focused job title matching (`term` on `job_title_role` + `match` on `job_title` with `operator: 'and'`).
+  - `bool.filter` with `terms` for array fields (`job_title_levels`, `skills`).
+  - `exists` queries for `emails` and `phone_numbers` — no more "use subfields" errors.
+  - Quality gates: `exists` on `full_name` and `job_title` so results without names or titles are excluded.
+- `workers/api/src/routes/outreach/pdlSearch.ts`: Added safety-net client-side filter requiring both `full_name` and `job_title` on PDL responses.
+- `src/pages/ContactsPage.tsx`: Replaced rigid 4-field grid (role, level, company, country) with a single natural language search input.
+  - Parses queries like `"software engineer at Stripe in united states"` → role + company + location.
+  - Parses `"product manager in Canada"` → role + location.
+  - Shows parsed filter chips (role, company, location) for transparency.
+  - Retains `Has email` / `Has phone` checkboxes as additional filters.
+  - Chips are toggleable: click `×` to exclude a parsed filter from the search (shows strikethrough, click `+` to re-include).
+  - Parser respects sentence boundaries: trailing text after a period is ignored.
+  - Trailing punctuation is stripped from parsed values (e.g. `"Vancouver."` → `"vancouver"`).
 - `workers/api/src/types.ts`: Added `PDL_API_KEY` to Env bindings.
 
 ### Added — Meeting Rooms + Living Context Graph Foundations

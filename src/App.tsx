@@ -423,6 +423,7 @@ function App(): JSX.Element {
                     <Route path="/" element={<ListingPage />} />
                     <Route path="/pipeline/:id" element={<PipelineShellPage />}>
                       <Route index element={<PipelineInsightsPanel />} />
+                      <Route path="kanban" element={<KanbanPage />} />
                       <Route path="new-stage" element={<NewStageFormPage />} />
                       <Route path="stage/:stageId" element={<StagePanel />}>
                         <Route index element={<StageIndexTab />} />
@@ -432,7 +433,6 @@ function App(): JSX.Element {
                         <Route path="benchmark" element={<CultureBenchmarkTab />} />
                       </Route>
                     </Route>
-                    <Route path="/pipeline/:id/kanban" element={<KanbanPage />} />
                     {/* Legacy redirects — old /stages/:stageId paths */}
                     <Route
                       path="/pipeline/:id/stages/:stageId"

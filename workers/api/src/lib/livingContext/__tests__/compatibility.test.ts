@@ -23,19 +23,14 @@ function node(properties: Record<string, unknown>): CandidateNode {
 }
 
 describe('candidateNodeTerms', () => {
-  it('keeps arbitrary property values searchable without promoting them to signals', () => {
+  it('does not turn arbitrary property values into semantic concepts', () => {
     const terms = candidateNodeTerms(node({
       date_range: '2013-2014',
       team_size: '20+',
       administrative_label: 'Region 7',
     }));
 
-    expect(terms.map((term) => term.canonicalKey)).toEqual([
-      'term:2013-2014',
-      'term:20+',
-      'term:region-7',
-    ]);
-    expect(terms.every((term) => term.signalEligible === false)).toBe(true);
+    expect(terms).toEqual([]);
   });
 
   it('promotes only extractor-explicit open terms to signal evidence', () => {
@@ -48,15 +43,11 @@ describe('candidateNodeTerms', () => {
       }],
     }));
 
-    expect(terms.find((term) =>
-      term.canonicalKey === 'term:2013-2014'
-    )?.signalEligible).toBe(false);
-    expect(terms.find((term) =>
-      term.canonicalKey === 'term:temporal-workflow-compensation'
-    )).toMatchObject({
+    expect(terms).toEqual([expect.objectContaining({
+      canonicalKey: 'term:temporal-workflow-compensation',
       signalEligible: true,
       evidenceLevel: 'demonstrated',
-    });
+    })]);
   });
 
   it('keeps an unseen invalid-evidence term searchable without fabricating a signal level', () => {
@@ -69,7 +60,7 @@ describe('candidateNodeTerms', () => {
     }));
     expect(terms).toEqual([{
       surface: 'Novel Source Surface',
-      canonicalKey: 'term:novel-source-surface',
+      canonicalKey: 'technology:kafka',
       signalEligible: false,
       evidenceLevel: null,
     }]);

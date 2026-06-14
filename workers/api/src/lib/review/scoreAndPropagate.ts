@@ -15,7 +15,7 @@ import { computeImplementerMetrics } from '../implementerMetrics';
 import { loadRcdForAssessment } from '../rcd';
 import type { ReviewRound } from '../implementerAgent';
 import type { ComprehensionExchange } from '../explainerAgent';
-import { decomposeCodeReviewToGraph } from '../candidateDiscovery/decomposeCodeReview';
+import { ingestCodeReviewScoreReportToLivingContext } from '../livingContext/codeReview';
 
 export interface ScoreAndPropagateTranscript {
   rounds: ReviewRound[];
@@ -133,35 +133,34 @@ export async function scoreAndPropagate(
       ...(comprehensionSupplement ? { comprehension_supplement: comprehensionSupplement } : {}),
     };
     const scoredAt = new Date().toISOString();
+    const fullReportJson = JSON.stringify(fullReport);
+    const session = await env.DB.prepare(
+      `SELECT candidate_id, created_at
+         FROM review_sessions
+        WHERE id = ?1`,
+    )
+      .bind(sessionId)
+      .first<{ candidate_id: string; created_at: string }>();
+    if (!session) {
+      throw new Error(`Review session "${sessionId}" disappeared during scoring`);
+    }
+
+    await ingestCodeReviewScoreReportToLivingContext(env.DB, {
+      sessionId,
+      candidateId: session.candidate_id,
+      challengeId,
+      assessmentId,
+      scoreReportJson: fullReportJson,
+      observedAt: scoredAt,
+      producer: 'automated_scorer',
+      startedAt: session.created_at,
+    });
 
     await env.DB.prepare(
       `UPDATE review_sessions SET score_report = ?1, status = 'scored', updated_at = ?2 WHERE id = ?3`,
     )
-      .bind(JSON.stringify(fullReport), scoredAt, sessionId)
+      .bind(fullReportJson, scoredAt, sessionId)
       .run();
-
-    // Decompose score report into candidate graph nodes (non-blocking — errors caught inside)
-    try {
-      const session = await env.DB.prepare(
-        `SELECT id, candidate_id, updated_at, implementer_persona, challenge_id
-         FROM review_sessions WHERE id = ?1`,
-      )
-        .bind(sessionId)
-        .first<{
-          id: string;
-          candidate_id: string;
-          updated_at: string;
-          implementer_persona: string;
-          challenge_id: string;
-        }>();
-
-      if (session) {
-        await decomposeCodeReviewToGraph(env.DB, env, session, scoreReport, transcript.rounds);
-      }
-    } catch (decompErr) {
-      const msg = decompErr instanceof Error ? decompErr.message : String(decompErr);
-      console.error(`[${scope}] Graph decomposition failed for session ${sessionId}:`, msg);
-    }
 
     const sub = await env.DB.prepare(
       `SELECT id FROM challenge_submissions

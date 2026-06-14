@@ -26,6 +26,7 @@ import {
   X as XIcon,
   ArrowLeft,
   GitBranch,
+  Network,
   Upload,
   Loader2,
 } from "lucide-react";
@@ -44,6 +45,7 @@ import { getReviewSessionStatusColors } from "../lib/reviewSessionStatus";
 import { CandidateEnrichmentTab } from "../components/Candidate/CandidateEnrichmentTab";
 import { CandidateOverviewTab } from "../components/Candidate/CandidateOverviewTab";
 import { SecureVideoPlayer } from "../components/Candidate/SecureVideoPlayer";
+import { LivingContextGraph } from "../components/Candidate/LivingContextGraph";
 
 // ============================================================================
 // Local types
@@ -1563,6 +1565,39 @@ export default function CandidateProfilePage(): JSX.Element {
             </span>
           </button>
 
+          <button
+            onClick={() => setSelectedTab('CONTEXT_GRAPH')}
+            style={{
+              padding: '10px 20px',
+              cursor: 'pointer',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: selectedTab === 'CONTEXT_GRAPH'
+                ? '2px solid #38bdf8'
+                : '2px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: -1,
+            }}
+          >
+            <Network
+              size={12}
+              color={selectedTab === 'CONTEXT_GRAPH' ? '#38bdf8' : 'rgba(255,255,255,0.25)'}
+            />
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                color: selectedTab === 'CONTEXT_GRAPH' ? '#38bdf8' : 'rgba(255,255,255,0.35)',
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: '0.05em',
+              }}
+            >
+              CONTEXT
+            </span>
+          </button>
+
           <div
             style={{
               width: 1,
@@ -1732,6 +1767,10 @@ export default function CandidateProfilePage(): JSX.Element {
             cultureInterviewSessions={cultureInterviewSessions}
             candidateId={id!}
           />
+        )}
+
+        {selectedTab === 'CONTEXT_GRAPH' && id && (
+          <LivingContextGraph candidateId={id} />
         )}
 
         {/* INTELLIGENCE tab */}

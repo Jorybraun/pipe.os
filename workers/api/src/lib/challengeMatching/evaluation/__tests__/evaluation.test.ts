@@ -542,6 +542,96 @@ describe('Determinism Verification', () => {
     const { identical } = verifyByteIdenticalRerun(firstRun, secondRun);
     expect(identical).toBe(false);
   });
+
+  it('should fingerprint pair score breakdowns', () => {
+    const firstRun: PersistedMatchRun = {
+      matchRunId: 'run-1',
+      candidateId: 'candidate-1',
+      roleId: 'role-1',
+      candidateSnapshotId: 'snapshot-1',
+      policyVersion: 'candidate-pr-v1',
+      modelVersion: null,
+      status: 'MATCHED',
+      rankedChallenges: [
+        {
+          rank: 1,
+          recallRank: 1,
+          challengeId: 'challenge-1',
+          repoId: 'repo-1',
+          prNumber: 1,
+          sourceVersion: 'v1',
+          score: 0.9,
+          candidateEvidenceAlignment: 0.8,
+          roleRelevance: 0.9,
+          contextualSpecificity: 0.85,
+          challengeQuality: 0.9,
+          validationDeepeningValue: 0.8,
+          alignedDemandCount: 1,
+          stretchCount: 0,
+          stretchDemandWeightRatio: 0,
+          provenanceComplete: true,
+          eligible: true,
+          alignments: [
+            {
+              atomId: 'atom-1',
+              demandId: 'demand-1',
+              pairScore: 0.7,
+              pairScoreBreakdown: {
+                semanticNarrative: 0.2,
+                conceptCorrespondence: 1,
+                problemMechanismCorrespondence: 0.5,
+                domainBusinessContext: 0.3,
+                ownershipActionCorrespondence: 0.1,
+                total: 0.7,
+              },
+              weightedScore: 0.7,
+              stretch: null,
+              sharedConcepts: ['term:kafka'],
+              candidateSourceRefs: [
+                {
+                  artifactId: 'candidate-artifact',
+                  artifactVersion: 'candidate-version',
+                  contentHash: 'sha256:candidate',
+                  startOffset: 0,
+                  endOffset: 10,
+                },
+              ],
+              challengeSourceRefs: [
+                {
+                  artifactId: 'challenge-artifact',
+                  artifactVersion: 'challenge-version',
+                  contentHash: 'sha256:challenge',
+                  startOffset: 0,
+                  endOffset: 10,
+                },
+              ],
+            },
+          ],
+          rejectionReasons: [],
+        },
+      ],
+    };
+    const secondRun: PersistedMatchRun = {
+      ...firstRun,
+      rankedChallenges: [
+        {
+          ...firstRun.rankedChallenges[0]!,
+          alignments: [
+            {
+              ...firstRun.rankedChallenges[0]!.alignments[0]!,
+              pairScoreBreakdown: {
+                ...firstRun.rankedChallenges[0]!.alignments[0]!.pairScoreBreakdown!,
+                semanticNarrative: 0.4,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const { identical } = verifyByteIdenticalRerun(firstRun, secondRun);
+    expect(identical).toBe(false);
+  });
 });
 
 describe('Acceptance Thresholds', () => {

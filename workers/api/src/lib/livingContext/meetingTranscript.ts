@@ -4,7 +4,10 @@ import {
   stableJson,
 } from './persistence';
 import { ensureContactLivingContext } from './compatibility';
-import { openSemanticTerm } from './openTerms';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTerm,
+} from './openTerms';
 import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 const TRANSCRIPT_PROJECTION_TYPE = 'meeting_transcript_semantics';
@@ -744,7 +747,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         namespace: 'term',
         label: term.surface,
         metadata: {
-          resolver: 'open-source-term-v1',
+          resolver: OPEN_TERM_RESOLVER_VERSION,
           source: 'meeting_transcript',
         },
       });

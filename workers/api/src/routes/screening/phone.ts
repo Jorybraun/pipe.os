@@ -29,6 +29,10 @@ import {
   getTranscriptionMetadata,
   type TranscriptionMetadata,
 } from '../../lib/transcriptionStorage';
+import {
+  ingestPhoneCallToLivingContext,
+  ingestPhoneRecruiterNote,
+} from '../../lib/livingContext';
 import type { Env, Variables, PhoneCallRow } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -153,13 +157,60 @@ phonePublic.post('/recording-status', async (c) => {
 
   // Find the call record by Twilio CallSid
   const call = await db
-    .prepare('SELECT id FROM phone_calls WHERE twilio_call_sid = ?')
+    .prepare(
+      `SELECT id, candidate_id, direction, twilio_call_sid, recording_s3_key,
+              duration_seconds, transcription, transcription_status,
+              started_at, ended_at
+         FROM phone_calls WHERE twilio_call_sid = ?`,
+    )
     .bind(callSid)
-    .first<{ id: string }>();
+    .first<{
+      id: string;
+      candidate_id: string;
+      direction: string;
+      twilio_call_sid: string | null;
+      recording_s3_key: string | null;
+      duration_seconds: number | null;
+      transcription: string | null;
+      transcription_status: string | null;
+      started_at: string | null;
+      ended_at: string | null;
+    }>();
 
   if (!call) {
     console.error('[phone/recording-status] No call found for CallSid:', callSid);
     return c.json({ message: 'Call not found' }, 404);
+  }
+
+  const r2Key = `call-recordings/${call.id}/${recordingSid}.mp3`;
+  if (
+    call.recording_s3_key === r2Key
+    && call.transcription_status === 'COMPLETED'
+  ) {
+    try {
+      await ingestPhoneCallToLivingContext(db, {
+        callId: call.id,
+        candidateId: call.candidate_id,
+        direction: call.direction,
+        startedAt: call.started_at,
+        endedAt: call.ended_at,
+        twilioCallSid: call.twilio_call_sid,
+        recording: {
+          storageKey: r2Key,
+          recordingSid,
+          mediaType: 'audio/mpeg',
+          durationSeconds: call.duration_seconds,
+        },
+        transcript: call.transcription,
+        transcriptProvider: '@cf/openai/whisper-large-v3-turbo',
+      });
+    } catch (livingContextError) {
+      console.error(
+        '[phone/recording-status] Duplicate callback repair failed:',
+        livingContextError,
+      );
+    }
+    return c.json({ message: 'Already processed' });
   }
 
   // Fetch recording audio from Twilio (requires Basic Auth)
@@ -183,7 +234,6 @@ phonePublic.post('/recording-status', async (c) => {
   const audioBuffer = await audioResponse.arrayBuffer();
 
   // Store in R2
-  const r2Key = `call-recordings/${call.id}/${recordingSid}.mp3`;
   await c.env.STORAGE.put(r2Key, audioBuffer, {
     httpMetadata: { contentType: 'audio/mpeg' },
   });
@@ -198,6 +248,29 @@ phonePublic.post('/recording-status', async (c) => {
     )
     .bind(r2Key, recordingUrl, duration, now, call.id)
     .run();
+
+  try {
+    await ingestPhoneCallToLivingContext(db, {
+      callId: call.id,
+      candidateId: call.candidate_id,
+      direction: call.direction,
+      startedAt: call.started_at,
+      endedAt: call.ended_at,
+      twilioCallSid: call.twilio_call_sid,
+      recording: {
+        storageKey: r2Key,
+        recordingSid,
+        mediaType: 'audio/mpeg',
+        byteLength: audioBuffer.byteLength,
+        durationSeconds: duration,
+      },
+    });
+  } catch (livingContextError) {
+    console.error(
+      '[phone/recording-status] Recording living-context ingestion failed:',
+      livingContextError,
+    );
+  }
 
   // Fire-and-forget transcription via Workers AI Whisper (free)
   if (c.env.AI) {
@@ -218,6 +291,33 @@ phonePublic.post('/recording-status', async (c) => {
             )
             .bind(transcript, status, new Date().toISOString(), call.id)
             .run();
+
+          if (transcript) {
+            try {
+              await ingestPhoneCallToLivingContext(db, {
+                callId: call.id,
+                candidateId: call.candidate_id,
+                direction: call.direction,
+                startedAt: call.started_at,
+                endedAt: call.ended_at,
+                twilioCallSid: call.twilio_call_sid,
+                recording: {
+                  storageKey: r2Key,
+                  recordingSid,
+                  mediaType: 'audio/mpeg',
+                  byteLength: audioBuffer.byteLength,
+                  durationSeconds: duration,
+                },
+                transcript,
+                transcriptProvider: '@cf/openai/whisper-large-v3-turbo',
+              });
+            } catch (livingContextError) {
+              console.error(
+                '[phone/recording-status] Living-context ingestion failed:',
+                livingContextError,
+              );
+            }
+          }
 
           // Store transcription files in R2 if transcription succeeded
           if (transcript && c.env.STORAGE) {
@@ -246,7 +346,7 @@ phonePublic.post('/recording-status', async (c) => {
                   durationSeconds: callRecord.duration_seconds ?? undefined,
                   recordingUrl: callRecord.recording_url ?? undefined,
                   recordingS3Key: callRecord.recording_s3_key ?? undefined,
-                  transcriptionStatus: callRecord.transcription_status,
+                  transcriptionStatus: callRecord.transcription_status ?? status,
                   transcriptionService: 'cloudflare-workers-ai',
                   transcriptionModel: '@cf/openai/whisper-large-v3-turbo',
                   startedAt: callRecord.started_at ?? undefined,
@@ -506,9 +606,18 @@ phoneAuth.patch('/calls/:callId', async (c) => {
 
   // Ownership check
   const call = await db
-    .prepare('SELECT id FROM phone_calls WHERE id = ? AND owner_id = ?')
+    .prepare(
+      `SELECT id, candidate_id, direction, started_at, ended_at
+         FROM phone_calls WHERE id = ? AND owner_id = ?`,
+    )
     .bind(callId, userId)
-    .first<{ id: string }>();
+    .first<{
+      id: string;
+      candidate_id: string;
+      direction: string;
+      started_at: string | null;
+      ended_at: string | null;
+    }>();
 
   if (!call) return apiError(c, 'NOT_FOUND', 'Call not found.');
 
@@ -528,14 +637,32 @@ phoneAuth.patch('/calls/:callId', async (c) => {
 
   if (updates.length === 0) return apiError(c, 'VALIDATION_ERROR', 'No fields to update.');
 
+  const observedAt = new Date().toISOString();
   updates.push('updated_at = ?');
-  values.push(new Date().toISOString());
+  values.push(observedAt);
   values.push(callId);
 
   await db
     .prepare(`UPDATE phone_calls SET ${updates.join(', ')} WHERE id = ?`)
     .bind(...values)
     .run();
+
+  if (parsed.data.recruiterNotes !== undefined) {
+    c.executionCtx.waitUntil(
+      ingestPhoneRecruiterNote(db, {
+        callId,
+        candidateId: call.candidate_id,
+        direction: call.direction,
+        note: parsed.data.recruiterNotes,
+        observedAt,
+        recruiterActorId: userId,
+        startedAt: call.started_at,
+        endedAt: call.ended_at,
+      }).catch((error) => {
+        console.error('[phone/calls] Recruiter-note living-context ingestion failed:', error);
+      }),
+    );
+  }
 
   return c.json({ success: true });
 });

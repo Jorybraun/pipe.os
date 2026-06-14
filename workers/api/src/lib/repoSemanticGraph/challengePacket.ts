@@ -37,6 +37,28 @@ function sortedUnique(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
 }
 
+function sortedOpenTerms(values: readonly (string | undefined)[]): string[] {
+  const terms = new Set<string>();
+  for (const value of values) {
+    if (!value?.trim()) continue;
+    const term = openSemanticTerm(value);
+    if (term) terms.add(term.canonicalKey);
+  }
+  return [...terms].sort();
+}
+
+function sourceIdentifierSurfaces(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  const surfaces = new Set<string>([value]);
+  const separated = value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^A-Za-z0-9+#.]+|\.(?=[A-Za-z])/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 3);
+  separated.forEach((part) => surfaces.add(part));
+  return [...surfaces];
+}
+
 function roundScore(value: number): number {
   return Math.round(value * 1_000) / 1_000;
 }
@@ -158,6 +180,9 @@ function extractConceptKeys(
     const term = openSemanticTerm(normalized);
     if (term) concepts.add(term.canonicalKey);
   };
+  const addSourceIdentifierConcepts = (surface: string | undefined): void => {
+    sourceIdentifierSurfaces(surface).forEach(addConcept);
+  };
 
   addConcept(normalizeLanguage(input.primaryLanguage));
 
@@ -168,15 +193,20 @@ function extractConceptKeys(
     );
     if (relevantHunks.length === 0 && relevantSymbols.length === 0) continue;
     addConcept(file.language);
-    relevantSymbols.forEach((symbol) => addConcept(symbol.name));
+    addSourceIdentifierConcepts(file.path);
+    addSourceIdentifierConcepts(file.previousPath);
+    relevantSymbols.forEach((symbol) => {
+      addSourceIdentifierConcepts(symbol.name);
+      addSourceIdentifierConcepts(symbol.qualifiedName);
+      addSourceIdentifierConcepts(symbol.signature);
+    });
   }
 
   for (const fact of input.structuralFacts ?? []) {
     if (!fact.sourceSpanIds.some((spanId) => spanIds.has(spanId))) continue;
-    addConcept(fact.object.concept);
-    addConcept(fact.object.literal);
-    addConcept(symbols.get(fact.subject.symbolId ?? '')?.name);
-    addConcept(symbols.get(fact.object.symbolId ?? '')?.name);
+    addSourceIdentifierConcepts(fact.object.concept);
+    addSourceIdentifierConcepts(symbols.get(fact.subject.symbolId ?? '')?.name);
+    addSourceIdentifierConcepts(symbols.get(fact.object.symbolId ?? '')?.name);
   }
 
   for (const test of input.tests) {
@@ -186,8 +216,11 @@ function extractConceptKeys(
     ) {
       continue;
     }
-    addConcept(test.framework);
-    test.relatedSymbolIds.forEach((symbolId) => addConcept(symbols.get(symbolId)?.name));
+    addSourceIdentifierConcepts(test.path);
+    addSourceIdentifierConcepts(test.framework);
+    test.relatedSymbolIds.forEach((symbolId) =>
+      addSourceIdentifierConcepts(symbols.get(symbolId)?.name)
+    );
   }
 
   if (input.issue?.sourceSpanIds.some((spanId) => spanIds.has(spanId))) {
@@ -195,6 +228,145 @@ function extractConceptKeys(
   }
 
   return [...concepts].sort();
+}
+
+function conceptLabel(conceptKey: string): string {
+  const value = conceptKey.includes(':')
+    ? conceptKey.slice(conceptKey.indexOf(':') + 1)
+    : conceptKey;
+  return value.replace(/[-_]+/g, ' ').trim() || conceptKey;
+}
+
+function familyLabel(family: ChallengeDemandFamily): string {
+  const [namespace, ...rest] = family.split(':');
+  const detail = rest.join(':');
+  if (!detail) return conceptLabel(namespace ?? family);
+  return `${conceptLabel(detail)} ${conceptLabel(namespace ?? 'demand')}`.trim();
+}
+
+function firstEvidenceLine(span: SourceSpan): string {
+  const line = span.exactText
+    .split('\n')
+    .map((value) => value.trim())
+    .find((value) => value && !value.startsWith('@@'));
+  const normalized = (line ?? span.exactText.trim()).replace(/\s+/g, ' ');
+  return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
+}
+
+function demandEvidenceSummary(
+  input: NormalizedPullRequestInput,
+  sourceSpanIds: readonly string[],
+): string {
+  const spans = spanMap(input);
+  return sourceSpanIds
+    .map((id) => spans.get(id))
+    .filter((span): span is SourceSpan => Boolean(span))
+    .sort((a, b) => (a.displayLabel ?? a.id).localeCompare(b.displayLabel ?? b.id))
+    .slice(0, 3)
+    .map((span) => `${span.displayLabel ?? span.id}: ${firstEvidenceLine(span)}`)
+    .join(' | ');
+}
+
+function pathParts(path: string): string[] {
+  return path
+    .split(/[/.\\_-]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 3);
+}
+
+function extractDemandDimensions(
+  input: NormalizedPullRequestInput,
+  family: ChallengeDemandFamily,
+  sourceSpanIds: readonly string[],
+  changedSymbolIds: readonly string[],
+): Pick<
+  ChallengeDemand,
+  'problems' | 'mechanisms' | 'domains' | 'businessObjects' | 'ownershipActions'
+> {
+  const spanIds = new Set(sourceSpanIds);
+  const symbolIds = new Set(changedSymbolIds);
+  const symbols = new Map(
+    input.changedFiles
+      .flatMap((file) => file.symbols)
+      .map((symbol) => [symbol.id, symbol] as const),
+  );
+  const relevantFiles = input.changedFiles.filter((file) =>
+    file.hunks.some((hunk) => spanIds.has(hunk.sourceSpan.id)),
+  );
+  const relevantFacts = (input.structuralFacts ?? []).filter((fact) =>
+    fact.sourceSpanIds.some((spanId) => spanIds.has(spanId)),
+  );
+  const relevantTests = input.tests.filter((test) =>
+    test.sourceSpanIds.some((spanId) => spanIds.has(spanId))
+    || test.relatedSymbolIds.some((id) => symbolIds.has(id)),
+  );
+  const issueRelevant = input.issue
+    && input.issue.sourceSpanIds.some((spanId) => spanIds.has(spanId));
+  const familyParts = family.split(':');
+  const familyNamespace = familyParts[0] ?? family;
+  const familyDetail = familyParts.slice(1).join(':');
+
+  const mechanisms = sortedOpenTerms([
+    familyNamespace,
+    familyDetail,
+    ...relevantFacts.flatMap((fact) => [
+      fact.kind,
+      fact.object.concept,
+      symbols.get(fact.subject.symbolId ?? '')?.name,
+      symbols.get(fact.object.symbolId ?? '')?.name,
+    ]),
+    ...relevantTests.map((test) => test.framework),
+  ]);
+  const problems = sortedOpenTerms([
+    ...(issueRelevant
+      ? [
+          input.issue?.title,
+          input.issue?.body,
+          ...(input.issue?.labels ?? []),
+        ]
+      : []),
+    ...(familyNamespace === 'issue' ? [familyDetail] : []),
+  ]);
+  const domains = sortedOpenTerms([
+    input.repoSnapshot.repository.name,
+    ...relevantFiles.flatMap((file) => pathParts(file.path).slice(0, 3)),
+  ]);
+  const businessObjects = sortedOpenTerms([
+    ...relevantFiles.flatMap((file) => pathParts(file.path).slice(-3)),
+    ...changedSymbolIds.map((id) => symbols.get(id)?.name),
+  ]);
+  const ownershipActions = sortedOpenTerms([
+    ...relevantFiles.map((file) => file.status),
+    ...relevantFacts.map((fact) => fact.kind),
+    ...(relevantTests.length > 0 ? ['verified by test change'] : []),
+  ]);
+
+  return {
+    ...(problems.length > 0 ? { problems } : {}),
+    ...(mechanisms.length > 0 ? { mechanisms } : {}),
+    ...(domains.length > 0 ? { domains } : {}),
+    ...(businessObjects.length > 0 ? { businessObjects } : {}),
+    ...(ownershipActions.length > 0 ? { ownershipActions } : {}),
+  };
+}
+
+function buildDemandNarrative(input: {
+  pr: NormalizedPullRequestInput;
+  family: ChallengeDemandFamily;
+  conceptKeys: readonly string[];
+  sourceSpanIds: readonly string[];
+}): string {
+  const evidence = demandEvidenceSummary(input.pr, input.sourceSpanIds);
+  const concepts = input.conceptKeys
+    .filter((key) => key !== input.family)
+    .map(conceptLabel)
+    .slice(0, 8)
+    .join(', ');
+  return [
+    `Review ${familyLabel(input.family)} in pull request #${input.pr.number}.`,
+    evidence ? `Source evidence: ${evidence}.` : '',
+    concepts ? `Source-derived terms: ${concepts}.` : '',
+  ].filter(Boolean).join(' ');
 }
 
 export async function extractChallengeDemands(
@@ -272,15 +444,22 @@ export async function extractChallengeDemands(
     const sourceSpanIds = [...familyEvidence.spans].sort();
     if (sourceSpanIds.length === 0) continue;
     const changedSymbolIds = [...familyEvidence.symbols].sort();
-    const narrative = `Review the source-backed pull-request demand represented by ${family}.`;
     const concepts = extractConceptKeys(input, family, sourceSpanIds, changedSymbolIds);
+    const dimensions = extractDemandDimensions(input, family, sourceSpanIds, changedSymbolIds);
+    const narrative = buildDemandNarrative({
+      pr: input,
+      family,
+      conceptKeys: concepts,
+      sourceSpanIds,
+    });
     const identity = { repoSnapshotId: input.repoSnapshot.id, prNumber: input.number, family, sourceSpanIds };
-    const content = { ...identity, narrative, conceptKeys: concepts, changedSymbolIds };
+    const content = { ...identity, narrative, conceptKeys: concepts, ...dimensions, changedSymbolIds };
     demands.push({
       id: await stableId('challenge_demand', identity),
       family,
       narrative,
       conceptKeys: concepts,
+      ...dimensions,
       sourceSpanIds,
       changedSymbolIds,
       weight: 0,

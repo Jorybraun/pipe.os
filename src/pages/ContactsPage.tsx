@@ -37,8 +37,15 @@ interface PdlPerson {
   job_company_website: string | null;
   location_name: string | null;
   location_country: string | null;
-  emails: Array<{ address: string; type: string }> | null;
-  phone_numbers: Array<{ number: string; type: string }> | null;
+  // PDL returns email/phone as presence flags (boolean) in search results
+  work_email?: boolean;
+  personal_emails?: boolean;
+  recommended_personal_email?: boolean;
+  mobile_phone?: boolean;
+  phone_numbers?: boolean;
+  // Legacy/mock format (array of objects)
+  emails?: Array<{ address: string; type: string }> | null;
+  phone_numbers_legacy?: Array<{ number: string; type: string }> | null;
   linkedin_url: string | null;
   github_url: string | null;
   skills: string[] | null;
@@ -625,15 +632,47 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
 
 // ─── Source Search Panel ─────────────────────────────────────────────────────
 
+function trimPunctuation(value: string): string {
+  return value.replace(/[.,;:!?]+$/, '').trim();
+}
+
+function firstSentence(raw: string): string {
+  // Stop at first sentence terminator followed by space or end of string
+  const m = raw.match(/^([^.,;:!?]+[.,;:!?]?)(?:\s+|$)/);
+  return m ? m[1]!.trim() : raw.trim();
+}
+
+function parseSearchQuery(raw: string): { jobTitleRole: string | undefined; jobCompanyName: string | undefined; locationCountry: string | undefined } {
+  const sentence = firstSentence(raw.toLowerCase().trim());
+  if (!sentence) return { jobTitleRole: undefined, jobCompanyName: undefined, locationCountry: undefined };
+
+  const atInMatch = sentence.match(/^(.*?)\s+at\s+(.+?)(?:\s+in\s+(.+))?$/);
+  if (atInMatch) {
+    return {
+      jobTitleRole: trimPunctuation(atInMatch[1]!).trim(),
+      jobCompanyName: trimPunctuation(atInMatch[2]!).trim(),
+      locationCountry: atInMatch[3] ? trimPunctuation(atInMatch[3]).trim() : undefined,
+    };
+  }
+
+  const inMatch = sentence.match(/^(.*?)\s+in\s+(.+)$/);
+  if (inMatch) {
+    return {
+      jobTitleRole: trimPunctuation(inMatch[1]!).trim(),
+      jobCompanyName: undefined,
+      locationCountry: trimPunctuation(inMatch[2]!).trim(),
+    };
+  }
+
+  return { jobTitleRole: trimPunctuation(sentence), jobCompanyName: undefined, locationCountry: undefined };
+}
+
 function SourceSearchPanel({ api, onContact }: {
   api: ReturnType<typeof createApiClient>;
   onContact: () => void;
 }): JSX.Element {
+  const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({
-    jobTitleRole: '',
-    jobTitleLevel: '',
-    jobCompanyName: '',
-    locationCountry: '',
     hasPhone: false,
     hasEmail: true,
     size: 10,
@@ -643,16 +682,18 @@ function SourceSearchPanel({ api, onContact }: {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [actionIds, setActionIds] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<'role' | 'company' | 'location'>>(new Set());
+
+  const parsed = parseSearchQuery(query);
 
   const handleSearch = async (): Promise<void> => {
     setIsSearching(true);
     setSearchError(null);
     try {
       const payload: Record<string, unknown> = { size: filters.size };
-      if (filters.jobTitleRole) payload.jobTitleRole = filters.jobTitleRole;
-      if (filters.jobTitleLevel) payload.jobTitleLevel = filters.jobTitleLevel;
-      if (filters.jobCompanyName) payload.jobCompanyName = filters.jobCompanyName;
-      if (filters.locationCountry) payload.locationCountry = filters.locationCountry;
+      if (parsed.jobTitleRole && !excluded.has('role')) payload.jobTitleRole = parsed.jobTitleRole;
+      if (parsed.jobCompanyName && !excluded.has('company')) payload.jobCompanyName = parsed.jobCompanyName;
+      if (parsed.locationCountry && !excluded.has('location')) payload.locationCountry = parsed.locationCountry;
       if (filters.hasPhone) payload.hasPhone = true;
       if (filters.hasEmail) payload.hasEmail = true;
 
@@ -703,41 +744,80 @@ function SourceSearchPanel({ api, onContact }: {
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 10px', fontSize: 11,
-    fontFamily: '"Space Mono", monospace',
-    background: 'rgba(255,255,255,0.03)',
-    border: '1px solid var(--pipe-border)', borderRadius: 4,
-    color: 'var(--pipe-text)', outline: 'none',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 8, fontWeight: 700, letterSpacing: '0.12em',
-    color: 'var(--pipe-text-dim)', marginBottom: 4,
-  };
-
   return (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
       {/* Search form */}
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--pipe-border)', flexShrink: 0 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <div>
-            <div style={labelStyle}>JOB ROLE</div>
-            <input value={filters.jobTitleRole} onChange={(e) => setFilters((p) => ({ ...p, jobTitleRole: e.target.value }))} placeholder="e.g. engineering" style={inputStyle} />
-          </div>
-          <div>
-            <div style={labelStyle}>LEVEL</div>
-            <input value={filters.jobTitleLevel} onChange={(e) => setFilters((p) => ({ ...p, jobTitleLevel: e.target.value }))} placeholder="e.g. senior" style={inputStyle} />
-          </div>
-          <div>
-            <div style={labelStyle}>COMPANY</div>
-            <input value={filters.jobCompanyName} onChange={(e) => setFilters((p) => ({ ...p, jobCompanyName: e.target.value }))} placeholder="e.g. Stripe" style={inputStyle} />
-          </div>
-          <div>
-            <div style={labelStyle}>COUNTRY</div>
-            <input value={filters.locationCountry} onChange={(e) => setFilters((p) => ({ ...p, locationCountry: e.target.value }))} placeholder="e.g. united states" style={inputStyle} />
+        <div style={{ marginBottom: 10 }}>
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setExcluded(new Set()); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleSearch(); }}
+            placeholder="e.g. software engineer at Stripe in united states"
+            style={{
+              width: '100%', padding: '10px 12px', fontSize: 12,
+              fontFamily: '"Space Mono", monospace',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--pipe-border)', borderRadius: 4,
+              color: 'var(--pipe-text)', outline: 'none',
+            }}
+          />
+          <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', marginTop: 6 }}>
+            Try: <em style={{ color: 'var(--pipe-text-muted)' }}>"software engineer at google in united states"</em> or <em style={{ color: 'var(--pipe-text-muted)' }}>"product manager in canada"</em>
           </div>
         </div>
+
+        {/* Parsed filter chips */}
+        {(parsed.jobTitleRole || parsed.jobCompanyName || parsed.locationCountry) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+            <span style={{ fontSize: 8, color: 'var(--pipe-text-dim)', marginRight: 4 }}>Parsed:</span>
+            {parsed.jobTitleRole && (
+              <button
+                onClick={() => setExcluded((prev) => { const n = new Set(prev); if (n.has('role')) n.delete('role'); else n.add('role'); return n; })}
+                style={{
+                  fontSize: 9, padding: '3px 8px', borderRadius: 3, border: 'none', cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  background: excluded.has('role') ? 'transparent' : 'rgba(96,165,250,0.12)',
+                  color: excluded.has('role') ? 'var(--pipe-text-dim)' : '#60a5fa',
+                  textDecoration: excluded.has('role') ? 'line-through' : 'none',
+                }}
+                title={excluded.has('role') ? 'Click to include role in search' : 'Click to exclude role from search'}
+              >
+                role: {parsed.jobTitleRole} {excluded.has('role') ? '+' : '×'}
+              </button>
+            )}
+            {parsed.jobCompanyName && (
+              <button
+                onClick={() => setExcluded((prev) => { const n = new Set(prev); if (n.has('company')) n.delete('company'); else n.add('company'); return n; })}
+                style={{
+                  fontSize: 9, padding: '3px 8px', borderRadius: 3, border: 'none', cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  background: excluded.has('company') ? 'transparent' : 'rgba(168,85,247,0.12)',
+                  color: excluded.has('company') ? 'var(--pipe-text-dim)' : '#a855f7',
+                  textDecoration: excluded.has('company') ? 'line-through' : 'none',
+                }}
+                title={excluded.has('company') ? 'Click to include company in search' : 'Click to exclude company from search'}
+              >
+                company: {parsed.jobCompanyName} {excluded.has('company') ? '+' : '×'}
+              </button>
+            )}
+            {parsed.locationCountry && (
+              <button
+                onClick={() => setExcluded((prev) => { const n = new Set(prev); if (n.has('location')) n.delete('location'); else n.add('location'); return n; })}
+                style={{
+                  fontSize: 9, padding: '3px 8px', borderRadius: 3, border: 'none', cursor: 'pointer',
+                  fontFamily: '"Space Mono", monospace',
+                  background: excluded.has('location') ? 'transparent' : 'rgba(34,197,94,0.12)',
+                  color: excluded.has('location') ? 'var(--pipe-text-dim)' : '#22c55e',
+                  textDecoration: excluded.has('location') ? 'line-through' : 'none',
+                }}
+                title={excluded.has('location') ? 'Click to include location in search' : 'Click to exclude location from search'}
+              >
+                location: {parsed.locationCountry} {excluded.has('location') ? '+' : '×'}
+              </button>
+            )}
+          </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', cursor: 'pointer' }}>
@@ -772,8 +852,12 @@ function SourceSearchPanel({ api, onContact }: {
               </div>
               <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>{person.job_title ?? 'No title'}{person.job_company_name && ` @ ${person.job_company_name}`}</div>
               <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {person.emails && person.emails[0] && <span>{person.emails[0].address}</span>}
-                {person.phone_numbers && person.phone_numbers[0] && <span>{person.phone_numbers[0].number}</span>}
+                {person.work_email && <span>work email</span>}
+                {person.personal_emails && <span>personal email</span>}
+                {person.mobile_phone && <span>mobile phone</span>}
+                {person.phone_numbers === true && <span>phone</span>}
+                {person.emails && Array.isArray(person.emails) && person.emails[0] && <span>{person.emails[0].address}</span>}
+                {person.phone_numbers_legacy && Array.isArray(person.phone_numbers_legacy) && person.phone_numbers_legacy[0] && <span>{person.phone_numbers_legacy[0].number}</span>}
                 {person.location_name && <span>{person.location_name}</span>}
               </div>
             </div>
@@ -783,12 +867,8 @@ function SourceSearchPanel({ api, onContact }: {
                   <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
                     {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
                   </button>
-                  {person.phone_numbers && person.phone_numbers[0] && (
-                    <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
-                  )}
-                  {person.emails && person.emails[0] && (
-                    <button onClick={() => void handleContact(person, 'email')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>EMAIL</button>
-                  )}
+                  <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
+                  <button onClick={() => void handleContact(person, 'email')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>EMAIL</button>
                   <button onClick={() => void handleContact(person, 'invite')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 3, color: '#60a5fa', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>INVITE</button>
                   <button onClick={() => void handleDismiss(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'transparent', border: '1px solid var(--pipe-border)', borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>DISMISS</button>
                 </>

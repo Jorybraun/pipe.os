@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { ContextualDecomposition } from '../../cultureContextualDecomposition';
+import type { LLMProvider } from '../../llm/types';
 import { ingestCultureTurnToLivingContext } from '../cultureTurn';
+import { ingestHistoricalCultureTranscript } from '../cultureTranscriptBackfill';
 
 interface SqliteStatement {
   run(...bindings: unknown[]): { changes: number | bigint };
@@ -279,6 +281,137 @@ describe('culture turn living-context ingestion', () => {
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
+  });
+
+  it('backfills historical turns with provider-learned open semantics', async () => {
+    let providerCalls = 0;
+    const provider: LLMProvider = {
+      async complete() {
+        providerCalls++;
+        return {
+          content: JSON.stringify({
+            statements: [{
+              id: 'n1',
+              type: 'historical reliability intervention',
+              phrase: 'fixed a race condition in the async test setup',
+              surface: 'race condition',
+              sourceQuote: 'a race condition in our async test setup',
+              confidence: 0.92,
+              semanticTerms: [{
+                surface: 'race condition',
+                relationship: 'was the identified cause of intermittent CI failures',
+                weight: 0.9,
+                evidenceLevel: 'implemented',
+                strength: 0.82,
+              }],
+            }],
+            edges: [{
+              from: 'candidate',
+              to: 'n1',
+              predicate: 'person identified and corrected',
+            }],
+            discarded: false,
+            probe: null,
+            missingContext: [],
+          }),
+          usage: { inputTokens: 10, outputTokens: 20 },
+        };
+      },
+    };
+
+    const result = await ingestHistoricalCultureTranscript(db, {
+      candidateId: 'candidate-1',
+      sessionId: 'historical-culture-session',
+      extractSemantics: true,
+      provider,
+      transcript: {
+        turns: [{
+          idx: 0,
+          questionId: 'historical-question',
+          questionText: 'What did you fix?',
+          probeOf: null,
+          candidateResponse:
+            'I found a race condition in our async test setup and fixed the harness.',
+          starSlots: null,
+          timestamp: '2026-05-11T13:39:06.357Z',
+        }],
+        scratchpad: {
+          dimensionCoverage: {},
+          probesUsedForCurrentQ: 0,
+          runningThemes: [],
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      answeredTurns: 1,
+      ingestedTurns: 1,
+      extractedTurns: 1,
+      extractionFailures: 0,
+      reusedTurns: 0,
+      sourceOnlyTurns: 0,
+      assertionCount: 1,
+      signalCount: 1,
+    });
+    const replay = await ingestHistoricalCultureTranscript(db, {
+      candidateId: 'candidate-1',
+      sessionId: 'historical-culture-session',
+      extractSemantics: true,
+      provider,
+      transcript: {
+        turns: [{
+          idx: 0,
+          questionId: 'historical-question',
+          questionText: 'What did you fix?',
+          probeOf: null,
+          candidateResponse:
+            'I found a race condition in our async test setup and fixed the harness.',
+          starSlots: null,
+          timestamp: '2026-05-11T13:39:06.357Z',
+        }],
+        scratchpad: {
+          dimensionCoverage: {},
+          probesUsedForCurrentQ: 0,
+          runningThemes: [],
+        },
+      },
+    });
+    expect(replay.reusedTurns).toBe(1);
+    expect(providerCalls).toBe(1);
+    expect(count(sqlite, 'artifact_versions')).toBe(1);
+    expect(count(sqlite, 'semantic_assertions')).toBe(1);
+    expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(
+      sqlite.prepare('SELECT started_at FROM interactions').get(),
+    ).toEqual({ started_at: '2026-05-11T13:39:06.357Z' });
+  });
+
+  it('backfills exact historical source without fabricating semantics', async () => {
+    const result = await ingestHistoricalCultureTranscript(db, {
+      candidateId: 'candidate-1',
+      sessionId: 'historical-source-only-session',
+      transcript: {
+        turns: [{
+          idx: 0,
+          questionId: 'historical-question',
+          questionText: 'Tell me more.',
+          probeOf: null,
+          candidateResponse: 'I would need to think about that.',
+          starSlots: null,
+          timestamp: '2026-05-11T13:39:06.357Z',
+        }],
+        scratchpad: {
+          dimensionCoverage: {},
+          probesUsedForCurrentQ: 0,
+          runningThemes: [],
+        },
+      },
+    });
+
+    expect(result.sourceOnlyTurns).toBe(1);
+    expect(count(sqlite, 'artifact_versions')).toBe(1);
+    expect(count(sqlite, 'source_spans')).toBe(2);
+    expect(count(sqlite, 'semantic_assertions')).toBe(0);
   });
 
   it('keeps immutable source history while replacing corrected derived meaning', async () => {

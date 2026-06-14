@@ -13,7 +13,7 @@ import type {
   SourceRef,
 } from './types';
 import type { ChallengePacket as RepoChallengePacket } from '../repoSemanticGraph';
-import { extractOpenIdentifierTerms } from '../livingContext/openTerms';
+import { openSemanticTerm } from '../livingContext/openTerms';
 
 interface CandidateEvidenceRow {
   assertion_id: string;
@@ -57,27 +57,29 @@ function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   if (row.concept_key) return [row.concept_key];
   try {
     const qualifiers = JSON.parse(row.qualifiers_json) as {
-      legacyNodeType?: unknown;
       extractedProperties?: unknown;
     };
     if (typeof qualifiers.extractedProperties !== 'string') {
       return [];
     }
-    const properties = JSON.parse(qualifiers.extractedProperties) as unknown;
-    const surfaces: string[] = [];
-    const collect = (value: unknown, depth = 0): void => {
-      if (depth > 6 || surfaces.length >= 128 || value === null || value === undefined) return;
-      if (typeof value === 'string') {
-        const surface = value.trim();
-        if (surface.length > 0 && surface.length <= 80) surfaces.push(surface);
-      } else if (Array.isArray(value)) {
-        for (const entry of value) collect(entry, depth + 1);
-      } else if (typeof value === 'object') {
-        for (const entry of Object.values(value as Record<string, unknown>)) collect(entry, depth + 1);
-      }
+    const properties = JSON.parse(qualifiers.extractedProperties) as {
+      semantic_terms?: Array<{
+        surface?: unknown;
+        canonical_key?: unknown;
+      }>;
     };
-    collect(properties);
-    return extractOpenIdentifierTerms(surfaces).map((term) => term.canonicalKey);
+    const terms = new Set<string>();
+    for (const term of properties.semantic_terms ?? []) {
+      if (typeof term.canonical_key === 'string' && term.canonical_key.trim()) {
+        terms.add(term.canonical_key.trim());
+        continue;
+      }
+      if (typeof term.surface === 'string') {
+        const resolved = openSemanticTerm(term.surface);
+        if (resolved) terms.add(resolved.canonicalKey);
+      }
+    }
+    return [...terms];
   } catch {
     return [];
   }
@@ -133,10 +135,11 @@ async function loadCandidateSignals(
       ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC, sa.id, c.canonical_key`,
   ).bind(candidateId).all<CandidateEvidenceRow>();
 
-  return (result.results ?? []).map((row): CandidateSignal => {
+  const signals: CandidateSignal[] = [];
+  for (const row of result.results ?? []) {
     const concepts = conceptsFromRow(row);
     const purpose: QueryPurpose = 'validation';
-    return {
+    const signal: CandidateSignal = {
       id: row.concept_key ? `${row.assertion_id}:${row.concept_key}` : row.assertion_id,
       episodeId: row.episode_id ?? row.assertion_id,
       narrative: row.narrative,
@@ -149,11 +152,15 @@ async function loadCandidateSignals(
       concepts,
       sourceRefs: [candidateSourceRef(row)],
     };
-  }).filter((signal) =>
-    signal.evidenceLevel != null
-    && signal.evidenceStrength != null
-    && signal.confidence != null
-  );
+    if (
+      signal.evidenceLevel != null
+      && signal.evidenceStrength != null
+      && signal.confidence != null
+    ) {
+      signals.push(signal);
+    }
+  }
+  return signals;
 }
 
 function packetSourceRef(span: RepoSpanRow): SourceRef {
@@ -210,16 +217,24 @@ async function loadChallengePackets(
       concepts: [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))],
       demands: packet.demands.map((demand) => {
         const concepts = demand.conceptKeys;
+        const demandSpans = demand.sourceSpanIds
+          .map((id) => spanById.get(id))
+          .filter((span): span is RepoSpanRow => Boolean(span));
+        const sourceRefs = demandSpans.length === demand.sourceSpanIds.length
+          ? demandSpans.map(packetSourceRef)
+          : [];
         return {
           id: demand.id,
           family: demand.family,
           narrative: demand.narrative,
           weight: demand.weight,
           concepts,
-          sourceRefs: demand.sourceSpanIds
-            .map((id) => spanById.get(id))
-            .filter((span): span is RepoSpanRow => Boolean(span))
-            .map(packetSourceRef),
+          problems: demand.problems,
+          mechanisms: demand.mechanisms,
+          domains: demand.domains,
+          businessObjects: demand.businessObjects,
+          ownershipActions: demand.ownershipActions,
+          sourceRefs,
           roleRequirement: roleConceptSet
             ? demand.conceptKeys.some((key) => roleConceptSet.has(key))
             : true,
@@ -315,6 +330,9 @@ export async function matchCandidateToReviewChallenge(
   );
   const ranked = rankReviewChallenges(compiled.query, alignments);
   const selected = ranked.matches[0]?.alignment;
+  const eligibleRankByChallengeId = new Map(
+    ranked.matches.map((match) => [match.alignment.challenge.id, match.rank]),
+  );
   const evaluated = [...alignments].sort((left, right) =>
     right.finalScore - left.finalScore
     || right.candidateEvidenceAlignment - left.candidateEvidenceAlignment
@@ -351,19 +369,35 @@ export async function matchCandidateToReviewChallenge(
     JSON.stringify(recalled.challenges.map((item) => item.challenge.id)),
     JSON.stringify(recalled.excludedChallengeIds),
     JSON.stringify(evaluated.map((alignment, index) => ({
-      rank: index + 1,
+      rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
+      recallRank: index + 1,
       challengeId: alignment.challenge.id,
+      repoId: alignment.challenge.repoId,
+      prNumber: alignment.challenge.prNumber,
+      sourceVersion: alignment.challenge.sourceVersion,
       score: alignment.finalScore,
       candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
       roleRelevance: alignment.roleRelevance,
+      contextualSpecificity: alignment.contextualSpecificity,
+      challengeQuality: alignment.challengeQuality,
+      validationDeepeningValue: alignment.validationDeepeningValue,
       alignedDemandCount: alignment.alignments.length,
+      stretchCount: alignment.stretchCount,
+      stretchDemandWeightRatio: alignment.stretchDemandWeightRatio,
+      provenanceComplete: alignment.provenanceComplete,
+      eligible: alignment.eligible,
       alignments: alignment.alignments.map((entry) => ({
         atomId: entry.atom.id,
         demandId: entry.demand.id,
-        pairScore: entry.pairScore,
+        pairScore: entry.pairScore.total,
+        pairScoreBreakdown: entry.pairScore,
+        weightedScore: entry.weightedScore,
+        stretch: entry.stretch ?? null,
         sharedConcepts: entry.atom.concepts.filter((concept) =>
           entry.demand.concepts.includes(concept)
         ),
+        candidateSourceRefs: entry.atom.sourceRefs,
+        challengeSourceRefs: entry.demand.sourceRefs,
       })),
       rejectionReasons: alignment.rejectionReasons,
     }))),

@@ -36,3 +36,4 @@ export type {
 } from './types';
 export * from './d1Matcher';
 export * from './roleGuardrails';
+export * from './evaluation';

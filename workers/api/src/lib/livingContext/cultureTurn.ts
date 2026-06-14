@@ -1,7 +1,10 @@
 import type { ContextualDecomposition } from '../cultureContextualDecomposition';
 import { ensureCandidateLivingContext } from './compatibility';
 import { rebuildLivingContextSignalSnapshot } from './meetingTranscript';
-import { openSemanticTerm } from './openTerms';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTerm,
+} from './openTerms';
 import {
   deterministicEntityId,
   LivingContextStore,
@@ -18,6 +21,8 @@ export interface CultureTurnIngestionInput {
   question: string;
   answer: string;
   observedAt: string;
+  interactionStartedAt?: string | null;
+  interactionEndedAt?: string | null;
   decomposition: ContextualDecomposition;
   videoStorageKey?: string | null;
 }
@@ -118,6 +123,8 @@ export async function ingestCultureTurnToLivingContext(
     applicationId: identity.applicationId,
     interactionType: 'culture_interview',
     externalReference: input.sessionId,
+    startedAt: input.interactionStartedAt ?? null,
+    endedAt: input.interactionEndedAt ?? null,
     metadata: { sessionId: input.sessionId },
   });
   const artifact = await store.upsertArtifact({
@@ -303,7 +310,7 @@ export async function ingestCultureTurnToLivingContext(
         namespace: 'term',
         label: term.surface,
         metadata: {
-          resolver: 'open-source-term-v1',
+          resolver: OPEN_TERM_RESOLVER_VERSION,
           source: 'culture_interview_turn',
         },
       });

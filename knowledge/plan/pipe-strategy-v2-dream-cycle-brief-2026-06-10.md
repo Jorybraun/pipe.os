@@ -103,7 +103,7 @@ chrome-devtools-mcp proof before done, graph edge marked validated, strict Kanba
 **Priority**: Critical (blocks all future recursive planning).
 **Assignee Profile**: kanban-orchestrator (self-contained prompt).
 
-**Provenance**: Derived from graph query results on 2026-06-13T14:59:43.498044+00:00. Raw transcript: raw-dream-cycle-pipe-os-2026-06-10.md
+**Provenance**: Derived from graph query results on 2026-06-14T15:15:36.085622+00:00. Raw transcript: raw-dream-cycle-pipe-os-2026-06-10.md
 
 ---
 **End of Proposed Delegation Brief**

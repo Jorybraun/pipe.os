@@ -14,6 +14,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { searchPeople, enrichPerson } from '../../lib/pdl';
 import { LivingContextStore, deterministicEntityId } from '../../lib/livingContext';
+import type { JsonObject } from '../../lib/livingContext/types';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ─────────────────────────────────────────────────────────────
@@ -60,10 +61,6 @@ pdlSearch.use('*', authMiddleware);
 // POST /api/v1/outreach/search
 pdlSearch.post('/search', async (c) => {
   const apiKey = c.env.PDL_API_KEY;
-  if (!apiKey) {
-    return apiError(c, 'SERVICE_UNAVAILABLE', 'PDL integration not configured.');
-  }
-
   const userId = c.var.userId;
   const db = c.env.DB;
 
@@ -99,12 +96,16 @@ pdlSearch.post('/search', async (c) => {
     return c.json({ results, total: results.length, cached: true });
   }
 
+  if (!apiKey) {
+    return apiError(c, 'SERVICE_UNAVAILABLE', 'PDL integration not configured.');
+  }
+
   // 2. Cache miss → call PDL
   let data: Record<string, unknown>[];
   let total: number;
   try {
     const result = await searchPeople(apiKey, parsed.data);
-    data = result.data as Record<string, unknown>[];
+    data = result.data as unknown as Record<string, unknown>[];
     total = result.total;
   } catch (err) {
     console.error('[pdlSearch] search failed:', err);
@@ -112,23 +113,47 @@ pdlSearch.post('/search', async (c) => {
     return apiError(c, 'SERVICE_UNAVAILABLE', message);
   }
 
+  // Safety net: drop results that slipped past the `exists` filters
+  data = data.filter((p) => {
+    const hasName = typeof p.full_name === 'string' && p.full_name.length > 0;
+    const hasTitle = typeof p.job_title === 'string' && p.job_title.length > 0;
+    return hasName && hasTitle;
+  });
+
   // 3. Write to sourcing pool
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const resultsWithPoolId: Record<string, unknown>[] = [];
   for (const person of data) {
     const pdlId = typeof person.id === 'string' ? person.id : null;
     const poolId = crypto.randomUUID();
+
+    // Check for existing record by PDL ID
+    if (pdlId) {
+      const existing = await db
+        .prepare('SELECT id, status FROM sourcing_pool WHERE workspace_id = ? AND pdl_id = ?')
+        .bind(userId, pdlId)
+        .first<{ id: string; status: string }>();
+      if (existing) {
+        await db
+          .prepare(
+            `UPDATE sourcing_pool
+             SET query_hash = ?, data_json = ?,
+                 status = CASE WHEN status = 'dismissed' THEN 'discovered' ELSE status END,
+                 updated_at = ?, expires_at = ?
+             WHERE id = ?`,
+          )
+          .bind(qHash, JSON.stringify(person), now, expiresAt, existing.id)
+          .run();
+        resultsWithPoolId.push({ poolId: existing.id, status: existing.status === 'dismissed' ? 'discovered' : existing.status, personId: null, ...person });
+        continue;
+      }
+    }
+
     await db
       .prepare(
         `INSERT INTO sourcing_pool
          (id, workspace_id, pdl_id, query_hash, data_json, status, created_at, updated_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, 'discovered', ?, ?, ?)
-         ON CONFLICT(workspace_id, pdl_id) DO UPDATE SET
-           query_hash = excluded.query_hash,
-           data_json = excluded.data_json,
-           status = CASE WHEN sourcing_pool.status = 'dismissed' THEN 'discovered' ELSE sourcing_pool.status END,
-           updated_at = excluded.updated_at,
-           expires_at = excluded.expires_at`,
+         VALUES (?, ?, ?, ?, ?, 'discovered', ?, ?, ?)`,
       )
       .bind(poolId, userId, pdlId, qHash, JSON.stringify(person), now, now, expiresAt)
       .run();
@@ -273,7 +298,7 @@ pdlSearch.post('/contact', async (c) => {
     interactionType: parsed.data.channel,
     externalReference: parsed.data.poolId,
     startedAt: now,
-    metadata: parsed.data.context,
+    metadata: parsed.data.context as unknown as JsonObject | undefined,
   });
 
   // Add PersonRole: discovered

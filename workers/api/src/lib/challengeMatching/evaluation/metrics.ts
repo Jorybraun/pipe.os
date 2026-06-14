@@ -168,6 +168,7 @@ export function computeMatchRunFingerprint(run: PersistedMatchRun): string {
         atomId: alignment.atomId,
         demandId: alignment.demandId,
         pairScore: alignment.pairScore,
+        pairScoreBreakdown: alignment.pairScoreBreakdown ?? null,
         weightedScore: alignment.weightedScore ?? null,
         stretch: alignment.stretch ?? null,
         candidateSourceRefs: alignment.candidateSourceRefs,
@@ -300,7 +301,7 @@ export function evaluateMatchRuns(
   }
 
   const rerunFingerprints: Record<string, string> = {};
-  let byteIdenticalRerun = matchRuns.length > 0 && comparisonRuns.length > 0;
+  let byteIdenticalRerun = runs.size > 0 && runs.size === comparisons.size;
   for (const [key, run] of Array.from(runs.entries())) {
     const comparison = comparisons.get(key);
     if (!comparison) {

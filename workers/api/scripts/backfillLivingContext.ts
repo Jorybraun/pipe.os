@@ -23,13 +23,27 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { CandidateNode } from '../src/types';
+import type { CultureTranscript } from '../src/lib/cultureAgent';
+import { createCultureAgentProvider } from '../src/lib/llm/createProvider';
+import type { ProviderEnv, ProviderName } from '../src/lib/llm/createProvider';
 import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
+  ingestCodeReviewScoreReportToLivingContext,
+  ingestCodeReviewTranscriptToLivingContext,
+  ingestHistoricalCultureTranscript,
   ingestMeetingTranscriptToLivingContext,
+  ingestPhoneCallToLivingContext,
+  ingestPhoneRecruiterNote,
   mirrorCandidateNodeToLivingContext,
   parseStoredMeetingTranscript,
+  type CodeReviewTranscript,
 } from '../src/lib/livingContext';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTermRecord,
+  type OpenSemanticTermRecord,
+} from '../src/lib/livingContext/openTerms';
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -43,7 +57,14 @@ const { DatabaseSync } = require('node:sqlite') as {
 dotenv.config({ path: resolve(apiRoot, '.dev.vars') });
 
 type SqlValue = string | number | null;
-type EntityKind = 'candidates' | 'contacts' | 'candidateNodes' | 'meetings';
+type EntityKind =
+  | 'candidates'
+  | 'contacts'
+  | 'candidateNodes'
+  | 'meetings'
+  | 'cultureSessions'
+  | 'phoneCalls'
+  | 'codeReviewSessions';
 
 interface SqliteStatement {
   get(...values: unknown[]): unknown;
@@ -63,6 +84,8 @@ interface Options {
   batchSize: number;
   limit?: number;
   dryRun: boolean;
+  extractCultureSemantics: boolean;
+  cultureProvider?: ProviderName;
 }
 
 interface IdRow {
@@ -77,6 +100,44 @@ interface MeetingTranscriptRow {
   recording_r2_key: string | null;
   started_at: string | null;
   ended_at: string | null;
+}
+
+interface CultureSessionRow {
+  id: string;
+  candidate_id: string;
+  transcript: string;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+}
+
+interface PhoneCallBackfillRow {
+  id: string;
+  candidate_id: string;
+  owner_id: string;
+  direction: string;
+  twilio_call_sid: string | null;
+  duration_seconds: number | null;
+  recording_s3_key: string | null;
+  transcription: string | null;
+  transcription_status: string | null;
+  recruiter_notes: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  updated_at: string;
+}
+
+interface CodeReviewSessionBackfillRow {
+  id: string;
+  candidate_id: string;
+  challenge_id: string;
+  assessment_id: string;
+  implementer_persona: string;
+  status: string;
+  transcript: string | null;
+  score_report: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface QueryResult<T> {
@@ -100,6 +161,7 @@ interface EntityStats {
   processed: number;
   skipped: number;
   failed: number;
+  partial: number;
 }
 
 interface BackfillStats {
@@ -107,10 +169,13 @@ interface BackfillStats {
   contacts: EntityStats;
   candidateNodes: EntityStats;
   meetings: EntityStats;
+  cultureSessions: EntityStats;
+  phoneCalls: EntityStats;
+  codeReviewSessions: EntityStats;
 }
 
 function emptyEntityStats(): EntityStats {
-  return { discovered: 0, processed: 0, skipped: 0, failed: 0 };
+  return { discovered: 0, processed: 0, skipped: 0, failed: 0, partial: 0 };
 }
 
 function parsePositiveInteger(flag: string, raw: string | undefined): number {
@@ -131,6 +196,12 @@ Options:
   --database-path <path>  Override local SQLite discovery
   --batch-size <n>        Rows fetched per keyset page (default: 100)
   --limit <n>             Maximum rows processed per entity type
+  --extract-culture-semantics
+                          Re-extract open semantics for historical culture turns
+                          that do not contain a persisted decomposition
+  --culture-provider <name>
+                          Provider for offline extraction:
+                          cloudflare-ai | vertex-ai | google-ai | kimi
   --dry-run               Count eligible rows without writing
   --help                  Show this help
 
@@ -145,6 +216,8 @@ function parseArgs(argv: string[]): Options {
   let batchSize = 100;
   let limit: number | undefined;
   let dryRun = false;
+  let extractCultureSemantics = false;
+  let cultureProvider: ProviderName | undefined;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]!;
@@ -163,6 +236,36 @@ function parseArgs(argv: string[]): Options {
     }
     if (arg === '--dry-run') {
       dryRun = true;
+      continue;
+    }
+    if (arg === '--extract-culture-semantics') {
+      extractCultureSemantics = true;
+      continue;
+    }
+    if (arg === '--culture-provider') {
+      const value = argv[++index];
+      if (
+        value !== 'cloudflare-ai'
+        && value !== 'vertex-ai'
+        && value !== 'google-ai'
+        && value !== 'kimi'
+      ) {
+        throw new Error('--culture-provider must name a supported provider');
+      }
+      cultureProvider = value;
+      continue;
+    }
+    if (arg.startsWith('--culture-provider=')) {
+      const value = arg.slice('--culture-provider='.length);
+      if (
+        value !== 'cloudflare-ai'
+        && value !== 'vertex-ai'
+        && value !== 'google-ai'
+        && value !== 'kimi'
+      ) {
+        throw new Error('--culture-provider must name a supported provider');
+      }
+      cultureProvider = value;
       continue;
     }
     if (arg === '--database-path') {
@@ -196,7 +299,15 @@ function parseArgs(argv: string[]): Options {
   if (target === 'remote' && databasePath) {
     throw new Error('--database-path can only be used with --local');
   }
-  return { target, databasePath, batchSize, limit, dryRun };
+  return {
+    target,
+    databasePath,
+    batchSize,
+    limit,
+    dryRun,
+    extractCultureSemantics,
+    cultureProvider,
+  };
 }
 
 class LocalStatement implements PreparedStatementLike {
@@ -323,6 +434,60 @@ async function fetchCandidateNodePage(
   return result.results;
 }
 
+function upgradeLegacyCandidateNodeSemanticTerms(node: CandidateNode): {
+  node: CandidateNode;
+  upgraded: boolean;
+} {
+  if (!node.extracted_properties_json) return { node, upgraded: false };
+  try {
+    const properties = JSON.parse(node.extracted_properties_json) as Record<string, unknown> & {
+      semantic_terms?: unknown;
+      skills_demonstrated?: unknown;
+      name?: unknown;
+    };
+    if (Array.isArray(properties.semantic_terms) && properties.semantic_terms.length > 0) {
+      return { node, upgraded: false };
+    }
+
+    const terms = new Map<string, OpenSemanticTermRecord & { resolver: string }>();
+    const add = (surface: string, evidenceLevel: string): void => {
+      const term = openSemanticTermRecord(surface, evidenceLevel);
+      if (term) {
+        terms.set(term.canonical_key, {
+          ...term,
+          resolver: OPEN_TERM_RESOLVER_VERSION,
+        });
+      }
+    };
+    if (Array.isArray(properties.skills_demonstrated)) {
+      for (const surface of properties.skills_demonstrated) {
+        if (typeof surface === 'string') add(surface, 'demonstrated');
+      }
+    }
+    if (
+      terms.size === 0
+      && node.node_type.toLowerCase() === 'skill'
+      && typeof properties.name === 'string'
+    ) {
+      add(properties.name, 'mentioned');
+    }
+    if (terms.size === 0) return { node, upgraded: false };
+
+    return {
+      node: {
+        ...node,
+        extracted_properties_json: JSON.stringify({
+          ...properties,
+          semantic_terms: [...terms.values()],
+        }),
+      },
+      upgraded: true,
+    };
+  } catch {
+    return { node, upgraded: false };
+  }
+}
+
 async function fetchMeetingPage(
   db: D1Like,
   afterId: string,
@@ -338,6 +503,57 @@ async function fetchMeetingPage(
       ORDER BY id
       LIMIT ?2`,
   ).bind(afterId, pageSize).all<MeetingTranscriptRow>();
+  return result.results;
+}
+
+async function fetchCultureSessionPage(
+  db: D1Like,
+  afterId: string,
+  pageSize: number,
+): Promise<CultureSessionRow[]> {
+  const result = await db.prepare(
+    `SELECT id, candidate_id, transcript, started_at, completed_at, updated_at
+       FROM culture_interview_sessions
+      WHERE id > ?1
+        AND transcript IS NOT NULL
+      ORDER BY id
+      LIMIT ?2`,
+  ).bind(afterId, pageSize).all<CultureSessionRow>();
+  return result.results;
+}
+
+async function fetchPhoneCallPage(
+  db: D1Like,
+  afterId: string,
+  pageSize: number,
+): Promise<PhoneCallBackfillRow[]> {
+  const result = await db.prepare(
+    `SELECT id, candidate_id, owner_id, direction, twilio_call_sid,
+            duration_seconds, recording_s3_key, transcription,
+            transcription_status, recruiter_notes, started_at, ended_at,
+            updated_at
+       FROM phone_calls
+      WHERE id > ?1
+      ORDER BY id
+      LIMIT ?2`,
+  ).bind(afterId, pageSize).all<PhoneCallBackfillRow>();
+  return result.results;
+}
+
+async function fetchCodeReviewSessionPage(
+  db: D1Like,
+  afterId: string,
+  pageSize: number,
+): Promise<CodeReviewSessionBackfillRow[]> {
+  const result = await db.prepare(
+    `SELECT id, candidate_id, challenge_id, assessment_id,
+            implementer_persona, status, transcript, score_report,
+            created_at, updated_at
+       FROM review_sessions
+      WHERE id > ?1
+      ORDER BY id
+      LIMIT ?2`,
+  ).bind(afterId, pageSize).all<CodeReviewSessionBackfillRow>();
   return result.results;
 }
 
@@ -393,8 +609,9 @@ async function backfillCandidateNodes(
   db: D1Like,
   options: Options,
   stats: EntityStats,
-): Promise<void> {
+): Promise<number> {
   let afterId = '';
+  let semanticTermUpgrades = 0;
   while (shouldContinue(options, stats)) {
     const rows = await fetchCandidateNodePage(db, afterId, pageSize(options, stats));
     if (rows.length === 0) break;
@@ -403,7 +620,20 @@ async function backfillCandidateNodes(
     if (!options.dryRun) {
       for (const row of rows) {
         try {
-          await mirrorCandidateNodeToLivingContext(db as unknown as D1Database, row);
+          const upgraded = upgradeLegacyCandidateNodeSemanticTerms(row);
+          if (upgraded.upgraded) {
+            await db.prepare(
+              `UPDATE candidate_nodes
+                  SET extracted_properties_json = ?1,
+                      updated_at = unixepoch()
+                WHERE id = ?2`,
+            ).bind(upgraded.node.extracted_properties_json, row.id).run();
+            semanticTermUpgrades++;
+          }
+          await mirrorCandidateNodeToLivingContext(
+            db as unknown as D1Database,
+            upgraded.node,
+          );
           stats.processed++;
         } catch (error) {
           stats.failed++;
@@ -417,6 +647,7 @@ async function backfillCandidateNodes(
       `[living-context] candidateNodes: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
     );
   }
+  return semanticTermUpgrades;
 }
 
 async function backfillMeetings(
@@ -460,12 +691,197 @@ async function backfillMeetings(
   }
 }
 
+async function backfillCultureSessions(
+  db: D1Like,
+  options: Options,
+  stats: EntityStats,
+  provider: ReturnType<typeof createCultureAgentProvider>,
+): Promise<void> {
+  let afterId = '';
+  while (shouldContinue(options, stats)) {
+    const rows = await fetchCultureSessionPage(db, afterId, pageSize(options, stats));
+    if (rows.length === 0) break;
+    stats.discovered += rows.length;
+
+    if (!options.dryRun) {
+      for (const row of rows) {
+        try {
+          const transcript = JSON.parse(row.transcript) as CultureTranscript;
+          const result = await ingestHistoricalCultureTranscript(
+            db as unknown as D1Database,
+            {
+              candidateId: row.candidate_id,
+              sessionId: row.id,
+              transcript,
+              provider,
+              extractSemantics: options.extractCultureSemantics,
+              fallbackObservedAt: row.updated_at,
+              sessionStartedAt: row.started_at,
+              sessionEndedAt: row.completed_at,
+            },
+          );
+          stats.processed++;
+          if (result.extractionFailures > 0) stats.partial++;
+          console.log(JSON.stringify({
+            event: 'livingContextBackfill.cultureSession',
+            sessionId: row.id,
+            candidateId: row.candidate_id,
+            ...result,
+          }));
+        } catch (error) {
+          stats.failed++;
+          reportFailure('cultureSessions', row.id, error);
+        }
+      }
+    }
+
+    afterId = rows.at(-1)!.id;
+    console.log(
+      `[living-context] cultureSessions: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
+    );
+  }
+}
+
+async function backfillPhoneCalls(
+  db: D1Like,
+  options: Options,
+  stats: EntityStats,
+): Promise<void> {
+  let afterId = '';
+  while (shouldContinue(options, stats)) {
+    const rows = await fetchPhoneCallPage(db, afterId, pageSize(options, stats));
+    if (rows.length === 0) break;
+    stats.discovered += rows.length;
+
+    if (!options.dryRun) {
+      for (const row of rows) {
+        try {
+          await ingestPhoneCallToLivingContext(db as unknown as D1Database, {
+            callId: row.id,
+            candidateId: row.candidate_id,
+            direction: row.direction,
+            startedAt: row.started_at,
+            endedAt: row.ended_at,
+            twilioCallSid: row.twilio_call_sid,
+            recording: row.recording_s3_key
+              ? {
+                  storageKey: row.recording_s3_key,
+                  durationSeconds: row.duration_seconds,
+                }
+              : null,
+            transcript: row.transcription,
+            transcriptProvider: row.transcription_status === 'COMPLETED'
+              ? 'historical-phone-transcript'
+              : null,
+          });
+          if (row.recruiter_notes !== null) {
+            await ingestPhoneRecruiterNote(db as unknown as D1Database, {
+              callId: row.id,
+              candidateId: row.candidate_id,
+              direction: row.direction,
+              note: row.recruiter_notes,
+              observedAt: row.updated_at,
+              recruiterActorId: row.owner_id,
+              startedAt: row.started_at,
+              endedAt: row.ended_at,
+            });
+          }
+          stats.processed++;
+        } catch (error) {
+          stats.failed++;
+          reportFailure('phoneCalls', row.id, error);
+        }
+      }
+    }
+
+    afterId = rows.at(-1)!.id;
+    console.log(
+      `[living-context] phoneCalls: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
+    );
+  }
+}
+
+async function backfillCodeReviewSessions(
+  db: D1Like,
+  options: Options,
+  stats: EntityStats,
+): Promise<void> {
+  let afterId = '';
+  while (shouldContinue(options, stats)) {
+    const rows = await fetchCodeReviewSessionPage(db, afterId, pageSize(options, stats));
+    if (rows.length === 0) break;
+    stats.discovered += rows.length;
+
+    if (!options.dryRun) {
+      for (const row of rows) {
+        try {
+          const transcript = row.transcript
+            ? JSON.parse(row.transcript) as CodeReviewTranscript
+            : { rounds: [] };
+          await ingestCodeReviewTranscriptToLivingContext(
+            db as unknown as D1Database,
+            {
+              sessionId: row.id,
+              candidateId: row.candidate_id,
+              challengeId: row.challenge_id,
+              assessmentId: row.assessment_id,
+              transcript,
+              status: row.status,
+              implementerPersona: row.implementer_persona,
+              startedAt: row.created_at,
+              endedAt: ['verdict_submitted', 'scoring', 'scored'].includes(row.status)
+                ? row.updated_at
+                : null,
+              observedAt: row.updated_at,
+            },
+          );
+          if (row.score_report) {
+            await ingestCodeReviewScoreReportToLivingContext(
+              db as unknown as D1Database,
+              {
+                sessionId: row.id,
+                candidateId: row.candidate_id,
+                challengeId: row.challenge_id,
+                assessmentId: row.assessment_id,
+                scoreReportJson: row.score_report,
+                observedAt: row.updated_at,
+                producer: 'automated_scorer',
+                startedAt: row.created_at,
+              },
+            );
+          }
+          await db.prepare(
+            `UPDATE candidate_nodes
+                SET superseded_at = COALESCE(superseded_at, ?1),
+                    updated_at = ?1
+              WHERE source_type = 'code_review_session'
+                AND source_reference = ?2
+                AND decomposition_version = 'code_review_v1'`,
+          ).bind(row.updated_at, row.id).run();
+          stats.processed++;
+        } catch (error) {
+          stats.failed++;
+          reportFailure('codeReviewSessions', row.id, error);
+        }
+      }
+    }
+
+    afterId = rows.at(-1)!.id;
+    console.log(
+      `[living-context] codeReviewSessions: discovered=${stats.discovered} processed=${stats.processed} failed=${stats.failed}`,
+    );
+  }
+}
+
 async function verifySchema(db: D1Like): Promise<void> {
   const requiredTables = [
     'candidates',
     'contacts',
     'candidate_nodes',
     'meetings',
+    'culture_interview_sessions',
+    'phone_calls',
+    'review_sessions',
     'meeting_participants',
     'people',
     'workspace_people',
@@ -514,19 +930,49 @@ async function main(): Promise<void> {
 
   try {
     await verifySchema(db);
+    const providerEnv: ProviderEnv = {
+      ...(process.env as ProviderEnv),
+      ...(options.cultureProvider
+        ? { CULTURE_AGENT_PROVIDER: options.cultureProvider }
+        : {}),
+    };
+    const provider = options.extractCultureSemantics
+      ? createCultureAgentProvider(providerEnv)
+      : null;
+    if (options.extractCultureSemantics && !provider) {
+      throw new Error(
+        'Culture semantic extraction was requested, but no configured provider is available.',
+      );
+    }
     const stats: BackfillStats = {
       candidates: emptyEntityStats(),
       contacts: emptyEntityStats(),
       candidateNodes: emptyEntityStats(),
       meetings: emptyEntityStats(),
+      cultureSessions: emptyEntityStats(),
+      phoneCalls: emptyEntityStats(),
+      codeReviewSessions: emptyEntityStats(),
     };
 
     await backfillIdentities(db, 'candidates', options, stats.candidates);
     await backfillIdentities(db, 'contacts', options, stats.contacts);
-    await backfillCandidateNodes(db, options, stats.candidateNodes);
+    await backfillCultureSessions(
+      db,
+      options,
+      stats.cultureSessions,
+      provider,
+    );
+    await backfillPhoneCalls(db, options, stats.phoneCalls);
+    await backfillCodeReviewSessions(db, options, stats.codeReviewSessions);
+    const candidateSemanticTermUpgrades = await backfillCandidateNodes(
+      db,
+      options,
+      stats.candidateNodes,
+    );
     await backfillMeetings(db, options, stats.meetings);
 
     const failed = Object.values(stats).reduce((sum, entry) => sum + entry.failed, 0);
+    const partial = Object.values(stats).reduce((sum, entry) => sum + entry.partial, 0);
     console.log(JSON.stringify({
       event: 'livingContextBackfill.complete',
       target: options.target,
@@ -534,10 +980,12 @@ async function main(): Promise<void> {
       batchSize: options.batchSize,
       limitPerEntity: options.limit ?? null,
       stats,
+      candidateSemanticTermUpgrades,
       failed,
+      partial,
     }, null, 2));
 
-    if (failed > 0) process.exitCode = 1;
+    if (failed > 0 || partial > 0) process.exitCode = 1;
   } finally {
     localDatabase?.close();
   }

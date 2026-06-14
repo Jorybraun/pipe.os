@@ -41,6 +41,10 @@ import { loadRcdForAssessment } from '../../lib/rcd';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 import { scoreAndPropagate } from '../../lib/review/scoreAndPropagate';
 import { recordSessionEvent } from '../../lib/telemetry/sessionEvents';
+import {
+  ingestCodeReviewTranscriptToLivingContext,
+  type CodeReviewTranscript,
+} from '../../lib/livingContext/codeReview';
 
 // ─── Router ──────────────────────────────────────────────────────────────────
 
@@ -60,6 +64,8 @@ interface ReviewSessionRow {
   transcript: string;
   next_comment_id: number;
   mode: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface ChallengeConfigRow {
@@ -75,15 +81,7 @@ interface ChallengeConfigRow {
 }
 
 /** Shape of transcript stored in D1 — review rounds + optional explainer exchanges */
-interface StoredTranscript {
-  rounds: ReviewRound[];
-  explainer_exchanges?: ComprehensionExchange[];
-  verdict?: {
-    decision: string;
-    summary: string;
-    submittedAt: string;
-  };
-}
+type StoredTranscript = CodeReviewTranscript;
 
 // ─── Severity mapping ────────────────────────────────────────────────────────
 
@@ -115,6 +113,43 @@ function parseJsonColumn<T>(value: unknown): T | null {
     }
   }
   return value as T;
+}
+
+async function syncReviewTranscript(
+  db: D1Database,
+  input: {
+    sessionId: string;
+    candidateId: string;
+    challengeId: string;
+    assessmentId: string;
+    transcript: StoredTranscript;
+    status: string;
+    implementerPersona?: string | null;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    observedAt: string;
+  },
+): Promise<void> {
+  try {
+    await ingestCodeReviewTranscriptToLivingContext(db, input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[review] living-context sync failed for session ${input.sessionId}:`,
+      message,
+    );
+    await recordSessionEvent(db, {
+      sessionId: input.sessionId,
+      sessionType: 'code_review',
+      candidateId: input.candidateId,
+      eventType: 'error',
+      payload: {
+        operation: 'living_context_sync',
+        message,
+        recoverableBy: 'backfillLivingContext',
+      },
+    });
+  }
 }
 
 function extractDiffText(cachedDiffJson: unknown): string {
@@ -381,6 +416,17 @@ async function executeReviewRound(
   )
     .bind(JSON.stringify(transcript), newRoundNum, nextId, now, session.id)
     .run();
+  await syncReviewTranscript(db, {
+    sessionId: session.id,
+    candidateId: session.candidate_id,
+    challengeId: session.challenge_id,
+    assessmentId: session.assessment_id,
+    transcript,
+    status: 'in_progress',
+    implementerPersona: session.implementer_persona,
+    startedAt: session.created_at ?? null,
+    observedAt: now,
+  });
 
   const threads = buildThreadsForResponse(transcript.rounds);
 
@@ -399,6 +445,8 @@ async function finalizeReviewSession(
     challenge_id: string;
     assessment_id: string;
     transcript: string;
+    created_at?: string;
+    implementer_persona?: string;
   },
   verdict: string,
   summary: string,
@@ -419,6 +467,18 @@ async function finalizeReviewSession(
   )
     .bind(JSON.stringify(transcript), now, session.id)
     .run();
+  await syncReviewTranscript(c.env.DB, {
+    sessionId: session.id,
+    candidateId: session.candidate_id,
+    challengeId: session.challenge_id,
+    assessmentId: session.assessment_id,
+    transcript,
+    status: 'verdict_submitted',
+    implementerPersona: session.implementer_persona ?? null,
+    startedAt: session.created_at ?? null,
+    endedAt: now,
+    observedAt: now,
+  });
 
   // Write challenge_submissions row
   const submissionId = crypto.randomUUID();
@@ -620,7 +680,8 @@ review.post('/session/:id/message', async (c) => {
   // Load and authorise session
   const session = await c.env.DB.prepare(
     `SELECT id, challenge_id, assessment_id, candidate_id, implementer_persona,
-            current_round, max_rounds, status, transcript, next_comment_id, mode
+            current_round, max_rounds, status, transcript, next_comment_id, mode,
+            created_at, updated_at
      FROM review_sessions
      WHERE id = ?1`,
   )
@@ -779,7 +840,8 @@ review.post('/session/:id/complete', async (c) => {
 
   // Load and authorise session
   const session = await c.env.DB.prepare(
-    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript
+    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript,
+            implementer_persona, created_at
      FROM review_sessions WHERE id = ?1`,
   )
     .bind(sessionId)
@@ -790,6 +852,8 @@ review.post('/session/:id/complete', async (c) => {
       assessment_id: string;
       status: string;
       transcript: string;
+      implementer_persona: string;
+      created_at: string;
     }>();
 
   if (!session) {
@@ -926,7 +990,8 @@ review.post('/submit', async (c) => {
 
   // Check for existing session — reuse if created by lazy /ask, otherwise conflict
   const existingSession = await c.env.DB.prepare(
-    `SELECT id, current_round, transcript, next_comment_id, status, implementer_persona, max_rounds
+    `SELECT id, current_round, transcript, next_comment_id, status,
+            implementer_persona, max_rounds, created_at, updated_at
      FROM review_sessions
      WHERE candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3
      LIMIT 1`,
@@ -995,6 +1060,8 @@ review.post('/submit', async (c) => {
       transcript: JSON.stringify(transcript),
       next_comment_id: nextCommentId,
       mode: 'bug_finding',
+      created_at: now,
+      updated_at: now,
     };
   }
 
@@ -1025,7 +1092,8 @@ review.post('/:sessionId/respond', async (c) => {
   // Load and authorise session
   const session = await c.env.DB.prepare(
     `SELECT id, challenge_id, assessment_id, candidate_id, implementer_persona,
-            current_round, max_rounds, status, transcript, next_comment_id, mode
+            current_round, max_rounds, status, transcript, next_comment_id, mode,
+            created_at, updated_at
      FROM review_sessions
      WHERE id = ?1`,
   )
@@ -1234,11 +1302,21 @@ review.post('/ask', async (c) => {
     exchanges.push(exchange);
     transcript.explainer_exchanges = exchanges;
 
+    const observedAt = new Date().toISOString();
     await c.env.DB.prepare(
       `UPDATE review_sessions SET transcript = ?1, updated_at = ?2 WHERE id = ?3`,
     )
-      .bind(JSON.stringify(transcript), new Date().toISOString(), existingSession.id)
+      .bind(JSON.stringify(transcript), observedAt, existingSession.id)
       .run();
+    await syncReviewTranscript(c.env.DB, {
+      sessionId: existingSession.id,
+      candidateId,
+      challengeId: ch.id,
+      assessmentId: assessment.id,
+      transcript,
+      status: 'in_progress',
+      observedAt,
+    });
 
     return c.json({ sessionId: existingSession.id, exchanges });
   }
@@ -1273,6 +1351,17 @@ review.post('/ask', async (c) => {
       typeof config?.maxRounds === 'number' ? config.maxRounds : 4,
       JSON.stringify(transcript), now)
     .run();
+  await syncReviewTranscript(c.env.DB, {
+    sessionId,
+    candidateId,
+    challengeId: ch.id,
+    assessmentId: assessment.id,
+    transcript,
+    status: 'in_progress',
+    implementerPersona: 'pending',
+    startedAt: now,
+    observedAt: now,
+  });
 
   return c.json({ sessionId, exchanges: transcript.explainer_exchanges });
 });
@@ -1300,11 +1389,21 @@ review.post('/:sessionId/ask', async (c) => {
 
   // Load and authorise session
   const session = await c.env.DB.prepare(
-    `SELECT id, challenge_id, candidate_id, status, transcript
+    `SELECT id, challenge_id, assessment_id, candidate_id, status, transcript,
+            implementer_persona, created_at
      FROM review_sessions WHERE id = ?1`,
   )
     .bind(sessionId)
-    .first<{ id: string; challenge_id: string; candidate_id: string; status: string; transcript: string }>();
+    .first<{
+      id: string;
+      challenge_id: string;
+      assessment_id: string;
+      candidate_id: string;
+      status: string;
+      transcript: string;
+      implementer_persona: string;
+      created_at: string;
+    }>();
 
   if (!session) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
@@ -1377,11 +1476,23 @@ review.post('/:sessionId/ask', async (c) => {
   exchanges.push(exchange);
   transcript.explainer_exchanges = exchanges;
 
+  const observedAt = new Date().toISOString();
   await c.env.DB.prepare(
     `UPDATE review_sessions SET transcript = ?1, updated_at = ?2 WHERE id = ?3`,
   )
-    .bind(JSON.stringify(transcript), new Date().toISOString(), sessionId)
+    .bind(JSON.stringify(transcript), observedAt, sessionId)
     .run();
+  await syncReviewTranscript(c.env.DB, {
+    sessionId,
+    candidateId,
+    challengeId: session.challenge_id,
+    assessmentId: session.assessment_id,
+    transcript,
+    status: session.status,
+    implementerPersona: session.implementer_persona,
+    startedAt: session.created_at,
+    observedAt,
+  });
 
   return c.json({ sessionId, exchanges });
 });
@@ -1404,7 +1515,8 @@ review.post('/:sessionId/verdict', async (c) => {
 
   // Load and authorise session
   const session = await c.env.DB.prepare(
-    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript
+    `SELECT id, candidate_id, challenge_id, assessment_id, status, transcript,
+            implementer_persona, created_at
      FROM review_sessions WHERE id = ?1`,
   )
     .bind(sessionId)
@@ -1415,6 +1527,8 @@ review.post('/:sessionId/verdict', async (c) => {
       assessment_id: string;
       status: string;
       transcript: string;
+      implementer_persona: string;
+      created_at: string;
     }>();
 
   if (!session) {

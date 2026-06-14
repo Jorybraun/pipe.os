@@ -229,8 +229,8 @@ export class LivingContextStore {
          application_id = excluded.application_id,
          interaction_type = excluded.interaction_type,
          external_reference = excluded.external_reference,
-         started_at = excluded.started_at,
-         ended_at = excluded.ended_at,
+         started_at = COALESCE(excluded.started_at, interactions.started_at),
+         ended_at = COALESCE(excluded.ended_at, interactions.ended_at),
          metadata_json = excluded.metadata_json,
          updated_at = excluded.updated_at`,
     ).bind(

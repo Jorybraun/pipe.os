@@ -1,153 +1,319 @@
-/**
- * CLI for evaluating candidate-to-PR matching against the expert-label corpus.
- *
- * This script loads persisted match runs from D1 and evaluates them against
- * a frozen expert-label corpus, producing both JSON and human-readable reports.
- */
-
-import type {
-  EvaluationCorpus,
-  EvaluationResult,
-  AcceptanceThresholds,
-  PersistedMatchRun,
+import { getLabelsForCandidateRole, loadCorpus } from './corpus';
+import { checkAcceptanceThresholds, evaluateMatchRuns } from './metrics';
+import {
+  DEFAULT_ACCEPTANCE_THRESHOLDS,
+  type AcceptanceThresholds,
+  type EvaluationResult,
+  type PersistedMatchAlignment,
+  type PersistedMatchRun,
+  type PersistedRankedChallenge,
 } from './types';
-import { evaluateMatchRuns, checkAcceptanceThresholds } from './metrics';
-import { loadCorpus } from './corpus';
-import { DEFAULT_ACCEPTANCE_THRESHOLDS } from './types';
 
-export interface CliOptions {
-  corpusPath: string;
+export interface EvaluationOptions {
+  corpusId: string;
   matchRunIds?: string[];
   comparisonMatchRunIds?: string[];
-  outputJson?: string;
-  outputReport?: string;
   thresholds?: Partial<AcceptanceThresholds>;
-  verbose?: boolean;
+  persistResult?: boolean;
 }
 
-/**
- * Run evaluation with CLI options.
- *
- * This is a simplified implementation that requires D1 database integration.
- * The full implementation would load match runs from D1 and evaluate them.
- */
+interface MatchRunRow {
+  id: string;
+  candidate_id: string;
+  role_context_id: string | null;
+  candidate_snapshot_id: string;
+  role_snapshot_id: string;
+  policy_version: string;
+  model_version: string | null;
+  status: string;
+  ranked_results_json: string;
+}
+
+function requiredString(
+  row: Record<string, unknown>,
+  key: string,
+  context: string,
+): string {
+  const value = row[key];
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${context}.${key} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requiredNumber(
+  row: Record<string, unknown>,
+  key: string,
+  context: string,
+): number {
+  const value = row[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${context}.${key} must be a finite number`);
+  }
+  return value;
+}
+
+function requiredBoolean(
+  row: Record<string, unknown>,
+  key: string,
+  context: string,
+): boolean {
+  const value = row[key];
+  if (typeof value !== 'boolean') {
+    throw new Error(`${context}.${key} must be a boolean`);
+  }
+  return value;
+}
+
+function positiveInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function parseAlignment(
+  value: unknown,
+  context: string,
+): PersistedMatchAlignment {
+  const row = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+  const rawPairScore = row.pairScore;
+  const pairScore = typeof rawPairScore === 'number'
+    ? rawPairScore
+    : rawPairScore && typeof rawPairScore === 'object'
+      ? requiredNumber(
+          rawPairScore as Record<string, unknown>,
+          'total',
+          `${context}.pairScore`,
+        )
+      : requiredNumber(row, 'pairScore', context);
+  const pairScoreBreakdown = row.pairScoreBreakdown
+    && typeof row.pairScoreBreakdown === 'object'
+    ? row.pairScoreBreakdown as PersistedMatchAlignment['pairScoreBreakdown']
+    : undefined;
+  const weightedScore = typeof row.weightedScore === 'number'
+    ? row.weightedScore
+    : undefined;
+  return {
+    atomId: requiredString(row, 'atomId', context),
+    demandId: requiredString(row, 'demandId', context),
+    pairScore,
+    ...(pairScoreBreakdown ? { pairScoreBreakdown } : {}),
+    ...(weightedScore !== undefined ? { weightedScore } : {}),
+    stretch: row.stretch && typeof row.stretch === 'object'
+      ? row.stretch as PersistedMatchAlignment['stretch']
+      : null,
+    sharedConcepts: Array.isArray(row.sharedConcepts)
+      ? row.sharedConcepts.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+    candidateSourceRefs: Array.isArray(row.candidateSourceRefs)
+      ? row.candidateSourceRefs as PersistedMatchAlignment['candidateSourceRefs']
+      : [],
+    challengeSourceRefs: Array.isArray(row.challengeSourceRefs)
+      ? row.challengeSourceRefs as PersistedMatchAlignment['challengeSourceRefs']
+      : [],
+  };
+}
+
+function parseRankedResults(json: string): PersistedRankedChallenge[] {
+  const parsed = JSON.parse(json) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error('ranked_results_json must contain an array');
+  }
+  return parsed.map((entry, index) => {
+    const context = `ranked_results_json[${index}]`;
+    const row = entry && typeof entry === 'object'
+      ? entry as Record<string, unknown>
+      : {};
+    const rank = row.rank === null ? null : positiveInteger(row.rank);
+    if (row.rank !== null && rank === null) {
+      throw new Error(`${context}.rank must be null or a positive integer`);
+    }
+    const recallRank = positiveInteger(row.recallRank);
+    const prNumber = positiveInteger(row.prNumber);
+    if (recallRank === null) {
+      throw new Error(`${context}.recallRank must be a positive integer`);
+    }
+    if (prNumber === null) {
+      throw new Error(`${context}.prNumber must be a positive integer`);
+    }
+    const rejectionReasons = Array.isArray(row.rejectionReasons)
+      ? row.rejectionReasons.filter((reason): reason is string => typeof reason === 'string')
+      : [];
+    return {
+      rank,
+      recallRank,
+      challengeId: requiredString(row, 'challengeId', context),
+      repoId: requiredString(row, 'repoId', context),
+      prNumber,
+      sourceVersion: requiredString(row, 'sourceVersion', context),
+      score: requiredNumber(row, 'score', context),
+      candidateEvidenceAlignment: requiredNumber(
+        row,
+        'candidateEvidenceAlignment',
+        context,
+      ),
+      roleRelevance: requiredNumber(row, 'roleRelevance', context),
+      contextualSpecificity: requiredNumber(row, 'contextualSpecificity', context),
+      challengeQuality: requiredNumber(row, 'challengeQuality', context),
+      validationDeepeningValue: requiredNumber(
+        row,
+        'validationDeepeningValue',
+        context,
+      ),
+      alignedDemandCount: positiveInteger(row.alignedDemandCount) ?? 0,
+      stretchCount: positiveInteger(row.stretchCount) ?? 0,
+      stretchDemandWeightRatio: requiredNumber(
+        row,
+        'stretchDemandWeightRatio',
+        context,
+      ),
+      provenanceComplete: requiredBoolean(row, 'provenanceComplete', context),
+      eligible: requiredBoolean(row, 'eligible', context),
+      alignments: Array.isArray(row.alignments)
+        ? row.alignments.map((alignment, alignmentIndex) =>
+            parseAlignment(alignment, `${context}.alignments[${alignmentIndex}]`)
+          )
+        : [],
+      rejectionReasons,
+    };
+  });
+}
+
+export async function loadPersistedMatchRun(
+  db: D1Database,
+  matchRunId: string,
+): Promise<PersistedMatchRun> {
+  const row = await db.prepare(
+    `SELECT id, candidate_id, role_context_id, candidate_snapshot_id, role_snapshot_id,
+            policy_version, model_version, status, ranked_results_json
+       FROM match_runs
+      WHERE id = ?1`,
+  ).bind(matchRunId).first<MatchRunRow>();
+  if (!row) throw new Error(`Match run "${matchRunId}" was not found`);
+  return {
+    matchRunId: row.id,
+    candidateId: row.candidate_id,
+    roleId: row.role_context_id ?? row.role_snapshot_id,
+    candidateSnapshotId: row.candidate_snapshot_id,
+    policyVersion: row.policy_version,
+    modelVersion: row.model_version,
+    status: row.status,
+    rankedChallenges: parseRankedResults(row.ranked_results_json),
+  };
+}
+
+async function latestRunIdsForCorpus(
+  db: D1Database,
+  corpus: ReturnType<typeof loadCorpus>,
+): Promise<string[]> {
+  const pairs = new Map<string, { candidateId: string; roleId: string }>();
+  for (const label of corpus.expertLabels) {
+    pairs.set(JSON.stringify([label.candidateId, label.roleId]), {
+      candidateId: label.candidateId,
+      roleId: label.roleId,
+    });
+  }
+  const ids: string[] = [];
+  for (const pair of pairs.values()) {
+    const row = await db.prepare(
+      `SELECT id
+         FROM match_runs
+        WHERE candidate_id = ?1
+          AND (role_context_id = ?2 OR role_snapshot_id = ?2)
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+    ).bind(pair.candidateId, pair.roleId).first<{ id: string }>();
+    if (row) ids.push(row.id);
+  }
+  return ids;
+}
+
 export async function runEvaluation(
-  db: unknown,
-  options: CliOptions,
+  db: D1Database,
+  options: EvaluationOptions,
 ): Promise<EvaluationResult> {
-  // In a real implementation, this would:
-  // 1. Load corpus from D1
-  // 2. Load match runs from D1
-  // 3. Evaluate using evaluateMatchRuns
-  // 4. Check thresholds
-  // 5. Output results
+  const corpusRow = await db.prepare(
+    `SELECT corpus_json
+       FROM evaluation_corpora
+      WHERE corpus_id = ?1`,
+  ).bind(options.corpusId).first<{ corpus_json: string }>();
+  if (!corpusRow) throw new Error(`Evaluation corpus "${options.corpusId}" was not found`);
 
-  throw new Error('CLI requires D1 database connection - not implemented in stub');
+  const corpus = loadCorpus(corpusRow.corpus_json);
+  const matchRunIds = options.matchRunIds?.length
+    ? options.matchRunIds
+    : await latestRunIdsForCorpus(db, corpus);
+  const matchRuns = await Promise.all(
+    matchRunIds.map((id) => loadPersistedMatchRun(db, id)),
+  );
+  const comparisonRuns = await Promise.all(
+    (options.comparisonMatchRunIds ?? []).map((id) => loadPersistedMatchRun(db, id)),
+  );
+  const thresholds = {
+    ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+    ...options.thresholds,
+  };
+  const result = checkAcceptanceThresholds(
+    evaluateMatchRuns(corpus, matchRuns, comparisonRuns),
+    thresholds,
+  );
+
+  if (options.persistResult) {
+    await db.prepare(
+      `INSERT INTO evaluation_results (
+         id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,
+         metrics_json, result_json, passed, created_at
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch())`,
+    ).bind(
+      crypto.randomUUID(),
+      corpus.corpusId,
+      JSON.stringify(result.metrics.matchRunIds),
+      JSON.stringify(result.metrics.comparisonMatchRunIds),
+      JSON.stringify(result.metrics),
+      JSON.stringify(result),
+      result.passed ? 1 : 0,
+    ).run();
+  }
+
+  return result;
 }
 
-/**
- * Generate human-readable report.
- */
 export function generateHumanReadableReport(result: EvaluationResult): string {
-  const lines: string[] = [];
-
-  lines.push('=== Matching Evaluation Report ===');
-  lines.push('');
-  lines.push(`Corpus: ${result.metrics.corpusId} (v${result.metrics.corpusVersion})`);
-  lines.push(`Match Runs: ${result.metrics.matchRunIds.join(', ')}`);
-  lines.push(`Comparison Runs: ${result.metrics.comparisonMatchRunIds.join(', ')}`);
-  lines.push(`Evaluated At: ${result.metrics.evaluatedAt}`);
-  lines.push('');
-
-  lines.push('--- Metrics ---');
-  lines.push(`Recall@50: ${(result.metrics.recallAt50 * 100).toFixed(1)}%`);
-  lines.push(`Precision@3: ${(result.metrics.precisionAt3 * 100).toFixed(1)}%`);
-  lines.push(`nDCG@5: ${(result.metrics.ndcgAt5 * 100).toFixed(1)}%`);
-  lines.push('');
-
-  lines.push('--- Guardrail Compliance ---');
-  lines.push(`Guardrail Violations: ${result.metrics.guardrailViolationCount}`);
-  lines.push(`Multi-Stretch Violations: ${result.metrics.multiStretchViolationCount}`);
-  lines.push(`Missing Provenance: ${result.metrics.missingProvenanceCount}`);
-  lines.push('');
-
-  lines.push('--- Determinism ---');
-  lines.push(`Byte-Identical Rerun: ${result.metrics.byteIdenticalRerun ? 'PASS' : 'FAIL'}`);
-  lines.push('');
-
-  lines.push('--- Thresholds ---');
-  lines.push(`Min Recall@50: ${(result.thresholds.minRecallAt50 * 100).toFixed(1)}%`);
-  lines.push(`Min Precision@3: ${(result.thresholds.minPrecisionAt3 * 100).toFixed(1)}%`);
-  lines.push(`Min nDCG@5: ${(result.thresholds.minNdcgAt5 * 100).toFixed(1)}%`);
-  lines.push(`Max Guardrail Violations: ${result.thresholds.maxGuardrailViolations}`);
-  lines.push(`Max Multi-Stretch Violations: ${result.thresholds.maxMultiStretchViolations}`);
-  lines.push(`Max Missing Provenance: ${result.thresholds.maxMissingProvenance}`);
-  lines.push('');
-
-  lines.push('--- Result ---');
-  lines.push(result.passed ? '✓ PASS' : '✗ FAIL');
-  lines.push('');
-
+  const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const lines = [
+    '=== Matching Evaluation Report ===',
+    `Corpus: ${result.metrics.corpusId} (schema ${result.metrics.corpusVersion})`,
+    `Match runs: ${result.metrics.matchRunIds.join(', ') || '(none)'}`,
+    `Comparison runs: ${result.metrics.comparisonMatchRunIds.join(', ') || '(none)'}`,
+    '',
+    `Recall@50: ${percent(result.metrics.recallAt50)}`,
+    `Precision@3: ${percent(result.metrics.precisionAt3)}`,
+    `nDCG@5: ${percent(result.metrics.ndcgAt5)}`,
+    `Guardrail violations: ${result.metrics.guardrailViolationCount}`,
+    `Multi-stretch violations: ${result.metrics.multiStretchViolationCount}`,
+    `Missing provenance: ${result.metrics.missingProvenanceCount}`,
+    `Missing match runs: ${result.metrics.missingMatchRunCount}`,
+    `Byte-identical comparison: ${result.metrics.byteIdenticalRerun ? 'PASS' : 'NOT PROVEN'}`,
+    `Expert labels: ${result.metrics.expertLabelCount}`,
+    `Synthetic labels: ${result.metrics.syntheticFixtureCount}`,
+    '',
+    result.passed ? 'RESULT: PASS' : 'RESULT: FAIL',
+  ];
   if (result.failures.length > 0) {
-    lines.push('--- Failures ---');
-    for (const failure of result.failures) {
-      lines.push(`  - ${failure}`);
-    }
-    lines.push('');
+    lines.push('', 'Failures:', ...result.failures.map((failure) => `- ${failure}`));
   }
-
   if (result.warnings.length > 0) {
-    lines.push('--- Warnings ---');
-    for (const warning of result.warnings) {
-      lines.push(`  - ${warning}`);
-    }
-    lines.push('');
+    lines.push('', 'Warnings:', ...result.warnings.map((warning) => `- ${warning}`));
   }
-
-  lines.push('--- Detailed Results ---');
-  for (const labelResult of result.metrics.labelResults) {
-    lines.push(`Label: ${labelResult.labelId}`);
-    lines.push(`  Candidate: ${labelResult.candidateId}`);
-    lines.push(`  Role: ${labelResult.roleId}`);
-    lines.push(`  Challenge: ${labelResult.challengeId}`);
-    lines.push(`  Expected Grade: ${labelResult.expectedGrade}`);
-    lines.push(`  Actual Rank: ${labelResult.actualRank ?? 'N/A'}`);
-    lines.push(`  Actual Score: ${labelResult.actualScore?.toFixed(3) ?? 'N/A'}`);
-    lines.push(`  Status: ${labelResult.passed ? 'PASS' : 'FAIL'}`);
-    if (labelResult.failureReason) {
-      lines.push(`  Failure: ${labelResult.failureReason}`);
-    }
-    if (labelResult.guardrailViolations.length > 0) {
-      lines.push(`  Guardrail Violations: ${labelResult.guardrailViolations.join(', ')}`);
-    }
-    lines.push('');
-  }
-
   return lines.join('\n');
 }
 
-/**
- * CLI entry point for Node.js execution.
- */
-export async function cliMain(args: string[]): Promise<number> {
-  // Parse arguments (simplified for this implementation)
-  const options: CliOptions = {
-    corpusPath: args[0] ?? 'default',
-    verbose: args.includes('--verbose'),
-  };
-
-  const jsonIndex = args.indexOf('--json');
-  if (jsonIndex >= 0 && jsonIndex + 1 < args.length) {
-    options.outputJson = args[jsonIndex + 1];
-  }
-
-  const reportIndex = args.indexOf('--report');
-  if (reportIndex >= 0 && reportIndex + 1 < args.length) {
-    options.outputReport = args[reportIndex + 1];
-  }
-
-  // In a real implementation, this would connect to D1
-  // For now, we'll return an error code
-  console.error('CLI requires D1 database connection');
-  return 1;
+export function candidateRoleLabels(
+  corpusJson: string,
+  candidateId: string,
+  roleId: string,
+) {
+  return getLabelsForCandidateRole(loadCorpus(corpusJson), candidateId, roleId);
 }

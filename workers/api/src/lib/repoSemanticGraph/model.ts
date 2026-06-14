@@ -282,6 +282,11 @@ export interface ChallengeDemand {
   family: ChallengeDemandFamily;
   narrative: string;
   conceptKeys: string[];
+  problems?: string[];
+  mechanisms?: string[];
+  domains?: string[];
+  businessObjects?: string[];
+  ownershipActions?: string[];
   sourceSpanIds: string[];
   changedSymbolIds: string[];
   weight: number;

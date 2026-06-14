@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "corpusId": "sample-corpus-v1",
+  "createdAt": "2026-06-13T00:00:00Z",
+  "description": "Sample evaluation corpus with synthetic fixtures for testing the matching evaluation harness",
+  "candidateEvidence": [
+    {
+      "candidateId": "candidate-1",
+      "evidenceId": "evidence-1",
+      "episodeId": "episode-1",
+      "narrative": "Implemented quantum-resistant cryptography using lattice-based schemes",
+      "concepts": ["term:quantum-cryptography", "term:lattice-based-cryptography", "term:post-quantum"],
+      "mechanisms": ["term:kyber-encapsulation", "term:dilithium-signatures"],
+      "domains": ["term:security", "term:cryptography"],
+      "businessObjects": ["term:encryption-keys", "term:digital-signatures"],
+      "ownershipActions": ["term:implemented", "term:designed"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-1",
+          "artifactVersion": "version-1",
+          "contentHash": "sha256:abc123",
+          "startOffset": 0,
+          "endOffset": 100
+        }
+      ]
+    }
+  ],
+  "roleRequirements": [
+    {
+      "roleId": "role-1",
+      "requiredLanguages": ["typescript"],
+      "relevantConcepts": ["term:quantum-cryptography", "term:post-quantum"],
+      "requiredConcepts": ["term:security"],
+      "sourceReferences": [
+        {
+          "entityId": "role-1",
+          "locator": "technical_context",
+          "conceptKeys": ["term:quantum-cryptography"]
+        }
+      ]
+    }
+  ],
+  "expertLabels": [
+    {
+      "labelId": "label-1",
+      "candidateId": "candidate-1",
+      "roleId": "role-1",
+      "challengeId": "challenge-1",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": ["challenge-1", "challenge-2"],
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-13T00:00:00Z",
+      "labeledBy": "synthetic-fixture"
+    }
+  ],
+  "metadata": {
+    "totalLabels": 1,
+    "totalCandidates": 1,
+    "totalRoles": 1,
+    "totalChallenges": 2,
+    "syntheticFixtureCount": 1
+  }
+}

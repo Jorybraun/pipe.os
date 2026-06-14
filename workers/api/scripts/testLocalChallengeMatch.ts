@@ -72,11 +72,15 @@ function d1(sqlite: SqliteDatabase): D1Database {
 async function main(): Promise<void> {
   const candidateId = argument('--candidate');
   if (!candidateId) {
-    throw new Error('Usage: npx tsx scripts/testLocalChallengeMatch.ts --candidate <candidate-id>');
+    throw new Error(
+      'Usage: npx tsx scripts/testLocalChallengeMatch.ts --candidate <candidate-id> [--commit]',
+    );
   }
 
+  const commit = process.argv.includes('--commit');
   const sqlite = new DatabaseSync(localDatabasePath());
   sqlite.exec('BEGIN');
+  let succeeded = false;
   try {
     const roleContextId = argument('--role-context');
     const database = d1(sqlite);
@@ -137,6 +141,7 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({
         candidateId,
         roleContextId,
+        committed: commit,
         result,
         run: {
           status: typedRun.status,
@@ -155,10 +160,11 @@ async function main(): Promise<void> {
         },
       }, null, 2));
     } else {
-      console.log(JSON.stringify({ candidateId, roleContextId, result, run }, null, 2));
+      console.log(JSON.stringify({ candidateId, roleContextId, committed: commit, result, run }, null, 2));
     }
+    succeeded = true;
   } finally {
-    sqlite.exec('ROLLBACK');
+    sqlite.exec(commit && succeeded ? 'COMMIT' : 'ROLLBACK');
     sqlite.close();
   }
 }

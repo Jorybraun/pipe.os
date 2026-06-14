@@ -9,11 +9,12 @@ export interface OpenSemanticTermRecord {
   evidence_level?: string;
 }
 
+export const OPEN_TERM_RESOLVER_VERSION = 'open-source-term-v2' as const;
+
 export function normalizeOpenTermSurface(value: string): string {
   return value
     .normalize('NFKC')
     .trim()
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .replace(/[^a-z0-9+#.]+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -49,8 +50,7 @@ export function extractOpenIdentifierTerms(
 ): OpenSemanticTerm[] {
   const terms = new Map<string, OpenSemanticTerm>();
   for (const value of values) {
-    const expanded = value.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
-    for (const token of expanded.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
+    for (const token of value.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
       if (token.length < 3) continue;
       const term = openSemanticTerm(token);
       if (term && !terms.has(term.canonicalKey)) terms.set(term.canonicalKey, term);

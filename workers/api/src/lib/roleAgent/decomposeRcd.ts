@@ -22,7 +22,10 @@ import type {
 import type { Env } from '../../types';
 import { writeRoleGraphFireAndForget, resolvePolicyFromConfig } from '../neo4j/writeRoleGraph';
 import { deterministicEntityId } from '../livingContext/persistence';
-import { openSemanticTerm } from '../livingContext/openTerms';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTerm,
+} from '../livingContext/openTerms';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -422,7 +425,7 @@ function extractTechnicalContexts(rcd: RoleContextDocument, roleContextId: strin
           semantic_terms: term ? [{
             surface: term.surface,
             canonical_key: term.canonicalKey,
-            resolver: 'open-source-term-v1',
+            resolver: OPEN_TERM_RESOLVER_VERSION,
           }] : [],
         },
         'technical_context.stack',
@@ -446,7 +449,7 @@ function extractTechnicalContexts(rcd: RoleContextDocument, roleContextId: strin
           semantic_terms: term ? [{
             surface: term.surface,
             canonical_key: term.canonicalKey,
-            resolver: 'open-source-term-v1',
+            resolver: OPEN_TERM_RESOLVER_VERSION,
           }] : [],
         },
         'technical_context.constructs',

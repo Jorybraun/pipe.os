@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   generateHumanReadableReport,
@@ -23,7 +23,6 @@ interface SqliteStatement {
 
 interface SqliteDatabase {
   prepare(sql: string): SqliteStatement;
-  exec(sql: string): void;
   close(): void;
 }
 
@@ -43,7 +42,7 @@ interface D1Like {
   prepare(sql: string): PreparedStatementLike;
 }
 
-interface Options {
+export interface EvaluationCliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
   corpusId: string;
@@ -188,9 +187,33 @@ function valueFor(argv: string[], flag: string): string | undefined {
   return valuesFor(argv, flag)[0];
 }
 
-function parseArgs(argv: string[]): Options {
-  if (argv.includes('--help') || argv.includes('-h')) {
-    console.log(`Usage:
+export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null {
+  if (argv.includes('--help') || argv.includes('-h')) return null;
+  const corpusId = valueFor(argv, '--corpus-id');
+  if (!corpusId) throw new Error('--corpus-id is required');
+  const target = argv.includes('--remote') ? 'remote' : 'local';
+  const databasePath = valueFor(argv, '--database-path');
+  if (target === 'remote' && databasePath) {
+    throw new Error('--database-path can only be used with --local');
+  }
+  return {
+    target,
+    ...(databasePath ? { databasePath } : {}),
+    corpusId,
+    ...(valueFor(argv, '--corpus-file')
+      ? { corpusFile: valueFor(argv, '--corpus-file')! }
+      : {}),
+    matchRunIds: valuesFor(argv, '--match-run-id'),
+    comparisonMatchRunIds: valuesFor(argv, '--comparison-run-id'),
+    ...(valueFor(argv, '--json') ? { jsonPath: valueFor(argv, '--json')! } : {}),
+    ...(valueFor(argv, '--report') ? { reportPath: valueFor(argv, '--report')! } : {}),
+    persist: argv.includes('--persist'),
+    allowSynthetic: argv.includes('--allow-synthetic'),
+  };
+}
+
+export function evaluationHelp(): string {
+  return `Usage:
   npx tsx scripts/evaluateMatching.ts --corpus-id <id> [options]
 
 Options:
@@ -202,28 +225,7 @@ Options:
   --json <path>                 Write machine-readable result
   --report <path>               Write human-readable report
   --persist                     Persist the evaluation result in D1
-  --allow-synthetic             Disable the expert-only gate for fixture testing`);
-    process.exit(0);
-  }
-  const corpusId = valueFor(argv, '--corpus-id');
-  if (!corpusId) throw new Error('--corpus-id is required');
-  const target = argv.includes('--remote') ? 'remote' : 'local';
-  const databasePath = valueFor(argv, '--database-path');
-  if (target === 'remote' && databasePath) {
-    throw new Error('--database-path can only be used with --local');
-  }
-  return {
-    target,
-    databasePath,
-    corpusId,
-    corpusFile: valueFor(argv, '--corpus-file'),
-    matchRunIds: valuesFor(argv, '--match-run-id'),
-    comparisonMatchRunIds: valuesFor(argv, '--comparison-run-id'),
-    jsonPath: valueFor(argv, '--json'),
-    reportPath: valueFor(argv, '--report'),
-    persist: argv.includes('--persist'),
-    allowSynthetic: argv.includes('--allow-synthetic'),
-  };
+  --allow-synthetic             Disable the expert-only gate for fixture testing`;
 }
 
 async function freezeCorpus(
@@ -267,15 +269,19 @@ async function freezeCorpus(
   ).run();
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+export async function runEvaluationCli(argv: string[]): Promise<number> {
+  const options = parseEvaluationArgs(argv);
+  if (!options) {
+    process.stdout.write(`${evaluationHelp()}\n`);
+    return 0;
+  }
+
   let localDatabase: SqliteDatabase | undefined;
   let db: D1Like;
   if (options.target === 'remote') {
     db = new RemoteD1(new D1Client(loadD1Config()));
   } else {
-    const path = discoverLocalDatabase(options.databasePath);
-    localDatabase = new DatabaseSync(path);
+    localDatabase = new DatabaseSync(discoverLocalDatabase(options.databasePath));
     db = new LocalD1(localDatabase);
   }
 
@@ -298,13 +304,20 @@ async function main(): Promise<void> {
     if (options.reportPath) writeFileSync(resolve(options.reportPath), report);
     if (!options.jsonPath) process.stdout.write(json);
     if (!options.reportPath) process.stdout.write(report);
-    if (!result.passed) process.exitCode = 1;
+    return result.passed ? 0 : 1;
   } finally {
     localDatabase?.close();
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
+if (import.meta.url === invokedPath) {
+  runEvaluationCli(process.argv.slice(2))
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    });
+}

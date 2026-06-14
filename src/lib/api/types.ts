@@ -851,6 +851,167 @@ export interface CandidateProfileResponse {
   cultureInterviewSessions: CultureInterviewSession[];
 }
 
+// ─── Living Context Graph ───────────────────────────────────────────────────
+
+export interface LivingContextSourceRef {
+  sourceSpanId: string;
+  evidenceRole: string | null;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  artifactVersionId: string;
+  artifactVersionNumber: number;
+  mediaType: string;
+  storageKey: string | null;
+  stableSegmentId: string | null;
+  exactText: string;
+  byteStart: number | null;
+  byteEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface LivingContextArtifact {
+  id: string;
+  interactionId: string | null;
+  artifactType: string;
+  logicalKey: string | null;
+  metadata: Record<string, unknown>;
+  latestVersionId: string | null;
+  latestVersionNumber: number | null;
+  versionCount: number;
+  mediaType: string | null;
+  storageKey: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sourceSpans: LivingContextSourceRef[];
+}
+
+export interface LivingContextAssertionConcept {
+  id: string;
+  canonicalKey: string;
+  namespace: string;
+  label: string;
+  relationship: string;
+  weight: number;
+}
+
+export interface LivingContextAssertion {
+  id: string;
+  interactionId: string | null;
+  episodeId: string | null;
+  subjectType: string;
+  subjectId: string | null;
+  predicate: string;
+  narrative: string;
+  confidence: number | null;
+  polarity: number;
+  extractionVersion: string | null;
+  observedAt: string | null;
+  qualifiers: Record<string, unknown>;
+  concepts: LivingContextAssertionConcept[];
+  sources: LivingContextSourceRef[];
+}
+
+export interface LivingContextSignalEvidence {
+  id: string;
+  interactionId: string | null;
+  assertionId: string;
+  conceptId: string | null;
+  evidenceLevel: string;
+  strength: number;
+  polarity: number;
+  observedAt: string | null;
+  assertionNarrative: string;
+  assertionPredicate: string;
+  sources: LivingContextSourceRef[];
+}
+
+export interface LivingContextSignal {
+  signalKey: string;
+  label: string;
+  namespace: string | null;
+  interactionId: string | null;
+  asOf: string;
+  conversationScore: number | null;
+  totalScore: number;
+  confidence: number;
+  evidenceCount: number;
+  sourceDiversity: number;
+  dimensions: Record<string, unknown>;
+  policyVersion: string;
+  evidence: LivingContextSignalEvidence[];
+}
+
+export interface LivingContextInteraction {
+  id: string;
+  interactionType: string;
+  externalReference: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+  artifactIds: string[];
+  assertionIds: string[];
+  signalKeys: string[];
+}
+
+export interface LivingContextReadModel {
+  person: {
+    personId: string;
+    workspacePersonId: string;
+    applicationId: string;
+    displayName: string | null;
+    primaryEmail: string | null;
+    primaryPhone: string | null;
+    relationshipSummary: string | null;
+    applicationStatus: string | null;
+    pipelineId: string | null;
+    roles: Array<{
+      id: string;
+      roleType: string;
+      label: string | null;
+      applicationId: string | null;
+      attributes: Record<string, unknown>;
+      activeFrom: string | null;
+      activeTo: string | null;
+    }>;
+  };
+  summary: {
+    interactionCount: number;
+    artifactCount: number;
+    assertionCount: number;
+    signalCount: number;
+    sourceSpanCount: number;
+  };
+  interactions: LivingContextInteraction[];
+  artifacts: LivingContextArtifact[];
+  assertions: LivingContextAssertion[];
+  signals: LivingContextSignal[];
+  relationships: Array<{
+    id: string;
+    fromEntityType: string;
+    fromEntityId: string;
+    predicate: string;
+    toEntityType: string | null;
+    toEntityId: string | null;
+    toValue: unknown;
+    qualifiers: Record<string, unknown>;
+    confidence: number | null;
+    sourceAssertionId: string | null;
+  }>;
+}
+
+export interface LivingContextResponse {
+  livingContext: LivingContextReadModel;
+}
+
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
 
 export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';

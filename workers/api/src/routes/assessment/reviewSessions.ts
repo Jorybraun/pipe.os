@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../../middleware/auth';
 import type { Env, Variables } from '../../types';
 import { scoreAndPropagate, type ScoreAndPropagateTranscript } from '../../lib/review/scoreAndPropagate';
+import { ingestCodeReviewScoreReportToLivingContext } from '../../lib/livingContext/codeReview';
 
 const reviewSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 reviewSessions.use('*', authMiddleware);
@@ -177,7 +178,7 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
 
   // Validate ownership via pipeline
   const session = await c.env.DB.prepare(`
-    SELECT rs.id, rs.assessment_id
+    SELECT rs.id, rs.assessment_id, rs.challenge_id, rs.candidate_id, rs.created_at
     FROM review_sessions rs
     JOIN assessments a ON a.id = rs.assessment_id
     JOIN candidates cand ON cand.id = rs.candidate_id
@@ -185,7 +186,13 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
     WHERE rs.id = ?1 AND p.owner_id = ?2
   `)
     .bind(sessionId, userId)
-    .first<{ id: string; assessment_id: string }>();
+    .first<{
+      id: string;
+      assessment_id: string;
+      challenge_id: string;
+      candidate_id: string;
+      created_at: string;
+    }>();
 
   if (!session) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
@@ -193,6 +200,17 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
 
   const now = new Date().toISOString();
   const scoreReportJson = JSON.stringify(scoreReport);
+  await ingestCodeReviewScoreReportToLivingContext(c.env.DB, {
+    sessionId,
+    candidateId: session.candidate_id,
+    challengeId: session.challenge_id,
+    assessmentId: session.assessment_id,
+    scoreReportJson,
+    observedAt: now,
+    producer: 'recruiter_override',
+    producerId: userId,
+    startedAt: session.created_at,
+  });
 
   // Write score_report and update status
   await c.env.DB.prepare(`

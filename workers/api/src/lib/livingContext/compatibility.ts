@@ -2,6 +2,7 @@ import type { CandidateNode } from '../../types';
 import { LivingContextStore, deterministicEntityId } from './persistence';
 import {
   normalizeOpenTermSurface,
+  OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
   type OpenSemanticTerm,
 } from './openTerms';
@@ -90,36 +91,27 @@ export function candidateNodeTerms(node: CandidateNode): CandidateSemanticTerm[]
           }>;
         }
       : {};
-    const { semantic_terms: semanticTerms, ...sourceProperties } = properties;
-    const explicit = Array.isArray(semanticTerms)
-      ? semanticTerms.flatMap((term) => {
+    const explicit = Array.isArray(properties.semantic_terms)
+      ? properties.semantic_terms.flatMap((term) => {
           if (typeof term.surface !== 'string') return [];
           const resolved = openSemanticTerm(term.surface);
+          const canonicalKey = typeof term.canonical_key === 'string'
+            && term.canonical_key.trim().length > 0
+            ? term.canonical_key.trim()
+            : resolved?.canonicalKey;
           const resolvedEvidenceLevel = evidenceLevel(term.evidence_level);
-          return resolved
+          return resolved && canonicalKey
             ? [{
-                ...resolved,
+                surface: resolved.surface,
+                canonicalKey,
                 signalEligible: resolvedEvidenceLevel !== null,
                 evidenceLevel: resolvedEvidenceLevel,
               }]
             : [];
         })
       : [];
-    const propertyStrings: string[] = [];
-    sourcePropertyStrings(sourceProperties, propertyStrings);
     const terms = new Map<string, CandidateSemanticTerm>();
-    for (const surface of propertyStrings) {
-      const term = openSemanticTerm(surface);
-      if (term) {
-        terms.set(term.canonicalKey, {
-          ...term,
-          signalEligible: false,
-          evidenceLevel: null,
-        });
-      }
-    }
     for (const term of explicit) {
-      // Explicit extractor output upgrades a searchable mention into signal evidence.
       terms.set(term.canonicalKey, term);
     }
     return [...terms.values()];
@@ -127,30 +119,6 @@ export function candidateNodeTerms(node: CandidateNode): CandidateSemanticTerm[]
     // Preserve the assertion even when legacy properties are malformed.
   }
   return [];
-}
-
-function sourcePropertyStrings(value: unknown, output: string[], depth = 0): void {
-  if (depth > 6 || output.length >= 128 || value === null || value === undefined) return;
-  if (typeof value === 'string') {
-    const surface = value.trim();
-    const normalized = surface.toLowerCase();
-    const missingSentinel =
-      normalized === 'unknown'
-      || normalized === 'n/a'
-      || normalized === 'not available'
-      || normalized === 'not provided';
-    if (!missingSentinel && surface.length > 0 && surface.length <= 80) output.push(surface);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) sourcePropertyStrings(entry, output, depth + 1);
-    return;
-  }
-  if (typeof value === 'object') {
-    for (const entry of Object.values(value as Record<string, unknown>)) {
-      sourcePropertyStrings(entry, output, depth + 1);
-    }
-  }
 }
 
 export async function ensureCandidateLivingContext(
@@ -310,7 +278,10 @@ export async function mirrorCandidateNodeToLivingContext(
   await db.prepare(
     `DELETE FROM signal_evidence
       WHERE assertion_id = ?1
-        AND json_extract(metadata_json, '$.resolver') = 'open-source-term-v1'`,
+        AND json_extract(metadata_json, '$.resolver') IN (
+          'open-source-term-v1',
+          'open-source-term-v2'
+        )`,
   ).bind(assertion.id).run();
   await db.prepare(
     `DELETE FROM assertion_concepts
@@ -324,7 +295,7 @@ export async function mirrorCandidateNodeToLivingContext(
       namespace: 'term',
       label: term.surface,
       metadata: {
-        resolver: 'open-source-term-v1',
+        resolver: OPEN_TERM_RESOLVER_VERSION,
         source: 'legacy_candidate_node',
       },
     });
@@ -347,7 +318,7 @@ export async function mirrorCandidateNodeToLivingContext(
         observedAt: new Date(node.captured_at * 1000).toISOString(),
         metadata: {
           sourceType: node.source_type,
-          resolver: 'open-source-term-v1',
+          resolver: OPEN_TERM_RESOLVER_VERSION,
           signalEligibility: 'extractor_explicit',
         },
       });

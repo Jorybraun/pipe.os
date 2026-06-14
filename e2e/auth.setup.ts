@@ -28,7 +28,8 @@ setup("authenticate via Clerk", async ({ page }) => {
   // Step 2: Clerk modal opens — fill email
   const emailInput = page.locator('input[name="identifier"]');
   await expect(emailInput).toBeVisible({ timeout: 15000 });
-  await emailInput.fill(process.env.E2E_EMAIL ?? "e2e-test@pipe.dev");
+  const email = process.env.E2E_EMAIL?.trim() || "e2e-test@pipe.dev";
+  await emailInput.fill(email);
 
   // Step 3: Click continue
   await page.locator('button:has-text("Continue")').click();
@@ -36,7 +37,9 @@ setup("authenticate via Clerk", async ({ page }) => {
   // Step 4: Fill password
   const passwordInput = page.locator('input[name="password"]');
   await expect(passwordInput).toBeVisible({ timeout: 10000 });
-  await passwordInput.fill(process.env.E2E_PASSWORD ?? "PipeE2E_Test2026!");
+  const password = process.env.E2E_PASSWORD?.trim();
+  if (!password) throw new Error("E2E_PASSWORD is required for auth setup");
+  await passwordInput.fill(password);
 
   // Step 5: Submit
   await page.locator('button:has-text("Continue")').click();

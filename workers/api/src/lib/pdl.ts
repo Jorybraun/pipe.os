@@ -1,7 +1,7 @@
 /**
  * People Data Labs (PDL) client — candidate sourcing and enrichment.
  *
- * Uses the Person Search API (SQL queries) and Person Enrichment API.
+ * Uses the Person Search API (Elasticsearch queries) and Person Enrichment API.
  * Auth: X-Api-Key header.
  *
  * Docs: https://docs.peopledatalabs.com/docs/person-search-api
@@ -60,48 +60,63 @@ export interface PdlSearchResponse {
   scroll_token?: string;
 }
 
-function escapeSql(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
-function buildSearchSql(filters: PdlSearchFilters): string {
-  const conditions: string[] = [];
+function buildSearchQuery(filters: PdlSearchFilters): Record<string, unknown> {
+  const must: Record<string, unknown>[] = [];
+  const should: Record<string, unknown>[] = [];
+  const filter: Record<string, unknown>[] = [];
 
   if (filters.jobTitleRole) {
-    conditions.push(`job_title_role = '${escapeSql(filters.jobTitleRole)}'`);
+    // Match normalized role exactly OR raw title contains all words
+    should.push(
+      { term: { job_title_role: filters.jobTitleRole } },
+      { match: { job_title: { query: filters.jobTitleRole, operator: 'and' } } },
+    );
   }
   if (filters.jobTitleLevel) {
-    conditions.push(`job_title_levels = '${escapeSql(filters.jobTitleLevel)}'`);
+    filter.push({ terms: { job_title_levels: [filters.jobTitleLevel] } });
   }
   if (filters.jobCompanyName) {
-    conditions.push(`job_company_name = '${escapeSql(filters.jobCompanyName)}'`);
+    filter.push({ term: { job_company_name: filters.jobCompanyName } });
   }
   if (filters.locationCountry) {
-    conditions.push(`location_country = '${escapeSql(filters.locationCountry)}'`);
+    filter.push({ term: { location_country: filters.locationCountry } });
   }
   if (filters.locationRegion) {
-    conditions.push(`location_region = '${escapeSql(filters.locationRegion)}'`);
+    filter.push({ term: { location_region: filters.locationRegion } });
   }
   if (filters.skills && filters.skills.length > 0) {
-    const skillList = filters.skills.map((s) => `'${escapeSql(s)}'`).join(', ');
-    conditions.push(`skills IN (${skillList})`);
-  }
-  if (filters.hasPhone) {
-    conditions.push('phone_numbers IS NOT NULL');
+    filter.push({ terms: { skills: filters.skills } });
   }
   if (filters.hasEmail) {
-    conditions.push('emails IS NOT NULL');
+    filter.push({ exists: { field: 'emails' } });
+  }
+  if (filters.hasPhone) {
+    filter.push({ exists: { field: 'phone_numbers' } });
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  return `SELECT * FROM person ${whereClause}`;
+  // Quality gates — require name and job title
+  filter.push({ exists: { field: 'full_name' } });
+  filter.push({ exists: { field: 'job_title' } });
+
+  const boolQuery: Record<string, unknown> = {};
+  if (should.length > 0) boolQuery.should = should;
+  if (must.length > 0) boolQuery.must = must;
+  if (filter.length > 0) boolQuery.filter = filter;
+  if (should.length > 0) boolQuery.minimum_should_match = 1;
+
+  // If only filters exist, add match_all to satisfy bool query structure
+  if (should.length === 0 && must.length === 0 && filter.length > 0) {
+    boolQuery.must = { match_all: {} };
+  }
+
+  return { query: { bool: boolQuery } };
 }
 
 export async function searchPeople(
   apiKey: string,
   filters: PdlSearchFilters,
 ): Promise<PdlSearchResponse> {
-  const sql = buildSearchSql(filters);
+  const esQuery = buildSearchQuery(filters);
   const size = filters.size ?? 10;
 
   const response = await fetch(`${PDL_BASE_URL}/person/search`, {
@@ -110,18 +125,19 @@ export async function searchPeople(
       'Content-Type': 'application/json',
       'X-Api-Key': apiKey,
     },
-    body: JSON.stringify({ sql, size }),
+    body: JSON.stringify({ ...esQuery, size }),
   });
 
   const body = (await response.json()) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message =
-      typeof body.error === 'string'
-        ? body.error
-        : typeof (body.error as Record<string, unknown>)?.message === 'string'
-          ? (body.error as Record<string, unknown>).message
-          : `PDL search failed (${response.status})`;
+    let message: string;
+    if (typeof body.error === 'string') {
+      message = body.error;
+    } else {
+      const errObj = body.error as Record<string, unknown> | undefined;
+      message = typeof errObj?.message === 'string' ? errObj.message : `PDL search failed (${response.status})`;
+    }
     throw new Error(message);
   }
 

@@ -57,7 +57,7 @@ describe('loadRoleChallengeSemantics', () => {
     expect(semantics.requiredConcepts).toEqual([]);
   });
 
-  it('uses exact source-backed node narratives when legacy properties lack terms', async () => {
+  it('does not turn legacy role-node prose into semantic concepts', async () => {
     const semantics = await loadRoleChallengeSemantics(d1([{
       id: 'node-legacy',
       rcd_version: '1.0.0',
@@ -71,8 +71,8 @@ describe('loadRoleChallengeSemantics', () => {
       non_negotiable_skills_json: JSON.stringify(['Understanding of code']),
     });
 
-    expect(semantics.relevantConcepts).toEqual(['term:understanding-of-code']);
-    expect(semantics.requiredConcepts).toEqual(['term:understanding-of-code']);
+    expect(semantics.relevantConcepts).toEqual([]);
+    expect(semantics.requiredConcepts).toEqual([]);
   });
 
   it('merges exact RCD terms when legacy role-node narratives contain prefixes', async () => {

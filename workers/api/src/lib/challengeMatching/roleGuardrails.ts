@@ -1,6 +1,7 @@
 import type { RoleContextDocument } from '../../types';
 import {
   normalizeOpenTermSurface,
+  OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from '../livingContext/openTerms';
 
@@ -26,7 +27,7 @@ interface PersistedSemanticTerm {
 
 export interface RoleChallengeSemantics {
   roleSnapshotId: string;
-  resolverVersion: 'open-source-term-v1';
+  resolverVersion: typeof OPEN_TERM_RESOLVER_VERSION;
   relevantConcepts: string[];
   requiredConcepts: string[];
   sources: Array<{
@@ -51,17 +52,13 @@ function parseStringArray(value: string | null): string[] {
 
 function termsFromProperties(
   value: string | null,
-  narrative: string,
 ): Array<{ surface: string; canonicalKey: string }> {
   const terms = new Map<string, { surface: string; canonicalKey: string }>();
   const add = (surface: string): void => {
     const term = openSemanticTerm(surface);
     if (term) terms.set(term.canonicalKey, term);
   };
-  if (!value) {
-    add(narrative);
-    return [...terms.values()];
-  }
+  if (!value) return [];
   try {
     const parsed = JSON.parse(value) as {
       value?: unknown;
@@ -78,11 +75,9 @@ function termsFromProperties(
     if (typeof parsed.value === 'string') {
       add(parsed.value);
     }
-    if (terms.size === 0) add(narrative);
     return [...terms.values()];
   } catch {
-    add(narrative);
-    return [...terms.values()];
+    return [];
   }
 }
 
@@ -141,7 +136,7 @@ export async function loadRoleChallengeSemantics(
   const sources: RoleChallengeSemantics['sources'] = [];
   const terms = new Map<string, string>();
   for (const row of result.results ?? []) {
-    const nodeTerms = termsFromProperties(row.extracted_properties_json, row.narrative_text);
+    const nodeTerms = termsFromProperties(row.extracted_properties_json);
     if (nodeTerms.length === 0) continue;
     nodeTerms.forEach((term) => terms.set(term.canonicalKey, term.surface));
     sources.push({
@@ -173,7 +168,7 @@ export async function loadRoleChallengeSemantics(
 
   return {
     roleSnapshotId: `role-context:${roleContext.id}:rcd:${rcdVersion}`,
-    resolverVersion: 'open-source-term-v1',
+    resolverVersion: OPEN_TERM_RESOLVER_VERSION,
     relevantConcepts: [...terms.keys()].sort(),
     requiredConcepts,
     sources,

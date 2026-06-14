@@ -168,7 +168,7 @@ async function makePullRequest(
     repoSnapshotId: snapshot.id,
     kind: 'calls',
     subject: { symbolId: worker.file.symbols[0]!.id },
-    object: { concept: 'kafka.consume' },
+    object: { concept: 'kafka.consume', literal: 'true' },
     sourceSpanIds: [worker.span.id],
     confidence: 1,
     parser: 'fixture-parser',
@@ -288,11 +288,38 @@ describe('repository semantic graph challenge packets', () => {
       demands.find((demand) => demand.family === 'structure:calls')?.conceptKeys,
     ).toContain('term:kafka.consume');
     expect(
+      demands.find((demand) => demand.family === 'artifact:source')?.conceptKeys,
+    ).toContain('term:order');
+    expect(
+      demands.find((demand) => demand.family === 'artifact:test')?.conceptKeys,
+    ).toContain('term:duplicate');
+    expect(
+      demands.find((demand) => demand.family === 'structure:calls')?.conceptKeys,
+    ).not.toContain('term:true');
+    expect(
       demands.find((demand) => demand.family === 'structure:calls')?.conceptKeys,
     ).not.toContain('term:expect.toequal');
     expect(
       demands.find((demand) => demand.family === 'issue:term:bug')?.conceptKeys,
     ).not.toContain('term:kafka.consume');
+    expect(
+      demands.find((demand) => demand.family === 'structure:calls')?.mechanisms,
+    ).toEqual(expect.arrayContaining(['term:calls', 'term:kafka.consume']));
+    expect(
+      demands.find((demand) => demand.family === 'issue:term:bug')?.problems,
+    ).toContain('term:bug');
+    expect(
+      demands.find((demand) => demand.family === 'artifact:source')?.domains,
+    ).toContain('term:orders');
+    expect(
+      demands.find((demand) => demand.family === 'artifact:source')?.ownershipActions,
+    ).toContain('term:modified');
+    expect(
+      demands.find((demand) => demand.family === 'structure:calls')?.narrative,
+    ).toContain('src/workers/orderEvents.ts');
+    expect(
+      demands.find((demand) => demand.family === 'structure:calls')?.narrative,
+    ).not.toContain('represented by structure:calls');
   });
 
   it('scores a well-provenanced review challenge as eligible and fails oversized challenges', async () => {
