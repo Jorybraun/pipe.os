@@ -2,9 +2,9 @@
 
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import Database from 'better-sqlite3';
 
 import {
   generateHumanReadableReport,
@@ -15,16 +15,7 @@ import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 
 type SqlValue = string | number | null;
 
-interface SqliteStatement {
-  get(...values: unknown[]): unknown;
-  all(...values: unknown[]): unknown[];
-  run(...values: unknown[]): { changes: number | bigint };
-}
-
-interface SqliteDatabase {
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
+type BetterSqliteDb = InstanceType<typeof Database>;
 
 interface QueryResult<T> {
   results: T[];
@@ -57,16 +48,35 @@ export interface EvaluationCliOptions {
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(scriptDir, '..');
-const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
+
+function rewriteNumberedParams(
+  sql: string,
+  bindings: unknown[],
+): { sql: string; args: unknown[] } {
+  const numbered = /\?(\d+)/g;
+  let match = numbered.exec(sql);
+  if (!match) return { sql, args: bindings };
+
+  const args: unknown[] = [];
+  let rewritten = '';
+  let lastIndex = 0;
+
+  numbered.lastIndex = 0;
+  while ((match = numbered.exec(sql)) !== null) {
+    rewritten += sql.slice(lastIndex, match.index) + '?';
+    const paramIndex = parseInt(match[1], 10) - 1;
+    args.push(bindings[paramIndex]);
+    lastIndex = numbered.lastIndex;
+  }
+  rewritten += sql.slice(lastIndex);
+  return { sql: rewritten, args };
+}
 
 class LocalStatement implements PreparedStatementLike {
   private values: SqlValue[] = [];
 
   constructor(
-    private readonly database: SqliteDatabase,
+    private readonly database: BetterSqliteDb,
     private readonly sql: string,
   ) {}
 
@@ -87,7 +97,8 @@ class LocalStatement implements PreparedStatementLike {
 
   async first<T>(): Promise<T | null> {
     try {
-      return (this.database.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+      const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+      return (this.database.prepare(sql).get(...args) as T | undefined) ?? null;
     } catch (error) {
       throw this.bindingError(error);
     }
@@ -95,8 +106,9 @@ class LocalStatement implements PreparedStatementLike {
 
   async all<T>(): Promise<QueryResult<T>> {
     try {
+      const { sql, args } = rewriteNumberedParams(this.sql, this.values);
       return {
-        results: this.database.prepare(this.sql).all(...this.values) as T[],
+        results: this.database.prepare(sql).all(...args) as T[],
         success: true,
       };
     } catch (error) {
@@ -106,7 +118,8 @@ class LocalStatement implements PreparedStatementLike {
 
   async run(): Promise<QueryResult<never>> {
     try {
-      this.database.prepare(this.sql).run(...this.values);
+      const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+      this.database.prepare(sql).run(...args);
       return { results: [], success: true };
     } catch (error) {
       throw this.bindingError(error);
@@ -115,7 +128,7 @@ class LocalStatement implements PreparedStatementLike {
 }
 
 class LocalD1 implements D1Like {
-  constructor(private readonly database: SqliteDatabase) {}
+  constructor(private readonly database: BetterSqliteDb) {}
 
   prepare(sql: string): PreparedStatementLike {
     return new LocalStatement(this.database, sql);
@@ -276,12 +289,12 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
     return 0;
   }
 
-  let localDatabase: SqliteDatabase | undefined;
+  let localDatabase: BetterSqliteDb | undefined;
   let db: D1Like;
   if (options.target === 'remote') {
     db = new RemoteD1(new D1Client(loadD1Config()));
   } else {
-    localDatabase = new DatabaseSync(discoverLocalDatabase(options.databasePath));
+    localDatabase = new Database(discoverLocalDatabase(options.databasePath));
     db = new LocalD1(localDatabase);
   }
 
