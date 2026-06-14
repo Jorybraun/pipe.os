@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reused shared `src/__tests__/helpers/mockD1.ts` with D1-style `?N` parameter rewriting for `better-sqlite3` compatibility, eliminating duplicated mock D1 adapters across test files.
 - Fixed `normalizeOpenTermSurface` to split CamelCase boundaries (`FluxCapacitorX` → `term:flux-capacitor-x`), enabling proper semantic key generation for dynamically learned concepts.
 
+### Changed — E2E Test Reliability
+
+- Centralized `API_BASE` / `APP_BASE` into `e2e/env.ts` (reads `process.env` with localhost fallbacks) so specs work against both local dev and deployed Cloudflare test env.
+- `playwright.config.ts` now skips local `webServer` startup when `IS_REMOTE` (running against deployed test env).
+- `.github/workflows/e2e-test.yml` now passes `E2E_EMAIL`, `E2E_PASSWORD`, and `CLERK_PUBLISHABLE_KEY` to the Playwright step.
+- Added `test:e2e:ci` npm script for consistent CI invocation.
+
 ### Fixed — Evaluation Harness
 
 - Migrated evaluation CLI test and `evaluateMatching.ts` script from experimental `node:sqlite` to `better-sqlite3`, fixing test failures on Node 20 (CI) and Node 22 without `--experimental-sqlite`.
@@ -36,6 +43,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Security: MCQ scoring ground-truth leak
 
 - `POST /rpc/score-submission`: feedback for incorrect MCQ answers no longer reveals the `correctOptionId` from `server_config`. The response now returns `"Incorrect answer"` instead of `"Incorrect. The correct answer was {id}"`.
+
+### Fixed — Repo Semantic Graph Persistence Tests
+
+- Fixed `node:sqlite` compatibility in test D1 shim: numbered params (`?1, ?2`) are normalized to positional `?` placeholders for Node 22.12's experimental `node:sqlite` module.
+- Added `force-rebuild produces byte-identical rows and preserves exact source span text` test proving deterministic, idempotent backfill with full provenance verification.
+- Added `marks ineligible packets when provenance is incomplete` test proving packets below quality thresholds are rejected from matching eligibility.
+
+### Added — UI Visualization Plan Handoff
+
+- `knowledge/docs/handoffs/2026-06-14-ui-visualization-plan-handoff.md`: Report-only handoff covering current living context UI surfaces, missing meeting-memory surfaces, proposed IA (person timeline, source evidence drawer, assertion/signal cards, match overlay, repo evidence panel), minimal MVP screen sequence, exact components to touch, and contract changes needed before implementation.
+- `apps/meetings/src/pages/MeetingsPage.tsx`: Added `data-testid="meeting-intelligence"` to the transcript summary section for future E2E testability.
 
 ### Added — Cloudflare Test Environment
 

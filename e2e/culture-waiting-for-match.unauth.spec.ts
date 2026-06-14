@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { API_BASE, APP_BASE } from './env';
 
 /**
  * BDD: WAITING_FOR_MATCH gate flow
@@ -7,9 +8,6 @@ import { test, expect } from "@playwright/test";
  * frontend renders waiting screen with auto-refresh → on next refresh, gate
  * opens → frontend renders real challenge.
  */
-
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
 
 const MOCK_TOKEN = "mock-invite-token";
 const MOCK_SESSION_TOKEN = "mock-session-jwt";

@@ -31,8 +31,7 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * skip via test.skip until the helper is available.
  */
 
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
+import { API_BASE, APP_BASE } from './env';
 
 async function getAuthToken(page: Page): Promise<string> {
   await page.waitForLoadState("networkidle");

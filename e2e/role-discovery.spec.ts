@@ -15,9 +15,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
+import { API_BASE, APP_BASE } from './env';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 

@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { API_BASE, APP_BASE } from './env';
 
 /**
  * BDD: Stage Panel Tabs
@@ -10,9 +11,6 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * raw insights) is removed entirely. Stage configuration moves from the
  * ?config=<stageId> side panel into the Configure tab.
  */
-
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
 
 interface SeedResult {
   pipelineId: string;

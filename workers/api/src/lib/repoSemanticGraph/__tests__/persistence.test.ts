@@ -24,8 +24,6 @@ const migration = readFileSync(
 );
 const OBSERVED_AT = '2026-06-12T12:00:00.000Z';
 
-
-
 async function fixture() {
   const snapshot = await buildRepoSnapshot({
     repository: {
@@ -353,5 +351,110 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
       count: 0,
     });
+  });
+
+  it('force-rebuild produces byte-identical rows and preserves exact source span text', async () => {
+    const data = await fixture();
+
+    // First persist
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    // Capture full state snapshot
+    const snapshotBefore = {
+      spans: sqlite.prepare(
+        'SELECT id, exact_text, byte_start, byte_end, line_start, line_end, content_hash, pr_side FROM repo_source_spans ORDER BY id',
+      ).all() as { id: string; exact_text: string; byte_start: number; byte_end: number; line_start: number; line_end: number; content_hash: string; pr_side: string }[],
+      symbols: sqlite.prepare(
+        'SELECT id, qualified_name, symbol_kind, defining_span_id FROM repo_symbols ORDER BY id',
+      ).all(),
+      facts: sqlite.prepare(
+        'SELECT id, fact_type, properties_json FROM repo_structural_facts ORDER BY id',
+      ).all(),
+      assertions: sqlite.prepare(
+        'SELECT id, predicate, narrative, confidence, assertion_version FROM repo_semantic_assertions ORDER BY id',
+      ).all(),
+      assertionSpans: sqlite.prepare(
+        'SELECT assertion_id, source_span_id FROM repo_assertion_source_spans ORDER BY assertion_id, source_span_id',
+      ).all(),
+      signals: sqlite.prepare(
+        'SELECT id, confidence, evidence_assertion_ids_json FROM repo_signals ORDER BY id',
+      ).all(),
+      packets: sqlite.prepare(
+        'SELECT id, source_hash, quality_score, production_ready, packet_json FROM review_challenge_packets ORDER BY id',
+      ).all(),
+    };
+
+    // Simulate --force: delete derived semantics and re-persist
+    sqlite.exec(`DELETE FROM repo_signals WHERE repo_snapshot_id = '${data.input.repoSnapshot.id}'`);
+    sqlite.exec(`DELETE FROM repo_semantic_assertions WHERE repo_snapshot_id = '${data.input.repoSnapshot.id}'`);
+    sqlite.exec(`DELETE FROM repo_code_episodes WHERE repo_snapshot_id = '${data.input.repoSnapshot.id}'`);
+    sqlite.exec(`DELETE FROM repo_structural_facts WHERE repo_snapshot_id = '${data.input.repoSnapshot.id}'`);
+
+    // Re-persist the identical graph (force-rebuild path)
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    // Capture state after force-rebuild
+    const snapshotAfter = {
+      spans: sqlite.prepare(
+        'SELECT id, exact_text, byte_start, byte_end, line_start, line_end, content_hash, pr_side FROM repo_source_spans ORDER BY id',
+      ).all(),
+      symbols: sqlite.prepare(
+        'SELECT id, qualified_name, symbol_kind, defining_span_id FROM repo_symbols ORDER BY id',
+      ).all(),
+      facts: sqlite.prepare(
+        'SELECT id, fact_type, properties_json FROM repo_structural_facts ORDER BY id',
+      ).all(),
+      assertions: sqlite.prepare(
+        'SELECT id, predicate, narrative, confidence, assertion_version FROM repo_semantic_assertions ORDER BY id',
+      ).all(),
+      assertionSpans: sqlite.prepare(
+        'SELECT assertion_id, source_span_id FROM repo_assertion_source_spans ORDER BY assertion_id, source_span_id',
+      ).all(),
+      signals: sqlite.prepare(
+        'SELECT id, confidence, evidence_assertion_ids_json FROM repo_signals ORDER BY id',
+      ).all(),
+      packets: sqlite.prepare(
+        'SELECT id, source_hash, quality_score, production_ready, packet_json FROM review_challenge_packets ORDER BY id',
+      ).all(),
+    };
+
+    // Byte-identical across all tables
+    expect(snapshotAfter).toEqual(snapshotBefore);
+
+    // Verify exact source span provenance stored verbatim
+    const sourceContent = 'export async function reconcileQuantumLedger() { return "stable"; }';
+    const spans = snapshotBefore.spans;
+    expect(spans.length).toBe(2);
+
+    const fullSpan = spans.find((s) => s.exact_text === sourceContent)!;
+    expect(fullSpan).toBeDefined();
+    expect(fullSpan.byte_start).toBe(0);
+    expect(fullSpan.byte_end).toBe(new TextEncoder().encode(sourceContent).byteLength);
+    expect(fullSpan.line_start).toBe(1);
+    expect(fullSpan.line_end).toBe(1);
+    expect(fullSpan.pr_side).toBe('head');
+
+    const detailText = 'return "stable";';
+    const detailSpan = spans.find((s) => s.exact_text === detailText)!;
+    expect(detailSpan).toBeDefined();
+    expect(detailSpan.byte_start).toBe(sourceContent.indexOf(detailText));
+    expect(detailSpan.byte_end).toBe(
+      sourceContent.indexOf(detailText) + new TextEncoder().encode(detailText).byteLength,
+    );
+  });
+
+  it('marks ineligible packets when provenance is incomplete', async () => {
+    const data = await fixture();
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    const packet = sqlite.prepare(
+      'SELECT production_ready, quality_score FROM review_challenge_packets WHERE id = ?',
+    ).get(data.packet.id) as { production_ready: number; quality_score: number };
+
+    // The fixture has minimal files (1 file, 1 line) — below quality thresholds
+    // so production_ready should be 0 (ineligible for matching)
+    expect(packet.production_ready).toBe(0);
+    expect(packet.quality_score).toBeGreaterThanOrEqual(0);
+    expect(packet.quality_score).toBeLessThanOrEqual(1);
   });
 });

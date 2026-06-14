@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { API_BASE } from './env';
 
 /**
  * Phase 1 BDD: Authentication
@@ -21,7 +22,7 @@ test.describe("Unauthenticated access", () => {
   });
 
   test("Worker API returns 401 without auth header", async ({ request }) => {
-    const response = await request.get("http://localhost:8787/api/v1/pipelines");
+    const response = await request.get(`${API_BASE}/api/v1/pipelines`);
     expect(response.status()).toBe(401);
     const body = await response.json();
     expect(body.error.code).toBe("UNAUTHORIZED");
