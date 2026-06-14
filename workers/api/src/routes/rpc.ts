@@ -21,6 +21,7 @@ import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
@@ -369,7 +370,9 @@ async function matchStandaloneReview(
   return { repoUrl: repo.github_url, prNumber: match.prNumber };
 }
 
-/** Parse a submission (object or JSON string) and return it if it is a CV intake payload. */
+/** Parse a submission (object or JSON string) and return it if it is a CV intake payload.
+ *  Recognizes both R2-based uploads ({ resumeR2Key }) and text-based evidence ({ resumeText }).
+ */
 function parseIntakePayload(submission: unknown): Record<string, unknown> | null {
   let obj: unknown = submission;
   if (typeof submission === 'string') {
@@ -381,7 +384,9 @@ function parseIntakePayload(submission: unknown): Record<string, unknown> | null
   }
   if (typeof obj !== 'object' || obj === null) return null;
   const record = obj as Record<string, unknown>;
-  return typeof record.resumeR2Key === 'string' ? record : null;
+  if (typeof record.resumeR2Key === 'string') return record;
+  if (typeof record.resumeText === 'string' && record.resumeText.length > 0) return record;
+  return null;
 }
 
 /** Persist intake form data (resume / github / linkedin) and kick off enrichment. */
@@ -400,10 +405,11 @@ async function handleIntakePayload(
   }
 
   const resumeR2Key = typeof intakePayload.resumeR2Key === 'string' ? intakePayload.resumeR2Key : '';
+  const resumeText = typeof intakePayload.resumeText === 'string' ? intakePayload.resumeText.trim() : '';
   const githubHandle = typeof intakePayload.githubHandle === 'string' ? intakePayload.githubHandle : '';
   const linkedinUrl = typeof intakePayload.linkedinUrl === 'string' ? intakePayload.linkedinUrl : '';
 
-  // 1. Update candidate record with resume key + run ingestion immediately
+  // 1a. R2-based resume upload — fetch and ingest from object storage
   if (resumeR2Key) {
     try {
       await env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
@@ -413,7 +419,6 @@ async function handleIntakePayload(
       console.error(`[rpc/intake] failed to update candidate resume key:`, err);
     }
 
-    // Run ingestion immediately — candidate graph must be live before they proceed
     executionCtx.waitUntil(
       (async () => {
         try {
@@ -427,6 +432,35 @@ async function handleIntakePayload(
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           console.error(`[rpc/intake] resume ingestion failed for ${candidateId}:`, msg);
+        }
+      })(),
+    );
+  } else if (resumeText.length >= 20) {
+    // 1b. Text-based resume evidence — run ingestion directly from plain text
+    // Mark candidate as having a synthetic resume key so candidateNeedsCvIntake() returns false
+    const syntheticKey = `text-intake/${candidateId}/${now}`;
+    try {
+      await env.DB.prepare(`UPDATE candidates SET resume_s3_key = ?1, updated_at = ?2 WHERE id = ?3`)
+        .bind(syntheticKey, now, candidateId)
+        .run();
+    } catch (err) {
+      console.error(`[rpc/intake] failed to set synthetic resume key:`, err);
+    }
+
+    executionCtx.waitUntil(
+      (async () => {
+        try {
+          await runCandidateIngestion({
+            env,
+            db: env.DB,
+            candidateId,
+            parsed: { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
+            resumeText,
+          });
+          console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[rpc/intake] text-based ingestion failed for ${candidateId}:`, msg);
         }
       })(),
     );
