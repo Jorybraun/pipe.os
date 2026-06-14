@@ -26,11 +26,7 @@
  */
 
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-const API_BASE = 'http://localhost:8787';
-const APP_BASE = 'http://localhost:5173';
+import { API_BASE, APP_BASE } from './env';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

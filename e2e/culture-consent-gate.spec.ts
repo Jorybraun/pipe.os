@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { API_BASE, APP_BASE } from './env';
 
 /**
  * BDD: Culture Interview — Consent Gate
@@ -18,9 +19,6 @@ import { test, expect } from "@playwright/test";
  * that HTTP setup path is documented and implemented, these tests are skipped
  * via test.skip with a clear reason. See §A.12 follow-up in the plan.
  */
-
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
 
 // ---------------------------------------------------------------------------
 // Skipped: seeding a candidate session token requires an end-to-end invite

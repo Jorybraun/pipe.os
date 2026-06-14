@@ -9,6 +9,8 @@ name: E2E Test Environment
 #   CLERK_PUBLISHABLE_KEY_TEST  — Clerk dev instance publishable key (for Vite build)
 #   TEST_API_BASE               — e.g. https://pipe-api-test.<subdomain>.workers.dev
 #   TEST_APP_BASE               — e.g. https://pipe-app-test.pages.dev
+#   E2E_EMAIL                   — Clerk test user email (e.g. e2e-test@pipe.dev)
+#   E2E_PASSWORD                — Clerk test user password
 
 on:
   pull_request:
@@ -105,6 +107,9 @@ jobs:
         env:
           API_BASE: ${{ secrets.TEST_API_BASE }}
           APP_BASE: ${{ secrets.TEST_APP_BASE }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npx playwright test --workers=1
 
       - name: Upload Playwright report

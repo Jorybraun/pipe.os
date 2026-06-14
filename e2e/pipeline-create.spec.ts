@@ -10,7 +10,7 @@ import { test, expect, type Page } from "@playwright/test";
  * role-discovery.spec.ts); this file tests the API contract directly.
  */
 
-const API_BASE = "http://localhost:8787";
+import { API_BASE } from './env';
 
 async function getAuthToken(page: Page): Promise<string> {
   await page.waitForLoadState("networkidle");

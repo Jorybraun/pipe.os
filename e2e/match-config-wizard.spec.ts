@@ -12,8 +12,7 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * (workers/api/src/lib/match/__tests__/*).
  */
 
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
+import { API_BASE, APP_BASE } from './env';
 
 interface SeedResult {
   pipelineId: string;

@@ -14,8 +14,7 @@ import { test, expect } from "@playwright/test";
  * Route under test: /culture/:token
  */
 
-const APP_BASE = "http://localhost:5173";
-const API_BASE = "http://localhost:8787";
+import { API_BASE, APP_BASE } from './env';
 
 // An answer long enough (≥200 chars) to make the mock agent advance without probing.
 const LONG_ANSWER =

@@ -14,10 +14,7 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * the `setup` project via auth.setup.ts).
  */
 
-// ─── Configuration ─────────────────────────────────────────────────────────────
-
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
+import { API_BASE, APP_BASE } from './env';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

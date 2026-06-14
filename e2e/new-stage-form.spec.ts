@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { API_BASE, APP_BASE } from './env';
 
 /**
  * BDD: New Stage Form
@@ -8,9 +9,6 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
  * form with a plain <select> for stage type. On submit, redirects to the new
  * stage panel.
  */
-
-const API_BASE = "http://localhost:8787";
-const APP_BASE = "http://localhost:5173";
 
 async function getAuthToken(page: Page): Promise<string> {
   await page.waitForLoadState("networkidle");

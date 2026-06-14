@@ -9,6 +9,10 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, ".env.local") });
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 
+const appBase = process.env.APP_BASE || "http://localhost:5173";
+const apiBase = process.env.API_BASE || "http://localhost:8787";
+const isRemote = !appBase.includes("localhost");
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -20,7 +24,7 @@ export default defineConfig({
   globalSetup: "./e2e/global.setup.ts",
 
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: appBase,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
@@ -50,18 +54,23 @@ export default defineConfig({
     },
   ],
 
-  webServer: [
-    {
-      command: "cd workers/api && npx wrangler dev --port 8787",
-      url: "http://localhost:8787/health",
-      reuseExistingServer: true,
-      timeout: 120000,
-    },
-    {
-      command: "npm run dev -- --port 5173",
-      url: "http://localhost:5173",
-      reuseExistingServer: true,
-      timeout: 60000,
-    },
-  ],
+  // Skip local webServer startup when running against a remote deployment
+  ...(isRemote
+    ? {}
+    : {
+        webServer: [
+          {
+            command: "cd workers/api && npx wrangler dev --port 8787",
+            url: `${apiBase}/health`,
+            reuseExistingServer: true,
+            timeout: 120000,
+          },
+          {
+            command: "npm run dev -- --port 5173",
+            url: appBase,
+            reuseExistingServer: true,
+            timeout: 60000,
+          },
+        ],
+      }),
 });
