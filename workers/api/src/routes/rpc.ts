@@ -1539,7 +1539,7 @@ rpcAuth.post('/score-submission', async (c) => {
 
     if (correctOptionId && selectedAnswer) {
       score = selectedAnswer === correctOptionId ? 100 : 0;
-      feedback = score === 100 ? 'Correct answer' : `Incorrect. The correct answer was ${correctOptionId}`;
+      feedback = score === 100 ? 'Correct answer' : 'Incorrect answer';
     } else {
       // No correct answer configured — score as 0
       score = 0;

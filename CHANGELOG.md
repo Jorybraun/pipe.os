@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Living context test infrastructure and CamelCase term normalization
 
-- Migrated all 11 living-context, repo-semantic-graph, and challenge-matching test files from experimental `node:sqlite` to `better-sqlite3`, resolving test failures on Node.js v22 without `--experimental-sqlite`.
-- Created shared `src/__tests__/helpers/mockD1.ts` with D1-style `?N` parameter rewriting for `better-sqlite3` compatibility, eliminating duplicated mock D1 adapters across test files.
+- Migrated living-context, repo-semantic-graph, and challenge-matching test files from experimental `node:sqlite` to `better-sqlite3`, resolving local/CI runtime failures without `--experimental-sqlite`.
+- Reused shared `src/__tests__/helpers/mockD1.ts` with D1-style `?N` parameter rewriting for `better-sqlite3` compatibility, eliminating duplicated mock D1 adapters across test files.
 - Fixed `normalizeOpenTermSurface` to split CamelCase boundaries (`FluxCapacitorX` → `term:flux-capacitor-x`), enabling proper semantic key generation for dynamically learned concepts.
-- Converted `scripts/evaluateMatching.ts` from `node:sqlite` to `better-sqlite3` with the same `?N` parameter rewriting, fixing the evaluation CLI test.
+
+### Fixed — Evaluation Harness
+
+- Migrated evaluation CLI test and `evaluateMatching.ts` script from experimental `node:sqlite` to `better-sqlite3`, fixing test failures on Node 20 (CI) and Node 22 without `--experimental-sqlite`.
+- Added shared `mockD1` helper (`src/__tests__/helpers/mockD1.ts`) for D1-style `?N` parameter rewriting with better-sqlite3.
+- Added test: synthetic labels are rejected when `--allow-synthetic` is omitted (`requireExpertLabels` gate).
+- Added test: forbidden expert labels trigger guardrail violation detection.
+- Added test: missing provenance in ranked results is detected and fails acceptance.
 
 ### Added — Video Meeting Brain Proof
 
@@ -25,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `workers/api/src/routes/rpc.ts`: `handleIntakePayload()` runs `runCandidateIngestion` directly from plain-text resume evidence when `resumeText` is provided (≥20 chars), sets a synthetic `resume_s3_key` so the intake gate clears, and proceeds to deterministic matching.
 - `e2e/standalone-code-review-mvp.spec.ts`: §MVP.4/§MVP.6 tightened to use correct `submit-challenge-response` endpoint with proper `{ order, submission: { resumeText } }` payload shape (previously referenced non-existent `/rpc/submit-intake`).
 - `e2e/standalone-code-review-mvp.spec.ts`: §MVP.8 assertions now verify `standaloneReviewMatch` (the actual API field) including source-backed `evidence[].candidateSourceRefs` and `evidence[].challengeSourceRefs`, not the previously incorrect `matchResult`.
+
+### Fixed — Security: MCQ scoring ground-truth leak
+
+- `POST /rpc/score-submission`: feedback for incorrect MCQ answers no longer reveals the `correctOptionId` from `server_config`. The response now returns `"Incorrect answer"` instead of `"Incorrect. The correct answer was {id}"`.
 
 ### Added — Cloudflare Test Environment
 
