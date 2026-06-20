@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `normalizeOpenTermSurface` to split CamelCase boundaries (`FluxCapacitorX` → `term:flux-capacitor-x`), enabling proper semantic key generation for dynamically learned concepts.
 - Aligned deterministic probe librarian/planner tests with the 9-probe signal library, including the codebase-organization probe.
 - Attached retry-helper rejection assertions before advancing fake timers, preventing unhandled rejection failures in CI.
+- Stabilized unified-agent runtime and Go source-analysis tests with an explicit role-discovery test provider and a longer Go parser test timeout.
 
 ### Changed — E2E Test Reliability
 

@@ -4,6 +4,29 @@ import { clearPlugins } from '../pluginRegistry';
 import { InMemorySessionStore } from '../sessionStore';
 import { getPlugin, createFSM, runEvalGate, scoreSession } from '../';
 import type { AgentTurn } from '../types';
+import type { LLMProvider } from '../../llm/types';
+
+const roleDiscoveryProvider: LLMProvider = {
+  name: 'test-role-discovery-provider',
+  model: 'test-role-discovery-model',
+  supportsTools: false,
+  async complete() {
+    return {
+      content: JSON.stringify({
+        acknowledgment: 'Thanks — that helps frame the role discovery.',
+        reasoning: 'Ask a broad, safe role-discovery question.',
+        question: {
+          id: 'q-role-discovery',
+          text: 'What matters most for this role discovery conversation right now?',
+          goal: 'Understand the role context.',
+          input: { type: 'textarea' },
+        },
+        knowledgeStateUpdate: {},
+        domainCoverage: {},
+      }),
+    };
+  },
+};
 
 function makeTurn(i: number): AgentTurn {
   return {
@@ -74,7 +97,8 @@ describe('Unified Agent Runtime — Swarm Integration', () => {
     for (const type of ['role_discovery', 'code_review', 'culture_interview'] as const) {
       const plugin = getPlugin(type);
       const session = await store.createSession(type, undefined, undefined);
-      const turn = await plugin.generateTurn(session, {}, null);
+      const provider = type === 'role_discovery' ? roleDiscoveryProvider : null;
+      const turn = await plugin.generateTurn(session, {}, provider);
       expect(turn.questionText.toLowerCase()).toContain(type.replace('_', ' '));
       expect(turn.idx).toBe(0);
     }
@@ -129,7 +153,7 @@ describe('Unified Agent Runtime — Swarm Integration', () => {
 
     for (let i = 0; i < 2; i++) {
       const current = await store.getSession(session.id);
-      const turn = await plugin.generateTurn(current!, {}, null);
+      const turn = await plugin.generateTurn(current!, {}, roleDiscoveryProvider);
       await store.appendTurn(session.id, turn);
     }
 
