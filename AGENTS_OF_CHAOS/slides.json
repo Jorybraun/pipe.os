@@ -1,0 +1,14 @@
+{
+  "slides": [
+    {
+      "number": 1,
+      "terminal_microcopy": "> init chaos.exe",
+      "title": "AGENTS OF CHAOS",
+      "subtitle": "July 4 AI Hackathon",
+      "location": "Funk Coffee · Vancouver · 10:00 AM–4:00 PM",
+      "body": "Build something useful, weird, satirical, disruptive, beautiful, or barely holding together.",
+      "footer": "Chaos is undefined, unpredictable, and generative.",
+      "visual": "Large binary/ASCII butterfly on right with subtle ripple rings"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
       "id": "ceo",
       "name": "ceo",
       "provider": "hermes",
-      "model": "grok-4.3",
+      "model": "gpt-5.5",
       "persona": "ceo-orchestrator",
       "memory_key": "agent:ceo",
       "tmux_session": "pipe-ceo"
