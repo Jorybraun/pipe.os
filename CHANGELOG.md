@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Acceptance Criteria Proof Tests
+
+- Added `dynamicSemantics.test.ts` — 6 regression tests for acceptance criterion #3 (learn semantics dynamically): unknown concept survival, CamelCase word-boundary splitting, multi-face accumulation, novel relationship dimensions, end-to-end meeting transcript concept ingestion, cross-interaction concept evolution.
+- Added `identityUnification.test.ts` — 5 tests for acceptance criterion #1 (living person graph): contact-to-applicant identity unification via email, meeting-then-candidate unification, interaction-level vs accumulated evidence separation, case-insensitive email matching, distinct-email separation.
+
+### Fixed — CI Stability
+
+- `sourceAnalysis.test.ts` Go parser test now skips gracefully when `go` runtime is not available, eliminating the 1 preexisting test failure in CI environments.
+
 ### Fixed — Test Infrastructure Consolidation
 
 - Migrated 10 living-context and matching test files from `node:sqlite` + inline mock to shared `better-sqlite3` + `createMockD1` helper, eliminating ~650 lines of duplicate boilerplate.
