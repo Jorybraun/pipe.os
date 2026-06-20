@@ -16,10 +16,13 @@ import type {
   LivingContextInteraction,
   LivingContextSignal,
   LivingContextSourceRef,
+  StandaloneReviewExcludedPacket,
+  StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
   StandaloneReviewSourceRef,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { ContextRecordForest } from './ContextRecordTree';
 import './LivingContextGraph.css';
 
 function titleCase(value: string): string {
@@ -66,6 +69,17 @@ function includesQuery(values: Array<string | null | undefined>, query: string):
   return values.some((value) => value?.toLowerCase().includes(query));
 }
 
+function entityValueLabel(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '—';
+  }
+}
+
 function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
 }
@@ -85,6 +99,34 @@ function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): s
   return status.replace(/_/g, ' ');
 }
 
+function reviewExclusionReasonLabel(reason: StandaloneReviewExcludedPacket['reason']): string {
+  if (reason === 'DEMAND_WITHOUT_SOURCE_SPANS') return 'Demand lacks source spans';
+  if (reason === 'MISSING_DEMAND_SOURCE_SPANS') return 'Missing repo source spans';
+  return 'Job-description guardrail';
+}
+
+function reviewExclusionDetail(packet: StandaloneReviewExcludedPacket): string {
+  const details = [
+    packet.repoId ? `repo ${packet.repoId}` : null,
+    packet.prNumber !== null ? `PR #${packet.prNumber}` : null,
+    packet.demandIds.length ? `demands ${packet.demandIds.join(', ')}` : null,
+    packet.missingSourceSpanIds.length ? `missing spans ${packet.missingSourceSpanIds.join(', ')}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return details.join(' · ') || packet.id;
+}
+
+function reviewedChallengeDetail(challenge: StandaloneReviewEvaluatedChallenge): string {
+  const parts = [
+    `PR #${challenge.prNumber}`,
+    `${challenge.alignedDemandCount} aligned demand${challenge.alignedDemandCount === 1 ? '' : 's'}`,
+    challenge.provenanceComplete ? 'provenance complete' : 'provenance incomplete',
+  ];
+  if (challenge.rejectionReasons.length > 0) {
+    parts.push(challenge.rejectionReasons.slice(0, 2).join(', '));
+  }
+  return parts.join(' · ');
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -92,6 +134,8 @@ function StandaloneReviewMatchPanel({
 }): JSX.Element | null {
   if (!match) return null;
   const primaryEvidence = match.evidence.slice(0, 3);
+  const excludedPackets = match.diagnostics.excludedPackets.slice(0, 4);
+  const evaluatedChallenges = match.diagnostics.evaluatedChallenges.slice(0, 4);
   return (
     <section className="living-context__review-match" aria-label="Standalone code review match">
       <div className="living-context__review-match-head">
@@ -209,6 +253,40 @@ function StandaloneReviewMatchPanel({
               <li key={gap}>{gap}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {(excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
+        <div className="living-context__review-diagnostics">
+          {excludedPackets.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Excluded challenge packets</div>
+              <div className="living-context__diagnostic-list">
+                {excludedPackets.map((packet) => (
+                  <div key={`${packet.id}:${packet.reason}`} className="living-context__diagnostic-row">
+                    <span>{reviewExclusionReasonLabel(packet.reason)}</span>
+                    <strong>{packet.id}</strong>
+                    <p>{reviewExclusionDetail(packet)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {evaluatedChallenges.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Evaluated challenge evidence</div>
+              <div className="living-context__diagnostic-list">
+                {evaluatedChallenges.map((challenge) => (
+                  <div key={challenge.challengeId} className="living-context__diagnostic-row">
+                    <span>{challenge.eligible ? 'Eligible' : 'Blocked'}</span>
+                    <strong>{challenge.challengeId}</strong>
+                    <p>{reviewedChallengeDetail(challenge)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -457,6 +535,32 @@ export function LivingContextGraph({
     });
   }, [livingContext, normalizedSearch, selectedInteractionId]);
 
+  const visibleContextRecords = useMemo(() => {
+    if (!livingContext) return [];
+    return livingContext.contextRecords.filter((record) => {
+      if (selectedInteractionId !== 'all' && record.interactionId !== selectedInteractionId) {
+        return false;
+      }
+      return includesQuery([
+        record.predicate,
+        record.narrative,
+        record.recordType,
+        ...record.entities.flatMap((entity) => [
+          entity.entityType,
+          entity.relationship,
+          entityValueLabel(entity.value),
+        ]),
+        ...record.concepts.flatMap((concept) => [
+          concept.label,
+          concept.canonicalKey,
+          concept.namespace,
+          concept.relationship,
+        ]),
+        ...record.sources.map((source) => source.exactText),
+      ], normalizedSearch);
+    });
+  }, [livingContext, normalizedSearch, selectedInteractionId]);
+
   const relationshipsByAssertion = useMemo(() => {
     const index = new Map<string, string[]>();
     for (const relationship of livingContext?.relationships ?? []) {
@@ -487,6 +591,7 @@ export function LivingContextGraph({
 
   const summaryMetrics = [
     ['Interactions', livingContext.summary.interactionCount],
+    ['Context records', livingContext.summary.contextRecordCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
     ['Assertions', livingContext.summary.assertionCount],
@@ -594,6 +699,15 @@ export function LivingContextGraph({
           </div>
 
           <div className="living-context__section-head" style={{ marginTop: 20 }}>
+            <div className="living-context__section-title">Context records</div>
+            <div className="living-context__count">{visibleContextRecords.length}</div>
+          </div>
+          <ContextRecordForest
+            records={visibleContextRecords}
+            onSelectSource={setSelectedSource}
+          />
+
+          <div className="living-context__section-head" style={{ marginTop: 22 }}>
             <div className="living-context__section-title">Signals</div>
             <div className="living-context__count">{visibleSignals.length}</div>
           </div>

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Tree Projection UI Over Semantic Hypergraph
+
+- Added `ContextRecordTree` component (`src/components/Candidate/ContextRecordTree.tsx`) — renders source-backed hyperedge/context records as expandable tree nodes with entities, concepts, and source spans as children. Each source span is clickable and populates the existing source evidence inspector.
+- Added `ContextRecordForest` wrapper for rendering the full set of context records.
+- Wired context records into the `LivingContextGraph` canvas as a first-class section (above signals), filtered by selected interaction and search query.
+- Added `contextRecordCount` to the summary metrics row.
+- Added 8 Vitest tests covering collapsed/expanded states, entity/concept/source rendering, source selection callback, polarity indicators, and empty-record handling.
+
 ### Fixed — Test Infrastructure Consolidation
 
 - Migrated 10 living-context and matching test files from `node:sqlite` + inline mock to shared `better-sqlite3` + `createMockD1` helper, eliminating ~650 lines of duplicate boilerplate.

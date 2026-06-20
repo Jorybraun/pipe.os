@@ -304,6 +304,52 @@
   line-height: 1.6;
 }
 
+.living-context__review-diagnostics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.living-context__diagnostic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.living-context__diagnostic-row {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.living-context__diagnostic-row span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.living-context__diagnostic-row strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--pipe-text-muted);
+  font-size: 10px;
+}
+
+.living-context__diagnostic-row p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--pipe-text-dim);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .living-context__workspace {
   display: grid;
   grid-template-columns: minmax(190px, 0.72fr) minmax(360px, 1.6fr) minmax(250px, 0.95fr);
@@ -504,6 +550,92 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
+}
+
+.living-context__context-records {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.living-context__context-record {
+  padding: 12px 13px;
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  border-radius: 6px;
+  background: rgba(129, 140, 248, 0.035);
+}
+
+.living-context__context-record-toggle {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pipe-text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.living-context__context-record-chevron--open {
+  transform: rotate(90deg);
+}
+
+.living-context__context-record-type,
+.living-context__context-record-meta {
+  padding: 2px 5px;
+  border: 1px solid var(--pipe-border);
+  border-radius: 3px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  white-space: nowrap;
+}
+
+.living-context__context-record-body {
+  display: grid;
+  gap: 11px;
+  margin-top: 12px;
+}
+
+.living-context__context-record-heading {
+  margin-bottom: 7px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.living-context__context-record-list {
+  display: grid;
+  gap: 6px;
+}
+
+.living-context__context-record-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 7px;
+  border: 1px solid var(--pipe-border-light);
+  border-radius: 4px;
+  color: var(--pipe-text-muted);
+  font-size: 10px;
+}
+
+.living-context__context-record-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.living-context__context-record-source-snippet {
+  margin-top: 8px;
+  padding: 8px 9px;
+  border-left: 2px solid var(--lc-source);
+  background: rgba(56, 189, 248, 0.04);
+  color: var(--pipe-text-muted);
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .living-context__assertion {
@@ -715,4 +847,251 @@
   .living-context__signal-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ─── Context Record Tree (hypergraph projection) ─────────────────────────── */
+
+.context-tree__forest {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.context-tree__node {
+  border: 1px solid var(--pipe-border);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.context-tree__node--expanded {
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.context-tree__head {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  align-items: flex-start;
+}
+
+.context-tree__toggle {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--pipe-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.context-tree__toggle:hover {
+  color: var(--pipe-text);
+}
+
+.context-tree__toggle:disabled {
+  cursor: default;
+  opacity: 0.2;
+}
+
+.context-tree__chevron--open {
+  transform: rotate(90deg);
+}
+
+.context-tree__head-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.context-tree__predicate-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.context-tree__predicate {
+  font: 11px "Space Mono", monospace;
+  color: var(--lc-structural);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.context-tree__type-badge {
+  font: 9px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  border: 1px solid var(--pipe-border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.context-tree__confidence {
+  font: 10px "Space Mono", monospace;
+  color: var(--lc-assertion);
+}
+
+.context-tree__polarity {
+  font: 9px "Space Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.context-tree__polarity--positive {
+  color: var(--lc-signal);
+  background: rgba(52, 211, 153, 0.08);
+}
+
+.context-tree__polarity--negative {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.context-tree__polarity--neutral {
+  color: var(--pipe-text-dim);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.context-tree__narrative {
+  font: 11px "Space Mono", monospace;
+  color: var(--pipe-text);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.context-tree__meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font: 9px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  letter-spacing: 0.02em;
+}
+
+.context-tree__children {
+  border-top: 1px solid var(--pipe-border);
+  padding: 10px 12px 12px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.context-tree__branch {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.context-tree__branch-label {
+  font: 9px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+
+.context-tree__branch-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.context-tree__entity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: 10px "Space Mono", monospace;
+  padding: 3px 0;
+}
+
+.context-tree__entity-type {
+  color: var(--lc-structural);
+  text-transform: capitalize;
+}
+
+.context-tree__entity-relationship {
+  color: var(--pipe-text-dim);
+  font-style: italic;
+}
+
+.context-tree__entity-value {
+  color: var(--pipe-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-tree__entity-confidence {
+  color: var(--lc-assertion);
+  font-size: 9px;
+}
+
+.context-tree__concept {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font: 10px "Space Mono", monospace;
+  padding: 3px 0;
+}
+
+.context-tree__concept-label {
+  color: var(--pipe-text);
+}
+
+.context-tree__concept-relationship {
+  color: var(--pipe-text-dim);
+  font-style: italic;
+}
+
+.context-tree__concept-weight {
+  color: var(--lc-assertion);
+  font-size: 9px;
+}
+
+.context-tree__sources {
+  gap: 6px;
+}
+
+.context-tree__source-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--pipe-border);
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.04);
+  color: var(--lc-source);
+  font: 9px "Space Mono", monospace;
+  padding: 3px 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.context-tree__source-button:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.context-tree__source-snippet {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--lc-source);
+  background: rgba(56, 189, 248, 0.04);
+  font: 10px "Space Mono", monospace;
+  color: var(--pipe-text);
+  line-height: 1.5;
+  border-radius: 0 3px 3px 0;
 }
