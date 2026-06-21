@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Code,
   ExternalLink,
   FileText,
   GitPullRequest,
+  MessageSquare,
+  Mic,
   Network,
   Quote,
   RefreshCw,
   Search,
   UserRound,
+  Video,
 } from 'lucide-react';
 import type {
   LivingContextArtifact,
@@ -70,6 +74,33 @@ function includesQuery(values: Array<string | null | undefined>, query: string):
 
 function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
+}
+
+function interactionDuration(interaction: LivingContextInteraction): string | null {
+  if (!interaction.startedAt || !interaction.endedAt) return null;
+  const start = new Date(interaction.startedAt).getTime();
+  const end = new Date(interaction.endedAt).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  const minutes = Math.round((end - start) / 60000);
+  if (minutes <= 0) return null;
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function InteractionIcon({ type }: { type: string }): JSX.Element {
+  const normalized = type.toLowerCase();
+  if (normalized.includes('meeting') || normalized.includes('video')) {
+    return <Video size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('interview') || normalized.includes('call')) {
+    return <Mic size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('message') || normalized.includes('email')) {
+    return <MessageSquare size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('code') || normalized.includes('review')) {
+    return <Code size={11} color="var(--lc-structural)" />;
+  }
+  return <Activity size={11} color="var(--lc-structural)" />;
 }
 
 function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
@@ -754,14 +785,27 @@ export function LivingContextGraph({
                 className={`living-context__interaction ${selectedInteractionId === interaction.id ? 'living-context__interaction--active' : ''}`}
                 onClick={() => setSelectedInteractionId(interaction.id)}
               >
-                <div className="living-context__interaction-title">
-                  {titleCase(interaction.interactionType)}
+                <div className="living-context__interaction-header">
+                  <InteractionIcon type={interaction.interactionType} />
+                  <div className="living-context__interaction-title">
+                    {titleCase(interaction.interactionType)}
+                  </div>
                 </div>
                 <div className="living-context__interaction-meta">
                   <span>{interactionDate(interaction)}</span>
                   <span>{interaction.assertionIds.length} assertions</span>
                   <span>{interaction.signalKeys.length} signals</span>
                 </div>
+                {interaction.artifactIds.length > 0 && (
+                  <div className="living-context__interaction-artifacts">
+                    <span>{interaction.artifactIds.length} artifact{interaction.artifactIds.length === 1 ? '' : 's'}</span>
+                  </div>
+                )}
+                {interactionDuration(interaction) && (
+                  <div className="living-context__interaction-duration">
+                    {interactionDuration(interaction)}
+                  </div>
+                )}
               </button>
             ))}
           </div>

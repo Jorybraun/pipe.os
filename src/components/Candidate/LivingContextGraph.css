@@ -606,6 +606,12 @@
   background: rgba(56, 189, 248, 0.06);
 }
 
+.living-context__interaction-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .living-context__interaction-title {
   overflow-wrap: anywhere;
   color: var(--pipe-text-muted);
@@ -620,6 +626,19 @@
   margin-top: 6px;
   color: var(--pipe-text-dim);
   font: 8px "Space Mono", monospace;
+}
+
+.living-context__interaction-artifacts {
+  margin-top: 4px;
+  color: var(--lc-source);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__interaction-duration {
+  margin-top: 3px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  opacity: 0.8;
 }
 
 .living-context__empty {
