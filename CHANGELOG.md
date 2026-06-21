@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Staged Rollout and Projection Rebuild Proof
+
+- Added `rollout.ts` — staged rollout configuration with 9 gates (`living_context_ingestion`, `deterministic_matching`, `match_explanation`, `repo_overlay_visualization`, `expert_labelled_evaluation`, etc.), prerequisite chains, and stage validation (disabled/internal_only/canary/general_availability).
+- Added `rollout.test.ts` — 10 tests for acceptance criterion #8: gate prerequisite validation, unique keys, circular dependency detection, GA gate verification, stage filtering.
+- Added `projectionRebuild.test.ts` — 5 tests for acceptance criteria #4 and #8: outbox entry creation during ingestion, Neo4j write query production, force-rebuild idempotency (identical cypher templates), failed entry retry with backoff, full rebuild from D1 source data alone.
+
+### Added — Structured Match Gaps Through Recruiter API
+
+- Persisted `unmatchedDemands` and `stretchAreas` in `match_runs.ranked_results_json` — each ranked challenge now includes full structured gaps with demand narratives, concepts, weights, and source refs.
+- Wired `unmatchedDemands` and `stretchAreas` through the `GET /:candidateId` recruiter API response (`standaloneReviewMatch` object), so the frontend `StandaloneReviewMatchPanel` can render structured gap/stretch evidence.
+- Added `lifecycleProvenance.test.ts` — 5-test proof suite for acceptance criteria #1 and #2: contact→meeting→candidate→code-review all resolve to one person, source spans preserve exact text with immutable hashes, assertions link to source spans via provenance join, interaction-level evidence remains separate, `loadCandidateLivingContext` surfaces counts.
+
+### Added — Living Context Consolidation (PR #62 + #63 + #64)
+
+- Contact living context API: `GET /api/v1/contacts/:id/living-context` endpoint
+- ContactsPage UI: living context tab showing interaction timeline per contact
+- G-001 brain goal/plan/job hierarchy: 8 acceptance gates, 7 execution phases, minion task briefs M-001–M-007
+- MVP browser smoke E2E test (`e2e/mvp-browser-smoke.spec.ts`): ADR-053 golden path with role/person creation and roleless candidate intake
+- Auth fallback for E2E: `auth.setup.ts` falls back to known test password when `E2E_PASSWORD` unset
+
+### Added — Acceptance Criteria Proof Tests
+
+- Added `dynamicSemantics.test.ts` — 6 regression tests for acceptance criterion #3 (learn semantics dynamically): unknown concept survival, CamelCase word-boundary splitting, multi-face accumulation, novel relationship dimensions, end-to-end meeting transcript concept ingestion, cross-interaction concept evolution.
+- Added `identityUnification.test.ts` — 5 tests for acceptance criterion #1 (living person graph): contact-to-applicant identity unification via email, meeting-then-candidate unification, interaction-level vs accumulated evidence separation, case-insensitive email matching, distinct-email separation.
+- Added `codeReviewSemantics.test.ts` — 4 tests for acceptance criterion #3 (code-review evidence path): unknown concepts survive code-review ingestion, source spans preserve exact review text, concepts accumulate across meeting + review evidence, CamelCase splitting in code-review context.
+- Added `matchExplanation.test.ts` — 8 tests for acceptance criteria #5 and #6 (evidence-based matching + explanation): source ref linking, unmatched demand gap reporting, stretch area reporting, no-fabrication enforcement (null signals, empty refs), NEEDS_MORE_EVIDENCE status, deterministic golden-path pipeline, incomplete provenance rejection.
+- Added `expertCorpus.test.ts` — 14 tests for acceptance criterion #8 (expert-labelled evaluation corpus): corpus validation, JSON round-trip, immutable source identity enforcement, duplicate/unknown entity rejection, forbidden label guardrail violations, metadata count validation, corpus query helpers.
+
+### Added — Match Explanation Structured Gaps & Repo Overlay
+
+- `MatchExplanation` now includes `unmatchedDemands` and `stretchAreas` arrays with full source refs, concepts, and dimension data (acceptance criteria #5, #6).
+- Added `UnmatchedDemand` and `StretchArea` interfaces to challenge matching types with complete provenance.
+- `explainChallengeMatch` computes gap/stretch data from `ChallengeAlignment`.
+- Added `conceptAliasing.test.ts` — 7-test regression suite for concept aliasing across evidence sources: casing unification, CamelCase distinctiveness, concept resolution persistence, novel concept survival, hyphenated/space equivalence, adjacency persistence (criterion #3).
+- Added `goldenPathE2E.test.ts` — 6-test golden-path E2E suite: full person graph to deterministic match pipeline, D1 match run persistence, idempotent re-run verification, person/application unification, assertion provenance linking, NEEDS_MORE_EVIDENCE guard (criteria #1, #2, #4, #5, #8).
+- Added `RepoOverlayPanel` to `LivingContextGraph.tsx` — shows repository file structure with matched code spans, pair scores, shared concepts, and source text when a standalone review match exists (criterion #7).
+- Added repo overlay CSS styles following existing brutalist glassmorphic design system.
+
+### Fixed — CI Stability
+
+- `sourceAnalysis.test.ts` Go parser test now skips gracefully when `go` runtime is not available, eliminating the 1 preexisting test failure in CI environments.
+
+### Fixed — Test Infrastructure Consolidation
+
+- Migrated 10 living-context and matching test files from `node:sqlite` + inline mock to shared `better-sqlite3` + `createMockD1` helper, eliminating ~650 lines of duplicate boilerplate.
+- Added CamelCase boundary splitting to `normalizeOpenTermSurface` so `TypeScript` → `term:type-script` and `SomeNewTechnology` → `term:some-new-technology` — previously unseen CamelCase concepts are no longer collapsed.
+- Updated `probeLibrarian` and `planner` tests to match the current 9-probe signal library (added `probe_9_codebase_organization`).
+- Fixed `unifiedAgentRuntime` integration tests: `role_discovery` plugin now requires an LLM provider; added a deterministic mock provider.
+- Updated `conceptRegistry` test expectation for CamelCase normalization.
+
+### Added — Living Context Graph Tracker
+
+- Added `docs/plans/living-context-graph-tracker.md` — canonical acceptance tracker, PR ledger, merge gates, and autonomous agent operating model for the living context graph goal.
+
 ### Changed — E2E Test Reliability
 
 - Centralized `API_BASE` / `APP_BASE` into `e2e/env.ts` (reads `process.env` with localhost fallbacks) so specs work against both local dev and deployed Cloudflare test env.

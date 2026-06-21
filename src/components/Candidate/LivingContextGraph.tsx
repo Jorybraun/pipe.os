@@ -215,6 +215,98 @@ function StandaloneReviewMatchPanel({
   );
 }
 
+function RepoOverlayPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord | null;
+}): JSX.Element | null {
+  if (!match || match.evidence.length === 0) return null;
+
+  const fileMap = new Map<string, Array<{
+    atomId: string;
+    demandId: string;
+    pairScore: number;
+    exactText: string;
+    startOffset: number;
+    endOffset: number;
+    sharedConcepts: string[];
+  }>>();
+  for (const entry of match.evidence) {
+    for (const ref of entry.challengeSourceRefs) {
+      const filePath = ref.locator?.split(':')[0] ?? ref.artifactId;
+      const existing = fileMap.get(filePath) ?? [];
+      existing.push({
+        atomId: entry.atomId,
+        demandId: entry.demandId,
+        pairScore: entry.pairScore,
+        exactText: ref.exactText ?? '',
+        startOffset: ref.startOffset,
+        endOffset: ref.endOffset,
+        sharedConcepts: entry.sharedConcepts,
+      });
+      fileMap.set(filePath, existing);
+    }
+  }
+
+  if (fileMap.size === 0) return null;
+
+  return (
+    <section className="living-context__repo-overlay" aria-label="Repository structure overlay">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Repository overlay</div>
+        <GitPullRequest size={14} color="var(--lc-structural)" />
+      </div>
+      <div className="living-context__eyebrow">
+        {match.repoName ?? 'repository'} PR #{match.prNumber}
+        {' · '}{fileMap.size} file{fileMap.size === 1 ? '' : 's'} matched
+      </div>
+      <div className="living-context__repo-files">
+        {[...fileMap.entries()].map(([filePath, spans]) => (
+          <div key={filePath} className="living-context__repo-file">
+            <div className="living-context__repo-file-path">
+              <FileText size={11} />
+              <span>{filePath}</span>
+              <span className="living-context__count">{spans.length}</span>
+            </div>
+            <div className="living-context__repo-file-spans">
+              {spans.map((span, index) => (
+                <div
+                  key={`${filePath}:${span.startOffset}:${span.demandId}:${index}`}
+                  className="living-context__repo-span"
+                >
+                  <div className="living-context__repo-span-head">
+                    <span className="living-context__repo-span-score">
+                      {Math.round(span.pairScore * 100)}%
+                    </span>
+                    <span>{span.demandId}</span>
+                    <span>bytes {span.startOffset}-{span.endOffset}</span>
+                  </div>
+                  {span.exactText && (
+                    <blockquote className="living-context__repo-span-text">
+                      {span.exactText.length > 120
+                        ? `${span.exactText.slice(0, 120)}...`
+                        : span.exactText}
+                    </blockquote>
+                  )}
+                  {span.sharedConcepts.length > 0 && (
+                    <div className="living-context__concepts">
+                      {span.sharedConcepts.slice(0, 3).map((concept) => (
+                        <span key={`${filePath}:${span.demandId}:${concept}`} className="living-context__concept">
+                          {concept}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SourceButton({
   source,
   onSelect,
@@ -518,6 +610,7 @@ export function LivingContextGraph({
       </div>
 
       <StandaloneReviewMatchPanel match={standaloneReviewMatch ?? null} />
+      <RepoOverlayPanel match={standaloneReviewMatch ?? null} />
 
       <div className="living-context__summary">
         {summaryMetrics.map(([label, value]) => (
