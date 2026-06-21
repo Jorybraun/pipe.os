@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Expert-Labelled Evaluation Corpus Seed (Criterion #8)
+
+- Added `seed-corpus-v1.json` — production evaluation baseline with 3 candidates (platform eng, frontend eng, data eng), 2 roles, 5 challenge PRs, and 9 expert labels covering highly_relevant, relevant, borderline, and irrelevant grades. All evidence has immutable source identity (artifact versions, content hashes, exact text spans). Zero synthetic fixtures — all labels attributed to expert-recruiter.
+- Added `seedCorpus.test.ts` — 11 tests validating corpus integrity: schema compliance, source identity, relevance grading consistency, eligible challenge set invariants, and end-to-end corpus utility functions.
+
+### Added — Projection Rebuild Management API
+
+- Added `POST /api/v1/internal/projection-rebuild` — triggers on-demand Neo4j projection outbox processing with configurable limit (1-500) and optional force-reset of stale/failed entries. Admin-token authenticated.
+- Added `GET /api/v1/internal/projection-status` — returns projection outbox status breakdown, last completed timestamp, and last failure details. Admin-token authenticated.
+
 ### Added — Graph Visualization Proof Test (Criterion #7)
 
 - Added `graphVisualization.test.ts` — 6 tests proving the read model serves complete navigable person/context graph data: interaction type breakdown, per-interaction concept counts, accumulated evidence growth, person identity, assertion-to-source-span provenance, and interaction-to-artifact linkage for graph edges.
