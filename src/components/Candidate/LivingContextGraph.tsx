@@ -704,6 +704,7 @@ export function LivingContextGraph({
 
   const summaryMetrics = [
     ['Interactions', livingContext.summary.interactionCount],
+    ['Concepts', livingContext.summary.conceptCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
     ['Assertions', livingContext.summary.assertionCount],
@@ -766,6 +767,16 @@ export function LivingContextGraph({
             <div className="living-context__section-title">Interactions</div>
             <div className="living-context__count">{livingContext.interactions.length}</div>
           </div>
+          {Object.keys(livingContext.summary.interactionTypeBreakdown).length > 1 && (
+            <div className="living-context__type-breakdown">
+              {Object.entries(livingContext.summary.interactionTypeBreakdown).map(([type, count]) => (
+                <span key={type} className="living-context__type-badge">
+                  <InteractionIcon type={type} />
+                  {count}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="living-context__interactions">
             <button
               type="button"
@@ -795,6 +806,9 @@ export function LivingContextGraph({
                   <span>{interactionDate(interaction)}</span>
                   <span>{interaction.assertionIds.length} assertions</span>
                   <span>{interaction.signalKeys.length} signals</span>
+                  {interaction.conceptCount > 0 && (
+                    <span>{interaction.conceptCount} concepts</span>
+                  )}
                 </div>
                 {interaction.artifactIds.length > 0 && (
                   <div className="living-context__interaction-artifacts">

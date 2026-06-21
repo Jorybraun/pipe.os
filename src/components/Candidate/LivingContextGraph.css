@@ -641,6 +641,25 @@
   opacity: 0.8;
 }
 
+.living-context__type-breakdown {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+}
+
+.living-context__type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(167, 139, 250, 0.08);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  font: 9px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+}
+
 .living-context__empty {
   padding: 28px 16px;
   border: 1px dashed var(--pipe-border);

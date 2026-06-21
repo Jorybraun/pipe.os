@@ -106,6 +106,8 @@ describe('living-context candidate read model', () => {
       assertionCount: 1,
       signalCount: 1,
       sourceSpanCount: 3,
+      interactionTypeBreakdown: { culture_interview: 1 },
+      conceptCount: 1,
     });
     expect(graph?.interactions[0]).toMatchObject({
       interactionType: 'culture_interview',

@@ -175,6 +175,8 @@ contacts.get('/:id/living-context', async (c) => {
         assertionCount: 0,
         signalCount: 0,
         sourceSpanCount: 0,
+        interactionTypeBreakdown: {},
+        conceptCount: 0,
       },
       interactions: [],
       artifacts: [],
