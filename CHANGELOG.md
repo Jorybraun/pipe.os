@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Repo Graph Overlay API (Criterion #7)
+
+- Added `GET /api/v1/internal/repo-graph/:repoId/overlay` — returns full file tree for a challenge packet's repo snapshot including source spans, symbols, and demand-to-span mappings. Powers the complete repo context view in the recruiter overlay. Admin-token authenticated.
+- Added `repoGraph.test.ts` — 6 integration tests proving file tree loading, span locators, demand mapping, symbol resolution, and frontend contract compatibility.
+
 ### Added — Rollout Gate Middleware (Criterion #8)
 
 - Added `requireGate()` middleware that checks feature gate status before allowing access to gated routes. Returns 404 when gate is disabled so clients cannot discover unreleased capabilities.
