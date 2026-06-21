@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `matchExplanation.test.ts` — 8 tests for acceptance criteria #5 and #6 (evidence-based matching + explanation): source ref linking, unmatched demand gap reporting, stretch area reporting, no-fabrication enforcement (null signals, empty refs), NEEDS_MORE_EVIDENCE status, deterministic golden-path pipeline, incomplete provenance rejection.
 - Added `expertCorpus.test.ts` — 14 tests for acceptance criterion #8 (expert-labelled evaluation corpus): corpus validation, JSON round-trip, immutable source identity enforcement, duplicate/unknown entity rejection, forbidden label guardrail violations, metadata count validation, corpus query helpers.
 
+### Added — Match Explanation Structured Gaps & Repo Overlay
+
+- `MatchExplanation` now includes `unmatchedDemands` and `stretchAreas` arrays with full source refs, concepts, and dimension data (acceptance criteria #5, #6).
+- Added `UnmatchedDemand` and `StretchArea` interfaces to challenge matching types with complete provenance.
+- `explainChallengeMatch` computes gap/stretch data from `ChallengeAlignment`.
+- Added `conceptAliasing.test.ts` — 7-test regression suite for concept aliasing across evidence sources: casing unification, CamelCase distinctiveness, concept resolution persistence, novel concept survival, hyphenated/space equivalence, adjacency persistence (criterion #3).
+- Added `goldenPathE2E.test.ts` — 6-test golden-path E2E suite: full person graph to deterministic match pipeline, D1 match run persistence, idempotent re-run verification, person/application unification, assertion provenance linking, NEEDS_MORE_EVIDENCE guard (criteria #1, #2, #4, #5, #8).
+- Added `RepoOverlayPanel` to `LivingContextGraph.tsx` — shows repository file structure with matched code spans, pair scores, shared concepts, and source text when a standalone review match exists (criterion #7).
+- Added repo overlay CSS styles following existing brutalist glassmorphic design system.
+
 ### Fixed — CI Stability
 
 - `sourceAnalysis.test.ts` Go parser test now skips gracefully when `go` runtime is not available, eliminating the 1 preexisting test failure in CI environments.
