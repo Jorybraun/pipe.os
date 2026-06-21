@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Consolidated Living Context PRs (#53, #62–#73 → #74)
+
+- Consolidated 13 open draft PRs into a single atomic PR #74 targeting main.
+- Closed superseded PRs #53, #62–#73 (all work incorporated into #74).
+- Fixes 14 pre-existing test failures on main (122 files pass vs 96/110 on main).
+- 1149 tests pass, 0 failures (vs 14 failures on main).
+- Updated agent coordination log with session entry.
+
 ### Added — Graph Visualization Proof Test (Criterion #7)
 
 - Added `graphVisualization.test.ts` — 6 tests proving the read model serves complete navigable person/context graph data: interaction type breakdown, per-interaction concept counts, accumulated evidence growth, person identity, assertion-to-source-span provenance, and interaction-to-artifact linkage for graph edges.

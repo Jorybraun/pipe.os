@@ -49,7 +49,8 @@ Every PR, child session, and merge recommendation must map to at least one accep
 
 | PR | Area | Merge state | Recommendation |
 |---|---|---|---|
-| #53 | Migrate broader living-context tests from `node:sqlite` to `better-sqlite3`; CamelCase open-term normalization | Open draft, superseded by #62 | Close — all changes incorporated into #62. |
+| #74 | Consolidation of all living-context graph work (#53, #62–#73) — 12 proof test suites, match explanation, staged rollout, evidence UI, evaluation CI | Open (draft due to network policy) | Merge — all code quality checks pass; only pre-existing Cloudflare deploy failures. Supersedes #53, #62–#73. |
+| #53, #62–#73 | Individual living-context PRs | Open (superseded by #74) | Close after #74 merges. |
 
 ## Merge gates
 
