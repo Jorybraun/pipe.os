@@ -18,6 +18,8 @@ import type {
   LivingContextSourceRef,
   StandaloneReviewMatchRecord,
   StandaloneReviewSourceRef,
+  StandaloneReviewUnmatchedDemand,
+  StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import './LivingContextGraph.css';
@@ -83,6 +85,90 @@ function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | nul
 
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
   return status.replace(/_/g, ' ');
+}
+
+function UnmatchedDemandsPanel({
+  demands,
+}: {
+  demands: StandaloneReviewUnmatchedDemand[];
+}): JSX.Element {
+  return (
+    <div className="living-context__unmatched-demands">
+      <div className="living-context__eyebrow">
+        Unmatched demands ({demands.length})
+      </div>
+      <div className="living-context__demand-list">
+        {demands.map((demand) => (
+          <div key={demand.demandId} className="living-context__demand-item">
+            <div className="living-context__demand-head">
+              <span className="living-context__demand-family">{demand.family}</span>
+              <span className="living-context__demand-weight">
+                {Math.round(demand.weight * 100)}% weight
+              </span>
+              {demand.roleRequirement && (
+                <span className="living-context__demand-badge">role req</span>
+              )}
+            </div>
+            <div className="living-context__demand-narrative">{demand.narrative}</div>
+            {demand.concepts.length > 0 && (
+              <div className="living-context__concepts">
+                {demand.concepts.slice(0, 4).map((concept) => (
+                  <span key={`${demand.demandId}:${concept}`} className="living-context__concept">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+            {demand.challengeSourceRefs.length > 0 && (
+              <div className="living-context__demand-source">
+                {demand.challengeSourceRefs.slice(0, 2).map((ref, index) => (
+                  <span key={`${demand.demandId}:source:${index}`} className="living-context__demand-ref">
+                    {ref.locator ?? `${ref.artifactId.slice(0, 8)}:${ref.startOffset}-${ref.endOffset}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StretchAreasPanel({
+  areas,
+}: {
+  areas: StandaloneReviewStretchArea[];
+}): JSX.Element {
+  return (
+    <div className="living-context__stretch-areas">
+      <div className="living-context__eyebrow">
+        Stretch areas ({areas.length})
+      </div>
+      <div className="living-context__stretch-list">
+        {areas.map((area, index) => (
+          <div key={`${area.atomId}:${area.demandId}:${index}`} className="living-context__stretch-item">
+            <div className="living-context__stretch-head">
+              <span className="living-context__stretch-dimension">{area.dimension}</span>
+              <span className="living-context__stretch-concepts">
+                {area.atomConcept} → {area.demandConcept}
+              </span>
+            </div>
+            <div className="living-context__stretch-narratives">
+              <div className="living-context__stretch-narrative">
+                <span className="living-context__stretch-label">Candidate</span>
+                <span>{area.candidateNarrative}</span>
+              </div>
+              <div className="living-context__stretch-narrative">
+                <span className="living-context__stretch-label">Demand</span>
+                <span>{area.demandNarrative}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function StandaloneReviewMatchPanel({
@@ -210,6 +296,14 @@ function StandaloneReviewMatchPanel({
             ))}
           </ul>
         </div>
+      )}
+
+      {match.unmatchedDemands && match.unmatchedDemands.length > 0 && (
+        <UnmatchedDemandsPanel demands={match.unmatchedDemands} />
+      )}
+
+      {match.stretchAreas && match.stretchAreas.length > 0 && (
+        <StretchAreasPanel areas={match.stretchAreas} />
       )}
     </section>
   );

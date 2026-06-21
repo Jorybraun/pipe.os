@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Structured Evidence Gaps & Stretch Areas UI (Criteria #6, #7)
+
+- Added `StandaloneReviewUnmatchedDemand` and `StandaloneReviewStretchArea` types to frontend API types, matching the backend API contract.
+- Added `UnmatchedDemandsPanel` component — renders structured evidence gaps with family, weight, narrative, concepts, and challenge source refs.
+- Added `StretchAreasPanel` component — renders adjacent-concept stretch areas with dimension, concept pair, and both-side narratives.
+- Wired both panels into `StandaloneReviewMatchPanel` so recruiters see exactly which demands have no candidate evidence and which alignments are stretches.
+- Added corresponding CSS in brutalist glassmorphic style (red-tinted for gaps, amber-tinted for stretches).
+
 ### Added — Full Pipeline E2E Test (Criteria #1, #2, #5, #6, #8)
 
 - Added `fullPipelineE2E.test.ts` — 4-test comprehensive suite proving the full lifecycle: contact→meeting transcript→candidate→code-review→matching→read-model, identity unification across contact and candidate flows, source provenance through the matching pipeline, idempotent match re-runs, accumulated evidence in contact read model, and NEEDS_MORE_EVIDENCE guard for empty candidates.
