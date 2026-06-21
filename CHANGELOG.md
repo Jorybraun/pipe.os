@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `dynamicSemantics.test.ts` — 6 regression tests for acceptance criterion #3 (learn semantics dynamically): unknown concept survival, CamelCase word-boundary splitting, multi-face accumulation, novel relationship dimensions, end-to-end meeting transcript concept ingestion, cross-interaction concept evolution.
 - Added `identityUnification.test.ts` — 5 tests for acceptance criterion #1 (living person graph): contact-to-applicant identity unification via email, meeting-then-candidate unification, interaction-level vs accumulated evidence separation, case-insensitive email matching, distinct-email separation.
+- Added `codeReviewSemantics.test.ts` — 4 tests for acceptance criterion #3 (code-review evidence path): unknown concepts survive code-review ingestion, source spans preserve exact review text, concepts accumulate across meeting + review evidence, CamelCase splitting in code-review context.
+- Added `matchExplanation.test.ts` — 8 tests for acceptance criteria #5 and #6 (evidence-based matching + explanation): source ref linking, unmatched demand gap reporting, stretch area reporting, no-fabrication enforcement (null signals, empty refs), NEEDS_MORE_EVIDENCE status, deterministic golden-path pipeline, incomplete provenance rejection.
+- Added `expertCorpus.test.ts` — 14 tests for acceptance criterion #8 (expert-labelled evaluation corpus): corpus validation, JSON round-trip, immutable source identity enforcement, duplicate/unknown entity rejection, forbidden label guardrail violations, metadata count validation, corpus query helpers.
 
 ### Fixed — CI Stability
 

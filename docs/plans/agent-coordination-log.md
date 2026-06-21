@@ -111,3 +111,49 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 5. Continue: match explanation and visualization (criteria #6, #7)
 
 **Acceptance criteria advanced:** 1, 2, 3, 4 (partial), 7 (partial UI), 8 (stable tests)
+
+### 2026-06-21 — Session fa3276f1 (Devin)
+
+**Action:** Merge consolidation PR content, build acceptance-criteria proof tests for remaining gaps.
+
+**Open PRs reviewed:**
+- PR #65 (consolidation of #62, #63, #64) — merged into working branch via git merge
+- PR #53 (superseded by #62) — recommended close
+
+**Changes made:**
+1. Merged PR #65 consolidation branch (65 files, 3746 insertions) into `devin/1782039915-living-context-consolidation-merge`
+2. Added `codeReviewSemantics.test.ts` — 4 tests for acceptance criterion #3:
+   - Previously unknown concepts in code-review transcript survive ingestion
+   - Code-review transcript ingestion creates source spans preserving exact text
+   - Concepts from code-review and meeting evidence accumulate on same canonical key
+   - CamelCase concepts from code review split into natural word boundaries
+3. Added `matchExplanation.test.ts` — 8 tests for acceptance criteria #5 and #6:
+   - Explanation links both candidate and challenge source refs
+   - Reports unmatched demands as evidence gaps
+   - Stretch areas explicitly reported in explanation evidence
+   - No fabricated evidence: signals without source refs excluded
+   - No fabricated evidence: null evidence level/strength/confidence excluded
+   - NEEDS_MORE_EVIDENCE when no valid signals exist
+   - Full golden path: recall → align → rank → explain with deterministic output
+   - Incomplete provenance reported as rejection reason
+4. Added `expertCorpus.test.ts` — 14 tests for acceptance criterion #8:
+   - Minimal expert corpus passes validation and round-trips JSON
+   - Rejects corpus with missing/duplicate evidence, unknown candidates, bad metadata
+   - Validates forbidden label guardrail violations, immutable source identity
+   - Role requirements must have persisted source references
+   - Corpus query helpers return correct subsets
+5. Updated tracker with new evidence for criteria #3, #5, #6, #8
+6. Updated coordination log
+
+**Test results after changes:**
+- All 26 new tests pass (4 + 8 + 14)
+- TypeScript: pending full check
+- Lint: pending full check
+
+**Next priorities:**
+1. Full E2E proof: meeting/resume → graph → matching → recruiter CONTEXT
+2. First UI slice: contact/person context summary
+3. Make evaluation a non-blocking CI report
+4. Rebuild Neo4j/search projections from D1 repo graph
+
+**Acceptance criteria advanced:** 3 (code-review semantic survival), 5 (no-fabrication + golden path), 6 (gaps + stretch + provenance), 8 (expert corpus validation)
