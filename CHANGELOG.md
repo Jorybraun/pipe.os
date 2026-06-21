@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Full Pipeline E2E Test (Criteria #1, #2, #5, #6, #8)
+
+- Added `fullPipelineE2E.test.ts` — 4-test comprehensive suite proving the full lifecycle: contact→meeting transcript→candidate→code-review→matching→read-model, identity unification across contact and candidate flows, source provenance through the matching pipeline, idempotent match re-runs, accumulated evidence in contact read model, and NEEDS_MORE_EVIDENCE guard for empty candidates.
+
+### Fixed — Workspace Person Context Merge
+
+- Fixed `upsertWorkspacePerson` in `persistence.ts` to use `json_patch` instead of full replacement for `context_json`. Previously, when a person had both contact and candidate flows, the second upsert would overwrite the first flow's context (losing `contactId`). Now both contexts merge correctly, ensuring `loadContactLivingContext` works even after `ensureCandidateLivingContext` runs on the same person.
+
 ### Added — Staged Rollout and Projection Rebuild Proof
 
 - Added `rollout.ts` — staged rollout configuration with 9 gates (`living_context_ingestion`, `deterministic_matching`, `match_explanation`, `repo_overlay_visualization`, `expert_labelled_evaluation`, etc.), prerequisite chains, and stage validation (disabled/internal_only/canary/general_availability).
