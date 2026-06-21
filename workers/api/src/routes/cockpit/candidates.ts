@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
+import { isFeatureEnabled } from '../../middleware/rolloutGate';
 import { parseResume, persistParsedCV } from '../../lib/cvParser';
 import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
@@ -1239,8 +1240,8 @@ candidateOps.get('/:candidateId', async (c) => {
         summary: summary.summary,
         evidence: summary.evidence,
         gaps: summary.gaps,
-        unmatchedDemands: summary.unmatchedDemands,
-        stretchAreas: summary.stretchAreas,
+        unmatchedDemands: isFeatureEnabled('match_explanation') ? summary.unmatchedDemands : [],
+        stretchAreas: isFeatureEnabled('match_explanation') ? summary.stretchAreas : [],
         submitted: standaloneInterview.submission_json !== null,
         submission,
         completedAt: standaloneInterview.completed_at,

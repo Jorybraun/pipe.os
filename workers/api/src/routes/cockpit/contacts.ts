@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
+import { requireGate } from '../../middleware/rolloutGate';
 import { ensureContactLivingContext, loadContactLivingContext } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -152,7 +153,7 @@ contacts.get('/:id', async (c) => {
 });
 
 // GET /:id/living-context — contact living context graph
-contacts.get('/:id/living-context', async (c) => {
+contacts.get('/:id/living-context', requireGate('contact_living_context'), async (c) => {
   const userId = c.var.userId;
   const { id } = c.req.param();
   const db = c.env.DB;
