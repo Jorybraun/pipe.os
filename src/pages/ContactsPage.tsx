@@ -712,9 +712,9 @@ function parseSearchQuery(raw: string): { jobTitleRole: string | undefined; jobC
   return { jobTitleRole: trimPunctuation(sentence), jobCompanyName: undefined, locationCountry: undefined };
 }
 
-function SourceSearchPanel({ api, onContact }: {
+function SourceSearchPanel({ api }: {
   api: ReturnType<typeof createApiClient>;
-  onContact: () => void;
+  onContact?: () => void;
 }): JSX.Element {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -722,11 +722,11 @@ function SourceSearchPanel({ api, onContact }: {
     hasEmail: true,
     size: 10,
   });
-  const [results, setResults] = useState<PdlPerson[]>([]);
-  const [total, setTotal] = useState(0);
+  const [, setResults] = useState<PdlPerson[]>([]);
+  const [, setTotal] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [actionIds, setActionIds] = useState<Set<string>>(new Set());
+  const [, setSearchError] = useState<string | null>(null);
+
   const [excluded, setExcluded] = useState<Set<'role' | 'company' | 'location'>>(new Set());
 
   const parsed = parseSearchQuery(query);
@@ -752,42 +752,7 @@ function SourceSearchPanel({ api, onContact }: {
     }
   };
 
-  const handleFlag = async (person: PdlPerson): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/flag', { poolId: person.poolId });
-      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'flagged' } : p));
-    } catch (err) {
-      console.error('[SourceSearchPanel] flag failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
 
-  const handleDismiss = async (person: PdlPerson): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/dismiss', { poolId: person.poolId });
-      setResults((prev) => prev.filter((p) => p.poolId !== person.poolId));
-    } catch (err) {
-      console.error('[SourceSearchPanel] dismiss failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
-
-  const handleContact = async (person: PdlPerson, channel: 'phone' | 'email' | 'invite'): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/contact', { poolId: person.poolId, channel });
-      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'contacted' } : p));
-      onContact();
-    } catch (err) {
-      console.error('[SourceSearchPanel] contact failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -884,7 +849,7 @@ function SourceSearchPanel({ api, onContact }: {
 // ─── Contact Living Context ─────────────────────────────────────────────────────
 
 function ContactLivingContext({ contactId, api }: { contactId: string; api: ReturnType<typeof createApiClient> }): JSX.Element {
-  const [livingContext, setLivingContext] = useState<any>(null);
+  const [livingContext, setLivingContext] = useState<{ summary: { interactionCount: number } } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -892,7 +857,7 @@ function ContactLivingContext({ contactId, api }: { contactId: string; api: Retu
       setIsLoading(true);
       try {
         const res = await api.get(`/api/v1/contacts/${contactId}/living-context`);
-        setLivingContext(res);
+        setLivingContext(res as { summary: { interactionCount: number } });
       } catch {
         setLivingContext(null);
       } finally {
