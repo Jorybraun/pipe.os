@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Graph Visualization Proof Test (Criterion #7)
+
+- Added `graphVisualization.test.ts` — 6 tests proving the read model serves complete navigable person/context graph data: interaction type breakdown, per-interaction concept counts, accumulated evidence growth, person identity, assertion-to-source-span provenance, and interaction-to-artifact linkage for graph edges.
+
 ### Added — Meeting-Level Graph Cards & Evaluation CI (Criteria #7, #8)
 
 - Added `interactionTypeBreakdown` and `conceptCount` to `LivingContextReadModel.summary` — shows concept accumulation and interaction diversity at a glance.
