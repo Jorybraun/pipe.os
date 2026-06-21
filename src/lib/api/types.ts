@@ -1043,6 +1043,7 @@ export interface LivingContextInteraction {
   artifactIds: string[];
   assertionIds: string[];
   signalKeys: string[];
+  conceptCount: number;
 }
 
 export interface LivingContextReadModel {
@@ -1072,6 +1073,8 @@ export interface LivingContextReadModel {
     assertionCount: number;
     signalCount: number;
     sourceSpanCount: number;
+    interactionTypeBreakdown: Record<string, number>;
+    conceptCount: number;
   };
   interactions: LivingContextInteraction[];
   artifacts: LivingContextArtifact[];

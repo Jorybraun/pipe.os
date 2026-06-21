@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Meeting-Level Graph Cards & Evaluation CI (Criteria #7, #8)
+
+- Added `interactionTypeBreakdown` and `conceptCount` to `LivingContextReadModel.summary` — shows concept accumulation and interaction diversity at a glance.
+- Added `conceptCount` per interaction in the read model — each meeting/interview card now reports how many unique concepts were surfaced.
+- Added interaction type breakdown badges to the living-context sidebar rail — quickly see mix of meetings, interviews, messages, code reviews.
+- Added non-blocking evaluation CI workflow (`evaluation-report.yml`) — runs matching proof tests on PRs touching `challengeMatching/` or `livingContext/` and posts a summary comment.
+
 ### Added — Structured Evidence Gaps & Stretch Areas UI (Criteria #6, #7)
 
 - Added `StandaloneReviewUnmatchedDemand` and `StandaloneReviewStretchArea` types to frontend API types, matching the backend API contract.

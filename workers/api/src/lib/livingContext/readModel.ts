@@ -126,6 +126,8 @@ export interface LivingContextReadModel {
     assertionCount: number;
     signalCount: number;
     sourceSpanCount: number;
+    interactionTypeBreakdown: Record<string, number>;
+    conceptCount: number;
   };
   interactions: Array<{
     id: string;
@@ -139,6 +141,7 @@ export interface LivingContextReadModel {
     artifactIds: string[];
     assertionIds: string[];
     signalKeys: string[];
+    conceptCount: number;
   }>;
   artifacts: LivingContextArtifact[];
   assertions: LivingContextAssertion[];
@@ -712,6 +715,16 @@ async function loadLivingContextByWorkspacePerson(
     }
   }
 
+  const conceptsByInteraction = new Map<string, Set<string>>();
+  for (const assertion of assertions) {
+    if (!assertion.interactionId) continue;
+    const keys = conceptsByInteraction.get(assertion.interactionId) ?? new Set<string>();
+    for (const concept of assertion.concepts) {
+      keys.add(concept.canonicalKey);
+    }
+    conceptsByInteraction.set(assertion.interactionId, keys);
+  }
+
   const interactions = (interactionsResult.results ?? []).map((row) => ({
     id: row.id,
     interactionType: row.interaction_type,
@@ -724,6 +737,7 @@ async function loadLivingContextByWorkspacePerson(
     artifactIds: artifactIdsByInteraction.get(row.id) ?? [],
     assertionIds: assertionIdsByInteraction.get(row.id) ?? [],
     signalKeys: [...(signalKeysByInteraction.get(row.id) ?? new Set<string>())],
+    conceptCount: (conceptsByInteraction.get(row.id) ?? new Set<string>()).size,
   }));
 
   return {
@@ -753,6 +767,11 @@ async function loadLivingContextByWorkspacePerson(
       assertionCount: assertions.length,
       signalCount: signals.length,
       sourceSpanCount: (artifactSourcesResult.results ?? []).length,
+      interactionTypeBreakdown: interactions.reduce<Record<string, number>>((acc, interaction) => {
+        acc[interaction.interactionType] = (acc[interaction.interactionType] ?? 0) + 1;
+        return acc;
+      }, {}),
+      conceptCount: new Set(assertions.flatMap((a) => a.concepts.map((c) => c.canonicalKey))).size,
     },
     interactions,
     artifacts,
