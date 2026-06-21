@@ -341,6 +341,39 @@ export async function loadCandidateLivingContext(
   ).bind(candidateId).first<IdentityRow>();
   if (!identity) return null;
 
+  return loadLivingContextByWorkspacePerson(db, identity);
+}
+
+export async function loadContactLivingContext(
+  db: D1Database,
+  contactId: string,
+): Promise<LivingContextReadModel | null> {
+  const identity = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.id AS workspace_person_id,
+            NULL AS application_id,
+            p.display_name,
+            p.primary_email,
+            p.primary_phone,
+            wp.relationship_summary,
+            NULL AS application_status,
+            NULL AS pipeline_id
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+       JOIN contacts c ON c.id = ?1
+      WHERE wp.context_json LIKE '%"contactId":"' || ?1 || '"%'
+      LIMIT 1`,
+  ).bind(contactId).first<IdentityRow>();
+  if (!identity) return null;
+
+  return loadLivingContextByWorkspacePerson(db, identity);
+}
+
+async function loadLivingContextByWorkspacePerson(
+  db: D1Database,
+  identity: IdentityRow,
+): Promise<LivingContextReadModel> {
+
   const [
     rolesResult,
     interactionsResult,

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   buildRepoSnapshot,
@@ -5,6 +6,8 @@ import {
   buildSourceArtifactVersion,
 } from '../../src/lib/repoSemanticGraph';
 import { analyzeSourceFile } from './sourceAnalysis';
+
+const hasGo = spawnSync('go', ['version'], { encoding: 'utf8', timeout: 5_000 }).status === 0;
 
 async function analyze(path: string, language: string, content: string) {
   const snapshot = await buildRepoSnapshot({
@@ -91,7 +94,7 @@ describe('analyzeSourceFile', () => {
     expectExactSpans(content, result.sourceSpans);
   });
 
-  it('uses go/parser for Go declarations and calls', async () => {
+  it.skipIf(!hasGo)('uses go/parser for Go declarations and calls', { timeout: 30_000 }, async () => {
     const content = [
       'package orders',
       'import "context"',
