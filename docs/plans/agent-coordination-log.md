@@ -111,3 +111,43 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 5. Continue: match explanation and visualization (criteria #6, #7)
 
 **Acceptance criteria advanced:** 1, 2, 3, 4 (partial), 7 (partial UI), 8 (stable tests)
+
+### 2026-06-21 — Session 9a8d26a0 (Devin)
+
+**Action:** Enhance match explanation with evidence gaps/stretch areas, add golden-path proof test.
+
+**Changes made:**
+1. Enhanced `MatchExplanation` type (`types.ts`):
+   - Added `UnmatchedDemand` interface (demandId, family, narrative, weight, concepts, challengeSourceRefs, roleRequirement)
+   - Added `StretchArea` interface (atomId, demandId, concepts, dimension, narratives, sourceRefs)
+   - Added `unmatchedDemands` and `stretchAreas` fields to `MatchExplanation`
+2. Updated `explainChallengeMatch()` in `engine.ts`:
+   - Computes unmatched demands (demands not in matchedDemandIds set)
+   - Computes stretch areas (alignments with `entry.stretch`)
+   - Summary includes gap count: "N unmatched demand(s) (evidence gaps)."
+3. Exported `UnmatchedDemand` and `StretchArea` from `index.ts`
+4. Added `goldenPathMatching.test.ts` — 9 tests proving criteria #5 and #6:
+   - Selects specific reviewable PR from source-backed evidence
+   - Links evidence to exact source spans on both sides
+   - Reports unmatched demands as evidence gaps
+   - Includes structured stretch areas
+   - Summary includes gap count
+   - Match run persisted to D1 with full audit trail
+   - Uses accumulated evidence from multiple interactions
+   - No fabrication/fallbacks
+   - Unknown concepts survive through matching
+
+**Test results:**
+- 113 test files pass, 0 failures
+- 1089 tests pass, 15 skipped
+- TypeScript: 0 errors (frontend + workers)
+- Lint: 0 errors (preexisting warnings only)
+
+**Next priorities:**
+1. Merge PR #65
+2. Full E2E with real UI: recruiter CONTEXT displays accumulated evidence, gaps, stretch areas
+3. First UI slice: contact/person context summary
+4. Expert-labelled evaluation corpus
+5. Rebuild Neo4j/search projections from D1 repo graph
+
+**Acceptance criteria advanced:** 5 (partial → strong proof), 6 (partial → strong proof)

@@ -17,8 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Acceptance Criteria Proof Tests
 
+- Added `goldenPathMatching.test.ts` — 9 tests proving criteria #5 (evidence-based matching) and #6 (explain every match): PR selection from source-backed evidence, exact source span linking on both sides, unmatched demand evidence gaps, structured stretch areas, gap-count summary, D1 audit trail persistence, multi-interaction evidence accumulation, no fabrication/fallbacks, unknown concept survival through matching.
 - Added `dynamicSemantics.test.ts` — 6 regression tests for acceptance criterion #3 (learn semantics dynamically): unknown concept survival, CamelCase word-boundary splitting, multi-face accumulation, novel relationship dimensions, end-to-end meeting transcript concept ingestion, cross-interaction concept evolution.
 - Added `identityUnification.test.ts` — 5 tests for acceptance criterion #1 (living person graph): contact-to-applicant identity unification via email, meeting-then-candidate unification, interaction-level vs accumulated evidence separation, case-insensitive email matching, distinct-email separation.
+
+### Added — Match Explanation Enhancement
+
+- `MatchExplanation` type now includes `unmatchedDemands: UnmatchedDemand[]` and `stretchAreas: StretchArea[]` for criterion #6 (explain every match with evidence gaps and stretch areas).
+- `explainChallengeMatch()` computes and populates evidence gaps (demands not matched by any candidate atom) and stretch areas (alignments via concept adjacency rather than direct overlap).
+- Summary string now reports gap count: "N unmatched demand(s) (evidence gaps)."
+- Exported `UnmatchedDemand` and `StretchArea` types from `challengeMatching/index.ts`.
 
 ### Fixed — CI Stability
 

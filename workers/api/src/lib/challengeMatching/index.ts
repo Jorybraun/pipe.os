@@ -32,7 +32,9 @@ export type {
   RoleGuardrailSnapshot,
   Seniority,
   SourceRef,
+  StretchArea,
   StretchMatch,
+  UnmatchedDemand,
 } from './types';
 export * from './d1Matcher';
 export * from './roleGuardrails';
