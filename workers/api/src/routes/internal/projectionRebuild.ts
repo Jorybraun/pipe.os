@@ -14,7 +14,7 @@
 
 import { Hono } from 'hono';
 import type { Env } from '../../types';
-import { processProjectionOutbox } from '../../lib/livingContext';
+import { processProjectionOutbox, listCheckpoints, resetCheckpoint } from '../../lib/livingContext';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -91,6 +91,33 @@ app.get('/projection-status', async (c) => {
     lastFailedError: lastFailed?.last_error ?? null,
     lastFailedAt: lastFailed?.updated_at ?? null,
   });
+});
+
+app.get('/backfill-status', async (c) => {
+  const adminToken = c.req.header('X-Admin-Token');
+  const expectedToken = c.env.ADMIN_TTL_OVERRIDE_SECRET;
+  if (!expectedToken || adminToken !== expectedToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const checkpoints = await listCheckpoints(c.env.DB);
+  return c.json({ checkpoints });
+});
+
+app.post('/backfill-reset', async (c) => {
+  const adminToken = c.req.header('X-Admin-Token');
+  const expectedToken = c.env.ADMIN_TTL_OVERRIDE_SECRET;
+  if (!expectedToken || adminToken !== expectedToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const name = c.req.query('name');
+  if (!name) {
+    return c.json({ error: 'Missing required query parameter: name' }, 400);
+  }
+
+  const removed = await resetCheckpoint(c.env.DB, name);
+  return c.json({ removed, backfillName: name });
 });
 
 export const projectionRebuild = app;

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Rollout Gate Middleware (Criterion #8)
+
+- Added `requireGate()` middleware that checks feature gate status before allowing access to gated routes. Returns 404 when gate is disabled so clients cannot discover unreleased capabilities.
+- Added `isFeatureEnabled()` helper for conditional response sections within handlers.
+- Wired `contact_living_context` gate into `GET /api/v1/contacts/:id/living-context`.
+- Wired `match_explanation` gate into candidate match response — `unmatchedDemands` and `stretchAreas` are empty arrays when gate is off.
+- Added `rolloutGate.test.ts` — 9 tests proving gate enforcement, canary/internal stage access, and middleware chaining.
+
+### Added — Backfill Checkpoint Tracking (Criterion #8)
+
+- Added `backfillCheckpoint.ts` — D1-backed checkpoint tracking for idempotent, restartable backfills. Supports running/completed/failed/paused status, metadata persistence, and clean reset for re-runs.
+- Added migration `0095_backfill_checkpoints.sql` — `backfill_checkpoints` table with named checkpoints, progress counters, and status tracking.
+- Added `GET /api/v1/internal/backfill-status` and `POST /api/v1/internal/backfill-reset` admin endpoints for ops visibility.
+- Added `backfillCheckpoint.test.ts` — 9 tests proving round-trip persistence, idempotent upsert, completion timestamps, reset, concurrent tracking, and failure debugging.
+
 ### Added — Expert-Labelled Evaluation Corpus Seed (Criterion #8)
 
 - Added `seed-corpus-v1.json` — production evaluation baseline with 3 candidates (platform eng, frontend eng, data eng), 2 roles, 5 challenge PRs, and 9 expert labels covering highly_relevant, relevant, borderline, and irrelevant grades. All evidence has immutable source identity (artifact versions, content hashes, exact text spans). Zero synthetic fixtures — all labels attributed to expert-recruiter.
