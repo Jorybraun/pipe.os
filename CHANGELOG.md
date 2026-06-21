@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Living Context Consolidation (PR #62 + #63 + #64)
+
+- Contact living context API: `GET /api/v1/contacts/:id/living-context` endpoint
+- ContactsPage UI: living context tab showing interaction timeline per contact
+- G-001 brain goal/plan/job hierarchy: 8 acceptance gates, 7 execution phases, minion task briefs M-001–M-007
+- MVP browser smoke E2E test (`e2e/mvp-browser-smoke.spec.ts`): ADR-053 golden path with role/person creation and roleless candidate intake
+- Auth fallback for E2E: `auth.setup.ts` falls back to known test password when `E2E_PASSWORD` unset
+
 ### Added — Acceptance Criteria Proof Tests
 
 - Added `dynamicSemantics.test.ts` — 6 regression tests for acceptance criterion #3 (learn semantics dynamically): unknown concept survival, CamelCase word-boundary splitting, multi-face accumulation, novel relationship dimensions, end-to-end meeting transcript concept ingestion, cross-interaction concept evolution.
