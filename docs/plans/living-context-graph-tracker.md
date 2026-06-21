@@ -105,8 +105,8 @@ Add focused tests for any touched route, UI, or backfill script.
 
 ## Next highest-impact work
 
-1. Wire structured `unmatchedDemands`/`stretchAreas` through the recruiter CONTEXT API so `StandaloneReviewMatchPanel` renders them.
+1. ~~Wire structured `unmatchedDemands`/`stretchAreas` through the recruiter CONTEXT API so `StandaloneReviewMatchPanel` renders them.~~ ✓ Done (PR #68).
 2. Implement the first #57 UI slice: contact/person context summary from living-context data.
 3. Make evaluation a non-blocking CI report before turning it into a hard gate.
 4. Rebuild Neo4j/search projections from D1 repo graph and verify repository overlays in UI.
-5. Run the full standalone CODE_REVIEW E2E and define staged rollout gates.
+5. Run full standalone CODE_REVIEW E2E and define staged rollout gates.

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Structured Match Gaps Through Recruiter API
+
+- Persisted `unmatchedDemands` and `stretchAreas` in `match_runs.ranked_results_json` — each ranked challenge now includes full structured gaps with demand narratives, concepts, weights, and source refs.
+- Wired `unmatchedDemands` and `stretchAreas` through the `GET /:candidateId` recruiter API response (`standaloneReviewMatch` object), so the frontend `StandaloneReviewMatchPanel` can render structured gap/stretch evidence.
+- Added `lifecycleProvenance.test.ts` — 5-test proof suite for acceptance criteria #1 and #2: contact→meeting→candidate→code-review all resolve to one person, source spans preserve exact text with immutable hashes, assertions link to source spans via provenance join, interaction-level evidence remains separate, `loadCandidateLivingContext` surfaces counts.
+
 ### Added — Living Context Consolidation (PR #62 + #63 + #64)
 
 - Contact living context API: `GET /api/v1/contacts/:id/living-context` endpoint
