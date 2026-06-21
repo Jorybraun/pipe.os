@@ -13,4 +13,5 @@ export * from './codeReview';
 export * from './readModel';
 export * from './projection';
 export * from './openTerms';
+export * from './rollout';
 export { loadContactLivingContext } from './readModel';

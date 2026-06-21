@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Staged Rollout and Projection Rebuild Proof
+
+- Added `rollout.ts` — staged rollout configuration with 9 gates (`living_context_ingestion`, `deterministic_matching`, `match_explanation`, `repo_overlay_visualization`, `expert_labelled_evaluation`, etc.), prerequisite chains, and stage validation (disabled/internal_only/canary/general_availability).
+- Added `rollout.test.ts` — 10 tests for acceptance criterion #8: gate prerequisite validation, unique keys, circular dependency detection, GA gate verification, stage filtering.
+- Added `projectionRebuild.test.ts` — 5 tests for acceptance criteria #4 and #8: outbox entry creation during ingestion, Neo4j write query production, force-rebuild idempotency (identical cypher templates), failed entry retry with backoff, full rebuild from D1 source data alone.
+
 ### Added — Structured Match Gaps Through Recruiter API
 
 - Persisted `unmatchedDemands` and `stretchAreas` in `match_runs.ranked_results_json` — each ranked challenge now includes full structured gaps with demand narratives, concepts, weights, and source refs.
