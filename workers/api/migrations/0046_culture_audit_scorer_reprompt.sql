@@ -4,8 +4,8 @@
 -- the table. The audit trail is small (13 event types × N sessions) so this
 -- is safe and fast.
 --
--- Note: D1 runs each migration in a transaction and does not support
--- BEGIN TRANSACTION / COMMIT or PRAGMA foreign_keys in SQL.
+-- Note: D1 wraps each migration automatically, so this file avoids explicit
+-- transaction control statements and connection-level foreign-key toggles.
 --
 -- See docs/plans/strategy-v2/part1-north-star/culture-reprompt-ungrounded-scores.md
 
