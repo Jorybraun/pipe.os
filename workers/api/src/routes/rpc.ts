@@ -372,7 +372,7 @@ async function matchStandaloneReview(
   return { repoUrl: repo.github_url, prNumber: match.prNumber };
 }
 
-async function loadSourceBackedReviewDiff(
+export async function loadSourceBackedReviewDiff(
   db: D1Database,
   repoUrl: string,
   prNumber: number,
@@ -381,9 +381,25 @@ async function loadSourceBackedReviewDiff(
     `SELECT rcp.packet_json
        FROM review_challenge_packets rcp
        JOIN qualified_repos qr ON qr.id = rcp.repo_id
+       JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
       WHERE qr.github_url = ?1
         AND rcp.pr_number = ?2
         AND rcp.production_ready = 1
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_source_refs crsr
+           WHERE crsr.context_record_id = cr.id
+             AND crsr.source_ref_type = 'repo_source_span'
+        ) > 0
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_concepts crc
+           WHERE crc.context_record_id = cr.id
+        ) > 0
       ORDER BY rcp.quality_score DESC, rcp.updated_at DESC
       LIMIT 1`,
   ).bind(repoUrl, prNumber).first<{ packet_json: string }>();
