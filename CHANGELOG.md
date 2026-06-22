@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Evaluation CI: Wire Corpus Runner + Backfill Orchestrator (Criterion #8)
+
+- `evaluation-report.yml` now runs `corpusRunner.test.ts` (offline evaluation pipeline) and `backfillOrchestrator.test.ts` (multi-task backfill coordination) alongside existing proof tests. The evaluation CI report now covers 6 test suites: expertCorpus, corpusRunner, matchExplanation, goldenPathE2E, fullPipelineE2E, backfillOrchestrator.
+
 ### Added — Offline Corpus Evaluation Runner (Criterion #8)
 
 - Added `corpusRunner.ts` — runs the full compile→recall→align→rank→evaluate pipeline in-memory from a seed corpus and challenge packets, without requiring a live D1 database. Converts corpus evidence to `CandidateSignal`, runs the matching engine for each candidate-role pair, and evaluates results against expert labels using `evaluateMatchRuns` + `checkAcceptanceThresholds`.

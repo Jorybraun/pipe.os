@@ -40,9 +40,11 @@ jobs:
         run: |
           npx vitest run \
             src/lib/challengeMatching/evaluation/__tests__/expertCorpus.test.ts \
+            src/lib/challengeMatching/evaluation/__tests__/corpusRunner.test.ts \
             src/lib/challengeMatching/__tests__/matchExplanation.test.ts \
             src/lib/challengeMatching/__tests__/goldenPathE2E.test.ts \
             src/lib/challengeMatching/__tests__/fullPipelineE2E.test.ts \
+            src/lib/livingContext/__tests__/backfillOrchestrator.test.ts \
             --reporter=verbose 2>&1 | tee /tmp/evaluation-output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           echo "evaluation_exit_code=$EXIT_CODE" >> "$GITHUB_ENV"
@@ -62,9 +64,11 @@ jobs:
           echo "| Suite | Purpose |" >> /tmp/evaluation-summary.md
           echo "|-------|---------|" >> /tmp/evaluation-summary.md
           echo "| expertCorpus | Expert-labelled corpus validation, immutable source identity |" >> /tmp/evaluation-summary.md
+          echo "| corpusRunner | Offline evaluation: compile→recall→align→rank→evaluate pipeline |" >> /tmp/evaluation-summary.md
           echo "| matchExplanation | Structured gaps/stretches, source ref linking, no fabrication |" >> /tmp/evaluation-summary.md
           echo "| goldenPathE2E | Full person→evidence→D1 matching→explanation pipeline |" >> /tmp/evaluation-summary.md
           echo "| fullPipelineE2E | Contact→meeting→candidate→review→matching lifecycle |" >> /tmp/evaluation-summary.md
+          echo "| backfillOrchestrator | Multi-task backfill coordination with checkpoint tracking |" >> /tmp/evaluation-summary.md
           echo "" >> /tmp/evaluation-summary.md
           echo "<details><summary>Test output</summary>" >> /tmp/evaluation-summary.md
           echo "" >> /tmp/evaluation-summary.md
