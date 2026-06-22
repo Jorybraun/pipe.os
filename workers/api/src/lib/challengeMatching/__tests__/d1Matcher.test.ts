@@ -6,7 +6,22 @@ import {
   matchCandidateToReviewChallenge,
 } from '../d1Matcher';
 import type { ChallengePacket } from '../types';
-import type { ChallengePacket as RepoChallengePacket } from '../../repoSemanticGraph';
+import {
+  buildChallengePacket,
+  buildCodeEpisode,
+  buildFacet,
+  buildRepoSignal,
+  buildRepoSnapshot,
+  buildSemanticAssertion,
+  buildSourceArtifact,
+  buildSourceArtifactVersion,
+  buildSourceSpan,
+  buildStructuralFact,
+  buildSymbol,
+  persistReviewChallengeGraph,
+  type ChallengePacket as RepoChallengePacket,
+  type NormalizedPullRequestInput,
+} from '../../repoSemanticGraph';
 
 
 const livingMigration = readFileSync(
@@ -40,6 +55,8 @@ const require = createRequire(import.meta.url);
 const { DatabaseSync } = require('node:sqlite') as {
   DatabaseSync: new (path: string) => NodeSqliteDatabase;
 };
+
+const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
 function rewriteNumberedParams(
   sql: string,
@@ -95,9 +112,276 @@ function createNodeSqliteD1(sqlite: NodeSqliteDatabase): D1Database {
   } as unknown as D1Database;
 }
 
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function sourceEndPosition(value: string): { byteOffset: number; line: number; column: number } {
+  const lines = value.split('\n');
+  return {
+    byteOffset: byteLength(value),
+    line: lines.length,
+    column: lines[lines.length - 1]!.length + 1,
+  };
+}
+
+async function buildRepoChangedFile(input: {
+  repoSnapshotId: string;
+  path: string;
+  content: string;
+  symbolName: string;
+  symbolKind: 'function' | 'test';
+  signature: string;
+}) {
+  const artifact = await buildSourceArtifact({
+    repoSnapshotId: input.repoSnapshotId,
+    kind: 'source',
+    path: input.path,
+    language: 'typescript',
+  });
+  const artifactVersion = await buildSourceArtifactVersion({
+    artifactId: artifact.id,
+    repoSnapshotId: input.repoSnapshotId,
+    content: input.content,
+    createdAt: OBSERVED_AT,
+  });
+  const sourceSpan = await buildSourceSpan({
+    repoSnapshotId: input.repoSnapshotId,
+    artifactId: artifact.id,
+    artifactVersionId: artifactVersion.id,
+    contentHash: artifactVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(input.content),
+    exactText: input.content,
+    displayLabel: `${input.path}:1-${input.content.split('\n').length}`,
+    prSide: 'head',
+  });
+  const symbol = await buildSymbol({
+    repoSnapshotId: input.repoSnapshotId,
+    language: 'typescript',
+    qualifiedName: `${input.path}:${input.symbolName}`,
+    name: input.symbolName,
+    kind: input.symbolKind,
+    signature: input.signature,
+    definingSpanId: sourceSpan.id,
+    exported: true,
+  });
+
+  return {
+    file: {
+      path: input.path,
+      status: 'modified' as const,
+      language: 'typescript',
+      additions: input.content.split('\n').length,
+      deletions: 0,
+      artifact,
+      artifactVersion,
+      hunks: [{
+        header: `@@ ${input.symbolName} @@`,
+        patch: input.content,
+        sourceSpan,
+        changedSymbolIds: [symbol.id],
+      }],
+      symbols: [symbol],
+    },
+    sourceSpan,
+    symbol,
+  };
+}
+
+async function buildProductionReadyRepoChallengeFixture(): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  const repoSnapshot = await buildRepoSnapshot({
+    repository: {
+      provider: 'github',
+      owner: 'pipe',
+      name: 'orders',
+      canonicalUrl: 'https://github.com/pipe/orders',
+    },
+    commitSha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    defaultBranch: 'main',
+    observedAt: OBSERVED_AT,
+  });
+  const primary = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/ordersKafkaRetry.ts',
+    symbolName: 'publishKafkaRetry',
+    symbolKind: 'function',
+    signature: 'export function publishKafkaRetry(eventId: string, attempt: number): KafkaRetryEnvelope',
+    content: [
+      'import { createKafkaRetryKey } from "./kafkaRetryKey";',
+      '',
+      'export function publishKafkaRetry(eventId: string, attempt: number) {',
+      '  const key = createKafkaRetryKey(eventId);',
+      '  const topic = "orders.retry.kafka";',
+      '  const headers = { "idempotency-key": key, attempt };',
+      '  return { key, topic, headers, idempotent: true };',
+      '}',
+    ].join('\n'),
+  });
+  const helper = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/kafkaRetryKey.ts',
+    symbolName: 'createKafkaRetryKey',
+    symbolKind: 'function',
+    signature: 'export function createKafkaRetryKey(eventId: string): string',
+    content: [
+      'export function createKafkaRetryKey(eventId: string) {',
+      '  const normalized = eventId.trim().toLowerCase();',
+      '  const prefix = "kafka-retry";',
+      '  const suffix = normalized || "missing-event";',
+      '  return `${prefix}:${suffix}`;',
+      '}',
+    ].join('\n'),
+  });
+  const test = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/ordersKafkaRetry.test.ts',
+    symbolName: 'validatesKafkaRetryIdempotency',
+    symbolKind: 'test',
+    signature: 'it("validates kafka retry idempotency", () => void)',
+    content: [
+      'import { describe, expect, it } from "vitest";',
+      'import { publishKafkaRetry } from "./ordersKafkaRetry";',
+      '',
+      'describe("publishKafkaRetry", () => {',
+      '  it("validates kafka retry idempotency", () => {',
+      '    const envelope = publishKafkaRetry("ORDER-123", 2);',
+      '    expect(envelope.key).toBe("kafka-retry:order-123");',
+      '    expect(envelope.headers["idempotency-key"]).toBe(envelope.key);',
+      '  });',
+      '});',
+    ].join('\n'),
+  });
+  const issueText = [
+    'Issue #88: Kafka retry publishing needs idempotent envelopes.',
+    'The review should check exact retry keys, Kafka topic routing, and test coverage.',
+  ].join('\n');
+  const issueArtifact = await buildSourceArtifact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'issue',
+    externalRef: 'https://github.com/pipe/orders/issues/88',
+    mediaType: 'text/markdown',
+  });
+  const issueVersion = await buildSourceArtifactVersion({
+    artifactId: issueArtifact.id,
+    repoSnapshotId: repoSnapshot.id,
+    content: issueText,
+    createdAt: OBSERVED_AT,
+  });
+  const issueSpan = await buildSourceSpan({
+    repoSnapshotId: repoSnapshot.id,
+    artifactId: issueArtifact.id,
+    artifactVersionId: issueVersion.id,
+    contentHash: issueVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(issueText),
+    exactText: issueText,
+    displayLabel: 'issues/88:1-2',
+    prSide: 'metadata',
+  });
+
+  const input: NormalizedPullRequestInput = {
+    repoSnapshot,
+    number: 88,
+    url: 'https://github.com/pipe/orders/pull/88',
+    title: 'Add idempotent Kafka retry publishing',
+    body: 'Implements exact Kafka retry keys and coverage for idempotent retry envelopes.',
+    author: 'engineer',
+    primaryLanguage: 'TypeScript',
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    headSha: repoSnapshot.commitSha,
+    mergedAt: OBSERVED_AT,
+    metadataSourceSpanIds: [issueSpan.id],
+    sourceArtifacts: [issueArtifact],
+    sourceArtifactVersions: [issueVersion],
+    sourceSpans: [primary.sourceSpan, helper.sourceSpan, test.sourceSpan, issueSpan],
+    changedFiles: [primary.file, helper.file, test.file],
+    tests: [{
+      path: test.file.path,
+      framework: 'vitest',
+      sourceSpanIds: [test.sourceSpan.id],
+      relatedSymbolIds: [test.symbol.id],
+    }],
+    issue: {
+      number: 88,
+      title: 'Kafka retry publishing needs idempotent envelopes',
+      body: issueText,
+      labels: [],
+      sourceSpanIds: [issueSpan.id],
+    },
+  };
+  const fact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'calls',
+    subject: { symbolId: primary.symbol.id },
+    object: { symbolId: helper.symbol.id },
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id],
+    confidence: 0.94,
+    parser: 'typescript-compiler-api-test',
+  });
+  const episode = await buildCodeEpisode({
+    repoSnapshotId: repoSnapshot.id,
+    title: 'kafka-retry-idempotency',
+    narrative: 'The PR implements Kafka retry idempotency and verifies the retry key contract.',
+    symbolIds: [primary.symbol.id, helper.symbol.id, test.symbol.id],
+    structuralFactIds: [fact.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    conceptKeys: ['term:kafka', 'term:retry', 'term:idempotency'],
+  });
+  const facet = await buildFacet({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'source-derived-mechanism',
+    key: 'kafka-retry-idempotency',
+    label: 'Kafka retry idempotency',
+    aliases: [],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.91,
+  });
+  const assertion = await buildSemanticAssertion({
+    repoSnapshotId: repoSnapshot.id,
+    episodeId: episode.id,
+    subject: primary.symbol.id,
+    predicate: 'implements.source.backed.kafka.retry.idempotency',
+    object: 'term:kafka',
+    narrative: 'The source implements Kafka retry idempotency with exact retry key verification.',
+    qualifiers: { source: 'normalized-pr-fixture' },
+    facetIds: [facet.id],
+    conceptKeys: ['term:kafka', 'term:retry', 'term:idempotency'],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.92,
+    extractor: 'repo-semantic-test-v1',
+  });
+  const signal = await buildRepoSignal({
+    repoSnapshotId: repoSnapshot.id,
+    key: 'kafka-retry-idempotency',
+    narrative: 'The repository demonstrates Kafka retry idempotency backed by exact source and test spans.',
+    assertionIds: [assertion.id],
+    facetIds: [facet.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.9,
+    sourceDiversity: 3,
+  });
+
+  return {
+    input,
+    packet: await buildChallengePacket(input),
+    graph: {
+      structuralFacts: [fact],
+      codeEpisodes: [episode],
+      facets: [facet],
+      semanticAssertions: [assertion],
+      repoSignals: [signal],
+    },
+  };
+}
+
 
 function seedCandidateEvidence(sqlite: NodeSqliteDatabase): void {
-  const now = '2026-06-14T08:00:00.000Z';
+  const now = OBSERVED_AT;
   sqlite.exec(`
     INSERT INTO people (
       id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
@@ -939,6 +1223,170 @@ describe('matchCandidateToReviewChallenge', () => {
       entity_id: 'packet-eligible',
       relationship: 'selected_packet',
     });
+  });
+
+  it('matches against a production-ready packet persisted through repo graph ingestion', async () => {
+    seedCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(41);
+    const data = await buildProductionReadyRepoChallengeFixture();
+
+    expect(data.packet.quality.eligible).toBe(true);
+    expect(data.packet.quality.score).toBeGreaterThanOrEqual(0.7);
+    expect(data.packet.demandFamilies).toEqual([
+      'artifact:source',
+      'verification:term:vitest',
+    ]);
+    expect(data.packet.demands).toHaveLength(2);
+    expect(data.packet.demands.every((demand) =>
+      demand.sourceSpanIds.length > 0
+      && demand.conceptKeys.includes('term:kafka'),
+    )).toBe(true);
+
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      41,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    expect(sqlite.prepare(
+      `SELECT production_ready, quality_score, packet_json
+         FROM review_challenge_packets
+        WHERE id = ?`,
+    ).get(data.packet.id)).toEqual({
+      production_ready: 1,
+      quality_score: data.packet.quality.score,
+      packet_json: JSON.stringify(data.packet),
+    });
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(41);
+    expect(result.prNumber).toBe(88);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '41',
+      prNumber: 88,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.evidence).toHaveLength(2);
+    expect(result.explanation?.candidateSpans).toHaveLength(2);
+    expect(result.explanation?.repoSpans).toHaveLength(2);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([
+      expect.objectContaining({
+        challengeId: data.packet.id,
+        repoId: '41',
+        prNumber: 88,
+        alignedDemandCount: 2,
+        stretchCount: 0,
+        provenanceComplete: true,
+        eligible: true,
+      }),
+    ]);
+
+    const repoExactTexts = new Set(data.input.sourceSpans.map((span) => span.exactText));
+    expect(result.explanation?.evidence.every((entry) =>
+      entry.candidateSourceRefs.length > 0
+      && entry.challengeSourceRefs.length > 0
+      && entry.candidateSourceRefs.every((ref) => ref.sourceRefType === 'source_span' && ref.exactText)
+      && entry.challengeSourceRefs.every((ref) =>
+        ref.sourceRefType === 'repo_source_span'
+        && ref.exactText
+        && repoExactTexts.has(ref.exactText)
+        && ref.locator?.startsWith('src/')
+      ),
+    )).toBe(true);
+
+    const ranked = sqlite.prepare(
+      'SELECT ranked_results_json, selected_packet_id FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      ranked_results_json: string;
+      selected_packet_id: string;
+    };
+    expect(ranked.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(ranked.ranked_results_json) as Array<{
+      challengeId: string;
+      alignments: Array<{
+        sharedConcepts: string[];
+        candidateSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+        challengeSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+      }>;
+    }>;
+    expect(rankedResult).toEqual(expect.objectContaining({
+      challengeId: data.packet.id,
+    }));
+    expect(rankedResult.alignments.every((alignment) =>
+      alignment.sharedConcepts.includes('term:kafka')
+      && alignment.candidateSourceRefs.some((ref) => ref.sourceRefType === 'source_span' && ref.exactText)
+      && alignment.challengeSourceRefs.some((ref) => ref.sourceRefType === 'repo_source_span' && ref.exactText),
+    )).toBe(true);
+
+    const contextRecord = sqlite.prepare(
+      `SELECT id, scope_type, scope_id, record_type, predicate
+         FROM context_records
+        WHERE scope_id = ?
+          AND record_type = 'candidate_pr_match_decision'`,
+    ).get(result.matchRunId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+      predicate: string;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+      predicate: 'selects review challenge',
+    });
+
+    const contextRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text, evidence_role
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY evidence_role, source_ref_id`,
+    ).all(contextRecord.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      exact_text: string | null;
+      evidence_role: string;
+    }>;
+    expect(contextRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: data.packet.id,
+        evidence_role: 'selected_packet',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-1',
+        exact_text: 'implemented kafka idempotency',
+        evidence_role: 'selected_candidate_evidence',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-2',
+        exact_text: 'validated retry handling',
+        evidence_role: 'selected_candidate_evidence',
+      }),
+    ]));
+    const selectedRepoContextRefs = contextRefs.filter((ref) =>
+      ref.evidence_role === 'selected_repo_evidence'
+      && ref.source_ref_type === 'repo_source_span'
+      && ref.exact_text
+      && repoExactTexts.has(ref.exact_text),
+    );
+    const explanationRepoRefIds = new Set(
+      result.explanation?.evidence.flatMap((entry) =>
+        entry.challengeSourceRefs.flatMap((ref) => ref.sourceRefId ? [ref.sourceRefId] : [])
+      ) ?? [],
+    );
+    expect(selectedRepoContextRefs.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(selectedRepoContextRefs.map((ref) => ref.source_ref_id))).toEqual(explanationRepoRefIds);
   });
 });
 
