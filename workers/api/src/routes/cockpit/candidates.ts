@@ -21,6 +21,10 @@ import {
   loadCandidateLivingContext,
   LivingContextStore,
 } from '../../lib/livingContext';
+import {
+  hasSourceBackedReviewPacket,
+  loadSourceBackedReviewPacketById,
+} from '../../lib/review/sourceBackedReviewDiff';
 import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -1622,6 +1626,25 @@ candidateOps.get('/:candidateId', async (c) => {
     }>();
 
     if (standaloneInterview) {
+      const cachedInterviewIsSourceBacked = !!(
+        standaloneInterview.github_repo_url
+        && standaloneInterview.github_pr_number
+        && await hasSourceBackedReviewPacket(
+          db,
+          standaloneInterview.github_repo_url,
+          standaloneInterview.github_pr_number,
+        )
+      );
+      const cachedInterviewRepoId = cachedInterviewIsSourceBacked
+        ? standaloneInterview.matched_repo_id
+        : null;
+      const cachedInterviewRepoUrl = cachedInterviewIsSourceBacked
+        ? standaloneInterview.github_repo_url
+        : null;
+      const cachedInterviewPrNumber = cachedInterviewIsSourceBacked
+        ? standaloneInterview.github_pr_number
+        : null;
+
       const latestRun = await db.prepare(
         `SELECT id, status, recalled_packets_json, excluded_packets_json,
                 ranked_results_json, selected_packet_id, query_json
@@ -1645,8 +1668,8 @@ candidateOps.get('/:candidateId', async (c) => {
           LIMIT 1`,
       ).bind(
         candidateId,
-        standaloneInterview.matched_repo_id,
-        standaloneInterview.github_pr_number,
+        cachedInterviewRepoId,
+        cachedInterviewPrNumber,
       ).first<{
         id: string;
         status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
@@ -1672,27 +1695,22 @@ candidateOps.get('/:candidateId', async (c) => {
         ?? null;
       const selectedPacketId = latestRun?.selected_packet_id ?? selectedResult?.challengeId ?? null;
       const selectedPacketMetadata = selectedPacketId
-        ? parseStandaloneReviewPacketMetadata(await db.prepare(
-          `SELECT repo_id, pr_number, packet_json
-             FROM review_challenge_packets
-            WHERE id = ?1
-            LIMIT 1`,
-        ).bind(selectedPacketId).first<{
-          repo_id: number | null;
-          pr_number: number | null;
-          packet_json: string | null;
-        }>())
+        ? parseStandaloneReviewPacketMetadata(await loadSourceBackedReviewPacketById(db, selectedPacketId))
         : null;
+      const selectedPacketContextMissing = !!(selectedPacketId && !selectedPacketMetadata);
+      const selectedResultForDisplay = selectedPacketContextMissing ? null : selectedResult;
       const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
         || latestRun?.status === 'NEEDS_MORE_EVIDENCE'
         || latestRun?.status === 'NO_ROLE_SAFE_CHALLENGE'
-        ? latestRun.status
+        ? selectedPacketContextMissing && latestRun.status === 'MATCHED'
+          ? 'NO_ROLE_SAFE_CHALLENGE'
+          : latestRun.status
         : 'PENDING_INTAKE';
-      const repoId = standaloneInterview.matched_repo_id
+      const repoId = cachedInterviewRepoId
         ?? selectedPacketMetadata?.repoId
-        ?? (selectedResult ? Number(selectedResult.repoId) : null);
+        ?? (selectedResultForDisplay ? Number(selectedResultForDisplay.repoId) : null);
       let repoName: string | null = selectedPacketMetadata?.repoName ?? null;
-      let repoUrl = standaloneInterview.github_repo_url ?? selectedPacketMetadata?.repoUrl ?? null;
+      let repoUrl = cachedInterviewRepoUrl ?? selectedPacketMetadata?.repoUrl ?? null;
       if (repoId !== null && Number.isFinite(repoId)) {
         const repoRow = await db.prepare(
           `SELECT full_name, github_url FROM qualified_repos WHERE id = ?1`,
@@ -1700,9 +1718,9 @@ candidateOps.get('/:candidateId', async (c) => {
         repoName = repoRow?.full_name ?? repoName;
         repoUrl = repoUrl ?? repoRow?.github_url ?? null;
       }
-      const prNumber = standaloneInterview.github_pr_number
+      const prNumber = cachedInterviewPrNumber
         ?? selectedPacketMetadata?.prNumber
-        ?? selectedResult?.prNumber
+        ?? selectedResultForDisplay?.prNumber
         ?? null;
       let prTitle: string | null = selectedPacketMetadata?.prTitle ?? null;
       let prUrl: string | null = selectedPacketMetadata?.prUrl
@@ -1714,7 +1732,10 @@ candidateOps.get('/:candidateId', async (c) => {
         prTitle = prRow?.title ?? prTitle;
         prUrl = prRow?.pr_url ?? prUrl;
       }
-      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult, diagnostics);
+      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResultForDisplay, diagnostics);
+      const graphContextGaps = selectedPacketContextMissing
+        ? [`Selected review packet ${selectedPacketId} is missing source-backed graph context.`]
+        : [];
       const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
@@ -1727,11 +1748,11 @@ candidateOps.get('/:candidateId', async (c) => {
         prNumber,
         prUrl,
         prTitle,
-        score: selectedResult?.score ?? null,
+        score: selectedResultForDisplay?.score ?? null,
         summary: summary.summary,
         evidence: summary.evidence,
         roleSources,
-        gaps: summary.gaps,
+        gaps: [...graphContextGaps, ...summary.gaps],
         diagnostics,
         submitted: standaloneInterview.submission_json !== null,
         submission,

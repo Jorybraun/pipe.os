@@ -921,9 +921,28 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         );
         CREATE TABLE review_challenge_packets (
           id TEXT PRIMARY KEY,
+          repo_snapshot_id TEXT,
           repo_id INTEGER,
           pr_number INTEGER,
-          packet_json TEXT
+          production_ready INTEGER,
+          quality_score REAL,
+          packet_json TEXT,
+          updated_at INTEGER
+        );
+        CREATE TABLE context_records (
+          id TEXT PRIMARY KEY,
+          ingestion_key TEXT,
+          scope_type TEXT,
+          scope_id TEXT,
+          record_type TEXT
+        );
+        CREATE TABLE context_record_source_refs (
+          context_record_id TEXT,
+          source_ref_type TEXT
+        );
+        CREATE TABLE context_record_concepts (
+          context_record_id TEXT,
+          concept_id TEXT
         );
         CREATE TABLE match_runs (
           id TEXT PRIMARY KEY,
@@ -1024,9 +1043,31 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         )
       `).run();
       sqlite.prepare(`
-        INSERT INTO review_challenge_packets (id, repo_id, pr_number, packet_json)
-        VALUES ('packet-from-backfill', 77, 314, ?)
+        INSERT INTO review_challenge_packets (
+          id, repo_snapshot_id, repo_id, pr_number, production_ready,
+          quality_score, packet_json, updated_at
+        )
+        VALUES ('packet-from-backfill', 'snapshot-backfill', 77, 314, 1, 0.91, ?, 1)
       `).run(JSON.stringify(packetJson));
+      sqlite.prepare(`
+        INSERT INTO context_records (
+          id, ingestion_key, scope_type, scope_id, record_type
+        ) VALUES (
+          'context-record-packet-backfill',
+          'repo-challenge-packet-context:packet-from-backfill',
+          'repo_snapshot',
+          'snapshot-backfill',
+          'repo_challenge_packet'
+        )
+      `).run();
+      sqlite.prepare(`
+        INSERT INTO context_record_source_refs (context_record_id, source_ref_type)
+        VALUES ('context-record-packet-backfill', 'repo_source_span')
+      `).run();
+      sqlite.prepare(`
+        INSERT INTO context_record_concepts (context_record_id, concept_id)
+        VALUES ('context-record-packet-backfill', 'concept-ledger')
+      `).run();
       sqlite.prepare(`
         INSERT INTO match_runs (
           id, candidate_id, role_snapshot_id, status, recalled_packets_json,
@@ -1095,6 +1136,37 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         sourceRefId: 'repo-span-ledger',
         exactText: 'Write CrystallineQuorumLedger recovery entries from retryable orders.',
       });
+
+      sqlite.prepare('DELETE FROM context_record_concepts').run();
+      sqlite.prepare('DELETE FROM context_record_source_refs').run();
+      sqlite.prepare('DELETE FROM context_records').run();
+
+      const legacyResponse = await app.request('/candidate-graph');
+      expect(legacyResponse.status).toBe(200);
+      const legacyBody = await legacyResponse.json() as {
+        standaloneReviewMatch: {
+          matchStatus: string;
+          repoId: number | null;
+          repoUrl: string | null;
+          prNumber: number | null;
+          prTitle: string | null;
+          score: number | null;
+          evidence: unknown[];
+          gaps: string[];
+        };
+      };
+      expect(legacyBody.standaloneReviewMatch).toMatchObject({
+        matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
+        repoId: null,
+        repoUrl: null,
+        prNumber: null,
+        prTitle: null,
+        score: null,
+        evidence: [],
+      });
+      expect(legacyBody.standaloneReviewMatch.gaps).toContain(
+        'Selected review packet packet-from-backfill is missing source-backed graph context.',
+      );
     } finally {
       sqlite.close();
     }

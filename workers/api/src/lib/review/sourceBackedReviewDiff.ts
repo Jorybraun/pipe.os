@@ -1,6 +1,12 @@
 import type { GitHubDiffResult } from '../fetchGitHubDiff';
 import type { ChallengePacket as RepoChallengePacket } from '../repoSemanticGraph';
 
+export interface SourceBackedReviewPacketRow {
+  repo_id: number | null;
+  pr_number: number | null;
+  packet_json: string | null;
+}
+
 async function loadSourceBackedReviewPacketJson(
   db: D1Database,
   repoUrl: string,
@@ -33,6 +39,38 @@ async function loadSourceBackedReviewPacketJson(
       LIMIT 1`,
   ).bind(repoUrl, prNumber).first<{ packet_json: string }>();
   return row?.packet_json ?? null;
+}
+
+export async function loadSourceBackedReviewPacketById(
+  db: D1Database,
+  packetId: string,
+): Promise<SourceBackedReviewPacketRow | null> {
+  return await db.prepare(
+    `SELECT rcp.repo_id,
+            rcp.pr_number,
+            rcp.packet_json
+       FROM review_challenge_packets rcp
+       JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+      WHERE rcp.id = ?1
+        AND rcp.production_ready = 1
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_source_refs crsr
+           WHERE crsr.context_record_id = cr.id
+             AND crsr.source_ref_type = 'repo_source_span'
+        ) > 0
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_concepts crc
+           WHERE crc.context_record_id = cr.id
+        ) > 0
+      ORDER BY rcp.quality_score DESC, rcp.updated_at DESC
+      LIMIT 1`,
+  ).bind(packetId).first<SourceBackedReviewPacketRow>();
 }
 
 export async function hasSourceBackedReviewPacket(
