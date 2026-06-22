@@ -10,13 +10,33 @@
 
 import Database from 'better-sqlite3';
 import { Hono } from 'hono';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, it, expect } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
+import { ensureCandidateLivingContext, LivingContextStore } from '../../../lib/livingContext';
 import type { Env, Variables } from '../../../types';
 import {
   canInterviewStatusTransition,
   schedulingAuth,
 } from '../scheduling';
+
+const livingContextMigration = readFileSync(
+  new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordsMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
+const transcriptProjectionMigration = readFileSync(
+  new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
+  'utf8',
+);
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 // ─── Validation schema tests ────────────────────────────────────────────────
 
@@ -171,6 +191,7 @@ describe('GET /interviews/:id detail', () => {
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL,
         pipeline_id TEXT,
+        status TEXT,
         name TEXT,
         email TEXT
       );
@@ -250,10 +271,13 @@ describe('GET /interviews/:id detail', () => {
         updated_at TEXT
       );
     `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(contextRecordsMigration);
 
     sqlite.prepare(`
-      INSERT INTO candidates (id, owner_id, pipeline_id, name, email)
-      VALUES ('candidate-1', 'owner-1', 'pipeline-1', 'Ada Lovelace', 'ada@example.com')
+      INSERT INTO candidates (id, owner_id, pipeline_id, status, name, email)
+      VALUES ('candidate-1', 'owner-1', 'pipeline-1', 'ACTIVE', 'Ada Lovelace', 'ada@example.com')
     `).run();
     sqlite.prepare(`
       INSERT INTO pipelines (id, owner_id, title)
@@ -314,8 +338,87 @@ describe('GET /interviews/:id detail', () => {
     `).run();
   }
 
+  async function seedInterviewLivingContext(): Promise<void> {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const db = createMockD1(sqlite);
+    const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+    if (!identity) throw new Error('candidate living context was not created');
+
+    const store = new LivingContextStore(db, () => '2026-06-22T18:35:01.000Z');
+    const interaction = await store.upsertInteraction({
+      ingestionKey: 'scheduled-interview:interview-1',
+      workspacePersonId: identity.workspacePersonId,
+      applicationId: identity.applicationId,
+      interactionType: 'scheduled_interview',
+      externalReference: 'interview-1',
+      startedAt: '2026-06-22T18:00:30.000Z',
+      endedAt: '2026-06-22T18:35:00.000Z',
+      metadata: { meetingId: 'meeting-1', roomId: 'room-1' },
+    });
+    const artifact = await store.upsertArtifact({
+      ingestionKey: 'scheduled-interview:interview-1:transcript',
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: interaction.id,
+      artifactType: 'meeting_transcript',
+      logicalKey: 'interview-1/transcript',
+      metadata: { scheduledInterviewId: 'interview-1' },
+    });
+    const transcriptText = 'I built idempotent Kafka consumers.';
+    const version = await store.createArtifactVersion({
+      ingestionKey: 'scheduled-interview:interview-1:transcript:v1',
+      artifactId: artifact.id,
+      versionNumber: 1,
+      contentHash: sha256Hex(transcriptText),
+      mediaType: 'text/plain',
+      contentText: transcriptText,
+      byteLength: transcriptText.length,
+      metadata: { source: 'test-transcript' },
+    });
+    const span = await store.createSourceSpan({
+      ingestionKey: 'scheduled-interview:interview-1:transcript:paragraph-0001',
+      artifactVersionId: version.id,
+      stableSegmentId: 'paragraph-0001',
+      charStart: 0,
+      charEnd: transcriptText.length,
+      exactText: transcriptText,
+      metadata: { speaker: 'candidate' },
+    });
+    const concept = await store.upsertConcept({
+      ingestionKey: 'term:kafka-idempotency',
+      canonicalKey: 'term:kafka-idempotency',
+      namespace: 'term',
+      label: 'Kafka idempotency',
+      metadata: { source: 'scheduled_interview_detail_test' },
+    });
+    await store.upsertContextRecord({
+      ingestionKey: 'scheduled-interview:interview-1:kafka-idempotency',
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: interaction.id,
+      applicationId: identity.applicationId,
+      recordType: 'interview_transcript_assertion',
+      predicate: 'described implementation experience',
+      narrative: 'Ada described building idempotent Kafka consumers.',
+      qualifiers: { scheduledInterviewId: 'interview-1' },
+      confidence: 0.9,
+      extractionVersion: 'scheduling-detail-test-v1',
+      observedAt: '2026-06-22T18:02:00.000Z',
+      sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+      entities: [{
+        entityType: 'workspace_person',
+        entityId: identity.workspacePersonId,
+        relationship: 'speaker',
+      }],
+      concepts: [{
+        conceptId: concept.id,
+        relationship: 'implementation_mechanism',
+        weight: 0.9,
+      }],
+    });
+  }
+
   it('returns the interview, generated join URL, linked meeting, room, and transcript artifact', async () => {
     seedInterviewDetailFixture();
+    await seedInterviewLivingContext();
     const app = mountSchedulingApp();
 
     const response = await app.request('/interviews/interview-1');
@@ -337,6 +440,15 @@ describe('GET /interviews/:id detail', () => {
           transcriptStatus: string;
           transcriptSummary: string | null;
           room: { id: string; status: string | null } | null;
+        } | null;
+        livingContext: {
+          summary: { contextRecordCount: number; sourceSpanCount: number };
+          contextRecords: Array<{
+            recordType: string;
+            narrative: string;
+            concepts: Array<{ canonicalKey: string; label: string }>;
+            sources: Array<{ exactText: string }>;
+          }>;
         } | null;
       };
     };
@@ -372,6 +484,21 @@ describe('GET /interviews/:id detail', () => {
         id: 'room-1',
         status: 'ACTIVE',
       },
+    });
+    expect(body.interview.livingContext?.summary).toMatchObject({
+      contextRecordCount: 1,
+      sourceSpanCount: 1,
+    });
+    expect(body.interview.livingContext?.contextRecords[0]).toMatchObject({
+      recordType: 'interview_transcript_assertion',
+      narrative: 'Ada described building idempotent Kafka consumers.',
+      concepts: [{
+        canonicalKey: 'term:kafka-idempotency',
+        label: 'Kafka idempotency',
+      }],
+      sources: [{
+        exactText: 'I built idempotent Kafka consumers.',
+      }],
     });
   });
 });

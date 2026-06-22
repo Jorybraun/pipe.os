@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
+import { ensureCandidateLivingContext, loadCandidateLivingContext } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -775,6 +776,12 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       room_status: string | null;
     }>();
 
+  let livingContext: Awaited<ReturnType<typeof loadCandidateLivingContext>> = null;
+  if (interview.candidate_id) {
+    await ensureCandidateLivingContext(db, interview.candidate_id);
+    livingContext = await loadCandidateLivingContext(db, interview.candidate_id);
+  }
+
   return c.json({
     interview: {
       id: interview.id,
@@ -836,6 +843,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         createdAt: linkedMeeting.created_at,
         updatedAt: linkedMeeting.updated_at,
       } : null,
+      livingContext,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,
     },
