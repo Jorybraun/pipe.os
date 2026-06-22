@@ -30,6 +30,7 @@ import {
   pickImplementationIssue,
   buildMatchRequest,
 } from '../lib/match/autoStageBuilder';
+import { upsertCandidateChallengeAssignment } from '../lib/candidateDiscovery/persist';
 import { createNeo4jDriver, buildNeo4jConfig } from '../lib/neo4j/driver';
 import {
   loadRoleChallengeSemantics,
@@ -100,11 +101,33 @@ async function checkMatchingGate(
 
   // 1. Check if assignment already exists for this candidate + stage
   const existingAssignment = await db.prepare(
-    `SELECT id FROM candidate_challenge_assignment WHERE candidate_id = ?1 AND stage_id = ?2`
-  ).bind(candidateId, stageId).first<{ id: string }>();
+    `SELECT id, github_repo_url, github_pr_number
+       FROM candidate_challenge_assignment
+      WHERE candidate_id = ?1 AND stage_id = ?2`,
+  ).bind(candidateId, stageId).first<{
+    id: string;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  }>();
 
   if (existingAssignment) {
-    return { blocked: false };
+    if (nextChallengeType !== 'CODE_REVIEW') {
+      return { blocked: false };
+    }
+    if (
+      existingAssignment.github_repo_url
+      && existingAssignment.github_pr_number
+      && await hasSourceBackedReviewPacket(
+        db,
+        existingAssignment.github_repo_url,
+        existingAssignment.github_pr_number,
+      )
+    ) {
+      return { blocked: false };
+    }
+    console.warn(
+      `[checkMatchingGate] refreshing stale CODE_REVIEW assignment without source-backed graph context for candidate ${candidateId}`,
+    );
   }
 
   if (nextChallengeType === 'CODE_REVIEW') {
@@ -160,19 +183,16 @@ async function checkMatchingGate(
       return waitingForMatch('Matched challenge repository is unavailable');
     }
 
-    await db.prepare(
-      `INSERT INTO candidate_challenge_assignment
-         (id, candidate_id, stage_id, challenge_id, repo_id, github_repo_url, github_pr_number, issue_number)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)`,
-    ).bind(
-      crypto.randomUUID(),
+    await upsertCandidateChallengeAssignment(db, {
+      id: crypto.randomUUID(),
       candidateId,
       stageId,
       challengeId,
-      match.repoId,
-      repo.github_url,
-      match.prNumber,
-    ).run();
+      repoId: match.repoId,
+      githubRepoUrl: repo.github_url,
+      githubPrNumber: match.prNumber,
+      issueNumber: null,
+    });
     return { blocked: false };
   }
 
@@ -1224,6 +1244,9 @@ rpcAuth.post('/get-challenge', async (c) => {
       ch.cached_diff_json, ch.github_pr_title, ch.github_pr_number,
       ch.github_repo_url, ch.github_pr_description,
       ch.dev_container_repo_url,
+      cca.id as assignment_id,
+      cca.github_repo_url as assignment_repo_url,
+      cca.github_pr_number as assignment_pr_number,
       COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
       COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number,
       COALESCE(cca.issue_number, NULL) as effective_issue_number
@@ -1245,12 +1268,49 @@ rpcAuth.post('/get-challenge', async (c) => {
   const ch = rows[dbOrder] as Record<string, unknown>;
 
   // Use the LEFT JOIN result to skip matching when an assignment already exists
-  const hasAssignment = !!(ch.effective_repo_url as string | null);
+  const hasAssignment = !!(ch.assignment_id as string | null);
   if (!hasAssignment) {
     const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId as string, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
     if (gateResult.blocked && gateResult.syntheticChallenge) {
       return c.json(gateResult.syntheticChallenge);
     }
+  } else if (
+    ch.type === 'CODE_REVIEW'
+    && typeof ch.assignment_repo_url === 'string'
+    && typeof ch.assignment_pr_number === 'number'
+    && !(await hasSourceBackedReviewPacket(
+      c.env.DB,
+      ch.assignment_repo_url,
+      ch.assignment_pr_number,
+    ))
+  ) {
+    const gateResult = await checkMatchingGate(
+      c.env.DB,
+      candidateId,
+      pipelineId as string,
+      candidate.current_stage_id,
+      ch.id as string,
+      ch.type as string,
+      c.env,
+    );
+    if (gateResult.blocked && gateResult.syntheticChallenge) {
+      return c.json(gateResult.syntheticChallenge);
+    }
+    const refreshed = await c.env.DB.prepare(
+      `SELECT github_repo_url, github_pr_number, issue_number
+         FROM candidate_challenge_assignment
+        WHERE candidate_id = ?1 AND stage_id = ?2`,
+    ).bind(candidateId, candidate.current_stage_id).first<{
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      issue_number: number | null;
+    }>();
+    if (!refreshed?.github_repo_url || typeof refreshed.github_pr_number !== 'number') {
+      return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
+    }
+    ch.effective_repo_url = refreshed.github_repo_url;
+    ch.effective_pr_number = refreshed.github_pr_number;
+    ch.effective_issue_number = refreshed.issue_number;
   }
 
   // Apply per-candidate overrides from the LEFT JOIN
@@ -1302,29 +1362,37 @@ rpcAuth.post('/get-challenge', async (c) => {
   const effectiveRepoUrl = ch.github_repo_url as string | null;
   const effectivePrNumber = ch.github_pr_number as number | null;
   if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
-    try {
-      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-      const result = await fetchGitHubDiff(
-        effectiveRepoUrl,
-        effectivePrNumber,
-        token,
-      );
-      if (result) {
-        cachedDiffJson = result.diff;
-        // Persist so we don't fetch again next time
-        await c.env.DB.prepare(
-          `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
-        )
-          .bind(
-            JSON.stringify(result.diff),
-            JSON.stringify(result.metadata),
-            new Date().toISOString(),
-            ch.id as string,
+    const sourceBackedDiff = ch.type === 'CODE_REVIEW'
+      ? await loadSourceBackedReviewDiff(c.env.DB, effectiveRepoUrl, effectivePrNumber)
+      : null;
+    if (sourceBackedDiff) {
+      cachedDiffJson = sourceBackedDiff.diff;
+      ch.github_pr_title = sourceBackedDiff.metadata.title;
+    } else {
+      try {
+        const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+        const result = await fetchGitHubDiff(
+          effectiveRepoUrl,
+          effectivePrNumber,
+          token,
+        );
+        if (result) {
+          cachedDiffJson = result.diff;
+          // Persist so we don't fetch again next time
+          await c.env.DB.prepare(
+            `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
           )
-          .run();
+            .bind(
+              JSON.stringify(result.diff),
+              JSON.stringify(result.metadata),
+              new Date().toISOString(),
+              ch.id as string,
+            )
+            .run();
+        }
+      } catch (err) {
+        console.error('[rpc/get-challenge] Self-heal diff fetch failed:', err);
       }
-    } catch (err) {
-      console.error('[rpc/get-challenge] Self-heal diff fetch failed:', err);
     }
   }
 

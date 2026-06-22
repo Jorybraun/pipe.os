@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pipeline auto-build now selects CODE_REVIEW PRs only from context-ready review packets with `repo_challenge_packet` records, repo source-span refs, and concept links.
 - Pipeline auto-build now uses persisted role context concepts before legacy persona skill strings when selecting a source-backed CODE_REVIEW PR, preserving simple-JD/open-concept semantics in challenge selection.
 - Pipeline auto-build can now build CODE_REVIEW-only stations from source-backed role context concepts when legacy `mustHaveSkills` are absent, selecting repos through context-ready review packet overlap instead of fabricating skill constraints.
+- Pipeline CODE_REVIEW candidate assignments are now revalidated against context-ready review packets before reuse, and stale assignment rows are refreshed through deterministic matching instead of serving legacy repo/PR overrides.
 - Standalone CODE_REVIEW cached repo/PR matches are now revalidated against context-ready review packets before being reused, so stale scheduled-interview rows without source-backed graph context fall back to deterministic rematching.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
