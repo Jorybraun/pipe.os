@@ -21,6 +21,7 @@ import {
   checkGitHubApiConnectivity,
   type GitHubConnectivityResult,
 } from './backfillReviewChallengePackets';
+import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 import {
   prepareReviewChallengeGraphLocalDb,
   SqliteQueryClient,
@@ -159,6 +160,8 @@ function usage(): string {
     'Usage: npx tsx scripts/checkReviewChallengeGraphReadiness.ts [options]',
     '',
     'Options:',
+    '  --local               Audit local Wrangler D1 database (default)',
+    '  --remote              Audit Cloudflare D1 via REST',
     '  --database-path PATH  Override local SQLite discovery',
     '  --prepare-local       Apply graph/context migrations before auditing',
     '  --require-github      Fail unless GitHub API is reachable',
@@ -168,6 +171,7 @@ function usage(): string {
 }
 
 interface CliOptions {
+  target: 'local' | 'remote';
   databasePath?: string;
   prepareLocal: boolean;
   requireGitHub: boolean;
@@ -184,13 +188,18 @@ function readValue(argv: string[], index: number, flag: string): [string, number
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
+    target: 'local',
     prepareLocal: false,
     requireGitHub: false,
     json: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
-    if (arg === '--prepare-local') {
+    if (arg === '--local') {
+      options.target = 'local';
+    } else if (arg === '--remote') {
+      options.target = 'remote';
+    } else if (arg === '--prepare-local') {
       options.prepareLocal = true;
     } else if (arg === '--require-github') {
       options.requireGitHub = true;
@@ -206,6 +215,12 @@ function parseArgs(argv: string[]): CliOptions {
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+  if (options.target === 'remote' && options.databasePath) {
+    throw new Error('--database-path can only be used with --local');
+  }
+  if (options.target === 'remote' && options.prepareLocal) {
+    throw new Error('--prepare-local can only be used with --local');
   }
   return options;
 }
@@ -259,13 +274,14 @@ function printHuman(report: ReviewChallengeGraphReadinessReport): void {
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
-  const { database, path } = openLocalDatabase(options.databasePath);
+  const opened = options.target === 'local' ? openLocalDatabase(options.databasePath) : null;
+  const database = opened?.database;
   try {
-    const client = new SqliteQueryClient(database);
+    const client: QueryClient = database ? new SqliteQueryClient(database) : new D1Client(loadD1Config());
     const report = await checkReviewChallengeGraphReadiness({
       client,
       database,
-      databasePath: path,
+      databasePath: opened?.path ?? 'remote',
       options: {
         prepareLocal: options.prepareLocal,
         requireGitHub: options.requireGitHub,
@@ -279,7 +295,7 @@ async function main(): Promise<void> {
     }
     if (!report.ready) process.exitCode = 1;
   } finally {
-    database.close?.();
+    database?.close?.();
   }
 }
 

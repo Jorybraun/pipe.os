@@ -8,7 +8,8 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "review-graph:readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --json",
-    "review-graph:rollout-gate": "tsx scripts/checkReviewChallengeGraphReadiness.ts --prepare-local --require-github"
+    "review-graph:remote-readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --json",
+    "review-graph:rollout-gate": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --require-github"
   },
   "dependencies": {
     "@clerk/backend": "^1.19.2",
