@@ -497,10 +497,14 @@ describe('backfillReviewChallengePackets', () => {
       title: 'Add idempotent order retry flow',
       status: 'persisted',
       eligible: true,
+      productionReady: true,
       demandCount: expect.any(Number),
       sourceSpanCount: expect.any(Number),
       changedFileCount: 4,
       structuralFactCount: expect.any(Number),
+      repoSourceRefCount: expect.any(Number),
+      conceptLinkCount: expect.any(Number),
+      persistedContextReady: true,
       error: null,
     });
 
@@ -540,6 +544,9 @@ describe('backfillReviewChallengePackets', () => {
       scope_type: 'repo_snapshot',
       scope_id: packet.repoSnapshotId,
       record_type: 'repo_challenge_packet',
+    });
+    expect(result.outcomes[0]).toMatchObject({
+      contextRecordId: packetContext.id,
     });
     const packetContextConcepts = sqlite.prepare(
       `SELECT c.canonical_key, crc.relationship, crc.weight
@@ -584,6 +591,8 @@ describe('backfillReviewChallengePackets', () => {
       && ref.evidence_role === 'source'
       && ref.exact_text?.includes('crystalline quorum ledger write')
     )).toBe(true);
+    expect(result.outcomes[0]?.repoSourceRefCount).toBeGreaterThan(0);
+    expect(result.outcomes[0]?.conceptLinkCount).toBeGreaterThan(0);
 
     const candidateEvidence: CandidateConceptEvidence[] = [
       {
@@ -788,10 +797,15 @@ describe('backfillReviewChallengePackets', () => {
           packetContentHash: 'sha256:packet',
           eligible: true,
           qualityScore: 0.92,
+          productionReady: null,
           demandCount: 4,
           sourceSpanCount: 12,
           changedFileCount: 3,
           structuralFactCount: 7,
+          contextRecordId: null,
+          repoSourceRefCount: null,
+          conceptLinkCount: null,
+          persistedContextReady: null,
           error: null,
         },
       ],
@@ -833,10 +847,15 @@ describe('backfillReviewChallengePackets', () => {
           packetContentHash: 'sha256:packet',
           eligible: true,
           qualityScore: 0.92,
+          productionReady: null,
           demandCount: 4,
           sourceSpanCount: 12,
           changedFileCount: 3,
           structuralFactCount: 7,
+          contextRecordId: null,
+          repoSourceRefCount: null,
+          conceptLinkCount: null,
+          persistedContextReady: null,
           error: null,
         },
       ],

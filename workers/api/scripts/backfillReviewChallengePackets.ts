@@ -44,6 +44,7 @@ import {
   type NormalizedPullRequestInput,
   type PullRequestFileStatus,
   type RepositoryRef,
+  type ChallengePacket,
   type SourceArtifact,
   type SourceArtifactKind,
   type SourceArtifactVersion,
@@ -192,11 +193,24 @@ export interface BackfillRowOutcome {
   packetContentHash: string | null;
   eligible: boolean | null;
   qualityScore: number | null;
+  productionReady: boolean | null;
   demandCount: number | null;
   sourceSpanCount: number | null;
   changedFileCount: number | null;
   structuralFactCount: number | null;
+  contextRecordId: string | null;
+  repoSourceRefCount: number | null;
+  conceptLinkCount: number | null;
+  persistedContextReady: boolean | null;
   error: string | null;
+}
+
+interface PersistedPacketCoverage {
+  productionReady: boolean | null;
+  contextRecordId: string | null;
+  repoSourceRefCount: number | null;
+  conceptLinkCount: number | null;
+  persistedContextReady: boolean | null;
 }
 
 export interface BackfillRunResult {
@@ -934,11 +948,73 @@ function buildBackfillRowOutcome(
     packetContentHash: values.packetContentHash ?? null,
     eligible: values.eligible ?? null,
     qualityScore: values.qualityScore ?? null,
+    productionReady: values.productionReady ?? null,
     demandCount: values.demandCount ?? null,
     sourceSpanCount: values.sourceSpanCount ?? null,
     changedFileCount: values.changedFileCount ?? null,
     structuralFactCount: values.structuralFactCount ?? null,
+    contextRecordId: values.contextRecordId ?? null,
+    repoSourceRefCount: values.repoSourceRefCount ?? null,
+    conceptLinkCount: values.conceptLinkCount ?? null,
+    persistedContextReady: values.persistedContextReady ?? null,
     error: values.error ?? null,
+  };
+}
+
+async function loadPersistedPacketCoverage(
+  client: QueryClient,
+  packet: ChallengePacket,
+): Promise<PersistedPacketCoverage> {
+  const row = (await client.query<{
+    production_ready: number;
+    context_record_id: string | null;
+    repo_source_ref_count: number;
+    concept_link_count: number;
+  }>(
+    `SELECT
+       rcp.production_ready,
+       cr.id AS context_record_id,
+       COALESCE((
+         SELECT COUNT(*)
+           FROM context_record_source_refs
+          WHERE context_record_id = cr.id
+            AND source_ref_type = 'repo_source_span'
+       ), 0) AS repo_source_ref_count,
+       COALESCE((
+         SELECT COUNT(*)
+           FROM context_record_concepts
+          WHERE context_record_id = cr.id
+       ), 0) AS concept_link_count
+     FROM review_challenge_packets rcp
+     LEFT JOIN context_records cr
+       ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+      AND cr.scope_type = 'repo_snapshot'
+      AND cr.scope_id = rcp.repo_snapshot_id
+      AND cr.record_type = 'repo_challenge_packet'
+     WHERE rcp.id = ?`,
+    [packet.id],
+  ))[0];
+  if (!row) {
+    return {
+      productionReady: null,
+      contextRecordId: null,
+      repoSourceRefCount: null,
+      conceptLinkCount: null,
+      persistedContextReady: false,
+    };
+  }
+  const productionReady = Number(row.production_ready) !== 0;
+  const repoSourceRefCount = Number(row.repo_source_ref_count ?? 0);
+  const conceptLinkCount = Number(row.concept_link_count ?? 0);
+  return {
+    productionReady,
+    contextRecordId: row.context_record_id,
+    repoSourceRefCount,
+    conceptLinkCount,
+    persistedContextReady: productionReady
+      && row.context_record_id !== null
+      && repoSourceRefCount > 0
+      && conceptLinkCount > 0,
   };
 }
 
@@ -1117,6 +1193,7 @@ export async function backfillReviewChallengePackets(
         semanticAssertions: semantics.assertions,
         repoSignals: semantics.signals,
       });
+      const persistedCoverage = await loadPersistedPacketCoverage(client, packet);
       stats.persisted++;
       outcomes.push(buildBackfillRowOutcome(row, 'persisted', {
         packetId: packet.id,
@@ -1124,10 +1201,15 @@ export async function backfillReviewChallengePackets(
         packetContentHash: packet.contentHash,
         eligible: packet.quality.eligible,
         qualityScore: packet.quality.score,
+        productionReady: persistedCoverage.productionReady,
         demandCount: packet.demands.length,
         sourceSpanCount: challengeInput.sourceSpans.length,
         changedFileCount: challengeInput.changedFiles.length,
         structuralFactCount: structuralFacts.length,
+        contextRecordId: persistedCoverage.contextRecordId,
+        repoSourceRefCount: persistedCoverage.repoSourceRefCount,
+        conceptLinkCount: persistedCoverage.conceptLinkCount,
+        persistedContextReady: persistedCoverage.persistedContextReady,
       }));
       log.log(
         `[challenge-backfill] [${index + 1}/${rows.length}] persisted ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
