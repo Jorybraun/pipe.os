@@ -801,6 +801,31 @@ describe('GET /interviews/:id detail', () => {
       'Scheduling URL: none',
       expect.stringMatching(/^Created at: /),
     ]);
+
+    const detailResponse = await app.request(`/interviews/${body.interview.id}`);
+    expect(detailResponse.status).toBe(200);
+    const detailBody = await detailResponse.json() as {
+      interview: {
+        livingContext: {
+          summary: { contextRecordCount: number; sourceSpanCount: number };
+          contextRecords: Array<{
+            recordType: string;
+            narrative: string;
+            sources: Array<{ exactText: string }>;
+          }>;
+        } | null;
+      };
+    };
+    expect(detailBody.interview.livingContext?.summary).toMatchObject({
+      contextRecordCount: 1,
+      sourceSpanCount: 1,
+    });
+    expect(detailBody.interview.livingContext?.contextRecords[0]).toMatchObject({
+      recordType: 'scheduled_interview_invite',
+      narrative: 'Contact-first interview invite for Edsger Dijkstra.',
+    });
+    expect(detailBody.interview.livingContext?.contextRecords[0]?.sources[0]?.exactText)
+      .toContain('Recipient email: edsger@example.com');
   });
 });
 
