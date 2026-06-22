@@ -75,6 +75,7 @@ export interface ChallengePacketLoadExclusion {
   id: string;
   repoId: string;
   prNumber: number | null;
+  packetContentHash?: string | null;
   reason:
     | 'DEMAND_WITHOUT_SOURCE_SPANS'
     | 'MISSING_DEMAND_SOURCE_SPANS'
@@ -92,6 +93,7 @@ export interface RoleGuardrailChallengeExclusion {
   reason: 'ROLE_GUARDRAIL_FAILED';
   repoId?: string;
   prNumber?: number | null;
+  packetContentHash?: string | null;
 }
 
 export type ChallengeMatchExclusion = ChallengePacketLoadExclusion | RoleGuardrailChallengeExclusion;
@@ -103,6 +105,7 @@ export interface ChallengeMatchDiagnostics {
     challengeId: string;
     repoId: string;
     prNumber: number;
+    packetContentHash?: string | null;
     recallRank: number;
     rank: number | null;
     eligible: boolean;
@@ -438,6 +441,7 @@ export function materializeChallengePacketForMatching(
   packet: RepoChallengePacket,
   spanById: Map<string, RepoSpanRow>,
   roleConcepts?: string[],
+  packetContentHash?: string | null,
 ): { packet: ChallengePacket } | { exclusion: ChallengePacketLoadExclusion } {
   const demandsWithoutSpans = packet.demands
     .filter((demand) => demand.sourceSpanIds.length === 0)
@@ -449,6 +453,7 @@ export function materializeChallengePacketForMatching(
         id: packet.id,
         repoId: String(repoId),
         prNumber: packet.pullRequest.number,
+        packetContentHash: packetContentHash ?? packet.contentHash,
         reason: 'DEMAND_WITHOUT_SOURCE_SPANS',
         demandIds: demandsWithoutSpans,
         missingSourceSpanIds: [],
@@ -467,6 +472,7 @@ export function materializeChallengePacketForMatching(
         id: packet.id,
         repoId: String(repoId),
         prNumber: packet.pullRequest.number,
+        packetContentHash: packetContentHash ?? packet.contentHash,
         reason: 'MISSING_DEMAND_SOURCE_SPANS',
         demandIds: [...new Set(missingByDemand.map((entry) => entry.demandId))].sort(),
         missingSourceSpanIds: [...new Set(missingByDemand.map((entry) => entry.spanId))].sort(),
@@ -488,6 +494,7 @@ export function materializeChallengePacketForMatching(
       repoId: String(repoId),
       prNumber: packet.pullRequest.number,
       sourceVersion: packet.repoSnapshotId,
+      packetContentHash: packetContentHash ?? packet.contentHash,
       challengeReady: packet.quality.eligible,
       languages: [packet.languageSupport.normalizedLanguage],
       seniority: undefined,
@@ -544,6 +551,7 @@ async function loadChallengePackets(
         id: row.id,
         repoId: String(row.repo_id),
         prNumber: row.pr_number,
+        packetContentHash: row.source_hash,
         reason: 'PACKET_PROVENANCE_INVALID',
         demandIds: [],
         missingSourceSpanIds: [],
@@ -558,6 +566,7 @@ async function loadChallengePackets(
         id: row.id,
         repoId: String(row.repo_id),
         prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
         reason: 'PACKET_NOT_PRODUCTION_READY',
         demandIds: packetDemandIds(packet),
         missingSourceSpanIds: [],
@@ -580,6 +589,7 @@ async function loadChallengePackets(
         id: row.id,
         repoId: String(row.repo_id),
         prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
         reason: 'PACKET_PROVENANCE_INVALID',
         demandIds: packetDemandIds(packet),
         missingSourceSpanIds: [],
@@ -591,7 +601,13 @@ async function loadChallengePackets(
 
     const spanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
     if (spanIds.length === 0) {
-      const loaded = materializeChallengePacketForMatching(row.repo_id, packet, new Map(), roleConcepts);
+      const loaded = materializeChallengePacketForMatching(
+        row.repo_id,
+        packet,
+        new Map(),
+        roleConcepts,
+        row.source_hash ?? packet.contentHash,
+      );
       if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
       continue;
     }
@@ -601,7 +617,13 @@ async function loadChallengePackets(
          FROM repo_source_spans WHERE id IN (${placeholders})`,
     ).bind(...spanIds).all<RepoSpanRow>();
     const spanById = new Map((spans.results ?? []).map((span) => [span.id, span]));
-    const loaded = materializeChallengePacketForMatching(row.repo_id, packet, spanById, roleConcepts);
+    const loaded = materializeChallengePacketForMatching(
+      row.repo_id,
+      packet,
+      spanById,
+      roleConcepts,
+      row.source_hash ?? packet.contentHash,
+    );
     if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
     else packets.push(loaded.packet);
   }
@@ -727,6 +749,20 @@ function buildMatchContextRecordInput(input: {
   concepts: ContextRecordConceptInput[];
 }): ContextRecordInput {
   const selectedPacketId = input.selected?.challenge.id ?? null;
+  const packetContentHashById = new Map<string, string>();
+  const rememberPacketContentHash = (packetId: string | null | undefined, hash: string | null | undefined) => {
+    if (packetId && hash) packetContentHashById.set(packetId, hash);
+  };
+  rememberPacketContentHash(selectedPacketId, input.selected?.challenge.packetContentHash);
+  for (const alignment of input.evaluated) {
+    rememberPacketContentHash(alignment.challenge.id, alignment.challenge.packetContentHash);
+  }
+  for (const packet of input.diagnostics.excludedPackets) {
+    rememberPacketContentHash(packet.id, packet.packetContentHash);
+  }
+  for (const challenge of input.diagnostics.evaluatedChallenges) {
+    rememberPacketContentHash(challenge.challengeId, challenge.packetContentHash);
+  }
   const evidenceSources: ContextRecordSourceInput[] = [
     {
       sourceRefType: 'match_run',
@@ -754,6 +790,7 @@ function buildMatchContextRecordInput(input: {
       sourceRefType: 'review_challenge_packet',
       sourceRefId: packetId,
       evidenceRole: packetId === selectedPacketId ? 'selected_packet' : 'considered_packet',
+      contentHash: packetContentHashById.get(packetId) ?? null,
       locator: {
         matchRunId: input.matchRunId,
         selected: packetId === selectedPacketId,
@@ -1092,6 +1129,7 @@ export async function matchCandidateToReviewChallenge(
         reason: 'ROLE_GUARDRAIL_FAILED' as const,
         repoId: challenge?.repoId,
         prNumber: challenge?.prNumber ?? null,
+        packetContentHash: challenge?.packetContentHash,
       };
     }),
   ];
@@ -1099,6 +1137,7 @@ export async function matchCandidateToReviewChallenge(
     challengeId: alignment.challenge.id,
     repoId: alignment.challenge.repoId,
     prNumber: alignment.challenge.prNumber,
+    packetContentHash: alignment.challenge.packetContentHash,
     recallRank: index + 1,
     rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
     eligible: alignment.eligible,

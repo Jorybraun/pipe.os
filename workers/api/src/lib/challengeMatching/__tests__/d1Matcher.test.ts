@@ -1257,7 +1257,7 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(contextRecord.confidence).toBeGreaterThanOrEqual(0.6);
 
     const refs = sqlite.prepare(
-      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role
+      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, content_hash
          FROM context_record_source_refs
         WHERE context_record_id = ?
         ORDER BY source_ref_type, source_ref_id, evidence_role`,
@@ -1268,36 +1268,42 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: result.matchRunId,
         source_span_id: null,
         evidence_role: 'decision_record',
+        content_hash: null,
       },
       {
         source_ref_type: 'review_challenge_packet',
         source_ref_id: data.packet.id,
         source_span_id: null,
         evidence_role: 'selected_packet',
+        content_hash: data.packet.contentHash,
       },
       {
         source_ref_type: 'source_span',
         source_ref_id: 'candidate-span-1',
         source_span_id: 'candidate-span-1',
         evidence_role: 'selected_candidate_evidence',
+        content_hash: 'sha256:candidate',
       },
       {
         source_ref_type: 'source_span',
         source_ref_id: 'candidate-span-2',
         source_span_id: 'candidate-span-2',
         evidence_role: 'selected_candidate_evidence',
+        content_hash: 'sha256:candidate',
       },
       {
         source_ref_type: 'repo_source_span',
         source_ref_id: data.packet.demands[0]!.sourceSpanIds[0]!,
         source_span_id: null,
         evidence_role: 'selected_repo_evidence',
+        content_hash: expect.any(String),
       },
       {
         source_ref_type: 'repo_source_span',
         source_ref_id: data.packet.demands[1]!.sourceSpanIds[0]!,
         source_span_id: null,
         evidence_role: 'selected_repo_evidence',
+        content_hash: expect.any(String),
       },
     ]));
     expect(sqlite.prepare(
@@ -1450,7 +1456,7 @@ describe('matchCandidateToReviewChallenge', () => {
     });
 
     const contextRefs = sqlite.prepare(
-      `SELECT source_ref_type, source_ref_id, exact_text, evidence_role
+      `SELECT source_ref_type, source_ref_id, exact_text, content_hash, evidence_role
          FROM context_record_source_refs
         WHERE context_record_id = ?
         ORDER BY evidence_role, source_ref_id`,
@@ -1458,12 +1464,14 @@ describe('matchCandidateToReviewChallenge', () => {
       source_ref_type: string;
       source_ref_id: string;
       exact_text: string | null;
+      content_hash: string | null;
       evidence_role: string;
     }>;
     expect(contextRefs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         source_ref_type: 'review_challenge_packet',
         source_ref_id: data.packet.id,
+        content_hash: data.packet.contentHash,
         evidence_role: 'selected_packet',
       }),
       expect.objectContaining({

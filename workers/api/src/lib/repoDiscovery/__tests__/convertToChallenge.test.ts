@@ -310,19 +310,25 @@ function seedCandidateEvidenceForConcepts(
       now,
       now,
     );
-    sqlite.prepare(
-      `INSERT INTO concepts (
-         id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
-    ).run(
-      `concept-${ordinal}`,
-      `concept-${ordinal}`,
-      item.conceptKey,
-      item.conceptKey.split(':', 1)[0] || 'term',
-      conceptLabel,
-      now,
-      now,
-    );
+    const existingConcept = sqlite.prepare(
+      'SELECT id FROM concepts WHERE canonical_key = ?',
+    ).get(item.conceptKey) as { id: string } | undefined;
+    const conceptId = existingConcept?.id ?? `concept-${ordinal}`;
+    if (!existingConcept) {
+      sqlite.prepare(
+        `INSERT INTO concepts (
+           id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
+      ).run(
+        conceptId,
+        `concept-${ordinal}`,
+        item.conceptKey,
+        item.conceptKey.split(':', 1)[0] || 'term',
+        conceptLabel,
+        now,
+        now,
+      );
+    }
     sqlite.prepare(
       `INSERT INTO semantic_assertions (
          id, ingestion_key, workspace_person_id, episode_id, subject_type, subject_id,
@@ -348,7 +354,7 @@ function seedCandidateEvidenceForConcepts(
     sqlite.prepare(
       `INSERT INTO assertion_concepts (assertion_id, concept_id, relationship, weight, created_at)
        VALUES (?, ?, 'about', 1, ?)`,
-    ).run(`assertion-${ordinal}`, `concept-${ordinal}`, now);
+    ).run(`assertion-${ordinal}`, conceptId, now);
     sqlite.prepare(
       `INSERT INTO signal_evidence (
          id, ingestion_key, workspace_person_id, interaction_id, assertion_id, concept_id,
@@ -358,7 +364,7 @@ function seedCandidateEvidenceForConcepts(
       `evidence-${ordinal}`,
       `evidence-${ordinal}`,
       `assertion-${ordinal}`,
-      `concept-${ordinal}`,
+      conceptId,
       item.conceptKey,
       item.evidenceLevel,
       now,

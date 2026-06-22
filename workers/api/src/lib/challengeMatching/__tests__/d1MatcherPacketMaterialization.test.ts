@@ -91,6 +91,7 @@ describe('materializeChallengePacketForMatching', () => {
         id: 'packet-1',
         repoId: '7',
         prNumber: 42,
+        packetContentHash: 'sha256:packet-1',
         reason: 'MISSING_DEMAND_SOURCE_SPANS',
         demandIds: ['demand-1'],
         missingSourceSpanIds: ['span-1'],
@@ -112,6 +113,7 @@ describe('materializeChallengePacketForMatching', () => {
         id: 'packet-1',
         repoId: '7',
         prNumber: 42,
+        packetContentHash: 'sha256:packet-1',
         reason: 'DEMAND_WITHOUT_SOURCE_SPANS',
         demandIds: ['demand-1'],
         missingSourceSpanIds: [],
@@ -126,6 +128,7 @@ describe('materializeChallengePacketForMatching', () => {
       id: 'packet-1',
       repoId: '7',
       prNumber: 42,
+      packetContentHash: 'sha256:packet-1',
       challengeReady: true,
       concepts: ['term:kafka'],
       demands: [expect.objectContaining({

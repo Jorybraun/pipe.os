@@ -246,12 +246,23 @@ async function requireContextSourceRef(
     return;
   }
   if (source.sourceRefType === 'review_challenge_packet') {
-    await requireRow(
-      db,
-      'SELECT id FROM review_challenge_packets WHERE id = ?1',
-      [source.sourceRefId],
-      `review challenge packet ${source.sourceRefId}`,
-    );
+    const row = await db.prepare(
+      'SELECT id, source_hash, packet_json FROM review_challenge_packets WHERE id = ?1',
+    ).bind(source.sourceRefId).first<{
+      id: string;
+      source_hash: string;
+      packet_json: string;
+    }>();
+    if (!row) throw new Error(`review challenge packet ${source.sourceRefId} does not exist`);
+    if (source.contentHash === null) {
+      throw new Error(`review challenge packet ${source.sourceRefId} contentHash is required`);
+    }
+    if (source.contentHash !== row.source_hash) {
+      throw new Error(`review challenge packet ${source.sourceRefId} contentHash does not match`);
+    }
+    if (source.exactText !== null && source.exactText !== row.packet_json) {
+      throw new Error(`review challenge packet ${source.sourceRefId} exactText does not match`);
+    }
     return;
   }
   if (source.sourceRefType === 'match_run') {

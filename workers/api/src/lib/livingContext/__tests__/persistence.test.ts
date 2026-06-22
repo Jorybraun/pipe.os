@@ -678,6 +678,72 @@ describe('LivingContextStore', () => {
     });
   });
 
+  it('rejects review challenge packet refs without matching immutable packet hash', async () => {
+    sqlite.exec(`
+      CREATE TABLE review_challenge_packets (
+        id TEXT PRIMARY KEY,
+        source_hash TEXT NOT NULL,
+        packet_json TEXT NOT NULL
+      );
+    `);
+    sqlite.prepare(
+      'INSERT INTO review_challenge_packets (id, source_hash, packet_json) VALUES (?, ?, ?)',
+    ).run(
+      'packet-verified',
+      'sha256:packet-verified',
+      '{"id":"packet-verified"}',
+    );
+
+    const baseInput: ContextRecordInput = {
+      ingestionKey: 'context-record:match:packet-ref',
+      scopeType: 'match_run',
+      scopeId: 'match-run-1',
+      recordType: 'candidate_pr_match_decision',
+      narrative: 'Match selected a review challenge packet.',
+      sources: [{
+        sourceRefType: 'review_challenge_packet',
+        sourceRefId: 'packet-verified',
+        evidenceRole: 'selected_packet',
+        contentHash: 'sha256:packet-verified',
+      }],
+    };
+
+    await expect(store.upsertContextRecord({
+      ...baseInput,
+      sources: [{
+        ...baseInput.sources[0],
+        contentHash: null,
+      }],
+    })).rejects.toThrow('review challenge packet packet-verified contentHash is required');
+
+    await expect(store.upsertContextRecord({
+      ...baseInput,
+      sources: [{
+        ...baseInput.sources[0],
+        contentHash: 'sha256:wrong-packet',
+      }],
+    })).rejects.toThrow('review challenge packet packet-verified contentHash does not match');
+
+    await expect(store.upsertContextRecord({
+      ...baseInput,
+      sources: [{
+        ...baseInput.sources[0],
+        exactText: '{"id":"other-packet"}',
+      }],
+    })).rejects.toThrow('review challenge packet packet-verified exactText does not match');
+
+    const record = await store.upsertContextRecord(baseInput);
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, content_hash
+         FROM context_record_source_refs
+        WHERE context_record_id = ?`,
+    ).get(record.id)).toEqual({
+      source_ref_type: 'review_challenge_packet',
+      source_ref_id: 'packet-verified',
+      content_hash: 'sha256:packet-verified',
+    });
+  });
+
   it('rejects context records without exact source-span provenance', async () => {
     const person = await store.upsertPerson({ ingestionKey: 'person:no-source-record' });
     const workspacePerson = await store.upsertWorkspacePerson({

@@ -129,6 +129,7 @@ export interface ChallengePacket {
   repoId: string;
   prNumber: number;
   sourceVersion: string;
+  packetContentHash?: string | null;
   challengeReady: boolean;
   languages: string[];
   seniority?: Seniority;
