@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Evaluation CI Expansion (Criterion #8)
+
+- Added `corpusRunner.test.ts` and `seedCorpus.test.ts` to the `evaluation-report.yml` CI workflow, expanding automated regression coverage from 4 to 6 test suites.
+- Updated tracker and coordination log to reflect PR #84 consolidation.
+
 ### Added — Offline Corpus Evaluation Runner (Criterion #8)
 
 - Added `corpusRunner.ts` — runs the full compile→recall→align→rank→evaluate pipeline in-memory from a seed corpus and challenge packets, without requiring a live D1 database. Converts corpus evidence to `CandidateSignal`, runs the matching engine for each candidate-role pair, and evaluates results against expert labels using `evaluateMatchRuns` + `checkAcceptanceThresholds`.
