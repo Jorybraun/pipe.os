@@ -43,6 +43,8 @@ function buildStubDb(capturedRuns: CapturedRun[], pipelineExists = true): D1Data
   const artifactVersions = new Map<string, Record<string, unknown>>();
   const sourceSpansByIngestionKey = new Map<string, Record<string, unknown>>();
   const sourceSpansById = new Map<string, Record<string, unknown>>();
+  const conceptsById = new Map<string, Record<string, unknown>>();
+  const conceptsByCanonicalKey = new Map<string, Record<string, unknown>>();
 
   return {
     prepare(sql: string) {
@@ -62,6 +64,12 @@ function buildStubDb(capturedRuns: CapturedRun[], pipelineExists = true): D1Data
               }
               if (normalized.includes('FROM source_spans WHERE id = ?1')) {
                 return (sourceSpansById.get(String(args[0])) ?? null) as T | null;
+              }
+              if (normalized.includes('FROM concepts WHERE canonical_key = ?1')) {
+                return (conceptsByCanonicalKey.get(String(args[0])) ?? null) as T | null;
+              }
+              if (normalized.includes('FROM concepts WHERE id = ?1')) {
+                return (conceptsById.get(String(args[0])) ?? null) as T | null;
               }
               return null;
             },
@@ -102,6 +110,30 @@ function buildStubDb(capturedRuns: CapturedRun[], pipelineExists = true): D1Data
                 };
                 sourceSpansByIngestionKey.set(String(args[1]), row);
                 sourceSpansById.set(String(args[0]), row);
+              }
+              if (normalized.startsWith('INSERT INTO concepts')) {
+                const row = {
+                  id: args[0],
+                  ingestion_key: args[1],
+                  canonical_key: args[2],
+                  namespace: args[3],
+                  label: args[4],
+                  description: args[5],
+                  aliases_json: args[6],
+                  metadata_json: args[7],
+                };
+                conceptsById.set(String(args[0]), row);
+                conceptsByCanonicalKey.set(String(args[2]), row);
+              }
+              if (normalized.startsWith('UPDATE concepts')) {
+                const row = conceptsById.get(String(args[0]));
+                if (row) {
+                  row.namespace = args[1];
+                  row.label = args[2];
+                  row.description = args[3];
+                  row.aliases_json = args[4];
+                  row.metadata_json = args[5];
+                }
               }
               return { success: true, meta: {} };
             },
@@ -247,6 +279,43 @@ describe('POST /api/v1/role-contexts/simple-job-description', () => {
     expect(entityInserts.some((run) => run.args[2] === 'job_description' && run.args[3] === artifactInsert!.args[0])).toBe(true);
     expect(entityInserts.some((run) => run.args[2] === 'selected_term' && JSON.parse(String(run.args[5])).surface === 'Kafka')).toBe(true);
     expect(entityInserts.some((run) => run.args[2] === 'selected_term' && JSON.parse(String(run.args[5])).surface === 'order processing')).toBe(true);
+
+    const conceptInserts = runs.filter((run) => run.sql.includes('INSERT INTO concepts'));
+    expect(conceptInserts).toHaveLength(2);
+    expect(conceptInserts.map((run) => run.args[2]).sort()).toEqual([
+      'term:kafka',
+      'term:order-processing',
+    ]);
+    expect(conceptInserts.every((run) => run.args[3] === 'term')).toBe(true);
+    expect(conceptInserts.every((run) => {
+      const metadata = JSON.parse(String(run.args[7]));
+      return metadata.source === 'simple_job_description'
+        && metadata.roleContextId === body.id
+        && metadata.resolver === 'open-source-term-v2';
+    })).toBe(true);
+
+    const conceptByCanonicalKey = new Map(conceptInserts.map((run) => [run.args[2], run.args[0]]));
+    const contextConceptInserts = runs.filter((run) => run.sql.includes('INSERT INTO context_record_concepts'));
+    expect(contextConceptInserts).toHaveLength(2);
+    expect(contextConceptInserts.map((run) => ({
+      contextRecordId: run.args[0],
+      conceptId: run.args[1],
+      relationship: run.args[2],
+      weight: run.args[3],
+    }))).toEqual(expect.arrayContaining([
+      {
+        contextRecordId: contextInsert!.args[0],
+        conceptId: conceptByCanonicalKey.get('term:kafka'),
+        relationship: 'required_literal_term',
+        weight: 1,
+      },
+      {
+        contextRecordId: contextInsert!.args[0],
+        conceptId: conceptByCanonicalKey.get('term:order-processing'),
+        relationship: 'required_literal_term',
+        weight: 1,
+      },
+    ]));
   });
 
   it('requires ownership for linked pipelines', async () => {

@@ -38,6 +38,7 @@ import { embedAndUpsertRole } from '../../lib/roleDiscovery/embedRole';
 import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRoleProfile';
 import { buildRcdSearchProfile } from '../../lib/repoDiscovery/rcdSearchProfile';
 import { LivingContextStore } from '../../lib/livingContext/persistence';
+import { OPEN_TERM_RESOLVER_VERSION, openSemanticTerm } from '../../lib/livingContext/openTerms';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -168,6 +169,28 @@ async function persistSimpleJobDescriptionContext(input: {
     },
   });
 
+  const contextConcepts: Array<{ conceptId: string; relationship: string; weight: number }> = [];
+  for (const selectedTerm of input.selectedTerms) {
+    const term = openSemanticTerm(selectedTerm);
+    if (!term) continue;
+    const concept = await store.upsertConcept({
+      ingestionKey: `role-context:${input.roleContextId}:selected-term:${term.canonicalKey}`,
+      canonicalKey: term.canonicalKey,
+      namespace: 'term',
+      label: term.surface,
+      metadata: {
+        resolver: OPEN_TERM_RESOLVER_VERSION,
+        source: 'simple_job_description',
+        roleContextId: input.roleContextId,
+      },
+    });
+    contextConcepts.push({
+      conceptId: concept.id,
+      relationship: 'required_literal_term',
+      weight: 1,
+    });
+  }
+
   await store.upsertContextRecord({
     ingestionKey: `role-context:${input.roleContextId}:job-description-context`,
     scopeType: 'role_context',
@@ -207,6 +230,7 @@ async function persistSimpleJobDescriptionContext(input: {
         value: { surface: term },
       })),
     ],
+    concepts: contextConcepts,
   });
 }
 
