@@ -134,6 +134,79 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
   };
 }
 
+function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
+  return {
+    interviewId: 'interview-backfilled-1',
+    interviewStatus: 'MATCHED',
+    matchStatus: 'MATCHED',
+    matchRunId: 'match-run-backfilled-1',
+    repoId: 77,
+    repoName: 'pipe-labs/orders',
+    repoUrl: 'https://github.com/pipe-labs/orders',
+    prNumber: 42,
+    prUrl: 'https://github.com/pipe-labs/orders/pull/42',
+    prTitle: 'Add idempotent order retry flow',
+    score: 0.88,
+    summary: 'Matched backfilled PR packet using accumulated resume and meeting evidence.',
+    evidence: [{
+      atomId: 'candidate-atom-crystalline-quorum-ledger',
+      demandId: 'demand-crystalline-quorum-ledger',
+      purpose: 'source-backed-validation',
+      pairScore: 0.93,
+      sharedConcepts: ['term:crystalline-quorum-ledger'],
+      candidateSourceRefs: [
+        {
+          artifactId: 'candidate-artifact-resume',
+          artifactVersion: 'artifact-version-resume-1',
+          contentHash: 'candidate-resume-hash',
+          startOffset: 0,
+          endOffset: 65,
+          locator: 'candidate-span-1',
+          exactText: 'resume: implemented CrystallineQuorumLedger commits for order recovery',
+        },
+        {
+          artifactId: 'candidate-artifact-meeting',
+          artifactVersion: 'artifact-version-meeting-1',
+          contentHash: 'candidate-meeting-hash',
+          startOffset: 0,
+          endOffset: 64,
+          locator: 'candidate-span-2',
+          exactText: 'meeting: debugged CrystallineQuorumLedger replay during an outage',
+        },
+      ],
+      challengeSourceRefs: [{
+        artifactId: 'repo-artifact-77-42',
+        artifactVersion: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        contentHash: 'repo-source-hash',
+        startOffset: 0,
+        endOffset: 148,
+        locator: 'src/orders/crystallineQuorumLedger.ts:1',
+        exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
+      }],
+    }],
+    gaps: [],
+    diagnostics: {
+      recalledPacketIds: ['review-packet-77-42'],
+      excludedPackets: [],
+      evaluatedChallenges: [{
+        challengeId: 'review-packet-77-42',
+        repoId: '77',
+        prNumber: 42,
+        recallRank: 1,
+        rank: 1,
+        eligible: true,
+        rejectionReasons: [],
+        provenanceComplete: true,
+        alignedDemandCount: 1,
+        stretchCount: 0,
+      }],
+    },
+    submitted: false,
+    submission: null,
+    completedAt: null,
+  };
+}
+
 function makeMeetingSourceRef(overrides: Partial<LivingContextSourceRef> = {}): LivingContextSourceRef {
   return {
     sourceSpanId: 'span-meeting-1',
@@ -337,6 +410,45 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('Evaluated challenge evidence')).toBeInTheDocument();
     expect(screen.getAllByText('packet-source-backed').length).toBeGreaterThan(1);
     expect(screen.getByText(/PR #42.*2 aligned demands.*1 stretch area.*provenance complete/i)).toBeInTheDocument();
+  });
+
+  it('renders repository overlay evidence shaped like the crawler backfill match output', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeBackfilledRepoReviewMatch()}
+      />,
+    );
+
+    expect(screen.getByLabelText('Standalone code review match')).toBeInTheDocument();
+    expect(screen.getByText('pipe-labs/orders #42')).toBeInTheDocument();
+    expect(screen.getByText('Add idempotent order retry flow')).toBeInTheDocument();
+    expect(screen.getByText('Matched backfilled PR packet using accumulated resume and meeting evidence.')).toBeInTheDocument();
+    expect(screen.getAllByText('term:crystalline-quorum-ledger').length).toBeGreaterThan(0);
+
+    const repoOverlay = screen.getByTestId('repository-overlay-panel');
+    expect(within(repoOverlay).getByText('pipe-labs/orders · PR #42')).toBeInTheDocument();
+    expect(within(repoOverlay).getAllByText('src/orders/crystallineQuorumLedger.ts').length).toBeGreaterThan(0);
+    expect(within(repoOverlay).getAllByText('demand-crystalline-quorum-ledger').length).toBeGreaterThan(1);
+    expect(within(repoOverlay).getByText('candidate-atom-crystalline-quorum-ledger')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('93% alignment')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('source-backed-validation')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('candidate-span-1')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('candidate-span-2')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('src/orders/crystallineQuorumLedger.ts:1')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText(
+      'resume: implemented CrystallineQuorumLedger commits for order recovery',
+    )).toBeInTheDocument();
+    expect(within(repoOverlay).getByText(
+      'meeting: debugged CrystallineQuorumLedger replay during an outage',
+    )).toBeInTheDocument();
+    expect(within(repoOverlay).getByText(/writeCrystallineQuorumLedger/)).toBeInTheDocument();
+
+    expect(screen.getByText('Evaluated challenge evidence')).toBeInTheDocument();
+    expect(screen.getAllByText('review-packet-77-42').length).toBeGreaterThan(1);
+    expect(screen.getByText(/PR #42.*1 aligned demand.*0 stretch areas.*provenance complete/i)).toBeInTheDocument();
   });
 
   it('surfaces meeting transcript evidence as an interaction-level graph branch', () => {
