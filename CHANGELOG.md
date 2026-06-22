@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Full Repository File Tree in Repo Overlay Panel (Criterion #7)
+
+- Added `useRepoOverlay` hook — fetches full repo file tree from `/api/v1/internal/repo-graph/:repoId/overlay`, including all files, spans, symbols, and demand mappings.
+- Enhanced `RepoOverlayPanel` to show complete repo structure when overlay data is available: matched files highlighted with evidence spans, unmatched files collapsible with symbol listings, file sizes, and demand counts.
+- Added `RepoFileTreeNode` component with expand/collapse for navigating matched spans, symbols, and unmatched file context.
+- Fallback: renders matched-only view when overlay endpoint is unavailable.
+
 ### Fixed — Contact Living Context Query (Production Hardening)
 
 - Replaced fragile `LIKE '%"contactId":"..."'` pattern in `loadContactLivingContext` with `json_extract(wp.context_json, '$.contactId')` — eliminates false matches from substring collisions and SQL injection edge cases.

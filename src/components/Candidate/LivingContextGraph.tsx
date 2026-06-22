@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Code,
@@ -26,6 +26,8 @@ import type {
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { useRepoOverlay } from '../../hooks/useRepoOverlay';
+import type { RepoOverlayFile } from '../../hooks/useRepoOverlay';
 import './LivingContextGraph.css';
 
 function titleCase(value: string): string {
@@ -340,22 +342,20 @@ function StandaloneReviewMatchPanel({
   );
 }
 
-function RepoOverlayPanel({
-  match,
-}: {
-  match: StandaloneReviewMatchRecord | null;
-}): JSX.Element | null {
-  if (!match || match.evidence.length === 0) return null;
+interface MatchedSpanEntry {
+  atomId: string;
+  demandId: string;
+  pairScore: number;
+  exactText: string;
+  startOffset: number;
+  endOffset: number;
+  sharedConcepts: string[];
+}
 
-  const fileMap = new Map<string, Array<{
-    atomId: string;
-    demandId: string;
-    pairScore: number;
-    exactText: string;
-    startOffset: number;
-    endOffset: number;
-    sharedConcepts: string[];
-  }>>();
+function buildMatchedFileMap(
+  match: StandaloneReviewMatchRecord,
+): Map<string, MatchedSpanEntry[]> {
+  const fileMap = new Map<string, MatchedSpanEntry[]>();
   for (const entry of match.evidence) {
     for (const ref of entry.challengeSourceRefs) {
       const filePath = ref.locator?.split(':')[0] ?? ref.artifactId;
@@ -372,8 +372,130 @@ function RepoOverlayPanel({
       fileMap.set(filePath, existing);
     }
   }
+  return fileMap;
+}
 
-  if (fileMap.size === 0) return null;
+function RepoFileTreeNode({
+  file,
+  matchedSpans,
+}: {
+  file: RepoOverlayFile;
+  matchedSpans: MatchedSpanEntry[];
+}): JSX.Element {
+  const [expanded, setExpanded] = useState(matchedSpans.length > 0);
+  const hasMatches = matchedSpans.length > 0;
+  const hasDemands = file.spans.some((span) => span.demandIds.length > 0);
+
+  return (
+    <div className={`living-context__repo-file${hasMatches ? ' living-context__repo-file--matched' : ''}`}>
+      <button
+        type="button"
+        className="living-context__repo-file-path"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+      >
+        <FileText size={11} />
+        <span>{file.path}</span>
+        {hasMatches && (
+          <span className="living-context__count living-context__count--matched">
+            {matchedSpans.length} matched
+          </span>
+        )}
+        {!hasMatches && hasDemands && (
+          <span className="living-context__count living-context__count--demand">
+            {file.spans.filter((s) => s.demandIds.length > 0).length} demands
+          </span>
+        )}
+        {file.symbols.length > 0 && (
+          <span className="living-context__count">
+            {file.symbols.length} symbol{file.symbols.length === 1 ? '' : 's'}
+          </span>
+        )}
+        <span className="living-context__file-size">
+          {file.byteLength > 1024
+            ? `${(file.byteLength / 1024).toFixed(1)}KB`
+            : `${file.byteLength}B`}
+        </span>
+      </button>
+      {expanded && matchedSpans.length > 0 && (
+        <div className="living-context__repo-file-spans">
+          {matchedSpans.map((span, index) => (
+            <div
+              key={`${file.path}:${span.startOffset}:${span.demandId}:${index}`}
+              className="living-context__repo-span"
+            >
+              <div className="living-context__repo-span-head">
+                <span className="living-context__repo-span-score">
+                  {Math.round(span.pairScore * 100)}%
+                </span>
+                <span>{span.demandId}</span>
+                <span>bytes {span.startOffset}-{span.endOffset}</span>
+              </div>
+              {span.exactText && (
+                <blockquote className="living-context__repo-span-text">
+                  {span.exactText.length > 120
+                    ? `${span.exactText.slice(0, 120)}...`
+                    : span.exactText}
+                </blockquote>
+              )}
+              {span.sharedConcepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {span.sharedConcepts.slice(0, 3).map((concept) => (
+                    <span key={`${file.path}:${span.demandId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {expanded && matchedSpans.length === 0 && file.symbols.length > 0 && (
+        <div className="living-context__repo-file-symbols">
+          {file.symbols.slice(0, 5).map((symbol) => (
+            <div key={symbol.id} className="living-context__repo-symbol">
+              <Code size={10} />
+              <span className="living-context__repo-symbol-name">{symbol.qualifiedName}</span>
+              <span className="living-context__repo-symbol-kind">{symbol.kind}</span>
+            </div>
+          ))}
+          {file.symbols.length > 5 && (
+            <div className="living-context__repo-symbol-overflow">
+              +{file.symbols.length - 5} more
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepoOverlayPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord | null;
+}): JSX.Element | null {
+  const [showFullTree, setShowFullTree] = useState(false);
+  const { overlay, isLoading: overlayLoading } = useRepoOverlay(
+    match?.repoId ?? null,
+  );
+
+  const matchedFileMap = useMemo(
+    () => (match ? buildMatchedFileMap(match) : new Map<string, MatchedSpanEntry[]>()),
+    [match],
+  );
+
+  const toggleFullTree = useCallback(() => {
+    setShowFullTree((prev) => !prev);
+  }, []);
+
+  if (!match || match.evidence.length === 0) return null;
+  if (matchedFileMap.size === 0) return null;
+
+  const overlayFiles = overlay?.files ?? [];
+  const matchedPaths = new Set(matchedFileMap.keys());
+  const unmatchedFiles = overlayFiles.filter((f) => !matchedPaths.has(f.path));
 
   return (
     <section className="living-context__repo-overlay" aria-label="Repository structure overlay">
@@ -383,51 +505,93 @@ function RepoOverlayPanel({
       </div>
       <div className="living-context__eyebrow">
         {match.repoName ?? 'repository'} PR #{match.prNumber}
-        {' · '}{fileMap.size} file{fileMap.size === 1 ? '' : 's'} matched
+        {' · '}{matchedFileMap.size} file{matchedFileMap.size === 1 ? '' : 's'} matched
+        {overlay && ` · ${overlay.fileCount} total · ${overlay.symbolCount} symbols`}
       </div>
+
       <div className="living-context__repo-files">
-        {[...fileMap.entries()].map(([filePath, spans]) => (
-          <div key={filePath} className="living-context__repo-file">
-            <div className="living-context__repo-file-path">
-              <FileText size={11} />
-              <span>{filePath}</span>
-              <span className="living-context__count">{spans.length}</span>
-            </div>
-            <div className="living-context__repo-file-spans">
-              {spans.map((span, index) => (
-                <div
-                  key={`${filePath}:${span.startOffset}:${span.demandId}:${index}`}
-                  className="living-context__repo-span"
-                >
-                  <div className="living-context__repo-span-head">
-                    <span className="living-context__repo-span-score">
-                      {Math.round(span.pairScore * 100)}%
-                    </span>
-                    <span>{span.demandId}</span>
-                    <span>bytes {span.startOffset}-{span.endOffset}</span>
-                  </div>
-                  {span.exactText && (
-                    <blockquote className="living-context__repo-span-text">
-                      {span.exactText.length > 120
-                        ? `${span.exactText.slice(0, 120)}...`
-                        : span.exactText}
-                    </blockquote>
-                  )}
-                  {span.sharedConcepts.length > 0 && (
-                    <div className="living-context__concepts">
-                      {span.sharedConcepts.slice(0, 3).map((concept) => (
-                        <span key={`${filePath}:${span.demandId}:${concept}`} className="living-context__concept">
-                          {concept}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+        {overlay ? (
+          <>
+            {overlayFiles
+              .filter((f) => matchedPaths.has(f.path))
+              .map((file) => (
+                <RepoFileTreeNode
+                  key={file.path}
+                  file={file}
+                  matchedSpans={matchedFileMap.get(file.path) ?? []}
+                />
               ))}
+
+            {unmatchedFiles.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="living-context__repo-tree-toggle"
+                  onClick={toggleFullTree}
+                  aria-expanded={showFullTree}
+                >
+                  {showFullTree
+                    ? `Hide ${unmatchedFiles.length} unmatched files`
+                    : `Show ${unmatchedFiles.length} unmatched files`}
+                </button>
+                {showFullTree && unmatchedFiles.map((file) => (
+                  <RepoFileTreeNode
+                    key={file.path}
+                    file={file}
+                    matchedSpans={[]}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        ) : (
+          [...matchedFileMap.entries()].map(([filePath, spans]) => (
+            <div key={filePath} className="living-context__repo-file living-context__repo-file--matched">
+              <div className="living-context__repo-file-path">
+                <FileText size={11} />
+                <span>{filePath}</span>
+                <span className="living-context__count">{spans.length}</span>
+              </div>
+              <div className="living-context__repo-file-spans">
+                {spans.map((span, index) => (
+                  <div
+                    key={`${filePath}:${span.startOffset}:${span.demandId}:${index}`}
+                    className="living-context__repo-span"
+                  >
+                    <div className="living-context__repo-span-head">
+                      <span className="living-context__repo-span-score">
+                        {Math.round(span.pairScore * 100)}%
+                      </span>
+                      <span>{span.demandId}</span>
+                      <span>bytes {span.startOffset}-{span.endOffset}</span>
+                    </div>
+                    {span.exactText && (
+                      <blockquote className="living-context__repo-span-text">
+                        {span.exactText.length > 120
+                          ? `${span.exactText.slice(0, 120)}...`
+                          : span.exactText}
+                      </blockquote>
+                    )}
+                    {span.sharedConcepts.length > 0 && (
+                      <div className="living-context__concepts">
+                        {span.sharedConcepts.slice(0, 3).map((concept) => (
+                          <span key={`${filePath}:${span.demandId}:${concept}`} className="living-context__concept">
+                            {concept}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
+
+      {overlayLoading && (
+        <div className="living-context__repo-loading">Loading full repository context...</div>
+      )}
     </section>
   );
 }

@@ -112,7 +112,7 @@ Add focused tests for any touched route, UI, or backfill script.
 5. ~~Fix workspace_person context_json merge bug.~~ ✓ Done — `upsertWorkspacePerson` now uses `json_patch` instead of replacement.
 6. ~~Implement the first #57 UI slice: contact/person context summary from living-context data.~~ ✓ Done — `interactionTypeBreakdown`, `conceptCount` in summary; concept count per interaction card; type breakdown badges in rail.
 7. ~~Make evaluation a non-blocking CI report before turning it into a hard gate.~~ ✓ Done — `evaluation-report.yml` workflow runs proof tests on matching/livingContext PRs and posts summary.
-8. Verify repository overlays in UI with real repo graph data.
+8. ~~Verify repository overlays in UI with real repo graph data.~~ ✓ Done — `RepoOverlayPanel` now fetches full file tree from `/internal/repo-graph/:repoId/overlay`; `RepoFileTreeNode` shows matched + unmatched files with symbols.
 9. Run full standalone CODE_REVIEW E2E with Playwright.
 10. Build expert-labelled corpus with real recruiter annotations.
 11. ~~Add source content search for living context (criterion #2).~~ ✓ Done — `searchSourceContent()` + `/living-context/search` on contacts and candidates.
