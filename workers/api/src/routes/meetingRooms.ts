@@ -8,6 +8,8 @@ import {
   transcribeAudioWhisper,
 } from '../lib/transcribe';
 import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
+import { getTurnIceServers } from '../lib/turnCredentials';
+import { sendTransactionalEmail } from '../lib/transactionalEmail';
 import type {
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
@@ -49,11 +51,6 @@ interface MeetingAnalysis {
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'ENDED']),
 });
-
-const FALLBACK_ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-];
 
 const evidenceLevelSchema = z.enum([
   'mentioned',
@@ -399,28 +396,8 @@ meetingRooms.get('/:token/turn-credentials', async (c) => {
   const room = await resolveRoom(c.env.DB, c.req.param('token'));
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
 
-  if (!c.env.METERED_API_KEY) {
-    return c.json({
-      iceServers: FALLBACK_ICE_SERVERS,
-    });
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 1800);
-  try {
-    const response = await fetch(
-      `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${c.env.METERED_API_KEY}`,
-      { signal: controller.signal },
-    );
-    if (!response.ok) {
-      return c.json({ iceServers: FALLBACK_ICE_SERVERS });
-    }
-    return c.json({ iceServers: await response.json() });
-  } catch {
-    return c.json({ iceServers: FALLBACK_ICE_SERVERS });
-  } finally {
-    clearTimeout(timeout);
-  }
+  const result = await getTurnIceServers(c.env, '[meetingRooms]');
+  return c.json(result);
 });
 
 meetingRooms.get('/:token/ws', async (c) => {
@@ -964,8 +941,8 @@ meetingsAuth.post('/:id/invite', async (c) => {
 
   const guestToken = await mintGuestToken(db, room.id, participant?.id ?? null);
 
-  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-  const joinUrl = `${baseUrl}/meeting/${guestToken}`;
+  const baseUrl = (c.env.VIDEO_ROOM_APP_URL ?? c.env.APP_BASE_URL ?? 'https://pipe.build').replace(/\/$/, '');
+  const joinUrl = `${baseUrl}/room/${guestToken}`;
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -990,26 +967,21 @@ meetingsAuth.post('/:id/invite', async (c) => {
   </p>
 </div>`;
 
-  if (!c.env.RESEND_API_KEY) {
-    // No email service — return the join link directly (dev/test path).
-    return c.json({ success: true, emailSent: false, joinUrl, guestToken });
-  }
-
-  const { Resend } = await import('resend');
-  const resend = new Resend(c.env.RESEND_API_KEY);
+  let emailResult: Awaited<ReturnType<typeof sendTransactionalEmail>> | null = null;
   try {
-    const sendResult = await resend.emails.send({
-      from: 'Pipe <onboarding@resend.dev>',
+    emailResult = await sendTransactionalEmail(c.env, {
       to: email,
       subject: `Video call invitation — ${meeting.title}`,
       html,
     });
-    if (sendResult.error) {
-      return c.json({ success: false, emailSent: false, joinUrl }, 502);
-    }
   } catch (err) {
     console.error('[meetings/invite] Email send failed:', err);
     return c.json({ success: false, emailSent: false, joinUrl }, 502);
+  }
+
+  if (!emailResult) {
+    // No email service — return the join link directly (dev/test path).
+    return c.json({ success: true, emailSent: false, joinUrl, guestToken });
   }
 
   const now = new Date().toISOString();
@@ -1018,5 +990,10 @@ meetingsAuth.post('/:id/invite', async (c) => {
      WHERE meeting_id = ? AND contact_id = ?`,
   ).bind(now, now, id, participant?.id ?? '').run();
 
-  return c.json({ success: true, emailSent: true, joinUrl });
+  return c.json({
+    success: true,
+    emailSent: true,
+    joinUrl,
+    provider: emailResult.provider,
+  });
 });

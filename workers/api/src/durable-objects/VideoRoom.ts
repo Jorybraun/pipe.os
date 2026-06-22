@@ -275,6 +275,15 @@ export class VideoRoom {
 
     // Handle status updates
     if (message.type === 'STATUS_UPDATE' && message.status) {
+      if (message.status === 'ENDED' && !this.isHostRole(senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'STATUS_UPDATE_REJECTED',
+          status: message.status,
+          reason: 'ONLY_HOST_CAN_END_ROOM',
+        }));
+        return;
+      }
+
       this.sessionStatus = message.status;
       await this.state.storage.put('status', this.sessionStatus);
 
@@ -293,6 +302,15 @@ export class VideoRoom {
         // Trigger transcript artifact creation/update
         void this.triggerTranscriptCallback();
       }
+      return;
+    }
+
+    if (message.type === 'HANGUP' && !this.isHostRole(senderRole)) {
+      ws.send(JSON.stringify({
+        type: 'SIGNAL_REJECTED',
+        signalType: message.type,
+        reason: 'ONLY_HOST_CAN_END_ROOM',
+      }));
       return;
     }
 

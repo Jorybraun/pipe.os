@@ -1,25 +1,15 @@
-const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
-const DEV_AUTH_COOKIE = 'pipe_room_dev_auth';
+const DEV_AUTH_COOKIE = 'pipe_app_dev_auth';
 const DEV_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
 
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
+
   let result = 0;
   for (let i = 0; i < a.length; i += 1) {
     result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return result === 0;
-}
-
-function unauthorized() {
-  return new Response('Authentication required', {
-    status: 401,
-    headers: {
-      'WWW-Authenticate': 'Basic realm="PIPE dev room", charset="UTF-8"',
-      'Cache-Control': 'no-store',
-      'Set-Cookie': `${DEV_AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
-    },
-  });
 }
 
 function bytesToHex(bytes) {
@@ -87,6 +77,17 @@ async function authorizationState(request, env) {
   return 'none';
 }
 
+function unauthorized() {
+  return new Response('Authentication required', {
+    status: 401,
+    headers: {
+      'WWW-Authenticate': 'Basic realm="PIPE dev app", charset="UTF-8"',
+      'Cache-Control': 'no-store',
+      'Set-Cookie': `${DEV_AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    },
+  });
+}
+
 async function withDevAuthCookie(response, authState, env) {
   if (authState !== 'basic') return response;
 
@@ -110,16 +111,19 @@ function proxyApi(request, env) {
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
   headers.delete('Authorization');
+  headers.delete('Cookie');
   headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  return fetch(new Request(target.toString(), {
-    method: request.method,
-    headers,
-    body: request.body,
-    redirect: request.redirect,
-  }));
+  return fetch(
+    new Request(target.toString(), {
+      method: request.method,
+      headers,
+      body: request.body,
+      redirect: request.redirect,
+    }),
+  );
 }
 
 async function serveStatic(request, env) {
@@ -140,10 +144,11 @@ export default {
     if (authState === 'none') return unauthorized();
 
     const { pathname } = new URL(request.url);
-    if (pathname.startsWith('/api/')) {
-      return withDevAuthCookie(await proxyApi(request, env), authState, env);
-    }
+    const response =
+      pathname.startsWith('/api/') || pathname.startsWith('/rpc/')
+        ? await proxyApi(request, env)
+        : await serveStatic(request, env);
 
-    return withDevAuthCookie(await serveStatic(request, env), authState, env);
+    return withDevAuthCookie(response, authState, env);
   },
 };

@@ -177,11 +177,16 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   }, [createPeer, drainIce, role, send, sendStatus]);
 
   const hangUp = useCallback((): void => {
-    send('HANGUP', {});
-    sendStatus('ENDED');
+    if (role === 'HOST') {
+      send('HANGUP', {});
+      sendStatus('ENDED');
+    } else {
+      sendStatus('LEFT');
+    }
     peerRef.current?.close();
+    setRemoteStream(null);
     setPhase('ended');
-  }, [send, sendStatus]);
+  }, [role, send, sendStatus]);
 
   const toggleCamera = useCallback((): void => {
     localRef.current?.getVideoTracks().forEach((track) => {

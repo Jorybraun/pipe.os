@@ -69,7 +69,7 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
-        'https://dev.hire-pipe.com',
+        'https://app-dev.hire-pipe.com',
         'https://room-dev.hire-pipe.com',
         'https://pipe-video-room-dev.pages.dev',
         // Cloudflare Pages preview URLs follow this pattern

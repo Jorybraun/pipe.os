@@ -104,6 +104,12 @@ export interface Env {
   GOOGLE_CLOUD_PROJECT?: string;
   /** Metered.ca API key for TURN credential fetching. */
   METERED_API_KEY?: string;
+  /** Cloudflare Realtime TURN key id for short-lived ICE credential generation. */
+  CLOUDFLARE_TURN_KEY_ID?: string;
+  /** Cloudflare Realtime TURN key API token. */
+  CLOUDFLARE_TURN_KEY_API_TOKEN?: string;
+  /** Optional TTL for generated Cloudflare TURN credentials, in seconds. */
+  CLOUDFLARE_TURN_TTL_SECONDS?: string;
   /** Calendly OAuth client ID. */
   CALENDLY_CLIENT_ID?: string;
   /** Calendly OAuth client secret. */
@@ -126,6 +132,19 @@ export interface Env {
    * Optional — emails are silently skipped when not set.
    */
   RESEND_API_KEY?: string;
+  /** Cloudflare Email Sending binding for transactional outbound email. */
+  EMAIL?: {
+    send(message: {
+      to: string | string[] | { email: string; name?: string } | Array<string | { email: string; name?: string }>;
+      from: string | { email: string; name?: string };
+      subject: string;
+      html?: string;
+      text?: string;
+      replyTo?: string | { email: string; name?: string };
+    }): Promise<{ messageId: string }>;
+  };
+  /** Default top-domain sender for app transactional email. */
+  OUTBOUND_EMAIL_FROM?: string;
   /**
    * Base URL for candidate-facing assessment links.
    * Defaults to 'https://pipe.build' in production.

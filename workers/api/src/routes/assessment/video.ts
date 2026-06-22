@@ -4,7 +4,7 @@
  * POST   /api/v1/video/sessions              — create a video session (returns session ID)
  * GET    /api/v1/video/sessions/:id/ws       — WebSocket upgrade → Durable Object
  * GET    /api/v1/video/sessions/:id/status   — get session status
- * GET    /api/v1/video/turn-credentials      — fetch TURN credentials from Metered.ca
+ * GET    /api/v1/video/turn-credentials      — fetch short-lived TURN credentials
  */
 
 import { Hono } from 'hono';
@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { candidateAuth, type CandidateVariables } from '../../middleware/candidateAuth';
 import { apiError } from '../../middleware/errors';
+import { getTurnIceServers } from '../../lib/turnCredentials';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ─────────────────────────────────────────────────────────────
@@ -100,45 +101,10 @@ videoAuth.get('/sessions/:id/status', async (c) => {
   return c.json(data);
 });
 
-// GET /turn-credentials — fetch TURN credentials from Metered.ca
+// GET /turn-credentials — fetch short-lived TURN credentials.
 videoAuth.get('/turn-credentials', async (c) => {
-  const meteredApiKey = (c.env as unknown as Record<string, string>)['METERED_API_KEY'];
-  if (!meteredApiKey) {
-    // Return STUN-only fallback
-    return c.json({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ],
-    });
-  }
-
-  try {
-    const response = await fetch(
-      `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${meteredApiKey}`,
-    );
-
-    if (!response.ok) {
-      console.error('[video] Metered TURN fetch failed:', response.status);
-      return c.json({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      });
-    }
-
-    const iceServers = await response.json();
-    return c.json({ iceServers });
-  } catch (err) {
-    console.error('[video] TURN credentials error:', err);
-    return c.json({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ],
-    });
-  }
+  const result = await getTurnIceServers(c.env, '[video]');
+  return c.json(result);
 });
 
 // ─── Candidate routes (session JWT) ─────────────────────────────────────────

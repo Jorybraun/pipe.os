@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
+import { sendTransactionalEmail } from '../../lib/transactionalEmail';
 import { ensureMeetingRoomLinks } from '../meetingRooms';
 import {
   LivingContextStore,
@@ -1738,7 +1739,32 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     : `Video call invitation — ${rawPipelineTitle}`;
   const now = new Date().toISOString();
 
-  if (!c.env.RESEND_API_KEY) {
+  let result: Awaited<ReturnType<typeof sendTransactionalEmail>> | null = null;
+  try {
+    result = await sendTransactionalEmail(c.env, {
+      to: email,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error('[scheduling/invite] Email send failed:', err);
+    await persistScheduledInterviewInviteDeliveryContext(db, {
+      contactId: roomLinks.contactId,
+      ownerId: userId,
+      interviewId: id,
+      meetingId: roomLinks.meetingId,
+      recipientEmail: email.trim().toLowerCase(),
+      subject,
+      meetingUrl,
+      customMessage: customMessage ?? null,
+      emailSent: false,
+      providerMessageId: null,
+      createdAt: now,
+    });
+    return c.json({ success: false, emailSent: false, meetingUrl }, 502);
+  }
+
+  if (!result) {
     await db
       .prepare(
         `UPDATE scheduled_interviews
@@ -1767,22 +1793,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     });
   }
 
-  // Send the email via Resend with our custom video-call HTML
-  const { Resend } = await import('resend');
-  const resend = new Resend(c.env.RESEND_API_KEY);
-  let result: { id: string } | null = null;
-  try {
-    const sendResult = await resend.emails.send({
-      from: 'Pipe <onboarding@resend.dev>',
-      to: email,
-      subject,
-      html,
-    });
-    result = sendResult.error ? null : (sendResult.data ?? null);
-  } catch (err) {
-    console.error('[scheduling/invite] Email send failed:', err);
-  }
-
   // Update the interview to track the invite
   if (result) {
     await db
@@ -1805,18 +1815,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     meetingUrl,
     customMessage: customMessage ?? null,
     emailSent: Boolean(result),
-    providerMessageId: result?.id ?? null,
+    providerMessageId: result.id,
     createdAt: now,
   });
-
-  if (!result) {
-    return c.json({ success: false, emailSent: false, meetingUrl }, 502);
-  }
 
   return c.json({
     success: true,
     emailSent: true,
     meetingUrl,
+    provider: result.provider,
   });
 });
 
