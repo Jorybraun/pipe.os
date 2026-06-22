@@ -145,6 +145,12 @@ interface StandaloneReviewSourceRef {
   exactText?: string;
 }
 
+interface StandaloneReviewRoleSource {
+  entityId: string;
+  locator: string;
+  conceptKeys: string[];
+}
+
 interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
@@ -321,6 +327,35 @@ function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSource
       exactText,
     }];
   });
+}
+
+function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): StandaloneReviewRoleSource[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.roleGuardrails)) return [];
+  const sourceReferences = parsed.roleGuardrails.sourceReferences;
+  if (!Array.isArray(sourceReferences)) return [];
+  const deduped = new Map<string, StandaloneReviewRoleSource>();
+  for (const source of sourceReferences) {
+    if (!isRecord(source)) continue;
+    const { entityId, locator } = source;
+    if (typeof entityId !== 'string' || typeof locator !== 'string') continue;
+    const roleSource = {
+      entityId,
+      locator,
+      conceptKeys: [...new Set(asStringArray(source.conceptKeys))].sort(),
+    };
+    deduped.set(JSON.stringify(roleSource), roleSource);
+  }
+  return [...deduped.values()].sort((left, right) =>
+    left.entityId.localeCompare(right.entityId)
+    || left.locator.localeCompare(right.locator)
+  );
 }
 
 function parseStandaloneReviewRankedResults(value: string | null): StandaloneReviewRankedResult[] {
@@ -1548,6 +1583,7 @@ candidateOps.get('/:candidateId', async (c) => {
     score: number | null;
     summary: string;
     evidence: StandaloneReviewAlignment[];
+    roleSources: StandaloneReviewRoleSource[];
     gaps: string[];
     diagnostics: StandaloneReviewDiagnostics;
     submitted: boolean;
@@ -1578,7 +1614,7 @@ candidateOps.get('/:candidateId', async (c) => {
     if (standaloneInterview) {
       const latestRun = await db.prepare(
         `SELECT id, status, recalled_packets_json, excluded_packets_json,
-                ranked_results_json, selected_packet_id
+                ranked_results_json, selected_packet_id, query_json
            FROM match_runs
           WHERE candidate_id = ?1
             AND role_snapshot_id = 'standalone-code-review-v1'
@@ -1608,9 +1644,11 @@ candidateOps.get('/:candidateId', async (c) => {
         excluded_packets_json: string | null;
         ranked_results_json: string | null;
         selected_packet_id: string | null;
+        query_json: string | null;
       }>();
 
       const rankedResults = parseStandaloneReviewRankedResults(latestRun?.ranked_results_json ?? null);
+      const roleSources = parseStandaloneReviewRoleSourcesFromQuery(latestRun?.query_json ?? null);
       const diagnostics = buildStandaloneReviewDiagnostics(
         latestRun?.recalled_packets_json ?? null,
         latestRun?.excluded_packets_json ?? null,
@@ -1682,6 +1720,7 @@ candidateOps.get('/:candidateId', async (c) => {
         score: selectedResult?.score ?? null,
         summary: summary.summary,
         evidence: summary.evidence,
+        roleSources,
         gaps: summary.gaps,
         diagnostics,
         submitted: standaloneInterview.submission_json !== null,

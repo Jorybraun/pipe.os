@@ -83,6 +83,11 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
     prTitle: 'Add Kafka-backed order retry handling',
     score: 0.82,
     summary: 'Matched 2 source-backed demands (1 stretch).',
+    roleSources: [{
+      entityId: 'context-record-jd',
+      locator: 'simple_job_description:source_span:jd-span-1',
+      conceptKeys: ['term:kafka-order-events'],
+    }],
     evidence: [{
       atomId: 'candidate-atom-kafka',
       demandId: 'repo-demand-retry',
@@ -162,6 +167,11 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
     prTitle: 'Add idempotent order retry flow',
     score: 0.88,
     summary: 'Matched backfilled PR packet using accumulated resume and meeting evidence.',
+    roleSources: [{
+      entityId: 'context-record-role-backfill',
+      locator: 'simple_job_description:source_span:jd-span-crystalline',
+      conceptKeys: ['term:crystalline-quorum-ledger'],
+    }],
     evidence: [{
       atomId: 'candidate-atom-crystalline-quorum-ledger',
       demandId: 'demand-crystalline-quorum-ledger',
@@ -458,6 +468,10 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('Add Kafka-backed order retry handling')).toBeInTheDocument();
     expect(screen.getByText('82% match score')).toBeInTheDocument();
     expect(screen.getByText('1 stretch area')).toBeInTheDocument();
+    const roleSources = screen.getByTestId('standalone-review-role-sources');
+    expect(within(roleSources).getByText('Role sources')).toBeInTheDocument();
+    expect(within(roleSources).getByText('simple_job_description:source_span:jd-span-1')).toBeInTheDocument();
+    expect(within(roleSources).getByText('term:kafka-order-events')).toBeInTheDocument();
 
     expect(screen.getByText('candidate-atom-kafka → repo-demand-retry')).toBeInTheDocument();
     expect(screen.getByText('candidate: resume line 7')).toBeInTheDocument();
@@ -514,6 +528,7 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('Add idempotent order retry flow')).toBeInTheDocument();
     expect(screen.getByText('Matched backfilled PR packet using accumulated resume and meeting evidence.')).toBeInTheDocument();
     expect(screen.getAllByText('term:crystalline-quorum-ledger').length).toBeGreaterThan(0);
+    expect(screen.getByText('simple_job_description:source_span:jd-span-crystalline')).toBeInTheDocument();
 
     const repoOverlay = screen.getByTestId('repository-overlay-panel');
     expect(within(repoOverlay).getByText('pipe-labs/orders · PR #42')).toBeInTheDocument();

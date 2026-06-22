@@ -794,6 +794,12 @@ export interface StandaloneReviewSourceRef {
   exactText?: string;
 }
 
+export interface StandaloneReviewRoleSource {
+  entityId: string;
+  locator: string;
+  conceptKeys: string[];
+}
+
 export interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
@@ -868,6 +874,7 @@ export interface StandaloneReviewMatchRecord {
   score: number | null;
   summary: string;
   evidence: StandaloneReviewAlignment[];
+  roleSources: StandaloneReviewRoleSource[];
   gaps: string[];
   diagnostics: StandaloneReviewDiagnostics;
   submitted: boolean;

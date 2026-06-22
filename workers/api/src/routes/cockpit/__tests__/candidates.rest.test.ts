@@ -383,6 +383,12 @@ describe('Standalone CODE_REVIEW match summary', () => {
   });
 });
 
+const STANDALONE_REVIEW_ROLE_SOURCES = [{
+  entityId: 'context-record-jd',
+  locator: 'simple_job_description:source_span:jd-span-1',
+  conceptKeys: ['term:kafka-order-events'],
+}];
+
 function createStandaloneReviewProfileApp(options: {
   repoSamplePr?: { title: string | null; pr_url: string | null } | null;
   challengePacket?: Record<string, unknown> | null;
@@ -468,7 +474,6 @@ function createStandaloneReviewProfileApp(options: {
     provenanceFailures: [],
     qualityScore: null,
   }];
-
   const db = {
     prepare(sql: string) {
       const normalized = sql.replace(/\s+/g, ' ');
@@ -528,6 +533,11 @@ function createStandaloneReviewProfileApp(options: {
                   excluded_packets_json: JSON.stringify(excludedPackets),
                   ranked_results_json: JSON.stringify(rankedResults),
                   selected_packet_id: 'packet-source-backed',
+                  query_json: JSON.stringify({
+                    roleGuardrails: {
+                      sourceReferences: STANDALONE_REVIEW_ROLE_SOURCES,
+                    },
+                  }),
                 };
               }
               if (normalized.includes('FROM review_challenge_packets')
@@ -615,6 +625,11 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         prTitle: string | null;
         score: number | null;
         summary: string;
+        roleSources: Array<{
+          entityId: string;
+          locator: string;
+          conceptKeys: string[];
+        }>;
         evidence: Array<{
           atomId: string;
           demandId: string;
@@ -689,6 +704,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         annotationCount: 1,
       },
     });
+    expect(body.standaloneReviewMatch.roleSources).toEqual(STANDALONE_REVIEW_ROLE_SOURCES);
     expect(body.standaloneReviewMatch.evidence).toHaveLength(1);
     expect(body.standaloneReviewMatch.evidence[0]).toMatchObject({
       atomId: 'candidate-atom-kafka',
@@ -905,6 +921,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           excluded_packets_json TEXT,
           ranked_results_json TEXT,
           selected_packet_id TEXT,
+          query_json TEXT,
           created_at TEXT
         );
       `);
@@ -965,6 +982,11 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           title: 'Backfill CrystallineQuorumLedger recovery packet',
         },
       };
+      const roleSources = [{
+        entityId: 'context-record-role-backfill',
+        locator: 'simple_job_description:source_span:jd-span-crystalline',
+        conceptKeys: ['term:crystalline-quorum-ledger'],
+      }];
 
       sqlite.prepare(`
         INSERT INTO candidates (
@@ -995,14 +1017,16 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       sqlite.prepare(`
         INSERT INTO match_runs (
           id, candidate_id, role_snapshot_id, status, recalled_packets_json,
-          excluded_packets_json, ranked_results_json, selected_packet_id, created_at
+          excluded_packets_json, ranked_results_json, selected_packet_id,
+          created_at, query_json
         ) VALUES (
           'match-run-graph', 'candidate-graph', 'standalone-code-review-v1', 'MATCHED',
-          ?, '[]', ?, 'packet-from-backfill', '2026-06-22T00:06:00.000Z'
+          ?, '[]', ?, 'packet-from-backfill', '2026-06-22T00:06:00.000Z', ?
         )
       `).run(
         JSON.stringify(['packet-from-backfill']),
         JSON.stringify(rankedResults),
+        JSON.stringify({ roleGuardrails: { sourceReferences: roleSources } }),
       );
 
       const app = new Hono<{ Bindings: Env }>();
@@ -1028,6 +1052,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           prNumber: number | null;
           prUrl: string | null;
           prTitle: string | null;
+          roleSources: Array<{ entityId: string; locator: string; conceptKeys: string[] }>;
           evidence: Array<{
             sharedConcepts: string[];
             candidateSourceRefs: Array<{ sourceRefId?: string; exactText?: string }>;
@@ -1044,6 +1069,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
         prUrl: 'https://github.com/pipe-labs/orders/pull/314',
         prTitle: 'Backfill CrystallineQuorumLedger recovery packet',
       });
+      expect(body.standaloneReviewMatch.roleSources).toEqual(roleSources);
       expect(body.standaloneReviewMatch.evidence[0].sharedConcepts).toEqual([
         'term:crystalline-quorum-ledger',
       ]);

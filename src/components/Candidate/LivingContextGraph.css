@@ -273,6 +273,41 @@
   text-decoration: none;
 }
 
+.living-context__role-sources {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.living-context__role-sources > span {
+  color: var(--pipe-text-dim);
+  font: 9px "Space Mono", monospace;
+  text-transform: uppercase;
+}
+
+.living-context__role-sources > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.living-context__role-source {
+  max-width: 100%;
+  padding: 5px 7px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 5px;
+  color: var(--pipe-text-muted);
+  background: rgba(56, 189, 248, 0.06);
+  font: 9px "Space Mono", monospace;
+}
+
+.living-context__role-source small {
+  display: block;
+  margin-top: 3px;
+  color: var(--pipe-text-dim);
+}
+
 .living-context__review-submission {
   margin-top: 14px;
   padding: 12px;

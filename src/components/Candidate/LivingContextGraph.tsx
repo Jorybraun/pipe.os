@@ -20,6 +20,7 @@ import type {
   StandaloneReviewExcludedPacket,
   StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
+  StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
@@ -104,6 +105,10 @@ function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | nul
   return sources
     .map((source) => source.exactText?.trim())
     .find((text): text is string => Boolean(text)) ?? null;
+}
+
+function roleSourceLabel(source: StandaloneReviewRoleSource): string {
+  return source.locator || source.entityId;
 }
 
 function reviewSourceFileLabel(source: StandaloneReviewSourceRef): string {
@@ -349,6 +354,22 @@ function StandaloneReviewMatchPanel({
             <span>{selectedStretchCount} stretch area{selectedStretchCount === 1 ? '' : 's'}</span>
           )}
           {match.submitted && <span>Review submitted</span>}
+        </div>
+      )}
+
+      {match.roleSources.length > 0 && (
+        <div className="living-context__role-sources" data-testid="standalone-review-role-sources">
+          <span>Role sources</span>
+          <div>
+            {match.roleSources.slice(0, 4).map((source) => (
+              <span key={`${source.entityId}:${source.locator}`} className="living-context__role-source">
+                {roleSourceLabel(source)}
+                {source.conceptKeys.length > 0 && (
+                  <small>{source.conceptKeys.slice(0, 3).join(', ')}</small>
+                )}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
