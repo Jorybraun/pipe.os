@@ -268,6 +268,7 @@ async function selectSamplePullRequests(
   const clauses = [
     'rsp.swe_bench_eligible = 1',
     'qr.disqualified = 0',
+    "COALESCE(qr.test_framework, '') <> 'source-backed-fixture'",
   ];
   const params: Array<string | number | null> = packetTableExists ? [PACKET_VERSION] : [];
 
@@ -327,6 +328,7 @@ async function countExistingPackets(db: QueryClient, options: Options): Promise<
     'rsp.swe_bench_eligible = 1',
     'qr.disqualified = 0',
     'rcp.packet_version = ?',
+    "COALESCE(qr.test_framework, '') <> 'source-backed-fixture'",
   ];
   const params: Array<string | number | null> = [PACKET_VERSION];
   if (options.repoId !== undefined) {

@@ -793,7 +793,7 @@ async function seedRepoChallenge(input: {
        repo_id, pr_number, pr_url, title, merged_at, changed_file_count,
        modifies_tests, additions, deletions, construct_slugs_json,
        swe_bench_eligible, changed_file_paths_json
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0, '[]', 1, ?8)
+     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0, '[]', 0, ?8)
      ON CONFLICT(repo_id, pr_number) DO UPDATE SET
        pr_url = excluded.pr_url,
        title = excluded.title,
@@ -801,6 +801,7 @@ async function seedRepoChallenge(input: {
        changed_file_count = excluded.changed_file_count,
        modifies_tests = excluded.modifies_tests,
        additions = excluded.additions,
+       swe_bench_eligible = excluded.swe_bench_eligible,
        changed_file_paths_json = excluded.changed_file_paths_json`,
   ).bind(
     repo.id,

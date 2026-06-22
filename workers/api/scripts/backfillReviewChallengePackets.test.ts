@@ -197,10 +197,13 @@ function setupDb(): BetterSqliteDb {
       github_url TEXT UNIQUE NOT NULL,
       full_name TEXT NOT NULL,
       primary_language TEXT NOT NULL,
+      test_framework TEXT,
       disqualified INTEGER NOT NULL DEFAULT 0
     );
-    INSERT INTO qualified_repos (id, github_url, full_name, primary_language, disqualified)
-    VALUES (77, 'https://github.com/pipe-labs/orders', 'pipe-labs/orders', 'TypeScript', 0);
+    INSERT INTO qualified_repos (id, github_url, full_name, primary_language, test_framework, disqualified)
+    VALUES
+      (7, 'https://github.com/pipe/e2e-source-backed-local', 'pipe/e2e-source-backed-local', 'TypeScript', 'source-backed-fixture', 0),
+      (77, 'https://github.com/pipe-labs/orders', 'pipe-labs/orders', 'TypeScript', NULL, 0);
 
     CREATE TABLE candidates (id TEXT PRIMARY KEY);
     CREATE TABLE repo_sample_prs (
@@ -220,11 +223,17 @@ function setupDb(): BetterSqliteDb {
     INSERT INTO repo_sample_prs (
       repo_id, pr_number, pr_url, title, merged_at, changed_file_count,
       modifies_tests, swe_bench_eligible, additions, deletions, resolves_issue_number
-    ) VALUES (
-      77, 42, 'https://github.com/pipe-labs/orders/pull/42',
-      'Add idempotent order retry flow', '2026-06-19T12:00:00Z',
-      3, 1, 1, 24, 2, NULL
-    );
+    ) VALUES
+      (
+        7, 42, 'https://github.com/pipe/e2e-source-backed-local/pull/42',
+        'Synthetic E2E source-backed fixture', '2026-06-19T12:00:00Z',
+        3, 1, 1, 24, 2, NULL
+      ),
+      (
+        77, 42, 'https://github.com/pipe-labs/orders/pull/42',
+        'Add idempotent order retry flow', '2026-06-19T12:00:00Z',
+        3, 1, 1, 24, 2, NULL
+      );
   `);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoGraphMigration);
