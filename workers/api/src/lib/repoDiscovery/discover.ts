@@ -14,8 +14,6 @@
 
 import { matchRepos, type MatchedRepo } from './matchRepos';
 import { rerankMatchedRepos } from './rerankPipeline';
-import { buildRcdSearchProfile } from './rcdSearchProfile';
-import { preprocessForEmbedding } from '../embedding/preprocess';
 import type { CandidatePersona, RoleContextDocument, RepoRoleAlignmentRow } from '../../types';
 import type { LLMProvider } from '../llm/types';
 import { slugifySkills } from '../skills/slugifySkills';
@@ -36,10 +34,9 @@ export interface DiscoverOptions {
    */
   provider?: LLMProvider;
   /**
-   * Optional Vectorize + AI bindings for hybrid recall (STRATEGY Decision Log
-   * 2026-04-14 extension). When BOTH are present plus an RCD, runDiscovery
-   * augments SQL-matched repos with semantic recall from REPO_INDEX. SQL hard
-   * filter and Gemma rerank still run — Vectorize is additive recall only.
+   * Reserved for future secondary ranking evidence. Repository discovery no
+   * longer uses Vectorize to create candidate rows because that would make
+   * embedding-only repo decisions possible.
    */
   vectorize?: VectorizeIndex;
   ai?: Ai;
@@ -96,24 +93,19 @@ export async function runDiscovery(opts: DiscoverOptions): Promise<void> {
       limit: 50,
     });
 
-    // If no repos matched via SQL, skip discovery (no fallback)
-    if (sqlMatched.length === 0 && (!opts.vectorize || !opts.ai)) {
+    // If no repos matched the source-backed terms, skip discovery. Embeddings
+    // must not create repository decisions on their own.
+    if (sqlMatched.length === 0) {
       await db.prepare(
-        `UPDATE discovery_jobs SET status = 'COMPLETED', completed_at = ?1, error_message = 'No repos matched must-have skills' WHERE id = ?2`,
+        `UPDATE discovery_jobs SET status = 'COMPLETED', completed_at = ?1, error_message = 'No repos matched source-backed selected terms' WHERE id = ?2`,
       ).bind(new Date().toISOString(), jobId).run();
       return;
     }
 
-    // ── Hybrid recall (STRATEGY Decision Log 2026-04-14) ─────────────────
-    // SQL gives skill-tag precision; Vectorize gives narrative-prose recall.
-    // Merged set feeds the canonical §2.3 Gemma rerank below. Failure to
-    // vectorize falls back to SQL-only, discovery never blocks on it.
-    const vectorMatched = await vectorizeRecall({
-      db, rcd,
-      vectorize: opts.vectorize,
-      ai: opts.ai,
-    });
-    const matched = mergeCandidates(sqlMatched, vectorMatched);
+    // SQL/source-backed recall is the only source allowed to create discovered
+    // repo rows. Embeddings may be used later as secondary ranking evidence,
+    // but never as the sole reason a repository enters the candidate pool.
+    const matched = sqlMatched;
 
     await db.prepare(
       `UPDATE discovery_jobs SET total_candidates = ?1 WHERE id = ?2`,
@@ -283,108 +275,6 @@ async function loadRcd(db: D1Database, roleContextId: string): Promise<RoleConte
     console.error(`[discover] failed to parse rcd_json for role_context ${roleContextId}:`, msg);
     return null;
   }
-}
-
-// ─── Vectorize recall (STRATEGY Decision Log 2026-04-14) ──────────────────
-// Additive path — embeds the RCD narrative, queries REPO_INDEX for top-50
-// semantic neighbors, and hydrates them from qualified_repos. Hard filters
-// (disqualified, library, challenge-ready) applied in the SQL hydration so
-// Vectorize can't smuggle a filtered-out repo back in. Best-effort: any
-// failure (missing bindings, API error, empty profile) returns empty and
-// the caller falls back to SQL-only.
-
-interface VectorizeRecallInput {
-  db: D1Database;
-  rcd: RoleContextDocument | null;
-  vectorize: VectorizeIndex | undefined;
-  ai: Ai | undefined;
-}
-
-async function vectorizeRecall(input: VectorizeRecallInput): Promise<MatchedRepo[]> {
-  const { db, rcd, vectorize, ai } = input;
-  if (!rcd || !vectorize || !ai) return [];
-
-  try {
-    const profile = buildRcdSearchProfile(rcd);
-    if (!profile || profile.trim().length === 0) return [];
-
-    const embedResult = (await ai.run('@cf/baai/bge-large-en-v1.5', {
-      text: [preprocessForEmbedding(profile, 'query')],
-    })) as { data?: number[][] };
-    const vector = embedResult?.data?.[0];
-    if (!vector || !Array.isArray(vector)) return [];
-
-    const queryResult = await vectorize.query(vector, {
-      topK: 50,
-      filter: { disqualified: 0 },
-    });
-    if (!queryResult?.matches || queryResult.matches.length === 0) return [];
-
-    const repoIds: number[] = [];
-    for (const m of queryResult.matches) {
-      const match = m.id.match(/^repo_(\d+)$/);
-      if (match?.[1]) repoIds.push(Number(match[1]));
-    }
-    if (repoIds.length === 0) return [];
-
-    const placeholders = repoIds.map(() => '?').join(', ');
-    const { results } = await db.prepare(`
-      SELECT r.id, r.full_name, r.github_url, r.description, r.seniority_band,
-             r.detected_domain, r.pr_quality_score, r.stars, r.primary_language
-      FROM qualified_repos r
-      LEFT JOIN repo_engineering_signals es ON es.repo_id = r.id
-      WHERE r.id IN (${placeholders})
-        AND r.disqualified = 0
-        AND (es.architecture_style IS NULL OR es.architecture_style != 'library')
-        AND NOT (COALESCE(r.open_pr_count, 0) = 0 AND COALESCE(r.open_feature_issue_count, 0) < 5)
-    `).bind(...repoIds).all<{
-      id: number;
-      full_name: string;
-      github_url: string;
-      description: string | null;
-      seniority_band: string;
-      detected_domain: string;
-      pr_quality_score: number;
-      stars: number;
-      primary_language: string;
-    }>();
-
-    return (results ?? []).map((r) => ({
-      id: r.id,
-      fullName: r.full_name,
-      githubUrl: r.github_url,
-      description: r.description,
-      seniorityBand: r.seniority_band,
-      detectedDomain: r.detected_domain,
-      prQualityScore: r.pr_quality_score,
-      stars: r.stars,
-      primaryLanguage: r.primary_language,
-      score: 0,
-      matchedMustSkills: [],
-      matchedNiceSkills: [],
-      matchedConstructs: [],
-      samplePrs: [],
-    }));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[discover] vectorize recall failed, SQL-only:', msg);
-    return [];
-  }
-}
-
-/**
- * Merge SQL and Vectorize candidate lists, deduping by repo id. SQL entries
- * win on collision so we preserve their populated matchedMustSkills /
- * matchedConstructs / samplePrs — those fields are empty on vector-only
- * matches.
- */
-function mergeCandidates(sqlMatched: MatchedRepo[], vectorMatched: MatchedRepo[]): MatchedRepo[] {
-  const byId = new Map<number, MatchedRepo>();
-  for (const r of sqlMatched) byId.set(r.id, r);
-  for (const r of vectorMatched) {
-    if (!byId.has(r.id)) byId.set(r.id, r);
-  }
-  return [...byId.values()];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

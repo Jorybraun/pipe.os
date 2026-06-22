@@ -42,6 +42,52 @@ function parseJsonColumn<T>(raw: string | null | undefined, fallback: T): T {
   try { return JSON.parse(raw) as T; } catch { return fallback; }
 }
 
+async function hasSourceBackedSimpleJdContext(db: D1Database, roleContextId: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT cr.id
+       FROM context_records cr
+       JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+      WHERE cr.scope_type = 'role_context'
+        AND cr.scope_id = ?1
+        AND cr.record_type = 'simple_job_description'
+      LIMIT 1`,
+  ).bind(roleContextId).first<{ id: string }>();
+  return Boolean(row);
+}
+
+async function sourceBackedSimpleJdPersona(
+  db: D1Database,
+  roleCtx: {
+    id: string;
+    non_negotiable_skills_json: string | null;
+    validation_metadata: string | null;
+  },
+): Promise<CandidatePersona | null> {
+  const metadata = parseJsonColumn<{ source?: string } | null>(roleCtx.validation_metadata, null);
+  if (metadata?.source !== 'simple_job_description') return null;
+
+  const selectedTerms = parseJsonColumn<unknown>(roleCtx.non_negotiable_skills_json, []);
+  if (!Array.isArray(selectedTerms)) return null;
+  const mustHaveSkills = selectedTerms
+    .filter((term): term is string => typeof term === 'string')
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (mustHaveSkills.length === 0) return null;
+
+  if (!await hasSourceBackedSimpleJdContext(db, roleCtx.id)) return null;
+
+  return {
+    seniority: '',
+    archetype: 'Source-backed job description',
+    mustHaveSkills,
+    niceToHaveSkills: [],
+    disposition: [],
+    careerSignal: '',
+    redFlags: [],
+    dealbreakers: [],
+  };
+}
+
 // ─── POST /discover ─────────────────────────────────────────────────────────
 
 repoDiscovery.post('/discover', async (c) => {
@@ -63,28 +109,42 @@ repoDiscovery.post('/discover', async (c) => {
 
   // Find role context with persona
   const roleCtx = await c.env.DB.prepare(
-    `SELECT id, rcd_json, persona_json FROM role_contexts WHERE pipeline_id = ?1 AND status = 'COMPLETE' ORDER BY updated_at DESC LIMIT 1`,
-  ).bind(body.pipelineId).first<{ id: string; rcd_json: string | null; persona_json: string | null }>();
+    `SELECT id, rcd_json, persona_json, non_negotiable_skills_json, validation_metadata
+       FROM role_contexts
+      WHERE pipeline_id = ?1
+        AND status = 'COMPLETE'
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(body.pipelineId).first<{
+    id: string;
+    rcd_json: string | null;
+    persona_json: string | null;
+    non_negotiable_skills_json: string | null;
+    validation_metadata: string | null;
+  }>();
 
-  /** RCD primary, persona_json fallback — see ADR-040 */
+  if (!roleCtx) {
+    return apiError(c, 'BAD_REQUEST', 'Pipeline has no source-backed role context. Create a simple job description with literal selected terms, or run deterministic candidate-to-PR matching from persisted evidence. Role discovery is optional and is not required for repository matching.');
+  }
+
+  /** RCD primary, persona_json fallback — see ADR-040. */
   let persona: CandidatePersona | null = null;
-  if (roleCtx?.rcd_json) {
+  if (roleCtx.rcd_json) {
     const rcd = parseJsonColumn<{ consumer_slice?: CandidatePersona } | null>(roleCtx.rcd_json, null);
     if (rcd?.consumer_slice) persona = rcd.consumer_slice;
   }
-  if (!persona && roleCtx?.persona_json) {
+  if (!persona && roleCtx.persona_json) {
     persona = parseJsonColumn<CandidatePersona | null>(roleCtx.persona_json, null);
+  }
+  if (!persona) {
+    persona = await sourceBackedSimpleJdPersona(c.env.DB, roleCtx);
   }
 
   if (!persona) {
-    return apiError(c, 'BAD_REQUEST', 'Pipeline has no completed role discovery. Use manual skill entry or run role discovery first.');
+    return apiError(c, 'BAD_REQUEST', 'Pipeline has no source-backed role context. Create a simple job description with literal selected terms, or run deterministic candidate-to-PR matching from persisted evidence. Role discovery is optional and is not required for repository matching.');
   }
   if (!persona?.mustHaveSkills?.length) {
-    return apiError(c, 'BAD_REQUEST', 'Role persona has no mustHaveSkills. Cannot discover repos.');
-  }
-
-  if (!roleCtx) {
-    return apiError(c, 'SERVER_ERROR', 'Role context missing after persona resolution.');
+    return apiError(c, 'BAD_REQUEST', 'Role context has no source-backed selected terms. Select terms that appear in the original job description before discovering repositories.');
   }
 
   // Create discovery job

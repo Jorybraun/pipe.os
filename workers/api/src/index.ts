@@ -69,6 +69,8 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
+        'https://app.hire-pipe.com',
+        'https://room.hire-pipe.com',
         'https://app-dev.hire-pipe.com',
         'https://room-dev.hire-pipe.com',
         'https://pipe-video-room-dev.pages.dev',

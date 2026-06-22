@@ -5,11 +5,14 @@ import type { Env, Variables } from '../types';
  * Maps well-known error codes to HTTP status codes.
  */
 const ERROR_STATUS_MAP: Record<string, number> = {
+  BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,
   VALIDATION_ERROR: 422,
+  SERVICE_UNAVAILABLE: 503,
+  SERVER_ERROR: 500,
   INTERNAL_ERROR: 500,
 };
 
@@ -31,6 +34,7 @@ export function apiError(
     | 404
     | 409
     | 422
+    | 503
     | 500;
   return c.json({ error: { code, message } }, status);
 }

@@ -798,6 +798,11 @@ export interface StandaloneReviewRoleSource {
   entityId: string;
   locator: string;
   conceptKeys: string[];
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  exactText?: string;
+  contentHash?: string;
 }
 
 export interface StandaloneReviewAlignment {
@@ -815,7 +820,8 @@ export type StandaloneReviewExclusionReason =
   | 'MISSING_DEMAND_SOURCE_SPANS'
   | 'ROLE_GUARDRAIL_FAILED'
   | 'PACKET_NOT_PRODUCTION_READY'
-  | 'PACKET_PROVENANCE_INVALID';
+  | 'PACKET_PROVENANCE_INVALID'
+  | 'PACKET_CONTEXT_PROJECTION_INCOMPLETE';
 
 export interface StandaloneReviewExcludedPacket {
   id: string;
@@ -826,6 +832,7 @@ export interface StandaloneReviewExcludedPacket {
   missingSourceSpanIds: string[];
   gateFailures: string[];
   provenanceFailures: string[];
+  contextProjectionFailures: string[];
   qualityScore: number | null;
 }
 

@@ -132,6 +132,20 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         missingSourceSpanIds: ['repo-span-missing'],
         gateFailures: [],
         provenanceFailures: [],
+        contextProjectionFailures: [],
+        qualityScore: null,
+      }, {
+        id: 'packet-missing-context',
+        repoId: '10',
+        prNumber: 89,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        demandIds: [],
+        missingSourceSpanIds: [],
+        gateFailures: [],
+        provenanceFailures: [],
+        contextProjectionFailures: [
+          'review challenge packet packet-missing-context is missing repo_source_span context refs',
+        ],
         qualityScore: null,
       }],
       evaluatedChallenges: [{
@@ -507,6 +521,8 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('Excluded challenge packets')).toBeInTheDocument();
     expect(screen.getByText('Missing repo source spans')).toBeInTheDocument();
     expect(screen.getByText(/missing spans repo-span-missing/i)).toBeInTheDocument();
+    expect(screen.getByText('Missing graph projection')).toBeInTheDocument();
+    expect(screen.getByText(/graph context review challenge packet packet-missing-context is missing repo_source_span context refs/i)).toBeInTheDocument();
 
     expect(screen.getByText('Evaluated challenge evidence')).toBeInTheDocument();
     expect(screen.getAllByText('packet-source-backed').length).toBeGreaterThan(1);
