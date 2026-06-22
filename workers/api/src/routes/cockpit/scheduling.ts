@@ -88,8 +88,17 @@ const createInterviewSchema = z.object({
   schedulingUrl: z.string().optional(),
 });
 
+export const INTERVIEW_STATUS_VALUES = [
+  'INVITED',
+  'SCHEDULED',
+  'ACTIVE',
+  'COMPLETED',
+  'CANCELLED',
+  'NO_SHOW',
+] as const;
+
 const updateInterviewSchema = z.object({
-  status: z.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']).optional(),
+  status: z.enum(INTERVIEW_STATUS_VALUES).optional(),
   scheduledAt: z.string().optional(),
   meetingUrl: z.string().optional(),
   recruiterNotes: z.string().optional(),
@@ -102,16 +111,17 @@ const inviteToCallSchema = z.object({
 
 // ─── Status transition validation ───────────────────────────────────────────
 
-const VALID_TRANSITIONS: Record<string, string[]> = {
+export const SCHEDULED_INTERVIEW_STATUS_TRANSITIONS: Record<string, string[]> = {
   INVITED: ['SCHEDULED', 'CANCELLED'],
-  SCHEDULED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  SCHEDULED: ['ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  ACTIVE: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
   COMPLETED: [],
   CANCELLED: ['INVITED'],
   NO_SHOW: ['SCHEDULED', 'CANCELLED'],
 };
 
-function canTransition(from: string, to: string): boolean {
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+export function canInterviewStatusTransition(from: string, to: string): boolean {
+  return SCHEDULED_INTERVIEW_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
 function buildInternalVideoUrl(c: { env: Env }, interview: { id: string; stage_id: string | null; candidate_id: string | null; meeting_url: string | null }): string | null {
@@ -1054,7 +1064,7 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  if (parsed.data.status && !canTransition(interview.status, parsed.data.status)) {
+  if (parsed.data.status && !canInterviewStatusTransition(interview.status, parsed.data.status)) {
     return apiError(c, 'VALIDATION_ERROR',
       `Cannot transition from ${interview.status} to ${parsed.data.status}`);
   }
@@ -1348,7 +1358,7 @@ schedulingPublic.post('/webhook', async (c) => {
   }
 
   // Validate status transition
-  if (!canTransition(interview.status, normalized.status)) {
+  if (!canInterviewStatusTransition(interview.status, normalized.status)) {
     console.warn('[scheduling/webhook] Invalid transition', {
       from: interview.status,
       to: normalized.status,

@@ -8,7 +8,15 @@
  * Validates transcript artifact creation/retrieval and graph associations.
  */
 
-import { describe, it, expect } from 'vitest';
+import Database from 'better-sqlite3';
+import { Hono } from 'hono';
+import { afterEach, describe, it, expect } from 'vitest';
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
+import type { Env, Variables } from '../../../types';
+import {
+  canInterviewStatusTransition,
+  schedulingAuth,
+} from '../scheduling';
 
 // ─── Validation schema tests ────────────────────────────────────────────────
 
@@ -94,51 +102,277 @@ describe('Create interview validation', () => {
 // ─── Status transition tests ─────────────────────────────────────────────────
 
 describe('Status transition validation', () => {
-  const VALID_TRANSITIONS: Record<string, string[]> = {
-    INVITED: ['SCHEDULED', 'CANCELLED'],
-    SCHEDULED: ['ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW'],
-    ACTIVE: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
-    COMPLETED: [],
-    CANCELLED: ['INVITED'],
-    NO_SHOW: ['SCHEDULED', 'CANCELLED'],
-  };
-
-  function canTransition(from: string, to: string): boolean {
-    return VALID_TRANSITIONS[from]?.includes(to) ?? false;
-  }
-
   it('allows INVITED -> SCHEDULED', () => {
-    expect(canTransition('INVITED', 'SCHEDULED')).toBe(true);
+    expect(canInterviewStatusTransition('INVITED', 'SCHEDULED')).toBe(true);
   });
 
   it('allows INVITED -> CANCELLED', () => {
-    expect(canTransition('INVITED', 'CANCELLED')).toBe(true);
+    expect(canInterviewStatusTransition('INVITED', 'CANCELLED')).toBe(true);
   });
 
   it('allows SCHEDULED -> ACTIVE', () => {
-    expect(canTransition('SCHEDULED', 'ACTIVE')).toBe(true);
+    expect(canInterviewStatusTransition('SCHEDULED', 'ACTIVE')).toBe(true);
   });
 
   it('allows SCHEDULED -> COMPLETED', () => {
-    expect(canTransition('SCHEDULED', 'COMPLETED')).toBe(true);
+    expect(canInterviewStatusTransition('SCHEDULED', 'COMPLETED')).toBe(true);
   });
 
   it('allows SCHEDULED -> NO_SHOW', () => {
-    expect(canTransition('SCHEDULED', 'NO_SHOW')).toBe(true);
+    expect(canInterviewStatusTransition('SCHEDULED', 'NO_SHOW')).toBe(true);
   });
 
   it('allows ACTIVE -> COMPLETED', () => {
-    expect(canTransition('ACTIVE', 'COMPLETED')).toBe(true);
+    expect(canInterviewStatusTransition('ACTIVE', 'COMPLETED')).toBe(true);
   });
 
   it('rejects invalid transitions', () => {
-    expect(canTransition('INVITED', 'COMPLETED')).toBe(false);
-    expect(canTransition('COMPLETED', 'SCHEDULED')).toBe(false);
-    expect(canTransition('CANCELLED', 'ACTIVE')).toBe(false);
+    expect(canInterviewStatusTransition('INVITED', 'COMPLETED')).toBe(false);
+    expect(canInterviewStatusTransition('COMPLETED', 'SCHEDULED')).toBe(false);
+    expect(canInterviewStatusTransition('CANCELLED', 'ACTIVE')).toBe(false);
   });
 
   it('allows CANCELLED -> INVITED (reschedule)', () => {
-    expect(canTransition('CANCELLED', 'INVITED')).toBe(true);
+    expect(canInterviewStatusTransition('CANCELLED', 'INVITED')).toBe(true);
+  });
+});
+
+// ─── Interview detail route tests ───────────────────────────────────────────
+
+describe('GET /interviews/:id detail', () => {
+  let sqlite: BetterSqliteDb | null = null;
+
+  afterEach(() => {
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  function mountSchedulingApp(): Hono<{ Bindings: Env; Variables: Variables }> {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+    app.use('*', async (c, next) => {
+      c.env = {
+        DB: createMockD1(sqlite!),
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'owner-1',
+        APP_BASE_URL: 'http://localhost:5173',
+      } as unknown as Env;
+      await next();
+    });
+    app.route('/', schedulingAuth);
+    return app;
+  }
+
+  function seedInterviewDetailFixture(): void {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT
+      );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        title TEXT
+      );
+      CREATE TABLE stages (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT NOT NULL,
+        title TEXT
+      );
+      CREATE TABLE scheduled_interviews (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        pipeline_id TEXT,
+        stage_id TEXT,
+        owner_id TEXT NOT NULL,
+        interview_type TEXT,
+        meeting_type TEXT,
+        status TEXT,
+        scheduled_at TEXT,
+        meeting_url TEXT,
+        scheduling_provider TEXT,
+        scheduling_url TEXT,
+        external_event_id TEXT,
+        recruiter_notes TEXT,
+        sync_source TEXT,
+        last_synced_at TEXT,
+        invite_link_sent_at TEXT,
+        email_sent_at TEXT,
+        recipient_name TEXT,
+        recipient_email TEXT,
+        matched_repo_id INTEGER,
+        github_repo_url TEXT,
+        github_pr_number INTEGER,
+        submission_json TEXT,
+        completed_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE transcript_artifacts (
+        id TEXT PRIMARY KEY,
+        scheduled_interview_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        transcript_json TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meetings (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        scheduled_interview_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        scheduled_at TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        duration_secs INTEGER,
+        meeting_url TEXT,
+        meeting_type TEXT NOT NULL,
+        transcript_status TEXT NOT NULL,
+        transcript_summary TEXT,
+        recording_r2_key TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meeting_rooms (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        session_id TEXT,
+        status TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+    `);
+
+    sqlite.prepare(`
+      INSERT INTO candidates (id, owner_id, pipeline_id, name, email)
+      VALUES ('candidate-1', 'owner-1', 'pipeline-1', 'Ada Lovelace', 'ada@example.com')
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO pipelines (id, owner_id, title)
+      VALUES ('pipeline-1', 'owner-1', 'Principal Systems Engineer')
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO stages (id, pipeline_id, title)
+      VALUES ('stage-1', 'pipeline-1', 'Technical screen')
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-1', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'VIDEO', 'SCREENING_INTERVIEW', 'ACTIVE', '2026-06-22T18:00:00.000Z',
+        NULL, 'MANUAL', NULL, NULL, 'Talk through repo evidence.',
+        'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO transcript_artifacts (
+        id, scheduled_interview_id, status, transcript_json, error_message,
+        created_at, updated_at
+      ) VALUES (
+        'transcript-1', 'interview-1', 'COMPLETED',
+        '[{"role":"recruiter","text":"Tell me about the retry system.","timestamp":"2026-06-22T18:01:00.000Z"},{"role":"candidate","text":"I built idempotent Kafka consumers.","timestamp":"2026-06-22T18:02:00.000Z"}]',
+        NULL, '2026-06-22T18:30:00.000Z', '2026-06-22T18:35:00.000Z'
+      )
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO meetings (
+        id, owner_id, scheduled_interview_id, title, description, status,
+        scheduled_at, started_at, ended_at, duration_secs, meeting_url,
+        meeting_type, transcript_status, transcript_summary, recording_r2_key,
+        created_at, updated_at
+      ) VALUES (
+        'meeting-1', 'owner-1', 'interview-1', 'Ada technical screen', NULL,
+        'ACTIVE', '2026-06-22T18:00:00.000Z', '2026-06-22T18:00:30.000Z',
+        NULL, NULL, 'http://localhost:5173/rooms/meeting-1',
+        'SCREENING_INTERVIEW', 'COMPLETED', 'Discussed retry and Kafka evidence.',
+        'meetings/owner-1/meeting-1/recording.webm',
+        '2026-06-22T17:30:00.000Z', '2026-06-22T18:35:00.000Z'
+      )
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO meeting_rooms (id, meeting_id, session_id, status, created_at, updated_at)
+      VALUES (
+        'room-1', 'meeting-1', 'session-1', 'ACTIVE',
+        '2026-06-22T17:30:00.000Z', '2026-06-22T18:00:30.000Z'
+      )
+    `).run();
+  }
+
+  it('returns the interview, generated join URL, linked meeting, room, and transcript artifact', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews/interview-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        candidateName: string | null;
+        pipelineTitle: string | null;
+        stageTitle: string | null;
+        status: string;
+        meetingUrl: string | null;
+        transcriptArtifact: {
+          status: string;
+          transcriptJson: string | null;
+        } | null;
+        linkedMeeting: {
+          title: string;
+          transcriptStatus: string;
+          transcriptSummary: string | null;
+          room: { id: string; status: string | null } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview).toMatchObject({
+      id: 'interview-1',
+      candidateName: 'Ada Lovelace',
+      pipelineTitle: 'Principal Systems Engineer',
+      stageTitle: 'Technical screen',
+      status: 'ACTIVE',
+      meetingUrl: 'http://localhost:5173/video/stage-1--candidate-1',
+    });
+    expect(body.interview.transcriptArtifact).toMatchObject({
+      status: 'COMPLETED',
+    });
+    expect(JSON.parse(body.interview.transcriptArtifact!.transcriptJson!)).toEqual([
+      {
+        role: 'recruiter',
+        text: 'Tell me about the retry system.',
+        timestamp: '2026-06-22T18:01:00.000Z',
+      },
+      {
+        role: 'candidate',
+        text: 'I built idempotent Kafka consumers.',
+        timestamp: '2026-06-22T18:02:00.000Z',
+      },
+    ]);
+    expect(body.interview.linkedMeeting).toMatchObject({
+      title: 'Ada technical screen',
+      transcriptStatus: 'COMPLETED',
+      transcriptSummary: 'Discussed retry and Kafka evidence.',
+      room: {
+        id: 'room-1',
+        status: 'ACTIVE',
+      },
+    });
   });
 });
 
