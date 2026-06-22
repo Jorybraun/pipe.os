@@ -86,6 +86,8 @@ interface IssueFixture {
   issue_id: number;
   issue_number: number;
   title: string;
+  body: string | null;
+  state_at_crawl: 'open' | 'closed';
   has_merged_pr: boolean;
   difficulty_band: 'junior' | 'mid' | 'senior';
   disqualified: boolean;
@@ -132,6 +134,8 @@ function buildStubDb(state: DbState): StubDb {
                 .filter(
                   (i) =>
                     i.repo_id === repoId &&
+                    i.state_at_crawl === 'open' &&
+                    Boolean(i.body?.trim()) &&
                     !i.has_merged_pr &&
                     !i.disqualified &&
                     i.difficulty_band === band,
@@ -412,10 +416,10 @@ describe('autoStageBuilder', () => {
       ],
       roleContextConcepts: [{ canonicalKey: 'term:typescript', label: 'typescript' }],
       issues: [
-        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
-        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
-        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
-        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', body: 'Cache expensive widget lookups.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', body: 'Expose request metrics for widgets.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
+        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', body: 'Already solved in a merged PR.', state_at_crawl: 'open', has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
+        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', body: 'Implement the thing endpoint.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
       ],
     };
   }
@@ -599,6 +603,23 @@ describe('autoStageBuilder', () => {
       matchConfig: baseConfig(),
     });
     expect(result.stations[1]!.issueNumber).toBe(100); // not 102 (merged), not 101 (lower score)
+  });
+
+  it('skips implementation issues without captured source body or open crawl state', async () => {
+    const state = fixtureState();
+    state.issues = [
+      { ...state.issues[0]!, issue_number: 100, body: null, implementability_score: 0.99 },
+      { ...state.issues[1]!, issue_number: 101, state_at_crawl: 'closed', implementability_score: 0.98 },
+      { ...state.issues[1]!, issue_number: 103, title: 'source-backed issue', body: 'Implement from this source issue body.', state_at_crawl: 'open', implementability_score: 0.6 },
+    ];
+    const stub = buildStubDb(state);
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+    });
+
+    expect(result.stations[1]!.issueNumber).toBe(103);
   });
 
   it('throws if no source-backed role-safe PR exists for the matched repo', async () => {

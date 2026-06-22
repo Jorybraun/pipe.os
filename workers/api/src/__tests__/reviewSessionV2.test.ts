@@ -481,6 +481,85 @@ describe('POST /rpc/get-challenge', () => {
       headContent: 'publishWithRetry(order)',
     });
   });
+
+  it('serves raw source issue text for implementation challenges without body cache', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM stages', value: { mode: 'ASYNC', screening_input_mode: null } },
+        {
+          match: 'FROM candidate_challenge_assignment',
+          value: {
+            id: 'assign_impl',
+            github_repo_url: 'https://github.com/test/source-backed-repo',
+            github_pr_number: null,
+            issue_number: 77,
+          },
+        },
+        {
+          match: 'FROM repo_issues ri',
+          value: {
+            title: 'Implement retry queue',
+            body: 'Original GitHub issue body with exact implementation request.',
+            labels_json: JSON.stringify(['good first issue', 'backend']),
+            body_cache_json: null,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_impl',
+            type: 'CODE_IMPLEMENTATION',
+            title: 'Implementation',
+            instructions: 'Implement the issue',
+            config: JSON.stringify({}),
+            cached_diff_json: null,
+            github_pr_title: null,
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: 'assign_impl',
+            assignment_repo_url: 'https://github.com/test/source-backed-repo',
+            assignment_pr_number: null,
+            effective_repo_url: 'https://github.com/test/source-backed-repo',
+            effective_pr_number: null,
+            effective_issue_number: 77,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      issueBody?: {
+        title: string | null;
+        body: string | null;
+        labels: string[];
+      };
+    };
+    expect(body.issueBody).toEqual({
+      title: 'Implement retry queue',
+      body: 'Original GitHub issue body with exact implementation request.',
+      labels: ['good first issue', 'backend'],
+    });
+  });
 });
 
 // ─── POST /rpc/review/ask ────────────────────────────────────────────────────

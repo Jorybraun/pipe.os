@@ -1324,7 +1324,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     }
   }
 
-  // Fetch cached issue body for CODE_IMPLEMENTATION challenges
+  // Fetch source issue text for CODE_IMPLEMENTATION challenges.
   const effectiveIssueNumber = ch.effective_issue_number as number | null;
   if (
     (ch.type as string) === 'CODE_IMPLEMENTATION' &&
@@ -1334,13 +1334,18 @@ rpcAuth.post('/get-challenge', async (c) => {
     try {
       const issueRow = await c.env.DB
         .prepare(
-          `SELECT ri.body_cache_json
+          `SELECT ri.title, ri.body, ri.labels_json, ri.body_cache_json
            FROM repo_issues ri
            JOIN qualified_repos qr ON ri.repo_id = qr.id
            WHERE qr.github_url = ?1 AND ri.issue_number = ?2`,
         )
         .bind(effectiveRepoUrl, effectiveIssueNumber)
-        .first<{ body_cache_json: string | null }>();
+        .first<{
+          title: string;
+          body: string | null;
+          labels_json: string | null;
+          body_cache_json: string | null;
+        }>();
 
       if (issueRow?.body_cache_json) {
         try {
@@ -1357,6 +1362,22 @@ rpcAuth.post('/get-challenge', async (c) => {
         } catch {
           // malformed cache JSON — ignore
         }
+      }
+      if (issueRow && !response.issueBody) {
+        let labels: string[] = [];
+        try {
+          const parsed = issueRow.labels_json ? JSON.parse(issueRow.labels_json) : [];
+          labels = Array.isArray(parsed)
+            ? parsed.filter((label): label is string => typeof label === 'string')
+            : [];
+        } catch {
+          labels = [];
+        }
+        response.issueBody = {
+          title: issueRow.title,
+          body: issueRow.body,
+          labels,
+        };
       }
     } catch (err) {
       console.error('[rpc/get-challenge] Failed to load issue body cache:', err);

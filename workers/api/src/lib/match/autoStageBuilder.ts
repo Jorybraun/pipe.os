@@ -409,6 +409,8 @@ export async function pickReviewPr(
  * Pick the top implementation issue for a given repo. Constraints:
  *   - issue_challenge_signals.disqualified = 0 (passed scoring gate)
  *   - repo_issues.has_merged_pr = 0 (no contamination from existing PR)
+ *   - repo_issues.state_at_crawl = 'open'
+ *   - repo_issues.body contains captured source text for the candidate to inspect
  *   - difficulty_band matches normalized persona seniority (or any band if
  *     persona is unknown)
  */
@@ -427,6 +429,8 @@ export async function pickImplementationIssue(
          JOIN issue_challenge_signals ics ON ics.issue_id = ri.id
         WHERE ri.repo_id = ?
           AND ri.has_merged_pr = 0
+          AND ri.state_at_crawl = 'open'
+          AND NULLIF(TRIM(COALESCE(ri.body, '')), '') IS NOT NULL
           AND ics.disqualified = 0
           ${difficultyClause}
         ORDER BY ics.implementability_score DESC, ics.clarity_score DESC
