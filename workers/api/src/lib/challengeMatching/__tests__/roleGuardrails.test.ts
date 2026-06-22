@@ -165,6 +165,9 @@ describe('loadRoleChallengeSemantics', () => {
       label: 'Temporal Shard Knitting',
       source_ref_type: 'source_span',
       source_ref_id: 'jd-span-1',
+      source_span_id: 'jd-span-1',
+      exact_text: 'Temporal Shard Knitting',
+      content_hash: 'sha256:jd',
     }]), {
       id: 'role-jd-context',
       rcd_version: null,
@@ -179,8 +182,15 @@ describe('loadRoleChallengeSemantics', () => {
     expect(semantics.sources).toEqual([
       {
         roleNodeId: 'context-record-jd',
+        entityId: 'context-record-jd',
         sourceSection: 'simple_job_description:source_span:jd-span-1',
+        locator: 'simple_job_description:source_span:jd-span-1',
         rcdVersion: 'simple-jd-v1',
+        sourceRefType: 'source_span',
+        sourceRefId: 'jd-span-1',
+        sourceSpanId: 'jd-span-1',
+        exactText: 'Temporal Shard Knitting',
+        contentHash: 'sha256:jd',
         conceptKeys: ['term:temporal-shard-knitting'],
       },
     ]);

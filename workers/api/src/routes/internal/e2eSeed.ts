@@ -26,6 +26,7 @@ import {
 import {
   loadRoleChallengeSemantics,
   matchCandidateToReviewChallenge,
+  type RoleSourceReference,
 } from '../../lib/challengeMatching';
 
 type SeedConceptInput = {
@@ -784,7 +785,7 @@ async function seedRoleSourceContext(input: {
   relevantConcepts: string[];
   requiredConcepts: string[];
   resolverVersion: string;
-  sourceReferences: Array<{ entityId: string; locator: string; conceptKeys: string[] }>;
+  sourceReferences: RoleSourceReference[];
 } | null> {
   const { db, fixtureId, seed, conceptIds, ownerId, pipelineId, now } = input;
   const roleSource = seed.roleSource;
@@ -926,6 +927,11 @@ async function seedRoleSourceContext(input: {
       entityId: source.roleNodeId,
       locator: source.sourceSection ?? 'role_context',
       conceptKeys: source.conceptKeys,
+      sourceRefType: source.sourceRefType,
+      sourceRefId: source.sourceRefId,
+      sourceSpanId: source.sourceSpanId,
+      exactText: source.exactText,
+      contentHash: source.contentHash,
     })),
   };
 }

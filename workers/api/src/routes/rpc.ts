@@ -171,6 +171,11 @@ async function checkMatchingGate(
         entityId: source.roleNodeId,
         locator: source.sourceSection ?? 'role_context',
         conceptKeys: source.conceptKeys,
+        sourceRefType: source.sourceRefType,
+        sourceRefId: source.sourceRefId,
+        sourceSpanId: source.sourceSpanId,
+        exactText: source.exactText,
+        contentHash: source.contentHash,
       })),
     });
     if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {

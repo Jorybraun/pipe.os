@@ -153,6 +153,11 @@ interface StandaloneReviewRoleSource {
   entityId: string;
   locator: string;
   conceptKeys: string[];
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  exactText?: string;
+  contentHash?: string;
 }
 
 interface StandaloneReviewAlignment {
@@ -351,11 +356,16 @@ function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): Standa
     if (!isRecord(source)) continue;
     const { entityId, locator } = source;
     if (typeof entityId !== 'string' || typeof locator !== 'string') continue;
-    const roleSource = {
+    const roleSource: StandaloneReviewRoleSource = {
       entityId,
       locator,
       conceptKeys: [...new Set(asStringArray(source.conceptKeys))].sort(),
     };
+    if (typeof source.sourceRefType === 'string') roleSource.sourceRefType = source.sourceRefType;
+    if (typeof source.sourceRefId === 'string') roleSource.sourceRefId = source.sourceRefId;
+    if (typeof source.sourceSpanId === 'string') roleSource.sourceSpanId = source.sourceSpanId;
+    if (typeof source.exactText === 'string') roleSource.exactText = source.exactText;
+    if (typeof source.contentHash === 'string') roleSource.contentHash = source.contentHash;
     deduped.set(JSON.stringify(roleSource), roleSource);
   }
   return [...deduped.values()].sort((left, right) =>

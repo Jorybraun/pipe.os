@@ -3,6 +3,7 @@ import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from '../livingContext/openTerms';
+import type { RoleSourceReference } from './types';
 
 interface RoleContextSemanticRow {
   id: string;
@@ -28,6 +29,9 @@ interface RoleContextConceptRow {
   label: string | null;
   source_ref_type: string | null;
   source_ref_id: string | null;
+  source_span_id: string | null;
+  exact_text: string | null;
+  content_hash: string | null;
 }
 
 interface PersistedSemanticTerm {
@@ -40,11 +44,10 @@ export interface RoleChallengeSemantics {
   resolverVersion: typeof OPEN_TERM_RESOLVER_VERSION;
   relevantConcepts: string[];
   requiredConcepts: string[];
-  sources: Array<{
+  sources: Array<RoleSourceReference & {
     roleNodeId: string;
     sourceSection: string | null;
     rcdVersion: string;
-    conceptKeys: string[];
   }>;
 }
 
@@ -107,7 +110,10 @@ export async function loadRoleChallengeSemantics(
             c.canonical_key,
             c.label,
             crsr.source_ref_type,
-            crsr.source_ref_id
+            crsr.source_ref_id,
+            crsr.source_span_id,
+            crsr.exact_text,
+            crsr.content_hash
        FROM context_records cr
        JOIN context_record_concepts crc ON crc.context_record_id = cr.id
        JOIN concepts c ON c.id = crc.concept_id
@@ -121,30 +127,52 @@ export async function loadRoleChallengeSemantics(
   const contextSources = new Map<string, {
     sourceSection: string;
     rcdVersion: string;
+    sourceRefType: string | undefined;
+    sourceRefId: string | undefined;
+    sourceSpanId: string | undefined;
+    exactText: string | undefined;
+    contentHash: string | undefined;
     conceptKeys: Set<string>;
   }>();
   for (const row of contextResult.results ?? []) {
     if (!row.canonical_key) continue;
     terms.set(row.canonical_key, row.label ?? row.canonical_key);
     contextConceptKeys.add(row.canonical_key);
-    const sourceKey = row.context_record_id;
+    const sourceKey = [
+      row.context_record_id,
+      row.source_ref_type ?? '',
+      row.source_ref_id ?? '',
+    ].join('\u0000');
     const source = contextSources.get(sourceKey) ?? {
       sourceSection: row.source_ref_type && row.source_ref_id
         ? `${row.record_type}:${row.source_ref_type}:${row.source_ref_id}`
         : row.record_type,
       rcdVersion: row.extraction_version ?? roleContext.rcd_version ?? 'context-record',
+      sourceRefType: row.source_ref_type ?? undefined,
+      sourceRefId: row.source_ref_id ?? undefined,
+      sourceSpanId: row.source_span_id ?? undefined,
+      exactText: row.exact_text ?? undefined,
+      contentHash: row.content_hash ?? undefined,
       conceptKeys: new Set<string>(),
     };
     source.conceptKeys.add(row.canonical_key);
     contextSources.set(sourceKey, source);
   }
-  for (const [roleNodeId, source] of [...contextSources.entries()].sort(([left], [right]) =>
+  for (const [sourceKey, source] of [...contextSources.entries()].sort(([left], [right]) =>
     left.localeCompare(right)
   )) {
+    const [roleNodeId] = sourceKey.split('\u0000');
     sources.push({
-      roleNodeId,
+      roleNodeId: roleNodeId || 'role-context-record',
+      entityId: roleNodeId || 'role-context-record',
       sourceSection: source.sourceSection,
+      locator: source.sourceSection,
       rcdVersion: source.rcdVersion,
+      sourceRefType: source.sourceRefType,
+      sourceRefId: source.sourceRefId,
+      sourceSpanId: source.sourceSpanId,
+      exactText: source.exactText,
+      contentHash: source.contentHash,
       conceptKeys: [...source.conceptKeys].sort(),
     });
   }
@@ -155,7 +183,9 @@ export async function loadRoleChallengeSemantics(
     nodeTerms.forEach((term) => terms.set(term.canonicalKey, term.surface));
     sources.push({
       roleNodeId: row.id,
+      entityId: row.id,
       sourceSection: row.source_section,
+      locator: row.source_section ?? 'role_node',
       rcdVersion: row.rcd_version,
       conceptKeys: nodeTerms.map((term) => term.canonicalKey).sort(),
     });
@@ -176,7 +206,9 @@ export async function loadRoleChallengeSemantics(
   if (jdConceptKeys.length > 0) {
     sources.push({
       roleNodeId: `role-context:${roleContext.id}:job-description`,
+      entityId: `role-context:${roleContext.id}:job-description`,
       sourceSection: 'job_description_md',
+      locator: 'job_description_md',
       rcdVersion: roleContext.rcd_version ?? 'simple-jd',
       conceptKeys: [...new Set(jdConceptKeys)].sort(),
     });

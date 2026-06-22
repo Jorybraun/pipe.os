@@ -54,6 +54,17 @@ export interface QueryAtom extends Omit<
 
 export type Seniority = 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
 
+export interface RoleSourceReference {
+  entityId: string;
+  locator: string;
+  conceptKeys: string[];
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  exactText?: string;
+  contentHash?: string;
+}
+
 export interface RoleGuardrailSnapshot {
   requiredLanguages: string[];
   forbiddenLanguages?: string[];
@@ -63,11 +74,7 @@ export interface RoleGuardrailSnapshot {
   forbiddenConcepts?: string[];
   minimumSeniority?: Seniority;
   conceptResolverVersion?: string;
-  sourceReferences?: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  sourceReferences?: RoleSourceReference[];
 }
 
 export interface CandidateMatchQuery {
@@ -259,11 +266,7 @@ export interface MatchExplanation {
     demandId: string;
     sourceRefs: SourceRef[];
   }>;
-  roleSources: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  roleSources: RoleSourceReference[];
   rejectedPackets: Array<{
     id: string;
     repoId?: string;

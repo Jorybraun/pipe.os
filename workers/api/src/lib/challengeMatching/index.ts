@@ -30,6 +30,7 @@ export type {
   RecallReviewChallengesResult,
   RecalledChallenge,
   RoleGuardrailSnapshot,
+  RoleSourceReference,
   Seniority,
   SourceRef,
   StretchMatch,

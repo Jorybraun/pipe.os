@@ -1538,6 +1538,7 @@ describe('matchCandidateToReviewChallenge', () => {
     });
     expect(JSON.parse(roleSourceRef.metadata_json)).toEqual({
       conceptKeys: ['term:kafka'],
+      roleSourceEntityId: 'context-record-jd',
     });
     expect(sqlite.prepare(
       `SELECT c.canonical_key, crc.relationship, crc.weight

@@ -11,6 +11,7 @@ import type {
   EvidenceLevel,
   MatchExplanation,
   QueryPurpose,
+  RoleSourceReference,
   SourceRef,
 } from './types';
 import {
@@ -755,11 +756,7 @@ export interface CandidateReviewChallengeOptions {
   forbiddenConcepts?: string[];
   roleConcepts?: string[];
   conceptResolverVersion?: string;
-  roleSourceReferences?: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  roleSourceReferences?: RoleSourceReference[];
 }
 
 function sourceRefToContextSource(
@@ -897,15 +894,26 @@ function buildMatchContextRecordInput(input: {
   }
 
   for (const roleSource of input.roleSourceReferences) {
+    const typedSourceRefType = roleSource.sourceRefType?.trim();
+    const typedSourceRefId = roleSource.sourceRefId?.trim();
+    const hasTypedSourceRef = Boolean(typedSourceRefType && typedSourceRefId);
+    const sourceRefType = hasTypedSourceRef ? typedSourceRefType! : 'role_source';
+    const sourceRefId = hasTypedSourceRef ? typedSourceRefId! : roleSource.entityId;
     evidenceSources.push({
-      sourceRefType: 'role_source',
-      sourceRefId: roleSource.entityId,
+      sourceRefType,
+      sourceRefId,
+      sourceSpanId: sourceRefType === 'source_span'
+        ? roleSource.sourceSpanId ?? sourceRefId
+        : undefined,
       evidenceRole: 'role_source',
+      exactText: roleSource.exactText,
+      contentHash: roleSource.contentHash,
       locator: {
         roleContextId: input.roleContextId,
         locator: roleSource.locator,
       },
       metadata: {
+        roleSourceEntityId: roleSource.entityId,
         conceptKeys: roleSource.conceptKeys,
       },
     });
@@ -1088,11 +1096,16 @@ function normalizeRoleSourcesForExplanation(
 ): MatchExplanation['roleSources'] {
   const deduped = new Map<string, MatchExplanation['roleSources'][number]>();
   for (const source of sources) {
-    const normalized = {
+    const normalized: MatchExplanation['roleSources'][number] = {
       entityId: source.entityId,
       locator: source.locator,
       conceptKeys: [...new Set(source.conceptKeys)].sort(),
     };
+    if (source.sourceRefType) normalized.sourceRefType = source.sourceRefType;
+    if (source.sourceRefId) normalized.sourceRefId = source.sourceRefId;
+    if (source.sourceSpanId) normalized.sourceSpanId = source.sourceSpanId;
+    if (source.exactText) normalized.exactText = source.exactText;
+    if (source.contentHash) normalized.contentHash = source.contentHash;
     deduped.set(JSON.stringify(normalized), normalized);
   }
   return [...deduped.values()].sort((left, right) =>
