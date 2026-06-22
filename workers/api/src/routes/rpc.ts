@@ -29,6 +29,7 @@ import { matchRepos } from '../lib/repoDiscovery/matchRepos';
 import {
   pickImplementationIssue,
   buildMatchRequest,
+  matchImplementationReposByRoleConcepts,
 } from '../lib/match/autoStageBuilder';
 import { upsertCandidateChallengeAssignment } from '../lib/candidateDiscovery/persist';
 import { hasSourceBackedReviewPacket, loadSourceBackedReviewDiff } from '../lib/review/sourceBackedReviewDiff';
@@ -203,70 +204,116 @@ async function checkMatchingGate(
     return waitingForMatch(`Unsupported code challenge type ${nextChallengeType}`);
   }
 
-  // 2. No assignment — run on-demand implementation repo recall.
+  const roleContext = await db.prepare(
+    `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
+       FROM role_contexts
+      WHERE pipeline_id = ?1
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(pipelineId).first<{
+    id: string;
+    persona_json: string | null;
+    rcd_json: string | null;
+    job_description_md: string | null;
+    non_negotiable_skills_json: string | null;
+  }>();
+  const roleSemantics = roleContext
+    ? await loadRoleChallengeSemantics(db, {
+      ...roleContext,
+      rcd_version: (() => {
+        if (!roleContext.rcd_json) return null;
+        try {
+          const parsed = JSON.parse(roleContext.rcd_json) as { rcd_version?: unknown };
+          return typeof parsed.rcd_version === 'string' ? parsed.rcd_version : null;
+        } catch {
+          return null;
+        }
+      })(),
+    })
+    : null;
+  const roleConcepts = roleSemantics?.relevantConcepts ?? [];
+  const requiredConcepts = roleSemantics?.requiredConcepts ?? [];
+
+  // 2. No assignment — use source-backed implementation issue context first.
   let repoId: number | null = null;
   let githubRepoUrl: string | null = null;
 
-  // Try Neo4j first if PRIMARY_MATCH_STORE is neo4j
-  const primaryStore = env.PRIMARY_MATCH_STORE ?? 'neo4j';
-  if (primaryStore === 'neo4j') {
-    let neo4jConfig = buildNeo4jConfig(env);
-    if (!neo4jConfig) {
-      neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
-    }
-
-    let driver;
+  if (roleConcepts.length > 0) {
     try {
-      driver = createNeo4jDriver(neo4jConfig);
-      // ADR-050: prefer grounded SIMILAR_TO edge traversal (multi-region
-      // structural overlap); fall back to cosine ranking when the candidate
-      // has no grounded edges yet.
-      const groundedResults = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
-      if (groundedResults.length > 0) {
-        const top = groundedResults[0]!;
-        repoId = top.repoId;
-        githubRepoUrl = `https://github.com/${top.fullName}`;
-      } else {
-        const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-        if (neo4jResults.length > 0) {
-          const top = neo4jResults[0]!;
-          repoId = top.repo_id;
-          githubRepoUrl = `https://github.com/${top.full_name}`;
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[checkMatchingGate] Neo4j matching failed for candidate ${candidateId}:`, msg);
-    } finally {
-      if (driver) {
-        try {
-          await driver.close();
-        } catch {
-          // ignore close errors
-        }
-      }
-    }
-  }
-
-  // Fallback to D1 SQL matcher if Neo4j returned nothing or failed
-  if (!repoId) {
-    try {
-      const roleContext = await db.prepare(
-        `SELECT id, persona_json, rcd_json, non_negotiable_skills_json FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`
-      ).bind(pipelineId).first<{ id: string; persona_json: string | null; rcd_json: string | null; non_negotiable_skills_json: string | null }>();
-
-      if (roleContext) {
-        const matchRequest = buildMatchRequest(roleContext as any);
-        const d1Results = await matchRepos(db, matchRequest);
-      if (d1Results.length > 0) {
-        const top = d1Results[0]!;
+      const contextMatches = await matchImplementationReposByRoleConcepts(
+        db,
+        roleConcepts,
+        requiredConcepts,
+        5,
+      );
+      const top = contextMatches[0];
+      if (top) {
         repoId = top.id;
         githubRepoUrl = top.githubUrl;
       }
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[checkMatchingGate] D1 fallback matching failed for candidate ${candidateId}:`, msg);
+      console.error(`[checkMatchingGate] source-backed implementation matching failed for candidate ${candidateId}:`, msg);
+    }
+    if (!repoId) {
+      return waitingForMatch('No source-backed implementation repo matched role evidence');
+    }
+  } else {
+    // Compatibility path for legacy pipelines with no source-backed role context.
+    const primaryStore = env.PRIMARY_MATCH_STORE ?? 'neo4j';
+    if (primaryStore === 'neo4j') {
+      let neo4jConfig = buildNeo4jConfig(env);
+      if (!neo4jConfig) {
+        neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
+      }
+
+      let driver;
+      try {
+        driver = createNeo4jDriver(neo4jConfig);
+        // ADR-050: prefer grounded SIMILAR_TO edge traversal (multi-region
+        // structural overlap); fall back to cosine ranking when the candidate
+        // has no grounded edges yet.
+        const groundedResults = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
+        if (groundedResults.length > 0) {
+          const top = groundedResults[0]!;
+          repoId = top.repoId;
+          githubRepoUrl = `https://github.com/${top.fullName}`;
+        } else {
+          const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+          if (neo4jResults.length > 0) {
+            const top = neo4jResults[0]!;
+            repoId = top.repo_id;
+            githubRepoUrl = `https://github.com/${top.full_name}`;
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[checkMatchingGate] Neo4j matching failed for candidate ${candidateId}:`, msg);
+      } finally {
+        if (driver) {
+          try {
+            await driver.close();
+          } catch {
+            // ignore close errors
+          }
+        }
+      }
+    }
+
+    // Fallback to D1 SQL matcher if Neo4j returned nothing or failed.
+    if (!repoId && roleContext) {
+      try {
+        const matchRequest = buildMatchRequest(roleContext as any);
+        const d1Results = await matchRepos(db, matchRequest);
+        if (d1Results.length > 0) {
+          const top = d1Results[0]!;
+          repoId = top.id;
+          githubRepoUrl = top.githubUrl;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[checkMatchingGate] D1 fallback matching failed for candidate ${candidateId}:`, msg);
+      }
     }
   }
 
@@ -278,7 +325,12 @@ async function checkMatchingGate(
   let prNumber: number | null = null;
   let issueNumber: number | null = null;
 
-  const issueResult = await pickImplementationIssue(db, repoId);
+  const issueResult = await pickImplementationIssue(
+    db,
+    repoId,
+    undefined,
+    roleConcepts,
+  );
   if (!issueResult) {
     return waitingForMatch('No eligible implementation issue found for matched repo');
   }

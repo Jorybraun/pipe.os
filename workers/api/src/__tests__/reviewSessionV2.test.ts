@@ -321,6 +321,132 @@ describe('POST /rpc/get-challenge', () => {
     expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
   });
 
+  it('uses source-backed issue context for CODE_IMPLEMENTATION without Neo4j recall', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates WHERE id', value: { current_stage_id: 'stage_code' } },
+        { match: 'FROM stages WHERE id', value: { mode: 'ASYNC', screening_input_mode: null } },
+        { match: 'FROM pipeline_match_config', value: { match_philosophy: 'tailored' } },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_impl',
+            persona_json: null,
+            rcd_json: null,
+            job_description_md: 'We need Kafka Idempotency work.',
+            non_negotiable_skills_json: JSON.stringify(['Kafka Idempotency']),
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_impl',
+            type: 'CODE_IMPLEMENTATION',
+            title: 'Implementation',
+            instructions: 'Implement a source-backed issue',
+            config: JSON.stringify({}),
+            cached_diff_json: null,
+            github_pr_title: null,
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: null,
+            assignment_repo_url: null,
+            assignment_pr_number: null,
+            effective_repo_url: null,
+            effective_pr_number: null,
+            effective_issue_number: null,
+          }],
+        },
+        { match: 'FROM role_nodes', value: [] },
+        {
+          match: "cr.scope_type = 'role_context'",
+          value: [{
+            context_record_id: 'role-context-record-1',
+            record_type: 'simple_job_description',
+            extraction_version: 'simple-jd-v1',
+            canonical_key: 'term:kafka-idempotency',
+            label: 'Kafka Idempotency',
+            source_ref_type: 'source_span',
+            source_ref_id: 'role-source-span-1',
+          }],
+        },
+        {
+          match: 'ri.repo_id,\n            ri.issue_number',
+          value: [],
+        },
+        {
+          match: 'SELECT qr.id AS repo_id',
+          value: [{
+            repo_id: 44,
+            full_name: 'acme/orders',
+            github_url: 'https://github.com/acme/orders',
+            description: null,
+            seniority_band: 'mid',
+            detected_domain: 'general',
+            pr_quality_score: 0.8,
+            stars: 10,
+            primary_language: 'typescript',
+            issue_id: 901,
+            issue_number: 77,
+            issue_title: 'Kafka idempotency work',
+            implementability_score: 0.7,
+            clarity_score: 0.8,
+            canonical_key: 'term:kafka-idempotency',
+          }],
+        },
+        {
+          match: 'SELECT ri.id AS issue_id,\n              ri.issue_number',
+          value: [{
+            issue_id: 901,
+            issue_number: 77,
+            title: 'Kafka idempotency work',
+            implementability_score: 0.7,
+            clarity_score: 0.8,
+          }],
+        },
+        {
+          match: 'SELECT crsr.source_ref_id AS issue_id',
+          value: [{ issue_id: '901', overlap: 1 }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, PRIMARY_MATCH_STORE: 'neo4j' } as Partial<Env & { DB: FakeD1 }>);
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
+    expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+    const assignmentInsert = db.__calls.find((call) =>
+      call.sql.includes('INSERT INTO candidate_challenge_assignment')
+    );
+    expect(assignmentInsert?.params.slice(1)).toEqual([
+      'cand_1',
+      'stage_code',
+      'ch_impl',
+      44,
+      'https://github.com/acme/orders',
+      null,
+      77,
+    ]);
+  });
+
   it('does not live-fetch standalone review diffs when source spans cannot rebuild the packet diff', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fetch should not be called'));
     const db = fakeD1({
