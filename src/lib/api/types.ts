@@ -787,6 +787,28 @@ export interface StandaloneReviewAlignment {
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
 
+export interface StandaloneReviewUnmatchedDemand {
+  demandId: string;
+  family: string;
+  narrative: string;
+  weight: number;
+  concepts: string[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+  roleRequirement: boolean;
+}
+
+export interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateNarrative: string;
+  demandNarrative: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 export interface StandaloneReviewSubmissionSummary {
   verdict: string | null;
   summary: string | null;
@@ -814,6 +836,8 @@ export interface StandaloneReviewMatchRecord {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   gaps: string[];
+  unmatchedDemands: StandaloneReviewUnmatchedDemand[];
+  stretchAreas: StandaloneReviewStretchArea[];
   submitted: boolean;
   submission: StandaloneReviewSubmissionSummary | null;
   completedAt: string | null;
@@ -1019,6 +1043,7 @@ export interface LivingContextInteraction {
   artifactIds: string[];
   assertionIds: string[];
   signalKeys: string[];
+  conceptCount: number;
 }
 
 export interface LivingContextReadModel {
@@ -1048,6 +1073,8 @@ export interface LivingContextReadModel {
     assertionCount: number;
     signalCount: number;
     sourceSpanCount: number;
+    interactionTypeBreakdown: Record<string, number>;
+    conceptCount: number;
   };
   interactions: LivingContextInteraction[];
   artifacts: LivingContextArtifact[];
@@ -1069,6 +1096,30 @@ export interface LivingContextReadModel {
 
 export interface LivingContextResponse {
   livingContext: LivingContextReadModel;
+}
+
+export interface SourceContentSearchResult {
+  assertionId: string;
+  interactionId: string | null;
+  predicate: string;
+  narrative: string;
+  confidence: number | null;
+  concepts: string[];
+  sourceSpanId: string;
+  exactText: string;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+}
+
+export interface SourceContentSearchResponse {
+  results: SourceContentSearchResult[];
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)

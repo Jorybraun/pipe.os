@@ -1,0 +1,17 @@
+[
+  {
+    "prompt": "Review M-002 using brain/rooms/discovery/agents/ceo/minion-tasks/review-M-002-person-graph-roleless-intake.md. Report findings first with file/line references."
+  },
+  {
+    "prompt": "Review M-003 using brain/rooms/discovery/agents/ceo/minion-tasks/review-M-003-context-records.md. Report findings first with file/line references."
+  },
+  {
+    "prompt": "Review M-004 using brain/rooms/discovery/agents/ceo/minion-tasks/review-M-004-repo-ingestion-challenge-packets.md. Report findings first with file/line references."
+  },
+  {
+    "prompt": "Review M-005 using brain/rooms/discovery/agents/ceo/minion-tasks/review-M-005-matching-explanations.md. Report findings first with file/line references."
+  },
+  {
+    "prompt": "Review M-007 using brain/rooms/discovery/agents/ceo/minion-tasks/review-M-007-evaluation-rollout.md. Report findings first with file/line references."
+  }
+]

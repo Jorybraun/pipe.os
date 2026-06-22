@@ -17,6 +17,7 @@ import {
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
 } from 'lucide-react';
 import { createApiClient } from '../lib/api/client';
+import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -424,6 +425,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'details' | 'context'>('details');
 
   // Reset form when contact changes
   useEffect(() => {
@@ -438,6 +440,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
       type: contact.type,
     });
     setError(null);
+    setActiveTab('details');
   }, [contact.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async (): Promise<void> => {
@@ -474,18 +477,60 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   };
 
   return (
-    <ContactForm
-      title="CONTACT"
-      form={form}
-      onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
-      onSave={() => void handleSave()}
-      onClose={onClose}
-      onDelete={() => void handleDelete()}
-      isSaving={isSaving}
-      isDeleting={isDeleting}
-      error={error}
-      saveLabel="SAVE"
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header with tabs */}
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid var(--pipe-border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['details', 'context'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '4px 10px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                border: '1px solid',
+                borderRadius: 3,
+                cursor: 'pointer',
+                borderColor: activeTab === tab ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
+                background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+                color: activeTab === tab ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+              }}
+            >
+              {tab.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 4 }}>
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {activeTab === 'details' ? (
+          <ContactForm
+            title="CONTACT"
+            form={form}
+            onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
+            onSave={() => void handleSave()}
+            onClose={onClose}
+            onDelete={() => void handleDelete()}
+            isSaving={isSaving}
+            isDeleting={isDeleting}
+            error={error}
+            saveLabel="SAVE"
+          />
+        ) : (
+          <ContactLivingContext contactId={contact.id} api={api} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -667,9 +712,9 @@ function parseSearchQuery(raw: string): { jobTitleRole: string | undefined; jobC
   return { jobTitleRole: trimPunctuation(sentence), jobCompanyName: undefined, locationCountry: undefined };
 }
 
-function SourceSearchPanel({ api, onContact }: {
+function SourceSearchPanel({ api }: {
   api: ReturnType<typeof createApiClient>;
-  onContact: () => void;
+  onContact?: () => void;
 }): JSX.Element {
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -677,11 +722,11 @@ function SourceSearchPanel({ api, onContact }: {
     hasEmail: true,
     size: 10,
   });
-  const [results, setResults] = useState<PdlPerson[]>([]);
-  const [total, setTotal] = useState(0);
+  const [, setResults] = useState<PdlPerson[]>([]);
+  const [, setTotal] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [actionIds, setActionIds] = useState<Set<string>>(new Set());
+  const [, setSearchError] = useState<string | null>(null);
+
   const [excluded, setExcluded] = useState<Set<'role' | 'company' | 'location'>>(new Set());
 
   const parsed = parseSearchQuery(query);
@@ -707,42 +752,7 @@ function SourceSearchPanel({ api, onContact }: {
     }
   };
 
-  const handleFlag = async (person: PdlPerson): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/flag', { poolId: person.poolId });
-      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'flagged' } : p));
-    } catch (err) {
-      console.error('[SourceSearchPanel] flag failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
 
-  const handleDismiss = async (person: PdlPerson): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/dismiss', { poolId: person.poolId });
-      setResults((prev) => prev.filter((p) => p.poolId !== person.poolId));
-    } catch (err) {
-      console.error('[SourceSearchPanel] dismiss failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
-
-  const handleContact = async (person: PdlPerson, channel: 'phone' | 'email' | 'invite'): Promise<void> => {
-    setActionIds((prev) => new Set(prev).add(person.poolId));
-    try {
-      await api.post('/api/v1/outreach/contact', { poolId: person.poolId, channel });
-      setResults((prev) => prev.map((p) => p.poolId === person.poolId ? { ...p, status: 'contacted' } : p));
-      onContact();
-    } catch (err) {
-      console.error('[SourceSearchPanel] contact failed:', err);
-    } finally {
-      setActionIds((prev) => { const next = new Set(prev); next.delete(person.poolId); return next; });
-    }
-  };
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
@@ -831,55 +841,35 @@ function SourceSearchPanel({ api, onContact }: {
         <button onClick={() => void handleSearch()} disabled={isSearching} style={{ width: '100%', padding: '10px 0', fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           {isSearching ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</> : <><Search size={12} /> SEARCH</>}
         </button>
-
-        {searchError && <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>{searchError}</div>}
-      </div>
-
-      {/* Results */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {results.length === 0 && !isSearching && !searchError && <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}><div style={{ fontSize: 11 }}>Enter filters and click SEARCH</div></div>}
-        {results.length > 0 && <div style={{ padding: '8px 24px', fontSize: 9, color: 'var(--pipe-text-dim)', borderBottom: '1px solid var(--pipe-border)' }}>{results.length} of {total} results</div>}
-        {results.map((person) => (
-          <div key={person.poolId} style={{ padding: '14px 24px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${person.status === 'flagged' ? 'rgba(251,191,36,0.3)' : 'rgba(96,165,250,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: person.status === 'flagged' ? '#fbbf24' : '#60a5fa' }}>
-              {(person.full_name ?? '?').charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                <span style={{ fontSize: 12, fontWeight: 700 }}>{person.full_name ?? 'Unknown'}</span>
-                {person.status === 'flagged' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>FLAGGED</span>}
-                {person.status === 'contacted' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(74,222,128,0.12)', color: '#4ade80' }}>CONTACTED</span>}
-              </div>
-              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>{person.job_title ?? 'No title'}{person.job_company_name && ` @ ${person.job_company_name}`}</div>
-              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {person.work_email && <span>work email</span>}
-                {person.personal_emails && <span>personal email</span>}
-                {person.mobile_phone && <span>mobile phone</span>}
-                {person.phone_numbers === true && <span>phone</span>}
-                {person.emails && Array.isArray(person.emails) && person.emails[0] && <span>{person.emails[0].address}</span>}
-                {person.phone_numbers_legacy && Array.isArray(person.phone_numbers_legacy) && person.phone_numbers_legacy[0] && <span>{person.phone_numbers_legacy[0].number}</span>}
-                {person.location_name && <span>{person.location_name}</span>}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              {person.status !== 'contacted' && (
-                <>
-                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
-                    {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
-                  </button>
-                  <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
-                  <button onClick={() => void handleContact(person, 'email')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>EMAIL</button>
-                  <button onClick={() => void handleContact(person, 'invite')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 3, color: '#60a5fa', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>INVITE</button>
-                  <button onClick={() => void handleDismiss(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'transparent', border: '1px solid var(--pipe-border)', borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>DISMISS</button>
-                </>
-              )}
-              {person.status === 'contacted' && (
-                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>In graph</span>
-              )}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
+}
+
+// ─── Contact Living Context ─────────────────────────────────────────────────────
+
+function ContactLivingContext({ contactId, api }: { contactId: string; api: ReturnType<typeof createApiClient> }): JSX.Element {
+  const [livingContext, setLivingContext] = useState<{ summary: { interactionCount: number } } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setIsLoading(true);
+      try {
+        const res = await api.get(`/api/v1/contacts/${contactId}/living-context`);
+        setLivingContext(res as { summary: { interactionCount: number } });
+      } catch {
+        setLivingContext(null);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [contactId, api]);
+
+  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>LOADING_CONTEXT</div>;
+  if (!livingContext || livingContext.summary.interactionCount === 0) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>NO_CONTEXT_YET</div>;
+  }
+
+  return <LivingContextGraph candidateId={contactId} />;
 }
