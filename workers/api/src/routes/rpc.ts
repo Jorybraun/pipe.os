@@ -196,7 +196,14 @@ async function checkMatchingGate(
     return { blocked: false };
   }
 
-  // 2. No assignment — run on-demand matching
+  // CODE_REVIEW returns above through matchCandidateToReviewChallenge. From
+  // here down, repo recall is only for CODE_IMPLEMENTATION issue selection;
+  // Neo4j projections must not become candidate-to-PR authority.
+  if (nextChallengeType !== 'CODE_IMPLEMENTATION') {
+    return waitingForMatch(`Unsupported code challenge type ${nextChallengeType}`);
+  }
+
+  // 2. No assignment — run on-demand implementation repo recall.
   let repoId: number | null = null;
   let githubRepoUrl: string | null = null;
 
@@ -271,13 +278,11 @@ async function checkMatchingGate(
   let prNumber: number | null = null;
   let issueNumber: number | null = null;
 
-  if (nextChallengeType === 'CODE_IMPLEMENTATION') {
-    const issueResult = await pickImplementationIssue(db, repoId);
-    if (!issueResult) {
-      return waitingForMatch('No eligible implementation issue found for matched repo');
-    }
-    issueNumber = issueResult.issueNumber;
+  const issueResult = await pickImplementationIssue(db, repoId);
+  if (!issueResult) {
+    return waitingForMatch('No eligible implementation issue found for matched repo');
   }
+  issueNumber = issueResult.issueNumber;
 
   // 4. Write assignment
   const assignmentId = crypto.randomUUID();

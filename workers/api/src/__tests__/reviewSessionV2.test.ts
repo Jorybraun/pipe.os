@@ -26,8 +26,26 @@ vi.mock('../lib/explainerAgent', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/neo4j/matchingQueries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/neo4j/matchingQueries')>();
+  return {
+    ...actual,
+    matchReposForCandidateNeo4j: vi.fn(async () => []),
+  };
+});
+
+vi.mock('../lib/neo4j/contextualGraph', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/neo4j/contextualGraph')>();
+  return {
+    ...actual,
+    matchReposByGroundedEdges: vi.fn(async () => []),
+  };
+});
+
 import { callImplementerAgent } from '../lib/implementerAgent';
 import { callExplainerAgent } from '../lib/explainerAgent';
+import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
+import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
 
 // ─── Fake D1 ─────────────────────────────────────────────────────────────────
 
@@ -237,11 +255,72 @@ beforeEach(() => {
     context_provided: ['surrounding_code'],
     depth_level: 'surface',
   });
+  vi.mocked(matchReposForCandidateNeo4j).mockClear();
+  vi.mocked(matchReposByGroundedEdges).mockClear();
 });
 
 // ─── POST /rpc/get-challenge ─────────────────────────────────────────────────
 
 describe('POST /rpc/get-challenge', () => {
+  it('does not use Neo4j projection recall when CODE_REVIEW lacks source-backed role context', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates WHERE id', value: { current_stage_id: 'stage_code' } },
+        { match: 'FROM stages WHERE id', value: { mode: 'ASYNC', screening_input_mode: null } },
+        { match: 'FROM pipeline_match_config', value: { match_philosophy: 'tailored' } },
+        { match: 'FROM candidate_challenge_assignment', value: null },
+        { match: 'FROM role_contexts', value: null },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_review',
+            type: 'CODE_REVIEW',
+            title: 'Code Review',
+            instructions: 'Review a source-backed PR',
+            config: JSON.stringify({ isMultiTurn: true }),
+            cached_diff_json: null,
+            github_pr_title: null,
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: null,
+            assignment_repo_url: null,
+            assignment_pr_number: null,
+            effective_repo_url: null,
+            effective_pr_number: null,
+            effective_issue_number: null,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, PRIMARY_MATCH_STORE: 'neo4j' } as Partial<Env & { DB: FakeD1 }>);
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string };
+    expect(body).toMatchObject({
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+    });
+    expect(matchReposByGroundedEdges).not.toHaveBeenCalled();
+    expect(matchReposForCandidateNeo4j).not.toHaveBeenCalled();
+  });
+
   it('does not live-fetch standalone review diffs when source spans cannot rebuild the packet diff', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fetch should not be called'));
     const db = fakeD1({
