@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +14,27 @@ const corpusFixture = new URL(
   '../../../../../fixtures/evaluation/sample-corpus.json',
   import.meta.url,
 );
+
+function writeExpertCorpusFixture(directory: string): string {
+  const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as {
+    corpusId: string;
+    description: string;
+    expertLabels: Array<{ labelId: string; labeledBy: string }>;
+    metadata: { syntheticFixtureCount: number };
+  };
+  corpus.corpusId = 'expert-corpus-v1';
+  corpus.description = 'Test-only corpus with non-synthetic labels for persisted evaluation coverage';
+  corpus.expertLabels = corpus.expertLabels.map((label, index) => ({
+    ...label,
+    labelId: `expert-label-${index + 1}`,
+    labeledBy: 'expert-reviewer-1',
+  }));
+  corpus.metadata.syntheticFixtureCount = 0;
+
+  const corpusPath = join(directory, 'expert-corpus.json');
+  writeFileSync(corpusPath, JSON.stringify(corpus));
+  return corpusPath;
+}
 
 function sourceRef(overrides?: Partial<Record<string, unknown>>) {
   return {
@@ -102,6 +123,7 @@ describe('matching evaluation CLI', () => {
     const databasePath = join(directory, 'evaluation.sqlite');
     const jsonPath = join(directory, 'result.json');
     const reportPath = join(directory, 'result.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
     const sqlite = new Database(databasePath);
     seedMatchRuns(sqlite);
     sqlite.close();
@@ -111,9 +133,9 @@ describe('matching evaluation CLI', () => {
       '--database-path',
       databasePath,
       '--corpus-id',
-      'sample-corpus-v1',
+      'expert-corpus-v1',
       '--corpus-file',
-      corpusFixture.pathname,
+      expertCorpusPath,
       '--match-run-id',
       'run-primary',
       '--comparison-run-id',
@@ -123,7 +145,6 @@ describe('matching evaluation CLI', () => {
       '--report',
       reportPath,
       '--persist',
-      '--allow-synthetic',
     ]);
 
     expect(exitCode).toBe(0);
@@ -147,9 +168,25 @@ describe('matching evaluation CLI', () => {
     ).get()).toEqual({ passed: 1 });
     expect(() => verification.prepare(
       `UPDATE evaluation_corpora SET schema_version = 'changed'
-        WHERE corpus_id = 'sample-corpus-v1'`,
+        WHERE corpus_id = 'expert-corpus-v1'`,
     ).run()).toThrow('evaluation corpora are frozen');
     verification.close();
+  });
+
+  it('refuses to persist fixture-mode synthetic evaluations', async () => {
+    await expect(runEvaluationCli([
+      '--local',
+      '--database-path',
+      '/tmp/unused-pipe-evaluation.sqlite',
+      '--corpus-id',
+      'sample-corpus-v1',
+      '--corpus-file',
+      corpusFixture.pathname,
+      '--persist',
+      '--allow-synthetic',
+    ])).rejects.toThrow(
+      '--allow-synthetic cannot be combined with --persist',
+    );
   });
 
   it('rejects synthetic labels when --allow-synthetic is omitted', async () => {
@@ -236,7 +273,6 @@ describe('matching evaluation CLI', () => {
     };
 
     const corpusPath = join(directory, 'forbidden-corpus.json');
-    const { writeFileSync } = await import('node:fs');
     writeFileSync(corpusPath, JSON.stringify(forbiddenCorpus));
 
     const sqlite = new Database(databasePath);

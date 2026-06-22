@@ -238,7 +238,7 @@ Options:
   --json <path>                 Write machine-readable result
   --report <path>               Write human-readable report
   --persist                     Persist the evaluation result in D1
-  --allow-synthetic             Disable the expert-only gate for fixture testing`;
+  --allow-synthetic             Fixture testing only; cannot be combined with --persist`;
 }
 
 async function freezeCorpus(
@@ -287,6 +287,11 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
   if (!options) {
     process.stdout.write(`${evaluationHelp()}\n`);
     return 0;
+  }
+  if (options.allowSynthetic && options.persist) {
+    throw new Error(
+      '--allow-synthetic cannot be combined with --persist; fixture evaluations must not be stored as acceptance evidence',
+    );
   }
 
   let localDatabase: BetterSqliteDb | undefined;
