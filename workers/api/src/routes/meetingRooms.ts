@@ -625,12 +625,6 @@ export async function ensureMeetingRoomLinks(
     ).bind(room.id, meetingId, room.session_id, now, now).run();
   }
 
-  await db.prepare(
-    `UPDATE meeting_room_tokens
-     SET revoked_at = ?
-     WHERE room_id = ? AND role = 'HOST' AND revoked_at IS NULL`,
-  ).bind(now, room.id).run();
-
   const hostToken = generateRoomToken();
   const hostHash = await hashRoomToken(hostToken);
   await db.prepare(

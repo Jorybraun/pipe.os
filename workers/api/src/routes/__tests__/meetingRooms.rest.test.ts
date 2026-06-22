@@ -293,6 +293,31 @@ describe('meeting room recording living-context route', () => {
     expect(second.room.hostUrl).not.toBe(first.room.hostUrl);
     expect(second.room.guestUrl).toBe(first.room.guestUrl);
 
+    const firstHostToken = new URL(first.room.hostUrl).pathname.split('/').pop()!;
+    const secondHostToken = new URL(second.room.hostUrl).pathname.split('/').pop()!;
+    const [firstHostRes, secondHostRes] = await Promise.all([
+      app.request(`/meeting/${firstHostToken}`, {}, env, ctx),
+      app.request(`/meeting/${secondHostToken}`, {}, env, ctx),
+    ]);
+    expect(firstHostRes.status).toBe(200);
+    expect(secondHostRes.status).toBe(200);
+    const firstHost = await firstHostRes.json() as {
+      room: { id: string; sessionId: string; role: string };
+    };
+    const secondHost = await secondHostRes.json() as {
+      room: { id: string; sessionId: string; role: string };
+    };
+    expect(firstHost.room).toEqual(expect.objectContaining({
+      id: first.room.id,
+      sessionId: first.room.sessionId,
+      role: 'HOST',
+    }));
+    expect(secondHost.room).toEqual(expect.objectContaining({
+      id: first.room.id,
+      sessionId: first.room.sessionId,
+      role: 'HOST',
+    }));
+
     const tokenCounts = sqlite.prepare(
       `SELECT role,
               COUNT(*) AS count,
@@ -303,7 +328,7 @@ describe('meeting room recording living-context route', () => {
     ).all();
     expect(tokenCounts).toEqual([
       { role: 'GUEST', count: 1, active: 1 },
-      { role: 'HOST', count: 3, active: 1 },
+      { role: 'HOST', count: 3, active: 3 },
     ]);
   });
 
