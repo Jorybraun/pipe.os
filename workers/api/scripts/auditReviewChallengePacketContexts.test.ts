@@ -52,6 +52,35 @@ function setupDb(): BetterSqliteDb {
   return sqlite;
 }
 
+function setupCrawlerOnlyDb(): BetterSqliteDb {
+  const sqlite = new Database(':memory:');
+  sqlite.exec(`
+    CREATE TABLE qualified_repos (
+      id INTEGER PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      test_framework TEXT,
+      disqualified INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE repo_sample_prs (
+      repo_id INTEGER NOT NULL,
+      pr_number INTEGER NOT NULL,
+      swe_bench_eligible INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO qualified_repos (id, full_name, test_framework, disqualified)
+    VALUES
+      (1, 'pipe-labs/orders', NULL, 0),
+      (2, 'pipe/e2e-source-backed-local', 'source-backed-fixture', 0),
+      (3, 'pipe-labs/disabled', NULL, 1);
+    INSERT INTO repo_sample_prs (repo_id, pr_number, swe_bench_eligible)
+    VALUES
+      (1, 42, 1),
+      (2, 42, 1),
+      (3, 42, 1),
+      (1, 43, 0);
+  `);
+  return sqlite;
+}
+
 interface PacketFixture {
   packetId: string;
   repoId: number;
@@ -120,6 +149,26 @@ describe('auditReviewChallengePacketContexts', () => {
   afterEach(() => {
     sqlite?.close();
     sqlite = null;
+  });
+
+  it('reports missing graph tables while preserving crawler source counts', async () => {
+    sqlite = setupCrawlerOnlyDb();
+
+    const result = await auditReviewChallengePacketContexts(new BetterQueryClient(sqlite));
+
+    expect(result.status).toBe('missing_graph_tables');
+    expect(result.missingTables).toEqual([
+      'review_challenge_packets',
+      'context_records',
+      'context_record_source_refs',
+      'context_record_concepts',
+    ]);
+    expect(result.sourceStats).toEqual({
+      qualifiedRepos: 3,
+      samplePullRequests: 4,
+      eligibleSamplePullRequests: 1,
+    });
+    expect(result.stats.totalPackets).toBe(0);
   });
 
   it('reports no_packets when there are no review challenge packets', async () => {

@@ -48,6 +48,7 @@ class LocalQueryClient implements QueryClient {
 export type AuditStatus =
   | 'ready'
   | 'fixture_only'
+  | 'missing_graph_tables'
   | 'no_packets'
   | 'no_real_overlay_ready_packets'
   | 'incomplete_context_projection';
@@ -81,10 +82,18 @@ export interface AuditStats {
   realOverlayReadyPackets: number;
 }
 
+export interface SourceStats {
+  qualifiedRepos: number | null;
+  samplePullRequests: number | null;
+  eligibleSamplePullRequests: number | null;
+}
+
 export interface AuditResult {
   status: AuditStatus;
   stats: AuditStats;
+  sourceStats: SourceStats;
   rows: PacketAuditRow[];
+  missingTables: string[];
   missingContextRecordPacketIds: string[];
   missingRepoSourceRefPacketIds: string[];
   missingConceptLinkPacketIds: string[];
@@ -109,6 +118,18 @@ function bool(value: number | null | undefined): boolean {
   return Number(value ?? 0) !== 0;
 }
 
+const emptyStats: AuditStats = {
+  totalPackets: 0,
+  productionReadyPackets: 0,
+  fixturePackets: 0,
+  realPackets: 0,
+  withContextRecords: 0,
+  withRepoSourceRefs: 0,
+  withConceptLinks: 0,
+  overlayReadyPackets: 0,
+  realOverlayReadyPackets: 0,
+};
+
 async function tableExists(client: QueryClient, tableName: string): Promise<boolean> {
   const rows = await client.query<{ count: number }>(
     `SELECT COUNT(*) AS count
@@ -118,6 +139,47 @@ async function tableExists(client: QueryClient, tableName: string): Promise<bool
     [tableName],
   );
   return Number(rows[0]?.count ?? 0) > 0;
+}
+
+async function countRowsIfTable(
+  client: QueryClient,
+  tableName: string,
+  present: boolean,
+): Promise<number | null> {
+  if (!present) return null;
+  const rows = await client.query<{ count: number }>(`SELECT COUNT(*) AS count FROM ${tableName}`);
+  return Number(rows[0]?.count ?? 0);
+}
+
+async function countEligibleSamplePullRequests(
+  client: QueryClient,
+  tables: Map<string, boolean>,
+): Promise<number | null> {
+  if (!tables.get('repo_sample_prs') || !tables.get('qualified_repos')) return null;
+  try {
+    const rows = await client.query<{ count: number }>(
+      `SELECT COUNT(*) AS count
+         FROM repo_sample_prs rsp
+         JOIN qualified_repos qr ON qr.id = rsp.repo_id
+        WHERE rsp.swe_bench_eligible = 1
+          AND COALESCE(qr.disqualified, 0) = 0
+          AND COALESCE(qr.test_framework, '') <> 'source-backed-fixture'`,
+    );
+    return Number(rows[0]?.count ?? 0);
+  } catch {
+    return null;
+  }
+}
+
+async function collectSourceStats(
+  client: QueryClient,
+  tables: Map<string, boolean>,
+): Promise<SourceStats> {
+  return {
+    qualifiedRepos: await countRowsIfTable(client, 'qualified_repos', tables.get('qualified_repos') === true),
+    samplePullRequests: await countRowsIfTable(client, 'repo_sample_prs', tables.get('repo_sample_prs') === true),
+    eligibleSamplePullRequests: await countEligibleSamplePullRequests(client, tables),
+  };
 }
 
 function deriveStatus(stats: AuditStats, result: {
@@ -149,8 +211,26 @@ export async function auditReviewChallengePacketContexts(
     'context_record_source_refs',
     'context_record_concepts',
   ];
+  const tables = new Map<string, boolean>();
+  for (const tableName of [...requiredTables, 'repo_sample_prs']) {
+    tables.set(tableName, await tableExists(client, tableName));
+  }
+  const sourceStats = await collectSourceStats(client, tables);
+  const missingTables = requiredTables.filter((tableName) => tables.get(tableName) !== true);
+  if (missingTables.length > 0) {
+    return {
+      status: 'missing_graph_tables',
+      stats: { ...emptyStats },
+      sourceStats,
+      rows: [],
+      missingTables,
+      missingContextRecordPacketIds: [],
+      missingRepoSourceRefPacketIds: [],
+      missingConceptLinkPacketIds: [],
+    };
+  }
   for (const tableName of requiredTables) {
-    if (!await tableExists(client, tableName)) {
+    if (!tables.get(tableName)) {
       throw new Error(`${tableName} does not exist; apply graph/context migrations before auditing`);
     }
   }
@@ -240,7 +320,9 @@ export async function auditReviewChallengePacketContexts(
   return {
     status: deriveStatus(stats, result),
     stats,
+    sourceStats,
     rows,
+    missingTables: [],
     ...result,
   };
 }
@@ -341,6 +423,18 @@ function printHuman(result: AuditResult, source: string): void {
   console.log(`  with concept links:     ${result.stats.withConceptLinks}`);
   console.log(`  overlay-ready packets:  ${result.stats.overlayReadyPackets}`);
   console.log(`  real overlay-ready:     ${result.stats.realOverlayReadyPackets}`);
+  if (result.missingTables.length > 0) {
+    console.log(`  missing tables:         ${result.missingTables.join(', ')}`);
+  }
+  if (
+    result.sourceStats.qualifiedRepos !== null
+    || result.sourceStats.samplePullRequests !== null
+    || result.sourceStats.eligibleSamplePullRequests !== null
+  ) {
+    console.log(`  qualified repos:        ${result.sourceStats.qualifiedRepos ?? 'unknown'}`);
+    console.log(`  sample PRs:             ${result.sourceStats.samplePullRequests ?? 'unknown'}`);
+    console.log(`  eligible sample PRs:    ${result.sourceStats.eligibleSamplePullRequests ?? 'unknown'}`);
+  }
   if (result.missingContextRecordPacketIds.length > 0) {
     console.log(`  missing context:        ${result.missingContextRecordPacketIds.slice(0, 10).join(', ')}`);
   }
