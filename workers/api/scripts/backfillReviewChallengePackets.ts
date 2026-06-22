@@ -172,6 +172,38 @@ export interface Stats {
   errors: number;
 }
 
+export type BackfillOutcomeStatus =
+  | 'dry_run_ready'
+  | 'persisted'
+  | 'skipped_fetch'
+  | 'skipped_no_hunks'
+  | 'error';
+
+export interface BackfillRowOutcome {
+  repoId: number;
+  repoFullName: string;
+  repoUrl: string;
+  prNumber: number;
+  prUrl: string;
+  title: string | null;
+  status: BackfillOutcomeStatus;
+  packetId: string | null;
+  repoSnapshotId: string | null;
+  packetContentHash: string | null;
+  eligible: boolean | null;
+  qualityScore: number | null;
+  demandCount: number | null;
+  sourceSpanCount: number | null;
+  changedFileCount: number | null;
+  structuralFactCount: number | null;
+  error: string | null;
+}
+
+export interface BackfillRunResult {
+  stats: Stats;
+  outcomes: BackfillRowOutcome[];
+}
+
 export interface BackfillCliReport {
   status: 'completed' | 'failed';
   mode: 'dry-run' | 'write';
@@ -184,6 +216,7 @@ export interface BackfillCliReport {
   };
   batchSize: number;
   stats: Stats;
+  outcomes: BackfillRowOutcome[];
 }
 
 export interface BackfillReviewChallengePacketsInput {
@@ -858,9 +891,9 @@ function printSummary(stats: Stats, options: Options): void {
   console.log(`  errors:           ${stats.errors}`);
 }
 
-export function buildBackfillCliReport(stats: Stats, options: Options): BackfillCliReport {
+export function buildBackfillCliReport(result: BackfillRunResult, options: Options): BackfillCliReport {
   return {
-    status: stats.errors > 0 ? 'failed' : 'completed',
+    status: result.stats.errors > 0 ? 'failed' : 'completed',
     mode: options.dryRun ? 'dry-run' : 'write',
     target: options.target,
     filters: {
@@ -870,7 +903,42 @@ export function buildBackfillCliReport(stats: Stats, options: Options): Backfill
       force: options.force,
     },
     batchSize: options.batchSize,
-    stats,
+    stats: result.stats,
+    outcomes: result.outcomes,
+  };
+}
+
+function buildBackfillRowOutcome(
+  row: SamplePullRequestRow,
+  status: BackfillOutcomeStatus,
+  values: Partial<Omit<BackfillRowOutcome,
+    | 'repoId'
+    | 'repoFullName'
+    | 'repoUrl'
+    | 'prNumber'
+    | 'prUrl'
+    | 'title'
+    | 'status'
+  >> = {},
+): BackfillRowOutcome {
+  return {
+    repoId: row.repo_id,
+    repoFullName: row.full_name,
+    repoUrl: row.github_url,
+    prNumber: row.pr_number,
+    prUrl: row.pr_url,
+    title: row.title,
+    status,
+    packetId: values.packetId ?? null,
+    repoSnapshotId: values.repoSnapshotId ?? null,
+    packetContentHash: values.packetContentHash ?? null,
+    eligible: values.eligible ?? null,
+    qualityScore: values.qualityScore ?? null,
+    demandCount: values.demandCount ?? null,
+    sourceSpanCount: values.sourceSpanCount ?? null,
+    changedFileCount: values.changedFileCount ?? null,
+    structuralFactCount: values.structuralFactCount ?? null,
+    error: values.error ?? null,
   };
 }
 
@@ -937,7 +1005,7 @@ export async function checkGitHubApiConnectivity(input: {
 
 export async function backfillReviewChallengePackets(
   input: BackfillReviewChallengePacketsInput,
-): Promise<Stats> {
+): Promise<BackfillRunResult> {
   const {
     client,
     options,
@@ -978,6 +1046,7 @@ export async function backfillReviewChallengePackets(
     skippedNoHunks: 0,
     errors: 0,
   };
+  const outcomes: BackfillRowOutcome[] = [];
 
   log.log(
     `[challenge-backfill] selected ${rows.length} row(s), mode=${options.dryRun ? 'dry-run' : 'write'}, batch=${options.batchSize}`,
@@ -993,11 +1062,17 @@ export async function backfillReviewChallengePackets(
       ]);
       if (!diffResult || !refs) {
         stats.skippedFetch++;
+        outcomes.push(buildBackfillRowOutcome(row, 'skipped_fetch', {
+          error: 'GitHub diff or pull request refs were unavailable',
+        }));
         log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
         continue;
       }
       if (!diffResult.diff.files.some((file) => file.hunks.length > 0)) {
         stats.skippedNoHunks++;
+        outcomes.push(buildBackfillRowOutcome(row, 'skipped_no_hunks', {
+          error: 'pull request diff contained no source hunks',
+        }));
         log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip no hunks ${label}`);
         continue;
       }
@@ -1018,6 +1093,17 @@ export async function backfillReviewChallengePackets(
 
       if (options.dryRun) {
         stats.dryRun++;
+        outcomes.push(buildBackfillRowOutcome(row, 'dry_run_ready', {
+          packetId: packet.id,
+          repoSnapshotId: packet.repoSnapshotId,
+          packetContentHash: packet.contentHash,
+          eligible: packet.quality.eligible,
+          qualityScore: packet.quality.score,
+          demandCount: packet.demands.length,
+          sourceSpanCount: challengeInput.sourceSpans.length,
+          changedFileCount: challengeInput.changedFiles.length,
+          structuralFactCount: structuralFacts.length,
+        }));
         log.log(
           `[challenge-backfill] [${index + 1}/${rows.length}] ready ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
         );
@@ -1032,16 +1118,29 @@ export async function backfillReviewChallengePackets(
         repoSignals: semantics.signals,
       });
       stats.persisted++;
+      outcomes.push(buildBackfillRowOutcome(row, 'persisted', {
+        packetId: packet.id,
+        repoSnapshotId: packet.repoSnapshotId,
+        packetContentHash: packet.contentHash,
+        eligible: packet.quality.eligible,
+        qualityScore: packet.quality.score,
+        demandCount: packet.demands.length,
+        sourceSpanCount: challengeInput.sourceSpans.length,
+        changedFileCount: challengeInput.changedFiles.length,
+        structuralFactCount: structuralFacts.length,
+      }));
       log.log(
         `[challenge-backfill] [${index + 1}/${rows.length}] persisted ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
       );
     } catch (error) {
       stats.errors++;
-      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${formatError(error)}`);
+      const message = formatError(error);
+      outcomes.push(buildBackfillRowOutcome(row, 'error', { error: message }));
+      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
     }
   }
 
-  return stats;
+  return { stats, outcomes };
 }
 
 async function run(options: Options): Promise<void> {
@@ -1079,9 +1178,9 @@ async function run(options: Options): Promise<void> {
         progressLog.log(`[challenge-backfill] target=local database=${path}`);
         return new LocalQueryClient(localDatabase);
       })();
-  let stats: Stats;
+  let result: BackfillRunResult;
   try {
-    stats = await backfillReviewChallengePackets({
+    result = await backfillReviewChallengePackets({
       client,
       db: d1DatabaseAdapter(client),
       options,
@@ -1093,11 +1192,11 @@ async function run(options: Options): Promise<void> {
   }
 
   if (options.json) {
-    console.log(JSON.stringify(buildBackfillCliReport(stats, options), null, 2));
+    console.log(JSON.stringify(buildBackfillCliReport(result, options), null, 2));
   } else {
-    printSummary(stats, options);
+    printSummary(result.stats, options);
   }
-  if (stats.errors > 0) process.exitCode = 1;
+  if (result.stats.errors > 0) process.exitCode = 1;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

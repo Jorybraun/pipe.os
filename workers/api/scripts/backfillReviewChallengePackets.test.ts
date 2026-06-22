@@ -456,7 +456,7 @@ describe('backfillReviewChallengePackets', () => {
       preflightGithub: false,
       batchSize: 10,
     };
-    const stats = await backfillReviewChallengePackets({
+    const result = await backfillReviewChallengePackets({
       client: new BetterQueryClient(sqlite),
       db: createMockD1(sqlite),
       options,
@@ -476,7 +476,7 @@ describe('backfillReviewChallengePackets', () => {
       },
     });
 
-    expect(stats).toEqual({
+    expect(result.stats).toEqual({
       selected: 1,
       built: 1,
       persisted: 1,
@@ -487,11 +487,33 @@ describe('backfillReviewChallengePackets', () => {
       skippedNoHunks: 0,
       errors: 0,
     });
+    expect(result.outcomes).toHaveLength(1);
+    expect(result.outcomes[0]).toMatchObject({
+      repoId: 77,
+      repoFullName: 'pipe-labs/orders',
+      repoUrl: 'https://github.com/pipe-labs/orders',
+      prNumber: 42,
+      prUrl: 'https://github.com/pipe-labs/orders/pull/42',
+      title: 'Add idempotent order retry flow',
+      status: 'persisted',
+      eligible: true,
+      demandCount: expect.any(Number),
+      sourceSpanCount: expect.any(Number),
+      changedFileCount: 4,
+      structuralFactCount: expect.any(Number),
+      error: null,
+    });
 
     const persistedPacket = sqlite.prepare(
       'SELECT packet_json, production_ready FROM review_challenge_packets ORDER BY updated_at DESC LIMIT 1',
     ).get() as { packet_json: string; production_ready: number };
     const packet = JSON.parse(persistedPacket.packet_json) as RepoChallengePacket;
+    expect(result.outcomes[0]).toMatchObject({
+      packetId: packet.id,
+      repoSnapshotId: packet.repoSnapshotId,
+      packetContentHash: packet.contentHash,
+      qualityScore: packet.quality.score,
+    });
 
     expect(packet.quality.eligible).toBe(true);
     expect(packet.demands.length).toBeGreaterThanOrEqual(2);
@@ -741,15 +763,38 @@ describe('backfillReviewChallengePackets', () => {
     };
 
     const report = buildBackfillCliReport({
-      selected: 3,
-      built: 2,
-      persisted: 0,
-      dryRun: 2,
-      ineligible: 1,
-      skippedExisting: 4,
-      skippedFetch: 1,
-      skippedNoHunks: 0,
-      errors: 0,
+      stats: {
+        selected: 3,
+        built: 2,
+        persisted: 0,
+        dryRun: 2,
+        ineligible: 1,
+        skippedExisting: 4,
+        skippedFetch: 1,
+        skippedNoHunks: 0,
+        errors: 0,
+      },
+      outcomes: [
+        {
+          repoId: 77,
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          title: 'Refactor menu focus handling',
+          status: 'dry_run_ready',
+          packetId: 'challenge_packet_123',
+          repoSnapshotId: 'repo_snapshot_123',
+          packetContentHash: 'sha256:packet',
+          eligible: true,
+          qualityScore: 0.92,
+          demandCount: 4,
+          sourceSpanCount: 12,
+          changedFileCount: 3,
+          structuralFactCount: 7,
+          error: null,
+        },
+      ],
     }, options);
 
     expect(report).toEqual({
@@ -774,6 +819,27 @@ describe('backfillReviewChallengePackets', () => {
         skippedNoHunks: 0,
         errors: 0,
       },
+      outcomes: [
+        {
+          repoId: 77,
+          repoFullName: 'mui/base-ui',
+          repoUrl: 'https://github.com/mui/base-ui',
+          prNumber: 973,
+          prUrl: 'https://github.com/mui/base-ui/pull/973',
+          title: 'Refactor menu focus handling',
+          status: 'dry_run_ready',
+          packetId: 'challenge_packet_123',
+          repoSnapshotId: 'repo_snapshot_123',
+          packetContentHash: 'sha256:packet',
+          eligible: true,
+          qualityScore: 0.92,
+          demandCount: 4,
+          sourceSpanCount: 12,
+          changedFileCount: 3,
+          structuralFactCount: 7,
+          error: null,
+        },
+      ],
     });
   });
 
