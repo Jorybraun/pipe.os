@@ -36,13 +36,15 @@ function StreamVideo({
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
-  const room = useRoomConnection(token, metadata.role);
+  const [enteredRoom, setEnteredRoom] = useState(false);
+  const room = useRoomConnection(token, metadata.role, enteredRoom);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'uploading' | 'saved' | 'failed'>('idle');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
+  const autoAcceptingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,10 +88,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }).catch(() => setRecordingState('failed'));
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
+  useEffect(() => {
+    if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
+      return;
+    }
+    autoAcceptingRef.current = true;
+    void room.acceptCall().finally(() => {
+      autoAcceptingRef.current = false;
+    });
+  }, [metadata.role, room.acceptCall, room.phase]);
+
   const joinLobby = (): void => {
     if (!preview) return;
     room.setLocalStream(preview);
     setPreview(null);
+    setEnteredRoom(true);
     void postRoomEvent(token, 'JOINED');
   };
 

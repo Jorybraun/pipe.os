@@ -125,8 +125,6 @@ test.describe('two-user video room', () => {
 
       await expect(host.getByTestId('start-call')).toBeVisible({ timeout: 20_000 });
       await host.getByTestId('start-call').click();
-      await expect(guest.getByTestId('accept-call')).toBeVisible({ timeout: 20_000 });
-      await guest.getByTestId('accept-call').click();
 
       await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
       await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });

@@ -224,7 +224,7 @@ export class VideoRoom {
       // Accept the WebSocket with the role as a tag (survives hibernation)
       this.state.acceptWebSocket(server, [role]);
 
-      const peerCount = this.getAllWebSockets().length + 1; // +1 for the new connection being established
+      const peerCount = this.getAllWebSockets().length;
 
       // Send current status to the new peer
       server.send(JSON.stringify({
