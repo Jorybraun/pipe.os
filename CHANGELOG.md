@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Contact/people drawer context now renders the shared living-context graph from `/api/v1/contacts/:id/living-context` instead of incorrectly treating the contact ID as a candidate ID.
 - Empty contact living-context responses now preserve the shared read-model shape, including `contextRecordCount` and `contextRecords`.
+- Contact living-context identity now follows the stable legacy contact link before email lookup, so contact email edits update the same person/workspace graph instead of forking it.
 
 ### Added — Tree Projection UI Over Semantic Hypergraph
 

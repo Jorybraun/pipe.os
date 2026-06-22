@@ -106,6 +106,7 @@ async function existingPersonIngestionKey(
   db: D1Database,
   email: string | null,
   candidateId?: string,
+  contactId?: string,
 ): Promise<string | null> {
   if (candidateId) {
     const linked = await db.prepare(
@@ -115,6 +116,17 @@ async function existingPersonIngestionKey(
          JOIN people p ON p.id = wp.person_id
         WHERE app.legacy_candidate_id = ?1`,
     ).bind(candidateId).first<{ ingestion_key: string }>();
+    if (linked?.ingestion_key) return linked.ingestion_key;
+  }
+  if (contactId) {
+    const linked = await db.prepare(
+      `SELECT p.ingestion_key
+         FROM workspace_people wp
+         JOIN people p ON p.id = wp.person_id
+        WHERE json_extract(wp.context_json, '$.contactId') = ?1
+        ORDER BY wp.created_at
+        LIMIT 1`,
+    ).bind(contactId).first<{ ingestion_key: string }>();
     if (linked?.ingestion_key) return linked.ingestion_key;
   }
   const normalized = email?.trim().toLowerCase();
@@ -246,7 +258,12 @@ export async function ensureContactLivingContext(
   if (!contact) return null;
 
   const store = new LivingContextStore(db);
-  const personIngestionKey = await existingPersonIngestionKey(db, contact.email);
+  const personIngestionKey = await existingPersonIngestionKey(
+    db,
+    contact.email,
+    undefined,
+    contact.id,
+  );
   const person = await store.upsertPerson({
     ingestionKey: personIngestionKey ?? identityKey(contact.email, `contact:${contact.id}`),
     displayName: contact.name,

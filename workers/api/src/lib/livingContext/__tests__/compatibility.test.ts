@@ -243,6 +243,74 @@ describe('legacy contact/candidate identity compatibility', () => {
     });
   });
 
+  it('keeps a contact on the same living person graph when the contact email changes', async () => {
+    sqlite.prepare(
+      `INSERT INTO contacts (id, owner_id, name, email, phone, company, role, type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'contact-email-change',
+      'workspace-1',
+      'Lin Contact',
+      'old@example.com',
+      '+1 555 0300',
+      'Graph Works',
+      'Hiring Partner',
+      'client',
+    );
+
+    const firstIdentity = await ensureContactLivingContext(db, 'contact-email-change');
+    sqlite.prepare(
+      `UPDATE contacts
+          SET email = ?, name = ?, phone = ?, company = ?, role = ?
+        WHERE id = ?`,
+    ).run(
+      'new@example.com',
+      'Lin Updated',
+      '+1 555 0301',
+      'Graph Works Updated',
+      'Executive Sponsor',
+      'contact-email-change',
+    );
+    const secondIdentity = await ensureContactLivingContext(db, 'contact-email-change');
+
+    expect(firstIdentity).not.toBeNull();
+    expect(secondIdentity).not.toBeNull();
+    expect(secondIdentity?.personId).toBe(firstIdentity?.personId);
+    expect(secondIdentity?.workspacePersonId).toBe(firstIdentity?.workspacePersonId);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare(
+      `SELECT primary_email, display_name, primary_phone, external_ids_json
+         FROM people
+        WHERE id = ?`,
+    ).get(firstIdentity?.personId)).toEqual({
+      primary_email: 'new@example.com',
+      display_name: 'Lin Updated',
+      primary_phone: '+1 555 0301',
+      external_ids_json: JSON.stringify({ legacyContactId: 'contact-email-change' }),
+    });
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT context_json FROM workspace_people WHERE id = ?`,
+    ).get(firstIdentity?.workspacePersonId)!.context_json as string)).toMatchObject({
+      contactId: 'contact-email-change',
+      company: 'Graph Works Updated',
+      role: 'Executive Sponsor',
+      source: 'legacy_contact',
+      sources: ['legacy_contact'],
+    });
+
+    const graph = await loadContactLivingContext(db, 'contact-email-change');
+    expect(graph?.person.personId).toBe(firstIdentity?.personId);
+    expect(graph?.person.workspacePersonId).toBe(firstIdentity?.workspacePersonId);
+    expect(graph?.person.primaryEmail).toBe('new@example.com');
+    expect(graph?.person.displayName).toBe('Lin Updated');
+    expect(graph?.person.primaryPhone).toBe('+1 555 0301');
+    expect(graph?.person.roles.map((role) => role.roleType)).toEqual(['client']);
+  });
+
   it('mirrors legacy candidate nodes through source-backed context records and projection rows', async () => {
     sqlite.prepare(
       `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
