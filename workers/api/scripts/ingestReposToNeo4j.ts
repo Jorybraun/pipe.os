@@ -89,6 +89,12 @@ interface RepoPR {
   pr_narrative_embedding_json: string | null;
   changed_file_count: number;
   swe_bench_eligible: number;
+  packet_id: string;
+  repo_snapshot_id: string;
+  packet_content_hash: string;
+  context_record_id: string;
+  repo_source_ref_count: number;
+  concept_link_count: number;
 }
 
 const env = {
@@ -169,6 +175,23 @@ function getDb(databasePath: string) {
   return new Database(databasePath);
 }
 
+interface SqliteLike {
+  prepare(sql: string): {
+    get?(...values: unknown[]): unknown;
+    all?(...values: unknown[]): unknown[];
+  };
+}
+
+function tableExists(db: SqliteLike, tableName: string): boolean {
+  const row = db.prepare(
+    `SELECT COUNT(*) AS count
+       FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?`,
+  ).get?.(tableName) as { count?: number } | undefined;
+  return Number(row?.count ?? 0) > 0;
+}
+
 /** Fetch embedding from Cloudflare AI REST API. */
 async function embedText(text: string): Promise<number[] | null> {
   if (!text || text.trim().length === 0) return null;
@@ -213,6 +236,71 @@ export function sourceBackedRepoProfile(
 ): string | null {
   const profile = signal?.repo_searchable_profile?.trim();
   return profile ? profile : null;
+}
+
+export function loadSourceBackedReviewPullRequests(db: SqliteLike): RepoPR[] {
+  const requiredTables = [
+    'qualified_repos',
+    'repo_sample_prs',
+    'review_challenge_packets',
+    'context_records',
+    'context_record_source_refs',
+    'context_record_concepts',
+  ];
+  if (!requiredTables.every((tableName) => tableExists(db, tableName))) return [];
+
+  const rows = db.prepare(`
+    SELECT
+      rsp.repo_id,
+      rsp.pr_number,
+      rsp.pr_url,
+      rsp.title,
+      rsp.pr_narrative,
+      rsp.pr_narrative_embedding_json,
+      rsp.changed_file_count,
+      rsp.swe_bench_eligible,
+      rcp.id AS packet_id,
+      rcp.repo_snapshot_id,
+      rcp.source_hash AS packet_content_hash,
+      cr.id AS context_record_id,
+      (
+        SELECT COUNT(*)
+          FROM context_record_source_refs crsr
+         WHERE crsr.context_record_id = cr.id
+           AND crsr.source_ref_type = 'repo_source_span'
+      ) AS repo_source_ref_count,
+      (
+        SELECT COUNT(*)
+          FROM context_record_concepts crc
+         WHERE crc.context_record_id = cr.id
+      ) AS concept_link_count
+    FROM repo_sample_prs rsp
+    JOIN qualified_repos qr ON qr.id = rsp.repo_id
+    JOIN review_challenge_packets rcp
+      ON rcp.repo_id = rsp.repo_id
+     AND rcp.pr_number = rsp.pr_number
+     AND rcp.production_ready = 1
+    JOIN context_records cr
+      ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+     AND cr.scope_type = 'repo_snapshot'
+     AND cr.scope_id = rcp.repo_snapshot_id
+     AND cr.record_type = 'repo_challenge_packet'
+    WHERE COALESCE(qr.disqualified, 0) = 0
+      AND COALESCE(qr.test_framework, '') <> 'source-backed-fixture'
+      AND (
+        SELECT COUNT(*)
+          FROM context_record_source_refs crsr
+         WHERE crsr.context_record_id = cr.id
+           AND crsr.source_ref_type = 'repo_source_span'
+      ) > 0
+      AND (
+        SELECT COUNT(*)
+          FROM context_record_concepts crc
+         WHERE crc.context_record_id = cr.id
+      ) > 0
+    ORDER BY rsp.repo_id, rsp.pr_number
+  `).all?.() ?? [];
+  return rows as RepoPR[];
 }
 
 /** Parse challenge surfaces JSON into flat key/value pairs. */
@@ -291,18 +379,14 @@ async function main(argv = process.argv.slice(2)) {
   }
   console.log(`  Found ${constructs.length} construct records`);
 
-  const prs = db.prepare(`
-    SELECT repo_id, pr_number, pr_url, title, pr_narrative,
-           pr_narrative_embedding_json, changed_file_count, swe_bench_eligible
-    FROM repo_sample_prs
-  `).all() as RepoPR[];
+  const prs = loadSourceBackedReviewPullRequests(db);
   const prsByRepo = new Map<number, RepoPR[]>();
   for (const p of prs) {
     const list = prsByRepo.get(p.repo_id) ?? [];
     list.push(p);
     prsByRepo.set(p.repo_id, list);
   }
-  console.log(`  Found ${prs.length} PR records`);
+  console.log(`  Found ${prs.length} source-backed review PR packet records`);
 
   // Track stats
   let reposWritten = 0;
@@ -511,6 +595,13 @@ async function main(argv = process.argv.slice(2)) {
                   pr.narrative = $narrative,
                   pr.changed_file_count = $changed_file_count,
                   pr.swe_bench_eligible = $swe_bench_eligible,
+                  pr.review_challenge_packet_id = $packet_id,
+                  pr.repo_snapshot_id = $repo_snapshot_id,
+                  pr.packet_content_hash = $packet_content_hash,
+                  pr.context_record_id = $context_record_id,
+                  pr.repo_source_ref_count = $repo_source_ref_count,
+                  pr.concept_link_count = $concept_link_count,
+                  pr.context_ready = true,
                   pr.embedding = $embedding
               MERGE (r)-[:HAS_PR]->(pr)
               `,
@@ -522,6 +613,12 @@ async function main(argv = process.argv.slice(2)) {
                 narrative: (p.pr_narrative ?? p.title ?? '').slice(0, MAX_CHARS),
                 changed_file_count: p.changed_file_count,
                 swe_bench_eligible: p.swe_bench_eligible === 1,
+                packet_id: p.packet_id,
+                repo_snapshot_id: p.repo_snapshot_id,
+                packet_content_hash: p.packet_content_hash,
+                context_record_id: p.context_record_id,
+                repo_source_ref_count: p.repo_source_ref_count,
+                concept_link_count: p.concept_link_count,
                 embedding: prEmbedding,
               },
             );
