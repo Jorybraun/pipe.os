@@ -4,6 +4,24 @@ import { clearPlugins } from '../pluginRegistry';
 import { InMemorySessionStore } from '../sessionStore';
 import { getPlugin, createFSM, runEvalGate, scoreSession } from '../';
 import type { AgentTurn } from '../types';
+import type { LLMProvider } from '../../llm/types';
+
+const mockProvider: LLMProvider = {
+  name: 'mock',
+  model: 'mock-model',
+  supportsTools: false,
+  async complete() {
+    return {
+      content: JSON.stringify({
+        acknowledgment: 'Thanks for sharing.',
+        question: { text: 'Tell me about role discovery on your team.' },
+      }),
+      usage: { inputTokens: 10, outputTokens: 20 },
+      toolCalls: [],
+      stopReason: 'end_turn',
+    };
+  },
+};
 
 function makeTurn(i: number): AgentTurn {
   return {
@@ -74,7 +92,8 @@ describe('Unified Agent Runtime — Swarm Integration', () => {
     for (const type of ['role_discovery', 'code_review', 'culture_interview'] as const) {
       const plugin = getPlugin(type);
       const session = await store.createSession(type, undefined, undefined);
-      const turn = await plugin.generateTurn(session, {}, null);
+      const provider = type === 'role_discovery' ? mockProvider : null;
+      const turn = await plugin.generateTurn(session, {}, provider);
       expect(turn.questionText.toLowerCase()).toContain(type.replace('_', ' '));
       expect(turn.idx).toBe(0);
     }
@@ -129,7 +148,7 @@ describe('Unified Agent Runtime — Swarm Integration', () => {
 
     for (let i = 0; i < 2; i++) {
       const current = await store.getSession(session.id);
-      const turn = await plugin.generateTurn(current!, {}, null);
+      const turn = await plugin.generateTurn(current!, {}, mockProvider);
       await store.appendTurn(session.id, turn);
     }
 

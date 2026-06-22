@@ -18,6 +18,8 @@ import type {
   RoleGuardrailSnapshot,
   Seniority,
   RankReviewChallengesResult,
+  StretchArea,
+  UnmatchedDemand,
 } from './types';
 
 const MAX_QUERY_ATOMS = 12;
@@ -643,9 +645,40 @@ export function rankReviewChallenges(
 export function explainChallengeMatch(alignment: ChallengeAlignment): MatchExplanation {
   const status = alignment.eligible ? 'MATCHED' : 'NO_ROLE_SAFE_CHALLENGE';
   const directCount = alignment.alignments.length - alignment.stretchCount;
+  const gapCount = alignment.unmatchedDemandIds.length;
   const summary = alignment.eligible
-    ? `Matched ${alignment.alignments.length} source-backed demands (${directCount} direct, ${alignment.stretchCount} adjacent stretch).`
+    ? `Matched ${alignment.alignments.length} source-backed demands (${directCount} direct, ${alignment.stretchCount} adjacent stretch)${gapCount > 0 ? `, ${gapCount} evidence gap${gapCount === 1 ? '' : 's'}` : ''}.`
     : `Challenge rejected: ${alignment.rejectionReasons.join(', ') || 'no eligible source-backed alignment'}.`;
+
+  const matchedDemandIds = new Set(alignment.alignments.map((entry) => entry.demand.id));
+  const unmatchedDemands: UnmatchedDemand[] = alignment.challenge.demands
+    .filter((demand) => !matchedDemandIds.has(demand.id))
+    .map((demand) => ({
+      demandId: demand.id,
+      family: demand.family,
+      narrative: demand.narrative,
+      weight: demand.weight,
+      concepts: demand.concepts,
+      challengeSourceRefs: demand.sourceRefs,
+      roleRequirement: demand.roleRequirement ?? false,
+    }));
+
+  const stretchAreas: StretchArea[] = alignment.alignments
+    .filter((entry): entry is DemandAlignment & { stretch: NonNullable<DemandAlignment['stretch']> } =>
+      entry.stretch !== undefined,
+    )
+    .map((entry) => ({
+      atomId: entry.atom.id,
+      demandId: entry.demand.id,
+      atomConcept: entry.stretch.atomConcept,
+      demandConcept: entry.stretch.demandConcept,
+      dimension: entry.stretch.dimension,
+      candidateNarrative: entry.atom.narrative,
+      demandNarrative: entry.demand.narrative,
+      candidateSourceRefs: entry.atom.sourceRefs,
+      challengeSourceRefs: entry.demand.sourceRefs,
+    }));
+
   return {
     status,
     challengeId: alignment.challenge.id,
@@ -663,6 +696,8 @@ export function explainChallengeMatch(alignment: ChallengeAlignment): MatchExpla
       candidateSourceRefs: entry.atom.sourceRefs,
       challengeSourceRefs: entry.demand.sourceRefs,
     })),
+    unmatchedDemands,
+    stretchAreas,
     rejectionReasons: alignment.rejectionReasons,
   };
 }
