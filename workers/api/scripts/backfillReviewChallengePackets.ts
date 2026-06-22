@@ -20,7 +20,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars') });
+dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars'), quiet: true });
 const apiRoot = resolve(scriptDir, '..');
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require('node:sqlite') as {
@@ -71,7 +71,7 @@ interface Options {
   prNumber?: number;
 }
 
-interface QueryClient {
+export interface QueryClient {
   query<T = Record<string, unknown>>(
     sql: string,
     params?: Array<string | number | null>,
@@ -105,7 +105,7 @@ class LocalQueryClient implements QueryClient {
   }
 }
 
-interface SamplePullRequestRow {
+export interface SamplePullRequestRow {
   repo_id: number;
   full_name: string;
   github_url: string;
@@ -116,14 +116,14 @@ interface SamplePullRequestRow {
   merged_at: string;
 }
 
-interface PullRequestRefs {
+export interface PullRequestRefs {
   baseSha: string;
   baseRef: string;
   headSha: string;
   mergedAt: string | null;
 }
 
-interface NormalizedBuildResult {
+export interface NormalizedBuildResult {
   challengeInput: NormalizedPullRequestInput;
   challengeStructuralFacts: StructuralFact[];
   structuralFacts: StructuralFact[];
@@ -623,7 +623,7 @@ function inferTestFramework(path: string): string | undefined {
   return undefined;
 }
 
-async function buildNormalizedInput(
+export async function buildNormalizedInput(
   row: SamplePullRequestRow,
   refs: PullRequestRefs,
   diffResult: NonNullable<Awaited<ReturnType<typeof fetchGitHubDiff>>>,
@@ -744,7 +744,7 @@ async function buildNormalizedInput(
   };
 }
 
-function d1DatabaseAdapter(client: QueryClient): D1Database {
+export function d1DatabaseAdapter(client: QueryClient): D1Database {
   return {
     prepare(sql: string) {
       let params: Array<string | number | null> = [];
@@ -912,7 +912,9 @@ async function run(options: Options): Promise<void> {
   if (stats.errors > 0) process.exitCode = 1;
 }
 
-run(parseArgs(process.argv.slice(2))).catch((error) => {
-  console.error(`[challenge-backfill] fatal: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  run(parseArgs(process.argv.slice(2))).catch((error) => {
+    console.error(`[challenge-backfill] fatal: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}
