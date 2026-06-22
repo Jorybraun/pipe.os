@@ -2,16 +2,20 @@
 /**
  * Backfill existing D1 data into Neo4j.
  *
- * Reads from the local D1 SQLite file and writes to Neo4j using the
- * canonical write functions (writeCandidateGraph, writeRoleGraph, writeRepoGraph).
+ * Reads from the local D1 SQLite file and writes candidate/role projections to
+ * Neo4j using the canonical write functions.
  *
  * Usage:
- *   npx tsx scripts/backfillNeo4j.ts [--candidates] [--roles] [--repos]
- *   npx tsx scripts/backfillNeo4j.ts --all
+ *   npx tsx scripts/backfillNeo4j.ts [--candidates] [--roles]
+ *
+ * Repo projection from legacy repo_nodes is intentionally disabled. Use
+ * ingestReposToNeo4j.ts so repo projection rebuilds from source-backed D1
+ * review packet/context records instead.
  */
 
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Load .dev.vars for NEO4J_* config
 import dotenv from 'dotenv';
@@ -23,9 +27,10 @@ const Database = require('better-sqlite3');
 import { buildNeo4jConfig, getNeo4jDriver, closeNeo4jDriver } from '../src/lib/neo4j/driver';
 import { writeCandidateGraph } from '../src/lib/neo4j/writeCandidateGraph';
 import { writeRoleGraph } from '../src/lib/neo4j/writeRoleGraph';
-import { writeRepoGraph } from '../src/lib/neo4j/writeRepoGraph';
 
 const DB_PATH = '.wrangler/state/v3/d1/miniflare-D1DatabaseObject/c7052d4c5f690270845d2e1be0b13a62fc3f47b010c62f2243a64980dbf38f15.sqlite';
+export const LEGACY_REPO_BACKFILL_DISABLED =
+  'Legacy repo_nodes -> Neo4j backfill is disabled. Run scripts/ingestReposToNeo4j.ts to rebuild repo projection from source-backed review packet/context records.';
 
 interface CandidateRow {
   id: string;
@@ -68,22 +73,6 @@ interface RoleNodeRow {
   source_stakeholder: string | null;
   weight: number | null;
   superseded_at: number | null;
-}
-
-interface RepoRow {
-  id: number;
-  full_name: string;
-  admin_status: string | null;
-}
-
-interface RepoNodeRow {
-  id: string;
-  repo_id: number;
-  signals_version: string;
-  node_type: string;
-  narrative_text: string;
-  embedding_json: string | null;
-  source_reference: string | null;
 }
 
 const env = {
@@ -212,53 +201,8 @@ async function backfillRoles(db: any) {
   console.log(`✓ Backfilled ${roles.length} roles with ${nodes.length} active nodes`);
 }
 
-async function backfillRepos(db: any) {
-  console.log('\n--- Repos ---');
-  const repos = db.prepare("SELECT id, full_name, admin_status FROM qualified_repos WHERE disqualified = 0").all() as RepoRow[];
-  console.log(`Found ${repos.length} repos in D1`);
-
-  const nodes = db.prepare(`
-    SELECT id, repo_id, signals_version, node_type, narrative_text,
-           embedding_json, source_reference
-    FROM repo_nodes
-  `).all() as RepoNodeRow[];
-
-  const nodesByRepo = new Map<number, RepoNodeRow[]>();
-  for (const n of nodes) {
-    const list = nodesByRepo.get(n.repo_id) ?? [];
-    list.push(n);
-    nodesByRepo.set(n.repo_id, list);
-  }
-
-  for (const r of repos) {
-    const repoNodes = nodesByRepo.get(r.id) ?? [];
-    if (repoNodes.length === 0) continue;
-
-    // Extract slug from id: "{repo_id}_{node_type}_{slug}"
-    const subElements = repoNodes.map((n) => {
-      const parts = n.id.split('_');
-      const slug = parts.slice(2).join('_');
-      const embedding = n.embedding_json ? JSON.parse(n.embedding_json) : null;
-      return {
-        node_type: n.node_type as any,
-        slug: slug || n.id,
-        narrative_text: n.narrative_text,
-        source_reference: n.source_reference ?? undefined,
-        embedding,
-      };
-    });
-
-    await writeRepoGraph({
-      repoId: r.id,
-      fullName: r.full_name,
-      adminStatus: r.admin_status ?? 'unknown',
-      signalsVersion: repoNodes[0]!.signals_version,
-      subElements,
-      env,
-    });
-  }
-
-  console.log(`✓ Backfilled ${repos.length} repos with ${nodes.length} nodes`);
+export async function backfillRepos(_db: unknown): Promise<never> {
+  throw new Error(LEGACY_REPO_BACKFILL_DISABLED);
 }
 
 async function main() {
@@ -270,6 +214,7 @@ async function main() {
 
   if (!doCandidates && !doRoles && !doRepos) {
     console.log('Usage: npx tsx scripts/backfillNeo4j.ts [--candidates] [--roles] [--repos] [--all]');
+    console.log('  --repos / --all fail closed; use scripts/ingestReposToNeo4j.ts for repo projection.');
     process.exit(1);
   }
 
@@ -307,7 +252,9 @@ async function main() {
   console.log('\nBackfill complete.');
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
