@@ -91,7 +91,9 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
   }) => {
     const unique = Date.now();
     const roleTitle = `E2E Smoke Role ${unique}`;
-    const rolelessEmail = `mvp-smoke-${unique}@pipe-test.dev`;
+    const personEmail = `mvp-smoke-${unique}@pipe-test.dev`;
+    const rolelessMessage =
+      "Roleless intake smoke fixture: candidate has React, D1, and living-context debugging experience.";
 
     await page.goto(`${APP_BASE}/interviews?new=1`);
     await waitForClerkLoaded(page);
@@ -136,12 +138,12 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     const addContactPanel = page
       .getByText("ADD_CONTACT")
       .locator("xpath=ancestor::div[contains(@style, 'height: 100%')]");
-    await addContactPanel.getByPlaceholder("email@example.com").fill(rolelessEmail);
+    await addContactPanel.getByPlaceholder("email@example.com").fill(personEmail);
     await addContactPanel.getByPlaceholder("Full name").fill("MVP Smoke Person");
     await addContactPanel.getByPlaceholder("Company").fill("PIPE Smoke Co");
     await addContactPanel.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
     await addContactPanel.getByRole("button", { name: /^add$/i }).click();
-    await expect(page.getByText(rolelessEmail)).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(personEmail)).toBeVisible({ timeout: 15000 });
 
     const token = await getAuthToken(page);
     const contactsRes = await request.get(`${API_BASE}/api/v1/contacts`, {
@@ -151,7 +153,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     const contactsBody = (await contactsRes.json()) as {
       contacts: Array<{ id: string; email: string }>;
     };
-    const createdContact = contactsBody.contacts.find((contact) => contact.email === rolelessEmail);
+    const createdContact = contactsBody.contacts.find((contact) => contact.email === personEmail);
     expect(createdContact).toBeTruthy();
     createdContactId = createdContact!.id;
 
@@ -163,6 +165,17 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
       contactContextRes.ok(),
       `contact living-context read failed: ${await contactContextRes.text()}`,
     ).toBeTruthy();
+    const contactContext = (await contactContextRes.json()) as {
+      person: {
+        personId: string;
+        workspacePersonId: string;
+        primaryEmail: string | null;
+      } | null;
+      summary: { interactionCount: number; sourceSpanCount: number };
+    };
+    expect(contactContext.person).not.toBeNull();
+    expect(contactContext.person!.primaryEmail).toBe(personEmail);
+    expect(contactContext.summary.interactionCount).toBe(0);
 
     await page.getByRole("button", { name: /^context$/i }).click();
     await expect(
@@ -176,10 +189,9 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
       headers: authHeaders(token),
       data: {
         name: "MVP Smoke Roleless Candidate",
-        email: rolelessEmail.replace("@", "+candidate@"),
+        email: personEmail,
         interviewType: "SCREENING",
-        message:
-          "Roleless intake smoke fixture: candidate has React, D1, and living-context debugging experience.",
+        message: rolelessMessage,
         skipEmail: true,
       },
     });
@@ -203,9 +215,56 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
       `candidate living-context read failed: ${await contextRes.text()}`,
     ).toBeTruthy();
     const contextBody = (await contextRes.json()) as {
-      livingContext: { summary: { interactionCount: number; sourceSpanCount: number } };
+      livingContext: {
+        person: {
+          personId: string;
+          workspacePersonId: string;
+          primaryEmail: string | null;
+        };
+        summary: { interactionCount: number; sourceSpanCount: number };
+        artifacts: Array<{ sourceSpans: Array<{ exactText: string }> }>;
+      };
     };
+    expect(contextBody.livingContext.person.personId).toBe(contactContext.person!.personId);
+    expect(contextBody.livingContext.person.workspacePersonId).toBe(
+      contactContext.person!.workspacePersonId,
+    );
+    expect(contextBody.livingContext.person.primaryEmail).toBe(personEmail);
     expect(contextBody.livingContext.summary.interactionCount).toBeGreaterThan(0);
     expect(contextBody.livingContext.summary.sourceSpanCount).toBeGreaterThan(0);
+    expect(
+      contextBody.livingContext.artifacts
+        .flatMap((artifact) => artifact.sourceSpans)
+        .some((span) => span.exactText === rolelessMessage),
+    ).toBe(true);
+
+    const contactAfterCandidateRes = await request.get(
+      `${API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(
+      contactAfterCandidateRes.ok(),
+      `post-candidate contact living-context read failed: ${await contactAfterCandidateRes.text()}`,
+    ).toBeTruthy();
+    const contactAfterCandidate = (await contactAfterCandidateRes.json()) as {
+      person: {
+        personId: string;
+        workspacePersonId: string;
+        primaryEmail: string | null;
+      } | null;
+      summary: { interactionCount: number; sourceSpanCount: number };
+      artifacts: Array<{ sourceSpans: Array<{ exactText: string }> }>;
+    };
+    expect(contactAfterCandidate.person?.personId).toBe(contextBody.livingContext.person.personId);
+    expect(contactAfterCandidate.person?.workspacePersonId).toBe(
+      contextBody.livingContext.person.workspacePersonId,
+    );
+    expect(contactAfterCandidate.summary.interactionCount).toBeGreaterThan(0);
+    expect(contactAfterCandidate.summary.sourceSpanCount).toBeGreaterThan(0);
+    expect(
+      contactAfterCandidate.artifacts
+        .flatMap((artifact) => artifact.sourceSpans)
+        .some((span) => span.exactText === rolelessMessage),
+    ).toBe(true);
   });
 });

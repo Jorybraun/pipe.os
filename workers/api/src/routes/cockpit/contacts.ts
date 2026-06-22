@@ -164,6 +164,7 @@ contacts.get('/:id/living-context', async (c) => {
     .first<{ id: string }>();
   if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
 
+  await ensureContactLivingContext(db, id);
   const livingContext = await loadContactLivingContext(db, id);
   if (!livingContext) {
     // Contact exists but has no living context yet — return empty structure
