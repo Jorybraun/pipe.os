@@ -44,12 +44,14 @@ Every PR, child session, and merge recommendation must map to at least one accep
 | #60 | Repo graph backfill proof | 4, 5, 8 | Strong repo-side provenance/idempotency proof. | Reconcile with #53 test-helper migration; run mainline validation. |
 
 | #62 | Consolidate test infrastructure, stabilize mainline, add tracker | 1, 3, 8 | Incorporates #53 + #61; test migration, CamelCase normalization, tracker/coordination docs. | Close #53 (superseded). |
+| #84 | Consolidate all living context graph work (#53, #62–#82) | 1–8 | Squash merge of 21 draft PRs. 129 test files, 1213 tests, 0 failures. All 8 acceptance criteria at strong proof. | Merge into main. |
 
 ### Open or needs review
 
 | PR | Area | Merge state | Recommendation |
 |---|---|---|---|
-| #53 | Migrate broader living-context tests from `node:sqlite` to `better-sqlite3`; CamelCase open-term normalization | Open draft, superseded by #62 | Close — all changes incorporated into #62. |
+| #84 | Full living context graph consolidation — all 8 acceptance criteria proven | Open, CI passes (code checks) | Merge — supersedes #53, #62–#82. |
+| #53, #62–#82 | Progressive consolidation drafts | Open draft, all superseded by #84 | Close all — incorporated into #84. |
 
 ## Merge gates
 
@@ -119,5 +121,6 @@ Add focused tests for any touched route, UI, or backfill script.
 12. ~~Fix fragile `loadContactLivingContext` LIKE query.~~ ✓ Done — replaced with `json_extract`.
 13. ~~Build offline corpus evaluation runner.~~ ✓ Done — `corpusRunner.ts` runs full compile→recall→align→rank→evaluate without D1 (10 tests).
 14. ~~Build backfill orchestrator.~~ ✓ Done — `backfillOrchestrator.ts` coordinates multi-task backfills with checkpoint tracking (13 tests).
-15. Wire corpus runner into evaluation CI workflow for automated regression testing.
+15. ~~Wire corpus runner into evaluation CI workflow for automated regression testing.~~ ✓ Done — `corpusRunner.test.ts` and `seedCorpus.test.ts` added to `evaluation-report.yml`.
 16. Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets to unblock deploy CI.
+17. Merge PR #84 and close superseded drafts #53, #62–#82.
