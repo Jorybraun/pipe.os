@@ -48,6 +48,8 @@ import { projectionRebuild } from './routes/internal/projectionRebuild';
 import { repoGraph } from './routes/internal/repoGraph';
 // Rollout gate administration (criterion #8 — staged rollout without redeployment)
 import { rolloutAdmin } from './routes/internal/rolloutAdmin';
+// Living context subsystem health check
+import { livingContextHealth } from './routes/internal/livingContextHealth';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -199,6 +201,9 @@ app.route('/api/v1/internal/repo-graph', repoGraph);
 
 // Internal: Rollout gate administration (admin-token auth)
 app.route('/api/v1/internal', rolloutAdmin);
+
+// Internal: Living context subsystem health check (admin-token auth)
+app.route('/api/v1/internal', livingContextHealth);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

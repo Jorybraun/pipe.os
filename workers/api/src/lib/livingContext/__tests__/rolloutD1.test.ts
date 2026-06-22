@@ -21,6 +21,7 @@ import {
   updateGateStage,
   validateD1GatePrerequisites,
   getAllGates,
+  getGateAuditLog,
 } from '../rollout';
 
 let sqlite: BetterSqliteDb;
@@ -28,9 +29,10 @@ let db: D1Database;
 
 function applyMigrations(): void {
   const migrationsDir = resolve(__dirname, '../../../../migrations');
-  const migrationFile = resolve(migrationsDir, '0096_rollout_gates.sql');
-  const sql = readFileSync(migrationFile, 'utf-8');
-  sqlite.exec(sql);
+  for (const file of ['0096_rollout_gates.sql', '0097_rollout_audit_log.sql']) {
+    const sql = readFileSync(resolve(migrationsDir, file), 'utf-8');
+    sqlite.exec(sql);
+  }
 }
 
 beforeEach(() => {
@@ -132,5 +134,48 @@ describe('D1-backed rollout gates — criterion #8', () => {
     sqlite.exec('DELETE FROM rollout_gates');
     const gates = await loadGatesFromD1(db);
     expect(gates.length).toBe(getAllGates().length);
+  });
+
+  it('logs audit entry on successful gate stage change', async () => {
+    const result = await updateGateStage(db, 'match_explanation', 'general_availability', 'test-auditor', 'enabling for production');
+    expect(result.success).toBe(true);
+
+    const entries = await getGateAuditLog(db, 'match_explanation');
+    expect(entries.length).toBe(1);
+    expect(entries[0].gateKey).toBe('match_explanation');
+    expect(entries[0].oldStage).toBe('canary');
+    expect(entries[0].newStage).toBe('general_availability');
+    expect(entries[0].changedBy).toBe('test-auditor');
+    expect(entries[0].reason).toBe('enabling for production');
+    expect(entries[0].createdAt).toBeTruthy();
+  });
+
+  it('accumulates audit entries across multiple changes', async () => {
+    await updateGateStage(db, 'match_explanation', 'general_availability', 'user-1');
+    await updateGateStage(db, 'match_explanation', 'canary', 'user-2', 'rolling back');
+
+    const entries = await getGateAuditLog(db, 'match_explanation');
+    expect(entries.length).toBe(2);
+    expect(entries[0].newStage).toBe('canary');
+    expect(entries[0].changedBy).toBe('user-2');
+    expect(entries[0].reason).toBe('rolling back');
+    expect(entries[1].newStage).toBe('general_availability');
+    expect(entries[1].changedBy).toBe('user-1');
+  });
+
+  it('does not log audit entry on rejected change', async () => {
+    const result = await updateGateStage(db, 'deterministic_matching', 'disabled', 'test');
+    expect(result.success).toBe(false);
+
+    const entries = await getGateAuditLog(db, 'deterministic_matching');
+    expect(entries.length).toBe(0);
+  });
+
+  it('returns full audit log across all gates', async () => {
+    await updateGateStage(db, 'match_explanation', 'general_availability', 'user-a');
+    await updateGateStage(db, 'contact_living_context', 'general_availability', 'user-b');
+
+    const all = await getGateAuditLog(db);
+    expect(all.length).toBe(2);
   });
 });

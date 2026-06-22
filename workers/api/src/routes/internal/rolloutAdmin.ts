@@ -16,6 +16,7 @@ import {
   getGateFromD1,
   updateGateStage,
   validateD1GatePrerequisites,
+  getGateAuditLog,
 } from '../../lib/livingContext/rollout';
 import type { RolloutStage } from '../../lib/livingContext/rollout';
 
@@ -57,7 +58,7 @@ app.put('/rollout/:key', async (c) => {
   if (authErr) return authErr;
 
   const { key } = c.req.param();
-  const body = await c.req.json<{ stage?: string }>().catch((): { stage?: string } => ({}));
+  const body = await c.req.json<{ stage?: string; reason?: string }>().catch((): { stage?: string; reason?: string } => ({}));
   if (!body.stage || !VALID_STAGES.includes(body.stage)) {
     return c.json(
       { error: `Invalid stage. Must be one of: ${VALID_STAGES.join(', ')}` },
@@ -70,6 +71,7 @@ app.put('/rollout/:key', async (c) => {
     key,
     body.stage as RolloutStage,
     'admin',
+    body.reason,
   );
 
   if (!result.success) {
@@ -84,6 +86,16 @@ app.post('/rollout/validate', async (c) => {
 
   const errors = await validateD1GatePrerequisites(c.env.DB);
   return c.json({ valid: errors.length === 0, errors });
+});
+
+app.get('/rollout/audit', async (c) => {
+  const authErr = checkAdmin(c);
+  if (authErr) return authErr;
+
+  const gateKey = c.req.query('gate_key') || undefined;
+  const limit = Math.min(Math.max(1, Number(c.req.query('limit')) || 50), 200);
+  const entries = await getGateAuditLog(c.env.DB, gateKey, limit);
+  return c.json({ entries });
 });
 
 export { app as rolloutAdmin };

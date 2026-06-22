@@ -197,6 +197,7 @@ export async function updateGateStage(
   key: string,
   stage: RolloutStage,
   updatedBy: string,
+  reason?: string,
 ): Promise<{ success: boolean; error?: string }> {
   if (!VALID_STAGES.includes(stage)) {
     return { success: false, error: `Invalid stage: ${stage}` };
@@ -234,6 +235,7 @@ export async function updateGateStage(
     }
   }
 
+  const oldStage = target.stage;
   try {
     await db
       .prepare(
@@ -241,6 +243,16 @@ export async function updateGateStage(
       )
       .bind(stage, updatedBy, key)
       .run();
+
+    await db
+      .prepare(
+        `INSERT INTO rollout_gate_audit_log (gate_key, old_stage, new_stage, changed_by, reason)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .bind(key, oldStage, stage, updatedBy, reason ?? null)
+      .run()
+      .catch(() => { /* audit write is best-effort; never block the update */ });
+
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -272,4 +284,45 @@ function validateGatePrerequisitesFrom(gates: readonly RolloutGate[]): string[] 
 export async function validateD1GatePrerequisites(db: D1Database): Promise<string[]> {
   const gates = await loadGatesFromD1(db);
   return validateGatePrerequisitesFrom(gates);
+}
+
+export interface RolloutAuditEntry {
+  readonly id: number;
+  readonly gateKey: string;
+  readonly oldStage: string;
+  readonly newStage: string;
+  readonly changedBy: string;
+  readonly reason: string | null;
+  readonly createdAt: string;
+}
+
+export async function getGateAuditLog(
+  db: D1Database,
+  gateKey?: string,
+  limit = 50,
+): Promise<RolloutAuditEntry[]> {
+  const query = gateKey
+    ? 'SELECT id, gate_key, old_stage, new_stage, changed_by, reason, created_at FROM rollout_gate_audit_log WHERE gate_key = ? ORDER BY id DESC LIMIT ?'
+    : 'SELECT id, gate_key, old_stage, new_stage, changed_by, reason, created_at FROM rollout_gate_audit_log ORDER BY id DESC LIMIT ?';
+  const stmt = gateKey
+    ? db.prepare(query).bind(gateKey, limit)
+    : db.prepare(query).bind(limit);
+  const { results } = await stmt.all<{
+    id: number;
+    gate_key: string;
+    old_stage: string;
+    new_stage: string;
+    changed_by: string;
+    reason: string | null;
+    created_at: string;
+  }>();
+  return (results ?? []).map((row) => ({
+    id: row.id,
+    gateKey: row.gate_key,
+    oldStage: row.old_stage,
+    newStage: row.new_stage,
+    changedBy: row.changed_by,
+    reason: row.reason,
+    createdAt: row.created_at,
+  }));
 }

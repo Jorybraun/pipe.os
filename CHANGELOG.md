@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Rollout Gate Audit Log (Criterion #8)
+
+- New D1 migration `0097_rollout_audit_log.sql` — immutable audit trail for every gate stage transition with actor, reason, and timestamp.
+- `getGateAuditLog()` function in `rollout.ts` — query audit history by gate key or globally.
+- `updateGateStage()` now writes audit entries on successful transitions (best-effort, never blocks the update).
+- `PUT /api/v1/internal/rollout/:key` accepts optional `reason` field for audit trail context.
+- `GET /api/v1/internal/rollout/audit` — new admin endpoint to query gate change history.
+- 4 new tests in `rolloutD1.test.ts` proving audit log writes, accumulation, rejection handling, and cross-gate queries.
+
+### Added — Living Context Subsystem Health Check (Criterion #8)
+
+- `GET /api/v1/internal/living-context-health` — structured health check covering rollout gates, backfill orchestrator, projection outbox depth, and required D1 table presence.
+- Returns per-subsystem healthy/unhealthy status with detail payloads for ops dashboards.
+
 ### Added — Expanded Expert-Labelled Evaluation Corpus (Criterion #8)
 
 - Expanded seed corpus from 3 to 5 candidates: added fullstack engineer (React + Node.js + API gateway) and DevOps/SRE (K8s deployments + Terraform IaC).

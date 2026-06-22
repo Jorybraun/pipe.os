@@ -127,3 +127,5 @@ Add focused tests for any touched route, UI, or backfill script.
 17. ~~Merge PR #84 and close superseded drafts #53, #62–#82.~~ ✓ Done — PR #86 consolidates #84 + #85; superseded PRs ready to close.
 18. ~~Make rollout gates D1-backed for runtime configuration.~~ ✓ Done — `0096_rollout_gates.sql`, `rollout.ts` D1 API, `rolloutAdmin.ts` admin endpoints, 11 proof tests.
 19. ~~Wire backfill orchestrator admin endpoints.~~ ✓ Done — `GET /backfill-orchestrator` status, `POST /backfill-orchestrator/reset`.
+20. ~~Add rollout gate audit log.~~ ✓ Done — `0097_rollout_audit_log.sql`, `getGateAuditLog()`, `GET /rollout/audit`, 4 proof tests.
+21. ~~Add living context subsystem health check.~~ ✓ Done — `GET /living-context-health` covers rollout gates, backfill, projection outbox, required tables.
