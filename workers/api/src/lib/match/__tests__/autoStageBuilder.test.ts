@@ -78,6 +78,7 @@ interface PrFixture {
   pr_number: number;
   title: string;
   swe_bench_eligible: boolean;
+  conceptKeys?: string[];
 }
 
 interface IssueFixture {
@@ -96,6 +97,7 @@ interface DbState {
   repos: RepoFixture[];
   prs: PrFixture[];
   issues: IssueFixture[];
+  roleContextConcepts?: Array<{ canonicalKey: string; label: string }>;
 }
 
 interface StubDb {
@@ -147,6 +149,23 @@ function buildStubDb(state: DbState): StubDb {
           },
 
           async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
+            if (normalized.startsWith('SELECT id, rcd_version, source_section, narrative_text, extracted_properties_json FROM role_nodes')) {
+              return { results: [] as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT cr.id AS context_record_id')) {
+              const rows = (state.roleContextConcepts ?? []).map((concept, index) => ({
+                context_record_id: `role-context-record-${index + 1}`,
+                record_type: 'simple_job_description_context',
+                extraction_version: 'simple-jd-v1',
+                canonical_key: concept.canonicalKey,
+                label: concept.label,
+                source_ref_type: 'source_span',
+                source_ref_id: `role-source-span-${index + 1}`,
+              }));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
             if (normalized.startsWith('SELECT rcp.pr_number, rcp.quality_score, rcp.packet_json FROM review_challenge_packets')) {
               const [repoId] = args as [number];
               const repo = state.repos.find((candidate) => candidate.id === repoId);
@@ -157,8 +176,8 @@ function buildStubDb(state: DbState): StubDb {
                   quality_score: 0.9,
                   packet_json: JSON.stringify({
                     pullRequest: { number: pr.pr_number, title: pr.title },
-                    demands: (repo?.skills ?? []).map((skill) => ({
-                      conceptKeys: [`term:${skill}`],
+                    demands: (pr.conceptKeys ?? (repo?.skills ?? []).map((skill) => `term:${skill}`)).map((conceptKey) => ({
+                      conceptKeys: [conceptKey],
                     })),
                   }),
                 }));
@@ -414,6 +433,30 @@ describe('autoStageBuilder', () => {
     // Top-1 by pr_quality_score is still 101 (0.9 > 0.6).
     expect(result.stations[0]!.repoId).toBe(101);
     expect(result.repoChoice.rationale).toContain('2 non-negotiable skill(s)');
+  });
+
+  it('uses persisted role context concepts to select source-backed review PRs', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [{ canonicalKey: 'term:kafka', label: 'kafka' }];
+    state.prs = [
+      { repo_id: 101, pr_number: 42, title: 'persona-surface PR', swe_bench_eligible: true, conceptKeys: ['term:typescript'] },
+      { repo_id: 101, pr_number: 84, title: 'source-backed Kafka PR', swe_bench_eligible: true, conceptKeys: ['term:kafka'] },
+    ];
+    const stub = buildStubDb(state);
+
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext({
+        non_negotiable_skills_json: JSON.stringify(['kafka']),
+        job_description_md: 'We need kafka ownership.',
+      }),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.githubPrNumber).toBe(84);
+    expect(result.stations[0]!.prTitle).toBe('source-backed Kafka PR');
   });
 
   it('throws when no must-have skills can be resolved', async () => {

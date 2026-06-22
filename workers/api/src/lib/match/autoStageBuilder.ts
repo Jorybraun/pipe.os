@@ -20,6 +20,7 @@
  */
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
+import { loadRoleChallengeSemantics } from '../challengeMatching/roleGuardrails';
 import { openSemanticTerm } from '../livingContext/openTerms';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
 import type { ChallengePacket } from '../repoSemanticGraph';
@@ -159,6 +160,17 @@ export function buildMatchRequest(roleContext: RoleContextRow): MatchRequest {
     niceToHaveSkills,
     seniority: exactSeniority(persona?.seniority),
     limit: 5,
+  };
+}
+
+function roleContextSemanticInput(roleContext: RoleContextRow): Parameters<typeof loadRoleChallengeSemantics>[1] {
+  const raw = (roleContext as unknown as Record<string, unknown>).non_negotiable_skills_json;
+  return {
+    id: roleContext.id,
+    rcd_version: roleContext.rcd_version,
+    rcd_json: roleContext.rcd_json,
+    job_description_md: roleContext.job_description_md,
+    non_negotiable_skills_json: typeof raw === 'string' ? raw : null,
   };
 }
 
@@ -334,14 +346,21 @@ export async function autoStageBuilder(
     ...baseRequest.mustHaveSkills,
     ...baseRequest.niceToHaveSkills,
   ];
-  const roleConcepts = roleSurfaces.flatMap((surface) => {
+  const fallbackRoleConcepts = roleSurfaces.flatMap((surface) => {
     const term = openSemanticTerm(surface);
     return term ? [term.canonicalKey] : [];
   });
-  const requiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
+  const fallbackRequiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
     const term = openSemanticTerm(surface);
     return term ? [term.canonicalKey] : [];
   });
+  const roleSemantics = await loadRoleChallengeSemantics(db, roleContextSemanticInput(roleContext));
+  const roleConcepts = roleSemantics.relevantConcepts.length > 0
+    ? roleSemantics.relevantConcepts
+    : fallbackRoleConcepts;
+  const requiredConcepts = roleSemantics.requiredConcepts.length > 0
+    ? roleSemantics.requiredConcepts
+    : fallbackRequiredConcepts;
   const stations: AutoStation[] = [];
   const perStationRepo: AutoStageBuilderResult['perStationRepo'] = {};
 

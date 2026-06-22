@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cockpit candidate profiles now preserve graph-context projection failures from rejected review packets instead of collapsing them into a generic no-match gap.
 - Standalone code-review challenge loading now reconstructs candidate-facing diffs only from context-ready review packets with `repo_challenge_packet` records, repo source-span refs, and concept links.
 - Pipeline auto-build now selects CODE_REVIEW PRs only from context-ready review packets with `repo_challenge_packet` records, repo source-span refs, and concept links.
+- Pipeline auto-build now uses persisted role context concepts before legacy persona skill strings when selecting a source-backed CODE_REVIEW PR, preserving simple-JD/open-concept semantics in challenge selection.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
 ### Fixed — Repo Graph Projection
