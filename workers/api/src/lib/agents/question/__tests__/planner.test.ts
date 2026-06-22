@@ -48,7 +48,7 @@ describe('planner', () => {
     });
 
     it('progresses through probes', () => {
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 9; i++) {
         const plan = buildTurnPlan(makeState({
           phase: 'DISCOVERY',
           questionsAsked: 2 + i,
@@ -59,11 +59,11 @@ describe('planner', () => {
       }
     });
 
-    it('stops assigning probes after all 8 delivered', () => {
+    it('stops assigning probes after all 9 delivered', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'DISCOVERY',
-        questionsAsked: 10,
-        knowledgeState: { _probesDelivered: 8 },
+        questionsAsked: 11,
+        knowledgeState: { _probesDelivered: 9 },
       }));
       expect(plan.probeId).toBeUndefined();
       expect(plan.strategy).not.toBe('probe');
@@ -105,7 +105,7 @@ describe('planner', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'PRIORITIZE',
         questionsAsked: 9,
-        knowledgeState: { _probesDelivered: 8 },
+        knowledgeState: { _probesDelivered: 9 },
         exchanges: [{
           questionId: 'q-9',
           acknowledgment: 'Ok.',
@@ -122,7 +122,7 @@ describe('planner', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'WRAP_UP',
         questionsAsked: 11,
-        knowledgeState: { _probesDelivered: 8, _mustHavesPrioritized: true, _frictionProbed: true, _dayInLifeProbed: true, _stories: [{}] },
+        knowledgeState: { _probesDelivered: 9, _mustHavesPrioritized: true, _frictionProbed: true, _dayInLifeProbed: true, _stories: [{}] },
       }));
       expect(plan.phase).toBe('WRAP_UP');
       expect(plan.strategy).toBe('wrap');
@@ -134,7 +134,7 @@ describe('planner', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'PRIORITIZE',
         questionsAsked: 9,
-        knowledgeState: { _probesDelivered: 8 },
+        knowledgeState: { _probesDelivered: 9 },
       }));
       expect(plan.phase).toBe('PRIORITIZE');
       expect(plan.directive).toContain('ranking');
@@ -145,7 +145,7 @@ describe('planner', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'EVP_FRICTION',
         questionsAsked: 10,
-        knowledgeState: { _probesDelivered: 8, _mustHavesPrioritized: true },
+        knowledgeState: { _probesDelivered: 9, _mustHavesPrioritized: true },
       }));
       expect(plan.phase).toBe('EVP_FRICTION');
       expect(plan.directive).toContain('friction');
@@ -156,7 +156,7 @@ describe('planner', () => {
       const plan = buildTurnPlan(makeState({
         phase: 'PRIORITIZE',
         questionsAsked: 9,
-        knowledgeState: { _probesDelivered: 8 },
+        knowledgeState: { _probesDelivered: 9 },
         coverage: { why: 'deep', work: 'deep', team: 'covered', bar: 'partial', codebase: 'deep', process: 'deep' },
       }));
       expect(plan.targetDomain).toBe('bar');

@@ -218,6 +218,28 @@ export interface RankReviewChallengesResult {
   matches: RankedChallenge[];
 }
 
+export interface UnmatchedDemand {
+  demandId: string;
+  family: string;
+  narrative: string;
+  weight: number;
+  concepts: string[];
+  challengeSourceRefs: SourceRef[];
+  roleRequirement: boolean;
+}
+
+export interface StretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: ConceptAdjacency['dimension'];
+  candidateNarrative: string;
+  demandNarrative: string;
+  candidateSourceRefs: SourceRef[];
+  challengeSourceRefs: SourceRef[];
+}
+
 export interface MatchExplanation {
   status: 'MATCHED' | 'NO_ROLE_SAFE_CHALLENGE';
   challengeId: string;
@@ -235,5 +257,7 @@ export interface MatchExplanation {
     candidateSourceRefs: SourceRef[];
     challengeSourceRefs: SourceRef[];
   }>;
+  unmatchedDemands: UnmatchedDemand[];
+  stretchAreas: StretchArea[];
   rejectionReasons: string[];
 }

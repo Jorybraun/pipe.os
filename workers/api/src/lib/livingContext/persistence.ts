@@ -143,7 +143,7 @@ export class LivingContextStore {
        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
        ON CONFLICT(ingestion_key) DO UPDATE SET
          relationship_summary = excluded.relationship_summary,
-         context_json = excluded.context_json,
+         context_json = json_patch(workspace_people.context_json, excluded.context_json),
          updated_at = excluded.updated_at`,
     ).bind(
       id,
