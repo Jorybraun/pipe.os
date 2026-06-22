@@ -343,7 +343,7 @@ export default function InterviewDetailPage(): JSX.Element {
   ));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={PAGE}>
       <header style={HEADER}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <button onClick={() => navigate('/interviews')} style={BACK_BUTTON}>
@@ -374,8 +374,56 @@ export default function InterviewDetailPage(): JSX.Element {
         </div>
       </header>
 
+      <section style={ROOM_PANEL}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
+            <Video size={15} />
+            Room
+          </div>
+          <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
+          <div style={ROOM_LINK_TEXT}>
+            {guestRoomUrl ? 'Guest link ready' : 'Open the host room to create the guest link'}
+          </div>
+          {roomLinks?.expiresAt && (
+            <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
+              Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
+            </div>
+          )}
+        </div>
+        <div style={ROOM_ACTIONS}>
+          <button
+            onClick={() => void openHostRoom()}
+            disabled={isPreparingRoom}
+            style={{ ...PRIMARY_BUTTON, ...ROOM_PRIMARY_BUTTON }}
+          >
+            {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+            OPEN HOST ROOM
+          </button>
+          <button
+            onClick={() => void copyGuestLink()}
+            disabled={isPreparingRoom}
+            style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+          >
+            <Copy size={14} />
+            COPY GUEST LINK
+          </button>
+          {personEmail && (
+            <button
+              onClick={() => void sendInvite()}
+              disabled={isSendingInvite}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+            >
+              {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+              {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
+            </button>
+          )}
+          {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
+          {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
+        </div>
+      </section>
+
       <div style={GRID}>
-        <main style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        <main style={DETAIL_GRID}>
           <Section title="Meeting" icon={<Calendar size={15} />}>
             <div style={FIELD_GRID}>
               <Field label="When" value={formatDate(interview.scheduledAt)} />
@@ -454,54 +502,8 @@ export default function InterviewDetailPage(): JSX.Element {
                 ))}
               </div>
             ) : (
-              <div style={EMPTY_TEXT}>No transcript captured yet.</div>
+              <div style={EMPTY_TEXT}>Transcript will appear here after the call.</div>
             )}
-          </Section>
-        </main>
-
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-          <Section title="Room" icon={<Video size={15} />}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={FIELD_VALUE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</div>
-              <div style={ROOM_LINK_TEXT}>
-                {guestRoomUrl ? 'Guest link ready' : 'Open the host room to create the guest link'}
-              </div>
-            </div>
-            <div style={ROOM_ACTIONS}>
-              <button
-                onClick={() => void openHostRoom()}
-                disabled={isPreparingRoom}
-                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-              >
-                {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-                OPEN HOST ROOM
-              </button>
-              <button
-                onClick={() => void copyGuestLink()}
-                disabled={isPreparingRoom}
-                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-              >
-                <Copy size={14} />
-                COPY GUEST LINK
-              </button>
-              {personEmail && (
-                <button
-                  onClick={() => void sendInvite()}
-                  disabled={isSendingInvite}
-                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-                >
-                  {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
-                  {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
-                </button>
-              )}
-              {roomLinks?.expiresAt && (
-                <div style={ROOM_LINK_TEXT}>
-                  Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
-                </div>
-              )}
-              {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
-              {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
-            </div>
           </Section>
 
           {hasInviteDelivery && (
@@ -511,7 +513,7 @@ export default function InterviewDetailPage(): JSX.Element {
               </div>
             </Section>
           )}
-        </aside>
+        </main>
       </div>
 
       {interview.livingContext && hasLivingContextEvidence && (
@@ -545,11 +547,52 @@ const HEADER: CSSProperties = {
   borderBottom: '1px solid var(--pipe-border)',
 };
 
+const PAGE: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 20,
+  width: '100%',
+  maxWidth: 1180,
+  margin: '0 auto',
+  padding: 22,
+  border: '1px solid rgba(148,163,184,0.18)',
+  borderRadius: 8,
+  background: 'rgba(6,10,18,0.96)',
+  boxShadow: '0 24px 80px rgba(0,0,0,0.34)',
+};
+
 const GRID: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 360px)',
+  gridTemplateColumns: '1fr',
   gap: 16,
   alignItems: 'start',
+};
+
+const ROOM_PANEL: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 420px)',
+  gap: 22,
+  alignItems: 'center',
+  border: '1px solid rgba(96,165,250,0.34)',
+  borderRadius: 8,
+  background: 'rgba(10,16,28,0.92)',
+  padding: 20,
+  boxShadow: '0 18px 42px rgba(0,0,0,0.22)',
+};
+
+const ROOM_TITLE: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontSize: 20,
+  lineHeight: 1.25,
+  letterSpacing: 0,
+};
+
+const DETAIL_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+  gap: 14,
+  minWidth: 0,
 };
 
 const GRAPH_SECTION: CSSProperties = {
@@ -719,7 +762,18 @@ const ROOM_ACTIONS: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: '1fr',
   gap: 10,
-  marginTop: 16,
+};
+
+const ROOM_PRIMARY_BUTTON: CSSProperties = {
+  justifyContent: 'center',
+  width: '100%',
+  borderColor: 'rgba(96,165,250,0.46)',
+  background: 'rgba(96,165,250,0.16)',
+};
+
+const ROOM_SECONDARY_BUTTON: CSSProperties = {
+  justifyContent: 'center',
+  width: '100%',
 };
 
 const ROOM_LINK_TEXT: CSSProperties = {
