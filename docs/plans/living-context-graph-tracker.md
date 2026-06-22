@@ -115,3 +115,5 @@ Add focused tests for any touched route, UI, or backfill script.
 8. Verify repository overlays in UI with real repo graph data.
 9. Run full standalone CODE_REVIEW E2E with Playwright.
 10. Build expert-labelled corpus with real recruiter annotations.
+11. ~~Add source content search for living context (criterion #2).~~ ✓ Done — `searchSourceContent()` + `/living-context/search` on contacts and candidates.
+12. ~~Fix fragile `loadContactLivingContext` LIKE query.~~ ✓ Done — replaced with `json_extract`.

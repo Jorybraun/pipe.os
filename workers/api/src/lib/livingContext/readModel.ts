@@ -1,3 +1,23 @@
+export interface SourceContentSearchResult {
+  assertionId: string;
+  interactionId: string | null;
+  predicate: string;
+  narrative: string;
+  confidence: number | null;
+  concepts: string[];
+  sourceSpanId: string;
+  exactText: string;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+}
+
 const INTERACTION_LIMIT = 100;
 const ARTIFACT_LIMIT = 200;
 const ASSERTION_LIMIT = 500;
@@ -363,8 +383,7 @@ export async function loadContactLivingContext(
             NULL AS pipeline_id
        FROM workspace_people wp
        JOIN people p ON p.id = wp.person_id
-       JOIN contacts c ON c.id = ?1
-      WHERE wp.context_json LIKE '%"contactId":"' || ?1 || '"%'
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
       LIMIT 1`,
   ).bind(contactId).first<IdentityRow>();
   if (!identity) return null;
@@ -790,4 +809,101 @@ async function loadLivingContextByWorkspacePerson(
       sourceAssertionId: row.source_assertion_id,
     })),
   };
+}
+
+const SOURCE_SEARCH_LIMIT = 50;
+
+export async function searchSourceContent(
+  db: D1Database,
+  workspacePersonId: string,
+  query: string,
+): Promise<SourceContentSearchResult[]> {
+  const escapedQuery = query.replace(/[%_]/g, (ch) => `\\${ch}`);
+  const likePattern = `%${escapedQuery}%`;
+
+  interface SearchRow {
+    assertion_id: string;
+    interaction_id: string | null;
+    predicate: string;
+    narrative: string;
+    confidence: number | null;
+    source_span_id: string;
+    exact_text: string;
+    artifact_id: string;
+    artifact_type: string;
+    logical_key: string | null;
+    char_start: number | null;
+    char_end: number | null;
+    line_start: number | null;
+    line_end: number | null;
+    timestamp_start_ms: number | null;
+    timestamp_end_ms: number | null;
+  }
+
+  const { results } = await db.prepare(
+    `SELECT sa.id AS assertion_id,
+            e.interaction_id,
+            sa.predicate,
+            sa.narrative,
+            sa.confidence,
+            ss.id AS source_span_id,
+            ss.exact_text,
+            a.id AS artifact_id,
+            a.artifact_type,
+            a.logical_key,
+            ss.char_start,
+            ss.char_end,
+            ss.line_start,
+            ss.line_end,
+            ss.timestamp_start_ms,
+            ss.timestamp_end_ms
+       FROM semantic_assertions sa
+       JOIN assertion_source_spans ass ON ass.assertion_id = sa.id
+       JOIN source_spans ss ON ss.id = ass.source_span_id
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       LEFT JOIN episodes e ON e.id = sa.episode_id
+      WHERE sa.workspace_person_id = ?1
+        AND (ss.exact_text LIKE ?2 ESCAPE '\\'
+             OR sa.narrative LIKE ?2 ESCAPE '\\')
+      ORDER BY sa.confidence DESC, sa.observed_at DESC, sa.id
+      LIMIT ?3`,
+  ).bind(workspacePersonId, likePattern, SOURCE_SEARCH_LIMIT).all<SearchRow>();
+
+  const assertionIds = [...new Set((results ?? []).map((r) => r.assertion_id))];
+  const conceptMap = new Map<string, string[]>();
+  if (assertionIds.length > 0) {
+    const placeholders = assertionIds.map((_, i) => `?${i + 1}`).join(',');
+    const { results: conceptRows } = await db.prepare(
+      `SELECT ac.assertion_id, c.canonical_key
+         FROM assertion_concepts ac
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ac.assertion_id IN (${placeholders})`,
+    ).bind(...assertionIds).all<{ assertion_id: string; canonical_key: string }>();
+    for (const row of conceptRows ?? []) {
+      const keys = conceptMap.get(row.assertion_id) ?? [];
+      keys.push(row.canonical_key);
+      conceptMap.set(row.assertion_id, keys);
+    }
+  }
+
+  return (results ?? []).map((row): SourceContentSearchResult => ({
+    assertionId: row.assertion_id,
+    interactionId: row.interaction_id,
+    predicate: row.predicate,
+    narrative: row.narrative,
+    confidence: row.confidence,
+    concepts: conceptMap.get(row.assertion_id) ?? [],
+    sourceSpanId: row.source_span_id,
+    exactText: row.exact_text,
+    artifactId: row.artifact_id,
+    artifactType: row.artifact_type,
+    artifactLogicalKey: row.logical_key,
+    charStart: row.char_start,
+    charEnd: row.char_end,
+    lineStart: row.line_start,
+    lineEnd: row.line_end,
+    timestampStartMs: row.timestamp_start_ms,
+    timestampEndMs: row.timestamp_end_ms,
+  }));
 }

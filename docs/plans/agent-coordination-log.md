@@ -510,3 +510,55 @@ None (test-only addition).
 4. Expand seed corpus with real recruiter annotations (criterion #8).
 5. Promote evaluation from non-blocking CI to hard gate once corpus coverage is sufficient.
 6. Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets to unblock deploy CI.
+
+---
+
+## Session: 2026-06-22T00:01Z
+
+**Agent**: Devin (session ddf91156c87a4dcf9e30569039b810c2)
+**Branch**: `devin/1782086715-consolidate-living-context-graph`
+**Trigger**: Scheduled automation — analyze open PRs, merge aligned work, continue toward goal.
+**PR**: [#80](https://github.com/Jorybraun/pipe.os/pull/80)
+
+### Actions taken
+
+1. Analyzed 18 open PRs (#53, #62–#79) for goal alignment — all address the living context graph goal.
+2. Confirmed PR #79 consolidates all prior work (127 test files, 1190 tests, 0 failures).
+3. Created PR #80 as a non-draft consolidation of all changes onto main.
+4. Verified CI: Typecheck/Lint/Unit Tests ✅, Matching Evaluation ✅, 3 infra failures preexisting.
+5. Fixed fragile `loadContactLivingContext` query — replaced `LIKE '%"contactId":"..."'` with `json_extract(wp.context_json, '$.contactId')`.
+6. Added `searchSourceContent()` function in readModel.ts — enables semantic search across source spans and assertion narratives (criterion #2: content remains searchable).
+7. Wired `GET /api/v1/contacts/:id/living-context/search?q=...` endpoint (criterion #2).
+8. Wired `GET /api/v1/candidates/:candidateId/living-context/search?q=...` endpoint (criterion #2).
+9. Updated coordination log and CHANGELOG.
+
+### Files modified
+
+- `workers/api/src/lib/livingContext/readModel.ts` — fixed `loadContactLivingContext` query, added `searchSourceContent()` + `SourceContentSearchResult`
+- `workers/api/src/lib/livingContext/index.ts` — new exports
+- `workers/api/src/routes/cockpit/contacts.ts` — source content search endpoint
+- `workers/api/src/routes/cockpit/candidates.ts` — source content search endpoint
+- `docs/plans/agent-coordination-log.md` — this entry
+- `CHANGELOG.md` — session entry
+
+### Validation
+
+- `npx tsc --noEmit` (root + workers/api) — 0 errors
+- `npm run lint` — 0 errors, 86 preexisting warnings
+- `npx vitest run` — 24 files focused, 189 tests pass; full suite 127 files, 1190 pass
+- CI: Typecheck/Lint/Unit Tests ✅, Matching Evaluation ✅
+
+### Contracts touched
+
+- `readModel.ts` — new export `searchSourceContent`, new type `SourceContentSearchResult`
+- Router — added source content search on `/contacts/:id/living-context/search` and `/candidates/:candidateId/living-context/search`
+
+### Recommendations for next agent
+
+1. Close superseded PRs (#53, #62–#79) — tool blocked (user not connected to GitHub).
+2. Run full standalone CODE_REVIEW E2E with Playwright (criterion #8 final proof).
+3. Wire RepoOverlayPanel to fetch from `/internal/repo-graph/:repoId/overlay` for full file context.
+4. Expand seed corpus with real recruiter annotations (criterion #8).
+5. Promote evaluation from non-blocking CI to hard gate once corpus coverage is sufficient.
+6. Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets to unblock deploy CI.
+7. Add FTS5 virtual table for source_spans.exact_text to improve search performance at scale.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Contact Living Context Query (Production Hardening)
+
+- Replaced fragile `LIKE '%"contactId":"..."'` pattern in `loadContactLivingContext` with `json_extract(wp.context_json, '$.contactId')` — eliminates false matches from substring collisions and SQL injection edge cases.
+
+### Added — Source Content Search (Criterion #2)
+
+- Added `searchSourceContent()` in `readModel.ts` — searches across source span exact text and assertion narratives for a workspace person. Returns matching assertions with linked source spans, concepts, and artifact provenance.
+- Added `GET /api/v1/contacts/:id/living-context/search?q=...` — searches source content for a contact's living context graph. Gated behind `contact_living_context` feature gate.
+- Added `GET /api/v1/candidates/:candidateId/living-context/search?q=...` — same search capability for candidates.
+- Fulfills criterion #2: "Original content remains semantically searchable."
+
 ### Added — Repo Graph Overlay API (Criterion #7)
 
 - Added `GET /api/v1/internal/repo-graph/:repoId/overlay` — returns full file tree for a challenge packet's repo snapshot including source spans, symbols, and demand-to-span mappings. Powers the complete repo context view in the recruiter overlay. Admin-token authenticated.

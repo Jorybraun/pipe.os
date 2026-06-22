@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { requireGate } from '../../middleware/rolloutGate';
-import { ensureContactLivingContext, loadContactLivingContext } from '../../lib/livingContext';
+import { ensureContactLivingContext, loadContactLivingContext, searchSourceContent } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -188,6 +188,32 @@ contacts.get('/:id/living-context', requireGate('contact_living_context'), async
   }
 
   return c.json(livingContext);
+});
+
+// GET /:id/living-context/search — search source content for a contact
+contacts.get('/:id/living-context/search', requireGate('contact_living_context'), async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const query = c.req.query('q');
+  if (!query || query.length < 2) {
+    return apiError(c, 'VALIDATION_ERROR', 'Query parameter q must be at least 2 characters.');
+  }
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+
+  const livingContext = await loadContactLivingContext(db, id);
+  if (!livingContext) {
+    return c.json({ results: [] });
+  }
+
+  const results = await searchSourceContent(db, livingContext.person.workspacePersonId, query);
+  return c.json({ results });
 });
 
 // PATCH /:id — update contact

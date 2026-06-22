@@ -20,6 +20,7 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
+  searchSourceContent,
 } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -744,6 +745,34 @@ candidateOps.get('/:candidateId/living-context', async (c) => {
     return apiError(c, 'NOT_FOUND', 'Living context not found.');
   }
   return c.json({ livingContext });
+});
+
+// GET /:candidateId/living-context/search — search source content for a candidate
+candidateOps.get('/:candidateId/living-context/search', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const query = c.req.query('q');
+  if (!query || query.length < 2) {
+    return apiError(c, 'VALIDATION_ERROR', 'Query parameter q must be at least 2 characters.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const livingContext = await loadCandidateLivingContext(db, candidateId);
+  if (!livingContext) {
+    return c.json({ results: [] });
+  }
+
+  const results = await searchSourceContent(db, livingContext.person.workspacePersonId, query);
+  return c.json({ results });
 });
 
 // GET /:candidateId — full profile with stages + challenge submissions
