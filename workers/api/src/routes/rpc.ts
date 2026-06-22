@@ -1150,7 +1150,7 @@ rpcAuth.post('/get-challenge', async (c) => {
   const ch = rows[dbOrder] as Record<string, unknown>;
 
   // Use the LEFT JOIN result to skip matching when an assignment already exists
-  const hasAssignment = !!(ch.assignment_id as string | null);
+  let hasAssignment = !!(ch.assignment_id as string | null);
   if (!hasAssignment) {
     const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId as string, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
     if (gateResult.blocked && gateResult.syntheticChallenge) {
@@ -1195,6 +1195,28 @@ rpcAuth.post('/get-challenge', async (c) => {
     ch.effective_issue_number = refreshed.issue_number;
   }
 
+  if ((ch.type as string) === 'CODE_REVIEW') {
+    const currentAssignment = await c.env.DB.prepare(
+      `SELECT id, github_repo_url, github_pr_number, issue_number
+         FROM candidate_challenge_assignment
+        WHERE candidate_id = ?1 AND stage_id = ?2`,
+    ).bind(candidateId, candidate.current_stage_id).first<{
+      id: string;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      issue_number: number | null;
+    }>();
+    if (currentAssignment) {
+      hasAssignment = true;
+      ch.assignment_id = currentAssignment.id;
+      ch.assignment_repo_url = currentAssignment.github_repo_url;
+      ch.assignment_pr_number = currentAssignment.github_pr_number;
+      ch.effective_repo_url = currentAssignment.github_repo_url;
+      ch.effective_pr_number = currentAssignment.github_pr_number;
+      ch.effective_issue_number = currentAssignment.issue_number;
+    }
+  }
+
   // Apply per-candidate overrides from the LEFT JOIN
   if (ch.effective_repo_url) {
     ch.github_repo_url = ch.effective_repo_url;
@@ -1228,7 +1250,8 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Parse cached diff JSON if stored as string
   let cachedDiffJson: unknown = null;
-  if (ch.cached_diff_json) {
+  const assignmentBackedReview = (ch.type as string) === 'CODE_REVIEW' && hasAssignment;
+  if (!assignmentBackedReview && ch.cached_diff_json) {
     try {
       cachedDiffJson =
         typeof ch.cached_diff_json === 'string'
@@ -1243,38 +1266,40 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Use the potentially overridden values from candidate_challenge_assignment
   const effectiveRepoUrl = ch.github_repo_url as string | null;
   const effectivePrNumber = ch.github_pr_number as number | null;
-  if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
-    const sourceBackedDiff = ch.type === 'CODE_REVIEW'
+  if (assignmentBackedReview) {
+    const sourceBackedDiff = effectiveRepoUrl && effectivePrNumber
       ? await loadSourceBackedReviewDiff(c.env.DB, effectiveRepoUrl, effectivePrNumber)
       : null;
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
       ch.github_pr_title = sourceBackedDiff.metadata.title;
     } else {
-      try {
-        const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-        const result = await fetchGitHubDiff(
-          effectiveRepoUrl,
-          effectivePrNumber,
-          token,
-        );
-        if (result) {
-          cachedDiffJson = result.diff;
-          // Persist so we don't fetch again next time
-          await c.env.DB.prepare(
-            `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+      return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
+    }
+  } else if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
+    try {
+      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+      const result = await fetchGitHubDiff(
+        effectiveRepoUrl,
+        effectivePrNumber,
+        token,
+      );
+      if (result) {
+        cachedDiffJson = result.diff;
+        // Persist so we don't fetch again next time
+        await c.env.DB.prepare(
+          `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+        )
+          .bind(
+            JSON.stringify(result.diff),
+            JSON.stringify(result.metadata),
+            new Date().toISOString(),
+            ch.id as string,
           )
-            .bind(
-              JSON.stringify(result.diff),
-              JSON.stringify(result.metadata),
-              new Date().toISOString(),
-              ch.id as string,
-            )
-            .run();
-        }
-      } catch (err) {
-        console.error('[rpc/get-challenge] Self-heal diff fetch failed:', err);
+          .run();
       }
+    } catch (err) {
+      console.error('[rpc/get-challenge] Self-heal diff fetch failed:', err);
     }
   }
 

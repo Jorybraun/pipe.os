@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone CODE_REVIEW cached repo/PR matches are now revalidated against context-ready review packets before being reused, so stale scheduled-interview rows without source-backed graph context fall back to deterministic rematching.
 - Multi-turn CODE_REVIEW session init now shares the source-backed review packet diff loader and returns `WAITING_FOR_MATCH` without creating a session when an assignment-backed PR lacks context-ready graph provenance.
 - Recruiter candidate profiles now hydrate standalone CODE_REVIEW selected packet metadata only from context-ready review packets; legacy `MATCHED` rows without source-backed graph context render as explicit no-safe-challenge gaps instead of polished PR matches.
+- Assignment-backed CODE_REVIEW challenge serving now ignores stale challenge-level cached diffs and reconstructs candidate-facing diffs from context-ready review packet source spans, returning `WAITING_FOR_MATCH` if packet graph provenance is unavailable.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
 ### Fixed — Repo Graph Projection

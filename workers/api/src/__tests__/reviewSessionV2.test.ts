@@ -31,6 +31,7 @@ interface PreparedCall {
 
 interface FakeD1Config {
   firstResponders?: Array<{ match: string; value: unknown }>;
+  allResponders?: Array<{ match: string; value: unknown[] }>;
 }
 
 interface FakeD1 extends D1Database {
@@ -55,7 +56,14 @@ function fakeD1(cfg: FakeD1Config = {}): FakeD1 {
         call.firstResult = result;
         return result;
       },
-      all: async () => ({ results: [] as unknown[], success: true, meta: {} }),
+      all: async () => {
+        const match = (cfg.allResponders ?? []).find((r) => sql.includes(r.match));
+        return {
+          results: match ? match.value : [],
+          success: true,
+          meta: {},
+        };
+      },
       run: async () => {
         call.ran = true;
         return { success: true, meta: { changes: 1 } };
@@ -128,7 +136,12 @@ const CHALLENGE_NON_MULTITURN = {
 
 const ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET = {
   ...CHALLENGE_ROW,
-  cached_diff_json: null,
+  cached_diff_json: JSON.stringify({
+    files: [{
+      filename: 'legacy.ts',
+      hunks: [{ lines: [{ type: 'added', content: 'stale cached diff' }] }],
+    }],
+  }),
   github_repo_url: null,
   github_pr_number: null,
   assignment_id: 'assign_1',
@@ -204,6 +217,109 @@ beforeEach(() => {
   vi.mocked(callImplementerAgent).mockResolvedValue([
     { to_comment_id: 1, move: 'comment', content: 'Mock implementer response' },
   ]);
+});
+
+// ─── POST /rpc/get-challenge ─────────────────────────────────────────────────
+
+describe('POST /rpc/get-challenge', () => {
+  it('serves source-backed packet diff for assignment-backed review even when challenge cache is stale', async () => {
+    const packet = {
+      pullRequest: {
+        title: 'Source-backed retry PR',
+        author: 'dev',
+        baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        mergedAt: '2026-06-20T12:00:00.000Z',
+        body: 'Source-backed packet body',
+      },
+      demands: [{ sourceSpanIds: ['repo-span-retry'] }],
+    };
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM stages', value: { mode: 'ASYNC', screening_input_mode: null } },
+        {
+          match: 'FROM candidate_challenge_assignment',
+          value: {
+            id: 'assign_1',
+            github_repo_url: 'https://github.com/test/source-backed-repo',
+            github_pr_number: 42,
+            issue_number: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges ch',
+          value: [{
+            id: 'ch_1',
+            type: 'CODE_REVIEW',
+            title: 'Code Review',
+            instructions: 'Review this PR',
+            config: JSON.stringify({ isMultiTurn: true }),
+            cached_diff_json: JSON.stringify({
+              files: [{
+                filename: 'legacy.ts',
+                headContent: 'stale cached diff',
+                hunks: [{ lines: [{ type: 'added', content: 'stale cached diff' }] }],
+              }],
+            }),
+            github_pr_title: 'Legacy title',
+            github_pr_number: null,
+            github_repo_url: null,
+            github_pr_description: null,
+            dev_container_repo_url: null,
+            assignment_id: 'assign_1',
+            assignment_repo_url: 'https://github.com/test/source-backed-repo',
+            assignment_pr_number: 42,
+            effective_repo_url: 'https://github.com/test/source-backed-repo',
+            effective_pr_number: 42,
+            effective_issue_number: null,
+          }],
+        },
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-retry',
+            path: 'src/orders/retry.ts',
+            exact_text: 'publishWithRetry(order)',
+            line_start: 18,
+            line_end: 18,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ order: 1 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      cachedDiffJson: { files: Array<{ filename: string; headContent: string }> };
+      githubPrTitle: string | null;
+      githubPrNumber: number | null;
+      githubRepoUrl: string | null;
+    };
+    expect(body.githubPrTitle).toBe('Source-backed retry PR');
+    expect(body.githubPrNumber).toBe(42);
+    expect(body.githubRepoUrl).toBe('https://github.com/test/source-backed-repo');
+    expect(body.cachedDiffJson.files[0]).toMatchObject({
+      filename: 'src/orders/retry.ts',
+      headContent: 'publishWithRetry(order)',
+    });
+  });
 });
 
 // ─── POST /rpc/review/session/init ───────────────────────────────────────────
@@ -377,7 +493,7 @@ describe('POST /rpc/review/session/init', () => {
     expect(body.pr.diff).toContain('const x = 1;');
   });
 
-  it('returns waiting without creating a session when an assigned PR lacks source-backed packet context', async () => {
+  it('returns waiting without creating a session when an assigned PR lacks source-backed packet context even with stale cached diff', async () => {
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates', value: CANDIDATE },

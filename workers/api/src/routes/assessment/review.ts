@@ -324,7 +324,10 @@ async function buildPrContext(
   const prNumber = ch.effective_pr_number ?? ch.github_pr_number ?? null;
   const usesCandidateAssignment = typeof ch.assignment_id === 'string';
 
-  if (!cachedDiffJson && repoUrl && prNumber) {
+  if (usesCandidateAssignment) {
+    if (!repoUrl || !prNumber) {
+      throw new SourceBackedReviewNotReadyError();
+    }
     const sourceBackedDiff = await loadSourceBackedReviewDiff(db, repoUrl, prNumber);
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
@@ -340,35 +343,31 @@ async function buildPrContext(
           ch.id,
         )
         .run();
-    } else if (usesCandidateAssignment) {
-      throw new SourceBackedReviewNotReadyError();
     } else {
-      try {
-        const token = (env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-        const result = await fetchGitHubDiff(repoUrl, prNumber, token);
-        if (result) {
-          cachedDiffJson = result.diff;
-          ch.github_pr_title = result.metadata.title ?? ch.github_pr_title;
-          ch.github_pr_description = result.metadata.description ?? ch.github_pr_description;
-          await db.prepare(
-            `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
-          )
-            .bind(
-              JSON.stringify(result.diff),
-              JSON.stringify(result.metadata),
-              new Date().toISOString(),
-              ch.id,
-            )
-            .run();
-        }
-      } catch (err) {
-        console.error('[buildPrContext] Self-heal diff fetch failed:', err);
-      }
+      throw new SourceBackedReviewNotReadyError();
     }
-  }
-
-  if (!cachedDiffJson && usesCandidateAssignment) {
-    throw new SourceBackedReviewNotReadyError();
+  } else if (!cachedDiffJson && repoUrl && prNumber) {
+    try {
+      const token = (env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+      const result = await fetchGitHubDiff(repoUrl, prNumber, token);
+      if (result) {
+        cachedDiffJson = result.diff;
+        ch.github_pr_title = result.metadata.title ?? ch.github_pr_title;
+        ch.github_pr_description = result.metadata.description ?? ch.github_pr_description;
+        await db.prepare(
+          `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+        )
+          .bind(
+            JSON.stringify(result.diff),
+            JSON.stringify(result.metadata),
+            new Date().toISOString(),
+            ch.id,
+          )
+          .run();
+      }
+    } catch (err) {
+      console.error('[buildPrContext] Self-heal diff fetch failed:', err);
+    }
   }
 
   const diff = extractDiffText(cachedDiffJson);
