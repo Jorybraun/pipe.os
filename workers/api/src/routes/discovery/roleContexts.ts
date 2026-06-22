@@ -186,7 +186,7 @@ async function persistSimpleJobDescriptionContext(input: {
     });
     contextConcepts.push({
       conceptId: concept.id,
-      relationship: 'required_literal_term',
+      relationship: 'source_term',
       weight: 1,
     });
   }

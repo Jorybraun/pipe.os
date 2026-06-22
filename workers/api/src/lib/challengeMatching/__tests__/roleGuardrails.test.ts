@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { loadRoleChallengeSemantics } from '../roleGuardrails';
 
-function d1(rows: unknown[]): D1Database {
+function d1(rows: unknown[], contextRows: unknown[] = []): D1Database {
   return {
-    prepare() {
+    prepare(sql: string) {
+      const normalized = sql.replace(/\s+/g, ' ').trim();
       const statement = {
         bind() { return statement; },
-        async all() { return { results: rows, success: true, meta: {} }; },
+        async all() {
+          return {
+            results: normalized.includes('FROM context_records cr') ? contextRows : rows,
+            success: true,
+            meta: {},
+          };
+        },
       };
       return statement;
     },
@@ -125,5 +132,35 @@ describe('loadRoleChallengeSemantics', () => {
       sourceSection: 'job_description_md',
       conceptKeys: ['term:kafka-idempotency'],
     })]);
+  });
+
+  it('loads selected simple JD terms from source-backed role context records', async () => {
+    const semantics = await loadRoleChallengeSemantics(d1([], [{
+      context_record_id: 'context-record-jd',
+      record_type: 'simple_job_description',
+      extraction_version: 'simple-jd-v1',
+      canonical_key: 'term:temporal-shard-knitting',
+      label: 'Temporal Shard Knitting',
+      source_ref_type: 'source_span',
+      source_ref_id: 'jd-span-1',
+    }]), {
+      id: 'role-jd-context',
+      rcd_version: null,
+      rcd_json: null,
+      job_description_md: 'We need Temporal Shard Knitting for event scheduling.',
+      non_negotiable_skills_json: JSON.stringify(['Temporal Shard Knitting']),
+    });
+
+    expect(semantics.roleSnapshotId).toBe('role-context:role-jd-context:source-backed:simple-jd-v1');
+    expect(semantics.relevantConcepts).toEqual(['term:temporal-shard-knitting']);
+    expect(semantics.requiredConcepts).toEqual(['term:temporal-shard-knitting']);
+    expect(semantics.sources).toEqual([
+      {
+        roleNodeId: 'context-record-jd',
+        sourceSection: 'simple_job_description:source_span:jd-span-1',
+        rcdVersion: 'simple-jd-v1',
+        conceptKeys: ['term:temporal-shard-knitting'],
+      },
+    ]);
   });
 });

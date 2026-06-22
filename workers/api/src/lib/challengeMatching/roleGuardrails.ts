@@ -20,6 +20,16 @@ interface RoleNodeSemanticRow {
   extracted_properties_json: string | null;
 }
 
+interface RoleContextConceptRow {
+  context_record_id: string;
+  record_type: string;
+  extraction_version: string | null;
+  canonical_key: string | null;
+  label: string | null;
+  source_ref_type: string | null;
+  source_ref_id: string | null;
+}
+
 interface PersistedSemanticTerm {
   surface?: unknown;
   canonical_key?: unknown;
@@ -97,6 +107,56 @@ export async function loadRoleChallengeSemantics(
   const selectedSurfaces = new Set(
     parseStringArray(roleContext.non_negotiable_skills_json).map(normalizeOpenTermSurface),
   );
+
+  const contextResult = await db.prepare(
+    `SELECT cr.id AS context_record_id,
+            cr.record_type,
+            cr.extraction_version,
+            c.canonical_key,
+            c.label,
+            crsr.source_ref_type,
+            crsr.source_ref_id
+       FROM context_records cr
+       JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+       JOIN concepts c ON c.id = crc.concept_id
+       LEFT JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+      WHERE cr.scope_type = 'role_context'
+        AND cr.scope_id = ?1
+      ORDER BY cr.id, c.canonical_key, crsr.source_ref_type, crsr.source_ref_id`,
+  ).bind(roleContext.id).all<RoleContextConceptRow>();
+
+  const contextConceptKeys = new Set<string>();
+  const contextSources = new Map<string, {
+    sourceSection: string;
+    rcdVersion: string;
+    conceptKeys: Set<string>;
+  }>();
+  for (const row of contextResult.results ?? []) {
+    if (!row.canonical_key) continue;
+    terms.set(row.canonical_key, row.label ?? row.canonical_key);
+    contextConceptKeys.add(row.canonical_key);
+    const sourceKey = row.context_record_id;
+    const source = contextSources.get(sourceKey) ?? {
+      sourceSection: row.source_ref_type && row.source_ref_id
+        ? `${row.record_type}:${row.source_ref_type}:${row.source_ref_id}`
+        : row.record_type,
+      rcdVersion: row.extraction_version ?? roleContext.rcd_version ?? 'context-record',
+      conceptKeys: new Set<string>(),
+    };
+    source.conceptKeys.add(row.canonical_key);
+    contextSources.set(sourceKey, source);
+  }
+  for (const [roleNodeId, source] of [...contextSources.entries()].sort(([left], [right]) =>
+    left.localeCompare(right)
+  )) {
+    sources.push({
+      roleNodeId,
+      sourceSection: source.sourceSection,
+      rcdVersion: source.rcdVersion,
+      conceptKeys: [...source.conceptKeys].sort(),
+    });
+  }
+
   for (const row of result.results ?? []) {
     const nodeTerms = termsFromProperties(row.extracted_properties_json);
     if (nodeTerms.length === 0) continue;
@@ -117,7 +177,9 @@ export async function loadRoleChallengeSemantics(
     const term = openSemanticTerm(surface);
     if (!term) continue;
     terms.set(term.canonicalKey, term.surface);
-    jdConceptKeys.push(term.canonicalKey);
+    if (!contextConceptKeys.has(term.canonicalKey)) {
+      jdConceptKeys.push(term.canonicalKey);
+    }
   }
   if (jdConceptKeys.length > 0) {
     sources.push({

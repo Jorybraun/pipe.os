@@ -306,13 +306,13 @@ describe('POST /api/v1/role-contexts/simple-job-description', () => {
       {
         contextRecordId: contextInsert!.args[0],
         conceptId: conceptByCanonicalKey.get('term:kafka'),
-        relationship: 'required_literal_term',
+        relationship: 'source_term',
         weight: 1,
       },
       {
         contextRecordId: contextInsert!.args[0],
         conceptId: conceptByCanonicalKey.get('term:order-processing'),
-        relationship: 'required_literal_term',
+        relationship: 'source_term',
         weight: 1,
       },
     ]));
