@@ -6,7 +6,7 @@
  *
  * Routes:
  *   POST   /discover              — start async discovery for a pipeline
- *   POST   /discover-by-skills    — start async discovery from manual skills (no pipeline required)
+ *   POST   /discover-by-skills    — legacy unsupported; source-backed context required
  *   GET    /jobs/:jobId           — poll discovery job status
  *   GET    /                      — list discovered repos (filterable)
  *   GET    /:repoId               — single repo detail
@@ -19,7 +19,7 @@
 import { Hono } from 'hono';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { runDiscovery, runDiscoveryBySkills } from '../../lib/repoDiscovery/discover';
+import { runDiscovery } from '../../lib/repoDiscovery/discover';
 import { convertRepoToChallenge } from '../../lib/repoDiscovery/convertToChallenge';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 import { createRoleAgentProvider } from '../../lib/llm/createProvider';
@@ -262,41 +262,12 @@ repoDiscovery.post('/:repoId/convert', async (c) => {
 // ─── POST /discover-by-skills ──────────────────────────────────────────────
 
 repoDiscovery.post('/discover-by-skills', async (c) => {
-  const userId = c.var.userId;
-  const body = await c.req.json<{ skills?: string[] }>().catch(() => ({} as { skills?: string[] }));
-
-  if (!body.skills?.length) {
-    return apiError(c, 'BAD_REQUEST', 'skills array is required and must not be empty');
-  }
-
-  // For skills-only discovery, use a deterministic virtual pipeline ID for dedup
-  const virtualPipelineId = `skills:${[...body.skills].sort().join(',')}`;
-
-  // Insert job without FK reference — pipeline_id is stored for dedup but the FK
-  // only applies when a real pipeline is used. We use a raw INSERT that bypasses
-  // the FK by setting pipeline_id to NULL in discovery_jobs.
-  const jobResult = await c.env.DB.prepare(`
-    INSERT INTO discovery_jobs (pipeline_id, owner_id, status, skills_queried)
-    VALUES (NULL, ?1, 'PENDING', ?2)
-    RETURNING id
-  `).bind(userId, JSON.stringify(body.skills)).first<{ id: string }>();
-
-  if (!jobResult) {
-    return apiError(c, 'SERVER_ERROR', 'Failed to create discovery job');
-  }
-
-  const discoveryPromise = runDiscoveryBySkills({
-    db: c.env.DB,
-    ownerId: userId,
-    jobId: jobResult.id,
-    skills: body.skills,
-    virtualPipelineId,
-    githubToken: c.env.GITHUB_TOKEN,
-  });
-
-  c.executionCtx.waitUntil(discoveryPromise);
-
-  return c.json({ jobId: jobResult.id, status: 'PENDING' }, 202);
+  return c.json({
+    error: {
+      code: 'SOURCE_BACKED_CONTEXT_REQUIRED',
+      message: 'Skill-only repository discovery is disabled. Create a source-backed job description or use deterministic candidate-to-PR matching so repository selection can be explained from persisted evidence.',
+    },
+  }, 410);
 });
 
 // ─── POST /:repoId/brief ──────────────────────────────────────────────────
