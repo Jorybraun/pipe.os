@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadSourceBackedReviewDiff } from '../routes/rpc';
+import { hasSourceBackedReviewPacket, loadSourceBackedReviewDiff } from '../routes/rpc';
 
 function createDiffDb(input: {
   packetJson?: string | null;
@@ -40,6 +40,27 @@ function createDiffDb(input: {
 }
 
 describe('loadSourceBackedReviewDiff', () => {
+  it('reports source-backed packet availability through the same context gate', async () => {
+    const sqls: string[] = [];
+    const ready = await hasSourceBackedReviewPacket(
+      createDiffDb({ packetJson: JSON.stringify({ demands: [] }), sqls }),
+      'https://github.com/pipe/orders',
+      42,
+    );
+    const missing = await hasSourceBackedReviewPacket(
+      createDiffDb({ packetJson: null }),
+      'https://github.com/pipe/orders',
+      42,
+    );
+
+    expect(ready).toBe(true);
+    expect(missing).toBe(false);
+    expect(sqls[0]).toContain('JOIN context_records cr');
+    expect(sqls[0]).toContain("cr.record_type = 'repo_challenge_packet'");
+    expect(sqls[0]).toContain("crsr.source_ref_type = 'repo_source_span'");
+    expect(sqls[0]).toContain('FROM context_record_concepts crc');
+  });
+
   it('requires source-backed packet context before loading standalone review diffs', async () => {
     const sqls: string[] = [];
     const result = await loadSourceBackedReviewDiff(

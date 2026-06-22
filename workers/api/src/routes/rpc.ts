@@ -351,7 +351,17 @@ async function matchStandaloneReview(
   interview: StandaloneReviewRow,
 ): Promise<{ repoUrl: string; prNumber: number } | null> {
   if (interview.github_repo_url && interview.github_pr_number) {
-    return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+    const isSourceBacked = await hasSourceBackedReviewPacket(
+      db,
+      interview.github_repo_url,
+      interview.github_pr_number,
+    );
+    if (isSourceBacked) {
+      return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+    }
+    console.warn(
+      `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+    );
   }
 
   const match = await matchCandidateToReviewChallenge(db, candidateId);
@@ -372,11 +382,11 @@ async function matchStandaloneReview(
   return { repoUrl: repo.github_url, prNumber: match.prNumber };
 }
 
-export async function loadSourceBackedReviewDiff(
+async function loadSourceBackedReviewPacketJson(
   db: D1Database,
   repoUrl: string,
   prNumber: number,
-): Promise<GitHubDiffResult | null> {
+): Promise<string | null> {
   const row = await db.prepare(
     `SELECT rcp.packet_json
        FROM review_challenge_packets rcp
@@ -403,11 +413,28 @@ export async function loadSourceBackedReviewDiff(
       ORDER BY rcp.quality_score DESC, rcp.updated_at DESC
       LIMIT 1`,
   ).bind(repoUrl, prNumber).first<{ packet_json: string }>();
-  if (!row?.packet_json) return null;
+  return row?.packet_json ?? null;
+}
+
+export async function hasSourceBackedReviewPacket(
+  db: D1Database,
+  repoUrl: string,
+  prNumber: number,
+): Promise<boolean> {
+  return (await loadSourceBackedReviewPacketJson(db, repoUrl, prNumber)) !== null;
+}
+
+export async function loadSourceBackedReviewDiff(
+  db: D1Database,
+  repoUrl: string,
+  prNumber: number,
+): Promise<GitHubDiffResult | null> {
+  const packetJson = await loadSourceBackedReviewPacketJson(db, repoUrl, prNumber);
+  if (!packetJson) return null;
 
   let packet: RepoChallengePacket;
   try {
-    packet = JSON.parse(row.packet_json) as RepoChallengePacket;
+    packet = JSON.parse(packetJson) as RepoChallengePacket;
   } catch {
     return null;
   }
