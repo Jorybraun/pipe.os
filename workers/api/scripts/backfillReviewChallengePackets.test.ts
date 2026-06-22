@@ -4,15 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../src/__tests__/helpers/mockD1';
 import { matchCandidateToReviewChallenge } from '../src/lib/challengeMatching/d1Matcher';
 import type { GitHubDiffResult } from '../src/lib/fetchGitHubDiff';
+import type { ChallengePacket as RepoChallengePacket } from '../src/lib/repoSemanticGraph';
 import {
-  buildChallengePacket,
-  deriveRepoSemantics,
-  persistReviewChallengeGraph,
-  type ChallengePacket as RepoChallengePacket,
-} from '../src/lib/repoSemanticGraph';
-import {
-  buildNormalizedInput,
+  backfillReviewChallengePackets,
+  type Options,
   type PullRequestRefs,
+  type QueryClient,
   type SamplePullRequestRow,
 } from './backfillReviewChallengePackets';
 
@@ -34,6 +31,22 @@ interface CandidateConceptEvidence {
   exactText: string;
   predicate: string;
   evidenceLevel: 'implemented' | 'validated' | 'demonstrated';
+}
+
+class BetterQueryClient implements QueryClient {
+  constructor(private readonly sqlite: BetterSqliteDb) {}
+
+  async query<T>(
+    sql: string,
+    params: Array<string | number | null> = [],
+  ): Promise<T[]> {
+    const statement = this.sqlite.prepare(sql);
+    if (/^\s*(SELECT|WITH|PRAGMA)/i.test(sql)) {
+      return statement.all(...params) as T[];
+    }
+    statement.run(...params);
+    return [];
+  }
 }
 
 function hunkLines(prefix: string, count: number): Array<{
@@ -168,12 +181,35 @@ function setupDb(): BetterSqliteDb {
       id INTEGER PRIMARY KEY,
       github_url TEXT UNIQUE NOT NULL,
       full_name TEXT NOT NULL,
+      primary_language TEXT NOT NULL,
       disqualified INTEGER NOT NULL DEFAULT 0
     );
-    INSERT INTO qualified_repos (id, github_url, full_name, disqualified)
-    VALUES (77, 'https://github.com/pipe-labs/orders', 'pipe-labs/orders', 0);
+    INSERT INTO qualified_repos (id, github_url, full_name, primary_language, disqualified)
+    VALUES (77, 'https://github.com/pipe-labs/orders', 'pipe-labs/orders', 'TypeScript', 0);
 
     CREATE TABLE candidates (id TEXT PRIMARY KEY);
+    CREATE TABLE repo_sample_prs (
+      repo_id INTEGER NOT NULL,
+      pr_number INTEGER NOT NULL,
+      pr_url TEXT NOT NULL,
+      title TEXT,
+      merged_at TEXT NOT NULL,
+      changed_file_count INTEGER NOT NULL,
+      modifies_tests INTEGER NOT NULL DEFAULT 0,
+      swe_bench_eligible INTEGER NOT NULL DEFAULT 0,
+      additions INTEGER,
+      deletions INTEGER,
+      resolves_issue_number INTEGER,
+      PRIMARY KEY (repo_id, pr_number)
+    );
+    INSERT INTO repo_sample_prs (
+      repo_id, pr_number, pr_url, title, merged_at, changed_file_count,
+      modifies_tests, swe_bench_eligible, additions, deletions, resolves_issue_number
+    ) VALUES (
+      77, 42, 'https://github.com/pipe-labs/orders/pull/42',
+      'Add idempotent order retry flow', '2026-06-19T12:00:00Z',
+      3, 1, 1, 24, 2, NULL
+    );
   `);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoGraphMigration);
@@ -330,39 +366,55 @@ describe('backfillReviewChallengePackets', () => {
   });
 
   it('feeds backfilled source-backed PR packets into deterministic candidate matching', async () => {
-    const backfilled = await buildNormalizedInput(sampleRow(), refs(), diffFixture());
-    const packet = await buildChallengePacket(backfilled.challengeInput);
-    const semantics = await deriveRepoSemantics({
-      pullRequest: backfilled.challengeInput,
-      packet,
-      structuralFacts: backfilled.challengeStructuralFacts,
+    const options: Options = {
+      target: 'local',
+      dryRun: false,
+      force: false,
+      batchSize: 10,
+    };
+    const stats = await backfillReviewChallengePackets({
+      client: new BetterQueryClient(sqlite),
+      db: createMockD1(sqlite),
+      options,
+      fetchDiff: async (repoUrl, prNumber) => {
+        expect(repoUrl).toBe(sampleRow().github_url);
+        expect(prNumber).toBe(sampleRow().pr_number);
+        return diffFixture();
+      },
+      fetchRefs: async (row) => {
+        expect(row).toEqual(sampleRow());
+        return refs();
+      },
+      log: {
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
     });
+
+    expect(stats).toEqual({
+      selected: 1,
+      built: 1,
+      persisted: 1,
+      dryRun: 0,
+      ineligible: 0,
+      skippedExisting: 0,
+      skippedFetch: 0,
+      skippedNoHunks: 0,
+      errors: 0,
+    });
+
+    const persistedPacket = sqlite.prepare(
+      'SELECT packet_json, production_ready FROM review_challenge_packets ORDER BY updated_at DESC LIMIT 1',
+    ).get() as { packet_json: string; production_ready: number };
+    const packet = JSON.parse(persistedPacket.packet_json) as RepoChallengePacket;
 
     expect(packet.quality.eligible).toBe(true);
     expect(packet.demands.length).toBeGreaterThanOrEqual(2);
     expect(packet.demands.flatMap((demand) => demand.conceptKeys)).toEqual(
       expect.arrayContaining(['term:retry', 'term:idempotency']),
     );
-
-    await persistReviewChallengeGraph(
-      createMockD1(sqlite),
-      sampleRow().repo_id,
-      backfilled.challengeInput,
-      packet,
-      {
-        structuralFacts: backfilled.structuralFacts,
-        codeEpisodes: semantics.episodes,
-        facets: semantics.facets,
-        semanticAssertions: semantics.assertions,
-        repoSignals: semantics.signals,
-      },
-    );
-
-    const persistedPacket = sqlite.prepare(
-      'SELECT packet_json, production_ready FROM review_challenge_packets WHERE id = ?',
-    ).get(packet.id) as { packet_json: string; production_ready: number };
     expect(persistedPacket.production_ready).toBe(1);
-    expect((JSON.parse(persistedPacket.packet_json) as RepoChallengePacket).id).toBe(packet.id);
 
     const candidateEvidence: CandidateConceptEvidence[] = [
       {
@@ -416,7 +468,7 @@ describe('backfillReviewChallengePackets', () => {
       challengeId: packet.id,
       repoId: '77',
       prNumber: 42,
-      sourceVersion: backfilled.challengeInput.repoSnapshot.id,
+      sourceVersion: packet.repoSnapshotId,
     });
     expect(match.explanation?.evidence.length).toBeGreaterThanOrEqual(2);
     expect(match.explanation?.evidence.every((entry) =>

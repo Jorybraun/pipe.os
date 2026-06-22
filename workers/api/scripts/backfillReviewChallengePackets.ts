@@ -60,7 +60,7 @@ const PACKET_VERSION = 'repo-challenge-v1';
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 250;
 
-interface Options {
+export interface Options {
   target: 'local' | 'remote';
   databasePath?: string;
   dryRun: boolean;
@@ -146,7 +146,7 @@ interface NormalizedChangedFileResult {
   extractionDiagnostics: ExtractionDiagnostic[];
 }
 
-interface Stats {
+export interface Stats {
   selected: number;
   built: number;
   persisted: number;
@@ -156,6 +156,16 @@ interface Stats {
   skippedFetch: number;
   skippedNoHunks: number;
   errors: number;
+}
+
+export interface BackfillReviewChallengePacketsInput {
+  client: QueryClient;
+  db?: D1Database;
+  options: Options;
+  token?: string;
+  log?: Pick<Console, 'log' | 'warn' | 'error'>;
+  fetchDiff?: typeof fetchGitHubDiff;
+  fetchRefs?: typeof fetchPullRequestRefs;
 }
 
 function usage(): string {
@@ -799,19 +809,18 @@ function printSummary(stats: Stats, options: Options): void {
   console.log(`  errors:           ${stats.errors}`);
 }
 
-async function run(options: Options): Promise<void> {
-  let localDatabase: LocalSqliteDatabase | undefined;
-  const client: QueryClient = options.target === 'remote'
-    ? new D1Client(loadD1Config())
-    : (() => {
-        const path = discoverLocalDatabase(options.databasePath);
-        localDatabase = new DatabaseSync(path);
-        localDatabase.exec('PRAGMA foreign_keys = ON');
-        console.log(`[challenge-backfill] target=local database=${path}`);
-        return new LocalQueryClient(localDatabase);
-      })();
-  const db = d1DatabaseAdapter(client);
-  const token = process.env['GITHUB_TOKEN'];
+export async function backfillReviewChallengePackets(
+  input: BackfillReviewChallengePacketsInput,
+): Promise<Stats> {
+  const {
+    client,
+    options,
+    token,
+    log = console,
+    fetchDiff = fetchGitHubDiff,
+    fetchRefs = fetchPullRequestRefs,
+  } = input;
+  const db = input.db ?? d1DatabaseAdapter(client);
   const packetTableExists = await tableExists(client, 'review_challenge_packets');
   if (!packetTableExists && !options.dryRun) {
     throw new Error(
@@ -819,7 +828,7 @@ async function run(options: Options): Promise<void> {
     );
   }
   if (!packetTableExists) {
-    console.warn(
+    log.warn(
       '[challenge-backfill] review_challenge_packets is absent; dry-run will build source packets without existing-packet checks',
     );
   }
@@ -841,27 +850,26 @@ async function run(options: Options): Promise<void> {
     errors: 0,
   };
 
-  console.log(
+  log.log(
     `[challenge-backfill] selected ${rows.length} row(s), mode=${options.dryRun ? 'dry-run' : 'write'}, batch=${options.batchSize}`,
   );
 
-  try {
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index]!;
-      const label = `${row.full_name}#${row.pr_number}`;
-      try {
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]!;
+    const label = `${row.full_name}#${row.pr_number}`;
+    try {
       const [diffResult, refs] = await Promise.all([
-        fetchGitHubDiff(row.github_url, row.pr_number, token),
-        fetchPullRequestRefs(row, token),
+        fetchDiff(row.github_url, row.pr_number, token),
+        fetchRefs(row, token),
       ]);
       if (!diffResult || !refs) {
         stats.skippedFetch++;
-        console.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
+        log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
         continue;
       }
       if (!diffResult.diff.files.some((file) => file.hunks.length > 0)) {
         stats.skippedNoHunks++;
-        console.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip no hunks ${label}`);
+        log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip no hunks ${label}`);
         continue;
       }
 
@@ -881,7 +889,7 @@ async function run(options: Options): Promise<void> {
 
       if (options.dryRun) {
         stats.dryRun++;
-        console.log(
+        log.log(
           `[challenge-backfill] [${index + 1}/${rows.length}] ready ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
         );
         continue;
@@ -895,15 +903,38 @@ async function run(options: Options): Promise<void> {
         repoSignals: semantics.signals,
       });
       stats.persisted++;
-      console.log(
+      log.log(
         `[challenge-backfill] [${index + 1}/${rows.length}] persisted ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
       );
-      } catch (error) {
-        stats.errors++;
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
-      }
+    } catch (error) {
+      stats.errors++;
+      const message = error instanceof Error ? error.message : String(error);
+      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
     }
+  }
+
+  return stats;
+}
+
+async function run(options: Options): Promise<void> {
+  let localDatabase: LocalSqliteDatabase | undefined;
+  const client: QueryClient = options.target === 'remote'
+    ? new D1Client(loadD1Config())
+    : (() => {
+        const path = discoverLocalDatabase(options.databasePath);
+        localDatabase = new DatabaseSync(path);
+        localDatabase.exec('PRAGMA foreign_keys = ON');
+        console.log(`[challenge-backfill] target=local database=${path}`);
+        return new LocalQueryClient(localDatabase);
+      })();
+  let stats: Stats;
+  try {
+    stats = await backfillReviewChallengePackets({
+      client,
+      db: d1DatabaseAdapter(client),
+      options,
+      token: process.env['GITHUB_TOKEN'],
+    });
   } finally {
     localDatabase?.close();
   }
