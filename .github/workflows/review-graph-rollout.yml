@@ -90,18 +90,35 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          REVIEW_GRAPH_MODE: ${{ inputs.mode }}
+          REVIEW_GRAPH_BATCH_SIZE: ${{ inputs.batch_size }}
+          REVIEW_GRAPH_REPO: ${{ inputs.repo }}
+          REVIEW_GRAPH_PR: ${{ inputs.pr }}
         run: |
-          ARGS="--remote --batch-size ${{ inputs.batch_size }}"
-          if [ "${{ inputs.mode }}" = "dry-run" ]; then
-            ARGS="$ARGS --dry-run"
+          if ! [[ "$REVIEW_GRAPH_BATCH_SIZE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "batch_size must be a positive integer" >&2
+            exit 1
           fi
-          if [ -n "${{ inputs.repo }}" ]; then
-            ARGS="$ARGS --repo ${{ inputs.repo }}"
+          if [ -n "$REVIEW_GRAPH_REPO" ] && ! [[ "$REVIEW_GRAPH_REPO" =~ ^[^[:space:]/]+/[^[:space:]/]+$ ]]; then
+            echo "repo must use OWNER/NAME format" >&2
+            exit 1
           fi
-          if [ -n "${{ inputs.pr }}" ]; then
-            ARGS="$ARGS --pr ${{ inputs.pr }}"
+          if [ -n "$REVIEW_GRAPH_PR" ] && ! [[ "$REVIEW_GRAPH_PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "pr must be a positive integer" >&2
+            exit 1
           fi
-          npx tsx scripts/backfillReviewChallengePackets.ts $ARGS | tee review-graph-backfill.log
+
+          args=(--remote --batch-size "$REVIEW_GRAPH_BATCH_SIZE")
+          if [ "$REVIEW_GRAPH_MODE" = "dry-run" ]; then
+            args+=(--dry-run)
+          fi
+          if [ -n "$REVIEW_GRAPH_REPO" ]; then
+            args+=(--repo "$REVIEW_GRAPH_REPO")
+          fi
+          if [ -n "$REVIEW_GRAPH_PR" ]; then
+            args+=(--pr "$REVIEW_GRAPH_PR")
+          fi
+          npx tsx scripts/backfillReviewChallengePackets.ts "${args[@]}" | tee review-graph-backfill.log
 
       - name: Final review graph readiness
         if: always()
