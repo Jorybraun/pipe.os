@@ -64,14 +64,9 @@ function termsFromProperties(
   value: string | null,
 ): Array<{ surface: string; canonicalKey: string }> {
   const terms = new Map<string, { surface: string; canonicalKey: string }>();
-  const add = (surface: string): void => {
-    const term = openSemanticTerm(surface);
-    if (term) terms.set(term.canonicalKey, term);
-  };
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as {
-      value?: unknown;
       semantic_terms?: PersistedSemanticTerm[];
     };
     const explicit = Array.isArray(parsed.semantic_terms)
@@ -82,9 +77,6 @@ function termsFromProperties(
       )
       : [];
     explicit.forEach((term) => terms.set(term.canonicalKey, term));
-    if (typeof parsed.value === 'string') {
-      add(parsed.value);
-    }
     return [...terms.values()];
   } catch {
     return [];

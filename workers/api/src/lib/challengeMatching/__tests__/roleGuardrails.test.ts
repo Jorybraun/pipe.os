@@ -115,6 +115,28 @@ describe('loadRoleChallengeSemantics', () => {
     expect(semantics.sources).toEqual([]);
   });
 
+  it('does not promote legacy role-node value fields into semantic constraints', async () => {
+    const semantics = await loadRoleChallengeSemantics(d1([{
+      id: 'node-value',
+      rcd_version: '1.0.0',
+      source_section: 'technical_context.stack',
+      narrative_text: 'Legacy parser put a display value in properties.',
+      extracted_properties_json: JSON.stringify({
+        value: 'Kafka idempotency',
+      }),
+    }]), {
+      id: 'role-value',
+      rcd_version: '1.0.0',
+      rcd_json: null,
+      job_description_md: null,
+      non_negotiable_skills_json: JSON.stringify(['Kafka idempotency']),
+    });
+
+    expect(semantics.relevantConcepts).toEqual([]);
+    expect(semantics.requiredConcepts).toEqual([]);
+    expect(semantics.sources).toEqual([]);
+  });
+
   it('uses selected simple JD terms only when the original JD text contains them', async () => {
     const semantics = await loadRoleChallengeSemantics(d1([]), {
       id: 'role-jd',

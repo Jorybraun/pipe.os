@@ -653,7 +653,6 @@ class D1ConceptRegistry implements ConceptRegistry {
               surface?: unknown;
               canonical_key?: unknown;
             }>;
-            value?: unknown;
           };
           for (const term of properties.semantic_terms ?? []) {
             if (
@@ -665,10 +664,6 @@ class D1ConceptRegistry implements ConceptRegistry {
                 canonicalKey: term.canonical_key,
               });
             }
-          }
-          if (terms.size === 0 && typeof properties.value === 'string') {
-            const term = openSemanticTerm(properties.value);
-            if (term) terms.set(term.canonicalKey, term);
           }
         } catch {
           // Malformed properties remain available in the role-node source.

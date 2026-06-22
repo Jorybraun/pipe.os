@@ -284,6 +284,14 @@ describe('ConceptRegistry', () => {
         'Must attend many meetings because stakeholders prefer alignment.',
         '{}', NULL
       );
+      INSERT INTO role_nodes (
+        id, rcd_version, source_section, narrative_text,
+        extracted_properties_json, superseded_at
+      ) VALUES (
+        'role-node-value', '1.0.0', 'technical_context.stack',
+        'Legacy parser put a display value in properties.',
+        '{"value":"stakeholder alignment"}', NULL
+      );
     `);
 
     const first = await registry.backfillOpenTerms();
@@ -291,14 +299,16 @@ describe('ConceptRegistry', () => {
       `SELECT
          (SELECT COUNT(*) FROM concept_surfaces) AS surfaces,
          (SELECT COUNT(*) FROM concepts WHERE canonical_key = 'term:causal-scheduler') AS role_terms,
-         (SELECT COUNT(*) FROM concepts WHERE canonical_key LIKE '%meetings%') AS prose_terms`,
+         (SELECT COUNT(*) FROM concepts WHERE canonical_key LIKE '%meetings%') AS prose_terms,
+         (SELECT COUNT(*) FROM concepts WHERE canonical_key = 'term:stakeholder-alignment') AS value_terms`,
     ).get();
     const second = await registry.backfillOpenTerms();
     const secondCounts = sqlite.prepare(
       `SELECT
          (SELECT COUNT(*) FROM concept_surfaces) AS surfaces,
          (SELECT COUNT(*) FROM concepts WHERE canonical_key = 'term:causal-scheduler') AS role_terms,
-         (SELECT COUNT(*) FROM concepts WHERE canonical_key LIKE '%meetings%') AS prose_terms`,
+         (SELECT COUNT(*) FROM concepts WHERE canonical_key LIKE '%meetings%') AS prose_terms,
+         (SELECT COUNT(*) FROM concepts WHERE canonical_key = 'term:stakeholder-alignment') AS value_terms`,
     ).get();
 
     expect(first.processed).toBe(2);
@@ -307,6 +317,7 @@ describe('ConceptRegistry', () => {
       surfaces: 2,
       role_terms: 1,
       prose_terms: 0,
+      value_terms: 0,
     });
     expect(secondCounts).toEqual(firstCounts);
   });
