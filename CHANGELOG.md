@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `checkReviewChallengeGraphReadiness.ts` plus `review-graph:readiness` / `review-graph:rollout-gate` worker scripts to compose local graph migration prep, packet-context auditing, and optional GitHub API preflight into one rollout report.
 - The readiness gate fails closed with explicit next actions for missing graph tables, no backfilled packets, fixture-only packets, incomplete packet context projections, and GitHub API connectivity failures.
+- Remote review-graph readiness now emits remote-specific migration guidance when crawler data exists but graph/context tables are not yet applied, instead of pointing operators at the local D1 prep script.
 - The repo crawler workflow now uploads a non-blocking remote review-graph readiness report after pass 2 so ops can watch packet/context/source/concept coverage before converting it into a hard rollout gate.
 
 ### Added — Matching Evaluation Readiness Report

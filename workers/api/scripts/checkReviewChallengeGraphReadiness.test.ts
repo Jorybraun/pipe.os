@@ -158,6 +158,21 @@ describe('checkReviewChallengeGraphReadiness', () => {
     );
   });
 
+  it('gives remote migration guidance when crawler data exists but graph tables are absent', async () => {
+    sqlite = setupCrawlerOnlyDb();
+
+    const report = await readiness(sqlite, {
+      target: 'remote',
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.audit.status).toBe('missing_graph_tables');
+    expect(report.audit.sourceStats.eligibleSamplePullRequests).toBe(1);
+    expect(report.nextActions).toEqual([
+      'Apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 before packet backfill.',
+    ]);
+  });
+
   it('passes when a real packet has context records, repo refs, concepts, and GitHub reachability', async () => {
     sqlite = setupReadyDb();
 

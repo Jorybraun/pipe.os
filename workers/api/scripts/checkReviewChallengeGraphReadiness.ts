@@ -36,6 +36,7 @@ const apiRoot = resolve(scriptDir, '..');
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface ReviewChallengeGraphReadinessOptions {
+  target?: 'local' | 'remote';
   prepareLocal?: boolean;
   requireGitHub?: boolean;
   githubToken?: string;
@@ -94,7 +95,10 @@ function auditFailures(audit: AuditResult): string[] {
   }
 }
 
-function nextActionsForAudit(audit: AuditResult): string[] {
+function nextActionsForAudit(
+  audit: AuditResult,
+  options: Pick<ReviewChallengeGraphReadinessOptions, 'target'>,
+): string[] {
   const hasProjectionGaps = audit.missingContextRecordPacketIds.length > 0
     || audit.missingRepoSourceRefPacketIds.length > 0
     || audit.missingConceptLinkPacketIds.length > 0;
@@ -102,7 +106,11 @@ function nextActionsForAudit(audit: AuditResult): string[] {
     case 'ready':
       return [];
     case 'missing_graph_tables':
-      return ['Run prepareReviewChallengeGraphLocalDb.ts against the crawler D1 before packet backfill.'];
+      return options.target === 'remote'
+        ? [
+            'Apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 before packet backfill.',
+          ]
+        : ['Run prepareReviewChallengeGraphLocalDb.ts against the local crawler D1 before packet backfill.'];
     case 'no_packets':
       return ['Run backfillReviewChallengePackets.ts after GitHub API connectivity is available.'];
     case 'fixture_only':
@@ -137,7 +145,7 @@ export async function checkReviewChallengeGraphReadiness(
     : null;
 
   const failures = auditFailures(audit);
-  const nextActions = nextActionsForAudit(audit);
+  const nextActions = nextActionsForAudit(audit, options);
   if (github && !github.ok) {
     failures.push(`GitHub API is not reachable for review packet backfill: ${github.message}`);
     nextActions.push('Restore GitHub API connectivity and verify GITHUB_TOKEN/rate limits before packet backfill.');
@@ -285,6 +293,7 @@ async function main(): Promise<void> {
       options: {
         prepareLocal: options.prepareLocal,
         requireGitHub: options.requireGitHub,
+        target: options.target,
         githubToken: process.env['GITHUB_TOKEN'],
       },
     });
