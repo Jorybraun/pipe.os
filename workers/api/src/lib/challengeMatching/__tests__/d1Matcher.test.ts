@@ -1315,6 +1315,19 @@ describe('matchCandidateToReviewChallenge', () => {
       entity_id: data.packet.id,
       relationship: 'selected_packet',
     });
+    expect(sqlite.prepare(
+      `SELECT c.canonical_key, crc.relationship, crc.weight
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(contextRecord.id)).toEqual([
+      {
+        canonical_key: 'term:kafka',
+        relationship: 'concept',
+        weight: 1,
+      },
+    ]);
   });
 
   it('matches against a production-ready packet persisted through repo graph ingestion', async () => {

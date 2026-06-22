@@ -22,6 +22,7 @@ import {
 import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
 import type {
+  ContextRecordConceptInput,
   ContextRecordEntityInput,
   ContextRecordInput,
   ContextRecordSourceInput,
@@ -119,6 +120,17 @@ interface ChallengePacketLoadResult {
 
 const GENERIC_CORPUS_MIN_PACKETS = 3;
 const GENERIC_CORPUS_RATIO = 0.4;
+
+function conceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function conceptLabel(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const raw = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return raw.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
 
 function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   if (row.concept_key) return [row.concept_key];
@@ -660,6 +672,46 @@ function sourceRefToContextSource(
   };
 }
 
+async function buildMatchContextConcepts(
+  store: LivingContextStore,
+  input: {
+    matchRunId: string;
+    query: ReturnType<typeof compileCandidateMatchQuery>['query'];
+    selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  },
+): Promise<ContextRecordConceptInput[]> {
+  if (!input.selected) return [];
+  const conceptKeys = new Set<string>();
+  for (const alignment of input.selected.alignments) {
+    const demandConcepts = new Set(alignment.demand.concepts);
+    for (const concept of alignment.atom.concepts) {
+      if (demandConcepts.has(concept)) conceptKeys.add(concept);
+    }
+  }
+
+  const concepts: ContextRecordConceptInput[] = [];
+  for (const canonicalKey of [...conceptKeys].map((key) => key.trim()).filter(Boolean).sort()) {
+    const concept = await store.upsertConcept({
+      ingestionKey: `match-open-concept:${canonicalKey}`,
+      canonicalKey,
+      namespace: conceptNamespace(canonicalKey),
+      label: conceptLabel(canonicalKey),
+      metadata: {
+        source: 'candidate_pr_match_decision',
+        matchRunId: input.matchRunId,
+        policyVersion: input.query.policyVersion,
+        selectedPacketId: input.selected.challenge.id,
+      },
+    });
+    concepts.push({
+      conceptId: concept.id,
+      relationship: 'concept',
+      weight: 1,
+    });
+  }
+  return concepts;
+}
+
 function buildMatchContextRecordInput(input: {
   matchRunId: string;
   candidateId: string;
@@ -672,6 +724,7 @@ function buildMatchContextRecordInput(input: {
   diagnostics: ChallengeMatchDiagnostics;
   conceptResolverVersion: string | null;
   roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
+  concepts: ContextRecordConceptInput[];
 }): ContextRecordInput {
   const selectedPacketId = input.selected?.challenge.id ?? null;
   const evidenceSources: ContextRecordSourceInput[] = [
@@ -859,6 +912,7 @@ function buildMatchContextRecordInput(input: {
     extractionVersion: input.query.policyVersion,
     sources: evidenceSources,
     entities,
+    concepts: input.concepts,
   };
 }
 
@@ -1119,7 +1173,13 @@ export async function matchCandidateToReviewChallenge(
     selected?.challenge.id ?? null,
   ).run();
 
-  await new LivingContextStore(db).upsertContextRecord(buildMatchContextRecordInput({
+  const contextStore = new LivingContextStore(db);
+  const matchConcepts = await buildMatchContextConcepts(contextStore, {
+    matchRunId,
+    query: compiled.query,
+    selected,
+  });
+  await contextStore.upsertContextRecord(buildMatchContextRecordInput({
     matchRunId,
     candidateId,
     applicationId: application?.id ?? null,
@@ -1131,6 +1191,7 @@ export async function matchCandidateToReviewChallenge(
     diagnostics,
     conceptResolverVersion: options.conceptResolverVersion ?? null,
     roleSourceReferences: options.roleSourceReferences ?? [],
+    concepts: matchConcepts,
   }));
 
   const explanation = buildRunExplanation({
