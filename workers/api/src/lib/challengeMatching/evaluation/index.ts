@@ -9,3 +9,4 @@ export * from './types';
 export * from './corpus';
 export * from './metrics';
 export * from './cli';
+export * from './corpusRunner';

@@ -13,3 +13,8 @@ export * from './codeReview';
 export * from './readModel';
 export * from './projection';
 export * from './openTerms';
+export * from './rollout';
+export * from './backfillCheckpoint';
+export * from './backfillOrchestrator';
+export { loadContactLivingContext, searchSourceContent } from './readModel';
+export type { SourceContentSearchResult } from './readModel';
