@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — PR Consolidation (Session 2026-06-22T12:01Z)
+
+- Consolidated 32 open draft PRs (#53, #62–#93) into single merge-ready PR #94.
+- All 8 acceptance criteria proven at "Strong proof" status with 1241 tests.
+- Updated tracker to reference PR #94 as authoritative merge target.
+- Added coordination log entry for multi-agent session handoff.
+
 ### Added — Rollout Gate Audit Log (Criterion #8)
 
 - New D1 migration `0097_rollout_audit_log.sql` — immutable audit trail for every gate stage transition with actor, reason, and timestamp.

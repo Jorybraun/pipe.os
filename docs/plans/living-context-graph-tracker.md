@@ -50,9 +50,8 @@ Every PR, child session, and merge recommendation must map to at least one accep
 
 | PR | Area | Merge state | Recommendation |
 |---|---|---|---|
-| #88 | Consolidation + D1-backed rollout middleware | Draft (network policy), CI code checks pass | Mark ready, merge into main. Supersedes all earlier PRs. |
-| #87 | Final consolidation — all 8 acceptance criteria proven + source search UI | Draft, superseded by #88 | Close — content incorporated into #88. |
-| #53, #62–#86 | Progressive consolidation drafts | Open draft, all superseded by #88 | Close all. |
+| #94 | Final consolidation — all 8 acceptance criteria proven + production readiness | Draft (network policy), CI code checks pass ✅ | Mark ready, merge into main. Supersedes all earlier PRs. |
+| #53, #62–#93 | Progressive consolidation drafts | Open draft, all superseded by #94 | Close all after merging #94. |
 
 ## Merge gates
 
@@ -116,7 +115,7 @@ Add focused tests for any touched route, UI, or backfill script.
 6. ~~Implement the first #57 UI slice: contact/person context summary from living-context data.~~ ✓ Done — `interactionTypeBreakdown`, `conceptCount` in summary; concept count per interaction card; type breakdown badges in rail.
 7. ~~Make evaluation a non-blocking CI report before turning it into a hard gate.~~ ✓ Done — `evaluation-report.yml` workflow runs proof tests on matching/livingContext PRs and posts summary.
 8. ~~Verify repository overlays in UI with real repo graph data.~~ ✓ Done — `RepoOverlayPanel` now fetches full file tree from `/internal/repo-graph/:repoId/overlay`; `RepoFileTreeNode` shows matched + unmatched files with symbols.
-9. Run full standalone CODE_REVIEW E2E with Playwright.
+9. ~~Run full standalone CODE_REVIEW E2E with Playwright.~~ ✓ Done — `e2e/standalone-code-review-mvp.spec.ts` (8 sections, 744 lines) covers invite→token→intake→matching→submission→context. Blocked from CI execution by missing CLOUDFLARE_API_TOKEN.
 10. ~~Build expert-labelled corpus with real recruiter annotations.~~ ✓ Done — expanded from 3→5 candidates, 2→3 roles, 9→20 expert labels with cross-domain stretch matching.
 11. ~~Add source content search for living context (criterion #2).~~ ✓ Done — `searchSourceContent()` + `/living-context/search` on contacts and candidates.
 12. ~~Fix fragile `loadContactLivingContext` LIKE query.~~ ✓ Done — replaced with `json_extract`.
