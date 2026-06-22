@@ -154,7 +154,11 @@ function StandaloneReviewMatchPanel({
   ) ?? evaluatedChallenges.find((challenge) => challenge.rank === 1) ?? null;
   const selectedStretchCount = selectedChallenge?.stretchCount ?? null;
   return (
-    <section className="living-context__review-match" aria-label="Standalone code review match">
+    <section
+      className="living-context__review-match"
+      aria-label="Standalone code review match"
+      data-testid="standalone-review-match-panel"
+    >
       <div className="living-context__review-match-head">
         <div>
           <div className="living-context__section-title">Standalone CODE_REVIEW match</div>
@@ -188,7 +192,7 @@ function StandaloneReviewMatchPanel({
       )}
 
       {match.submission && (
-        <div className="living-context__review-submission">
+        <div className="living-context__review-submission" data-testid="standalone-review-submission">
           <div className="living-context__eyebrow">Candidate review result</div>
           <div className="living-context__review-submission-meta">
             {match.submission.verdict && <span>{titleCase(match.submission.verdict)}</span>}
@@ -216,7 +220,7 @@ function StandaloneReviewMatchPanel({
       )}
 
       {primaryEvidence.length > 0 && (
-        <div className="living-context__review-evidence">
+        <div className="living-context__review-evidence" data-testid="standalone-review-evidence">
           {primaryEvidence.map((entry) => {
             const candidateSnippet = reviewSourceSnippet(entry.candidateSourceRefs);
             const challengeSnippet = reviewSourceSnippet(entry.challengeSourceRefs);
@@ -281,7 +285,7 @@ function StandaloneReviewMatchPanel({
       )}
 
       {(recalledPacketIds.length > 0 || excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
-        <div className="living-context__review-diagnostics">
+        <div className="living-context__review-diagnostics" data-testid="standalone-review-diagnostics">
           {recalledPacketIds.length > 0 && (
             <div>
               <div className="living-context__eyebrow">Recalled packets</div>

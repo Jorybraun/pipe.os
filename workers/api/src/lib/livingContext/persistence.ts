@@ -360,7 +360,16 @@ export class LivingContextStore {
   }
 
   async upsertApplication(input: ApplicationInput): Promise<PersistedEntity> {
-    const id = await this.id('application', input.ingestionKey);
+    const existingByCandidate = input.legacyCandidateId
+      ? await this.db.prepare(
+          `SELECT id, ingestion_key
+             FROM applications
+            WHERE legacy_candidate_id = ?1
+            LIMIT 1`,
+        ).bind(input.legacyCandidateId).first<{ id: string; ingestion_key: string }>()
+      : null;
+    const ingestionKey = existingByCandidate?.ingestion_key ?? input.ingestionKey;
+    const id = existingByCandidate?.id ?? await this.id('application', ingestionKey);
     const now = this.clock();
     await this.db.prepare(
       `INSERT INTO applications (
@@ -376,7 +385,7 @@ export class LivingContextStore {
          updated_at = excluded.updated_at`,
     ).bind(
       id,
-      input.ingestionKey,
+      ingestionKey,
       input.workspacePersonId,
       input.legacyCandidateId ?? null,
       input.pipelineId ?? null,
@@ -384,7 +393,7 @@ export class LivingContextStore {
       stableJson(normalizeJson(input.context, {})),
       now,
     ).run();
-    return { id, ingestionKey: input.ingestionKey };
+    return { id, ingestionKey };
   }
 
   async upsertPersonRole(input: PersonRoleInput): Promise<PersistedEntity> {

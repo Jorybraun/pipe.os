@@ -14,8 +14,7 @@
  * PIPE matches to a real reviewable PR or waits safely → candidate submits
  * review → recruiter sees context graph and source-backed result.
  *
- * These tests are written BEFORE the implementation is complete (BDD approach)
- * and will fail until the full standalone path is wired end-to-end.
+ * These tests protect the source-backed standalone path end-to-end.
  *
  * Invariants asserted:
  *   - No generic repo / smallest-PR / fabricated evidence fallback
@@ -85,6 +84,12 @@ interface SeedStandaloneReviewFixtureResponse {
   packetId: string;
   candidateSourceSpanIds: string[];
   repoSourceSpanIds: string[];
+}
+
+interface SeedStandaloneReviewFixture extends SeedStandaloneReviewFixtureResponse {
+  conceptKey: string;
+  conceptLabel: string;
+  repoFullName: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -181,10 +186,11 @@ async function seedStandaloneReviewMatchFixture(
   request: APIRequestContext,
   authToken: string,
   candidate: StandaloneCandidate,
-): Promise<SeedStandaloneReviewFixtureResponse> {
+): Promise<SeedStandaloneReviewFixture> {
   const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
   const conceptKey = `term:e2e-source-backed-${suffix}`;
   const conceptLabel = `e2e source backed ${suffix}`;
+  const repoFullName = `pipe/e2e-source-backed-${suffix}`;
   const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
   const prNumber = 42;
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
@@ -221,7 +227,7 @@ async function seedStandaloneReviewMatchFixture(
       ],
       repo: {
         githubUrl: repoUrl,
-        fullName: `pipe/e2e-source-backed-${suffix}`,
+        fullName: repoFullName,
         primaryLanguage: 'TypeScript',
         description: 'Source-backed deterministic E2E fixture repository.',
       },
@@ -278,7 +284,40 @@ async function seedStandaloneReviewMatchFixture(
   expect(body.prNumber).toBe(prNumber);
   expect(body.candidateSourceSpanIds.length).toBeGreaterThan(0);
   expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
-  return body;
+  return { ...body, conceptKey, conceptLabel, repoFullName };
+}
+
+async function submitStandaloneCodeReview(
+  request: APIRequestContext,
+  sessionToken: string,
+  options: {
+    summary: string;
+    annotations: Array<{
+      file: string;
+      line: number;
+      severity: string;
+      comment: string;
+    }>;
+  },
+): Promise<void> {
+  const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+    headers: candidateHeaders(sessionToken),
+    data: {
+      order: 0,
+      submission: {
+        type: 'CODE_REVIEW',
+        verdict: 'request_changes',
+        summary: options.summary,
+        annotations: options.annotations,
+      },
+    },
+  });
+
+  expect([200, 201]).toContain(submitRes.status());
+
+  const body = await submitRes.json() as Record<string, unknown>;
+  expect(JSON.stringify(body)).not.toContain('groundTruth');
+  expect(body.success).toBe(true);
 }
 
 // ─── §MVP.1 Recruiter creates standalone CODE_REVIEW invite ─────────────────
@@ -720,31 +759,18 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
     expect(challenge.githubPrNumber).toBe(fixture.prNumber);
 
-    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
-      headers: candidateHeaders(sessionToken),
-      data: {
-        order: 0,
-        submission: {
-          type: 'CODE_REVIEW',
-          verdict: 'request_changes',
-          summary: 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.',
-          annotations: [
-            {
-              file: 'src/pages/Search.tsx',
-              line: 43,
-              severity: 'blocking',
-              comment: 'No debounce on search input; add a 300ms debounce with AbortController.',
-            },
-          ],
+    const reviewSummary = 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.';
+    await submitStandaloneCodeReview(request, sessionToken, {
+      summary: reviewSummary,
+      annotations: [
+        {
+          file: 'src/pages/Search.tsx',
+          line: 43,
+          severity: 'blocking',
+          comment: 'No debounce on search input; add a 300ms debounce with AbortController.',
         },
-      },
+      ],
     });
-
-    expect([200, 201]).toContain(submitRes.status());
-
-    const body = await submitRes.json() as Record<string, unknown>;
-    expect(JSON.stringify(body)).not.toContain('groundTruth');
-    expect(body.success).toBe(true);
 
     const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
@@ -785,7 +811,7 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     expect(standaloneReviewMatch!.prNumber).toBe(fixture.prNumber);
     expect(standaloneReviewMatch!.submitted).toBe(true);
     expect(standaloneReviewMatch!.submission?.verdict).toBe('request_changes');
-    expect(standaloneReviewMatch!.submission?.summary).toContain('critical debounce issue');
+    expect(standaloneReviewMatch!.submission?.summary).toBe(reviewSummary);
     expect(standaloneReviewMatch!.submission?.annotationCount).toBe(1);
     expect(standaloneReviewMatch!.evidence?.length).toBeGreaterThan(0);
     expect(standaloneReviewMatch!.evidence!.every((entry) =>
@@ -940,5 +966,74 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toEqual([]);
     expect(standaloneReviewMatch!.diagnostics?.excludedPackets).toEqual([]);
     expect(standaloneReviewMatch!.diagnostics?.evaluatedChallenges).toEqual([]);
+  });
+
+  test('CONTEXT tab renders submitted review with source-backed match evidence', async ({ browser, request }) => {
+    const reviewedCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Submitted Context Graph Candidate',
+      email: `context-submitted+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const session = await resolveToken(request, reviewedCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, session.sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, reviewedCandidate);
+
+    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: { order: 0 },
+    });
+    expect(challengeRes.status()).toBe(200);
+    const challenge = await challengeRes.json() as ChallengeResponse;
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+
+    const reviewSummary = `The ${fixture.conceptLabel} implementation is reviewable, but the retry path still needs an idempotency guard before acknowledging duplicate events.`;
+    const reviewComment = `Add an idempotency-key check around ${fixture.conceptLabel} retry publication before acknowledging the event.`;
+    await submitStandaloneCodeReview(request, session.sessionToken, {
+      summary: reviewSummary,
+      annotations: [{
+        file: 'src/retry-idempotency.ts',
+        line: 10,
+        severity: 'blocking',
+        comment: reviewComment,
+      }],
+    });
+
+    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+    const page = await context.newPage();
+
+    await page.goto(`${APP_BASE}/candidates/${reviewedCandidate.id}`);
+    await page.getByRole('button', { name: 'CONTEXT' }).click();
+    await expect(page.getByTestId('living-context-graph')).toBeVisible({ timeout: 15000 });
+
+    const matchPanel = page.getByTestId('standalone-review-match-panel');
+    await expect(matchPanel).toContainText('Standalone CODE_REVIEW match');
+    await expect(matchPanel).toContainText('MATCHED');
+    await expect(matchPanel).toContainText(`${fixture.repoFullName} #${fixture.prNumber}`);
+    await expect(matchPanel).toContainText('Review source-backed retry idempotency');
+    await expect(matchPanel).toContainText('Review submitted');
+
+    const submission = page.getByTestId('standalone-review-submission');
+    await expect(submission).toContainText('Candidate review result');
+    await expect(submission).toContainText('Request Changes');
+    await expect(submission).toContainText('1 annotation');
+    await expect(submission).toContainText(reviewSummary);
+    await expect(submission).toContainText('src/retry-idempotency.ts · line 10 · blocking');
+    await expect(submission).toContainText(reviewComment);
+
+    const evidence = page.getByTestId('standalone-review-evidence');
+    await expect(evidence).toContainText('Candidate evidence');
+    await expect(evidence).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
+    await expect(evidence).toContainText('PR demand evidence');
+    await expect(evidence).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
+    await expect(evidence).toContainText(fixture.conceptKey);
+
+    const diagnostics = page.getByTestId('standalone-review-diagnostics');
+    await expect(diagnostics).toContainText('Recalled packets');
+    await expect(diagnostics).toContainText(fixture.packetId);
+    await expect(diagnostics).toContainText('Evaluated challenge evidence');
+    await expect(diagnostics).toContainText('Eligible');
+
+    await context.close();
   });
 });

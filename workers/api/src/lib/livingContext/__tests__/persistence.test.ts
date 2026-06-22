@@ -111,6 +111,51 @@ describe('LivingContextStore', () => {
     });
   });
 
+  it('reuses the existing application when the same legacy candidate is replayed with another ingestion key', async () => {
+    sqlite.prepare('INSERT INTO candidates (id) VALUES (?)').run('candidate-29');
+
+    const person = await store.upsertPerson({
+      ingestionKey: 'person:email:grace@example.com',
+      displayName: 'Grace Hopper',
+      primaryEmail: 'grace@example.com',
+    });
+    const workspacePerson = await store.upsertWorkspacePerson({
+      ingestionKey: 'workspace:acme:person:grace',
+      workspaceId: 'acme',
+      personId: person.id,
+    });
+
+    const seededApplication = await store.upsertApplication({
+      ingestionKey: 'application:candidate:candidate-29',
+      workspacePersonId: workspacePerson.id,
+      legacyCandidateId: 'candidate-29',
+      pipelineId: null,
+      status: 'standalone_code_review_match_fixture',
+      context: { seededBy: 'e2e' },
+    });
+    const replayedApplication = await store.upsertApplication({
+      ingestionKey: 'candidate:candidate-29',
+      workspacePersonId: workspacePerson.id,
+      legacyCandidateId: 'candidate-29',
+      pipelineId: null,
+      status: 'IN_PROGRESS',
+      context: { source: 'candidate_profile' },
+    });
+
+    expect(replayedApplication).toEqual(seededApplication);
+    expect(sqlite.prepare('SELECT count(*) AS count FROM applications').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT ingestion_key, legacy_candidate_id, status, context_json
+         FROM applications
+        WHERE legacy_candidate_id = ?`,
+    ).get('candidate-29')).toEqual({
+      ingestion_key: 'application:candidate:candidate-29',
+      legacy_candidate_id: 'candidate-29',
+      status: 'IN_PROGRESS',
+      context_json: JSON.stringify({ source: 'candidate_profile' }),
+    });
+  });
+
   it('stores exact immutable provenance and rejects a conflicting replay', async () => {
     const person = await store.upsertPerson({ ingestionKey: 'person:1' });
     const workspacePerson = await store.upsertWorkspacePerson({
