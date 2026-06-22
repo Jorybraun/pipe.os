@@ -122,6 +122,62 @@ describe('checkReviewGraphBackfillReport', () => {
     expect(result.readyOutcomes[0]?.contextRecordId).toBe('context_record_123');
   });
 
+  it('fails dry-run reports that build packets without structural facts', () => {
+    const result = validateBackfillReport(report({
+      outcomes: [
+        {
+          ...report().outcomes[0]!,
+          structuralFactCount: 0,
+        },
+      ],
+    }), {
+      expectedMode: 'dry-run',
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.dryRunReadyCount).toBe(0);
+    expect(result.failures).toContain(
+      'expected at least 1 eligible dry-run packet outcome(s), found 0',
+    );
+  });
+
+  it('fails write reports that persist context-ready packets without structural facts', () => {
+    const result = validateBackfillReport(report({
+      mode: 'write',
+      stats: {
+        selected: 1,
+        built: 1,
+        persisted: 1,
+        dryRun: 0,
+        ineligible: 0,
+        skippedExisting: 0,
+        skippedFetch: 0,
+        skippedNoHunks: 0,
+        errors: 0,
+      },
+      outcomes: [
+        {
+          ...report().outcomes[0]!,
+          status: 'persisted',
+          productionReady: true,
+          contextRecordId: 'context_record_123',
+          repoSourceRefCount: 8,
+          conceptLinkCount: 5,
+          persistedContextReady: true,
+          structuralFactCount: 0,
+        },
+      ],
+    }), {
+      expectedMode: 'write',
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.persistedContextReadyCount).toBe(0);
+    expect(result.failures).toContain(
+      'expected at least 1 persisted context-ready packet outcome(s), found 0',
+    );
+  });
+
   it('fails write reports that persist packets without context coverage', () => {
     const result = validateBackfillReport(report({
       mode: 'write',

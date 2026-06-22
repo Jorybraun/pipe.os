@@ -107,7 +107,8 @@ function validBuiltPacket(outcome: BackfillRowOutcome): boolean {
     && outcome.eligible === true
     && numberValue(outcome.demandCount) > 0
     && numberValue(outcome.sourceSpanCount) > 0
-    && numberValue(outcome.changedFileCount) > 0;
+    && numberValue(outcome.changedFileCount) > 0
+    && numberValue(outcome.structuralFactCount) > 0;
 }
 
 function dryRunReady(outcome: BackfillRowOutcome): boolean {
