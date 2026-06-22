@@ -3,6 +3,7 @@
  * Backfill deterministic review challenge packets from vetted repo sample PRs.
  *
  * Usage:
+ *   npx tsx scripts/prepareReviewChallengeGraphLocalDb.ts --database-path /path/to/local-d1.sqlite
  *   npx tsx scripts/backfillReviewChallengePackets.ts --dry-run
  *   npx tsx scripts/backfillReviewChallengePackets.ts --batch-size 25
  *   npx tsx scripts/backfillReviewChallengePackets.ts --repo pipe-labs/orders
@@ -811,6 +812,20 @@ function printSummary(stats: Stats, options: Options): void {
   console.log(`  errors:           ${stats.errors}`);
 }
 
+function errorCode(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || !('code' in value)) return null;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === 'string' && code.trim() ? code : null;
+}
+
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = (error as { cause?: unknown }).cause;
+  if (!(cause instanceof Error)) return error.message;
+  const code = errorCode(cause);
+  return `${error.message} (cause: ${cause.message}${code ? `; code=${code}` : ''})`;
+}
+
 export async function backfillReviewChallengePackets(
   input: BackfillReviewChallengePacketsInput,
 ): Promise<Stats> {
@@ -910,8 +925,7 @@ export async function backfillReviewChallengePackets(
       );
     } catch (error) {
       stats.errors++;
-      const message = error instanceof Error ? error.message : String(error);
-      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
+      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${formatError(error)}`);
     }
   }
 
