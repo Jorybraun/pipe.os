@@ -88,6 +88,7 @@ interface IssueFixture {
   title: string;
   body: string | null;
   state_at_crawl: 'open' | 'closed';
+  contextReady?: boolean;
   has_merged_pr: boolean;
   difficulty_band: 'junior' | 'mid' | 'senior';
   disqualified: boolean;
@@ -136,6 +137,7 @@ function buildStubDb(state: DbState): StubDb {
                     i.repo_id === repoId &&
                     i.state_at_crawl === 'open' &&
                     Boolean(i.body?.trim()) &&
+                    i.contextReady !== false &&
                     !i.has_merged_pr &&
                     !i.disqualified &&
                     i.difficulty_band === band,
@@ -611,6 +613,22 @@ describe('autoStageBuilder', () => {
       { ...state.issues[0]!, issue_number: 100, body: null, implementability_score: 0.99 },
       { ...state.issues[1]!, issue_number: 101, state_at_crawl: 'closed', implementability_score: 0.98 },
       { ...state.issues[1]!, issue_number: 103, title: 'source-backed issue', body: 'Implement from this source issue body.', state_at_crawl: 'open', implementability_score: 0.6 },
+    ];
+    const stub = buildStubDb(state);
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+    });
+
+    expect(result.stations[1]!.issueNumber).toBe(103);
+  });
+
+  it('skips implementation issues without context-ready source records', async () => {
+    const state = fixtureState();
+    state.issues = [
+      { ...state.issues[0]!, issue_number: 100, contextReady: false, implementability_score: 0.99 },
+      { ...state.issues[1]!, issue_number: 103, title: 'context-backed issue', body: 'Issue body with context record.', contextReady: true, implementability_score: 0.6 },
     ];
     const stub = buildStubDb(state);
     const result = await autoStageBuilder({

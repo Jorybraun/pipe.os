@@ -22,6 +22,7 @@
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
 import { loadRoleChallengeSemantics } from '../challengeMatching/roleGuardrails';
+import { backfillRepoImplementationIssueContextRecords } from '../repoDiscovery/implementationIssueContext';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
 import type { ChallengePacket } from '../repoSemanticGraph';
 
@@ -419,6 +420,8 @@ export async function pickImplementationIssue(
   repoId: number,
   seniority?: 'junior' | 'mid' | 'senior' | 'staff',
 ): Promise<{ issueNumber: number; issueTitle: string } | null> {
+  await backfillRepoImplementationIssueContextRecords(db, { repoId });
+
   const band = seniority === 'staff' ? 'senior' : seniority;
   const difficultyClause = band ? 'AND ics.difficulty_band = ?' : '';
 
@@ -432,6 +435,19 @@ export async function pickImplementationIssue(
           AND ri.state_at_crawl = 'open'
           AND NULLIF(TRIM(COALESCE(ri.body, '')), '') IS NOT NULL
           AND ics.disqualified = 0
+          AND EXISTS (
+            SELECT 1
+              FROM context_records cr
+              JOIN context_record_source_refs crsr
+                ON crsr.context_record_id = cr.id
+             WHERE cr.record_type = 'repo_implementation_issue'
+               AND cr.scope_type = 'qualified_repo'
+               AND cr.scope_id = CAST(ri.repo_id AS TEXT)
+               AND crsr.source_ref_type = 'repo_issue'
+               AND crsr.source_ref_id = CAST(ri.id AS TEXT)
+               AND crsr.exact_text IS NOT NULL
+               AND crsr.content_hash IS NOT NULL
+          )
           ${difficultyClause}
         ORDER BY ics.implementability_score DESC, ics.clarity_score DESC
         LIMIT 1`,

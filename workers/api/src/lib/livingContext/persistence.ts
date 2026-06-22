@@ -273,8 +273,8 @@ async function requireContextSourceRef(
       body: string | null;
     }>();
     if (!row) throw new Error(`repo issue ${source.sourceRefId} does not exist`);
-    const body = row.body?.trim() ?? '';
-    if (!body) {
+    const body = row.body ?? '';
+    if (!body.trim()) {
       throw new Error(`repo issue ${source.sourceRefId} body is required`);
     }
     if (source.exactText === null) {
