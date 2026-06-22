@@ -415,6 +415,38 @@ describe('backfillReviewChallengePackets', () => {
     sqlite.close();
   });
 
+  it('fails write mode before fetching when graph/context tables are missing', async () => {
+    sqlite.close();
+    sqlite = new Database(':memory:');
+
+    const options: Options = {
+      target: 'local',
+      dryRun: false,
+      force: false,
+      preflightGithub: false,
+      batchSize: 10,
+    };
+    const fetchDiff = vi.fn();
+    const fetchRefs = vi.fn();
+
+    await expect(backfillReviewChallengePackets({
+      client: new BetterQueryClient(sqlite),
+      db: createMockD1(sqlite),
+      options,
+      fetchDiff,
+      fetchRefs,
+      log: {
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    })).rejects.toThrow(
+      'review challenge graph tables are missing: review_challenge_packets, context_records, context_record_source_refs, context_record_concepts; apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, 0095_context_records.sql before write mode',
+    );
+    expect(fetchDiff).not.toHaveBeenCalled();
+    expect(fetchRefs).not.toHaveBeenCalled();
+  });
+
   it('feeds backfilled source-backed PR packets into deterministic candidate matching', async () => {
     const options: Options = {
       target: 'local',

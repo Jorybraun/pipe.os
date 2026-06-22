@@ -60,6 +60,17 @@ import {
 const PACKET_VERSION = 'repo-challenge-v1';
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 250;
+const REQUIRED_GRAPH_TABLES = [
+  'review_challenge_packets',
+  'context_records',
+  'context_record_source_refs',
+  'context_record_concepts',
+] as const;
+const REQUIRED_GRAPH_MIGRATIONS = [
+  '0082_living_context_graph.sql',
+  '0083_repo_semantic_graph_and_match_runs.sql',
+  '0095_context_records.sql',
+] as const;
 
 export interface Options {
   target: 'local' | 'remote';
@@ -327,6 +338,18 @@ async function tableExists(db: QueryClient, tableName: string): Promise<boolean>
     [tableName],
   );
   return Number(rows[0]?.count ?? 0) > 0;
+}
+
+async function missingReviewChallengeGraphTables(db: QueryClient): Promise<string[]> {
+  const tableChecks = await Promise.all(
+    REQUIRED_GRAPH_TABLES.map(async (tableName) => ({
+      tableName,
+      present: await tableExists(db, tableName),
+    })),
+  );
+  return tableChecks
+    .filter((table) => !table.present)
+    .map((table) => table.tableName);
 }
 
 async function countExistingPackets(db: QueryClient, options: Options): Promise<number> {
@@ -891,10 +914,13 @@ export async function backfillReviewChallengePackets(
   } = input;
   const db = input.db ?? d1DatabaseAdapter(client);
   const packetTableExists = await tableExists(client, 'review_challenge_packets');
-  if (!packetTableExists && !options.dryRun) {
-    throw new Error(
-      'review_challenge_packets does not exist; apply migration 0083_repo_semantic_graph_and_match_runs.sql before write mode',
-    );
+  if (!options.dryRun) {
+    const missingGraphTables = await missingReviewChallengeGraphTables(client);
+    if (missingGraphTables.length > 0) {
+      throw new Error(
+        `review challenge graph tables are missing: ${missingGraphTables.join(', ')}; apply migrations ${REQUIRED_GRAPH_MIGRATIONS.join(', ')} before write mode`,
+      );
+    }
   }
   if (!packetTableExists) {
     log.warn(
