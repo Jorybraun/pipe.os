@@ -17,6 +17,9 @@
  *     back to persona_json.mustHaveSkills if NULL. The existing
  *     `HAVING must_hits = must_total` clause in matchRepos.ts:168 guarantees
  *     coverage — no new SQL needed.
+ *   - CODE_REVIEW-only can also select repos from source-backed role context
+ *     concepts against context-ready review packets when legacy must-haves are
+ *     absent.
  */
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
@@ -55,6 +58,23 @@ export interface PickReviewPrResult {
   prNumber: number;
   prTitle: string;
   selectionPath: 'source_backed_role_overlap';
+}
+
+interface ReviewPacketRepoRow {
+  repo_id: number;
+  full_name: string;
+  github_url: string;
+  description: string | null;
+  seniority_band: string;
+  detected_domain: string;
+  pr_quality_score: number;
+  stars: number;
+  primary_language: string;
+  pr_number: number;
+  pr_url: string | null;
+  pr_title: string | null;
+  quality_score: number;
+  packet_json: string;
 }
 
 export interface AutoStageBuilderResult {
@@ -174,6 +194,143 @@ function roleContextSemanticInput(roleContext: RoleContextRow): Parameters<typeo
   };
 }
 
+function packetConcepts(packet: ChallengePacket): Set<string> {
+  return new Set(packet.demands.flatMap((demand) => demand.conceptKeys));
+}
+
+function rankedPacketConceptOverlap(
+  packetJson: string,
+  roleConcepts: Set<string>,
+  requiredConcepts: Set<string>,
+): { concepts: Set<string>; overlap: number } | null {
+  let packet: ChallengePacket;
+  try {
+    packet = JSON.parse(packetJson) as ChallengePacket;
+  } catch {
+    return null;
+  }
+  const concepts = packetConcepts(packet);
+  if ([...requiredConcepts].some((concept) => !concepts.has(concept))) return null;
+  const overlap = [...roleConcepts].filter((concept) => concepts.has(concept)).length;
+  return overlap > 0 ? { concepts, overlap } : null;
+}
+
+/**
+ * Select candidate repos directly from context-ready review packets when a role
+ * has source-backed concepts but no legacy must-have skill list. This keeps
+ * CODE_REVIEW auto-build usable for simple JD/open-concept roles without
+ * fabricating repo-skill constraints.
+ */
+export async function matchReviewReposByRoleConcepts(
+  db: D1Database,
+  roleConcepts: string[],
+  requiredConcepts: string[] = [],
+  limit = 5,
+): Promise<MatchedRepo[]> {
+  if (roleConcepts.length === 0) return [];
+  const rows = await db.prepare(
+    `SELECT qr.id AS repo_id,
+            qr.full_name,
+            qr.github_url,
+            qr.description,
+            qr.seniority_band,
+            qr.detected_domain,
+            qr.pr_quality_score,
+            qr.stars,
+            qr.primary_language,
+            rcp.pr_number,
+            rsp.pr_url,
+            rsp.title AS pr_title,
+            rcp.quality_score,
+            rcp.packet_json
+       FROM review_challenge_packets rcp
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+       JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+       LEFT JOIN repo_sample_prs rsp
+         ON rsp.repo_id = rcp.repo_id
+        AND rsp.pr_number = rcp.pr_number
+      WHERE rcp.production_ready = 1
+        AND rcp.quality_score >= 0.70
+        AND COALESCE(qr.disqualified, 0) = 0
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_source_refs crsr
+           WHERE crsr.context_record_id = cr.id
+             AND crsr.source_ref_type = 'repo_source_span'
+        ) > 0
+        AND (
+          SELECT COUNT(*)
+            FROM context_record_concepts crc
+           WHERE crc.context_record_id = cr.id
+        ) > 0
+      ORDER BY rcp.quality_score DESC, qr.id, rcp.pr_number`,
+  ).bind().all<ReviewPacketRepoRow>();
+
+  const relevant = new Set(roleConcepts);
+  const required = new Set(requiredConcepts);
+  const byRepo = new Map<number, MatchedRepo & { bestOverlap: number; bestQuality: number }>();
+
+  for (const row of rows.results ?? []) {
+    const overlap = rankedPacketConceptOverlap(row.packet_json, relevant, required);
+    if (!overlap) continue;
+    const score = overlap.overlap + row.quality_score;
+    const current = byRepo.get(row.repo_id);
+    const samplePr: MatchedRepo['samplePrs'][number] = {
+      prNumber: row.pr_number,
+      prUrl: row.pr_url ?? `${row.github_url}/pull/${row.pr_number}`,
+      title: row.pr_title ?? `PR #${row.pr_number}`,
+      sweBenchEligible: true,
+      changedFileCount: 0,
+    };
+    if (
+      current
+      && (
+        current.bestOverlap > overlap.overlap
+        || (
+          current.bestOverlap === overlap.overlap
+          && current.bestQuality > row.quality_score
+        )
+      )
+    ) {
+      current.samplePrs.push(samplePr);
+      continue;
+    }
+
+    byRepo.set(row.repo_id, {
+      id: row.repo_id,
+      fullName: row.full_name,
+      githubUrl: row.github_url,
+      description: row.description,
+      seniorityBand: row.seniority_band,
+      detectedDomain: row.detected_domain,
+      prQualityScore: row.pr_quality_score,
+      stars: row.stars,
+      primaryLanguage: row.primary_language,
+      score,
+      matchedMustSkills: [],
+      matchedNiceSkills: [...overlap.concepts].filter((concept) => relevant.has(concept)).sort(),
+      matchedConstructs: [],
+      samplePrs: current ? [samplePr, ...current.samplePrs] : [samplePr],
+      bestOverlap: overlap.overlap,
+      bestQuality: row.quality_score,
+    });
+  }
+
+  return [...byRepo.values()]
+    .sort((left, right) =>
+      right.bestOverlap - left.bestOverlap
+      || right.bestQuality - left.bestQuality
+      || right.score - left.score
+      || left.id - right.id
+    )
+    .slice(0, limit)
+    .map(({ bestOverlap: _bestOverlap, bestQuality: _bestQuality, ...repo }) => repo);
+}
+
 /**
  * Pick a production-ready challenge packet that overlaps persisted role
  * concepts. The packet already passed source-provenance and reviewability
@@ -225,7 +382,7 @@ export async function pickReviewPr(
     } catch {
       return [];
     }
-    const concepts = new Set(packet.demands.flatMap((demand) => demand.conceptKeys));
+    const concepts = packetConcepts(packet);
     if ([...required].some((concept) => !concepts.has(concept))) return [];
     const overlap = [...relevant].filter((concept) => concepts.has(concept)).length;
     if (overlap === 0) return [];
@@ -302,9 +459,36 @@ export async function autoStageBuilder(
   }
 
   const baseRequest = buildMatchRequest(roleContext);
-  if (baseRequest.mustHaveSkills.length === 0) {
+  const roleSurfaces = [
+    ...baseRequest.mustHaveSkills,
+    ...baseRequest.niceToHaveSkills,
+  ];
+  const fallbackRoleConcepts = roleSurfaces.flatMap((surface) => {
+    const term = openSemanticTerm(surface);
+    return term ? [term.canonicalKey] : [];
+  });
+  const fallbackRequiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
+    const term = openSemanticTerm(surface);
+    return term ? [term.canonicalKey] : [];
+  });
+  const roleSemantics = await loadRoleChallengeSemantics(db, roleContextSemanticInput(roleContext));
+  const roleConcepts = roleSemantics.relevantConcepts.length > 0
+    ? roleSemantics.relevantConcepts
+    : fallbackRoleConcepts;
+  const requiredConcepts = roleSemantics.requiredConcepts.length > 0
+    ? roleSemantics.requiredConcepts
+    : fallbackRequiredConcepts;
+
+  if (
+    baseRequest.mustHaveSkills.length === 0
+    && (
+      !includeReview
+      || includeImplementation && matchConfig.stage_linkage === 'per-stage'
+      || roleConcepts.length === 0
+    )
+  ) {
     throw new Error(
-      'autoStageBuilder: no must-have skills resolvable from role context (set non_negotiable_skills_json or persona.mustHaveSkills)',
+      'autoStageBuilder: no source-backed role concepts or must-have skills resolvable for requested stations',
     );
   }
 
@@ -312,10 +496,12 @@ export async function autoStageBuilder(
   let implRepo: MatchedRepo | undefined;
 
   if (includeReview) {
-    const reviewMatches = await matchRepos(db, baseRequest);
+    const reviewMatches = baseRequest.mustHaveSkills.length > 0
+      ? await matchRepos(db, baseRequest)
+      : await matchReviewReposByRoleConcepts(db, roleConcepts, requiredConcepts, baseRequest.limit);
     reviewRepo = reviewMatches[0];
     if (!reviewRepo) {
-      throw new Error('autoStageBuilder: matchRepos returned no candidate repos for review station');
+      throw new Error('autoStageBuilder: no candidate repos matched source-backed role evidence for review station');
     }
 
     if (includeImplementation && matchConfig.stage_linkage === 'per-stage') {
@@ -342,25 +528,6 @@ export async function autoStageBuilder(
   }
 
   // 3. Pick PR + issue.
-  const roleSurfaces = [
-    ...baseRequest.mustHaveSkills,
-    ...baseRequest.niceToHaveSkills,
-  ];
-  const fallbackRoleConcepts = roleSurfaces.flatMap((surface) => {
-    const term = openSemanticTerm(surface);
-    return term ? [term.canonicalKey] : [];
-  });
-  const fallbackRequiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
-    const term = openSemanticTerm(surface);
-    return term ? [term.canonicalKey] : [];
-  });
-  const roleSemantics = await loadRoleChallengeSemantics(db, roleContextSemanticInput(roleContext));
-  const roleConcepts = roleSemantics.relevantConcepts.length > 0
-    ? roleSemantics.relevantConcepts
-    : fallbackRoleConcepts;
-  const requiredConcepts = roleSemantics.requiredConcepts.length > 0
-    ? roleSemantics.requiredConcepts
-    : fallbackRequiredConcepts;
   const stations: AutoStation[] = [];
   const perStationRepo: AutoStageBuilderResult['perStationRepo'] = {};
 

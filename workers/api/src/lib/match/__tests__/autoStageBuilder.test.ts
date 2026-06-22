@@ -184,6 +184,36 @@ function buildStubDb(state: DbState): StubDb {
               return { results: rows as T[], success: true, meta: {} };
             }
 
+            if (normalized.startsWith('SELECT qr.id AS repo_id')) {
+              const rows = state.prs.flatMap((pr) => {
+                if (!pr.swe_bench_eligible) return [];
+                const repo = state.repos.find((candidate) => candidate.id === pr.repo_id);
+                if (!repo) return [];
+                return [{
+                  repo_id: repo.id,
+                  full_name: repo.full_name,
+                  github_url: repo.github_url,
+                  description: repo.description,
+                  seniority_band: repo.seniority_band,
+                  detected_domain: repo.detected_domain,
+                  pr_quality_score: repo.pr_quality_score,
+                  stars: repo.stars,
+                  primary_language: repo.primary_language,
+                  pr_number: pr.pr_number,
+                  pr_url: `https://github.com/x/y/pull/${pr.pr_number}`,
+                  pr_title: pr.title,
+                  quality_score: 0.9,
+                  packet_json: JSON.stringify({
+                    pullRequest: { number: pr.pr_number, title: pr.title },
+                    demands: (pr.conceptKeys ?? repo.skills.map((skill) => `term:${skill}`)).map((conceptKey) => ({
+                      conceptKeys: [conceptKey],
+                    })),
+                  }),
+                }];
+              });
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
             // skill_aliases lookup — return empty so the open term survives unchanged.
             if (normalized.startsWith('SELECT alias, canonical_slug FROM skill_aliases')) {
               return { results: [] as T[], success: true, meta: {} };
@@ -459,7 +489,40 @@ describe('autoStageBuilder', () => {
     expect(result.stations[0]!.prTitle).toBe('source-backed Kafka PR');
   });
 
-  it('throws when no must-have skills can be resolved', async () => {
+  it('builds code review from source-backed role concepts without legacy must-have skills', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [{ canonicalKey: 'term:kafka', label: 'kafka' }];
+    state.prs = [
+      { repo_id: 101, pr_number: 84, title: 'source-backed Kafka PR', swe_bench_eligible: true, conceptKeys: ['term:kafka'] },
+    ];
+    const stub = buildStubDb(state);
+
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext({
+        persona_json: null,
+        non_negotiable_skills_json: null,
+        job_description_md: 'We need kafka ownership.',
+      }),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]).toMatchObject({
+      type: 'CODE_REVIEW',
+      repoId: 101,
+      githubPrNumber: 84,
+      prTitle: 'source-backed Kafka PR',
+    });
+    expect(result.perStationRepo.CODE_REVIEW).toMatchObject({
+      repoId: 101,
+      fullName: 'acme/widgets',
+    });
+    expect(stub.matchReposCalls).toBe(0);
+  });
+
+  it('throws when no source-backed concepts or must-have skills can be resolved', async () => {
     const stub = buildStubDb(fixtureState());
     await expect(
       autoStageBuilder({
@@ -467,7 +530,7 @@ describe('autoStageBuilder', () => {
         roleContext: makeRoleContext({ persona_json: null }),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no must-have skills/);
+    ).rejects.toThrow(/no source-backed role concepts or must-have skills/);
   });
 
   it('builds only code review when requested', async () => {
