@@ -10,6 +10,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
+import { isFeatureEnabled } from '../../middleware/rolloutGate';
 import { parseResume, persistParsedCV } from '../../lib/cvParser';
 import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
@@ -19,6 +20,7 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
+  searchSourceContent,
 } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -86,6 +88,28 @@ interface StandaloneReviewAlignment {
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
 
+interface StandaloneReviewUnmatchedDemand {
+  demandId: string;
+  family: string;
+  narrative: string;
+  weight: number;
+  concepts: string[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+  roleRequirement: boolean;
+}
+
+interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateNarrative: string;
+  demandNarrative: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 interface StandaloneReviewRankedResult {
   rank: number | null;
   challengeId: string;
@@ -97,6 +121,8 @@ interface StandaloneReviewRankedResult {
   provenanceComplete: boolean;
   eligible: boolean;
   alignments: StandaloneReviewAlignment[];
+  unmatchedDemands: StandaloneReviewUnmatchedDemand[];
+  stretchAreas: StandaloneReviewStretchArea[];
   rejectionReasons: string[];
 }
 
@@ -104,6 +130,8 @@ export interface StandaloneReviewMatchSummary {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   gaps: string[];
+  unmatchedDemands: StandaloneReviewUnmatchedDemand[];
+  stretchAreas: StandaloneReviewStretchArea[];
 }
 
 export interface StandaloneReviewSubmissionSummary {
@@ -247,6 +275,41 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
           }];
         })
       : [];
+    const unmatchedDemands: StandaloneReviewUnmatchedDemand[] = Array.isArray(item.unmatchedDemands)
+      ? item.unmatchedDemands.flatMap((ud) => {
+          if (!isRecord(ud)) return [];
+          if (typeof ud.demandId !== 'string' || typeof ud.family !== 'string'
+            || typeof ud.narrative !== 'string' || typeof ud.weight !== 'number') return [];
+          return [{
+            demandId: ud.demandId,
+            family: ud.family,
+            narrative: ud.narrative,
+            weight: ud.weight,
+            concepts: asStringArray(ud.concepts),
+            challengeSourceRefs: parseStandaloneReviewSourceRefs(ud.challengeSourceRefs),
+            roleRequirement: ud.roleRequirement === true,
+          }];
+        })
+      : [];
+    const stretchAreasParsed: StandaloneReviewStretchArea[] = Array.isArray(item.stretchAreas)
+      ? item.stretchAreas.flatMap((sa) => {
+          if (!isRecord(sa)) return [];
+          if (typeof sa.atomId !== 'string' || typeof sa.demandId !== 'string'
+            || typeof sa.atomConcept !== 'string' || typeof sa.demandConcept !== 'string'
+            || typeof sa.dimension !== 'string') return [];
+          return [{
+            atomId: sa.atomId,
+            demandId: sa.demandId,
+            atomConcept: sa.atomConcept,
+            demandConcept: sa.demandConcept,
+            dimension: sa.dimension,
+            candidateNarrative: typeof sa.candidateNarrative === 'string' ? sa.candidateNarrative : '',
+            demandNarrative: typeof sa.demandNarrative === 'string' ? sa.demandNarrative : '',
+            candidateSourceRefs: parseStandaloneReviewSourceRefs(sa.candidateSourceRefs),
+            challengeSourceRefs: parseStandaloneReviewSourceRefs(sa.challengeSourceRefs),
+          }];
+        })
+      : [];
     return [{
       rank,
       challengeId,
@@ -258,6 +321,8 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       provenanceComplete,
       eligible,
       alignments,
+      unmatchedDemands,
+      stretchAreas: stretchAreasParsed,
       rejectionReasons: asStringArray(item.rejectionReasons),
     }];
   });
@@ -272,6 +337,8 @@ export function buildStandaloneReviewMatchSummary(
       summary: 'Waiting for candidate resume/profile evidence before matching to a PR.',
       evidence: [],
       gaps: ['Candidate has not submitted source evidence yet.'],
+      unmatchedDemands: [],
+      stretchAreas: [],
     };
   }
   if (status === 'NEEDS_MORE_EVIDENCE') {
@@ -279,6 +346,8 @@ export function buildStandaloneReviewMatchSummary(
       summary: 'No deterministic challenge can be selected until more candidate evidence is available.',
       evidence: [],
       gaps: ['Candidate graph has no sufficient source-backed validation or deepening atoms.'],
+      unmatchedDemands: [],
+      stretchAreas: [],
     };
   }
   if (status === 'NO_ROLE_SAFE_CHALLENGE') {
@@ -288,6 +357,8 @@ export function buildStandaloneReviewMatchSummary(
       gaps: selectedResult?.rejectionReasons.length
         ? selectedResult.rejectionReasons
         : ['No eligible challenge had complete provenance and non-generic alignment.'],
+      unmatchedDemands: selectedResult?.unmatchedDemands ?? [],
+      stretchAreas: selectedResult?.stretchAreas ?? [],
     };
   }
   return {
@@ -296,6 +367,8 @@ export function buildStandaloneReviewMatchSummary(
       : 'Matched to a reviewable PR challenge.',
     evidence: selectedResult?.alignments ?? [],
     gaps: selectedResult?.rejectionReasons ?? [],
+    unmatchedDemands: selectedResult?.unmatchedDemands ?? [],
+    stretchAreas: selectedResult?.stretchAreas ?? [],
   };
 }
 
@@ -672,6 +745,34 @@ candidateOps.get('/:candidateId/living-context', async (c) => {
     return apiError(c, 'NOT_FOUND', 'Living context not found.');
   }
   return c.json({ livingContext });
+});
+
+// GET /:candidateId/living-context/search — search source content for a candidate
+candidateOps.get('/:candidateId/living-context/search', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const query = c.req.query('q');
+  if (!query || query.length < 2) {
+    return apiError(c, 'VALIDATION_ERROR', 'Query parameter q must be at least 2 characters.');
+  }
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const livingContext = await loadCandidateLivingContext(db, candidateId);
+  if (!livingContext) {
+    return c.json({ results: [] });
+  }
+
+  const results = await searchSourceContent(db, livingContext.person.workspacePersonId, query);
+  return c.json({ results });
 });
 
 // GET /:candidateId — full profile with stages + challenge submissions
@@ -1076,6 +1177,8 @@ candidateOps.get('/:candidateId', async (c) => {
     summary: string;
     evidence: StandaloneReviewAlignment[];
     gaps: string[];
+    unmatchedDemands: StandaloneReviewUnmatchedDemand[];
+    stretchAreas: StandaloneReviewStretchArea[];
     submitted: boolean;
     submission: StandaloneReviewSubmissionSummary | null;
     completedAt: string | null;
@@ -1166,6 +1269,8 @@ candidateOps.get('/:candidateId', async (c) => {
         summary: summary.summary,
         evidence: summary.evidence,
         gaps: summary.gaps,
+        unmatchedDemands: isFeatureEnabled('match_explanation') ? summary.unmatchedDemands : [],
+        stretchAreas: isFeatureEnabled('match_explanation') ? summary.stretchAreas : [],
         submitted: standaloneInterview.submission_json !== null,
         submission,
         completedAt: standaloneInterview.completed_at,

@@ -370,39 +370,67 @@ export async function matchCandidateToReviewChallenge(
     JSON.stringify(compiled.query),
     JSON.stringify(recalled.challenges.map((item) => item.challenge.id)),
     JSON.stringify(recalled.excludedChallengeIds),
-    JSON.stringify(evaluated.map((alignment, index) => ({
-      rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
-      recallRank: index + 1,
-      challengeId: alignment.challenge.id,
-      repoId: alignment.challenge.repoId,
-      prNumber: alignment.challenge.prNumber,
-      sourceVersion: alignment.challenge.sourceVersion,
-      score: alignment.finalScore,
-      candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
-      roleRelevance: alignment.roleRelevance,
-      contextualSpecificity: alignment.contextualSpecificity,
-      challengeQuality: alignment.challengeQuality,
-      validationDeepeningValue: alignment.validationDeepeningValue,
-      alignedDemandCount: alignment.alignments.length,
-      stretchCount: alignment.stretchCount,
-      stretchDemandWeightRatio: alignment.stretchDemandWeightRatio,
-      provenanceComplete: alignment.provenanceComplete,
-      eligible: alignment.eligible,
-      alignments: alignment.alignments.map((entry) => ({
-        atomId: entry.atom.id,
-        demandId: entry.demand.id,
-        pairScore: entry.pairScore.total,
-        pairScoreBreakdown: entry.pairScore,
-        weightedScore: entry.weightedScore,
-        stretch: entry.stretch ?? null,
-        sharedConcepts: entry.atom.concepts.filter((concept) =>
-          entry.demand.concepts.includes(concept)
-        ),
-        candidateSourceRefs: entry.atom.sourceRefs,
-        challengeSourceRefs: entry.demand.sourceRefs,
-      })),
-      rejectionReasons: alignment.rejectionReasons,
-    }))),
+    JSON.stringify(evaluated.map((alignment, index) => {
+      const matchedDemandIds = new Set(alignment.alignments.map((e) => e.demand.id));
+      return {
+        rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
+        recallRank: index + 1,
+        challengeId: alignment.challenge.id,
+        repoId: alignment.challenge.repoId,
+        prNumber: alignment.challenge.prNumber,
+        sourceVersion: alignment.challenge.sourceVersion,
+        score: alignment.finalScore,
+        candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
+        roleRelevance: alignment.roleRelevance,
+        contextualSpecificity: alignment.contextualSpecificity,
+        challengeQuality: alignment.challengeQuality,
+        validationDeepeningValue: alignment.validationDeepeningValue,
+        alignedDemandCount: alignment.alignments.length,
+        stretchCount: alignment.stretchCount,
+        stretchDemandWeightRatio: alignment.stretchDemandWeightRatio,
+        provenanceComplete: alignment.provenanceComplete,
+        eligible: alignment.eligible,
+        unmatchedDemandIds: alignment.unmatchedDemandIds,
+        unmatchedDemands: alignment.challenge.demands
+          .filter((d) => !matchedDemandIds.has(d.id))
+          .map((d) => ({
+            demandId: d.id,
+            family: d.family,
+            narrative: d.narrative,
+            weight: d.weight,
+            concepts: d.concepts,
+            challengeSourceRefs: d.sourceRefs,
+            roleRequirement: d.roleRequirement ?? false,
+          })),
+        stretchAreas: alignment.alignments
+          .filter((e) => e.stretch !== undefined)
+          .map((e) => ({
+            atomId: e.atom.id,
+            demandId: e.demand.id,
+            atomConcept: e.stretch!.atomConcept,
+            demandConcept: e.stretch!.demandConcept,
+            dimension: e.stretch!.dimension,
+            candidateNarrative: e.atom.narrative,
+            demandNarrative: e.demand.narrative,
+            candidateSourceRefs: e.atom.sourceRefs,
+            challengeSourceRefs: e.demand.sourceRefs,
+          })),
+        alignments: alignment.alignments.map((entry) => ({
+          atomId: entry.atom.id,
+          demandId: entry.demand.id,
+          pairScore: entry.pairScore.total,
+          pairScoreBreakdown: entry.pairScore,
+          weightedScore: entry.weightedScore,
+          stretch: entry.stretch ?? null,
+          sharedConcepts: entry.atom.concepts.filter((concept) =>
+            entry.demand.concepts.includes(concept)
+          ),
+          candidateSourceRefs: entry.atom.sourceRefs,
+          challengeSourceRefs: entry.demand.sourceRefs,
+        })),
+        rejectionReasons: alignment.rejectionReasons,
+      };
+    })),
     selected?.challenge.id ?? null,
   ).run();
 

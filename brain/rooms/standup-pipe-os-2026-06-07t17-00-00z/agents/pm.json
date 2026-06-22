@@ -4,5 +4,6 @@
   "provider": "devin",
   "model": "swe-1.6",
   "session_id": "snapdragon-parallel",
-  "created_at": 1780844328.9757922
+  "created_at": 1780844328.9757922,
+  "workdir": "/Users/hans/Code/PIPE/PIPE-OS/brain/rooms/standup-pipe-os-2026-06-07t17-00-00z/agents/pm"
 }
