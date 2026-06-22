@@ -1028,6 +1028,21 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(evidence).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
     await expect(evidence).toContainText(fixture.conceptKey);
 
+    const repoOverlay = page.getByTestId('repository-overlay-panel');
+    await expect(repoOverlay).toBeVisible();
+    await expect(repoOverlay).toContainText('Repository evidence overlay');
+    await expect(repoOverlay).toContainText(`${fixture.repoFullName} · PR #${fixture.prNumber}`);
+    await expect(repoOverlay).toContainText('implementation-demand');
+    await expect(repoOverlay).toContainText('validation-demand');
+    await expect(repoOverlay).toContainText('src/retry-idempotency.ts');
+    await expect(repoOverlay).toContainText('src/retry-idempotency.test.ts');
+    await expect(repoOverlay).toContainText('Candidate source');
+    await expect(repoOverlay).toContainText('PR demand source');
+    await expect(repoOverlay).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
+    await expect(repoOverlay).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
+    await expect(repoOverlay).toContainText(`Validate ${fixture.conceptLabel} retry behavior with deterministic tests.`);
+    await expect(repoOverlay).toContainText(fixture.conceptKey);
+
     const diagnostics = page.getByTestId('standalone-review-diagnostics');
     await expect(diagnostics).toContainText('Recalled packets');
     await expect(diagnostics).toContainText(fixture.packetId);
