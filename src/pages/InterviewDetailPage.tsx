@@ -18,6 +18,7 @@ import {
   Video,
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
+import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import type {
   ScheduledInterviewDetail,
   TranscriptArtifact,
@@ -483,6 +484,25 @@ export default function InterviewDetailPage(): JSX.Element {
           </Section>
         </aside>
       </div>
+
+      {interview.candidateId && interview.livingContext && (
+        <section style={GRAPH_SECTION}>
+          <div style={GRAPH_HEADER}>
+            <div>
+              <div style={EYEBROW}>LIVING GRAPH</div>
+              <h2 style={GRAPH_TITLE}>Source-backed person context</h2>
+            </div>
+            <div style={GRAPH_META}>
+              {interview.livingContext.summary.contextRecordCount} records · {interview.livingContext.summary.sourceSpanCount} spans
+            </div>
+          </div>
+          <LivingContextGraph
+            candidateId={interview.candidateId}
+            livingContextEndpoint={`/api/v1/candidates/${interview.candidateId}/living-context`}
+            initialLivingContext={interview.livingContext}
+          />
+        </section>
+      )}
     </div>
   );
 }
@@ -501,6 +521,37 @@ const GRID: CSSProperties = {
   gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 360px)',
   gap: 16,
   alignItems: 'start',
+};
+
+const GRAPH_SECTION: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 14,
+};
+
+const GRAPH_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-end',
+  justifyContent: 'space-between',
+  gap: 16,
+  flexWrap: 'wrap',
+};
+
+const GRAPH_TITLE: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text)',
+  fontSize: 18,
+  lineHeight: 1.25,
+  letterSpacing: 0,
+};
+
+const GRAPH_META: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
 };
 
 const SECTION: CSSProperties = {

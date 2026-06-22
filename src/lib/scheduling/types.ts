@@ -1,3 +1,5 @@
+import type { LivingContextReadModel } from '../api/types';
+
 export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
@@ -97,6 +99,7 @@ export interface ScheduledInterviewDetail extends ScheduledInterview {
   pipelineTitle?: string | null;
   stageTitle?: string | null;
   linkedMeeting: LinkedMeetingSummary | null;
+  livingContext?: LivingContextReadModel | null;
 }
 
 /**
