@@ -765,6 +765,42 @@ describe('GET /interviews/:id detail', () => {
         WHERE p.primary_email = ?`,
     ).get('edsger@example.com')).toEqual({ count: 1 });
     expect(sqlite!.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+
+    const graphRows = sqlite!.prepare(
+      `SELECT cr.record_type,
+              cr.predicate,
+              cr.narrative,
+              ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+        ORDER BY cr.created_at`,
+    ).all('edsger@example.com') as Array<{
+      record_type: string;
+      predicate: string | null;
+      narrative: string;
+      exact_text: string;
+    }>;
+    expect(graphRows).toHaveLength(1);
+    expect(graphRows[0]).toMatchObject({
+      record_type: 'scheduled_interview_invite',
+      predicate: 'preserves contact-first interview invite',
+      narrative: 'Contact-first interview invite for Edsger Dijkstra.',
+    });
+    expect(graphRows[0]!.exact_text.split('\n')).toEqual([
+      'Contact-first interview invite',
+      'Recipient name: Edsger Dijkstra',
+      'Recipient email: edsger@example.com',
+      'Meeting type: DIRECT_VIDEO_CALL',
+      'Interview type: VIDEO',
+      'Scheduled at: 2026-06-24T18:00:00.000Z',
+      'Scheduling provider: none',
+      'Scheduling URL: none',
+      expect.stringMatching(/^Created at: /),
+    ]);
   });
 });
 

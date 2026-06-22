@@ -22,6 +22,8 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
 import {
+  LivingContextStore,
+  deterministicEntityId,
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   loadCandidateLivingContext,
@@ -240,6 +242,142 @@ async function ensureRecipientContact(
   ).bind(contactId, ownerId, email, name, now).run();
   await ensureContactLivingContext(db, contactId);
   return contactId;
+}
+
+function lineCount(value: string): number {
+  return Math.max(1, value.split('\n').length);
+}
+
+function contactFirstInterviewSourceText(input: {
+  recipientName: string;
+  recipientEmail: string;
+  meetingType: string;
+  interviewType: string;
+  scheduledAt: string | null;
+  schedulingProvider: string | null;
+  schedulingUrl: string | null;
+  createdAt: string;
+}): string {
+  return [
+    'Contact-first interview invite',
+    `Recipient name: ${input.recipientName}`,
+    `Recipient email: ${input.recipientEmail}`,
+    `Meeting type: ${input.meetingType}`,
+    `Interview type: ${input.interviewType}`,
+    `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
+    `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
+    `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistContactFirstInterviewInviteContext(
+  db: D1Database,
+  input: {
+    contactId: string;
+    ownerId: string;
+    interviewId: string;
+    recipientName: string;
+    recipientEmail: string;
+    meetingType: string;
+    interviewType: string;
+    scheduledAt: string | null;
+    schedulingProvider: string | null;
+    schedulingUrl: string | null;
+    createdAt: string;
+  },
+): Promise<void> {
+  const identity = await ensureContactLivingContext(db, input.contactId);
+  if (!identity) return;
+
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `scheduled-interview:${input.interviewId}:contact:${input.contactId}`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionType: input.meetingType === 'DIRECT_VIDEO_CALL'
+      ? 'direct_video_call'
+      : 'screening_interview',
+    externalReference: input.interviewId,
+    startedAt: input.scheduledAt,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingType: input.meetingType,
+      interviewType: input.interviewType,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'scheduled_interview_invite',
+    logicalKey: `${input.interviewId}:invite`,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      contactId: input.contactId,
+      ownerId: input.ownerId,
+    },
+  });
+  const sourceText = contactFirstInterviewSourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      source: 'contact_first_interview_create',
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'invite-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      source: 'contact_first_interview_create',
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'scheduled_interview_invite',
+    predicate: 'preserves contact-first interview invite',
+    narrative: `Contact-first interview invite for ${input.recipientName}.`,
+    qualifiers: {
+      scheduledInterviewId: input.interviewId,
+      contactId: input.contactId,
+      meetingType: input.meetingType,
+      interviewType: input.interviewType,
+    },
+    confidence: 1,
+    extractionVersion: 'scheduled-interview-create-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.interviewId,
+        relationship: 'source_event',
+      },
+      {
+        entityType: 'contact',
+        entityId: input.contactId,
+        relationship: 'participant',
+      },
+    ],
+  });
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -1142,6 +1280,7 @@ schedulingAuth.post('/interviews', async (c) => {
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
+  const effectiveInterviewType = interviewType ?? 'VIDEO';
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
@@ -1157,12 +1296,28 @@ schedulingAuth.post('/interviews', async (c) => {
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
-      interviewType ?? 'VIDEO', effectiveMeetingType, scheduledAt ?? null,
+      effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       now, now,
     )
     .run();
+
+  if (contactId && recipientName && recipientEmail) {
+    await persistContactFirstInterviewInviteContext(db, {
+      contactId,
+      ownerId: userId,
+      interviewId: id,
+      recipientName,
+      recipientEmail: recipientEmail.trim().toLowerCase(),
+      meetingType: effectiveMeetingType,
+      interviewType: effectiveInterviewType,
+      scheduledAt: scheduledAt ?? null,
+      schedulingProvider: schedulingProvider ?? null,
+      schedulingUrl: schedulingUrl ?? null,
+      createdAt: now,
+    });
+  }
 
   return c.json({
     interview: {
@@ -1175,7 +1330,7 @@ schedulingAuth.post('/interviews', async (c) => {
       recipientEmail: recipientEmail?.trim().toLowerCase() ?? null,
       meetingType: effectiveMeetingType,
       status: 'INVITED',
-      interviewType: interviewType ?? 'VIDEO',
+      interviewType: effectiveInterviewType,
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
