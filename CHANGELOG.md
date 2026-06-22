@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Matcher regression coverage now uses packets persisted through `buildChallengePacket` + `persistReviewChallengeGraph` for valid selection paths, and keeps hand-shaped packet rows only as invalid legacy fixtures.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
+### Fixed — Repo Graph Projection
+
+- `ingestReposToNeo4j` now treats Neo4j as a rebuildable projection from D1: local database discovery is configurable, and `--dry-run` no longer opens Neo4j, writes projection rows, or generates embeddings.
+
 ### Added — Match Explanation Visualization Proof
 
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
