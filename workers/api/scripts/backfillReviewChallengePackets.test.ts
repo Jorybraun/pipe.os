@@ -31,6 +31,7 @@ interface CandidateConceptEvidence {
   exactText: string;
   predicate: string;
   evidenceLevel: 'implemented' | 'validated' | 'demonstrated';
+  sourceKind: 'resume' | 'meeting' | 'assessment';
 }
 
 class BetterQueryClient implements QueryClient {
@@ -92,6 +93,13 @@ function diffFixture(): GitHubDiffResult {
           hunks: [{ header: '@@ -1,1 +1,8 @@', lines: hunkLines('idempotency key write', 8) }],
         },
         {
+          filename: 'src/orders/crystallineQuorumLedger.ts',
+          status: 'added',
+          additions: 8,
+          deletions: 0,
+          hunks: [{ header: '@@ -1,1 +1,8 @@', lines: hunkLines('crystalline quorum ledger write', 8) }],
+        },
+        {
           filename: 'src/orders/__tests__/retry.test.ts',
           status: 'modified',
           additions: 8,
@@ -119,6 +127,13 @@ function sourceContent(path: string): string | null {
       return [
         'export function idempotencyKey(orderId: string) {',
         '  return `order:${orderId}`;',
+        '}',
+      ].join('\n');
+    case 'src/orders/crystallineQuorumLedger.ts':
+      return [
+        'export function writeCrystallineQuorumLedger(orderId: string) {',
+        '  const ledgerKey = `crystalline:${orderId}`;',
+        '  return { ledgerKey, committed: true };',
         '}',
       ].join('\n');
     case 'src/orders/__tests__/retry.test.ts':
@@ -226,7 +241,6 @@ function labelForConcept(conceptKey: string): string {
 
 function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConceptEvidence[]): void {
   const now = '2026-06-20T00:00:00.000Z';
-  const content = evidence.map((item) => item.exactText).join('\n');
   sqlite.exec(`
     INSERT OR IGNORE INTO candidates (id) VALUES ('candidate-1');
     INSERT INTO people (
@@ -244,48 +258,63 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
     ) VALUES (
       'application-1', 'application-1', 'workspace-person-1', 'candidate-1', '{}', '${now}', '${now}'
     );
-    INSERT INTO interactions (
-      id, ingestion_key, workspace_person_id, application_id, interaction_type, metadata_json, created_at, updated_at
-    ) VALUES (
-      'interaction-1', 'interaction-1', 'workspace-person-1', 'application-1', 'assessment', '{}', '${now}', '${now}'
-    );
-    INSERT INTO artifacts (
-      id, ingestion_key, workspace_person_id, interaction_id, artifact_type, metadata_json, created_at, updated_at
-    ) VALUES (
-      'artifact-1', 'artifact-1', 'workspace-person-1', 'interaction-1', 'assessment_response', '{}', '${now}', '${now}'
-    );
   `);
-  sqlite.prepare(
-    `INSERT INTO artifact_versions (
-       id, ingestion_key, artifact_id, version_number, content_hash, media_type,
-       content_text, byte_length, metadata_json, created_at
-     ) VALUES (
-       'artifact-version-1', 'artifact-version-1', 'artifact-1', 1, 'sha256:candidate-backfill',
-       'text/plain', ?, ?, '{}', ?
-     )`,
-  ).run(content, content.length, now);
 
-  let searchFrom = 0;
   for (const [index, item] of evidence.entries()) {
     const ordinal = index + 1;
-    const start = content.indexOf(item.exactText, searchFrom);
-    const end = start + item.exactText.length;
+    const start = 0;
+    const end = item.exactText.length;
     const conceptLabel = labelForConcept(item.conceptKey);
-    searchFrom = end;
+    const conceptId = `concept-${item.conceptKey.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
+    const interactionType = item.sourceKind === 'meeting'
+      ? 'video_meeting'
+      : item.sourceKind === 'resume'
+        ? 'resume'
+        : 'assessment';
+    const artifactType = item.sourceKind === 'meeting'
+      ? 'meeting_transcript'
+      : item.sourceKind === 'resume'
+        ? 'resume'
+        : 'assessment_response';
+    sqlite.prepare(
+      `INSERT INTO interactions (
+         id, ingestion_key, workspace_person_id, application_id, interaction_type,
+         metadata_json, created_at, updated_at
+       ) VALUES (?, ?, 'workspace-person-1', 'application-1', ?, '{}', ?, ?)`,
+    ).run(`interaction-${ordinal}`, `interaction-${ordinal}`, interactionType, now, now);
+    sqlite.prepare(
+      `INSERT INTO artifacts (
+         id, ingestion_key, workspace_person_id, interaction_id, artifact_type,
+         metadata_json, created_at, updated_at
+       ) VALUES (?, ?, 'workspace-person-1', ?, ?, '{}', ?, ?)`,
+    ).run(`artifact-${ordinal}`, `artifact-${ordinal}`, `interaction-${ordinal}`, artifactType, now, now);
+    sqlite.prepare(
+      `INSERT INTO artifact_versions (
+         id, ingestion_key, artifact_id, version_number, content_hash, media_type,
+         content_text, byte_length, metadata_json, created_at
+       ) VALUES (?, ?, ?, 1, ?, 'text/plain', ?, ?, '{}', ?)`,
+    ).run(
+      `artifact-version-${ordinal}`,
+      `artifact-version-${ordinal}`,
+      `artifact-${ordinal}`,
+      `sha256:candidate-backfill-${ordinal}`,
+      item.exactText,
+      item.exactText.length,
+      now,
+    );
     sqlite.prepare(
       `INSERT INTO source_spans (
          id, ingestion_key, artifact_version_id, byte_start, byte_end, char_start, char_end,
          line_start, line_end, exact_text, exact_text_hash, metadata_json, created_at
-       ) VALUES (?, ?, 'artifact-version-1', ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?, '{}', ?)`,
     ).run(
       `candidate-span-${ordinal}`,
       `candidate-span-${ordinal}`,
+      `artifact-version-${ordinal}`,
       start,
       end,
       start,
       end,
-      ordinal,
-      ordinal,
       item.exactText,
       `sha256:candidate-span-${ordinal}`,
       now,
@@ -293,15 +322,22 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
     sqlite.prepare(
       `INSERT INTO episodes (
          id, ingestion_key, workspace_person_id, interaction_id, narrative, metadata_json, created_at, updated_at
-       ) VALUES (?, ?, 'workspace-person-1', 'interaction-1', ?, '{}', ?, ?)`,
-    ).run(`episode-${ordinal}`, `episode-${ordinal}`, `Candidate described ${item.exactText}.`, now, now);
+       ) VALUES (?, ?, 'workspace-person-1', ?, ?, '{}', ?, ?)`,
+    ).run(
+      `episode-${ordinal}`,
+      `episode-${ordinal}`,
+      `interaction-${ordinal}`,
+      `Candidate described ${item.exactText}.`,
+      now,
+      now,
+    );
     sqlite.prepare(
-      `INSERT INTO concepts (
+      `INSERT OR IGNORE INTO concepts (
          id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
     ).run(
-      `concept-${ordinal}`,
-      `concept-${ordinal}`,
+      conceptId,
+      conceptId,
       item.conceptKey,
       item.conceptKey.split(':', 1)[0] || 'term',
       conceptLabel,
@@ -333,17 +369,18 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
     sqlite.prepare(
       `INSERT INTO assertion_concepts (assertion_id, concept_id, relationship, weight, created_at)
        VALUES (?, ?, 'about', 1, ?)`,
-    ).run(`assertion-${ordinal}`, `concept-${ordinal}`, now);
+    ).run(`assertion-${ordinal}`, conceptId, now);
     sqlite.prepare(
       `INSERT INTO signal_evidence (
          id, ingestion_key, workspace_person_id, interaction_id, assertion_id, concept_id,
          signal_key, evidence_level, strength, polarity, metadata_json, created_at, updated_at
-       ) VALUES (?, ?, 'workspace-person-1', 'interaction-1', ?, ?, ?, ?, 1, 1, '{}', ?, ?)`,
+       ) VALUES (?, ?, 'workspace-person-1', ?, ?, ?, ?, ?, 1, 1, '{}', ?, ?)`,
     ).run(
       `evidence-${ordinal}`,
       `evidence-${ordinal}`,
+      `interaction-${ordinal}`,
       `assertion-${ordinal}`,
-      `concept-${ordinal}`,
+      conceptId,
       item.conceptKey,
       item.evidenceLevel,
       now,
@@ -414,44 +451,67 @@ describe('backfillReviewChallengePackets', () => {
     expect(packet.demands.flatMap((demand) => demand.conceptKeys)).toEqual(
       expect.arrayContaining(['term:retry', 'term:idempotency']),
     );
+    expect(packet.demands.some((demand) =>
+      demand.conceptKeys.includes('term:crystalline-quorum-ledger')
+    )).toBe(true);
     expect(persistedPacket.production_ready).toBe(1);
 
     const candidateEvidence: CandidateConceptEvidence[] = [
+      {
+        conceptKey: 'term:crystalline-quorum-ledger',
+        exactText: 'resume: implemented CrystallineQuorumLedger commits for order recovery',
+        predicate: 'implemented',
+        evidenceLevel: 'implemented',
+        sourceKind: 'resume',
+      },
+      {
+        conceptKey: 'term:crystalline-quorum-ledger',
+        exactText: 'meeting: debugged CrystallineQuorumLedger replay during an outage',
+        predicate: 'debugged',
+        evidenceLevel: 'demonstrated',
+        sourceKind: 'meeting',
+      },
       {
         conceptKey: 'term:idempotency',
         exactText: 'implemented idempotency key handling',
         predicate: 'implemented',
         evidenceLevel: 'implemented',
+        sourceKind: 'resume',
       },
       {
         conceptKey: 'term:retry',
         exactText: 'validated retry handling',
         predicate: 'validated',
         evidenceLevel: 'validated',
+        sourceKind: 'assessment',
       },
       {
         conceptKey: 'term:retry-order',
         exactText: 'implemented retry order flow',
         predicate: 'implemented',
         evidenceLevel: 'implemented',
+        sourceKind: 'assessment',
       },
       {
         conceptKey: 'term:publishorderevent',
         exactText: 'demonstrated publish order event call tracing',
         predicate: 'demonstrated',
         evidenceLevel: 'demonstrated',
+        sourceKind: 'assessment',
       },
       {
         conceptKey: 'term:events',
         exactText: 'maintained events import boundary',
         predicate: 'demonstrated',
         evidenceLevel: 'demonstrated',
+        sourceKind: 'assessment',
       },
       {
         conceptKey: 'term:test',
         exactText: 'validated source test coverage',
         predicate: 'validated',
         evidenceLevel: 'validated',
+        sourceKind: 'assessment',
       },
     ];
     expect(candidateEvidence.every((item) =>
@@ -471,6 +531,33 @@ describe('backfillReviewChallengePackets', () => {
       sourceVersion: packet.repoSnapshotId,
     });
     expect(match.explanation?.evidence.length).toBeGreaterThanOrEqual(2);
+    const queryRow = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(match.matchRunId) as { query_json: string };
+    const query = JSON.parse(queryRow.query_json) as {
+      validationAtoms: Array<{
+        concepts: string[];
+        sourceRefs: Array<{ exactText?: string }>;
+      }>;
+    };
+    const crystallineAtoms = query.validationAtoms.filter((atom) =>
+      atom.concepts.includes('term:crystalline-quorum-ledger')
+    );
+    expect(crystallineAtoms.flatMap((atom) =>
+      atom.sourceRefs.map((ref) => ref.exactText)
+    )).toEqual(expect.arrayContaining([
+      'resume: implemented CrystallineQuorumLedger commits for order recovery',
+      'meeting: debugged CrystallineQuorumLedger replay during an outage',
+    ]));
+    expect(match.explanation?.evidence.some((entry) =>
+      entry.candidateSourceRefs.some((ref) =>
+        ref.exactText === 'resume: implemented CrystallineQuorumLedger commits for order recovery'
+        || ref.exactText === 'meeting: debugged CrystallineQuorumLedger replay during an outage'
+      )
+      && entry.challengeSourceRefs.some((ref) =>
+        ref.exactText?.includes('writeCrystallineQuorumLedger')
+      )
+    )).toBe(true);
     expect(match.explanation?.evidence.every((entry) =>
       entry.candidateSourceRefs.length > 0
       && entry.challengeSourceRefs.length > 0
@@ -520,7 +607,7 @@ describe('backfillReviewChallengePackets', () => {
       expect.objectContaining({
         source_ref_type: 'source_span',
         source_ref_id: 'candidate-span-1',
-        exact_text: 'implemented idempotency key handling',
+        exact_text: 'resume: implemented CrystallineQuorumLedger commits for order recovery',
         evidence_role: 'selected_candidate_evidence',
       }),
     ]));

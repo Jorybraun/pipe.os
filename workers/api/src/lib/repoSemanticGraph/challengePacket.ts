@@ -51,12 +51,18 @@ function sortedOpenTerms(values: readonly (string | undefined)[]): string[] {
 function sourceIdentifierSurfaces(value: string | undefined): string[] {
   if (!value?.trim()) return [];
   const surfaces = new Set<string>([value]);
-  const separated = value
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  const rawParts = value
     .split(/[^A-Za-z0-9+#.]+|\.(?=[A-Za-z])/)
     .map((part) => part.trim())
     .filter((part) => part.length >= 3);
-  separated.forEach((part) => surfaces.add(part));
+  for (const part of rawParts) {
+    surfaces.add(part);
+    const phrase = part.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    surfaces.add(phrase);
+    for (const component of phrase.split(/\s+/)) {
+      if (component.length >= 3) surfaces.add(component);
+    }
+  }
   return [...surfaces];
 }
 
