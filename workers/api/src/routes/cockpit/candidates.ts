@@ -138,6 +138,9 @@ interface StandaloneReviewSourceRef {
   contentHash: string;
   startOffset: number;
   endOffset: number;
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
   locator?: string;
   exactText?: string;
 }
@@ -291,9 +294,23 @@ function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSource
     ) {
       return [];
     }
+    const sourceRefType = typeof item.sourceRefType === 'string' ? item.sourceRefType : undefined;
+    const sourceRefId = typeof item.sourceRefId === 'string' ? item.sourceRefId : undefined;
+    const sourceSpanId = typeof item.sourceSpanId === 'string' ? item.sourceSpanId : undefined;
     const locator = typeof item.locator === 'string' ? item.locator : undefined;
     const exactText = typeof item.exactText === 'string' ? item.exactText : undefined;
-    return [{ artifactId, artifactVersion, contentHash, startOffset, endOffset, locator, exactText }];
+    return [{
+      artifactId,
+      artifactVersion,
+      contentHash,
+      startOffset,
+      endOffset,
+      sourceRefType,
+      sourceRefId,
+      sourceSpanId,
+      locator,
+      exactText,
+    }];
   });
 }
 

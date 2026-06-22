@@ -413,6 +413,9 @@ function createStandaloneReviewProfileApp() {
         contentHash: 'candidate-hash',
         startOffset: 14,
         endOffset: 88,
+        sourceRefType: 'source_span',
+        sourceRefId: 'candidate-span-kafka',
+        sourceSpanId: 'candidate-span-kafka',
         locator: 'resume line 7',
         exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
       }],
@@ -422,6 +425,8 @@ function createStandaloneReviewProfileApp() {
         contentHash: 'repo-hash',
         startOffset: 120,
         endOffset: 210,
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-retry',
         locator: 'src/orders/retry.ts:18',
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
@@ -585,8 +590,19 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           atomId: string;
           demandId: string;
           sharedConcepts: string[];
-          candidateSourceRefs: Array<{ locator?: string; exactText?: string }>;
-          challengeSourceRefs: Array<{ locator?: string; exactText?: string }>;
+          candidateSourceRefs: Array<{
+            sourceRefType?: string;
+            sourceRefId?: string;
+            sourceSpanId?: string;
+            locator?: string;
+            exactText?: string;
+          }>;
+          challengeSourceRefs: Array<{
+            sourceRefType?: string;
+            sourceRefId?: string;
+            locator?: string;
+            exactText?: string;
+          }>;
         }>;
         gaps: string[];
         diagnostics: {
@@ -650,10 +666,15 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       demandId: 'repo-demand-retry',
       sharedConcepts: ['term:kafka-order-events'],
       candidateSourceRefs: [{
+        sourceRefType: 'source_span',
+        sourceRefId: 'candidate-span-kafka',
+        sourceSpanId: 'candidate-span-kafka',
         locator: 'resume line 7',
         exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
       }],
       challengeSourceRefs: [{
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-retry',
         locator: 'src/orders/retry.ts:18',
         exactText: 'Add idempotent retry handling around order event publication.',
       }],

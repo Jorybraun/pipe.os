@@ -787,6 +787,9 @@ export interface StandaloneReviewSourceRef {
   contentHash: string;
   startOffset: number;
   endOffset: number;
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
   locator?: string;
   exactText?: string;
 }
