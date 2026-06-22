@@ -146,6 +146,88 @@ function insertEvaluationCorpus(
   );
 }
 
+function persistedResultFixture(overrides?: {
+  corpusId?: string;
+  passed?: boolean;
+  expertLabelCount?: number;
+  syntheticFixtureCount?: number;
+  requireExpertLabels?: boolean;
+}) {
+  const corpusId = overrides?.corpusId ?? 'expert-corpus-v1';
+  const metrics = {
+    corpusVersion: '1.0.0',
+    corpusId,
+    matchRunIds: ['run-primary'],
+    comparisonMatchRunIds: ['run-comparison'],
+    evaluatedAt: '2026-06-14T00:00:00Z',
+    recallAt50: 1,
+    precisionAt3: 1,
+    ndcgAt5: 1,
+    guardrailViolationCount: 0,
+    multiStretchViolationCount: 0,
+    missingProvenanceCount: 0,
+    missingMatchRunCount: 0,
+    byteIdenticalRerun: true,
+    rerunFingerprints: { 'candidate-1::role-1': 'fingerprint-1' },
+    determinismComparisons: [{
+      candidateId: 'candidate-1',
+      roleId: 'role-1',
+      matchRunId: 'run-primary',
+      comparisonMatchRunId: 'run-comparison',
+      identical: true,
+      fingerprint: 'fingerprint-1',
+      comparisonFingerprint: 'fingerprint-1',
+    }],
+    totalEvaluations: 1,
+    evaluatedPairCount: 1,
+    highlyRelevantInTop3: 1,
+    relevantInTop3: 0,
+    irrelevantInTop3: 0,
+    forbiddenInResults: 0,
+    syntheticFixtureCount: overrides?.syntheticFixtureCount ?? 0,
+    expertLabelCount: overrides?.expertLabelCount ?? 1,
+    labelResults: [],
+  };
+  return {
+    metrics,
+    thresholds: {
+      minRecallAt50: 0.95,
+      minPrecisionAt3: 0.8,
+      minNdcgAt5: 0.8,
+      maxGuardrailViolations: 0,
+      maxMultiStretchViolations: 0,
+      maxMissingProvenance: 0,
+      maxMissingMatchRuns: 0,
+      requireByteIdenticalRerun: true,
+      requireExpertLabels: overrides?.requireExpertLabels ?? true,
+    },
+    passed: overrides?.passed ?? true,
+    failures: [],
+    warnings: [],
+  };
+}
+
+function insertEvaluationResult(
+  db: InstanceType<typeof Database>,
+  result: ReturnType<typeof persistedResultFixture>,
+): void {
+  db.prepare(
+    `INSERT INTO evaluation_results (
+       id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,
+       metrics_json, result_json, passed, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `evaluation-${result.metrics.corpusId}`,
+    result.metrics.corpusId,
+    JSON.stringify(result.metrics.matchRunIds),
+    JSON.stringify(result.metrics.comparisonMatchRunIds),
+    JSON.stringify(result.metrics),
+    JSON.stringify(result),
+    result.passed ? 1 : 0,
+    100,
+  );
+}
+
 describe('matching evaluation CLI', () => {
   let directory: string | undefined;
 
@@ -221,6 +303,101 @@ describe('matching evaluation CLI', () => {
       '--allow-synthetic',
     ])).rejects.toThrow(
       '--allow-synthetic cannot be combined with --persist',
+    );
+  });
+
+  it('passes the latest persisted production readiness gate for expert evidence', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const evaluationJsonPath = join(directory, 'evaluation.json');
+    const evaluationReportPath = join(directory, 'evaluation.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    sqlite.close();
+
+    expect(await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--corpus-file',
+      expertCorpusPath,
+      '--match-run-id',
+      'run-primary',
+      '--comparison-run-id',
+      'run-comparison',
+      '--json',
+      evaluationJsonPath,
+      '--report',
+      evaluationReportPath,
+      '--persist',
+    ])).toBe(0);
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await readFile(jsonPath, 'utf8'))).toMatchObject({
+      ready: true,
+      corpusId: 'expert-corpus-v1',
+      metrics: {
+        expertLabelCount: 1,
+        syntheticFixtureCount: 0,
+        byteIdenticalRerun: true,
+      },
+    });
+  });
+
+  it('fails the readiness gate for historically persisted synthetic results', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+    insertEvaluationResult(sqlite, persistedResultFixture({
+      corpusId: 'sample-corpus-v1',
+      expertLabelCount: 0,
+      syntheticFixtureCount: 1,
+    }));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'sample-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        'Production rollout requires at least one expert label',
+        'Production rollout requires zero synthetic fixture labels',
+      ]),
     );
   });
 

@@ -37,6 +37,22 @@ Production promotion requires:
 Synthetic corpora may use `--allow-synthetic` only for harness testing. They do
 not satisfy production rollout.
 
+Before promoting a cohort, check the latest persisted result for the frozen
+corpus:
+
+```bash
+npx tsx workers/api/scripts/evaluateMatching.ts \
+  --local \
+  --corpus-id <expert-corpus-id> \
+  --check-latest-production-pass \
+  --json outputs/evaluation/<corpus-id>-readiness.json \
+  --report outputs/evaluation/<corpus-id>-readiness.txt
+```
+
+This read-only gate fails if the latest persisted result is absent, synthetic,
+missing expert labels, missing independent reruns, missing provenance, below
+threshold, or was produced with the expert-label gate disabled.
+
 ## Expert Label Contract
 
 Each production label must identify:
