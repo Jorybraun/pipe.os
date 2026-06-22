@@ -1,0 +1,128 @@
+name: Review Graph Rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run a dry-run build or persist review challenge packets'
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - backfill
+      batch_size:
+        description: 'Maximum eligible PR rows to process'
+        required: true
+        default: '1'
+      repo:
+        description: 'Optional OWNER/NAME repo filter'
+        required: false
+        default: ''
+      pr:
+        description: 'Optional pull request number filter'
+        required: false
+        default: ''
+      apply_migrations:
+        description: 'Apply production D1 migrations before checking/backfilling'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  rollout:
+    name: Review Graph Rollout
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: workers/api/package-lock.json
+
+      - name: Install dependencies
+        working-directory: workers/api
+        run: npm ci
+
+      - name: Initial review graph readiness
+        continue-on-error: true
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: npm run review-graph:remote-readiness | tee review-graph-readiness-before.json
+
+      - name: Apply production D1 migrations
+        if: ${{ inputs.apply_migrations }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/api
+          command: d1 migrations apply pipe-db --env production --remote
+
+      - name: Schema readiness after migrations
+        continue-on-error: ${{ inputs.mode == 'dry-run' }}
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: npm run review-graph:remote-readiness | tee review-graph-readiness-after-migrations.json
+
+      - name: GitHub API preflight
+        working-directory: workers/api
+        env:
+          GITHUB_TOKEN: ${{ secrets.CRAWLER_GITHUB_TOKEN }}
+        run: npx tsx scripts/backfillReviewChallengePackets.ts --preflight-github
+
+      - name: Run review packet backfill
+        working-directory: workers/api
+        env:
+          GITHUB_TOKEN: ${{ secrets.CRAWLER_GITHUB_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: |
+          ARGS="--remote --batch-size ${{ inputs.batch_size }}"
+          if [ "${{ inputs.mode }}" = "dry-run" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          if [ -n "${{ inputs.repo }}" ]; then
+            ARGS="$ARGS --repo ${{ inputs.repo }}"
+          fi
+          if [ -n "${{ inputs.pr }}" ]; then
+            ARGS="$ARGS --pr ${{ inputs.pr }}"
+          fi
+          npx tsx scripts/backfillReviewChallengePackets.ts $ARGS | tee review-graph-backfill.log
+
+      - name: Final review graph readiness
+        if: always()
+        continue-on-error: ${{ inputs.mode == 'dry-run' }}
+        working-directory: workers/api
+        env:
+          GITHUB_TOKEN: ${{ secrets.CRAWLER_GITHUB_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: npm run review-graph:remote-readiness -- --require-github | tee review-graph-readiness-final.json
+
+      - name: Upload review graph rollout artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-graph-rollout-${{ github.run_id }}
+          path: |
+            workers/api/review-graph-readiness-before.json
+            workers/api/review-graph-readiness-after-migrations.json
+            workers/api/review-graph-readiness-final.json
+            workers/api/review-graph-backfill.log
+          if-no-files-found: ignore
+          retention-days: 14

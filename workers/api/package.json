@@ -10,6 +10,8 @@
     "review-graph:readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --json",
     "review-graph:remote-readiness": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --json",
     "review-graph:rollout-gate": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --require-github",
+    "review-graph:migrate-production": "wrangler d1 migrations apply pipe-db --env production --remote",
+    "review-graph:backfill-remote": "tsx scripts/backfillReviewChallengePackets.ts --remote",
     "matching-eval:readiness": "tsx scripts/evaluateMatching.ts --remote --check-latest-production-pass"
   },
   "dependencies": {
