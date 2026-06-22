@@ -1142,6 +1142,27 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(repoOverlay).toContainText(`Validate ${fixture.conceptLabel} retry behavior with deterministic tests.`);
     await expect(repoOverlay).toContainText(fixture.conceptKey);
 
+    const candidateSourceCard = repoOverlay
+      .getByTestId('review-source-card')
+      .filter({
+        hasText: `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+      })
+      .first();
+    await expect(candidateSourceCard).toHaveAttribute('data-source-ref-type', 'source_span');
+    await expect(candidateSourceCard).toHaveAttribute('data-source-ref-id', fixture.candidateSourceSpanIds[0]);
+    await expect(candidateSourceCard).toHaveAttribute('data-source-span-id', fixture.candidateSourceSpanIds[0]);
+
+    const repoSourceCard = repoOverlay
+      .getByTestId('review-source-card')
+      .filter({
+        hasText: `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+      })
+      .first();
+    await expect(repoSourceCard).toHaveAttribute('data-source-ref-type', 'repo_source_span');
+    await expect(repoSourceCard).toHaveAttribute('data-content-hash', /^sha256:/);
+    const repoSourceRefId = await repoSourceCard.getAttribute('data-source-ref-id');
+    expect(fixture.repoSourceSpanIds).toContain(repoSourceRefId);
+
     const diagnostics = page.getByTestId('standalone-review-diagnostics');
     await expect(diagnostics).toContainText('Recalled packets');
     await expect(diagnostics).toContainText(fixture.packetId);
