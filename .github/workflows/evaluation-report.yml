@@ -1,0 +1,109 @@
+name: Evaluation Report
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'workers/api/src/lib/challengeMatching/**'
+      - 'workers/api/src/lib/livingContext/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  evaluation:
+    name: Matching Evaluation (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies (root)
+        run: npm ci
+
+      - name: Install dependencies (worker)
+        working-directory: workers/api
+        run: npm ci
+
+      - name: Run evaluation proof tests
+        working-directory: workers/api
+        run: |
+          npx vitest run \
+            src/lib/challengeMatching/evaluation/__tests__/expertCorpus.test.ts \
+            src/lib/challengeMatching/evaluation/__tests__/corpusRunner.test.ts \
+            src/lib/challengeMatching/evaluation/__tests__/seedCorpus.test.ts \
+            src/lib/challengeMatching/__tests__/matchExplanation.test.ts \
+            src/lib/challengeMatching/__tests__/goldenPathE2E.test.ts \
+            src/lib/challengeMatching/__tests__/fullPipelineE2E.test.ts \
+            --reporter=verbose 2>&1 | tee /tmp/evaluation-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "evaluation_exit_code=$EXIT_CODE" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Generate evaluation summary
+        run: |
+          echo "## Matching Evaluation Report" > /tmp/evaluation-summary.md
+          echo "" >> /tmp/evaluation-summary.md
+          if [ "${{ env.evaluation_exit_code }}" = "0" ]; then
+            echo "✅ **All evaluation proof tests pass**" >> /tmp/evaluation-summary.md
+          else
+            echo "⚠️ **Evaluation proof tests have failures** (non-blocking)" >> /tmp/evaluation-summary.md
+          fi
+          echo "" >> /tmp/evaluation-summary.md
+          echo "### Test suites" >> /tmp/evaluation-summary.md
+          echo "| Suite | Purpose |" >> /tmp/evaluation-summary.md
+          echo "|-------|---------|" >> /tmp/evaluation-summary.md
+          echo "| expertCorpus | Expert-labelled corpus validation, immutable source identity |" >> /tmp/evaluation-summary.md
+          echo "| corpusRunner | Offline compile→recall→align→rank→evaluate pipeline from seed corpus |" >> /tmp/evaluation-summary.md
+          echo "| seedCorpus | Seed corpus fixture validation and round-trip |" >> /tmp/evaluation-summary.md
+          echo "| matchExplanation | Structured gaps/stretches, source ref linking, no fabrication |" >> /tmp/evaluation-summary.md
+          echo "| goldenPathE2E | Full person→evidence→D1 matching→explanation pipeline |" >> /tmp/evaluation-summary.md
+          echo "| fullPipelineE2E | Contact→meeting→candidate→review→matching lifecycle |" >> /tmp/evaluation-summary.md
+          echo "" >> /tmp/evaluation-summary.md
+          echo "<details><summary>Test output</summary>" >> /tmp/evaluation-summary.md
+          echo "" >> /tmp/evaluation-summary.md
+          echo '```' >> /tmp/evaluation-summary.md
+          tail -40 /tmp/evaluation-output.txt >> /tmp/evaluation-summary.md
+          echo '```' >> /tmp/evaluation-summary.md
+          echo "</details>" >> /tmp/evaluation-summary.md
+
+      - name: Post evaluation summary to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/evaluation-summary.md', 'utf8');
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.data.find(
+              c => c.body?.startsWith('## Matching Evaluation Report')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
