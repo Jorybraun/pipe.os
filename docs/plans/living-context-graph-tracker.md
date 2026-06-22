@@ -117,3 +117,7 @@ Add focused tests for any touched route, UI, or backfill script.
 10. Build expert-labelled corpus with real recruiter annotations.
 11. ~~Add source content search for living context (criterion #2).~~ ✓ Done — `searchSourceContent()` + `/living-context/search` on contacts and candidates.
 12. ~~Fix fragile `loadContactLivingContext` LIKE query.~~ ✓ Done — replaced with `json_extract`.
+13. ~~Build offline corpus evaluation runner.~~ ✓ Done — `corpusRunner.ts` runs full compile→recall→align→rank→evaluate without D1 (10 tests).
+14. ~~Build backfill orchestrator.~~ ✓ Done — `backfillOrchestrator.ts` coordinates multi-task backfills with checkpoint tracking (13 tests).
+15. Wire corpus runner into evaluation CI workflow for automated regression testing.
+16. Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets to unblock deploy CI.

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Offline Corpus Evaluation Runner (Criterion #8)
+
+- Added `corpusRunner.ts` — runs the full compile→recall→align→rank→evaluate pipeline in-memory from a seed corpus and challenge packets, without requiring a live D1 database. Converts corpus evidence to `CandidateSignal`, runs the matching engine for each candidate-role pair, and evaluates results against expert labels using `evaluateMatchRuns` + `checkAcceptanceThresholds`.
+- Added `corpusRunner.test.ts` — 10 tests proving pipeline end-to-end execution, deterministic output, explanation generation, guardrail enforcement, graceful handling of insufficient evidence, and label coverage.
+
+### Added — Backfill Orchestrator (Criterion #8)
+
+- Added `backfillOrchestrator.ts` — coordinates multi-task living context backfills using checkpoint tracking. Defines 4 registered tasks (person-graph-contacts, person-graph-candidates, repo-semantic-graph, projection-outbox-rebuild). Provides `startBackfillTask`, `advanceBackfillTask`, `failBackfillTask`, `resetBackfillTask`, `resetAllBackfillTasks`, and `getOrchestratorStatus` for aggregate status reporting (idle/running/completed/failed/partial).
+- Added `backfillOrchestrator.test.ts` — 13 tests proving task lifecycle, batch progression, failure recording, reset, idempotent re-start, and aggregate status.
+
 ### Added — Full Repository File Tree in Repo Overlay Panel (Criterion #7)
 
 - Added `useRepoOverlay` hook — fetches full repo file tree from `/api/v1/internal/repo-graph/:repoId/overlay`, including all files, spans, symbols, and demand mappings.
