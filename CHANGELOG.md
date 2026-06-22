@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ingestReposToNeo4j` now treats Neo4j as a rebuildable projection from D1: local database discovery is configurable, and `--dry-run` no longer opens Neo4j, writes projection rows, or generates embeddings.
 - `ingestReposToNeo4j` no longer synthesizes metadata-only repo searchable profiles when Pass-3/source-backed profile evidence is missing; repos without `repo_searchable_profile` now fail closed and are skipped from the semantic projection.
 
+### Added — Review Graph Readiness Gate
+
+- Added `checkReviewChallengeGraphReadiness.ts` plus `review-graph:readiness` / `review-graph:rollout-gate` worker scripts to compose local graph migration prep, packet-context auditing, and optional GitHub API preflight into one rollout report.
+- The readiness gate fails closed with explicit next actions for missing graph tables, no backfilled packets, fixture-only packets, incomplete packet context projections, and GitHub API connectivity failures.
+
 ### Added — Match Explanation Visualization Proof
 
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
