@@ -274,7 +274,7 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
     const start = 0;
     const end = item.exactText.length;
     const conceptLabel = labelForConcept(item.conceptKey);
-    const conceptId = `concept-${item.conceptKey.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
+    const candidateConceptId = `concept-${item.conceptKey.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
     const interactionType = item.sourceKind === 'meeting'
       ? 'video_meeting'
       : item.sourceKind === 'resume'
@@ -345,14 +345,17 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
          id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
     ).run(
-      conceptId,
-      conceptId,
+      candidateConceptId,
+      candidateConceptId,
       item.conceptKey,
       item.conceptKey.split(':', 1)[0] || 'term',
       conceptLabel,
       now,
       now,
     );
+    const concept = sqlite.prepare(
+      `SELECT id FROM concepts WHERE canonical_key = ?`,
+    ).get(item.conceptKey) as { id: string };
     sqlite.prepare(
       `INSERT INTO semantic_assertions (
          id, ingestion_key, workspace_person_id, episode_id, subject_type, subject_id,
@@ -378,7 +381,7 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
     sqlite.prepare(
       `INSERT INTO assertion_concepts (assertion_id, concept_id, relationship, weight, created_at)
        VALUES (?, ?, 'about', 1, ?)`,
-    ).run(`assertion-${ordinal}`, conceptId, now);
+    ).run(`assertion-${ordinal}`, concept.id, now);
     sqlite.prepare(
       `INSERT INTO signal_evidence (
          id, ingestion_key, workspace_person_id, interaction_id, assertion_id, concept_id,
@@ -389,7 +392,7 @@ function seedCandidateEvidence(sqlite: BetterSqliteDb, evidence: CandidateConcep
       `evidence-${ordinal}`,
       `interaction-${ordinal}`,
       `assertion-${ordinal}`,
-      conceptId,
+      concept.id,
       item.conceptKey,
       item.evidenceLevel,
       now,
@@ -464,6 +467,66 @@ describe('backfillReviewChallengePackets', () => {
       demand.conceptKeys.includes('term:crystalline-quorum-ledger')
     )).toBe(true);
     expect(persistedPacket.production_ready).toBe(1);
+
+    const packetContext = sqlite.prepare(
+      `SELECT id, scope_type, scope_id, record_type
+         FROM context_records
+        WHERE record_type = 'repo_challenge_packet'
+          AND scope_id = ?`,
+    ).get(packet.repoSnapshotId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+    };
+    expect(packetContext).toMatchObject({
+      scope_type: 'repo_snapshot',
+      scope_id: packet.repoSnapshotId,
+      record_type: 'repo_challenge_packet',
+    });
+    const packetContextConcepts = sqlite.prepare(
+      `SELECT c.canonical_key, crc.relationship, crc.weight
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(packetContext.id) as Array<{
+      canonical_key: string;
+      relationship: string;
+      weight: number;
+    }>;
+    expect(packetContextConcepts).toEqual(expect.arrayContaining([
+      {
+        canonical_key: 'term:crystalline-quorum-ledger',
+        relationship: 'concept',
+        weight: 1,
+      },
+      {
+        canonical_key: 'term:idempotency',
+        relationship: 'concept',
+        weight: 1,
+      },
+      {
+        canonical_key: 'term:retry',
+        relationship: 'concept',
+        weight: 1,
+      },
+    ]));
+    const packetContextSourceRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text, evidence_role
+         FROM context_record_source_refs
+        WHERE context_record_id = ?`,
+    ).all(packetContext.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      exact_text: string | null;
+      evidence_role: string;
+    }>;
+    expect(packetContextSourceRefs.some((ref) =>
+      ref.source_ref_type === 'repo_source_span'
+      && ref.evidence_role === 'source'
+      && ref.exact_text?.includes('crystalline quorum ledger write')
+    )).toBe(true);
 
     const candidateEvidence: CandidateConceptEvidence[] = [
       {
