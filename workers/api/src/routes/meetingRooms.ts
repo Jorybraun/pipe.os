@@ -50,6 +50,11 @@ const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'ENDED']),
 });
 
+const FALLBACK_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
 const evidenceLevelSchema = z.enum([
   'mentioned',
   'used',
@@ -396,18 +401,26 @@ meetingRooms.get('/:token/turn-credentials', async (c) => {
 
   if (!c.env.METERED_API_KEY) {
     return c.json({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-      ],
+      iceServers: FALLBACK_ICE_SERVERS,
     });
   }
 
-  const response = await fetch(
-    `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${c.env.METERED_API_KEY}`,
-  );
-  if (!response.ok) return apiError(c, 'INTERNAL_ERROR', 'TURN credentials are unavailable.');
-  return c.json({ iceServers: await response.json() });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1800);
+  try {
+    const response = await fetch(
+      `https://pipe-os.metered.live/api/v1/turn/credentials?apiKey=${c.env.METERED_API_KEY}`,
+      { signal: controller.signal },
+    );
+    if (!response.ok) {
+      return c.json({ iceServers: FALLBACK_ICE_SERVERS });
+    }
+    return c.json({ iceServers: await response.json() });
+  } catch {
+    return c.json({ iceServers: FALLBACK_ICE_SERVERS });
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 meetingRooms.get('/:token/ws', async (c) => {
@@ -425,6 +438,7 @@ meetingRooms.get('/:token/ws', async (c) => {
     body: JSON.stringify({
       meetingId: room.meeting_id,
       hostId: room.owner_id,
+      resetEnded: room.room_status === 'WAITING',
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {
@@ -583,7 +597,7 @@ async function createRoomAndHostToken(
   };
 }
 
-async function ensureMeetingRoomLinks(
+export async function ensureMeetingRoomLinks(
   db: D1Database,
   meetingId: string,
   roomAppUrl: string,

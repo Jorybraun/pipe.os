@@ -578,7 +578,7 @@ describe('GET /interviews/:id detail', () => {
       pipelineTitle: 'Principal Systems Engineer',
       stageTitle: 'Technical screen',
       status: 'ACTIVE',
-      meetingUrl: 'http://localhost:5173/video/stage-1--candidate-1',
+      meetingUrl: null,
     });
     expect(body.interview.transcriptArtifact).toMatchObject({
       status: 'COMPLETED',

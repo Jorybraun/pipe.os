@@ -13,7 +13,6 @@ import {
   GitPullRequest,
   Loader2,
   Mail,
-  RefreshCw,
   User,
   Video,
 } from 'lucide-react';
@@ -282,6 +281,18 @@ export default function InterviewDetailPage(): JSX.Element {
     interview.linkedMeeting?.transcriptStatus
     ?? interview.transcriptArtifact?.status
     ?? 'NONE';
+  const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
+  const hasInviteDelivery = Boolean(interview.inviteLinkSentAt ?? interview.emailSentAt);
+  const hasRoleContext = Boolean(interview.pipelineId || interview.stageId || interview.pipelineTitle || interview.stageTitle);
+  const livingContextSummary = interview.livingContext?.summary;
+  const hasLivingContextEvidence = Boolean(livingContextSummary && (
+    livingContextSummary.interactionCount > 0
+    || livingContextSummary.contextRecordCount > 0
+    || livingContextSummary.artifactCount > 0
+    || livingContextSummary.sourceSpanCount > 0
+    || livingContextSummary.assertionCount > 0
+    || livingContextSummary.signalCount > 0
+  ));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -308,17 +319,6 @@ export default function InterviewDetailPage(): JSX.Element {
               PERSON
             </button>
           )}
-          {roomLinks?.hostUrl ? (
-            <ActionLink href={roomLinks.hostUrl} tone="green">
-              <Video size={14} />
-              HOST ROOM
-            </ActionLink>
-          ) : (
-            <button onClick={() => void prepareRoom()} disabled={isPreparingRoom} style={PRIMARY_BUTTON}>
-              {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-              PREPARE ROOM
-            </button>
-          )}
           <ActionLink href={interview.schedulingUrl}>
             <Calendar size={14} />
             BOOKING
@@ -331,9 +331,8 @@ export default function InterviewDetailPage(): JSX.Element {
           <Section title="Meeting" icon={<Calendar size={15} />}>
             <div style={FIELD_GRID}>
               <Field label="When" value={formatDate(interview.scheduledAt)} />
-              <Field label="Type" value={interview.interviewType ?? 'VIDEO'} />
-              <Field label="Meeting model" value={interview.meetingType ?? 'SCREENING_INTERVIEW'} />
-              <Field label="Provider" value={interview.schedulingProvider ?? 'PIPE'} />
+              <Field label="Event" value={interview.interviewType ?? 'VIDEO'} />
+              <Field label="Context" value={roleTitle} />
             </div>
             {interview.recruiterNotes && (
               <div style={NOTE}>{interview.recruiterNotes}</div>
@@ -344,19 +343,18 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={FIELD_GRID}>
               <Field label="Name" value={personName} />
               <Field label="Email" value={personEmail ?? 'No email'} />
-              <Field label="Candidate id" value={interview.candidateId ?? 'Roleless contact'} />
               <Field label="Created" value={formatDate(interview.createdAt, 'Unknown')} />
             </div>
           </Section>
 
-          <Section title="Role context" icon={<Briefcase size={15} />}>
-            <div style={FIELD_GRID}>
-              <Field label="Role" value={roleTitle} />
-              <Field label="Stage" value={stageTitle} />
-              <Field label="Pipeline id" value={interview.pipelineId ?? 'None'} />
-              <Field label="Stage id" value={interview.stageId ?? 'None'} />
-            </div>
-          </Section>
+          {hasRoleContext && (
+            <Section title="Role context" icon={<Briefcase size={15} />}>
+              <div style={FIELD_GRID}>
+                <Field label="Role" value={roleTitle} />
+                <Field label="Stage" value={stageTitle} />
+              </div>
+            </Section>
+          )}
 
           {(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId) && (
             <Section title="Code review" icon={<GitPullRequest size={15} />}>
@@ -415,77 +413,57 @@ export default function InterviewDetailPage(): JSX.Element {
 
         <aside style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <Section title="Room" icon={<Video size={15} />}>
-            <div style={FIELD_GRID_SINGLE}>
-              <Field label="Linked meeting" value={interview.linkedMeeting?.title ?? 'No linked room'} />
-              <Field label="Room status" value={interview.linkedMeeting?.room?.status ?? 'None'} />
-              <Field label="Meeting status" value={interview.linkedMeeting?.status ?? 'None'} />
-              <Field label="Started" value={formatDate(interview.linkedMeeting?.startedAt, 'Not started')} />
-              <Field label="Ended" value={formatDate(interview.linkedMeeting?.endedAt, 'Not ended')} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={FIELD_VALUE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</div>
+              <div style={ROOM_LINK_TEXT}>
+                {guestRoomUrl ? 'Guest link ready' : 'Create a room to generate host and guest links'}
+              </div>
             </div>
             <div style={ROOM_ACTIONS}>
-              <button
-                onClick={() => void prepareRoom()}
-                disabled={isPreparingRoom}
-                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-              >
-                {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-                {roomLinks ? 'REFRESH HOST LINK' : 'PREPARE VIDEO ROOM'}
-              </button>
-              {roomLinks && (
-                <>
-                  <ActionLink href={roomLinks.hostUrl} tone="green">
-                    <Video size={14} />
-                    OPEN HOST ROOM
-                  </ActionLink>
-                  <button
-                    onClick={() => void navigator.clipboard.writeText(roomLinks.guestUrl)}
-                    style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-                  >
-                    <Copy size={14} />
-                    COPY GUEST LINK
-                  </button>
-                  <div style={ROOM_LINK_TEXT}>
-                    Guest link expires {formatDate(roomLinks.expiresAt, 'after token expiry')}
-                  </div>
-                </>
+              {roomLinks?.hostUrl ? (
+                <ActionLink href={roomLinks.hostUrl} tone="green">
+                  <Video size={14} />
+                  OPEN HOST ROOM
+                </ActionLink>
+              ) : (
+                <button
+                  onClick={() => void prepareRoom()}
+                  disabled={isPreparingRoom}
+                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+                >
+                  {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+                  START HOST ROOM
+                </button>
               )}
-              {!roomLinks && interview.linkedMeeting?.meetingUrl && (
-                <Field
-                  label="Current guest link"
-                  value={(
-                    <a href={interview.linkedMeeting.meetingUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
-                      {interview.linkedMeeting.meetingUrl}
-                    </a>
-                  )}
-                />
+              {guestRoomUrl && (
+                <button
+                  onClick={() => void navigator.clipboard.writeText(guestRoomUrl)}
+                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+                >
+                  <Copy size={14} />
+                  COPY GUEST LINK
+                </button>
+              )}
+              {roomLinks?.expiresAt && (
+                <div style={ROOM_LINK_TEXT}>
+                  Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
+                </div>
               )}
               {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
             </div>
           </Section>
 
-          <Section title="Delivery" icon={<Mail size={15} />}>
-            <div style={FIELD_GRID_SINGLE}>
-              <Field label="Invite sent" value={formatDate(interview.inviteLinkSentAt ?? interview.emailSentAt, 'Not sent')} />
-              <Field label="Sync source" value={interview.syncSource ?? 'MANUAL'} />
-              <Field label="Last sync" value={formatDate(interview.lastSyncedAt, 'Never')} />
-              <Field label="External event" value={interview.externalEventId ?? 'None'} />
-            </div>
-          </Section>
-
-          <Section title="Record" icon={<RefreshCw size={15} />}>
-            <div style={FIELD_GRID_SINGLE}>
-              <Field label="Interview id" value={interview.id} />
-              <Field label="Updated" value={formatDate(interview.updatedAt, 'Unknown')} />
-            </div>
-            <button onClick={() => void load()} style={{ ...PRIMARY_BUTTON, width: '100%', justifyContent: 'center', marginTop: 14 }}>
-              <RefreshCw size={14} />
-              REFRESH
-            </button>
-          </Section>
+          {hasInviteDelivery && (
+            <Section title="Delivery" icon={<Mail size={15} />}>
+              <div style={FIELD_GRID_SINGLE}>
+                <Field label="Invite sent" value={formatDate(interview.inviteLinkSentAt ?? interview.emailSentAt, 'Not sent')} />
+              </div>
+            </Section>
+          )}
         </aside>
       </div>
 
-      {interview.livingContext && (
+      {interview.livingContext && hasLivingContextEvidence && (
         <section style={GRAPH_SECTION}>
           <div style={GRAPH_HEADER}>
             <div>

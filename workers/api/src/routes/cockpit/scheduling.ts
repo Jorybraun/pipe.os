@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
+import { ensureMeetingRoomLinks } from '../meetingRooms';
 import {
   LivingContextStore,
   deterministicEntityId,
@@ -152,12 +153,9 @@ export function canInterviewStatusTransition(from: string, to: string): boolean 
   return SCHEDULED_INTERVIEW_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-function buildInternalVideoUrl(c: { env: Env }, interview: { id: string; stage_id: string | null; candidate_id: string | null; meeting_url: string | null }): string | null {
+function buildInternalVideoUrl(_c: { env: Env }, interview: { id: string; stage_id: string | null; candidate_id: string | null; meeting_url: string | null }): string | null {
   if (interview.meeting_url) return interview.meeting_url;
-  if (!interview.candidate_id) return null;
-  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-  const sessionStageId = interview.stage_id ?? interview.id;
-  return `${baseUrl}/video/${sessionStageId}--${interview.candidate_id}`;
+  return null;
 }
 
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
@@ -242,6 +240,97 @@ async function ensureRecipientContact(
   ).bind(contactId, ownerId, email, name, now).run();
   await ensureContactLivingContext(db, contactId);
   return contactId;
+}
+
+async function ensureScheduledInterviewRoomLinks(
+  db: D1Database,
+  ownerId: string,
+  env: Env,
+  interview: {
+    id: string;
+    scheduled_at: string | null;
+    candidate_name: string | null;
+    candidate_email: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    pipeline_title: string | null;
+    stage_title: string | null;
+    interview_type: string | null;
+  },
+  inviteEmail: string,
+): Promise<{ hostUrl: string; guestUrl: string; expiresAt: string }> {
+  const email = inviteEmail.trim().toLowerCase();
+  const name = (
+    interview.candidate_name
+    ?? interview.recipient_name
+    ?? email.split('@')[0]
+    ?? 'Interview guest'
+  ).trim();
+  const contactId = await ensureRecipientContact(db, ownerId, { name, email });
+  const now = new Date().toISOString();
+
+  let meeting = await db.prepare(
+    `SELECT id
+       FROM meetings
+      WHERE scheduled_interview_id = ?1
+        AND owner_id = ?2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).bind(interview.id, ownerId).first<{ id: string }>();
+
+  if (!meeting) {
+    const meetingId = crypto.randomUUID();
+    const role = interview.pipeline_title ?? 'Talent Pool';
+    const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    await db.prepare(
+      `INSERT INTO meetings
+       (id, owner_id, title, description, status, scheduled_at, meeting_type,
+        scheduled_interview_id, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?7)`,
+    ).bind(
+      meetingId,
+      ownerId,
+      `${name} interview`,
+      `${role} · ${stage}`,
+      interview.scheduled_at,
+      interview.id,
+      now,
+    ).run();
+    meeting = { id: meetingId };
+  }
+
+  const participant = await db.prepare(
+    `SELECT mp.id
+       FROM meeting_participants mp
+      WHERE mp.meeting_id = ?1
+        AND mp.contact_id = ?2
+      LIMIT 1`,
+  ).bind(meeting.id, contactId).first<{ id: string }>();
+
+  if (!participant) {
+    await db.prepare(
+      `INSERT INTO meeting_participants (id, meeting_id, contact_id, role, created_at, updated_at)
+       VALUES (?1, ?2, ?3, 'ATTENDEE', ?4, ?4)`,
+    ).bind(crypto.randomUUID(), meeting.id, contactId, now).run();
+  }
+
+  const room = await ensureMeetingRoomLinks(
+    db,
+    meeting.id,
+    env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175',
+  );
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET meeting_url = ?1,
+            updated_at = ?2
+      WHERE id = ?3`,
+  ).bind(room.guestUrl, now, interview.id).run();
+
+  return {
+    hostUrl: room.hostUrl,
+    guestUrl: room.guestUrl,
+    expiresAt: room.expiresAt,
+  };
 }
 
 function lineCount(value: string): number {
@@ -1424,7 +1513,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const interview = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
-              si.scheduled_at, si.meeting_url,
+              si.scheduled_at, si.meeting_url, si.recipient_name, si.recipient_email,
+              si.interview_type,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -1437,12 +1527,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     .bind(id, userId)
     .first<{
       id: string;
-      candidate_id: string;
+      candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      interview_type: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -1451,10 +1544,14 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  // Build the meeting link — prefer existing meetingUrl, else generate app video link
-  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-  const meetingUrl = interview.meeting_url
-    ?? `${baseUrl}/video/${interview.stage_id ?? interview.id}--${interview.candidate_id}`;
+  const roomLinks = await ensureScheduledInterviewRoomLinks(
+    db,
+    userId,
+    c.env,
+    interview,
+    email,
+  );
+  const meetingUrl = roomLinks.guestUrl;
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
@@ -1531,14 +1628,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
          WHERE id = ?`
       )
       .bind(now, now, now, id)
-      .run();
-  }
-
-  // If the meeting URL wasn't previously set, store it
-  if (!interview.meeting_url) {
-    await db
-      .prepare('UPDATE scheduled_interviews SET meeting_url = ?, updated_at = ? WHERE id = ?')
-      .bind(meetingUrl, now, id)
       .run();
   }
 
