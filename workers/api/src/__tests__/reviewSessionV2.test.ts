@@ -324,10 +324,12 @@ describe('POST /rpc/get-challenge', () => {
     const body = await res.json() as {
       cachedDiffJson: { files: Array<{ filename: string; headContent: string }> };
       githubPrTitle: string | null;
+      githubPrDescription: string | null;
       githubPrNumber: number | null;
       githubRepoUrl: string | null;
     };
     expect(body.githubPrTitle).toBe('Source-backed retry PR');
+    expect(body.githubPrDescription).toBe('Source-backed packet body');
     expect(body.githubPrNumber).toBe(42);
     expect(body.githubRepoUrl).toBe('https://github.com/test/source-backed-repo');
     expect(body.cachedDiffJson.files[0]).toMatchObject({

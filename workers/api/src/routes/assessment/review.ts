@@ -332,7 +332,7 @@ async function buildPrContext(
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
       ch.github_pr_title = sourceBackedDiff.metadata.title;
-      ch.github_pr_description = sourceBackedDiff.metadata.description ?? ch.github_pr_description;
+      ch.github_pr_description = sourceBackedDiff.metadata.description ?? null;
       await db.prepare(
         `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
       )

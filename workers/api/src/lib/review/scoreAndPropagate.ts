@@ -98,8 +98,8 @@ async function resolveScoringContext(
       // the same source-backed packet.
       plantedBugs: [],
       diff: JSON.stringify(sourceBackedDiff.diff),
-      prTitle: sourceBackedDiff.metadata.title ?? row.github_pr_title,
-      prDescription: sourceBackedDiff.metadata.description ?? row.github_pr_description,
+      prTitle: sourceBackedDiff.metadata.title ?? null,
+      prDescription: sourceBackedDiff.metadata.description ?? null,
     };
   }
 

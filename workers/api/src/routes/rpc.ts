@@ -1273,6 +1273,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
       ch.github_pr_title = sourceBackedDiff.metadata.title;
+      ch.github_pr_description = sourceBackedDiff.metadata.description ?? null;
     } else {
       return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
     }
