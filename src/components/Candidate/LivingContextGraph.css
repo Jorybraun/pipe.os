@@ -1032,3 +1032,102 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Source content search ──────────────────────────────────────────────── */
+
+.living-context__source-search {
+  margin-bottom: 18px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 6px;
+  padding: 12px 14px;
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.living-context__search-error {
+  font: 10px "Space Mono", monospace;
+  color: #f87171;
+  padding: 6px 0;
+}
+
+.living-context__search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.living-context__search-hit {
+  padding: 10px 12px;
+  border: 1px solid var(--pipe-border);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.living-context__search-hit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.living-context__search-hit-predicate {
+  font: 600 10px "Space Mono", monospace;
+  color: var(--lc-assertion);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.living-context__search-hit-type {
+  font: 9px "Space Mono", monospace;
+  color: var(--lc-source);
+  opacity: 0.7;
+  text-transform: uppercase;
+}
+
+.living-context__search-hit-conf {
+  font: 9px "Space Mono", monospace;
+  color: var(--lc-signal);
+  margin-left: auto;
+}
+
+.living-context__search-hit-narrative {
+  font: 10px "Space Mono", monospace;
+  color: var(--pipe-text);
+  line-height: 1.55;
+  margin-bottom: 6px;
+}
+
+.living-context__search-hit-quote {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--lc-source);
+  font: 10px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.living-context__search-hit-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.living-context__search-hit-locator,
+.living-context__search-hit-key {
+  font: 9px "Space Mono", monospace;
+  color: var(--pipe-text-dim);
+  opacity: 0.6;
+}
+
+.living-context__highlight {
+  background: rgba(245, 158, 11, 0.25);
+  color: var(--pipe-text);
+  border-radius: 2px;
+  padding: 0 1px;
+}

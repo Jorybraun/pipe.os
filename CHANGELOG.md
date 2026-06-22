@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Source Content Search UI Integration (Criterion #2)
+
+- Added `SourceContentSearchResult` and `SourceContentSearchResponse` types to frontend API types — mirrors the backend `searchSourceContent` return shape.
+- Added `useSourceSearch` hook — debounced server-side search against `/api/v1/candidates/:id/living-context/search` with abort controller cleanup.
+- Added `SourceSearchResults` panel to `LivingContextGraph` — renders matching source spans with highlighted query terms, assertion predicates, artifact types, confidence scores, concepts, and locator metadata.
+- Added `highlightMatch` utility for inline query term highlighting in search results.
+- Added 3 new tests to `readModel.test.ts` proving `searchSourceContent` returns matching spans with concepts, handles empty results, and escapes SQL wildcards.
+- Added CSS for source search panel (`.living-context__source-search`, `.living-context__search-hit`, `.living-context__highlight`).
+
 ### Added — D1-Backed Rollout Gate Configuration (Criterion #8)
 
 - Added `0096_rollout_gates.sql` migration — stores rollout gate stages in D1 for runtime configuration without redeployment.

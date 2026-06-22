@@ -1,6 +1,6 @@
 # Living Context Graph + Candidate-to-PR Matching Tracker
 
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 ## Goal
 
@@ -50,8 +50,8 @@ Every PR, child session, and merge recommendation must map to at least one accep
 
 | PR | Area | Merge state | Recommendation |
 |---|---|---|---|
-| #84 | Full living context graph consolidation — all 8 acceptance criteria proven | Open, CI passes (code checks) | Merge — supersedes #53, #62–#82. |
-| #53, #62–#82 | Progressive consolidation drafts | Open draft, all superseded by #84 | Close all — incorporated into #84. |
+| #87 | Final consolidation — all 8 acceptance criteria proven + source search UI | Draft, CI code checks pass | Merge into main — supersedes all earlier PRs. |
+| #53, #62–#86 | Progressive consolidation drafts | Open draft, all superseded by #87 | Close all — incorporated into #87. |
 
 ## Merge gates
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import type { ContextualDecomposition } from '../../cultureContextualDecomposition';
 import { ingestCultureTurnToLivingContext } from '../cultureTurn';
-import { loadCandidateLivingContext } from '../readModel';
+import { loadCandidateLivingContext, searchSourceContent } from '../readModel';
 
 
 
@@ -153,5 +153,116 @@ describe('living-context candidate read model', () => {
       'I implemented FluxCapacitorX for order replay.',
     );
     expect(graph?.relationships[0]?.predicate).toBe('person directly implemented');
+  });
+
+  it('searchSourceContent returns matching source spans and concepts', async () => {
+    const decomposition: ContextualDecomposition = {
+      statements: [{
+        id: 'stmt-search-1',
+        type: 'stream replay implementation',
+        phrase: 'implemented FluxCapacitorX for order replay',
+        surface: 'FluxCapacitorX',
+        sourceQuote: 'I implemented FluxCapacitorX for order replay.',
+        confidence: 0.92,
+        semanticTerms: [{
+          surface: 'FluxCapacitorX',
+          relationship: 'used as the replay mechanism',
+          weight: 0.9,
+          evidenceLevel: 'implemented',
+          strength: 0.8,
+        }],
+      }],
+      edges: [{
+        from: 'candidate',
+        to: 'stmt-search-1',
+        predicate: 'person directly implemented',
+      }],
+      discarded: false,
+      probe: null,
+      missingContext: [],
+    };
+    await ingestCultureTurnToLivingContext(db, {
+      candidateId: 'candidate-1',
+      sessionId: 'culture-session-search',
+      turnIndex: 0,
+      question: 'What did you build?',
+      answer: 'I implemented FluxCapacitorX for order replay.',
+      observedAt: '2026-06-14T10:00:00.000Z',
+      decomposition,
+    });
+
+    const graph = await loadCandidateLivingContext(db, 'candidate-1');
+    expect(graph).not.toBeNull();
+
+    const results = await searchSourceContent(
+      db,
+      graph!.person.workspacePersonId,
+      'FluxCapacitorX',
+    );
+
+    expect(results.length).toBeGreaterThan(0);
+    const hit = results[0];
+    expect(hit.exactText).toContain('FluxCapacitorX');
+    expect(hit.predicate).toBe('stream replay implementation');
+    expect(hit.narrative).toContain('FluxCapacitorX');
+    expect(hit.concepts.length).toBeGreaterThan(0);
+    expect(hit.concepts).toContain('term:flux-capacitor-x');
+    expect(hit.artifactType).toBe('culture_interview_turn');
+  });
+
+  it('searchSourceContent returns empty for non-matching query', async () => {
+    const graph = await loadCandidateLivingContext(db, 'candidate-1');
+    if (!graph) return;
+
+    const results = await searchSourceContent(
+      db,
+      graph.person.workspacePersonId,
+      'nonexistent_term_xyz',
+    );
+    expect(results).toEqual([]);
+  });
+
+  it('searchSourceContent escapes SQL wildcards in query', async () => {
+    const decomposition: ContextualDecomposition = {
+      statements: [{
+        id: 'stmt-escape-1',
+        type: 'wildcard content',
+        phrase: 'used 100% of the allocated budget',
+        surface: '100%',
+        sourceQuote: 'We used 100% of the allocated budget.',
+        confidence: 0.85,
+        semanticTerms: [{
+          surface: '100%',
+          relationship: 'budget utilization rate',
+          weight: 0.7,
+          evidenceLevel: 'mentioned',
+          strength: 0.6,
+        }],
+      }],
+      edges: [],
+      discarded: false,
+      probe: null,
+      missingContext: [],
+    };
+    await ingestCultureTurnToLivingContext(db, {
+      candidateId: 'candidate-1',
+      sessionId: 'culture-session-escape',
+      turnIndex: 0,
+      question: 'Budget?',
+      answer: 'We used 100% of the allocated budget.',
+      observedAt: '2026-06-14T11:00:00.000Z',
+      decomposition,
+    });
+
+    const graph = await loadCandidateLivingContext(db, 'candidate-1');
+    expect(graph).not.toBeNull();
+
+    const results = await searchSourceContent(
+      db,
+      graph!.person.workspacePersonId,
+      '100%',
+    );
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.some((r) => r.exactText.includes('100%'))).toBe(true);
   });
 });

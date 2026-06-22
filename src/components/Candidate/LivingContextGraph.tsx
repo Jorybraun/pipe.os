@@ -20,6 +20,7 @@ import type {
   LivingContextInteraction,
   LivingContextSignal,
   LivingContextSourceRef,
+  SourceContentSearchResult,
   StandaloneReviewMatchRecord,
   StandaloneReviewSourceRef,
   StandaloneReviewUnmatchedDemand,
@@ -27,6 +28,7 @@ import type {
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { useRepoOverlay } from '../../hooks/useRepoOverlay';
+import { useSourceSearch } from '../../hooks/useSourceSearch';
 import type { RepoOverlayFile } from '../../hooks/useRepoOverlay';
 import './LivingContextGraph.css';
 
@@ -751,6 +753,109 @@ function ArtifactNode({
   );
 }
 
+function sourceSearchLocator(result: SourceContentSearchResult): string {
+  if (result.lineStart !== null && result.lineEnd !== null) {
+    return result.lineStart === result.lineEnd
+      ? `line ${result.lineStart}`
+      : `lines ${result.lineStart}-${result.lineEnd}`;
+  }
+  if (result.timestampStartMs !== null && result.timestampEndMs !== null) {
+    return `${(result.timestampStartMs / 1000).toFixed(1)}s-${(result.timestampEndMs / 1000).toFixed(1)}s`;
+  }
+  if (result.charStart !== null && result.charEnd !== null) {
+    return `chars ${result.charStart}-${result.charEnd}`;
+  }
+  return result.sourceSpanId.slice(0, 8);
+}
+
+function highlightMatch(text: string, query: string): JSX.Element {
+  if (!query || query.length < 2) return <>{text}</>;
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  const idx = lowerText.indexOf(lowerQuery);
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="living-context__highlight">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
+function SourceSearchResults({
+  results,
+  isSearching,
+  searchError,
+  query,
+}: {
+  results: SourceContentSearchResult[];
+  isSearching: boolean;
+  searchError: Error | null;
+  query: string;
+}): JSX.Element | null {
+  if (!query || query.trim().length < 2) return null;
+
+  return (
+    <div className="living-context__source-search">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Source content search</div>
+        <div className="living-context__count">
+          {isSearching ? '...' : results.length}
+        </div>
+      </div>
+      {searchError && (
+        <div className="living-context__search-error">{searchError.message}</div>
+      )}
+      {!isSearching && results.length === 0 && !searchError && (
+        <div className="living-context__empty">NO_SOURCE_MATCHES</div>
+      )}
+      {results.length > 0 && (
+        <div className="living-context__search-results">
+          {results.map((result) => (
+            <div key={`${result.assertionId}:${result.sourceSpanId}`} className="living-context__search-hit">
+              <div className="living-context__search-hit-head">
+                <span className="living-context__search-hit-predicate">{result.predicate}</span>
+                <span className="living-context__search-hit-type">{result.artifactType}</span>
+                {result.confidence !== null && (
+                  <span className="living-context__search-hit-conf">
+                    {Math.round(result.confidence * 100)}%
+                  </span>
+                )}
+              </div>
+              <div className="living-context__search-hit-narrative">
+                {highlightMatch(result.narrative, query)}
+              </div>
+              <blockquote className="living-context__search-hit-quote">
+                {highlightMatch(result.exactText, query)}
+              </blockquote>
+              <div className="living-context__search-hit-meta">
+                <span className="living-context__search-hit-locator">
+                  {sourceSearchLocator(result)}
+                </span>
+                {result.artifactLogicalKey && (
+                  <span className="living-context__search-hit-key">
+                    {result.artifactLogicalKey}
+                  </span>
+                )}
+              </div>
+              {result.concepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {result.concepts.slice(0, 5).map((concept) => (
+                    <span key={`${result.assertionId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   standaloneReviewMatch,
@@ -759,10 +864,20 @@ export function LivingContextGraph({
   standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
 }): JSX.Element {
   const { livingContext, isLoading, error, refetch } = useLivingContext(candidateId);
+  const { results: sourceSearchResults, isSearching, searchError, search: serverSearch, clear: clearSearch } = useSourceSearch(candidateId);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
   const normalizedSearch = search.trim().toLowerCase();
+
+  const handleSearchChange = useCallback((value: string): void => {
+    setSearch(value);
+    if (value.trim().length >= 2) {
+      void serverSearch(value);
+    } else {
+      clearSearch();
+    }
+  }, [serverSearch, clearSearch]);
 
   useEffect(() => {
     if (!livingContext || selectedInteractionId !== null) return;
@@ -882,7 +997,7 @@ export function LivingContextGraph({
           <Search size={13} />
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => handleSearchChange(event.target.value)}
             placeholder="SEARCH EVIDENCE, CONCEPTS, ASSERTIONS..."
             aria-label="Search living context"
           />
@@ -898,6 +1013,13 @@ export function LivingContextGraph({
           <RefreshCw size={14} className={isLoading ? 'spin' : undefined} />
         </button>
       </div>
+
+      <SourceSearchResults
+        results={sourceSearchResults}
+        isSearching={isSearching}
+        searchError={searchError}
+        query={search}
+      />
 
       <StandaloneReviewMatchPanel match={standaloneReviewMatch ?? null} />
       <RepoOverlayPanel match={standaloneReviewMatch ?? null} />

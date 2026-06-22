@@ -1098,6 +1098,30 @@ export interface LivingContextResponse {
   livingContext: LivingContextReadModel;
 }
 
+export interface SourceContentSearchResult {
+  assertionId: string;
+  interactionId: string | null;
+  predicate: string;
+  narrative: string;
+  confidence: number | null;
+  concepts: string[];
+  sourceSpanId: string;
+  exactText: string;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+}
+
+export interface SourceContentSearchResponse {
+  results: SourceContentSearchResult[];
+}
+
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)
 
 export type InterviewPhase = 'CONTEXT' | 'DISCOVERY' | 'PRIORITIZE' | 'EVP_FRICTION' | 'WRAP_UP';
