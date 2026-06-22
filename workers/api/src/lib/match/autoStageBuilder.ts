@@ -11,20 +11,17 @@
  *   - Top-1 repo from matchRepos by score. Tolerance band → cosine threshold
  *     mapping is OQ-W1 — v1 uses raw score rank.
  *   - shared-repo: same repo for both stations.
- *   - per-stage: matchRepos called twice; second call may legitimately return
- *     the same repo (OQ-W2 — v1 accepts).
- *   - non_negotiable_skills_json drives mustHaveSkills for matchRepos. Falls
- *     back to persona_json.mustHaveSkills if NULL. The existing
- *     `HAVING must_hits = must_total` clause in matchRepos.ts:168 guarantees
- *     coverage — no new SQL needed.
- *   - CODE_REVIEW-only can also select repos from source-backed role context
- *     concepts against context-ready review packets when legacy must-haves are
- *     absent.
+ *   - per-stage: CODE_REVIEW uses source-backed review packets and
+ *     CODE_IMPLEMENTATION uses matchRepos; they may legitimately return the
+ *     same repo (OQ-W2 — v1 accepts).
+ *   - CODE_REVIEW selects repos and PRs from source-backed role context concepts
+ *     against context-ready review packets.
+ *   - CODE_IMPLEMENTATION still uses the legacy matchRepos skill path until
+ *     implementation issue matching is moved onto source-backed context records.
  */
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
 import { loadRoleChallengeSemantics } from '../challengeMatching/roleGuardrails';
-import { openSemanticTerm } from '../livingContext/openTerms';
 import { matchRepos, type MatchedRepo, type MatchRequest } from '../repoDiscovery/matchRepos';
 import type { ChallengePacket } from '../repoSemanticGraph';
 
@@ -459,36 +456,25 @@ export async function autoStageBuilder(
   }
 
   const baseRequest = buildMatchRequest(roleContext);
-  const roleSurfaces = [
-    ...baseRequest.mustHaveSkills,
-    ...baseRequest.niceToHaveSkills,
-  ];
-  const fallbackRoleConcepts = roleSurfaces.flatMap((surface) => {
-    const term = openSemanticTerm(surface);
-    return term ? [term.canonicalKey] : [];
-  });
-  const fallbackRequiredConcepts = (parseNonNegotiable(roleContext) ?? []).flatMap((surface) => {
-    const term = openSemanticTerm(surface);
-    return term ? [term.canonicalKey] : [];
-  });
   const roleSemantics = await loadRoleChallengeSemantics(db, roleContextSemanticInput(roleContext));
-  const roleConcepts = roleSemantics.relevantConcepts.length > 0
-    ? roleSemantics.relevantConcepts
-    : fallbackRoleConcepts;
-  const requiredConcepts = roleSemantics.requiredConcepts.length > 0
-    ? roleSemantics.requiredConcepts
-    : fallbackRequiredConcepts;
+  const roleConcepts = roleSemantics.relevantConcepts;
+  const requiredConcepts = roleSemantics.requiredConcepts;
 
   if (
-    baseRequest.mustHaveSkills.length === 0
-    && (
-      !includeReview
-      || includeImplementation && matchConfig.stage_linkage === 'per-stage'
-      || roleConcepts.length === 0
-    )
+    includeReview
+    && roleConcepts.length === 0
   ) {
     throw new Error(
-      'autoStageBuilder: no source-backed role concepts or must-have skills resolvable for requested stations',
+      'autoStageBuilder: no source-backed role concepts resolvable for review station',
+    );
+  }
+  if (
+    includeImplementation
+    && baseRequest.mustHaveSkills.length === 0
+    && (!includeReview || matchConfig.stage_linkage === 'per-stage')
+  ) {
+    throw new Error(
+      'autoStageBuilder: no must-have skills resolvable for implementation station',
     );
   }
 
@@ -496,9 +482,12 @@ export async function autoStageBuilder(
   let implRepo: MatchedRepo | undefined;
 
   if (includeReview) {
-    const reviewMatches = baseRequest.mustHaveSkills.length > 0
-      ? await matchRepos(db, baseRequest)
-      : await matchReviewReposByRoleConcepts(db, roleConcepts, requiredConcepts, baseRequest.limit);
+    const reviewMatches = await matchReviewReposByRoleConcepts(
+      db,
+      roleConcepts,
+      requiredConcepts,
+      baseRequest.limit,
+    );
     reviewRepo = reviewMatches[0];
     if (!reviewRepo) {
       throw new Error('autoStageBuilder: no candidate repos matched source-backed role evidence for review station');
@@ -598,10 +587,10 @@ export async function autoStageBuilder(
   const rationale =
     stations.length === 1
       ? includeReview
-        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) for code review.`
+        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) from source-backed role evidence for code review.`
         : `Matched ${implRepo!.fullName} (score ${implRepo!.score.toFixed(3)}) for implementation.`
       : matchConfig.stage_linkage === 'shared-repo'
-        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) covering all ${baseRequest.mustHaveSkills.length} non-negotiable skill(s); shared across both stations.`
+        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) from source-backed role evidence; shared across both stations.`
         : `Per-stage linkage: review on ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}), implementation on ${implRepo!.fullName} (score ${implRepo!.score.toFixed(3)}).`;
 
   return {

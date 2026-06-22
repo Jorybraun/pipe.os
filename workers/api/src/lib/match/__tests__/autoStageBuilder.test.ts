@@ -410,6 +410,7 @@ describe('autoStageBuilder', () => {
         { repo_id: 101, pr_number: 17, title: 'old fix', swe_bench_eligible: true },
         { repo_id: 102, pr_number: 9, title: 'thing fix', swe_bench_eligible: true },
       ],
+      roleContextConcepts: [{ canonicalKey: 'term:typescript', label: 'typescript' }],
       issues: [
         { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
         { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
@@ -435,17 +436,17 @@ describe('autoStageBuilder', () => {
     expect(review!.repoId).toBe(101); // higher pr_quality_score wins
     expect(review!.githubPrNumber).toBe(17); // stable PR-number tie-break after equal evidence
     expect(impl!.issueNumber).toBe(100);
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('runs matchRepos twice when stage_linkage=per-stage', async () => {
+  it('runs implementation matchRepos once when stage_linkage=per-stage', async () => {
     const stub = buildStubDb(fixtureState());
     await autoStageBuilder({
       db: stub.db,
       roleContext: makeRoleContext(),
       matchConfig: baseConfig({ stage_linkage: 'per-stage' }),
     });
-    expect(stub.matchReposCalls).toBe(2);
+    expect(stub.matchReposCalls).toBe(1);
   });
 
   it('uses non_negotiable_skills (subset of mustHaveSkills) to filter repos', async () => {
@@ -459,10 +460,12 @@ describe('autoStageBuilder', () => {
         non_negotiable_skills_json: JSON.stringify(['typescript', 'react']),
       }),
       matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_IMPLEMENTATION'],
     });
     // Top-1 by pr_quality_score is still 101 (0.9 > 0.6).
     expect(result.stations[0]!.repoId).toBe(101);
-    expect(result.repoChoice.rationale).toContain('2 non-negotiable skill(s)');
+    expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
+    expect(stub.matchReposCalls).toBe(1);
   });
 
   it('uses persisted role context concepts to select source-backed review PRs', async () => {
@@ -522,15 +525,29 @@ describe('autoStageBuilder', () => {
     expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('throws when no source-backed concepts or must-have skills can be resolved', async () => {
-    const stub = buildStubDb(fixtureState());
+  it('throws when no source-backed review concepts can be resolved', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [];
+    const stub = buildStubDb(state);
     await expect(
       autoStageBuilder({
         db: stub.db,
         roleContext: makeRoleContext({ persona_json: null }),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no source-backed role concepts or must-have skills/);
+    ).rejects.toThrow(/no source-backed role concepts resolvable for review station/);
+  });
+
+  it('throws when implementation has no must-have skills and no review repo to share', async () => {
+    const stub = buildStubDb(fixtureState());
+    await expect(
+      autoStageBuilder({
+        db: stub.db,
+        roleContext: makeRoleContext({ persona_json: null }),
+        matchConfig: baseConfig(),
+        requestedStationTypes: ['CODE_IMPLEMENTATION'],
+      }),
+    ).rejects.toThrow(/no must-have skills resolvable for implementation station/);
   });
 
   it('builds only code review when requested', async () => {
@@ -544,7 +561,7 @@ describe('autoStageBuilder', () => {
     expect(result.stations).toHaveLength(1);
     expect(result.stations[0]!.type).toBe('CODE_REVIEW');
     expect(result.perStationRepo.CODE_IMPLEMENTATION).toBeUndefined();
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
   it('builds only code implementation when requested', async () => {
@@ -594,7 +611,7 @@ describe('autoStageBuilder', () => {
         roleContext: makeRoleContext(),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no source-backed role-safe review challenge/);
+    ).rejects.toThrow(/no candidate repos matched source-backed role evidence/);
   });
 
   it('throws if no eligible implementation issue', async () => {
