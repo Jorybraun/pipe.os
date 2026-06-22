@@ -301,9 +301,24 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('candidate-atom-kafka → repo-demand-retry')).toBeInTheDocument();
     expect(screen.getByText('candidate: resume line 7')).toBeInTheDocument();
     expect(screen.getByText('PR: src/orders/retry.ts:18')).toBeInTheDocument();
-    expect(screen.getByText('Built Kafka order event retries for an ecommerce checkout platform.')).toBeInTheDocument();
-    expect(screen.getByText('Add idempotent retry handling around order event publication.')).toBeInTheDocument();
-    expect(screen.getByText('term:kafka-order-events')).toBeInTheDocument();
+    expect(screen.getAllByText('Built Kafka order event retries for an ecommerce checkout platform.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Add idempotent retry handling around order event publication.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('term:kafka-order-events').length).toBeGreaterThan(0);
+
+    const repoOverlay = screen.getByTestId('repository-overlay-panel');
+    expect(within(repoOverlay).getByText('Repository evidence overlay')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('pipe/source-backed-orders · PR #42')).toBeInTheDocument();
+    expect(within(repoOverlay).getAllByText('src/orders/retry.ts').length).toBeGreaterThan(0);
+    expect(within(repoOverlay).getAllByText('repo-demand-retry').length).toBeGreaterThan(0);
+    expect(within(repoOverlay).getByText('candidate-atom-kafka')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('91% alignment')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('validation')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('Candidate source')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('PR demand source')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('resume line 7')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('src/orders/retry.ts:18')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('Built Kafka order event retries for an ecommerce checkout platform.')).toBeInTheDocument();
+    expect(within(repoOverlay).getByText('Add idempotent retry handling around order event publication.')).toBeInTheDocument();
 
     expect(screen.getByText('Evidence gaps / guardrails')).toBeInTheDocument();
     expect(screen.getByText(

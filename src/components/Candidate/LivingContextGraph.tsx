@@ -106,6 +106,24 @@ function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | nul
     .find((text): text is string => Boolean(text)) ?? null;
 }
 
+function reviewSourceFileLabel(source: StandaloneReviewSourceRef): string {
+  if (!source.locator) return source.artifactId;
+  const lineLocator = source.locator.match(/^(.+?)(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)$/);
+  return lineLocator?.[1] ?? source.locator;
+}
+
+function reviewAnchorId(value: string, index: number): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `repo-demand-${index}-${slug || 'source'}`;
+}
+
+function uniqueReviewSourceLabels(sources: StandaloneReviewSourceRef[]): string[] {
+  return [...new Set(sources.map(reviewSourceFileLabel))];
+}
+
 function isMeetingEvidenceInteraction(
   interaction: LivingContextInteraction,
   artifacts: LivingContextArtifact[],
@@ -149,6 +167,129 @@ function reviewedChallengeDetail(challenge: StandaloneReviewEvaluatedChallenge):
     parts.push(challenge.rejectionReasons.slice(0, 2).join(', '));
   }
   return parts.join(' · ');
+}
+
+function ReviewSourceList({
+  label,
+  sources,
+}: {
+  label: string;
+  sources: StandaloneReviewSourceRef[];
+}): JSX.Element {
+  return (
+    <div className="living-context__repo-source-list">
+      <div className="living-context__eyebrow">{label}</div>
+      {sources.length > 0 ? (
+        sources.slice(0, 3).map((source, index) => (
+          <div
+            key={`${label}:${source.artifactId}:${source.startOffset}:${source.endOffset}:${index}`}
+            className="living-context__repo-source"
+          >
+            <div>
+              <strong>{reviewSourceLabel(source)}</strong>
+              <span>{source.artifactVersion}</span>
+            </div>
+            {source.exactText && <blockquote>{source.exactText}</blockquote>}
+          </div>
+        ))
+      ) : (
+        <div className="living-context__repo-source living-context__repo-source--missing">
+          missing source evidence
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepositoryOverlayPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord;
+}): JSX.Element | null {
+  if (match.evidence.length === 0) return null;
+
+  const repoLabel = match.repoName ?? match.repoUrl ?? 'Selected repository';
+  const prLabel = match.prNumber !== null ? `PR #${match.prNumber}` : 'Selected PR';
+  const demandAnchors = match.evidence.map((entry, index) => ({
+    entry,
+    anchorId: reviewAnchorId(entry.demandId, index),
+    sourceLabels: uniqueReviewSourceLabels(entry.challengeSourceRefs),
+  }));
+
+  return (
+    <section
+      className="living-context__repo-overlay"
+      aria-label="Repository evidence overlay"
+      data-testid="repository-overlay-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Repository evidence overlay</div>
+          <div className="living-context__eyebrow">
+            {repoLabel} · {prLabel}
+          </div>
+        </div>
+        <GitPullRequest size={14} color="var(--lc-source)" />
+      </div>
+
+      <div className="living-context__repo-overlay-layout">
+        <nav className="living-context__repo-nav" aria-label="Repository source spans">
+          {demandAnchors.map(({ entry, anchorId, sourceLabels }) => (
+            <a key={anchorId} href={`#${anchorId}`}>
+              <span>{sourceLabels.join(', ') || 'missing PR source'}</span>
+              <strong>{entry.demandId}</strong>
+            </a>
+          ))}
+        </nav>
+
+        <div className="living-context__repo-demands">
+          {demandAnchors.map(({ entry, anchorId, sourceLabels }) => (
+            <article
+              id={anchorId}
+              key={anchorId}
+              className="living-context__repo-demand"
+              data-testid="repository-overlay-demand"
+            >
+              <div className="living-context__repo-demand-head">
+                <div>
+                  <div className="living-context__repo-demand-title">{entry.demandId}</div>
+                  <div className="living-context__repo-demand-meta">
+                    <span>{Math.round(entry.pairScore * 100)}% alignment</span>
+                    {entry.purpose && <span>{entry.purpose}</span>}
+                    {sourceLabels.map((sourceLabel) => (
+                      <span key={`${anchorId}:${sourceLabel}`}>{sourceLabel}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="living-context__repo-atom">{entry.atomId}</div>
+              </div>
+
+              <div className="living-context__repo-source-grid">
+                <ReviewSourceList
+                  label="Candidate source"
+                  sources={entry.candidateSourceRefs}
+                />
+                <ReviewSourceList
+                  label="PR demand source"
+                  sources={entry.challengeSourceRefs}
+                />
+              </div>
+
+              {entry.sharedConcepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {entry.sharedConcepts.slice(0, 5).map((concept) => (
+                    <span key={`${anchorId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function StandaloneReviewMatchPanel({
@@ -285,6 +426,8 @@ function StandaloneReviewMatchPanel({
           })}
         </div>
       )}
+
+      <RepositoryOverlayPanel match={match} />
 
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
