@@ -1,6 +1,6 @@
 # Reliability: Heartbeats and Stale Run Detection
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 247–249)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 247–249)
 **Phase:** 0 (listed as ACTIVE in master list under "Reliability hardening")
 **Status:** PENDING
 **Estimate:** 0.5 weeks

@@ -9,6 +9,7 @@ import {
   type ChallengePacket,
   type ChallengeQuality,
   type ChallengeQualityMetrics,
+  type ExtractionDiagnostic,
   type NormalizedPullRequestFile,
   type NormalizedPullRequestInput,
   type SourceSpan,
@@ -67,9 +68,24 @@ function spanMap(input: NormalizedPullRequestInput): Map<string, SourceSpan> {
   return new Map(input.sourceSpans.map((span) => [span.id, span]));
 }
 
+function artifactVersionContent(input: NormalizedPullRequestInput): Map<string, string> {
+  return new Map([
+    ...input.changedFiles.map((file) => [
+      file.artifactVersion.id,
+      file.artifactVersion.content,
+    ] as const),
+    ...(input.sourceArtifactVersions ?? []).map((version) => [
+      version.id,
+      version.content,
+    ] as const),
+  ]);
+}
+
 export async function validateChallengeProvenance(input: NormalizedPullRequestInput): Promise<void> {
   const failures: string[] = [];
   const spans = spanMap(input);
+  const versionContent = artifactVersionContent(input);
+  const artifactIds = new Set(input.changedFiles.map((file) => file.artifact.id));
   const referencedSpanIds = new Set<string>(input.metadataSourceSpanIds);
 
   if (spans.size !== input.sourceSpans.length) {
@@ -77,6 +93,25 @@ export async function validateChallengeProvenance(input: NormalizedPullRequestIn
   }
   if (input.metadataSourceSpanIds.length === 0) {
     failures.push('PR metadata has no source span');
+  }
+
+  for (const artifact of input.sourceArtifacts ?? []) {
+    artifactIds.add(artifact.id);
+    if (artifact.repoSnapshotId !== input.repoSnapshot.id) {
+      failures.push(`source artifact ${artifact.id} belongs to another repo snapshot`);
+    }
+  }
+
+  for (const version of input.sourceArtifactVersions ?? []) {
+    if (version.repoSnapshotId !== input.repoSnapshot.id) {
+      failures.push(`source artifact version ${version.id} belongs to another repo snapshot`);
+    }
+    if (!artifactIds.has(version.artifactId)) {
+      failures.push(`source artifact version ${version.id} references an unknown artifact`);
+    }
+    if (await sha256(version.content) !== version.contentHash) {
+      failures.push(`source artifact version ${version.id} content hash is invalid`);
+    }
   }
 
   for (const span of input.sourceSpans) {
@@ -88,6 +123,18 @@ export async function validateChallengeProvenance(input: NormalizedPullRequestIn
     }
     if (await sha256(span.exactText) !== span.exactTextHash) {
       failures.push(`span ${span.id} exact text hash is invalid`);
+    }
+    const content = versionContent.get(span.artifactVersionId);
+    if (!content) {
+      failures.push(`span ${span.id} references an unknown artifact version`);
+    } else {
+      const encodedContent = new TextEncoder().encode(content);
+      const sourceSlice = new TextDecoder().decode(
+        encodedContent.slice(span.start.byteOffset, span.end.byteOffset),
+      );
+      if (sourceSlice !== span.exactText) {
+        failures.push(`span ${span.id} offsets do not resolve to its exact text`);
+      }
     }
   }
 
@@ -117,13 +164,6 @@ export async function validateChallengeProvenance(input: NormalizedPullRequestIn
       }
       if (hunk.sourceSpan.exactText !== hunk.patch) {
         failures.push(`hunk span ${hunk.sourceSpan.id} exact text does not match its normalized patch`);
-      }
-      const encodedContent = new TextEncoder().encode(file.artifactVersion.content);
-      const sourceSlice = new TextDecoder().decode(
-        encodedContent.slice(hunk.sourceSpan.start.byteOffset, hunk.sourceSpan.end.byteOffset),
-      );
-      if (sourceSlice !== hunk.sourceSpan.exactText) {
-        failures.push(`hunk span ${hunk.sourceSpan.id} offsets do not resolve to its exact text`);
       }
     }
     for (const symbol of file.symbols) {
@@ -489,6 +529,20 @@ function gate(gateName: ChallengeGateResult['gate'], passed: boolean, reason: st
   return { gate: gateName, passed, reason };
 }
 
+function extractionDiagnostics(input: NormalizedPullRequestInput): ExtractionDiagnostic[] {
+  const value = input.extractionDiagnostics;
+  return Array.isArray(value) ? value : [];
+}
+
+function extractionDiagnosticReason(diagnostics: readonly ExtractionDiagnostic[]): string {
+  if (diagnostics.length === 0) return 'all evidence resolves to exact source spans';
+  return diagnostics
+    .map((diagnostic) =>
+      `${diagnostic.kind} failed for ${diagnostic.path} (${diagnostic.language}): ${diagnostic.reason}`
+    )
+    .join('; ');
+}
+
 export function scoreChallengeQuality(input: {
   pr: NormalizedPullRequestInput;
   demands: ChallengeDemand[];
@@ -496,6 +550,11 @@ export function scoreChallengeQuality(input: {
 }): ChallengeQuality {
   const { pr, demands, provenanceValid } = input;
   const languageSupport = getLanguageSupport(pr.primaryLanguage);
+  const diagnostics = extractionDiagnostics(pr).filter((diagnostic) => {
+    const support = getLanguageSupport(diagnostic.language);
+    return support.level === 'production';
+  });
+  const completeProvenance = provenanceValid && diagnostics.length === 0;
   const fileCount = pr.changedFiles.length;
   const changedLines = pr.changedFiles.reduce((sum, file) => sum + file.additions + file.deletions, 0);
   const sourceHunkCount = pr.changedFiles.reduce((sum, file) => sum + file.hunks.length, 0);
@@ -508,7 +567,7 @@ export function scoreChallengeQuality(input: {
       : 0.7
     : 0;
   const metrics: ChallengeQualityMetrics = {
-    provenanceCoverage: provenanceValid ? 1 : 0,
+    provenanceCoverage: completeProvenance ? 1 : 0,
     reviewableSize,
     testCoverage: pr.tests.length > 0 ? 1 : 0,
     issueContext,
@@ -530,7 +589,11 @@ export function scoreChallengeQuality(input: {
     gate('contains_source_hunk', sourceHunkCount > 0, `${sourceHunkCount} source hunks available`),
     gate('contains_tests', pr.tests.length > 0, `${pr.tests.length} normalized test changes available`),
     gate('demand_diversity', demandFamilyCount >= 2, `${demandFamilyCount} distinct demand families extracted`),
-    gate('complete_provenance', provenanceValid, provenanceValid ? 'all evidence resolves to exact source spans' : 'source provenance is incomplete'),
+    gate(
+      'complete_provenance',
+      completeProvenance,
+      completeProvenance ? 'all evidence resolves to exact source spans' : extractionDiagnosticReason(diagnostics),
+    ),
     gate('minimum_quality', score >= MIN_QUALITY_SCORE, `quality score ${score}; minimum ${MIN_QUALITY_SCORE}`),
   ];
   return { score, metrics, gates, eligible: gates.every((result) => result.passed) };

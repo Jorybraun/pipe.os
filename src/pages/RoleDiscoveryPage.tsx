@@ -43,7 +43,7 @@ import ReactMarkdown from 'react-markdown';
 import type {
   RoleContextBaseline, RoleContextProgress, RoleContextFullState,
   ParseJDResponse, CandidatePersona, GeneratedJobDescription,
-  RoleContextDocument,
+  RoleContextDocument, SimpleJobDescriptionRoleContextResponse,
 } from '../lib/api/types';
 import type { AdapterConfig } from '../components/AIChat/types';
 
@@ -476,6 +476,11 @@ export default function RoleDiscoveryPage(): JSX.Element {
   const draft = useRoleDiscoveryDraft();
 
   const [isJDModalOpen, setIsJDModalOpen] = useState(false);
+  const [simpleJdTitle, setSimpleJdTitle] = useState('');
+  const [simpleJdText, setSimpleJdText] = useState('');
+  const [simpleJdTerms, setSimpleJdTerms] = useState<string[]>([]);
+  const [isSimpleJdCreating, setIsSimpleJdCreating] = useState(false);
+  const [simpleJdError, setSimpleJdError] = useState<string | null>(null);
 
   // ── initConfig: null until scripted questions complete ──
   // Setting this triggers <AIChat> to call adapter.initialize() and start the session.
@@ -672,6 +677,55 @@ export default function RoleDiscoveryPage(): JSX.Element {
     setIsWizardOpen(true);
   };
 
+  const handleCreateFromSimpleJd = useCallback(async (): Promise<void> => {
+    const jobDescriptionMd = simpleJdText.trim();
+    if (jobDescriptionMd.length < 20) {
+      setSimpleJdError('Job description must be at least 20 characters.');
+      return;
+    }
+    setIsSimpleJdCreating(true);
+    setSimpleJdError(null);
+    try {
+      const roleContext = await api.post<SimpleJobDescriptionRoleContextResponse>(
+        '/api/v1/role-contexts/simple-job-description',
+        {
+          jobDescriptionMd,
+          ...(simpleJdTitle.trim() ? { title: simpleJdTitle.trim() } : {}),
+          selectedTerms: simpleJdTerms,
+        },
+      );
+      const res = await api.post<{
+        pipeline: { id: string };
+        warnings?: Array<{ code: string; severity: 'warn'; message: string }>;
+      }>(
+        '/api/v1/pipelines/auto-build',
+        {
+          role_context_id: roleContext.id,
+          pipeline_title: simpleJdTitle.trim() || roleContext.baseline.title,
+          match_config: {
+            match_philosophy: 'tailored',
+            tolerance: 'moderate',
+            stage_linkage: 'shared-repo',
+            automation_granularity: 'per-candidate',
+            hybrid_mix_ratio: null,
+            non_negotiable_skills: roleContext.selectedTerms,
+          },
+        },
+      );
+      draft.clear();
+      navigate(`/pipeline/${res.pipeline.id}`, {
+        state: res.warnings && res.warnings.length > 0
+          ? { autoBuildWarnings: res.warnings }
+          : undefined,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not create pipeline from job description.';
+      setSimpleJdError(message);
+    } finally {
+      setIsSimpleJdCreating(false);
+    }
+  }, [api, draft, navigate, simpleJdTerms, simpleJdText, simpleJdTitle]);
+
   const handleLegacyCreatePipeline = async (): Promise<void> => {
     try {
       const baseline = rd.baseline;
@@ -749,7 +803,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            ROLE_DISCOVERY
+            ROLE_INTAKE
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em', margin: 0 }}>
             New Role
@@ -778,7 +832,7 @@ export default function RoleDiscoveryPage(): JSX.Element {
             PREVIOUS_SESSION_FOUND
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 8 }}>
-            You have an unfinished role discovery.
+            You have an unfinished role intake.
           </div>
           <div style={{ fontSize: 12, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', lineHeight: 1.6, marginBottom: 24 }}>
             {pendingDraftRef.current?.scriptedAnswers['sq-title'] ? `"${pendingDraftRef.current.scriptedAnswers['sq-title']}"` : 'Role details saved.'}
@@ -829,6 +883,86 @@ export default function RoleDiscoveryPage(): JSX.Element {
           {/* Current scripted question card */}
           {currentScriptedQ && (
             <div style={{ padding: 32, background: 'var(--pipe-surface)', border: '1px solid var(--pipe-border-light)', borderRadius: 16 }}>
+
+              {scripted.idx === 0 && (
+                <div style={{ marginBottom: 24, padding: 18, border: '1px solid var(--pipe-border)', borderRadius: 8, background: 'rgba(255,255,255,0.025)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.45fr) minmax(260px, 1fr)', gap: 12, alignItems: 'start' }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', letterSpacing: '0.14em', marginBottom: 8 }}>
+                        SOURCE JD
+                      </div>
+                      <TextInput
+                        value={simpleJdTitle}
+                        onChange={setSimpleJdTitle}
+                        placeholder="Role title"
+                        ariaLabel="Role title"
+                      />
+                      <div style={{ marginTop: 10 }}>
+                        <TagsInput
+                          value={simpleJdTerms}
+                          onChange={setSimpleJdTerms}
+                          placeholder="Source-backed terms"
+                          ariaLabel="Source-backed terms"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <textarea
+                        value={simpleJdText}
+                        onChange={(event) => setSimpleJdText(event.target.value)}
+                        placeholder="Paste the job description"
+                        aria-label="Job description"
+                        rows={7}
+                        style={{
+                          width: '100%',
+                          minHeight: 136,
+                          resize: 'vertical',
+                          padding: 12,
+                          background: 'rgba(0,0,0,0.22)',
+                          border: '1px solid var(--pipe-border-light)',
+                          borderRadius: 6,
+                          color: 'var(--pipe-text)',
+                          fontFamily: '"Space Mono", monospace',
+                          fontSize: 11,
+                          lineHeight: 1.55,
+                        }}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 10 }}>
+                        {simpleJdError ? (
+                          <span style={{ color: '#f87171', fontSize: 10, fontFamily: '"Space Mono", monospace' }}>{simpleJdError}</span>
+                        ) : (
+                          <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.08em' }}>
+                            TERMS MUST APPEAR IN SOURCE
+                          </span>
+                        )}
+                        <button
+                          onClick={() => { handleCreateFromSimpleJd().catch(() => {}); }}
+                          disabled={isSimpleJdCreating || simpleJdText.trim().length < 20}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 14px',
+                            background: simpleJdText.trim().length >= 20 ? 'rgba(74, 222, 128, 0.08)' : 'transparent',
+                            border: `1px solid ${simpleJdText.trim().length >= 20 ? 'rgba(74, 222, 128, 0.3)' : 'var(--pipe-border-light)'}`,
+                            borderRadius: 5,
+                            color: simpleJdText.trim().length >= 20 ? 'rgba(74, 222, 128, 0.9)' : 'var(--pipe-text-dim)',
+                            fontSize: 9,
+                            fontWeight: 800,
+                            letterSpacing: '0.13em',
+                            fontFamily: '"Space Mono", monospace',
+                            cursor: isSimpleJdCreating || simpleJdText.trim().length < 20 ? 'default' : 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {isSimpleJdCreating ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
+                          CREATE FROM JD
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Top toolbar — JD import + quick-start presets (first question only) */}
               {scripted.idx === 0 && (

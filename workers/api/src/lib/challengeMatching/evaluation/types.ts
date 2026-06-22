@@ -159,6 +159,16 @@ export interface LabelEvaluationResult {
   failureReason?: string;
 }
 
+export interface DeterminismComparison {
+  candidateId: string;
+  roleId: string;
+  matchRunId: string;
+  comparisonMatchRunId: string | null;
+  identical: boolean;
+  fingerprint: string;
+  comparisonFingerprint: string | null;
+}
+
 export interface EvaluationMetrics {
   corpusVersion: string;
   corpusId: string;
@@ -174,6 +184,7 @@ export interface EvaluationMetrics {
   missingMatchRunCount: number;
   byteIdenticalRerun: boolean;
   rerunFingerprints: Record<string, string>;
+  determinismComparisons: DeterminismComparison[];
   totalEvaluations: number;
   evaluatedPairCount: number;
   highlyRelevantInTop3: number;

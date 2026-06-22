@@ -1,53 +1,133 @@
+import type { ReactNode } from "react";
 import {
-  Calendar,
-  Box,
-  LayoutDashboard,
-  Settings,
-  Phone,
-  Bot,
-  Mail,
-  Database,
   Activity,
+  Bot,
+  Box,
+  Briefcase,
+  Calendar,
+  Database,
+  Mail,
+  Phone,
+  Settings,
   Users,
 } from "lucide-react";
 
 interface SidebarNavProps {
   activeSection?: string;
-  /** Called when the user clicks the Schedule nav item */
-  onScheduleClick?: () => void;
-  /** Called when the user clicks the Sandbox nav item */
-  onSandboxClick?: () => void;
-  /** Called when the user clicks the Roles nav item */
+  onInterviewsClick?: () => void;
   onRolesClick?: () => void;
-  /** Called when the user clicks the Settings nav item */
+  onPeopleClick?: () => void;
   onSettingsClick?: () => void;
-  /** Called when the user clicks the Calls nav item */
   onCallsClick?: () => void;
-  /** Called when the user clicks the Agent (copilot) nav item */
   onAgentClick?: () => void;
-  /** Called when the user clicks the Outreach nav item */
   onOutreachClick?: () => void;
-  /** Called when the user clicks the Repo Admin nav item */
   onRepoAdminClick?: () => void;
-  /** Called when the user clicks the AI Usage nav item */
   onAiUsageClick?: () => void;
-  /** Called when the user clicks the Contacts nav item */
-  onContactsClick?: () => void;
+  onSandboxClick?: () => void;
+}
+
+interface NavButtonProps {
+  activeSection: string;
+  section: string;
+  title: string;
+  icon: ReactNode;
+  onClick?: (() => void) | undefined;
+  accent?: boolean;
+}
+
+function NavButton({
+  activeSection,
+  section,
+  title,
+  icon,
+  onClick,
+  accent = false,
+}: NavButtonProps): JSX.Element | null {
+  if (!onClick) return null;
+
+  const active = activeSection === section;
+  const activeBackground = accent
+    ? "linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))"
+    : "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))";
+  const activeColor = accent ? "var(--pipe-accent)" : "var(--pipe-text, #fff)";
+  const activeBorder = accent ? "1px solid var(--pipe-accent-border)" : "none";
+
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        width: 48,
+        height: 48,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: active ? activeBackground : "transparent",
+        border: activeBorder,
+        borderRadius: 12,
+        color: active ? activeColor : "var(--pipe-text-dim)",
+        cursor: "pointer",
+        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        position: "relative",
+        backdropFilter: active ? "blur(20px)" : "none",
+        boxShadow: active
+          ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
+          : "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = accent
+            ? "var(--pipe-accent-surface)"
+            : "var(--pipe-surface-hover)";
+          e.currentTarget.style.color = accent
+            ? "var(--pipe-accent)"
+            : "var(--pipe-text-muted)";
+          e.currentTarget.style.transform = "translateX(4px)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = "transparent";
+          e.currentTarget.style.color = "var(--pipe-text-dim)";
+          e.currentTarget.style.transform = "translateX(0)";
+        }
+      }}
+    >
+      {icon}
+      {active && (
+        <div
+          style={{
+            position: "absolute",
+            left: -12,
+            width: 3,
+            height: 24,
+            background: accent
+              ? "linear-gradient(180deg, rgba(255,255,255,0.45), rgba(255,255,255,0.25))"
+              : "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
+            borderRadius: "0 2px 2px 0",
+            boxShadow: accent
+              ? "0 0 12px rgba(255,255,255,0.2)"
+              : "0 0 12px rgba(255,255,255,0.4)",
+          }}
+        />
+      )}
+    </button>
+  );
 }
 
 export function SidebarNav({
-  activeSection = "roles",
-  onScheduleClick,
-  onSandboxClick,
+  activeSection = "interviews",
+  onInterviewsClick,
+  onRolesClick,
+  onPeopleClick,
   onSettingsClick,
   onCallsClick,
   onAgentClick,
-  onRolesClick,
   onOutreachClick,
   onRepoAdminClick,
   onAiUsageClick,
-  onContactsClick,
-}: SidebarNavProps) {
+  onSandboxClick,
+}: SidebarNavProps): JSX.Element {
   return (
     <nav
       style={{
@@ -57,604 +137,81 @@ export function SidebarNav({
         padding: "16px 0",
       }}
     >
-      {/* Roles nav item */}
-      <button
-        onClick={onRolesClick}
+      <NavButton
+        activeSection={activeSection}
+        section="interviews"
+        title="Interviews"
+        icon={<Calendar size={20} />}
+        onClick={onInterviewsClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="roles"
         title="Roles"
-        style={{
-          width: 48,
-          height: 48,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: activeSection === "roles"
-            ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-            : "transparent",
-          border: "none",
-          borderRadius: "12px",
-          color: activeSection === "roles" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-          cursor: "pointer",
-          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-          position: "relative",
-          backdropFilter: activeSection === "roles" ? "blur(20px)" : "none",
-          boxShadow: activeSection === "roles"
-            ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-            : "none",
-        }}
-        onMouseEnter={(e) => {
-          if (activeSection !== "roles") {
-            e.currentTarget.style.background = "var(--pipe-surface-hover)";
-            e.currentTarget.style.color = "var(--pipe-text-muted)";
-            e.currentTarget.style.transform = "translateX(4px)";
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (activeSection !== "roles") {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = "var(--pipe-text-dim)";
-            e.currentTarget.style.transform = "translateX(0)";
-          }
-        }}
-      >
-        <LayoutDashboard size={20} />
-        {activeSection === "roles" && (
-          <div
-            style={{
-              position: "absolute",
-              left: -12,
-              width: 3,
-              height: 24,
-              background:
-                "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-              borderRadius: "0 2px 2px 0",
-              boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-            }}
-          />
-        )}
-      </button>
+        icon={<Briefcase size={20} />}
+        onClick={onRolesClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="people"
+        title="People"
+        icon={<Users size={20} />}
+        onClick={onPeopleClick}
+      />
 
-      {/* Schedule nav item */}
-      {onScheduleClick && (
-        <button
-          onClick={onScheduleClick}
-          title="Schedule"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "schedule"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "schedule" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "schedule" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "schedule"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "schedule") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "schedule") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Calendar size={20} />
-          {activeSection === "schedule" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
+      <div style={{ height: 12 }} />
 
-      {/* Calls nav item */}
-      {onCallsClick && (
-        <button
-          onClick={onCallsClick}
-          title="Calls"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "calls"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "calls" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "calls" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "calls"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "calls") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "calls") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Phone size={20} />
-          {activeSection === "calls" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Outreach nav item */}
-      {onOutreachClick && (
-        <button
-          onClick={onOutreachClick}
-          title="Outreach"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "outreach"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "outreach" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "outreach" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "outreach"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "outreach") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "outreach") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Mail size={20} />
-          {activeSection === "outreach" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Contacts nav item */}
-      {onContactsClick && (
-        <button
-          onClick={onContactsClick}
-          title="Contacts"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "contacts"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "contacts" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "contacts" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "contacts"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "contacts") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "contacts") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Users size={20} />
-          {activeSection === "contacts" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Repo admin nav item */}
-      {onRepoAdminClick && (
-        <button
-          onClick={onRepoAdminClick}
-          title="Repo Catalog"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "repo-admin"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "repo-admin" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "repo-admin" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "repo-admin"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "repo-admin") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "repo-admin") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Database size={20} />
-          {activeSection === "repo-admin" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* AI Usage nav item */}
-      {onAiUsageClick && (
-        <button
-          onClick={onAiUsageClick}
-          title="AI Usage"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "ai-usage"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "ai-usage" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "ai-usage" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "ai-usage"
-              ? "0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.2)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "ai-usage") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "ai-usage") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Activity size={20} />
-          {activeSection === "ai-usage" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.8), rgba(200,200,220,0.6))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255,255,255,0.4)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Sandbox nav item */}
-      {onSandboxClick && (
-        <button
-          onClick={onSandboxClick}
-          title="Dev Container Sandbox"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "sandbox"
-              ? "linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))"
-              : "transparent",
-            border: activeSection === "sandbox" ? "1px solid var(--pipe-accent-border)" : "none",
-            borderRadius: "12px",
-            color: activeSection === "sandbox" ? "var(--pipe-accent)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "sandbox" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "sandbox"
-              ? "0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "sandbox") {
-              e.currentTarget.style.background = "var(--pipe-accent-surface)";
-              e.currentTarget.style.color = "var(--pipe-accent-surface)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "sandbox") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Box size={20} />
-          {activeSection === "sandbox" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.25))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255, 255, 255, 0.20)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Agent copilot */}
-      {onAgentClick && (
-        <button
-          onClick={onAgentClick}
-          title="Copilot"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "agent"
-              ? "linear-gradient(135deg, var(--pipe-accent-surface), var(--pipe-accent-surface))"
-              : "transparent",
-            border: activeSection === "agent" ? "1px solid var(--pipe-accent-border)" : "none",
-            borderRadius: "12px",
-            color: activeSection === "agent" ? "var(--pipe-accent)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-            backdropFilter: activeSection === "agent" ? "blur(20px)" : "none",
-            boxShadow: activeSection === "agent"
-              ? "0 4px 16px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.09)"
-              : "none",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "agent") {
-              e.currentTarget.style.background = "var(--pipe-accent-surface)";
-              e.currentTarget.style.color = "var(--pipe-accent-surface)";
-              e.currentTarget.style.transform = "translateX(4px)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "agent") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-              e.currentTarget.style.transform = "translateX(0)";
-            }
-          }}
-        >
-          <Bot size={20} />
-          {activeSection === "agent" && (
-            <div
-              style={{
-                position: "absolute",
-                left: -12,
-                width: 3,
-                height: 24,
-                background:
-                  "linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.25))",
-                borderRadius: "0 2px 2px 0",
-                boxShadow: "0 0 12px rgba(255, 255, 255, 0.20)",
-              }}
-            />
-          )}
-        </button>
-      )}
-
-      {/* Settings */}
-      {onSettingsClick && (
-        <button
-          onClick={onSettingsClick}
-          title="Settings"
-          style={{
-            width: 48,
-            height: 48,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: activeSection === "settings"
-              ? "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(200,200,220,0.1))"
-              : "transparent",
-            border: "none",
-            borderRadius: "12px",
-            color: activeSection === "settings" ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-            cursor: "pointer",
-            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            position: "relative",
-          }}
-          onMouseEnter={(e) => {
-            if (activeSection !== "settings") {
-              e.currentTarget.style.background = "var(--pipe-surface-hover)";
-              e.currentTarget.style.color = "var(--pipe-text-muted)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (activeSection !== "settings") {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--pipe-text-dim)";
-            }
-          }}
-        >
-          <Settings size={20} />
-        </button>
-      )}
-
-      {/* Quick indicator */}
-      <div
-        style={{
-          width: 48,
-          padding: "12px 0",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 4,
-        }}
-      >
-        <div
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "#10b981",
-            boxShadow: "0 0 8px rgba(16, 185, 129, 0.6)",
-          }}
-        />
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "var(--pipe-text)",
-            letterSpacing: "0.05em",
-          }}
-        >
-          88
-        </div>
-        <div
-          style={{
-            fontSize: 7,
-            color: "var(--pipe-text-dim)",
-            letterSpacing: "0.1em",
-          }}
-        >
-          AVG
-        </div>
-      </div>
+      <NavButton
+        activeSection={activeSection}
+        section="calls"
+        title="Calls"
+        icon={<Phone size={20} />}
+        onClick={onCallsClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="outreach"
+        title="Outreach"
+        icon={<Mail size={20} />}
+        onClick={onOutreachClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="repo-admin"
+        title="Repo Catalog"
+        icon={<Database size={20} />}
+        onClick={onRepoAdminClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="ai-usage"
+        title="AI Usage"
+        icon={<Activity size={20} />}
+        onClick={onAiUsageClick}
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="sandbox"
+        title="Dev Container Sandbox"
+        icon={<Box size={20} />}
+        onClick={onSandboxClick}
+        accent
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="agent"
+        title="Copilot"
+        icon={<Bot size={20} />}
+        onClick={onAgentClick}
+        accent
+      />
+      <NavButton
+        activeSection={activeSection}
+        section="settings"
+        title="Settings"
+        icon={<Settings size={20} />}
+        onClick={onSettingsClick}
+      />
     </nav>
   );
 }

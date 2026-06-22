@@ -18,6 +18,14 @@ import { checkGuardrails, type MatchConfigInput } from '../../lib/match/guardrai
 import { getScreenerStage } from '../../lib/screener';
 import type { Env, Variables, RoleContextRow } from '../../types';
 
+type SelectedStage = 'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING';
+
+const DEFAULT_SELECTED_STAGES: SelectedStage[] = [
+  'SCREENING',
+  'CODE_REVIEW',
+  'LIVE_CODING',
+];
+
 const autoBuild = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 autoBuild.use('*', authMiddleware);
@@ -31,10 +39,17 @@ const matchConfigSchema = z.object({
   non_negotiable_skills: z.array(z.string()).default([]),
 });
 
+const selectedStagesSchema = z
+  .array(z.enum(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'] as const))
+  .min(1)
+  .default(DEFAULT_SELECTED_STAGES)
+  .transform((values) => [...new Set(values)] as SelectedStage[]);
+
 const bodySchema = z.object({
   role_context_id: z.string().min(1),
   pipeline_title: z.string().min(1).max(200).optional(),
   match_config: matchConfigSchema,
+  selected_stages: selectedStagesSchema,
 });
 
 autoBuild.post('/auto-build', async (c) => {
@@ -109,6 +124,14 @@ autoBuild.post('/auto-build', async (c) => {
   //    rows to candidate_challenge_assignment. See ADR-032 Decision Log
   //    2026-04-21 (ADR-039 sequencing override).
   const shouldMatchNow = input.match_config.match_philosophy === 'validate';
+  const selectedStages = input.selected_stages;
+  const includeScreening = selectedStages.includes('SCREENING');
+  const includeCodeReview = selectedStages.includes('CODE_REVIEW');
+  const includeLiveCoding = selectedStages.includes('LIVE_CODING');
+  const requestedStationTypes: Array<'CODE_REVIEW' | 'CODE_IMPLEMENTATION'> = [];
+  if (includeCodeReview) requestedStationTypes.push('CODE_REVIEW');
+  if (includeLiveCoding) requestedStationTypes.push('CODE_IMPLEMENTATION');
+
   let plan: Awaited<ReturnType<typeof autoStageBuilder>> | null = null;
   if (shouldMatchNow) {
     try {
@@ -123,6 +146,7 @@ autoBuild.post('/auto-build', async (c) => {
             : {}),
         } as RoleContextRow,
         matchConfig: input.match_config,
+        requestedStationTypes,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'autoStageBuilder failed';
@@ -182,10 +206,11 @@ autoBuild.post('/auto-build', async (c) => {
 
   // Build station records. For deferred mode (tailored/hybrid), the stations
   // are placeholders — repo/PR/issue are resolved per-candidate during ingestion.
-  type StationRecord = {
+  type StageRecord = {
     stageId: string;
     challengeId: string;
-    type: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
+    stageType: 'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE';
+    challengeType: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
     title: string;
     sortOrder: number;
     repoId: number | null;
@@ -195,127 +220,137 @@ autoBuild.post('/auto-build', async (c) => {
     instructions: string;
   };
 
-  const screener = getScreenerStage();
-  const screenerStageId = generateId();
+  const plannedReview = plan?.stations.find((station) => station.type === 'CODE_REVIEW') ?? null;
+  const plannedImplementation =
+    plan?.stations.find((station) => station.type === 'CODE_IMPLEMENTATION') ?? null;
+  const stageRecords: StageRecord[] = [];
+  let sortCursor = includeScreening ? 1 : 0;
 
-  const builtStations: StationRecord[] = plan
-    ? plan.stations.map((station) => ({
-        stageId: generateId(),
-        challengeId: generateId(),
-        type: station.type,
-        title: station.title,
-        sortOrder: station.sortOrder + 2, // shift down for screener + cultural fit
-        repoId: station.repoId,
-        githubRepoUrl: station.githubRepoUrl,
-        githubPrNumber: station.githubPrNumber ?? null,
-        issueNumber: station.issueNumber ?? null,
-        instructions:
-          station.type === 'CODE_REVIEW'
-            ? `Review pull request #${station.githubPrNumber} on ${station.githubRepoUrl}.`
-            : `Implement issue #${station.issueNumber} on ${station.githubRepoUrl}.`,
-      }))
-    : [
-        {
-          stageId: generateId(),
-          challengeId: generateId(),
-          type: 'CODE_REVIEW',
-          title: 'Code Review',
-          sortOrder: 2,
-          repoId: null,
-          githubRepoUrl: null,
-          githubPrNumber: null,
-          issueNumber: null,
-          instructions:
-            'A pull request from a repository matched to your background will be assigned when your profile is ingested.',
-        },
-        {
-          stageId: generateId(),
-          challengeId: generateId(),
-          type: 'CODE_IMPLEMENTATION',
-          title: 'Code Implementation',
-          sortOrder: 3,
-          repoId: null,
-          githubRepoUrl: null,
-          githubPrNumber: null,
-          issueNumber: null,
-          instructions:
-            'An issue from a repository matched to your background will be assigned when your profile is ingested.',
-        },
-      ];
+  const addCodeReviewStage = (): void => {
+    stageRecords.push(
+      plannedReview
+        ? {
+            stageId: generateId(),
+            challengeId: generateId(),
+            stageType: 'CODE_REVIEW',
+            challengeType: 'CODE_REVIEW',
+            title: plannedReview.title,
+            sortOrder: sortCursor,
+            repoId: plannedReview.repoId,
+            githubRepoUrl: plannedReview.githubRepoUrl,
+            githubPrNumber: plannedReview.githubPrNumber ?? null,
+            issueNumber: null,
+            instructions:
+              `Review pull request #${plannedReview.githubPrNumber} on ${plannedReview.githubRepoUrl}.`,
+          }
+        : {
+            stageId: generateId(),
+            challengeId: generateId(),
+            stageType: 'CODE_REVIEW',
+            challengeType: 'CODE_REVIEW',
+            title: 'Code Review',
+            sortOrder: sortCursor,
+            repoId: null,
+            githubRepoUrl: null,
+            githubPrNumber: null,
+            issueNumber: null,
+            instructions:
+              'A pull request from a repository matched to your background will be assigned when your profile is ingested.',
+          },
+    );
+    sortCursor += 1;
+  };
 
-  const stageRecords: StationRecord[] = builtStations;
+  const addLiveCodingStage = (): void => {
+    stageRecords.push(
+      plannedImplementation
+        ? {
+            stageId: generateId(),
+            challengeId: generateId(),
+            stageType: 'OPEN_SOURCE',
+            challengeType: 'CODE_IMPLEMENTATION',
+            title: plannedImplementation.title,
+            sortOrder: sortCursor,
+            repoId: plannedImplementation.repoId,
+            githubRepoUrl: plannedImplementation.githubRepoUrl,
+            githubPrNumber: null,
+            issueNumber: plannedImplementation.issueNumber ?? null,
+            instructions: `Implement issue #${plannedImplementation.issueNumber} on ${plannedImplementation.githubRepoUrl}.`,
+          }
+        : {
+            stageId: generateId(),
+            challengeId: generateId(),
+            stageType: 'OPEN_SOURCE',
+            challengeType: 'CODE_IMPLEMENTATION',
+            title: 'Open Source Implementation',
+            sortOrder: sortCursor,
+            repoId: null,
+            githubRepoUrl: null,
+            githubPrNumber: null,
+            issueNumber: null,
+            instructions:
+              'An issue from a repository matched to your background will be assigned when your profile is ingested.',
+          },
+    );
+    sortCursor += 1;
+  };
 
-  // Insert automatic screener stage first.
-  statements.push(
-    c.env.DB.prepare(
-      `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, screening_format, owner_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-    ).bind(
-      screenerStageId,
-      pipelineId,
-      screener.title,
-      screener.description ?? null,
-      0,
-      'SCREENING',
-      'ONLINE',
-      userId,
-    ),
-  );
+  if (includeCodeReview) {
+    addCodeReviewStage();
+  }
+  if (includeLiveCoding) {
+    addLiveCodingStage();
+  }
 
-  // Insert screener challenges.
-  for (let ci = 0; ci < screener.challenges.length; ci++) {
-    const challenge = screener.challenges[ci];
-    if (!challenge) continue;
-    const challengeId = generateId();
-    const configJson = JSON.stringify(challenge.config);
+  if (includeScreening) {
+    const screener = getScreenerStage();
+    const screenerStageId = generateId();
+
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+        `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, screening_format, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
       ).bind(
-        challengeId,
         screenerStageId,
-        challenge.type,
-        ci,
-        challenge.title,
-        challenge.instructions,
-        configJson,
+        pipelineId,
+        screener.title,
+        screener.description ?? null,
+        0,
+        'SCREENING',
+        'ONLINE',
         userId,
       ),
     );
-  }
 
-  // Insert Cultural Fit stage between screener and code stations.
-  const culturalStageId = generateId();
-  const culturalChallengeId = generateId();
-  statements.push(
-    c.env.DB.prepare(
-      `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-    ).bind(culturalStageId, pipelineId, 'Cultural Fit', 1, 'CULTURAL', userId),
-  );
-  statements.push(
-    c.env.DB.prepare(
-      `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-    ).bind(
-      culturalChallengeId,
-      culturalStageId,
-      'AGENT_INTERVIEW',
-      0,
-      'Cultural Fit Interview',
-      'A structured behavioral interview assessing cultural alignment, communication style, and team-fit.',
-      JSON.stringify({ autoBuilt: true }),
-      userId,
-    ),
-  );
+    // Insert screener challenges.
+    for (let ci = 0; ci < screener.challenges.length; ci++) {
+      const challenge = screener.challenges[ci];
+      if (!challenge) continue;
+      const configJson = JSON.stringify(challenge.config);
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO challenges (id, stage_id, type, sort_order, title, instructions, config, owner_id)
+           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
+        ).bind(
+          generateId(),
+          screenerStageId,
+          challenge.type,
+          ci,
+          challenge.title,
+          challenge.instructions,
+          configJson,
+          userId,
+        ),
+      );
+    }
+  }
 
   for (const rec of stageRecords) {
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, rec.type === 'CODE_REVIEW' ? 'CODE_REVIEW' : 'CODE_IMPLEMENTATION', userId),
+      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, rec.stageType, userId),
     );
   }
 
@@ -323,6 +358,7 @@ autoBuild.post('/auto-build', async (c) => {
     const config = JSON.stringify({
       autoBuilt: true,
       repoId: rec.repoId,
+      issueNumber: rec.issueNumber,
       matchDeferred: !shouldMatchNow,
     });
     statements.push(
@@ -334,7 +370,7 @@ autoBuild.post('/auto-build', async (c) => {
       ).bind(
         rec.challengeId,
         rec.stageId,
-        rec.type,
+        rec.challengeType,
         0,
         rec.title,
         rec.instructions,
@@ -360,7 +396,7 @@ autoBuild.post('/auto-build', async (c) => {
       stages: stageRecords.map((rec) => ({
         id: rec.stageId,
         title: rec.title,
-        type: rec.type,
+        type: rec.challengeType,
         sortOrder: rec.sortOrder,
         repoId: rec.repoId,
         githubRepoUrl: rec.githubRepoUrl,

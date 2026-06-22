@@ -255,6 +255,13 @@ export interface NormalizedIssueMetadata {
   sourceSpanIds: string[];
 }
 
+export interface ExtractionDiagnostic {
+  kind: 'full_source_fetch' | 'semantic_parser';
+  path: string;
+  language: string;
+  reason: string;
+}
+
 export interface NormalizedPullRequestInput {
   repoSnapshot: RepoSnapshot;
   number: number;
@@ -267,11 +274,14 @@ export interface NormalizedPullRequestInput {
   headSha: string;
   mergedAt: IsoDateTime | null;
   metadataSourceSpanIds: string[];
+  sourceArtifacts?: SourceArtifact[];
+  sourceArtifactVersions?: SourceArtifactVersion[];
   sourceSpans: SourceSpan[];
   changedFiles: NormalizedPullRequestFile[];
   tests: NormalizedTestChange[];
   issue?: NormalizedIssueMetadata;
   structuralFacts?: StructuralFact[];
+  extractionDiagnostics?: ExtractionDiagnostic[];
 }
 
 /** Open, source-derived demand family. */

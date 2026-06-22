@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from "react";
+import { useState, useEffect, Suspense, lazy, type ComponentType } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FEATURE_FLAGS } from "./config/featureFlags";
 import {
@@ -29,12 +29,16 @@ const NewStageFormPage = lazy(() => import("./pages/NewStageFormPage"));
 const KanbanPage = lazy(() => import("./pages/KanbanPage"));
 const CandidateProfilePage = lazy(() => import("./pages/CandidateProfilePage"));
 const CandidateScreeningPage = lazy(() => import("./pages/CandidateScreeningPage"));
-const RoleDiscoveryPage = lazy(() => import("./pages/RoleDiscoveryPage"));
+const PipelineNewRoutePage = lazy(() => import("./pages/PipelineNewRoutePage"));
 const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
 const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
-const ContactsPage = lazy(() => import("./pages/ContactsPage"));
+const ContactsPage = lazy(() =>
+  import("./pages/ContactsPage").then((module) => ({
+    default: module.default as ComponentType<{ view?: "people" | "clients" }>,
+  })),
+);
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
@@ -65,12 +69,12 @@ const SubHeader = () => {
 
   const headerData = { title: "PIPE_OS", count: 0 };
 
-  const handleNewRole = (): void => {
-    navigate("/pipeline/new");
+  const handleNewInterview = (): void => {
+    navigate("/interviews?new=1");
   };
 
   const currentStage = stageId ? { title: stageId } : null;
-  const isHome = location.pathname === "/";
+  const isHome = ["/", "/interviews", "/roles", "/people"].includes(location.pathname);
 
   return (
     <div
@@ -118,9 +122,9 @@ const SubHeader = () => {
             >
               <ArrowLeft size={12} />{" "}
               {questionId && currentStage
-                ? "BACK TO STAGE"
+                ? "BACK TO ROUND"
                 : stageId
-                  ? "BACK TO OVERVIEW"
+                  ? "BACK TO ROLE"
                   : "BACK"}
             </button>
 
@@ -141,7 +145,7 @@ const SubHeader = () => {
                   marginBottom: 6,
                 }}
               >
-                {isCandidateContext ? "CANDIDATE" : "POSITION"}
+                {isCandidateContext ? "PERSON" : stageId ? "ROUND" : "ROLE"}
               </div>
               <div
                 style={{
@@ -160,7 +164,7 @@ const SubHeader = () => {
 
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button
-          onClick={handleNewRole}
+          onClick={handleNewInterview}
           style={{
             padding: "14px 28px",
             background:
@@ -177,7 +181,7 @@ const SubHeader = () => {
           }}
         >
           <Plus size={16} />
-          CREATE NEW PIPE
+          NEW INTERVIEW
         </button>
         <button
           onClick={() => void auth.signOut()}
@@ -208,7 +212,29 @@ const SubHeader = () => {
  */
 function AppLayout(): JSX.Element {
   const navigate = useNavigate();
-  const [activeSection, setActiveSection] = useState("roles");
+  const location = useLocation();
+  const getSectionForPath = (pathname: string): string => {
+    if (pathname === "/" || pathname.startsWith("/interviews") || pathname.startsWith("/schedule")) {
+      return "interviews";
+    }
+    if (pathname.startsWith("/roles") || pathname.startsWith("/pipeline")) {
+      return "roles";
+    }
+    if (pathname.startsWith("/people") || pathname.startsWith("/clients") || pathname.startsWith("/contacts") || pathname.startsWith("/candidates")) {
+      return "people";
+    }
+    if (pathname.startsWith("/admin/repos")) {
+      return "repo-admin";
+    }
+    if (pathname.startsWith("/admin/ai-usage")) {
+      return "ai-usage";
+    }
+    if (pathname.startsWith("/sandbox")) {
+      return "sandbox";
+    }
+    return "interviews";
+  };
+  const [activeSection, setActiveSection] = useState(() => getSectionForPath(location.pathname));
   // Auto-open settings on OAuth callback (Calendly redirects back with ?code=&state=)
   const hasOAuthCallback = new URLSearchParams(window.location.search).has('code') &&
     new URLSearchParams(window.location.search).has('state');
@@ -218,10 +244,16 @@ function AppLayout(): JSX.Element {
 
   const agentDrawerVisible = FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT && agent.isOpen;
 
+  useEffect(() => {
+    if (!showSettings && !showCalls && !agentDrawerVisible) {
+      setActiveSection(getSectionForPath(location.pathname));
+    }
+  }, [agentDrawerVisible, location.pathname, showCalls, showSettings]);
+
   const panelContent = showSettings
-    ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection("roles"); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
+    ? <SettingsPanel onClose={() => { setShowSettings(false); setActiveSection(getSectionForPath(location.pathname)); }} initialTab={hasOAuthCallback ? 'integrations' : undefined} />
     : showCalls
-      ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection("roles"); }} />
+      ? <RecruiterCallDrawer onClose={() => { setShowCalls(false); setActiveSection(getSectionForPath(location.pathname)); }} />
       : agentDrawerVisible
         ? <AgentDrawer pipelineId={agent.pipelineId} skillMode={agent.skillMode} onClose={agent.closeAgent} onSkillModeChange={agent.setSkillMode} />
         : undefined;
@@ -236,59 +268,36 @@ function AppLayout(): JSX.Element {
       sidebar={
         <SidebarNav
           activeSection={activeSection}
+          onInterviewsClick={() => {
+            setActiveSection("interviews");
+            setShowSettings(false);
+            setShowCalls(false);
+            agent.closeAgent();
+            navigate("/interviews");
+          }}
           onRolesClick={() => {
             setActiveSection("roles");
             setShowSettings(false);
             setShowCalls(false);
-            navigate("/");
+            agent.closeAgent();
+            navigate("/roles");
           }}
-          {...(FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE
-            ? {
-                onScheduleClick: () => {
-                  setActiveSection("schedule");
-                  setShowSettings(false);
-                  setShowCalls(false);
-                  navigate("/schedule");
-                },
-              }
-            : {})}
           {...(FEATURE_FLAGS.FEATURE_FLAG_CODE_SANDBOX
             ? {
                 onSandboxClick: () => {
                   setActiveSection("sandbox");
                   setShowSettings(false);
+                  setShowCalls(false);
                   navigate("/sandbox/dev-container");
                 },
               }
             : {})}
-          {...(FEATURE_FLAGS.FEATURE_FLAG_LIVE_VIDEO
-            ? {
-                onCallsClick: () => {
-                  setShowSettings(false);
-                  agent.closeAgent();
-                  setShowCalls((prev) => !prev);
-                  if (!showCalls) setActiveSection("calls");
-                  else setActiveSection("roles");
-                },
-              }
-            : {})}
-          onContactsClick={() => {
-            setActiveSection("contacts");
+          onPeopleClick={() => {
+            setActiveSection("people");
             setShowSettings(false);
             setShowCalls(false);
-            navigate("/contacts");
-          }}
-          onRepoAdminClick={() => {
-            setActiveSection("repo-admin");
-            setShowSettings(false);
-            setShowCalls(false);
-            navigate("/admin/repos");
-          }}
-          onAiUsageClick={() => {
-            setActiveSection("ai-usage");
-            setShowSettings(false);
-            setShowCalls(false);
-            navigate("/admin/ai-usage");
+            agent.closeAgent();
+            navigate("/people");
           }}
           {...(FEATURE_FLAGS.FEATURE_FLAG_COPILOT_AGENT
             ? {
@@ -297,7 +306,7 @@ function AppLayout(): JSX.Element {
                   setShowCalls(false);
                   if (agent.isOpen) {
                     agent.closeAgent();
-                    setActiveSection("roles");
+                    setActiveSection(getSectionForPath(location.pathname));
                   } else {
                     agent.openAgent();
                     setActiveSection("agent");
@@ -310,7 +319,7 @@ function AppLayout(): JSX.Element {
             agent.closeAgent();
             setShowSettings((prev) => !prev);
             if (!showSettings) setActiveSection("settings");
-            else setActiveSection("roles");
+            else setActiveSection(getSectionForPath(location.pathname));
           }}
         />
       }
@@ -328,6 +337,18 @@ function AppLayout(): JSX.Element {
 function LegacyStageRedirect(): JSX.Element {
   const { id, stageId } = useParams<{ id: string; stageId: string }>();
   return <Navigate to={`/pipeline/${id}/stage/${stageId}`} replace />;
+}
+
+/** Public product route alias for the legacy pipeline detail shell. */
+function RoleRedirect(): JSX.Element {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/pipeline/${id}`} replace />;
+}
+
+/** Preserves OAuth callback params from the retired scheduling route. */
+function ScheduleRedirect(): JSX.Element {
+  const location = useLocation();
+  return <Navigate to={`/interviews${location.search}${location.hash}`} replace />;
 }
 
 /** Binds the theme storage to the signed-in recruiter's Clerk userId. */
@@ -420,7 +441,12 @@ function App(): JSX.Element {
                 <Suspense fallback={<PageLoader />}>
                 <Routes>
                   <Route element={<AppLayout />}>
-                    <Route path="/" element={<ListingPage />} />
+                    <Route path="/" element={<SchedulingPage />} />
+                    <Route path="/interviews" element={<SchedulingPage />} />
+                    <Route path="/schedule" element={<ScheduleRedirect />} />
+                    <Route path="/roles" element={<ListingPage />} />
+                    <Route path="/roles/new" element={<PipelineNewRoutePage />} />
+                    <Route path="/roles/:id/*" element={<RoleRedirect />} />
                     <Route path="/pipeline/:id" element={<PipelineShellPage />}>
                       <Route index element={<PipelineInsightsPanel />} />
                       <Route path="kanban" element={<KanbanPage />} />
@@ -448,7 +474,7 @@ function App(): JSX.Element {
                         element={<ChallengeEditorPage />}
                       />
                     )}
-                    <Route path="/pipeline/new" element={<RoleDiscoveryPage />} />
+                    <Route path="/pipeline/new" element={<PipelineNewRoutePage />} />
                     <Route
                       path="/candidates/:id"
                       element={<CandidateProfilePage />}
@@ -457,11 +483,10 @@ function App(): JSX.Element {
                       path="/screenings/:id/preview"
                       element={<CandidateScreeningPage />}
                     />
-                    {FEATURE_FLAGS.FEATURE_FLAG_SCHEDULE_ROUTE && (
-                      <Route path="/schedule" element={<SchedulingPage />} />
-                    )}
                     <Route path="/outreach" element={<OutreachPage />} />
-                    <Route path="/contacts" element={<ContactsPage />} />
+                    <Route path="/people" element={<ContactsPage />} />
+                    <Route path="/clients" element={<Navigate to="/people" replace />} />
+                    <Route path="/contacts" element={<Navigate to="/people" replace />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (
                       <Route
                         path="/sandbox/dev-container"

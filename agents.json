@@ -4,7 +4,7 @@
       "id": "ceo",
       "name": "ceo",
       "provider": "hermes",
-      "model": "grok-4.3",
+      "model": "gpt-5.5",
       "persona": "ceo-orchestrator",
       "memory_key": "agent:ceo",
       "tmux_session": "pipe-ceo"
@@ -34,6 +34,22 @@
         "love everyone"
       ],
       "memory_key": "grok:composer:architect"
+    },
+    {
+      "id": "devin-opus-factory-reviewer",
+      "name": "Devin Opus Factory Reviewer",
+      "provider": "devin",
+      "model": "claude-opus-4.8",
+      "dispatch_profile": "devin",
+      "persona": "domain-factory-orchestrator",
+      "capabilities": [
+        "software-factory-design",
+        "peer-review-design",
+        "autonomous-execution-systems",
+        "testing-and-validation",
+        "delivery-risk-analysis"
+      ],
+      "description": "Devin Opus reviewer for challenging and improving the autonomous domain factory and CEO project-management operating model. If Devin rejects claude-opus-4.8, use the nearest supported Opus model and record the downgrade."
     }
   ],
   "teams": {}

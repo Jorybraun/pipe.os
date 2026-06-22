@@ -445,7 +445,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
       {/* Empty-state quickstart — DRAFT with no stages */}
       {isDraft && isEmpty && (
         <SectionCard
-          label="EMPTY_PIPELINE"
+          label="EMPTY_ROLE"
           icon={<Plus size={16} color="var(--pipe-text-dim)" />}
           meta="START HERE"
         >
@@ -459,7 +459,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
               marginBottom: 8,
             }}
           >
-            START FROM A TEMPLATE OR BUILD STAGES ONE AT A TIME
+            Add the first interview round
           </div>
           <div
             style={{
@@ -471,9 +471,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            Pick a curated template to seed stages and questions in one shot,
-            run the role discovery interview to generate a pipeline tailored to
-            the role, or add a single stage manually.
+            Rounds keep sequencing when a role has more than one interview step.
+            Start with one round, then add challenges or scheduling as needed.
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <button
@@ -498,7 +497,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 USE_TEMPLATE
               </button>
               <button
-                onClick={() => navigate('/pipeline/new')}
+                onClick={() => navigate('/roles/new')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -516,18 +515,18 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 }}
               >
                 <Sparkles size={14} />
-                ROLE_DISCOVERY
+                NEW ROLE
               </button>
               <button
                 onClick={() => {
                   setIsCreatingStage(true);
                   void (async () => {
                     try {
-                      const created = await createStage(pipelineId, 'New Stage');
+                      const created = await createStage(pipelineId, 'New Round');
                       await refetch();
                       navigate(`/pipeline/${pipelineId}/stage/${created.id}?adder=1`);
                     } catch (err) {
-                      console.error('[PipelineInsightsPanel] Failed to create stage:', err);
+                      console.error('[PipelineInsightsPanel] Failed to create round:', err);
                     } finally {
                       setIsCreatingStage(false);
                     }
@@ -551,7 +550,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 }}
               >
                 <Plus size={14} />
-                {isCreatingStage ? 'CREATING...' : 'ADD_SINGLE_STAGE'}
+                {isCreatingStage ? 'CREATING...' : 'ADD ROUND'}
               </button>
             </div>
         </SectionCard>
@@ -634,7 +633,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
             ) : effectiveTab === 'profile' && roleContext ? (
               `${roleContext.questionsAsked} QUESTIONS · ${countFilledSignals(roleContext)} SIGNALS`
             ) : effectiveTab === 'insights' ? (
-              `${stages.length} STAGE${stages.length === 1 ? '' : 'S'}`
+              `${stages.length} ROUND${stages.length === 1 ? '' : 'S'}`
             ) : (
               `${candidates.length} CANDIDATE${candidates.length === 1 ? '' : 'S'}`
             )
@@ -826,7 +825,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              PER_STAGE
+              PER ROUND
             </div>
             {stages.map((stage, index) => {
               const stageCandidates = candidates.filter(
@@ -876,7 +875,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                       letterSpacing: '0.05em',
                     }}
                   >
-                    {(stage.title ?? 'STAGE').toUpperCase()}
+                    {(stage.title ?? 'ROUND').toUpperCase()}
                   </div>
                   <div
                     style={{
@@ -1064,9 +1063,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            This pipeline was created without running the role discovery
-            interview. Role insights will appear here once a discovery session
-            is attached.
+            This role does not have source-backed role context yet. Paste a job
+            description or attach interview evidence before using match decisions.
           </div>
         </SectionCard>
       )}

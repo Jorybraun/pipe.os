@@ -264,6 +264,27 @@
   overflow-wrap: anywhere;
 }
 
+.living-context__missing-evidence {
+  color: #f87171;
+}
+
+.living-context__packet-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.living-context__packet-strip span {
+  max-width: 100%;
+  padding: 4px 6px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 4px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
 .living-context__review-source-snippets {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

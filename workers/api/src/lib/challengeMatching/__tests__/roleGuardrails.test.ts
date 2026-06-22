@@ -29,6 +29,7 @@ describe('loadRoleChallengeSemantics', () => {
       id: 'role-1',
       rcd_version: '2.0.0',
       rcd_json: null,
+      job_description_md: null,
       non_negotiable_skills_json: JSON.stringify(['A Technology Never Seen Before']),
     });
 
@@ -50,6 +51,7 @@ describe('loadRoleChallengeSemantics', () => {
       id: 'role-1',
       rcd_version: '2.0.0',
       rcd_json: null,
+      job_description_md: null,
       non_negotiable_skills_json: null,
     });
 
@@ -68,6 +70,7 @@ describe('loadRoleChallengeSemantics', () => {
       id: 'role-legacy',
       rcd_version: '1.0.0',
       rcd_json: null,
+      job_description_md: null,
       non_negotiable_skills_json: JSON.stringify(['Understanding of code']),
     });
 
@@ -75,7 +78,7 @@ describe('loadRoleChallengeSemantics', () => {
     expect(semantics.requiredConcepts).toEqual([]);
   });
 
-  it('merges exact RCD terms when legacy role-node narratives contain prefixes', async () => {
+  it('does not derive matcher constraints from legacy RCD fallback fields', async () => {
     const semantics = await loadRoleChallengeSemantics(d1([{
       id: 'node-prefixed',
       rcd_version: '1.0.0',
@@ -96,14 +99,31 @@ describe('loadRoleChallengeSemantics', () => {
           niceToHaveSkills: [],
         },
       }),
+      job_description_md: null,
       non_negotiable_skills_json: JSON.stringify(['Understanding of code']),
     });
 
-    expect(semantics.relevantConcepts).toContain('term:understanding-of-code');
-    expect(semantics.requiredConcepts).toEqual(['term:understanding-of-code']);
-    expect(semantics.sources).toContainEqual(expect.objectContaining({
-      roleNodeId: 'role-context:role-prefixed',
-      sourceSection: 'technical_context.codebase_expectations',
-    }));
+    expect(semantics.relevantConcepts).toEqual([]);
+    expect(semantics.requiredConcepts).toEqual([]);
+    expect(semantics.sources).toEqual([]);
+  });
+
+  it('uses selected simple JD terms only when the original JD text contains them', async () => {
+    const semantics = await loadRoleChallengeSemantics(d1([]), {
+      id: 'role-jd',
+      rcd_version: null,
+      rcd_json: null,
+      job_description_md: 'We need Kafka idempotency work on order processing. Logging is useful.',
+      non_negotiable_skills_json: JSON.stringify(['Kafka idempotency', 'Temporal fanout']),
+    });
+
+    expect(semantics.roleSnapshotId).toBe('role-context:role-jd:source-backed:simple-jd');
+    expect(semantics.relevantConcepts).toEqual(['term:kafka-idempotency']);
+    expect(semantics.requiredConcepts).toEqual(['term:kafka-idempotency']);
+    expect(semantics.sources).toEqual([expect.objectContaining({
+      roleNodeId: 'role-context:role-jd:job-description',
+      sourceSection: 'job_description_md',
+      conceptKeys: ['term:kafka-idempotency'],
+    })]);
   });
 });

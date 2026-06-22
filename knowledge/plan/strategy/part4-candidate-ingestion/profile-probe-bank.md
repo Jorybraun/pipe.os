@@ -1,6 +1,6 @@
 # Profile Probe Bank — Role-Agnostic Screener Probes
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 163–166)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 163–166)
 **Phase:** 3
 **Status:** NEEDS-REFINEMENT
 **Estimate:** 2 weeks (split: 0.5 weeks code, 1.5 weeks content curation)

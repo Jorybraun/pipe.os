@@ -1,6 +1,6 @@
 # Phase 4 — Wire synthesizeRcd as UAR Post-FSM Hook
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 179–180)  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 179–180)
 **Phase:** 4  
 **Status:** PENDING  
 **Estimate:** 1 week

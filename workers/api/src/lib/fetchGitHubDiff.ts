@@ -14,8 +14,9 @@ interface GitHubPRResponse {
   state: string;
   user: { login: string };
   created_at: string;
-  base: { ref: string };
-  head: { ref: string };
+  merged_at: string | null;
+  base: { ref: string; sha: string };
+  head: { ref: string; sha: string };
 }
 
 interface GitHubFilesResponse {
@@ -37,6 +38,8 @@ export interface DiffFile {
   additions: number;
   deletions: number;
   hunks: DiffHunk[];
+  headContent?: string;
+  headContentUrl?: string;
 }
 
 export interface GitHubDiffResult {
@@ -48,6 +51,9 @@ export interface GitHubDiffResult {
     state: string;
     base: string;
     head: string;
+    base_sha: string;
+    head_sha: string;
+    merged_at: string | null;
     description: string;
   };
 }
@@ -94,6 +100,31 @@ function parsePatch(patch: string): DiffHunk[] {
   return hunks;
 }
 
+function encodeGitHubPath(path: string): string {
+  return path.split('/').map((part) => encodeURIComponent(part)).join('/');
+}
+
+async function fetchHeadFileContent(input: {
+  repoPath: string;
+  filename: string;
+  headSha: string;
+  headers: Record<string, string>;
+}): Promise<{ content: string; url: string } | null> {
+  if (!input.filename.trim() || input.headSha.trim() === '') return null;
+  const url = `https://api.github.com/repos/${input.repoPath}/contents/${encodeGitHubPath(input.filename)}?ref=${input.headSha}`;
+  const response = await fetch(url, {
+    headers: {
+      ...input.headers,
+      Accept: 'application/vnd.github.raw',
+    },
+  });
+  if (!response.ok) return null;
+  return {
+    content: await response.text(),
+    url,
+  };
+}
+
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 /**
@@ -132,12 +163,28 @@ export async function fetchGitHubDiff(
   if (!filesRes.ok) return null;
   const filesData = (await filesRes.json()) as GitHubFilesResponse[];
 
-  const diffFiles: DiffFile[] = filesData.map((file) => ({
-    filename: file.filename,
-    status: file.status,
-    additions: file.additions,
-    deletions: file.deletions,
-    hunks: file.patch ? parsePatch(file.patch) : [],
+  const diffFiles: DiffFile[] = await Promise.all(filesData.map(async (file) => {
+    const headFile = file.status === 'removed'
+      ? null
+      : await fetchHeadFileContent({
+        repoPath,
+        filename: file.filename,
+        headSha: prData.head.sha,
+        headers,
+      });
+    return {
+      filename: file.filename,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      hunks: file.patch ? parsePatch(file.patch) : [],
+      ...(headFile
+        ? {
+            headContent: headFile.content,
+            headContentUrl: headFile.url,
+          }
+        : {}),
+    };
   }));
 
   return {
@@ -149,6 +196,9 @@ export async function fetchGitHubDiff(
       state: prData.state,
       base: prData.base.ref,
       head: prData.head.ref,
+      base_sha: prData.base.sha,
+      head_sha: prData.head.sha,
+      merged_at: prData.merged_at,
       description: prData.body ?? '',
     },
   };

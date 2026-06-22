@@ -1,6 +1,6 @@
 # Adaptive Culture Interview Agent — Dynamic, Generative, Zero Static Questions
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 138–162, 282–298); knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 44–58, 183–208)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 138–162, 282–298); knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 44–58, 183–208)
 **Phase:** 3
 **Status:** PENDING
 **Estimate:** 4 weeks

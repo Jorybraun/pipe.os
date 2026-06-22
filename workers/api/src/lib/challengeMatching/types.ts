@@ -15,6 +15,9 @@ export interface SourceRef {
   contentHash: string;
   startOffset: number;
   endOffset: number;
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
   locator?: string;
   exactText?: string;
 }
@@ -219,10 +222,16 @@ export interface RankReviewChallengesResult {
 }
 
 export interface MatchExplanation {
-  status: 'MATCHED' | 'NO_ROLE_SAFE_CHALLENGE';
-  challengeId: string;
-  repoId: string;
-  prNumber: number;
+  status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE';
+  challengeId?: string;
+  repoId?: string;
+  prNumber?: number;
+  selectedPr?: {
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    sourceVersion: string;
+  };
   score: number;
   summary: string;
   evidence: Array<{
@@ -235,5 +244,43 @@ export interface MatchExplanation {
     candidateSourceRefs: SourceRef[];
     challengeSourceRefs: SourceRef[];
   }>;
+  candidateSpans: Array<{
+    atomId: string;
+    demandId: string;
+    purpose: QueryPurpose;
+    sourceRefs: SourceRef[];
+  }>;
+  repoSpans: Array<{
+    atomId: string;
+    demandId: string;
+    sourceRefs: SourceRef[];
+  }>;
+  rejectedPackets: Array<{
+    id: string;
+    repoId?: string;
+    prNumber?: number | null;
+    reasons: string[];
+    demandIds?: string[];
+    missingSourceSpanIds?: string[];
+    gateFailures?: string[];
+    qualityScore?: number | null;
+  }>;
+  missingEvidence: Array<{
+    scope: 'candidate' | 'repo' | 'role' | 'challenge';
+    reason: string;
+    challengeId?: string;
+    demandId?: string;
+    sourceRefs?: SourceRef[];
+  }>;
+  stretchAreas: Array<{
+    atomId: string;
+    demandId: string;
+    atomConcept: string;
+    demandConcept: string;
+    dimension: StretchMatch['dimension'];
+    candidateSourceRefs: SourceRef[];
+    challengeSourceRefs: SourceRef[];
+  }>;
+  unmatchedDemandIds: string[];
   rejectionReasons: string[];
 }

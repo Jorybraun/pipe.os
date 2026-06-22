@@ -456,6 +456,105 @@ describe('Evaluation Metrics', () => {
 });
 
 describe('Determinism Verification', () => {
+  function deterministicAlignment(
+    sharedConcepts: string[] = ['term:kafka'],
+  ): PersistedRankedChallenge['alignments'][number] {
+    return {
+      atomId: 'atom-1',
+      demandId: 'demand-1',
+      pairScore: 0.7,
+      weightedScore: 0.7,
+      stretch: null,
+      sharedConcepts,
+      candidateSourceRefs: [
+        {
+          artifactId: 'candidate-artifact',
+          artifactVersion: 'candidate-version',
+          contentHash: 'sha256:candidate',
+          startOffset: 0,
+          endOffset: 10,
+        },
+      ],
+      challengeSourceRefs: [
+        {
+          artifactId: 'challenge-artifact',
+          artifactVersion: 'challenge-version',
+          contentHash: 'sha256:challenge',
+          startOffset: 0,
+          endOffset: 10,
+        },
+      ],
+    };
+  }
+
+  function deterministicRun(
+    matchRunId: string,
+    overrides: Partial<PersistedRankedChallenge> = {},
+  ): PersistedMatchRun {
+    return {
+      matchRunId,
+      candidateId: 'candidate-1',
+      roleId: 'role-1',
+      candidateSnapshotId: 'snapshot-1',
+      policyVersion: 'candidate-pr-v1',
+      modelVersion: null,
+      status: 'MATCHED',
+      rankedChallenges: [
+        {
+          rank: 1,
+          recallRank: 1,
+          challengeId: 'challenge-1',
+          repoId: 'repo-1',
+          prNumber: 1,
+          sourceVersion: 'v1',
+          score: 0.9,
+          candidateEvidenceAlignment: 0.8,
+          roleRelevance: 0.9,
+          contextualSpecificity: 0.85,
+          challengeQuality: 0.9,
+          validationDeepeningValue: 0.8,
+          alignedDemandCount: 1,
+          stretchCount: 0,
+          stretchDemandWeightRatio: 0,
+          provenanceComplete: true,
+          eligible: true,
+          alignments: [],
+          rejectionReasons: [],
+          ...overrides,
+        },
+      ],
+    };
+  }
+
+  const deterministicCorpus: EvaluationCorpus = {
+    version: EVALUATION_CORPUS_VERSION,
+    corpusId: 'test-determinism',
+    createdAt: '2026-06-13T00:00:00Z',
+    description: 'Test determinism comparison details',
+    candidateEvidence: [],
+    roleRequirements: [],
+    expertLabels: [
+      {
+        labelId: 'label-1',
+        candidateId: 'candidate-1',
+        roleId: 'role-1',
+        challengeId: 'challenge-1',
+        relevanceGrade: 'highly_relevant',
+        eligibleChallengeIds: ['challenge-1'],
+        labelVersion: '1.0.0',
+        labeledAt: '2026-06-13T00:00:00Z',
+        labeledBy: 'synthetic-fixture',
+      },
+    ],
+    metadata: {
+      totalLabels: 1,
+      totalCandidates: 1,
+      totalRoles: 1,
+      totalChallenges: 1,
+      syntheticFixtureCount: 1,
+    },
+  };
+
   it('should verify byte-identical reruns', () => {
     const matchRun: PersistedMatchRun = {
       matchRunId: 'run-1',
@@ -541,6 +640,100 @@ describe('Determinism Verification', () => {
 
     const { identical } = verifyByteIdenticalRerun(firstRun, secondRun);
     expect(identical).toBe(false);
+  });
+
+  it('should report pair-level determinism comparisons for rollout evidence', () => {
+    const metrics = evaluateMatchRuns(
+      deterministicCorpus,
+      [deterministicRun('run-primary')],
+      [deterministicRun('run-comparison')],
+    );
+
+    expect(metrics.byteIdenticalRerun).toBe(true);
+    expect(metrics.determinismComparisons).toEqual([
+      expect.objectContaining({
+        candidateId: 'candidate-1',
+        roleId: 'role-1',
+        matchRunId: 'run-primary',
+        comparisonMatchRunId: 'run-comparison',
+        identical: true,
+      }),
+    ]);
+    expect(metrics.determinismComparisons[0]?.fingerprint).toBe(
+      metrics.determinismComparisons[0]?.comparisonFingerprint,
+    );
+  });
+
+  it('should identify missing comparison reruns by candidate-role pair', () => {
+    const metrics = evaluateMatchRuns(
+      deterministicCorpus,
+      [deterministicRun('run-primary')],
+      [],
+    );
+
+    expect(metrics.byteIdenticalRerun).toBe(false);
+    expect(metrics.determinismComparisons).toEqual([
+      expect.objectContaining({
+        candidateId: 'candidate-1',
+        roleId: 'role-1',
+        matchRunId: 'run-primary',
+        comparisonMatchRunId: null,
+        identical: false,
+        comparisonFingerprint: null,
+      }),
+    ]);
+  });
+
+  it('should fail comparison reruns when aligned demand count drifts', () => {
+    const metrics = evaluateMatchRuns(
+      deterministicCorpus,
+      [deterministicRun('run-primary', { alignedDemandCount: 1 })],
+      [deterministicRun('run-comparison', { alignedDemandCount: 2 })],
+    );
+
+    expect(metrics.byteIdenticalRerun).toBe(false);
+    expect(metrics.determinismComparisons[0]).toEqual(
+      expect.objectContaining({
+        comparisonMatchRunId: 'run-comparison',
+        identical: false,
+      }),
+    );
+    expect(metrics.determinismComparisons[0]?.fingerprint).not.toBe(
+      metrics.determinismComparisons[0]?.comparisonFingerprint,
+    );
+    expect(computeMatchRunFingerprint(deterministicRun('run-primary'))).toContain(
+      '"alignedDemandCount":1',
+    );
+  });
+
+  it('should fail comparison reruns when shared concepts drift', () => {
+    const metrics = evaluateMatchRuns(
+      deterministicCorpus,
+      [
+        deterministicRun('run-primary', {
+          alignments: [deterministicAlignment(['term:kafka'])],
+        }),
+      ],
+      [
+        deterministicRun('run-comparison', {
+          alignments: [deterministicAlignment(['term:redis'])],
+        }),
+      ],
+    );
+
+    expect(metrics.byteIdenticalRerun).toBe(false);
+    expect(metrics.determinismComparisons[0]).toEqual(
+      expect.objectContaining({
+        comparisonMatchRunId: 'run-comparison',
+        identical: false,
+      }),
+    );
+    expect(metrics.determinismComparisons[0]?.fingerprint).toContain(
+      '"sharedConcepts":["term:kafka"]',
+    );
+    expect(metrics.determinismComparisons[0]?.comparisonFingerprint).toContain(
+      '"sharedConcepts":["term:redis"]',
+    );
   });
 
   it('should fingerprint pair score breakdowns', () => {
@@ -651,6 +844,7 @@ describe('Acceptance Thresholds', () => {
       missingMatchRunCount: 0,
       byteIdenticalRerun: true,
       rerunFingerprints: {},
+      determinismComparisons: [],
       totalEvaluations: 10,
       evaluatedPairCount: 1,
       highlyRelevantInTop3: 5,
@@ -683,6 +877,7 @@ describe('Acceptance Thresholds', () => {
       missingMatchRunCount: 0,
       byteIdenticalRerun: true,
       rerunFingerprints: {},
+      determinismComparisons: [],
       totalEvaluations: 10,
       evaluatedPairCount: 1,
       highlyRelevantInTop3: 5,
@@ -715,6 +910,7 @@ describe('Acceptance Thresholds', () => {
       missingMatchRunCount: 0,
       byteIdenticalRerun: true,
       rerunFingerprints: {},
+      determinismComparisons: [],
       totalEvaluations: 10,
       evaluatedPairCount: 1,
       highlyRelevantInTop3: 5,

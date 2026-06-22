@@ -81,7 +81,8 @@ const createInterviewSchema = z.object({
   candidateId: z.string().min(1),
   pipelineId: z.string().optional(),
   stageId: z.string().optional(),
-  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
+  scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
 });
@@ -751,14 +752,37 @@ schedulingAuth.post('/interviews', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { candidateId, pipelineId, stageId, schedulingProvider, schedulingUrl } = parsed.data;
+  const { candidateId, pipelineId, stageId, interviewType, scheduledAt, schedulingProvider, schedulingUrl } = parsed.data;
 
-  // Ownership check
-  const pipeline = await db
-    .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
-    .bind(pipelineId, userId)
-    .first<{ id: string; title: string }>();
-  if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  const candidate = await db
+    .prepare('SELECT id, pipeline_id FROM candidates WHERE id = ? AND owner_id = ?')
+    .bind(candidateId, userId)
+    .first<{ id: string; pipeline_id: string | null }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Person not found.');
+
+  if (stageId && !pipelineId) {
+    return apiError(c, 'VALIDATION_ERROR', 'stageId requires pipelineId.');
+  }
+
+  if (pipelineId) {
+    const pipeline = await db
+      .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
+      .bind(pipelineId, userId)
+      .first<{ id: string; title: string }>();
+    if (!pipeline) return apiError(c, 'NOT_FOUND', 'Role not found.');
+
+    if (candidate.pipeline_id && candidate.pipeline_id !== pipelineId) {
+      return apiError(c, 'VALIDATION_ERROR', 'Person belongs to a different role.');
+    }
+
+    if (stageId) {
+      const stage = await db
+        .prepare('SELECT id FROM stages WHERE id = ? AND pipeline_id = ?')
+        .bind(stageId, pipelineId)
+        .first<{ id: string }>();
+      if (!stage) return apiError(c, 'NOT_FOUND', 'Round not found.');
+    }
+  }
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
@@ -767,11 +791,13 @@ schedulingAuth.post('/interviews', async (c) => {
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
-        scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
+        interview_type, scheduled_at, scheduling_provider, scheduling_url,
+        sync_source, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, 'MANUAL', ?, ?)`
     )
     .bind(
-      id, candidateId, pipelineId, stageId, userId,
+      id, candidateId, pipelineId ?? null, stageId ?? null, userId,
+      interviewType ?? 'VIDEO', scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
       now, now,
     )
@@ -781,9 +807,11 @@ schedulingAuth.post('/interviews', async (c) => {
     interview: {
       id,
       candidateId,
-      pipelineId,
-      stageId,
+      pipelineId: pipelineId ?? null,
+      stageId: stageId ?? null,
       status: 'INVITED',
+      interviewType: interviewType ?? 'VIDEO',
+      scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
     },

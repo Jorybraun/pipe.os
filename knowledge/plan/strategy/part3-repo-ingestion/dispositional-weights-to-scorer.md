@@ -1,6 +1,6 @@
 # Dispositional Weights Flow to Implementation Scorer
 
-**Source:** knowledge/plan/pipe-strategy-v2-part3-repo-ingestion.md (lines 207–208)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part3-repo-ingestion.md (lines 207–208)
 **Phase:** 2
 **Status:** NEEDS-REFINEMENT
 **Estimate:** TBD

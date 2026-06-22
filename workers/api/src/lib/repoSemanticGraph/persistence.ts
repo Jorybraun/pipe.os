@@ -1,3 +1,7 @@
+import { hashObject, stableId, stableJson } from './hash';
+import { buildChallengePacket } from './challengePacket';
+import { LivingContextStore } from '../livingContext/persistence';
+import type { ContextRecordInput, JsonObject } from '../livingContext/types';
 import type {
   ChallengePacket,
   CodeEpisode,
@@ -5,6 +9,7 @@ import type {
   NormalizedPullRequestInput,
   RepoSignal,
   SemanticAssertion,
+  SourceSpan,
   StructuralFact,
 } from './model';
 
@@ -52,6 +57,257 @@ function requireReferences(
   }
 }
 
+function repoSpanLocator(
+  span: SourceSpan,
+  path: string | undefined,
+  input: NormalizedPullRequestInput,
+): JsonObject {
+  return {
+    repoSnapshotId: span.repoSnapshotId,
+    artifactId: span.artifactId,
+    artifactVersionId: span.artifactVersionId,
+    path: path ?? null,
+    byteStart: span.start.byteOffset,
+    byteEnd: span.end.byteOffset,
+    lineStart: span.start.line,
+    lineEnd: span.end.line,
+    columnStart: span.start.column,
+    columnEnd: span.end.column,
+    prSide: span.prSide ?? null,
+    baseSha: input.baseSha,
+    headSha: input.headSha,
+  };
+}
+
+function buildChallengePacketContextRecordInput(
+  input: NormalizedPullRequestInput,
+  packet: ChallengePacket,
+): ContextRecordInput {
+  const pathByArtifactId = new Map(
+    [
+      ...(input.sourceArtifacts ?? []).flatMap((artifact) =>
+        artifact.path ? [[artifact.id, artifact.path] as const] : []
+      ),
+      ...input.changedFiles.map((file) => [file.artifact.id, file.path] as const),
+    ],
+  );
+  const spanById = new Map(input.sourceSpans.map((span) => [span.id, span] as const));
+  const concepts = [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))].sort();
+
+  return {
+    ingestionKey: `repo-challenge-packet-context:${packet.id}`,
+    scopeType: 'repo_snapshot',
+    scopeId: packet.repoSnapshotId,
+    recordType: 'repo_challenge_packet',
+    predicate: 'defines reviewable pull request challenge',
+    narrative: `Review challenge packet for ${packet.repository.owner}/${packet.repository.name} PR #${packet.pullRequest.number}: ${packet.pullRequest.title}`,
+    qualifiers: {
+      packetId: packet.id,
+      policyVersion: packet.policyVersion,
+      packetContentHash: packet.contentHash,
+      qualityScore: packet.quality.score,
+      productionReady: packet.quality.eligible,
+      demandFamilies: packet.demandFamilies,
+    },
+    confidence: packet.quality.metrics.provenanceCoverage,
+    extractionVersion: packet.schemaVersion,
+    observedAt: input.repoSnapshot.observedAt,
+    sources: packet.sourceSpanIds.map((spanId) => {
+      const span = spanById.get(spanId);
+      return {
+        sourceRefType: 'repo_source_span',
+        sourceRefId: spanId,
+        evidenceRole: 'source',
+        locator: span
+          ? repoSpanLocator(span, pathByArtifactId.get(span.artifactId), input)
+          : { repoSnapshotId: packet.repoSnapshotId },
+        exactText: span?.exactText ?? null,
+        contentHash: span?.contentHash ?? null,
+        metadata: {
+          source: 'review_challenge_packet',
+          packetId: packet.id,
+        },
+      };
+    }),
+    entities: [
+      {
+        entityType: 'repo_snapshot',
+        entityId: packet.repoSnapshotId,
+        relationship: 'scope',
+      },
+      {
+        entityType: 'repository',
+        entityId: `${packet.repository.provider}:${packet.repository.owner}/${packet.repository.name}`,
+        relationship: 'repository',
+        value: {
+          provider: packet.repository.provider,
+          owner: packet.repository.owner,
+          name: packet.repository.name,
+          canonicalUrl: packet.repository.canonicalUrl,
+        },
+      },
+      {
+        entityType: 'pull_request',
+        entityId: `${packet.repository.provider}:${packet.repository.owner}/${packet.repository.name}#${packet.pullRequest.number}`,
+        relationship: 'pull_request',
+        value: {
+          number: packet.pullRequest.number,
+          url: packet.pullRequest.url,
+          title: packet.pullRequest.title,
+          baseSha: packet.pullRequest.baseSha,
+          headSha: packet.pullRequest.headSha,
+        },
+      },
+      {
+        entityType: 'review_challenge_packet',
+        entityId: packet.id,
+        relationship: 'packet',
+        metadata: {
+          contentHash: packet.contentHash,
+          demandFamilies: packet.demandFamilies,
+        },
+      },
+      ...packet.demands.map((demand) => ({
+        entityType: 'challenge_demand',
+        entityId: demand.id,
+        relationship: 'demand',
+        metadata: {
+          family: demand.family,
+          sourceSpanIds: demand.sourceSpanIds,
+          changedSymbolIds: demand.changedSymbolIds,
+          conceptKeys: demand.conceptKeys,
+          weight: demand.weight,
+          contentHash: demand.contentHash,
+        },
+      })),
+      ...packet.changedSymbolIds.map((symbolId) => ({
+        entityType: 'repo_symbol',
+        entityId: symbolId,
+        relationship: 'changed_symbol',
+      })),
+      ...concepts.map((conceptKey) => ({
+        entityType: 'open_concept',
+        relationship: 'concept',
+        value: { canonicalKey: conceptKey },
+      })),
+    ],
+  };
+}
+
+async function validateChallengePacketPersistence(
+  packet: ChallengePacket,
+  expectedPacket: ChallengePacket,
+  repoSnapshotId: string,
+  persistedSpanIds: ReadonlySet<string>,
+  persistedSymbolIds: ReadonlySet<string>,
+): Promise<void> {
+  const failures: string[] = [];
+  const packetSpanIds = new Set(packet.sourceSpanIds);
+  const demandFamilies = packet.demands.map((demand) => demand.family).sort();
+  const identity = {
+    repoSnapshotId: packet.repoSnapshotId,
+    prNumber: packet.pullRequest.number,
+    baseSha: packet.pullRequest.baseSha.toLowerCase(),
+    headSha: packet.pullRequest.headSha.toLowerCase(),
+    policyVersion: packet.policyVersion,
+  };
+  const content = {
+    ...identity,
+    repository: packet.repository,
+    pullRequest: {
+      number: packet.pullRequest.number,
+      url: packet.pullRequest.url,
+      title: packet.pullRequest.title,
+      body: packet.pullRequest.body,
+      author: packet.pullRequest.author,
+      baseSha: identity.baseSha,
+      headSha: identity.headSha,
+      mergedAt: packet.pullRequest.mergedAt,
+    },
+    languageSupport: packet.languageSupport,
+    changedFilePaths: packet.changedFilePaths,
+    changedSymbolIds: packet.changedSymbolIds,
+    sourceSpanIds: packet.sourceSpanIds,
+    testChanges: packet.testChanges,
+    issue: packet.issue,
+    demands: packet.demands,
+    demandFamilies: packet.demandFamilies,
+    quality: packet.quality,
+  };
+
+  if (packet.repoSnapshotId !== repoSnapshotId) {
+    failures.push(`packet ${packet.id} belongs to snapshot ${packet.repoSnapshotId}, expected ${repoSnapshotId}`);
+  }
+  if (packet.schemaVersion !== expectedPacket.schemaVersion) {
+    failures.push(`packet ${packet.id} schema version is stale; expected ${expectedPacket.schemaVersion}`);
+  }
+  if (packet.sourceSpanIds.length === 0) {
+    failures.push(`packet ${packet.id} has no source spans`);
+  }
+  const missingPacketSpans = packet.sourceSpanIds.filter((spanId) => !persistedSpanIds.has(spanId));
+  if (missingPacketSpans.length > 0) {
+    failures.push(`packet ${packet.id} references missing persisted source spans: ${missingPacketSpans.join(', ')}`);
+  }
+  const missingPacketSymbols = packet.changedSymbolIds.filter((symbolId) => !persistedSymbolIds.has(symbolId));
+  if (missingPacketSymbols.length > 0) {
+    failures.push(`packet ${packet.id} references missing persisted symbols: ${missingPacketSymbols.join(', ')}`);
+  }
+  if (stableJson(packet.demandFamilies) !== stableJson(demandFamilies)) {
+    failures.push(`packet ${packet.id} demand families are stale`);
+  }
+
+  for (const demand of packet.demands) {
+    if (demand.sourceSpanIds.length === 0) {
+      failures.push(`demand ${demand.id} has no source spans`);
+    }
+    const demandSpansMissingFromPacket = demand.sourceSpanIds.filter((spanId) => !packetSpanIds.has(spanId));
+    if (demandSpansMissingFromPacket.length > 0) {
+      failures.push(`demand ${demand.id} references spans absent from packet: ${demandSpansMissingFromPacket.join(', ')}`);
+    }
+    const missingDemandSpans = demand.sourceSpanIds.filter((spanId) => !persistedSpanIds.has(spanId));
+    if (missingDemandSpans.length > 0) {
+      failures.push(`demand ${demand.id} references missing persisted source spans: ${missingDemandSpans.join(', ')}`);
+    }
+    const missingDemandSymbols = demand.changedSymbolIds.filter((symbolId) => !persistedSymbolIds.has(symbolId));
+    if (missingDemandSymbols.length > 0) {
+      failures.push(`demand ${demand.id} references missing persisted symbols: ${missingDemandSymbols.join(', ')}`);
+    }
+  }
+
+  for (const test of packet.testChanges) {
+    const missingTestSpans = test.sourceSpanIds.filter((spanId) => !persistedSpanIds.has(spanId));
+    if (missingTestSpans.length > 0) {
+      failures.push(`test change ${test.path} references missing persisted source spans: ${missingTestSpans.join(', ')}`);
+    }
+  }
+
+  const missingIssueSpans = packet.issue?.sourceSpanIds.filter((spanId) => !persistedSpanIds.has(spanId)) ?? [];
+  if (missingIssueSpans.length > 0) {
+    failures.push(`issue metadata references missing persisted source spans: ${missingIssueSpans.join(', ')}`);
+  }
+
+  const expectedId = await stableId('challenge_packet', identity);
+  if (packet.id !== expectedId) {
+    failures.push(`packet ${packet.id} has stale identity; expected ${expectedId}`);
+  }
+  if (packet.id !== expectedPacket.id) {
+    failures.push(`packet ${packet.id} does not match the current normalized pull request identity; expected ${expectedPacket.id}`);
+  }
+  const expectedContentHash = await hashObject(content);
+  if (packet.contentHash !== expectedContentHash) {
+    failures.push(`packet ${packet.id} content hash is stale; expected ${expectedContentHash}`);
+  }
+  if (packet.contentHash !== expectedPacket.contentHash) {
+    failures.push(`packet ${packet.id} does not match the current normalized pull request content; expected ${expectedPacket.contentHash}`);
+  }
+
+  if (failures.length > 0) {
+    throw new RepoSemanticGraphPersistenceError(
+      `review challenge packet provenance is invalid: ${failures.sort().join('; ')}`,
+    );
+  }
+}
+
 async function persistSemanticGraph(
   db: D1Database,
   repoSnapshotId: string,
@@ -59,64 +315,7 @@ async function persistSemanticGraph(
   persistedSpanIds: ReadonlySet<string>,
   persistedSymbolIds: ReadonlySet<string>,
 ): Promise<void> {
-  const structuralFacts = graph.structuralFacts ?? [];
-  const codeEpisodes = graph.codeEpisodes ?? [];
-  const facets = graph.facets ?? [];
-  const assertions = graph.semanticAssertions ?? [];
-  const signals = graph.repoSignals ?? [];
-  const factIds = new Set(structuralFacts.map((fact) => fact.id));
-  const episodeIds = new Set(codeEpisodes.map((episode) => episode.id));
-  const facetIds = new Set(facets.map((facet) => facet.id));
-  const assertionIds = new Set(assertions.map((assertion) => assertion.id));
-
-  for (const fact of structuralFacts) {
-    requireSnapshot('structural fact', fact, repoSnapshotId);
-    requireReferences('structural fact', fact.id, 'source spans', fact.sourceSpanIds, persistedSpanIds);
-    requireReferences(
-      'structural fact',
-      fact.id,
-      'symbols',
-      [fact.subject.symbolId, fact.object.symbolId].filter((id): id is string => Boolean(id)),
-      persistedSymbolIds,
-    );
-  }
-  for (const episode of codeEpisodes) {
-    requireSnapshot('code episode', episode, repoSnapshotId);
-    requireReferences('code episode', episode.id, 'source spans', episode.sourceSpanIds, persistedSpanIds);
-    requireReferences('code episode', episode.id, 'symbols', episode.symbolIds, persistedSymbolIds);
-    requireReferences(
-      'code episode',
-      episode.id,
-      'structural facts',
-      episode.structuralFactIds,
-      factIds,
-    );
-  }
-  for (const facet of facets) {
-    requireSnapshot('facet', facet, repoSnapshotId);
-    requireReferences('facet', facet.id, 'source spans', facet.sourceSpanIds, persistedSpanIds);
-  }
-  for (const assertion of assertions) {
-    requireSnapshot('semantic assertion', assertion, repoSnapshotId);
-    requireReferences(
-      'semantic assertion',
-      assertion.id,
-      'source spans',
-      assertion.sourceSpanIds,
-      persistedSpanIds,
-    );
-    requireReferences('semantic assertion', assertion.id, 'facets', assertion.facetIds, facetIds);
-    const episodeId = assertion.episodeId ?? graph.assertionEpisodeIds?.[assertion.id];
-    if (episodeId) {
-      requireReferences('semantic assertion', assertion.id, 'episodes', [episodeId], episodeIds);
-    }
-  }
-  for (const signal of signals) {
-    requireSnapshot('repo signal', signal, repoSnapshotId);
-    requireReferences('repo signal', signal.id, 'source spans', signal.sourceSpanIds, persistedSpanIds);
-    requireReferences('repo signal', signal.id, 'assertions', signal.assertionIds, assertionIds);
-    requireReferences('repo signal', signal.id, 'facets', signal.facetIds, facetIds);
-  }
+  validateSemanticGraphReferences(repoSnapshotId, graph, persistedSpanIds, persistedSymbolIds);
 
   // Semantic rows are a rebuildable projection of immutable source records.
   // Replaying an extractor version must replace stale derived meaning rather
@@ -134,6 +333,13 @@ async function persistSemanticGraph(
     'DELETE FROM repo_structural_facts WHERE repo_snapshot_id = ?1',
   ).bind(repoSnapshotId).run();
 
+  const structuralFacts = graph.structuralFacts ?? [];
+  const codeEpisodes = graph.codeEpisodes ?? [];
+  const facets = graph.facets ?? [];
+  const assertions = graph.semanticAssertions ?? [];
+  const signals = graph.repoSignals ?? [];
+
+  const persistedFacetIds = new Map<string, string>();
   for (const fact of structuralFacts) {
     await db.prepare(
       `INSERT INTO repo_structural_facts (
@@ -190,7 +396,6 @@ async function persistSemanticGraph(
     ).run();
   }
 
-  const persistedFacetIds = new Map<string, string>();
   for (const facet of facets) {
     const aliasesJson = JSON.stringify({
       aliases: facet.aliases,
@@ -308,6 +513,72 @@ async function persistSemanticGraph(
   }
 }
 
+function validateSemanticGraphReferences(
+  repoSnapshotId: string,
+  graph: RepoSemanticGraphPersistenceInput,
+  persistedSpanIds: ReadonlySet<string>,
+  persistedSymbolIds: ReadonlySet<string>,
+): void {
+  const structuralFacts = graph.structuralFacts ?? [];
+  const codeEpisodes = graph.codeEpisodes ?? [];
+  const facets = graph.facets ?? [];
+  const assertions = graph.semanticAssertions ?? [];
+  const signals = graph.repoSignals ?? [];
+  const factIds = new Set(structuralFacts.map((fact) => fact.id));
+  const episodeIds = new Set(codeEpisodes.map((episode) => episode.id));
+  const facetIds = new Set(facets.map((facet) => facet.id));
+  const assertionIds = new Set(assertions.map((assertion) => assertion.id));
+
+  for (const fact of structuralFacts) {
+    requireSnapshot('structural fact', fact, repoSnapshotId);
+    requireReferences('structural fact', fact.id, 'source spans', fact.sourceSpanIds, persistedSpanIds);
+    requireReferences(
+      'structural fact',
+      fact.id,
+      'symbols',
+      [fact.subject.symbolId, fact.object.symbolId].filter((id): id is string => Boolean(id)),
+      persistedSymbolIds,
+    );
+  }
+  for (const episode of codeEpisodes) {
+    requireSnapshot('code episode', episode, repoSnapshotId);
+    requireReferences('code episode', episode.id, 'source spans', episode.sourceSpanIds, persistedSpanIds);
+    requireReferences('code episode', episode.id, 'symbols', episode.symbolIds, persistedSymbolIds);
+    requireReferences(
+      'code episode',
+      episode.id,
+      'structural facts',
+      episode.structuralFactIds,
+      factIds,
+    );
+  }
+  for (const facet of facets) {
+    requireSnapshot('facet', facet, repoSnapshotId);
+    requireReferences('facet', facet.id, 'source spans', facet.sourceSpanIds, persistedSpanIds);
+  }
+  for (const assertion of assertions) {
+    requireSnapshot('semantic assertion', assertion, repoSnapshotId);
+    requireReferences(
+      'semantic assertion',
+      assertion.id,
+      'source spans',
+      assertion.sourceSpanIds,
+      persistedSpanIds,
+    );
+    requireReferences('semantic assertion', assertion.id, 'facets', assertion.facetIds, facetIds);
+    const episodeId = assertion.episodeId ?? graph.assertionEpisodeIds?.[assertion.id];
+    if (episodeId) {
+      requireReferences('semantic assertion', assertion.id, 'episodes', [episodeId], episodeIds);
+    }
+  }
+  for (const signal of signals) {
+    requireSnapshot('repo signal', signal, repoSnapshotId);
+    requireReferences('repo signal', signal.id, 'source spans', signal.sourceSpanIds, persistedSpanIds);
+    requireReferences('repo signal', signal.id, 'assertions', signal.assertionIds, assertionIds);
+    requireReferences('repo signal', signal.id, 'facets', signal.facetIds, facetIds);
+  }
+}
+
 export async function persistChallengePacket(
   db: D1Database,
   repoId: number,
@@ -349,6 +620,42 @@ export async function persistReviewChallengeGraph(
   packet: ChallengePacket,
   graph: RepoSemanticGraphPersistenceInput = {},
 ): Promise<void> {
+  let expectedPacket: ChallengePacket;
+  try {
+    expectedPacket = await buildChallengePacket(input);
+  } catch (error) {
+    throw new RepoSemanticGraphPersistenceError(
+      `review challenge input provenance is invalid: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+  if (
+    packet.schemaVersion !== expectedPacket.schemaVersion
+    || packet.id !== expectedPacket.id
+    || packet.contentHash !== expectedPacket.contentHash
+  ) {
+    throw new RepoSemanticGraphPersistenceError(
+      `review challenge packet provenance is invalid: packet ${packet.id} does not match the current normalized pull request content; expected ${expectedPacket.contentHash}`,
+    );
+  }
+
+  const inputSpanIds = new Set(input.sourceSpans.map((span) => span.id));
+  const inputSymbolIds = new Set(input.changedFiles.flatMap((file) => file.symbols.map((symbol) => symbol.id)));
+  await validateChallengePacketPersistence(
+    packet,
+    expectedPacket,
+    input.repoSnapshot.id,
+    inputSpanIds,
+    inputSymbolIds,
+  );
+  validateSemanticGraphReferences(
+    input.repoSnapshot.id,
+    graph,
+    inputSpanIds,
+    inputSymbolIds,
+  );
+
   await db.prepare(
     `INSERT INTO repo_snapshots (
        id, repo_id, commit_sha, tree_hash, extractor_version, created_at
@@ -365,20 +672,51 @@ export async function persistReviewChallengeGraph(
   const persistedVersions = new Set<string>();
   const persistedSpanIds = new Set<string>();
   const artifactPaths = new Map<string, string>();
+  const artifacts = new Map<string, {
+    id: string;
+    repoSnapshotId: string;
+    kind: string;
+    path?: string;
+    externalRef?: string;
+    mediaType: string;
+  }>();
+  const artifactVersions = new Map<string, {
+    id: string;
+    artifactId: string;
+    contentHash: string;
+    content: string;
+    byteLength: number;
+  }>();
+  for (const artifact of input.sourceArtifacts ?? []) {
+    artifacts.set(artifact.id, artifact);
+    if (artifact.path) artifactPaths.set(artifact.id, artifact.path);
+  }
+  for (const version of input.sourceArtifactVersions ?? []) {
+    artifactVersions.set(version.id, version);
+  }
   for (const file of input.changedFiles) {
     artifactPaths.set(file.artifact.id, file.path);
+    artifacts.set(file.artifact.id, file.artifact);
+    artifactVersions.set(file.artifactVersion.id, file.artifactVersion);
+  }
+
+  for (const artifact of artifacts.values()) {
     await db.prepare(
       `INSERT INTO repo_source_artifacts (
          id, repo_snapshot_id, artifact_type, path, external_reference, created_at
        ) VALUES (?1, ?2, ?3, ?4, ?5, unixepoch())
        ON CONFLICT(id) DO NOTHING`,
     ).bind(
-      file.artifact.id,
+      artifact.id,
       input.repoSnapshot.id,
-      file.artifact.kind,
-      file.path,
-      file.artifact.externalRef ?? null,
+      artifact.kind,
+      artifact.path ?? null,
+      artifact.externalRef ?? null,
     ).run();
+  }
+
+  for (const version of artifactVersions.values()) {
+    const artifact = artifacts.get(version.artifactId);
     await db.prepare(
       `INSERT INTO repo_artifact_versions (
          id, artifact_id, content_hash, storage_key, inline_content,
@@ -386,14 +724,14 @@ export async function persistReviewChallengeGraph(
        ) VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, unixepoch())
        ON CONFLICT(id) DO NOTHING`,
     ).bind(
-      file.artifactVersion.id,
-      file.artifact.id,
-      file.artifactVersion.contentHash,
-      file.artifactVersion.content,
-      file.artifactVersion.byteLength,
-      file.artifact.mediaType,
+      version.id,
+      version.artifactId,
+      version.contentHash,
+      version.content,
+      version.byteLength,
+      artifact?.mediaType ?? 'text/plain',
     ).run();
-    persistedVersions.add(file.artifactVersion.id);
+    persistedVersions.add(version.id);
   }
 
   for (const span of input.sourceSpans) {
@@ -451,12 +789,22 @@ export async function persistReviewChallengeGraph(
     ).bind(symbol.id, symbol.containingSymbolId).run();
   }
 
+  await validateChallengePacketPersistence(
+    packet,
+    expectedPacket,
+    input.repoSnapshot.id,
+    persistedSpanIds,
+    symbolIds,
+  );
   await persistSemanticGraph(
     db,
     input.repoSnapshot.id,
     graph,
     persistedSpanIds,
     symbolIds,
+  );
+  await new LivingContextStore(db, () => input.repoSnapshot.observedAt).upsertContextRecord(
+    buildChallengePacketContextRecordInput(input, packet),
   );
   await persistChallengePacket(db, repoId, packet);
 }

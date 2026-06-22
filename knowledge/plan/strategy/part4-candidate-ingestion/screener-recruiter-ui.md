@@ -1,6 +1,6 @@
 # Screener — Recruiter UI for "Invite to Screening" Action
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 191, 351–353)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 191, 351–353)
 **Phase:** 3
 **Status:** PENDING
 **Estimate:** 1 week

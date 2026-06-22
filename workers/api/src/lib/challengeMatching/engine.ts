@@ -640,29 +640,89 @@ export function rankReviewChallenges(
   };
 }
 
-export function explainChallengeMatch(alignment: ChallengeAlignment): MatchExplanation {
+export function explainChallengeMatch(
+  alignment: ChallengeAlignment,
+  context: Pick<MatchExplanation, 'rejectedPackets' | 'missingEvidence'> = {
+    rejectedPackets: [],
+    missingEvidence: [],
+  },
+): MatchExplanation {
   const status = alignment.eligible ? 'MATCHED' : 'NO_ROLE_SAFE_CHALLENGE';
   const directCount = alignment.alignments.length - alignment.stretchCount;
   const summary = alignment.eligible
     ? `Matched ${alignment.alignments.length} source-backed demands (${directCount} direct, ${alignment.stretchCount} adjacent stretch).`
     : `Challenge rejected: ${alignment.rejectionReasons.join(', ') || 'no eligible source-backed alignment'}.`;
+  const alignmentMissingEvidence: MatchExplanation['missingEvidence'] = [
+    ...alignment.unmatchedDemandIds.map((demandId) => ({
+      scope: 'candidate' as const,
+      reason: 'NO_SOURCE_BACKED_CANDIDATE_ALIGNMENT',
+      challengeId: alignment.challenge.id,
+      demandId,
+      sourceRefs: alignment.challenge.demands.find((demand) => demand.id === demandId)?.sourceRefs ?? [],
+    })),
+    ...(
+      alignment.provenanceComplete
+        ? []
+        : [{
+            scope: 'challenge' as const,
+            reason: 'INCOMPLETE_PROVENANCE',
+            challengeId: alignment.challenge.id,
+          }]
+    ),
+  ];
+  const evidence = alignment.alignments.map((entry) => ({
+    atomId: entry.atom.id,
+    demandId: entry.demand.id,
+    purpose: entry.atom.purpose,
+    pairScore: entry.pairScore.total,
+    episodeMultiplier: entry.atom.episodeMultiplier,
+    stretch: entry.stretch,
+    candidateSourceRefs: entry.atom.sourceRefs,
+    challengeSourceRefs: entry.demand.sourceRefs,
+  }));
   return {
     status,
     challengeId: alignment.challenge.id,
     repoId: alignment.challenge.repoId,
     prNumber: alignment.challenge.prNumber,
+    selectedPr: alignment.eligible
+      ? {
+          challengeId: alignment.challenge.id,
+          repoId: alignment.challenge.repoId,
+          prNumber: alignment.challenge.prNumber,
+          sourceVersion: alignment.challenge.sourceVersion,
+        }
+      : undefined,
     score: alignment.finalScore,
     summary,
-    evidence: alignment.alignments.map((entry) => ({
-      atomId: entry.atom.id,
-      demandId: entry.demand.id,
-      purpose: entry.atom.purpose,
-      pairScore: entry.pairScore.total,
-      episodeMultiplier: entry.atom.episodeMultiplier,
-      stretch: entry.stretch,
-      candidateSourceRefs: entry.atom.sourceRefs,
-      challengeSourceRefs: entry.demand.sourceRefs,
+    evidence,
+    candidateSpans: evidence.map((entry) => ({
+      atomId: entry.atomId,
+      demandId: entry.demandId,
+      purpose: entry.purpose,
+      sourceRefs: entry.candidateSourceRefs,
     })),
+    repoSpans: evidence.map((entry) => ({
+      atomId: entry.atomId,
+      demandId: entry.demandId,
+      sourceRefs: entry.challengeSourceRefs,
+    })),
+    rejectedPackets: context.rejectedPackets,
+    missingEvidence: [...alignmentMissingEvidence, ...context.missingEvidence],
+    stretchAreas: alignment.alignments.flatMap((entry) =>
+      entry.stretch
+        ? [{
+            atomId: entry.atom.id,
+            demandId: entry.demand.id,
+            atomConcept: entry.stretch.atomConcept,
+            demandConcept: entry.stretch.demandConcept,
+            dimension: entry.stretch.dimension,
+            candidateSourceRefs: entry.atom.sourceRefs,
+            challengeSourceRefs: entry.demand.sourceRefs,
+          }]
+        : []
+    ),
+    unmatchedDemandIds: alignment.unmatchedDemandIds,
     rejectionReasons: alignment.rejectionReasons,
   };
 }

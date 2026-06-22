@@ -108,6 +108,6 @@ The screener `profile_builder` mode needs to run pre-match, but `culture_intervi
 
 - **Execution plan:** [`/Users/hans/.kimi/plans/sif-tempest-starman.md`](/Users/hans/.kimi/plans/sif-tempest-starman.md) — 5-phase detailed plan with subtasks, file ownership, and migration sequencing.
 - **Handoff document:** [`docs/handoffs/2026-05-01-candidate-ingestion-resume-decomposition-handoff.md`](/Users/hans/Code/PIPE/PIPE-OS/docs/handoffs/2026-05-01-candidate-ingestion-resume-decomposition-handoff.md) — single-file comprehensive agent briefing (contains full ADR, all phases, file map, gotchas, and testing strategy).
-- **Original strategy:** [`knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md) — the north star document that defined the living graph reframe.
+- **Original strategy:** [`knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md) — the north star document that defined the living graph reframe.
 - **Update Part 4 INDEX:** Mark original Phase 1 plans as superseded by this revised sequencing.
 - **Weight tuning:** After 50+ new decomposed candidates, run offline analysis to compare match_feedback thumbs for decomposed vs non-decomposed candidates.

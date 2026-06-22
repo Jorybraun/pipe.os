@@ -14,6 +14,10 @@ const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
 );
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
@@ -63,6 +67,7 @@ describe('meeting transcript living-context ingestion', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO contacts (
@@ -210,8 +215,16 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'interactions')).toBe(1);
     expect(count(sqlite, 'artifact_interactions')).toBe(1);
     expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(2);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate FROM context_records`,
+    ).get()).toEqual({
+      record_type: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+    });
 
     const corrected = await ingestMeetingTranscriptToLivingContext(db, {
       meetingId: 'meeting-1',
@@ -223,6 +236,7 @@ describe('meeting transcript living-context ingestion', () => {
     expect(corrected.versionNumber).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(3);
+    expect(count(sqlite, 'context_records')).toBe(2);
   });
 
   it('persists unseen source-backed concepts and rebuilds interaction and total scores', async () => {
@@ -275,8 +289,24 @@ describe('meeting transcript living-context ingestion', () => {
     expect(replay).toEqual(first);
     expect(count(sqlite, 'semantic_assertions')).toBe(1);
     expect(count(sqlite, 'assertion_source_spans')).toBe(2);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(4);
     expect(count(sqlite, 'source_span_attributions')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate
+         FROM context_records
+        ORDER BY record_type`,
+    ).all()).toEqual([
+      {
+        record_type: 'meeting_transcript',
+        predicate: 'preserves meeting transcript',
+      },
+      {
+        record_type: 'meeting_transcript_assertion',
+        predicate: 'implemented a mechanism for',
+      },
+    ]);
     expect(sqlite.prepare(
       `SELECT canonical_key, label FROM concepts`,
     ).get()).toEqual({
@@ -545,6 +575,7 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'source_spans')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'episodes')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     expect(count(sqlite, 'signal_snapshots')).toBe(0);
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);

@@ -1,6 +1,6 @@
 # Hierarchical Summarization for Multi-Turn Transcripts
 
-**Source:** knowledge/plan/pipe-strategy-v2-part1-north-star.md (lines 212–213)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1-north-star.md (lines 212–213)
 **Status:** DEFERRED
 
 > Hierarchical summarization for multi-turn transcripts remains relevant… Detail deferred until UAR migration.

@@ -1,6 +1,6 @@
 # Candidate Profile State Schema — Re-Engagement Model
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 303–315)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 303–315)
 **Phase:** 1
 **Status:** PENDING
 **Estimate:** 0.5 weeks

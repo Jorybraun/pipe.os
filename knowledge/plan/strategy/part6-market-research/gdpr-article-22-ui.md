@@ -1,6 +1,6 @@
 # GDPR Article 22 — Candidate-Facing "Human Makes Final Decision" UI
 
-**Source:** knowledge/plan/pipe-strategy-v2-part6-market-research.md (line 281)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part6-market-research.md (line 281)
 **Phase:** 4
 **Status:** PENDING
 **Estimate:** 1 week

@@ -130,4 +130,4 @@ The `candidate_profile_state` table was built exactly for this purpose — to tr
 
 - **Implementation plan:** `/Users/hans/.kimi/plans/white-tiger-she-hulk-animal-man.md` — 5-phase detailed plan with subtasks, file ownership, and migration sequencing.
 - **Handoff document:** `docs/handoffs/2026-05-01-unified-intake-funnel-handoff.md` — single-file comprehensive agent briefing.
-- **Strategy reference:** `knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md` — the north star document.
+- **Strategy reference:** `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md` — the north star document.

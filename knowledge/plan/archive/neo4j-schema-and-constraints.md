@@ -3,7 +3,7 @@ See: workers/api/src/lib/neo4j/, infra/neo4j/, docs/decisions/current/ADR-043*.m
 
 # Neo4j: Schema, Constraints, and Vector Indexes
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 322–360)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 322–360)
 **Phase:** 2
 **Status:** PENDING
 **Estimate:** 0.5 weeks

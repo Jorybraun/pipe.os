@@ -24,6 +24,14 @@ const migration = readFileSync(
   new URL('../../../../migrations/0083_repo_semantic_graph_and_match_runs.sql', import.meta.url),
   'utf8',
 );
+const livingContextMigration = readFileSync(
+  new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 const OBSERVED_AT = '2026-06-12T12:00:00.000Z';
 
 
@@ -193,7 +201,10 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
     sqlite = new Database(':memory:');
     sqlite.exec('PRAGMA foreign_keys = ON; CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);');
     sqlite.exec('INSERT INTO qualified_repos (id) VALUES (41);');
+    sqlite.exec('CREATE TABLE candidates (id TEXT PRIMARY KEY);');
+    sqlite.exec(livingContextMigration);
     sqlite.exec(migration);
+    sqlite.exec(contextRecordMigration);
   });
 
   afterEach(() => sqlite.close());
@@ -201,7 +212,8 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
   it('persists an open semantic graph with exact provenance and replays idempotently', async () => {
     const data = await fixture();
 
-    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+    const packet = await buildChallengePacket(data.input);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, packet, data.graph);
     await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
 
     for (const table of [
@@ -274,6 +286,45 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
       sourceSpanIds: data.ids.spans,
       key: 'quantum-ledger-reconciliation',
     });
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({
+      count: 1,
+    });
+    const contextRecord = sqlite.prepare(
+      `SELECT scope_type, scope_id, record_type, predicate, narrative,
+              confidence, extraction_version
+         FROM context_records`,
+    ).get() as {
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+      predicate: string;
+      narrative: string;
+      confidence: number;
+      extraction_version: string;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'repo_snapshot',
+      scope_id: data.input.repoSnapshot.id,
+      record_type: 'repo_challenge_packet',
+      predicate: 'defines reviewable pull request challenge',
+      extraction_version: '1.0.0',
+    });
+    expect(contextRecord.narrative).toContain('PR #7');
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM context_record_source_refs',
+    ).get()).toEqual({ count: data.packet.sourceSpanIds.length });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_source_refs
+        WHERE source_ref_type = 'repo_source_span'
+          AND source_ref_id IN (${data.packet.sourceSpanIds.map(() => '?').join(',')})`,
+    ).get(...data.packet.sourceSpanIds)).toEqual({ count: data.packet.sourceSpanIds.length });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_entities
+        WHERE entity_type = 'challenge_demand'`,
+    ).get()).toEqual({ count: data.packet.demands.length });
   });
 
   it('replaces stale derived semantics when the same snapshot is rebuilt', async () => {
@@ -327,12 +378,9 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
       hunks: [],
       symbols: [secondSymbol],
     });
-    data.input.sourceSpans = [
-      ...data.input.sourceSpans,
-      data.input.sourceSpans[1]!,
-    ];
 
-    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+    const packet = await buildChallengePacket(data.input);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, packet, data.graph);
 
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_symbols').get()).toEqual({
       count: 1,
@@ -444,6 +492,260 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
     expect(detailSpan.byte_start).toBe(sourceContent.indexOf(detailText));
     expect(detailSpan.byte_end).toBe(
       sourceContent.indexOf(detailText) + new TextEncoder().encode(detailText).byteLength,
+    );
+  });
+
+  it('rejects stale packet provenance before writing review_challenge_packets', async () => {
+    const data = await fixture();
+    const stalePacket = {
+      ...data.packet,
+      sourceSpanIds: [data.ids.spans[0]!],
+    };
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, stalePacket, data.graph),
+    ).rejects.toThrow(/review challenge packet provenance is invalid/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_artifacts').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_artifact_versions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_spans').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_symbols').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_signals').get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it('rejects packets that reference symbols not persisted from the current normalized PR input', async () => {
+    const data = await fixture();
+    const invalidInput: NormalizedPullRequestInput = {
+      ...data.input,
+      changedFiles: data.input.changedFiles.map((file) => ({
+        ...file,
+        hunks: file.hunks.map((hunk) => ({
+          ...hunk,
+          changedSymbolIds: [...hunk.changedSymbolIds, 'repo-symbol-not-in-current-input'],
+        })),
+      })),
+    };
+    const packetWithMissingSymbol = await buildChallengePacket(invalidInput);
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, invalidInput, packetWithMissingSymbol, data.graph),
+    ).rejects.toThrow(/references missing persisted symbols/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_artifacts').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_artifact_versions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_spans').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_symbols').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_signals').get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it('rejects packets whose demand-family projection no longer matches their demands', async () => {
+    const data = await fixture();
+    const stalePacket = {
+      ...data.packet,
+      demandFamilies: [],
+      contentHash: (await buildChallengePacket({
+        ...data.input,
+        title: 'Reconcile the quantum ledger demand family drift',
+      })).contentHash,
+    };
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, {
+        ...data.input,
+        title: 'Reconcile the quantum ledger demand family drift',
+      }, stalePacket, data.graph),
+    ).rejects.toThrow(/demand families are stale/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_signals').get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it('rejects a self-consistent packet rebuilt from stale normalized PR content before writing source rows', async () => {
+    const data = await fixture();
+    const stalePacket = await buildChallengePacket({
+      ...data.input,
+      title: 'Stale title from an older pull request fetch',
+    });
+
+    expect(stalePacket.contentHash).not.toBe(data.packet.contentHash);
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, stalePacket, data.graph),
+    ).rejects.toThrow(/current normalized pull request content/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_spans').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it('rejects normalized PR input with source text that no longer matches its immutable hash', async () => {
+    const data = await fixture();
+    const invalidInput: NormalizedPullRequestInput = {
+      ...data.input,
+      sourceSpans: data.input.sourceSpans.map((span, index) =>
+        index === 0
+          ? { ...span, exactText: 'fabricated source text' }
+          : span,
+      ),
+    };
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, invalidInput, data.packet, data.graph),
+    ).rejects.toThrow(/review challenge input provenance is invalid/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_artifacts').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_artifact_versions').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_source_spans').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_symbols').get()).toEqual({
+      count: 0,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 0,
+    });
+  });
+
+  it('does not replace existing semantic graph rows when packet provenance is stale', async () => {
+    const data = await fixture();
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    const stalePacket = {
+      ...data.packet,
+      sourceSpanIds: [data.ids.spans[0]!],
+    };
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, stalePacket, {
+        structuralFacts: [],
+        codeEpisodes: [],
+        facets: [],
+        semanticAssertions: [],
+        repoSignals: [],
+      }),
+    ).rejects.toThrow(/review challenge packet provenance is invalid/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_signals').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({
+      count: 1,
+    });
+  });
+
+  it('keeps packet persistence idempotent and backed by exact stored source spans', async () => {
+    const data = await fixture();
+
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_record_source_refs').get()).toEqual({
+      count: data.packet.sourceSpanIds.length,
+    });
+
+    const row = sqlite.prepare(
+      'SELECT source_hash, demand_families_json, packet_json FROM review_challenge_packets WHERE id = ?',
+    ).get(data.packet.id) as {
+      source_hash: string;
+      demand_families_json: string;
+      packet_json: string;
+    };
+    const packet = JSON.parse(row.packet_json);
+    const spanRows = sqlite.prepare(
+      'SELECT id, exact_text FROM repo_source_spans ORDER BY id',
+    ).all() as { id: string; exact_text: string }[];
+    const exactTextBySpan = new Map(spanRows.map((span) => [span.id, span.exact_text]));
+    const sourceRefs = sqlite.prepare(
+      `SELECT refs.source_ref_id, refs.exact_text, refs.content_hash, spans.exact_text AS span_exact_text,
+              spans.content_hash AS span_content_hash
+         FROM context_record_source_refs refs
+         JOIN repo_source_spans spans ON spans.id = refs.source_ref_id
+        WHERE refs.source_ref_type = 'repo_source_span'
+        ORDER BY refs.source_ref_id`,
+    ).all() as {
+      source_ref_id: string;
+      exact_text: string;
+      content_hash: string;
+      span_exact_text: string;
+      span_content_hash: string;
+    }[];
+
+    expect(row.source_hash).toBe(data.packet.contentHash);
+    expect(JSON.parse(row.demand_families_json)).toEqual(data.packet.demandFamilies);
+    expect(packet.contentHash).toBe(data.packet.contentHash);
+    expect(packet.sourceSpanIds.length).toBeGreaterThan(0);
+    expect(packet.sourceSpanIds.every((spanId: string) => exactTextBySpan.has(spanId))).toBe(true);
+    expect(sourceRefs).toHaveLength(data.packet.sourceSpanIds.length);
+    expect(sourceRefs.every((ref) =>
+      ref.exact_text === ref.span_exact_text
+      && ref.content_hash === ref.span_content_hash,
+    )).toBe(true);
+    expect(packet.demands.every((demand: { sourceSpanIds: string[] }) =>
+      demand.sourceSpanIds.length > 0
+      && demand.sourceSpanIds.every((spanId) => exactTextBySpan.has(spanId)),
+    )).toBe(true);
+    expect([...exactTextBySpan.values()]).toEqual(
+      expect.arrayContaining([
+        'export async function reconcileQuantumLedger() { return "stable"; }',
+        'return "stable";',
+      ]),
     );
   });
 

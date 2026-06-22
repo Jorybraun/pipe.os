@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import type { ContextualDecomposition } from '../../cultureContextualDecomposition';
 import { ingestCultureTurnToLivingContext } from '../cultureTurn';
+import { LivingContextStore } from '../persistence';
 import { loadCandidateLivingContext } from '../readModel';
 
 
@@ -14,6 +15,10 @@ const livingContextMigration = readFileSync(
 );
 const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
 
@@ -38,6 +43,7 @@ describe('living-context candidate read model', () => {
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.prepare(
       `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -91,6 +97,95 @@ describe('living-context candidate read model', () => {
       observedAt: '2026-06-13T20:00:00.000Z',
       decomposition,
     });
+    const recordRefs = sqlite.prepare(
+      `SELECT app.id AS application_id,
+              app.workspace_person_id,
+              i.id AS interaction_id,
+              e.id AS episode_id,
+              sa.id AS assertion_id,
+              ass.source_span_id,
+              ac.concept_id
+         FROM applications app
+         JOIN interactions i ON i.workspace_person_id = app.workspace_person_id
+         JOIN semantic_assertions sa ON sa.workspace_person_id = app.workspace_person_id
+         JOIN episodes e ON e.id = sa.episode_id
+         JOIN assertion_source_spans ass ON ass.assertion_id = sa.id
+         JOIN assertion_concepts ac ON ac.assertion_id = sa.id
+        WHERE app.legacy_candidate_id = ?
+        LIMIT 1`,
+    ).get('candidate-1') as {
+      application_id: string;
+      workspace_person_id: string;
+      interaction_id: string;
+      episode_id: string;
+      assertion_id: string;
+      source_span_id: string;
+      concept_id: string;
+    };
+    const store = new LivingContextStore(db, () => '2026-06-13T20:00:01.000Z');
+    const contextRecord = await store.upsertContextRecord({
+      ingestionKey: 'context-record:culture-session-1:statement-1',
+      workspacePersonId: recordRefs.workspace_person_id,
+      interactionId: recordRefs.interaction_id,
+      applicationId: recordRefs.application_id,
+      episodeId: recordRefs.episode_id,
+      assertionId: recordRefs.assertion_id,
+      recordType: 'source_backed_meaning',
+      predicate: 'stream replay implementation',
+      narrative: 'implemented FluxCapacitorX for order replay',
+      qualifiers: { statementId: 'statement-1' },
+      confidence: 0.92,
+      extractionVersion: 'read-model-test-v1',
+      observedAt: '2026-06-13T20:00:00.000Z',
+      sources: [{ sourceSpanId: recordRefs.source_span_id, evidenceRole: 'source' }],
+      entities: [
+        {
+          entityType: 'workspace_person',
+          entityId: recordRefs.workspace_person_id,
+          relationship: 'subject',
+        },
+        {
+          entityType: 'business_object',
+          relationship: 'object',
+          value: { literal: 'order replay' },
+        },
+      ],
+      concepts: [{
+        conceptId: recordRefs.concept_id,
+        relationship: 'mechanism',
+        weight: 0.9,
+      }],
+    });
+    const artifactVersionRef = sqlite.prepare(
+      `SELECT av.id, av.content_hash
+         FROM artifact_versions av
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE a.workspace_person_id = ?
+        ORDER BY av.version_number DESC
+        LIMIT 1`,
+    ).get(recordRefs.workspace_person_id) as {
+      id: string;
+      content_hash: string;
+    };
+    const genericSourceRecord = await store.upsertContextRecord({
+      ingestionKey: 'context-record:culture-session-1:artifact-version',
+      workspacePersonId: recordRefs.workspace_person_id,
+      interactionId: recordRefs.interaction_id,
+      applicationId: recordRefs.application_id,
+      recordType: 'artifact_version_evidence',
+      predicate: 'preserves source artifact version',
+      narrative: 'Culture turn artifact version is available as generic source evidence.',
+      confidence: 1,
+      extractionVersion: 'read-model-test-v1',
+      observedAt: '2026-06-13T20:00:00.000Z',
+      sources: [{
+        sourceRefType: 'artifact_version',
+        sourceRefId: artifactVersionRef.id,
+        evidenceRole: 'source_artifact',
+        locator: { logicalKey: 'culture-session-1/turn-0' },
+        contentHash: artifactVersionRef.content_hash,
+      }],
+    });
 
     const graph = await loadCandidateLivingContext(db, 'candidate-1');
 
@@ -103,6 +198,7 @@ describe('living-context candidate read model', () => {
     expect(graph?.summary).toEqual({
       interactionCount: 1,
       artifactCount: 1,
+      contextRecordCount: 4,
       assertionCount: 1,
       signalCount: 1,
       sourceSpanCount: 3,
@@ -112,6 +208,10 @@ describe('living-context candidate read model', () => {
       externalReference: 'culture-session-1',
     });
     expect(graph?.interactions[0]?.artifactIds).toHaveLength(1);
+    expect(graph?.interactions[0]?.contextRecordIds).toEqual(
+      expect.arrayContaining([contextRecord.id, genericSourceRecord.id]),
+    );
+    expect(graph?.interactions[0]?.contextRecordIds).toHaveLength(4);
     expect(graph?.interactions[0]?.assertionIds).toHaveLength(1);
     expect(graph?.interactions[0]?.signalKeys).toEqual(['term:flux-capacitor-x']);
 
@@ -137,6 +237,61 @@ describe('living-context candidate read model', () => {
       canonicalKey: 'term:flux-capacitor-x',
       label: 'FluxCapacitorX',
       relationship: 'used as the replay mechanism',
+    });
+
+    expect(graph?.contextRecords.map((record) => record.recordType).sort()).toEqual([
+      'artifact_version_evidence',
+      'culture_interview_turn',
+      'culture_statement',
+      'source_backed_meaning',
+    ]);
+    const sourceBackedMeaning = graph?.contextRecords.find((record) => record.id === contextRecord.id);
+    expect(sourceBackedMeaning).toMatchObject({
+      id: contextRecord.id,
+      interactionId: recordRefs.interaction_id,
+      applicationId: recordRefs.application_id,
+      episodeId: recordRefs.episode_id,
+      assertionId: recordRefs.assertion_id,
+      recordType: 'source_backed_meaning',
+      predicate: 'stream replay implementation',
+      narrative: 'implemented FluxCapacitorX for order replay',
+      qualifiers: { statementId: 'statement-1' },
+      confidence: 0.92,
+      extractionVersion: 'read-model-test-v1',
+    });
+    expect(sourceBackedMeaning?.sources[0]?.exactText).toBe(
+      'I implemented FluxCapacitorX for order replay.',
+    );
+    expect(sourceBackedMeaning?.entities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entityType: 'workspace_person',
+        entityId: recordRefs.workspace_person_id,
+        relationship: 'subject',
+      }),
+      expect.objectContaining({
+        entityType: 'business_object',
+        entityId: null,
+        relationship: 'object',
+        value: { literal: 'order replay' },
+      }),
+    ]));
+    expect(sourceBackedMeaning?.concepts[0]).toMatchObject({
+      canonicalKey: 'term:flux-capacitor-x',
+      label: 'FluxCapacitorX',
+      relationship: 'mechanism',
+      weight: 0.9,
+    });
+    const genericSourceMeaning = graph?.contextRecords.find(
+      (record) => record.id === genericSourceRecord.id,
+    );
+    expect(genericSourceMeaning?.sources[0]).toMatchObject({
+      sourceRefType: 'artifact_version',
+      sourceRefId: artifactVersionRef.id,
+      sourceSpanId: null,
+      evidenceRole: 'source_artifact',
+      locator: { logicalKey: 'culture-session-1/turn-0' },
+      contentHash: artifactVersionRef.content_hash,
+      metadata: {},
     });
 
     expect(graph?.signals[0]).toMatchObject({

@@ -6,7 +6,7 @@ import {
   openSemanticTerm,
   type OpenSemanticTerm,
 } from './openTerms';
-import type { EvidenceLevel } from './types';
+import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 interface LegacyCandidateIdentity {
   id: string;
@@ -31,6 +31,75 @@ interface LegacyContactIdentity {
 function identityKey(email: string | null, fallback: string): string {
   const normalized = email?.trim().toLowerCase();
   return normalized ? `email:${normalized}` : fallback;
+}
+
+function jsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const parsed = jsonValue(entry);
+      return parsed === undefined ? [] : [parsed];
+    });
+  }
+  if (typeof value === 'object') {
+    const record: JsonObject = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const parsed = jsonValue(entry);
+      if (parsed !== undefined) record[key] = parsed;
+    }
+    return record;
+  }
+  return undefined;
+}
+
+function parseContext(raw: string | null): JsonObject {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const context = jsonValue(parsed);
+    return context && typeof context === 'object' && !Array.isArray(context)
+      ? context
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringValues(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+function mergeContextSource(
+  context: JsonObject,
+  source: 'legacy_candidate' | 'legacy_contact',
+): JsonObject {
+  const sources = new Set([
+    ...stringValues(context.sources),
+    ...stringValues(context.source),
+    source,
+  ]);
+  return {
+    ...context,
+    source,
+    sources: [...sources].sort(),
+  };
+}
+
+async function existingWorkspacePersonContext(
+  db: D1Database,
+  ingestionKey: string,
+): Promise<JsonObject> {
+  const existing = await db.prepare(
+    `SELECT context_json FROM workspace_people
+      WHERE ingestion_key = ?1
+      LIMIT 1`,
+  ).bind(ingestionKey).first<{ context_json: string | null }>();
+  return parseContext(existing?.context_json ?? null);
 }
 
 async function existingPersonIngestionKey(
@@ -139,11 +208,15 @@ export async function ensureCandidateLivingContext(
     primaryEmail: candidate.email,
     externalIds: { legacyCandidateId: candidate.id },
   });
+  const workspacePersonIngestionKey = `workspace:${candidate.owner_id}:person:${person.id}`;
   const workspacePerson = await store.upsertWorkspacePerson({
-    ingestionKey: `workspace:${candidate.owner_id}:person:${person.id}`,
+    ingestionKey: workspacePersonIngestionKey,
     workspaceId: candidate.owner_id,
     personId: person.id,
-    context: { source: 'legacy_candidate' },
+    context: mergeContextSource(
+      await existingWorkspacePersonContext(db, workspacePersonIngestionKey),
+      'legacy_candidate',
+    ),
   });
   const application = await store.upsertApplication({
     ingestionKey: `candidate:${candidate.id}`,
@@ -181,12 +254,16 @@ export async function ensureContactLivingContext(
     primaryPhone: contact.phone,
     externalIds: { legacyContactId: contact.id },
   });
+  const workspacePersonIngestionKey = `workspace:${contact.owner_id}:person:${person.id}`;
   const workspacePerson = await store.upsertWorkspacePerson({
-    ingestionKey: `workspace:${contact.owner_id}:person:${person.id}`,
+    ingestionKey: workspacePersonIngestionKey,
     workspaceId: contact.owner_id,
     personId: person.id,
     context: {
-      source: 'legacy_contact',
+      ...mergeContextSource(
+        await existingWorkspacePersonContext(db, workspacePersonIngestionKey),
+        'legacy_contact',
+      ),
       contactId: contact.id,
       company: contact.company,
       role: contact.role,
@@ -288,7 +365,9 @@ export async function mirrorCandidateNodeToLivingContext(
       WHERE assertion_id = ?1
         AND relationship IN ('about', 'mentions')`,
   ).bind(assertion.id).run();
-  for (const term of candidateNodeTerms(node)) {
+  const contextRecordConcepts: Array<{ conceptId: string; relationship: string; weight: number }> = [];
+  const terms = candidateNodeTerms(node);
+  for (const term of terms) {
     const concept = await store.upsertConcept({
       ingestionKey: `open-term:${term.canonicalKey}`,
       canonicalKey: term.canonicalKey,
@@ -305,6 +384,11 @@ export async function mirrorCandidateNodeToLivingContext(
       term.signalEligible ? 'about' : 'mentions',
       1,
     );
+    contextRecordConcepts.push({
+      conceptId: concept.id,
+      relationship: term.signalEligible ? 'about' : 'mentions',
+      weight: 1,
+    });
     if (term.signalEligible && term.evidenceLevel && node.confidence !== null) {
       await store.upsertSignalEvidence({
         ingestionKey: `candidate-node:${node.id}:evidence:${term.canonicalKey}`,
@@ -324,11 +408,53 @@ export async function mirrorCandidateNodeToLivingContext(
       });
     }
   }
+  const contextRecord = await store.upsertContextRecord({
+    ingestionKey: `candidate-node:${node.id}:context-record`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    applicationId: identity.applicationId,
+    episodeId: episode.id,
+    assertionId: assertion.id,
+    recordType: 'legacy_candidate_node',
+    predicate: `node_type:${normalizeOpenTermSurface(String(node.node_type)).replace(/\s+/g, '-')}`,
+    narrative: node.narrative_text,
+    qualifiers: {
+      legacyNodeId: node.id,
+      legacyNodeType: node.node_type,
+      extractedProperties: node.extracted_properties_json,
+      compatibilityProjection: true,
+    },
+    confidence: node.confidence,
+    extractionVersion: node.decomposition_version,
+    observedAt: new Date(node.captured_at * 1000).toISOString(),
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'workspace_person',
+        entityId: identity.workspacePersonId,
+        relationship: 'subject',
+      },
+      {
+        entityType: 'legacy_candidate_node',
+        entityId: node.id,
+        relationship: 'source_record',
+        metadata: {
+          sourceType: node.source_type,
+          sourceReference: node.source_reference,
+        },
+      },
+    ],
+    concepts: contextRecordConcepts,
+  });
   await store.enqueueProjection({
     ingestionKey: `candidate-node:${node.id}:neo4j`,
     projectionType: 'neo4j',
     aggregateType: 'workspace_person',
     aggregateId: identity.workspacePersonId,
-    payload: { assertionId: assertion.id, legacyCandidateNodeId: node.id },
+    payload: {
+      contextRecordId: contextRecord.id,
+      assertionId: assertion.id,
+      legacyCandidateNodeId: node.id,
+    },
   });
 }

@@ -38,6 +38,17 @@ export const createRoleContextSchema = z.object({
 
 export type CreateRoleContextInput = z.infer<typeof createRoleContextSchema>;
 
+export const createSimpleJobDescriptionRoleContextSchema = z.object({
+  jobDescriptionMd: z.string().min(20, 'jobDescriptionMd must be at least 20 characters').max(20000),
+  title: z.string().min(1).max(200).optional(),
+  pipelineId: z.string().min(1).optional(),
+  selectedTerms: z.array(z.string().min(1).max(100)).max(50).optional(),
+});
+
+export type CreateSimpleJobDescriptionRoleContextInput = z.infer<
+  typeof createSimpleJobDescriptionRoleContextSchema
+>;
+
 /**
  * Participant roles for the calibration question (ADR-028).
  */

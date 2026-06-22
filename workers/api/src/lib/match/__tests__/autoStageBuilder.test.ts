@@ -426,6 +426,47 @@ describe('autoStageBuilder', () => {
     ).rejects.toThrow(/no must-have skills/);
   });
 
+  it('builds only code review when requested', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.type).toBe('CODE_REVIEW');
+    expect(result.perStationRepo.CODE_IMPLEMENTATION).toBeUndefined();
+    expect(stub.matchReposCalls).toBe(1);
+  });
+
+  it('builds only code implementation when requested', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_IMPLEMENTATION'],
+    });
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
+    expect(result.perStationRepo.CODE_REVIEW).toBeUndefined();
+    expect(stub.matchReposCalls).toBe(1);
+  });
+
+  it('defaults to both stations when requested station list is empty', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: [],
+    });
+    expect(result.stations).toHaveLength(2);
+    expect(result.stations[0]!.type).toBe('CODE_REVIEW');
+    expect(result.stations[1]!.type).toBe('CODE_IMPLEMENTATION');
+  });
+
   it('skips issues with has_merged_pr=1 and prefers highest implementability_score', async () => {
     const stub = buildStubDb(fixtureState());
     const result = await autoStageBuilder({

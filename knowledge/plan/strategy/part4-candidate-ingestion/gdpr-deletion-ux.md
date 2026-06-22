@@ -1,6 +1,6 @@
 # GDPR Right-to-Erasure UX & Propagation Job
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (line 395)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (line 395)
 **Phase:** 4
 **Status:** PENDING
 **Estimate:** 1 week

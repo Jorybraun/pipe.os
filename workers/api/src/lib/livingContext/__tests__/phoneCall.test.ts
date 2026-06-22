@@ -13,6 +13,10 @@ const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
 );
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
@@ -44,6 +48,7 @@ describe('phone call living-context ingestion', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
@@ -89,6 +94,9 @@ describe('phone call living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(1);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_refs')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     expect(count(sqlite, 'projection_outbox')).toBe(1);
@@ -123,6 +131,21 @@ describe('phone call living-context ingestion', () => {
         WHERE a.artifact_type = 'phone_call_recording'`,
     ).get() as { storage_key: string };
     expect(audio.storage_key).toBe(input.recording.storageKey);
+    const contextRecords = sqlite.prepare(
+      `SELECT record_type, predicate
+         FROM context_records
+        ORDER BY record_type`,
+    ).all();
+    expect(contextRecords).toEqual([
+      {
+        record_type: 'phone_call_recording',
+        predicate: 'preserves phone call recording',
+      },
+      {
+        record_type: 'phone_call_transcript',
+        predicate: 'preserves phone call transcript',
+      },
+    ]);
   });
 
   it('stores recruiter note edits as attributed immutable evidence without signals', async () => {
@@ -147,6 +170,9 @@ describe('phone call living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(2);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_refs')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(2);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     const metadata = sqlite.prepare(
@@ -156,5 +182,11 @@ describe('phone call living-context ingestion', () => {
       authorType: 'recruiter',
       authorId: 'recruiter-1',
     });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'recruiter_note'
+          AND predicate = 'preserves recruiter note'`,
+    ).get()).toEqual({ count: 2 });
   });
 });

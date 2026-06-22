@@ -1,29 +1,27 @@
 # Part 5: Matching Architecture and Infrastructure Migration — Plan Index
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md
 **Updated:** 2026-05-16
+
+> 2026-06-19 update: the old `skill-adjacency-table.md` work item was archived
+> because hand-curated semantic adjacency conflicts with ADR-043 and the living
+> context graph plan. Matching should use source-backed context assertions and
+> persisted concept-registry relationships instead.
+>
+> 2026-06-19 update: the Neo4j-first migration plan set was also archived under
+> `../../archive/superseded-neo4j-first-2026-06-19/`. Neo4j is now a
+> rebuildable projection, not the semantic source of truth.
 
 ---
 
-## Neo4j migration (current primary workstream)
+## Archived Neo4j-First Migration
 
-See [`neo4j-MASTER-PLAN.md`](neo4j-MASTER-PLAN.md) for the cohesive summary.
+The old Neo4j-first plan set is historical only. Current matching work should
+start from `knowledge/plan/living-context-repo-matching-plan.md`.
 
-| File | Phase | Status |
-|---|---|---|
-| [`neo4j-03-phase-1-dead-code-removal.md`](neo4j-03-phase-1-dead-code-removal.md) | Phase 1 | PENDING |
-| [`neo4j-02-schema-design.md`](neo4j-02-schema-design.md) | Phase 2 | PENDING |
-| [`neo4j-04-phase-2-write-path-migration.md`](neo4j-04-phase-2-write-path-migration.md) | Phase 2 | PENDING |
-| [`neo4j-05-phase-3-matching-cypher-queries.md`](neo4j-05-phase-3-matching-cypher-queries.md) | Phase 3 | PENDING |
-| [`neo4j-06-phase-4-matching-ux-overhaul.md`](neo4j-06-phase-4-matching-ux-overhaul.md) | Phase 4 | PENDING |
-| [`neo4j-07-phase-5-repo-backfill.md`](neo4j-07-phase-5-repo-backfill.md) | Phase 5 | PENDING |
-| [`neo4j-08-implementation-sequencing.md`](neo4j-08-implementation-sequencing.md) | Sequencing | PENDING |
-| [`neo4j-00-executive-summary.md`](neo4j-00-executive-summary.md) | Reference | PENDING |
-| [`neo4j-01-neo4j-vector-search-deep-dive.md`](neo4j-01-neo4j-vector-search-deep-dive.md) | Reference | PENDING |
-| [`neo4j-09-concrete-graph-example.md`](neo4j-09-concrete-graph-example.md) | Reference | PENDING |
-| [`neo4j-11-how-similarity-works.md`](neo4j-11-how-similarity-works.md) | Reference | PENDING |
-
-**Open decision:** Cultural matching model (Option A/B/C) — gates Phase 3 Cypher finalization. See [`neo4j-MASTER-PLAN.md` §5](neo4j-MASTER-PLAN.md).
+| Archive | Status |
+|---|---|
+| `../../archive/superseded-neo4j-first-2026-06-19/` | **ARCHIVED** — conflicts with D1-authoritative, source-backed, rebuildable-projection architecture |
 
 ---
 
@@ -31,7 +29,7 @@ See [`neo4j-MASTER-PLAN.md`](neo4j-MASTER-PLAN.md) for the cohesive summary.
 
 | File | Status |
 |---|---|
-| [`skill-adjacency-table.md`](skill-adjacency-table.md) | PENDING |
+| `skill-adjacency-table.md` | **ARCHIVED** — see `../../archive/superseded-semantic-taxonomy-2026-06-19/part5-skill-adjacency-table.md` |
 | [`match-reports-schema.md`](match-reports-schema.md) | PENDING |
 
 ---
@@ -53,17 +51,7 @@ See [`neo4j-MASTER-PLAN.md`](neo4j-MASTER-PLAN.md) for the cohesive summary.
 ## Dependency graph
 
 ```
-Phase 2 (Neo4j-first):
-  phase1-dead-code-removal → phase2-schema-design → phase2-write-path
-    → phase3-matching-cypher → phase4-ux-overhaul
-    → phase5-repo-backfill
-  
-  phase3-matching-cypher → phase6-cultural-matching (gated on model decision)
-  
-  culture-agent-redesign (Part 4) → phase6-cultural-matching
-
 Parallel (any time):
-  skill-adjacency-table
   match-reports-schema
   reliability-retry → reliability-circuit-breakers → reliability-dead-letter-queue
   reliability-idempotency → reliability-heartbeats → reliability-dead-letter-queue

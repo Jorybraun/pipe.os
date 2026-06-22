@@ -3,6 +3,8 @@
 
 PRAGMA foreign_keys = ON;
 
+-- Add new columns to concepts table for concept registry functionality
+-- These columns enable versioned resolution, confidence tracking, and concept evolution
 ALTER TABLE concepts ADD COLUMN resolver_version TEXT;
 ALTER TABLE concepts ADD COLUMN model_version TEXT;
 ALTER TABLE concepts ADD COLUMN confidence REAL
@@ -14,10 +16,7 @@ ALTER TABLE concepts ADD COLUMN observation_count INTEGER NOT NULL DEFAULT 0
 ALTER TABLE concepts ADD COLUMN superseded_at INTEGER;
 ALTER TABLE concepts ADD COLUMN superseded_by_id TEXT REFERENCES concepts(id);
 
-CREATE INDEX IF NOT EXISTS idx_concepts_current
-  ON concepts(canonical_key)
-  WHERE superseded_at IS NULL;
-
+-- Create remaining tables (these are IF NOT EXISTS so safe to recreate)
 CREATE TABLE IF NOT EXISTS concept_surfaces (
   id TEXT PRIMARY KEY,
   ingestion_key TEXT NOT NULL UNIQUE,
@@ -85,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_concept_adjacency_from
 CREATE INDEX IF NOT EXISTS idx_concept_adjacency_to
   ON concept_adjacency(to_concept_id, dimension);
 
+-- Create trigger after all tables and indexes are in place
 CREATE TRIGGER IF NOT EXISTS concept_surfaces_increment_observation
 AFTER INSERT ON concept_surfaces
 BEGIN

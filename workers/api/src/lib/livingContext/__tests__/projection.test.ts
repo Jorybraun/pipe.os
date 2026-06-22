@@ -36,6 +36,10 @@ const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
 );
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
@@ -87,6 +91,7 @@ describe('living-context Neo4j projection outbox', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO contacts (

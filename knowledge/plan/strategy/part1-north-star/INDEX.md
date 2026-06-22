@@ -1,6 +1,6 @@
 # Part 1 — North Star: Work Item Index
 
-**Source strategy:** `knowledge/plan/pipe-strategy-v2-part1-north-star.md`
+**Source strategy:** `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1-north-star.md`
 **Reference plan (dedup source):** `docs/plans/phase0-subagent-execution-plan.md`
 **Generated:** 2026-04-25
 

@@ -1,6 +1,6 @@
 # GDPR Subject Rights Tooling
 
-**Source:** knowledge/plan/pipe-strategy-v2-part6-market-research.md (lines 283–291)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part6-market-research.md (lines 283–291)
 **Phase:** 2
 **Status:** NEEDS-REFINEMENT
 **Estimate:** 2 weeks

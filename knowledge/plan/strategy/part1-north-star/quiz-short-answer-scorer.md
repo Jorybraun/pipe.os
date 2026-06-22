@@ -1,6 +1,6 @@
 # QUIZ_SHORT_ANSWER Scorer
 
-**Source:** knowledge/plan/pipe-strategy-v2-part1-north-star.md (lines 110–111)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1-north-star.md (lines 110–111)
 **Status:** DEFERRED
 
 > LLM scoring for QUIZ_SHORT_ANSWER submissions (score is always null).

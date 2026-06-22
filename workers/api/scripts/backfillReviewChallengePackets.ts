@@ -37,12 +37,15 @@ import {
   buildSourceArtifactVersion,
   buildSourceSpan,
   persistReviewChallengeGraph,
+  getLanguageSupport,
   sha256,
   type NormalizedPullRequestFile,
   type NormalizedPullRequestInput,
   type PullRequestFileStatus,
   type RepositoryRef,
+  type SourceArtifact,
   type SourceArtifactKind,
+  type SourceArtifactVersion,
   type SourceSpan,
   type StructuralFact,
 } from '../src/lib/repoSemanticGraph';
@@ -122,17 +125,25 @@ interface PullRequestRefs {
 
 interface NormalizedBuildResult {
   challengeInput: NormalizedPullRequestInput;
-  persistenceInput: NormalizedPullRequestInput;
   challengeStructuralFacts: StructuralFact[];
-  persistenceStructuralFacts: StructuralFact[];
+  structuralFacts: StructuralFact[];
+}
+
+interface ExtractionDiagnostic {
+  kind: 'full_source_fetch' | 'semantic_parser';
+  path: string;
+  language: string;
+  reason: string;
 }
 
 interface NormalizedChangedFileResult {
   challengeFile: NormalizedPullRequestFile;
-  persistenceFiles: NormalizedPullRequestFile[];
+  sourceArtifacts: SourceArtifact[];
+  sourceArtifactVersions: SourceArtifactVersion[];
   sourceSpans: SourceSpan[];
   structuralFacts: StructuralFact[];
   challengeStructuralFacts: StructuralFact[];
+  extractionDiagnostics: ExtractionDiagnostic[];
 }
 
 interface Stats {
@@ -508,9 +519,11 @@ async function normalizeChangedFile(input: {
     symbols: [],
   };
   const sourceSpans = normalizedHunks.map((hunk) => hunk.sourceSpan);
-  const persistenceFiles: NormalizedPullRequestFile[] = [challengeFile];
+  const sourceArtifacts: SourceArtifact[] = [artifact];
+  const sourceArtifactVersions: SourceArtifactVersion[] = [artifactVersion];
   let structuralFacts: StructuralFact[] = [];
   let challengeStructuralFacts: StructuralFact[] = [];
+  const extractionDiagnostics: ExtractionDiagnostic[] = [];
 
   const sourcePath = file.status === 'renamed'
     ? file.filename
@@ -549,6 +562,8 @@ async function normalizeChangedFile(input: {
       });
       challengeFile.symbols = analysis.symbols;
       sourceSpans.push(...analysis.sourceSpans);
+      sourceArtifacts.push(sourceArtifact);
+      sourceArtifactVersions.push(sourceVersion);
       structuralFacts = analysis.structuralFacts;
 
       const side = file.status === 'removed' ? 'base' : 'head';
@@ -568,32 +583,35 @@ async function normalizeChangedFile(input: {
         lineNumbers: [...changedLines],
       });
     } catch (error) {
+      extractionDiagnostics.push({
+        kind: 'semantic_parser',
+        path: sourcePath,
+        language,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       console.warn(
         `[challenge-backfill] structural parser failed for ${row.full_name}:${sourcePath}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
-
-    persistenceFiles.push({
+  } else if (getLanguageSupport(language).level === 'production' && artifact.kind !== 'documentation') {
+    extractionDiagnostics.push({
+      kind: 'full_source_fetch',
       path: sourcePath,
-      status: normalizeStatus(file.status),
       language,
-      additions: 0,
-      deletions: 0,
-      artifact: sourceArtifact,
-      artifactVersion: sourceVersion,
-      hunks: [],
-      symbols: challengeFile.symbols,
+      reason: `could not fetch ${sourceRef}:${sourcePath}`,
     });
   }
 
   return {
     challengeFile,
-    persistenceFiles,
+    sourceArtifacts,
+    sourceArtifactVersions,
     sourceSpans,
     structuralFacts,
     challengeStructuralFacts,
+    extractionDiagnostics,
   };
 }
 
@@ -630,11 +648,11 @@ async function buildNormalizedInput(
     })
   ));
   const changedFiles = normalizedFiles.map((file) => file.challengeFile);
-  const persistenceFiles = normalizedFiles.flatMap((file) => file.persistenceFiles);
   const structuralFacts = normalizedFiles.flatMap((file) => file.structuralFacts);
   const challengeStructuralFacts = normalizedFiles.flatMap(
     (file) => file.challengeStructuralFacts,
   );
+  const extractionDiagnostics = normalizedFiles.flatMap((file) => file.extractionDiagnostics);
   const metadataContent = JSON.stringify({
     author: diffResult.metadata.author,
     baseSha: refs.baseSha,
@@ -675,20 +693,17 @@ async function buildNormalizedInput(
     displayLabel: `${row.full_name}#${row.pr_number} metadata`,
     prSide: 'metadata',
   });
-  const metadataFile: NormalizedPullRequestFile = {
-    path: `.pipe/pull-requests/${row.pr_number}.json`,
-    status: 'modified',
-    language: 'json',
-    additions: 0,
-    deletions: 0,
-    artifact: metadataArtifact,
-    artifactVersion: metadataVersion,
-    hunks: [],
-    symbols: [],
-  };
   const sourceSpans = [
     metadataSpan,
     ...normalizedFiles.flatMap((file) => file.sourceSpans),
+  ];
+  const sourceArtifacts = [
+    metadataArtifact,
+    ...normalizedFiles.flatMap((file) => file.sourceArtifacts),
+  ];
+  const sourceArtifactVersions = [
+    metadataVersion,
+    ...normalizedFiles.flatMap((file) => file.sourceArtifactVersions),
   ];
   const tests = changedFiles
     .filter((file) => file.artifact.kind === 'test')
@@ -700,7 +715,9 @@ async function buildNormalizedInput(
       relatedSymbolIds: [...new Set(file.hunks.flatMap((hunk) => hunk.changedSymbolIds))].sort(),
     }));
 
-  const challengeInput: NormalizedPullRequestInput = {
+  const challengeInput: NormalizedPullRequestInput & {
+    extractionDiagnostics?: ExtractionDiagnostic[];
+  } = {
     repoSnapshot: snapshot,
     number: row.pr_number,
     url: row.pr_url,
@@ -712,19 +729,18 @@ async function buildNormalizedInput(
     headSha: refs.headSha,
     mergedAt: refs.mergedAt ?? row.merged_at,
     metadataSourceSpanIds: [metadataSpan.id],
+    sourceArtifacts,
+    sourceArtifactVersions,
     sourceSpans,
     changedFiles,
     tests,
     structuralFacts: challengeStructuralFacts,
+    ...(extractionDiagnostics.length > 0 ? { extractionDiagnostics } : {}),
   };
   return {
     challengeInput,
-    persistenceInput: {
-      ...challengeInput,
-      changedFiles: [...persistenceFiles, metadataFile],
-    },
     challengeStructuralFacts,
-    persistenceStructuralFacts: structuralFacts,
+    structuralFacts,
   };
 }
 
@@ -851,9 +867,8 @@ async function run(options: Options): Promise<void> {
 
       const {
         challengeInput,
-        persistenceInput,
         challengeStructuralFacts,
-        persistenceStructuralFacts,
+        structuralFacts,
       } = await buildNormalizedInput(row, refs, diffResult, token);
       const packet = await buildChallengePacket(challengeInput);
       const semantics = await deriveRepoSemantics({
@@ -872,8 +887,8 @@ async function run(options: Options): Promise<void> {
         continue;
       }
 
-      await persistReviewChallengeGraph(db, row.repo_id, persistenceInput, packet, {
-        structuralFacts: persistenceStructuralFacts,
+      await persistReviewChallengeGraph(db, row.repo_id, challengeInput, packet, {
+        structuralFacts,
         codeEpisodes: semantics.episodes,
         facets: semantics.facets,
         semanticAssertions: semantics.assertions,

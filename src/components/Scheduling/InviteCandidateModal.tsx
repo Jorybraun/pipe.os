@@ -18,7 +18,7 @@ export function InviteCandidateModal({
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [interviewType, setInterviewType] = useState<InterviewType | ''>('');
+  const [interviewType, setInterviewType] = useState<InterviewType | ''>('VIDEO');
   const [scheduledAt, setScheduledAt] = useState('');
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [message, setMessage] = useState('');
@@ -45,6 +45,7 @@ export function InviteCandidateModal({
       const payload: Record<string, unknown> = {
         name: name.trim(),
         email: email.trim(),
+        skipEmail: true,
         ...(interviewType ? { interviewType } : {}),
         ...(message.trim() ? { message: message.trim() } : {}),
       };
@@ -67,7 +68,7 @@ export function InviteCandidateModal({
         onClose();
       }, 1500);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to invite candidate';
+      const msg = err instanceof Error ? err.message : 'Failed to create interview';
       setError(msg);
     } finally {
       setIsSending(false);
@@ -104,7 +105,7 @@ export function InviteCandidateModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <UserPlus size={18} color="var(--pipe-text)" />
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', margin: 0 }}>
-              INVITE CANDIDATE
+              NEW INTERVIEW
             </h2>
           </div>
           <button
@@ -118,10 +119,10 @@ export function InviteCandidateModal({
         {success ? (
           <div style={{ textAlign: 'center', padding: '24px 0' }}>
             <p style={{ color: '#4ade80', fontFamily: '"Space Mono", monospace', fontSize: 14, fontWeight: 700 }}>
-              INVITE SENT
+              INTERVIEW CREATED
             </p>
             <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 12, marginTop: 8 }}>
-              {name} ({email}) has been invited.
+              {name} ({email}) has been added to interviews.
             </p>
           </div>
         ) : (
@@ -300,7 +301,7 @@ export function InviteCandidateModal({
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                placeholder="Add a personal note to the invite email..."
+                placeholder="Add a personal note to the interview invite..."
                 rows={3}
                 style={{
                   width: '100%',
@@ -361,7 +362,7 @@ export function InviteCandidateModal({
                 }}
               >
                 <Send size={13} />
-                {isSending ? 'SENDING...' : 'SEND INVITE'}
+                {isSending ? 'CREATING...' : 'CREATE INTERVIEW'}
               </button>
             </div>
           </>

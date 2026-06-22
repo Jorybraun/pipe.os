@@ -29,6 +29,7 @@ import type { SchedulingConnectionInfo, ProviderEventType } from '../../hooks/us
 import { useEmailConnection } from '../../hooks/useEmailConnection';
 import { getAllPlugins } from '../../lib/scheduling/pluginRegistry';
 import type { SchedulingPlugin } from '../../lib/scheduling/pluginRegistry';
+import { getSchedulingOAuthRedirectUri } from '../../lib/scheduling/oauthRedirect';
 // Side-effect import: registers Calendly + Cal.com plugins
 import '../../components/Scheduling/provider';
 
@@ -43,6 +44,15 @@ type FlowState =
   | { step: 'error'; message: string }
   | { step: 'connected' };
 
+async function createPkcePair(): Promise<{ verifier: string; challenge: string }> {
+  const verifierArray = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = Array.from(verifierArray).map(b => b.toString(16).padStart(2, '0')).join('');
+  const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return { verifier, challenge };
+}
+
 // ---------------------------------------------------------------------------
 // IntegrationsSettings
 // ---------------------------------------------------------------------------
@@ -55,6 +65,7 @@ export function IntegrationsSettings(): JSX.Element {
     exchangeOAuth,
     fetchEventTypes,
     disconnect,
+    getAuthUrl,
     refetch,
   } = useSchedulingConnection();
 
@@ -84,7 +95,7 @@ export function IntegrationsSettings(): JSX.Element {
 
   const plugins = getAllPlugins();
   // Use fixed redirect URI to ensure consistency between auth and token exchange
-  const redirectUri = `${window.location.origin}/schedule`;
+  const redirectUri = getSchedulingOAuthRedirectUri();
 
   // ── Handle OAuth callback ─────────────────────────────────────────────
   useEffect(() => {
@@ -226,10 +237,29 @@ const handleEmailDisconnect = useCallback(async (): Promise<void> => {
     const state = btoa(JSON.stringify({ providerId: plugin.type, nonce }));
     sessionStorage.setItem('pipe_oauth_state_nonce', nonce);
 
-    const authUrl = plugin.getAuthUrl!(redirectUri, state);
     setFlow({ step: 'waiting', provider: plugin.type });
-    window.location.href = authUrl;
-  }, [redirectUri]);
+    Promise.resolve()
+      .then(async () => {
+        if (plugin.type !== 'CALENDLY') {
+          sessionStorage.removeItem('pipe_oauth_code_verifier');
+          return getAuthUrl(plugin.type, redirectUri);
+        }
+        const { verifier, challenge } = await createPkcePair();
+        sessionStorage.setItem('pipe_oauth_code_verifier', verifier);
+        return getAuthUrl(plugin.type, redirectUri, challenge);
+      })
+      .then((authUrl) => {
+        const url = new URL(authUrl);
+        url.searchParams.set('state', state);
+        window.location.href = url.toString();
+      })
+      .catch((err: unknown) => {
+        sessionStorage.removeItem('pipe_oauth_state_nonce');
+        sessionStorage.removeItem('pipe_oauth_code_verifier');
+        const msg = err instanceof Error ? err.message : 'Failed to start OAuth';
+        setFlow({ step: 'error', message: msg });
+      });
+  }, [getAuthUrl, redirectUri]);
 
   const handleDisconnect = useCallback(async (conn: SchedulingConnectionInfo): Promise<void> => {
     setIsDisconnecting(true);

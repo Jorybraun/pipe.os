@@ -19,7 +19,9 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
+  LivingContextStore,
 } from '../../lib/livingContext';
+import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -49,6 +51,70 @@ function sanitizeCandidateName(name: string): string {
     throw new Error('FORBIDDEN_PATTERN');
   }
   return name.replace(/[<>]/g, '').trim();
+}
+
+export function normalizeCandidateEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export const TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER =
+  'Current D1 schema has no TalentPoolMembership table; roleless intake records membership state in workspace_people.context_json until that table exists.';
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonObject(raw: string | null): JsonObject {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as JsonValue;
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringList(value: JsonValue | undefined): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+function uniqueStrings(...values: string[][]): string[] {
+  return [...new Set(values.flat())].sort();
+}
+
+export function buildRolelessTalentPoolContext(
+  existingContext: JsonObject,
+  candidateId: string,
+  joinedAt: string,
+): JsonObject {
+  const existingTalentPool = isJsonObject(existingContext.talentPool)
+    ? existingContext.talentPool
+    : {};
+  return {
+    ...existingContext,
+    source: 'roleless_candidate_intake',
+    sources: uniqueStrings(
+      stringList(existingContext.sources),
+      stringList(existingContext.source),
+      ['roleless_candidate_intake'],
+    ),
+    legacyCandidateIds: uniqueStrings(
+      stringList(existingContext.legacyCandidateIds),
+      [candidateId],
+    ),
+    talentPool: {
+      ...existingTalentPool,
+      status: 'active',
+      roleless: true,
+      candidateId,
+      joinedAt: typeof existingTalentPool.joinedAt === 'string' ? existingTalentPool.joinedAt : joinedAt,
+      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+    },
+  };
 }
 
 /** Maximum file size for CV uploads: 10 MB. */
@@ -88,6 +154,7 @@ interface StandaloneReviewAlignment {
 
 interface StandaloneReviewRankedResult {
   rank: number | null;
+  recallRank: number | null;
   challengeId: string;
   repoId: string;
   prNumber: number;
@@ -98,6 +165,42 @@ interface StandaloneReviewRankedResult {
   eligible: boolean;
   alignments: StandaloneReviewAlignment[];
   rejectionReasons: string[];
+}
+
+export type StandaloneReviewExclusionReason =
+  | 'DEMAND_WITHOUT_SOURCE_SPANS'
+  | 'MISSING_DEMAND_SOURCE_SPANS'
+  | 'ROLE_GUARDRAIL_FAILED'
+  | 'PACKET_NOT_PRODUCTION_READY';
+
+export interface StandaloneReviewExcludedPacket {
+  id: string;
+  repoId: string | null;
+  prNumber: number | null;
+  reason: StandaloneReviewExclusionReason;
+  demandIds: string[];
+  missingSourceSpanIds: string[];
+  gateFailures: string[];
+  qualityScore: number | null;
+}
+
+export interface StandaloneReviewEvaluatedChallenge {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  recallRank: number | null;
+  rank: number | null;
+  eligible: boolean;
+  rejectionReasons: string[];
+  provenanceComplete: boolean;
+  alignedDemandCount: number;
+  stretchCount: number;
+}
+
+export interface StandaloneReviewDiagnostics {
+  recalledPacketIds: string[];
+  excludedPackets: StandaloneReviewExcludedPacket[];
+  evaluatedChallenges: StandaloneReviewEvaluatedChallenge[];
 }
 
 export interface StandaloneReviewMatchSummary {
@@ -187,7 +290,8 @@ function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSource
       return [];
     }
     const locator = typeof item.locator === 'string' ? item.locator : undefined;
-    return [{ artifactId, artifactVersion, contentHash, startOffset, endOffset, locator }];
+    const exactText = typeof item.exactText === 'string' ? item.exactText : undefined;
+    return [{ artifactId, artifactVersion, contentHash, startOffset, endOffset, locator, exactText }];
   });
 }
 
@@ -223,6 +327,7 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       return [];
     }
     const rank = typeof item.rank === 'number' ? item.rank : null;
+    const recallRank = typeof item.recallRank === 'number' ? item.recallRank : null;
     const alignments = Array.isArray(item.alignments)
       ? item.alignments.flatMap((alignment) => {
           if (!isRecord(alignment)) return [];
@@ -249,6 +354,7 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       : [];
     return [{
       rank,
+      recallRank,
       challengeId,
       repoId,
       prNumber,
@@ -263,9 +369,105 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
   });
 }
 
+function parseStandaloneReviewRecalledPacketIds(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    return asStringArray(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function parseStandaloneReviewExcludedPackets(value: string | null): StandaloneReviewExcludedPacket[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== 'string' || typeof item.reason !== 'string') return [];
+    if (
+      item.reason !== 'DEMAND_WITHOUT_SOURCE_SPANS'
+      && item.reason !== 'MISSING_DEMAND_SOURCE_SPANS'
+      && item.reason !== 'ROLE_GUARDRAIL_FAILED'
+      && item.reason !== 'PACKET_NOT_PRODUCTION_READY'
+    ) {
+      return [];
+    }
+    return [{
+      id: item.id,
+      repoId: typeof item.repoId === 'string' ? item.repoId : null,
+      prNumber: typeof item.prNumber === 'number' ? item.prNumber : null,
+      reason: item.reason,
+      demandIds: asStringArray(item.demandIds),
+      missingSourceSpanIds: asStringArray(item.missingSourceSpanIds),
+      gateFailures: asStringArray(item.gateFailures),
+      qualityScore: typeof item.qualityScore === 'number' ? item.qualityScore : null,
+    }];
+  });
+}
+
+function buildStandaloneReviewEvaluatedChallenges(
+  rankedResults: StandaloneReviewRankedResult[],
+): StandaloneReviewEvaluatedChallenge[] {
+  return rankedResults.map((result) => ({
+    challengeId: result.challengeId,
+    repoId: result.repoId,
+    prNumber: result.prNumber,
+    recallRank: result.recallRank,
+    rank: result.eligible ? result.rank : null,
+    eligible: result.eligible,
+    rejectionReasons: result.rejectionReasons,
+    provenanceComplete: result.provenanceComplete,
+    alignedDemandCount: result.alignedDemandCount,
+    stretchCount: result.stretchCount,
+  }));
+}
+
+export function buildStandaloneReviewDiagnostics(
+  recalledPacketsJson: string | null,
+  excludedPacketsJson: string | null,
+  rankedResults: StandaloneReviewRankedResult[],
+): StandaloneReviewDiagnostics {
+  return {
+    recalledPacketIds: parseStandaloneReviewRecalledPacketIds(recalledPacketsJson),
+    excludedPackets: parseStandaloneReviewExcludedPackets(excludedPacketsJson),
+    evaluatedChallenges: buildStandaloneReviewEvaluatedChallenges(rankedResults),
+  };
+}
+
+function standaloneReviewExclusionGap(packet: StandaloneReviewExcludedPacket): string {
+  if (packet.reason === 'ROLE_GUARDRAIL_FAILED') {
+    return `${packet.id} did not satisfy the job-description guardrails.`;
+  }
+  if (packet.reason === 'PACKET_NOT_PRODUCTION_READY') {
+    const scoreSuffix = packet.qualityScore !== null
+      ? ` Quality score: ${packet.qualityScore.toFixed(2)}.`
+      : '';
+    const gateSuffix = packet.gateFailures.length
+      ? ` Failed gate${packet.gateFailures.length === 1 ? '' : 's'}: ${packet.gateFailures.join(', ')}.`
+      : '';
+    return `${packet.id} was excluded because its repo packet is not production-ready.${scoreSuffix}${gateSuffix}`;
+  }
+  const demandSuffix = packet.demandIds.length
+    ? ` Demand${packet.demandIds.length === 1 ? '' : 's'}: ${packet.demandIds.join(', ')}.`
+    : '';
+  if (packet.reason === 'DEMAND_WITHOUT_SOURCE_SPANS') {
+    return `${packet.id} was excluded because one or more PR demands have no source span provenance.${demandSuffix}`;
+  }
+  const missingSuffix = packet.missingSourceSpanIds.length
+    ? ` Missing span${packet.missingSourceSpanIds.length === 1 ? '' : 's'}: ${packet.missingSourceSpanIds.join(', ')}.`
+    : '';
+  return `${packet.id} was excluded because PR demand provenance references missing repo source spans.${demandSuffix}${missingSuffix}`;
+}
+
 export function buildStandaloneReviewMatchSummary(
   status: StandaloneReviewMatchStatus,
   selectedResult: StandaloneReviewRankedResult | null,
+  diagnostics?: StandaloneReviewDiagnostics,
 ): StandaloneReviewMatchSummary {
   if (status === 'PENDING_INTAKE') {
     return {
@@ -282,11 +484,18 @@ export function buildStandaloneReviewMatchSummary(
     };
   }
   if (status === 'NO_ROLE_SAFE_CHALLENGE') {
+    const diagnosticGaps = diagnostics?.excludedPackets.map(standaloneReviewExclusionGap) ?? [];
     return {
       summary: 'Matcher found candidate evidence, but no reviewable PR passed guardrails.',
       evidence: selectedResult?.alignments ?? [],
-      gaps: selectedResult?.rejectionReasons.length
-        ? selectedResult.rejectionReasons
+      gaps: [
+        ...(selectedResult?.rejectionReasons ?? []),
+        ...diagnosticGaps,
+      ].length
+        ? [
+            ...(selectedResult?.rejectionReasons ?? []),
+            ...diagnosticGaps,
+          ]
         : ['No eligible challenge had complete provenance and non-generic alignment.'],
     };
   }
@@ -326,6 +535,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   let { name, email, currentStageId: requestedStageId, skipEmail, schedulingProvider, schedulingUrl } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
+    email = normalizeCandidateEmail(email);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === 'FORBIDDEN_PATTERN') {
@@ -540,9 +750,138 @@ const createStandaloneCandidateSchema = z.object({
   email: z.string().email('valid email required'),
   interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
   scheduledAt: z.string().optional(),
+  schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
+  schedulingUrl: z.string().optional(),
   message: z.string().max(2000).optional(),
   skipEmail: z.boolean().optional(),
 });
+
+async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadWorkspacePersonContext(
+  db: D1Database,
+  workspaceId: string,
+  personId: string,
+): Promise<JsonObject> {
+  const existing = await db.prepare(
+    `SELECT context_json
+       FROM workspace_people
+      WHERE workspace_id = ?1 AND person_id = ?2
+      LIMIT 1`,
+  ).bind(workspaceId, personId).first<{ context_json: string | null }>();
+  return parseJsonObject(existing?.context_json ?? null);
+}
+
+async function persistRolelessMessageArtifact(input: {
+  store: LivingContextStore;
+  workspacePersonId: string;
+  candidateId: string;
+  message: string;
+  now: string;
+}): Promise<void> {
+  const message = input.message;
+  if (!message.trim()) return;
+
+  const contentHash = await sha256Hex(message);
+  const baseKey = `candidate:${input.candidateId}:roleless-message:${contentHash}`;
+  const interaction = await input.store.upsertInteraction({
+    ingestionKey: baseKey,
+    workspacePersonId: input.workspacePersonId,
+    interactionType: 'message',
+    externalReference: input.candidateId,
+    startedAt: input.now,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  const artifact = await input.store.upsertArtifact({
+    ingestionKey: baseKey,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'message',
+    logicalKey: 'roleless_candidate_intake_message',
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  const version = await input.store.createArtifactVersion({
+    ingestionKey: `${baseKey}:v1`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: message,
+    byteLength: new TextEncoder().encode(message).byteLength,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  await input.store.createSourceSpan({
+    ingestionKey: `${baseKey}:span:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'full-message',
+    charStart: 0,
+    charEnd: message.length,
+    exactText: message,
+    exactTextHash: contentHash,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+}
+
+export async function ensureRolelessTalentPoolIdentity(input: {
+  db: D1Database;
+  userId: string;
+  candidateId: string;
+  name: string;
+  email: string;
+  message?: string;
+  now: string;
+}): Promise<{ personId: string; workspacePersonId: string }> {
+  const { db, userId, candidateId, name, email, message, now } = input;
+  const store = new LivingContextStore(db);
+  const existingPerson = await db.prepare(
+    `SELECT id, ingestion_key
+       FROM people
+      WHERE primary_email = ?1
+      ORDER BY created_at
+      LIMIT 1`,
+  ).bind(email).first<{ id: string; ingestion_key: string }>();
+
+  const person = await store.upsertPerson({
+    ingestionKey: existingPerson?.ingestion_key ?? `email:${email}`,
+    displayName: name,
+    primaryEmail: email,
+    externalIds: { legacyCandidateId: candidateId },
+  });
+
+  const existingContext = await loadWorkspacePersonContext(db, userId, person.id);
+  const workspacePerson = await store.upsertWorkspacePerson({
+    ingestionKey: `workspace:${userId}:person:${person.id}`,
+    workspaceId: userId,
+    personId: person.id,
+    context: buildRolelessTalentPoolContext(existingContext, candidateId, now),
+  });
+
+  await persistRolelessMessageArtifact({
+    store,
+    workspacePersonId: workspacePerson.id,
+    candidateId,
+    message: message ?? '',
+    now,
+  });
+
+  return { personId: person.id, workspacePersonId: workspacePerson.id };
+}
 
 // POST / — create a standalone candidate (talent pool, no pipeline)
 candidateOps.post('/', async (c) => {
@@ -558,6 +897,7 @@ candidateOps.post('/', async (c) => {
   let { name, email, interviewType, scheduledAt, message: customMessage, skipEmail } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
+    email = normalizeCandidateEmail(email);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === 'FORBIDDEN_PATTERN') {
@@ -568,25 +908,35 @@ candidateOps.post('/', async (c) => {
 
   // Duplicate-email guard scoped to owner (no pipeline scope)
   const existing = await db
-    .prepare('SELECT id FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
+    .prepare('SELECT id, invite_token, status FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
     .bind(userId, email)
-    .first<{ id: string }>();
-  if (existing) {
-    return apiError(c, 'CONFLICT', 'Candidate with this email already exists in your talent pool');
-  }
+    .first<{ id: string; invite_token: string; status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' }>();
 
-  const id = crypto.randomUUID();
-  const inviteToken = crypto.randomUUID();
+  const id = existing?.id ?? crypto.randomUUID();
+  const inviteToken = existing?.invite_token ?? crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {
-    await db
-      .prepare(
-        `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
-         VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`
-      )
-      .bind(id, userId, name, email, inviteToken, now, now)
-      .run();
+    if (existing) {
+      await db
+        .prepare(
+          `UPDATE candidates
+              SET name = COALESCE(NULLIF(?1, ''), name),
+                  email = ?2,
+                  updated_at = ?3
+            WHERE id = ?4`,
+        )
+        .bind(name, email, now, id)
+        .run();
+    } else {
+      await db
+        .prepare(
+          `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
+           VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`
+        )
+        .bind(id, userId, name, email, inviteToken, now, now)
+        .run();
+    }
 
     // Ensure ingestion tracking row exists
     await db
@@ -598,7 +948,15 @@ candidateOps.post('/', async (c) => {
       .bind(id, now)
       .run();
 
-    await ensureCandidateLivingContext(db, id);
+    await ensureRolelessTalentPoolIdentity({
+      db,
+      userId,
+      candidateId: id,
+      name,
+      email,
+      message: customMessage,
+      now,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('UNIQUE constraint failed')) {
@@ -612,10 +970,24 @@ candidateOps.post('/', async (c) => {
     const interviewId = crypto.randomUUID();
     await db
       .prepare(
-        `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, interview_type, status, scheduled_at, created_at, updated_at)
-         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?)`
+        `INSERT INTO scheduled_interviews (
+           id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+           status, scheduled_at, scheduling_provider, scheduling_url, sync_source,
+           created_at, updated_at
+         )
+         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?)`
       )
-      .bind(interviewId, id, userId, interviewType, scheduledAt ?? null, now, now)
+      .bind(
+        interviewId,
+        id,
+        userId,
+        interviewType,
+        scheduledAt ?? null,
+        parsed.data.schedulingProvider ?? null,
+        parsed.data.schedulingUrl ?? null,
+        now,
+        now,
+      )
       .run();
   }
 
@@ -646,11 +1018,13 @@ candidateOps.post('/', async (c) => {
       name,
       email,
       inviteToken,
-      status: 'INVITED',
+      status: existing?.status ?? 'INVITED',
       interviewType: interviewType ?? null,
       pipelineId: null,
+      intakeState: 'roleless_talent_pool',
+      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
     },
-  }, 201);
+  }, existing ? 200 : 201);
 });
 
 // GET /:candidateId/living-context — source-backed person graph read model
@@ -1076,6 +1450,7 @@ candidateOps.get('/:candidateId', async (c) => {
     summary: string;
     evidence: StandaloneReviewAlignment[];
     gaps: string[];
+    diagnostics: StandaloneReviewDiagnostics;
     submitted: boolean;
     submission: StandaloneReviewSubmissionSummary | null;
     completedAt: string | null;
@@ -1103,7 +1478,8 @@ candidateOps.get('/:candidateId', async (c) => {
 
     if (standaloneInterview) {
       const latestRun = await db.prepare(
-        `SELECT id, status, ranked_results_json, selected_packet_id
+        `SELECT id, status, recalled_packets_json, excluded_packets_json,
+                ranked_results_json, selected_packet_id
            FROM match_runs
           WHERE candidate_id = ?1
             AND role_snapshot_id = 'standalone-code-review-v1'
@@ -1112,11 +1488,18 @@ candidateOps.get('/:candidateId', async (c) => {
       ).bind(candidateId).first<{
         id: string;
         status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
+        recalled_packets_json: string | null;
+        excluded_packets_json: string | null;
         ranked_results_json: string | null;
         selected_packet_id: string | null;
       }>();
 
       const rankedResults = parseStandaloneReviewRankedResults(latestRun?.ranked_results_json ?? null);
+      const diagnostics = buildStandaloneReviewDiagnostics(
+        latestRun?.recalled_packets_json ?? null,
+        latestRun?.excluded_packets_json ?? null,
+        rankedResults,
+      );
       const selectedResult = rankedResults.find((result) =>
         result.challengeId === latestRun?.selected_packet_id
       ) ?? rankedResults.find((result) => result.rank === 1)
@@ -1149,7 +1532,7 @@ candidateOps.get('/:candidateId', async (c) => {
         prTitle = prRow?.title ?? null;
         prUrl = prRow?.pr_url ?? prUrl;
       }
-      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult);
+      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult, diagnostics);
       const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
@@ -1166,6 +1549,7 @@ candidateOps.get('/:candidateId', async (c) => {
         summary: summary.summary,
         evidence: summary.evidence,
         gaps: summary.gaps,
+        diagnostics,
         submitted: standaloneInterview.submission_json !== null,
         submission,
         completedAt: standaloneInterview.completed_at,
@@ -1576,7 +1960,7 @@ candidateOps.patch('/:candidateId', async (c) => {
   }
   if (parsed.data.email !== undefined) {
     updates.push('email = ?');
-    values.push(parsed.data.email);
+    values.push(normalizeCandidateEmail(parsed.data.email));
   }
   if (parsed.data.resumeS3Key !== undefined) {
     updates.push('resume_s3_key = ?');

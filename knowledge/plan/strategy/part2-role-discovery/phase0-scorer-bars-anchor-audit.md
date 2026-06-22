@@ -1,6 +1,6 @@
 # Phase 0 — Scorer BARS Anchor Consumption Audit
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 62–69, 74–77)  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 62–69, 74–77)
 **Phase:** 0  
 **Status:** NEEDS-REFINEMENT  
 **Estimate:** unclear — see note

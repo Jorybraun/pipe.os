@@ -76,8 +76,8 @@ const TYPE_COLORS: Record<ContactType, string> = {
 
 const TYPE_LABELS: Record<ContactType, string> = {
   lead:      'LEAD',
-  candidate: 'CANDIDATE',
-  customer:  'CUSTOMER',
+  candidate: 'PERSON',
+  customer:  'CLIENT',
   other:     'OTHER',
 };
 
@@ -140,12 +140,12 @@ export default function ContactsPage(): JSX.Element {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-              {activeTab === 'contacts' ? 'CONTACTS' : 'SOURCE'}
+              {activeTab === 'contacts' ? 'PEOPLE' : 'SOURCE'}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>
               {activeTab === 'contacts'
                 ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'}`
-                : 'Find candidates'}
+                : 'Find people'}
             </div>
           </div>
 
@@ -169,7 +169,7 @@ export default function ContactsPage(): JSX.Element {
                   color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                 }}
               >
-                {t.toUpperCase()}
+                {t === 'contacts' ? 'PEOPLE' : 'SOURCE'}
               </button>
             ))}
           </div>
@@ -185,7 +185,7 @@ export default function ContactsPage(): JSX.Element {
                 borderRadius: 4, color: '#4ade80', cursor: 'pointer',
               }}
             >
-              <UserPlus size={13} /> ADD
+              <UserPlus size={13} /> ADD PERSON
             </button>
           )}
         </div>
@@ -233,11 +233,11 @@ export default function ContactsPage(): JSX.Element {
               {!isLoading && filtered.length === 0 && (
                 <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
                   <div style={{ fontSize: 11, marginBottom: 8 }}>
-                    {search ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
+                    {search ? 'No matches found' : 'No people yet'}
                   </div>
                   {!search && (
                     <div style={{ fontSize: 9, opacity: 0.6 }}>
-                      Add someone by clicking ADD above
+                      Add a person or invite someone to an interview.
                     </div>
                   )}
                 </div>
@@ -613,7 +613,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
                 color: form.type === t ? TYPE_COLORS[t] : 'var(--pipe-text-dim)',
               }}
             >
-              {t.toUpperCase()}
+              {TYPE_LABELS[t]}
             </button>
           ))}
         </div>
@@ -876,6 +876,53 @@ function SourceSearchPanel({ api, onContact }: {
         <button onClick={() => void handleSearch()} disabled={isSearching} style={{ width: '100%', padding: '10px 0', fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           {isSearching ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</> : <><Search size={12} /> SEARCH</>}
         </button>
+        {searchError && <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>{searchError}</div>}
+      </div>
+
+      {/* Results */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {results.length === 0 && !isSearching && !searchError && <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}><div style={{ fontSize: 11 }}>Enter filters and click SEARCH</div></div>}
+        {results.length > 0 && <div style={{ padding: '8px 24px', fontSize: 9, color: 'var(--pipe-text-dim)', borderBottom: '1px solid var(--pipe-border)' }}>{results.length} of {total} results</div>}
+        {results.map((person) => (
+          <div key={person.poolId} style={{ padding: '14px 24px', borderBottom: '1px solid var(--pipe-border)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(96,165,250,0.12)', border: `1px solid ${person.status === 'flagged' ? 'rgba(251,191,36,0.3)' : 'rgba(96,165,250,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: person.status === 'flagged' ? '#fbbf24' : '#60a5fa' }}>
+              {(person.full_name ?? '?').charAt(0).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{person.full_name ?? 'Unknown'}</span>
+                {person.status === 'flagged' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(251,191,36,0.12)', color: '#fbbf24' }}>FLAGGED</span>}
+                {person.status === 'contacted' && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 5px', borderRadius: 2, background: 'rgba(74,222,128,0.12)', color: '#4ade80' }}>CONTACTED</span>}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 4 }}>{person.job_title ?? 'No title'}{person.job_company_name && ` @ ${person.job_company_name}`}</div>
+              <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {person.work_email && <span>work email</span>}
+                {person.personal_emails && <span>personal email</span>}
+                {person.mobile_phone && <span>mobile phone</span>}
+                {person.phone_numbers === true && <span>phone</span>}
+                {person.emails && Array.isArray(person.emails) && person.emails[0] && <span>{person.emails[0].address}</span>}
+                {person.phone_numbers_legacy && Array.isArray(person.phone_numbers_legacy) && person.phone_numbers_legacy[0] && <span>{person.phone_numbers_legacy[0].number}</span>}
+                {person.location_name && <span>{person.location_name}</span>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              {person.status !== 'contacted' && (
+                <>
+                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
+                    {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
+                  </button>
+                  <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
+                  <button onClick={() => void handleContact(person, 'email')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>EMAIL</button>
+                  <button onClick={() => void handleContact(person, 'invite')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: 3, color: '#60a5fa', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>INVITE</button>
+                  <button onClick={() => void handleDismiss(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'transparent', border: '1px solid var(--pipe-border)', borderRadius: 3, color: 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>DISMISS</button>
+                </>
+              )}
+              {person.status === 'contacted' && (
+                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)' }}>In graph</span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

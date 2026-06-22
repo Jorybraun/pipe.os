@@ -108,7 +108,7 @@ async function checkMatchingGate(
 
   if (nextChallengeType === 'CODE_REVIEW') {
     const roleContext = await db.prepare(
-      `SELECT id, persona_json, rcd_json, non_negotiable_skills_json
+      `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
         WHERE pipeline_id = ?1
         ORDER BY updated_at DESC
@@ -117,6 +117,7 @@ async function checkMatchingGate(
       id: string;
       persona_json: string | null;
       rcd_json: string | null;
+      job_description_md: string | null;
       non_negotiable_skills_json: string | null;
     }>();
     if (!roleContext) {

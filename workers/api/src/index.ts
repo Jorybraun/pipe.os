@@ -29,7 +29,7 @@ import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
 import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/video';
-import { meetingRooms } from './routes/meetingRooms';
+import { meetingRooms, meetingsAuth } from './routes/meetingRooms';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -154,6 +154,8 @@ app.route('/rpc/video', videoCandidate);
 app.route('/api/v1/video/public', videoPublic);
 // Standalone host/guest meeting room runtime (opaque token auth)
 app.route('/api/v1/meeting-rooms', meetingRooms);
+// Meeting management: create/list/invite (authenticated)
+app.route('/api/v1/meetings', meetingsAuth);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}

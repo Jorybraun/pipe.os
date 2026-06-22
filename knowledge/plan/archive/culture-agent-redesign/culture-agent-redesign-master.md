@@ -1,6 +1,6 @@
 # Culture Agent Redesign — Master Plan
 
-**Source strategy:** `knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md` §The screener design  
+**Source strategy:** `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md` §The screener design
 **Generated:** 2026-05-02  
 **Status:** PENDING — awaiting implementation  
 **Owner:** Culture Agent Team  

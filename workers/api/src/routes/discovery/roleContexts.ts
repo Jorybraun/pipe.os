@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { createRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
+import { createRoleContextSchema, createSimpleJobDescriptionRoleContextSchema, respondSchema, inviteSchema, calibrateSchema, synthesizeSchema, PARTICIPANT_ROLES } from '../../validation/roleContexts';
 import { mergeKnowledgeState } from '../../lib/agents/interview/reducer';
 import { callGapFillingAgent } from '../../lib/agents/calibration/gapFilling';
 import { interviewReducer, createInitialState, selectPhase, readDomainCoverage, readEvpCoverage, readStories, readBooleanFlag, readProbesDelivered, readSoulProbesDelivered, readEnableSoulTrack } from '../../lib/agents/interview/reducer';
@@ -37,6 +37,7 @@ import { sendNotificationEmail } from '../../lib/email';
 import { embedAndUpsertRole } from '../../lib/roleDiscovery/embedRole';
 import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRoleProfile';
 import { buildRcdSearchProfile } from '../../lib/repoDiscovery/rcdSearchProfile';
+import { LivingContextStore } from '../../lib/livingContext/persistence';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -63,6 +64,150 @@ function parseJsonColumn<T>(raw: string | null, fallback: T): T {
 
 function now(): string {
   return new Date().toISOString();
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizeSourceTerm(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isTermBoundary(value: string | undefined): boolean {
+  return !value || !/[a-z0-9+#.]/i.test(value);
+}
+
+function sourceContainsLiteralTerm(normalizedSource: string, normalizedTerm: string): boolean {
+  let index = normalizedSource.indexOf(normalizedTerm);
+  while (index >= 0) {
+    const before = normalizedSource[index - 1];
+    const after = normalizedSource[index + normalizedTerm.length];
+    if (isTermBoundary(before) && isTermBoundary(after)) return true;
+    index = normalizedSource.indexOf(normalizedTerm, index + 1);
+  }
+  return false;
+}
+
+function sourceBackedSelectedTerms(
+  jobDescriptionMd: string,
+  selectedTerms: string[] | undefined,
+): { backedTerms: string[]; rejectedTerms: string[] } {
+  if (!selectedTerms?.length) return { backedTerms: [], rejectedTerms: [] };
+  const normalizedSource = normalizeSourceTerm(jobDescriptionMd);
+  const backedTerms: string[] = [];
+  const rejectedTerms: string[] = [];
+  const seen = new Set<string>();
+  for (const rawTerm of selectedTerms) {
+    const term = rawTerm.trim();
+    const normalizedTerm = normalizeSourceTerm(term);
+    if (!term || seen.has(normalizedTerm)) continue;
+    if (!sourceContainsLiteralTerm(normalizedSource, normalizedTerm)) {
+      rejectedTerms.push(term);
+      seen.add(normalizedTerm);
+      continue;
+    }
+    backedTerms.push(term);
+    seen.add(normalizedTerm);
+  }
+  return { backedTerms, rejectedTerms };
+}
+
+async function persistSimpleJobDescriptionContext(input: {
+  db: D1Database;
+  roleContextId: string;
+  pipelineId: string | null;
+  title: string;
+  jobDescriptionMd: string;
+  selectedTerms: string[];
+  timestamp: string;
+}): Promise<void> {
+  const contentHash = `sha256:${await sha256Hex(input.jobDescriptionMd)}`;
+  const encoded = new TextEncoder().encode(input.jobDescriptionMd);
+  const lineCount = input.jobDescriptionMd.split(/\r\n|\r|\n/).length;
+  const store = new LivingContextStore(input.db, () => input.timestamp);
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `role-context:${input.roleContextId}:job-description`,
+    artifactType: 'job_description',
+    logicalKey: `role-context/${input.roleContextId}/job-description.md`,
+    metadata: {
+      roleContextId: input.roleContextId,
+      pipelineId: input.pipelineId,
+      source: 'simple_job_description',
+    },
+  });
+  const version = await store.createArtifactVersion({
+    ingestionKey: `role-context:${input.roleContextId}:job-description:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/markdown',
+    contentText: input.jobDescriptionMd,
+    byteLength: encoded.byteLength,
+    metadata: {
+      roleContextId: input.roleContextId,
+      source: 'simple_job_description',
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `role-context:${input.roleContextId}:job-description:span:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'job-description-full',
+    byteStart: 0,
+    byteEnd: encoded.byteLength,
+    charStart: 0,
+    charEnd: input.jobDescriptionMd.length,
+    lineStart: 1,
+    lineEnd: lineCount,
+    exactText: input.jobDescriptionMd,
+    metadata: {
+      roleContextId: input.roleContextId,
+      source: 'simple_job_description',
+    },
+  });
+
+  await store.upsertContextRecord({
+    ingestionKey: `role-context:${input.roleContextId}:job-description-context`,
+    scopeType: 'role_context',
+    scopeId: input.roleContextId,
+    recordType: 'simple_job_description',
+    predicate: 'defines role source text',
+    narrative: `Simple job description source for ${input.title}.`,
+    qualifiers: {
+      roleContextId: input.roleContextId,
+      pipelineId: input.pipelineId,
+      selectedTerms: input.selectedTerms,
+      contentHash,
+    },
+    confidence: 1,
+    extractionVersion: 'simple-jd-v1',
+    observedAt: input.timestamp,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'role_context',
+        entityId: input.roleContextId,
+        relationship: 'scope',
+      },
+      {
+        entityType: 'job_description',
+        entityId: artifact.id,
+        relationship: 'source_artifact',
+        metadata: {
+          artifactVersionId: version.id,
+          sourceSpanId: span.id,
+          contentHash,
+        },
+      },
+      ...input.selectedTerms.map((term) => ({
+        entityType: 'selected_term',
+        relationship: 'literal_term',
+        value: { surface: term },
+      })),
+    ],
+  });
 }
 
 // ─── InterviewState reconstruction (new architecture backwards compatibility) ─
@@ -588,6 +733,98 @@ roleContexts.post('/', async (c) => {
       baseline,
       questionBudget,
       questionsAsked: 0,
+    },
+    201,
+  );
+});
+
+// ─── POST /simple-job-description — Current-path role source ────────────────
+
+roleContexts.post('/simple-job-description', async (c) => {
+  const userId = c.var.userId;
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = createSimpleJobDescriptionRoleContextSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const { jobDescriptionMd, title, pipelineId, selectedTerms } = parsed.data;
+  if (pipelineId) {
+    const pipeline = await c.env.DB.prepare(
+      'SELECT id FROM pipelines WHERE id = ?1 AND owner_id = ?2',
+    ).bind(pipelineId, userId).first<{ id: string }>();
+    if (!pipeline) {
+      return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+    }
+  }
+
+  const { backedTerms, rejectedTerms } = sourceBackedSelectedTerms(jobDescriptionMd, selectedTerms);
+  if (rejectedTerms.length > 0) {
+    return apiError(
+      c,
+      'VALIDATION_ERROR',
+      `Selected terms must appear as literal job-description text: ${rejectedTerms.join(', ')}.`,
+    );
+  }
+
+  const id = generateId();
+  const baseline = {
+    title: title ?? 'Simple job description',
+    source: 'simple_job_description',
+  };
+  const timestamp = now();
+
+  await c.env.DB.prepare(
+    `INSERT INTO role_contexts (
+       id, pipeline_id, owner_id, baseline, knowledge_state, exchanges,
+       question_budget, questions_asked, status, job_description_md,
+       rcd_version, rcd_json, validation_metadata, non_negotiable_skills_json,
+       created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, '{}', '[]', 0, 0, 'COMPLETE', ?5, ?6, NULL, ?7, ?8, ?9, ?9)`,
+  ).bind(
+    id,
+    pipelineId ?? null,
+    userId,
+    JSON.stringify(baseline),
+    jobDescriptionMd,
+    'simple-jd-v1',
+    JSON.stringify({
+      source: 'simple_job_description',
+      selectedTermsRequested: selectedTerms ?? [],
+      selectedTermsPersisted: backedTerms,
+    }),
+    JSON.stringify(backedTerms),
+    timestamp,
+  ).run();
+
+  await persistSimpleJobDescriptionContext({
+    db: c.env.DB,
+    roleContextId: id,
+    pipelineId: pipelineId ?? null,
+    title: baseline.title,
+    jobDescriptionMd,
+    selectedTerms: backedTerms,
+    timestamp,
+  });
+
+  return c.json(
+    {
+      id,
+      pipelineId: pipelineId ?? null,
+      status: 'COMPLETE' as const,
+      baseline,
+      jobDescription: jobDescriptionMd,
+      selectedTerms: backedTerms,
+      rejectedSelectedTerms: [],
+      roleSnapshotId: `role-context:${id}:source-backed:simple-jd-v1`,
     },
     201,
   );

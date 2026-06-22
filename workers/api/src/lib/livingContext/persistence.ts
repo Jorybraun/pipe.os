@@ -2,6 +2,7 @@ import type {
   ApplicationInput,
   ArtifactInput,
   ArtifactVersionInput,
+  ContextRecordInput,
   ConceptInput,
   EpisodeInput,
   InteractionInput,
@@ -97,6 +98,207 @@ function assertImmutableReplay(
   }
 }
 
+function requireNonEmpty(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${field} is required`);
+  return trimmed;
+}
+
+function requireScore(value: number | null | undefined, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${field} must be between 0 and 1`);
+  }
+  return value;
+}
+
+function requirePolarity(value: number | undefined): number {
+  const polarity = value ?? 1;
+  if (!Number.isFinite(polarity) || polarity < -1 || polarity > 1) {
+    throw new Error('polarity must be between -1 and 1');
+  }
+  return polarity;
+}
+
+interface PreparedContextRecordSource {
+  sourceSpanId: string | null;
+  sourceRefType: string;
+  sourceRefId: string;
+  evidenceRole: string;
+  locatorJson: string;
+  exactText: string | null;
+  contentHash: string | null;
+  metadataJson: string;
+}
+
+interface PreparedContextRecordEntity {
+  entityKey: string;
+  entityType: string;
+  entityId: string | null;
+  relationship: string;
+  valueJson: string | null;
+  confidence: number | null;
+  metadataJson: string;
+}
+
+interface PreparedContextRecordConcept {
+  conceptId: string;
+  relationship: string;
+  weight: number;
+}
+
+function optionalNonEmpty(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed ? trimmed : null;
+}
+
+async function requireRow(
+  db: D1Database,
+  sql: string,
+  bindings: unknown[],
+  label: string,
+): Promise<void> {
+  const row = await db.prepare(sql).bind(...bindings).first<{ id: string }>();
+  if (!row) throw new Error(`${label} does not exist`);
+}
+
+async function requireSourceSpanForWorkspacePerson(
+  db: D1Database,
+  sourceSpanId: string,
+  workspacePersonId: string,
+): Promise<void> {
+  const direct = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+      WHERE ss.id = ?1
+        AND a.workspace_person_id = ?2`,
+  ).bind(sourceSpanId, workspacePersonId).first<{ id: string }>();
+  if (direct) return;
+
+  const hasArtifactInteractions = await db.prepare(
+    `SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'artifact_interactions'`,
+  ).first<{ name: string }>();
+  if (hasArtifactInteractions) {
+    const linked = await db.prepare(
+      `SELECT ss.id
+         FROM source_spans ss
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+         JOIN artifact_interactions ai ON ai.artifact_id = a.id
+         JOIN interactions i ON i.id = ai.interaction_id
+        WHERE ss.id = ?1
+          AND i.workspace_person_id = ?2`,
+    ).bind(sourceSpanId, workspacePersonId).first<{ id: string }>();
+    if (linked) return;
+  }
+
+  throw new Error(`source span ${sourceSpanId} for workspace person ${workspacePersonId} does not exist`);
+}
+
+async function requireContextSourceRef(
+  db: D1Database,
+  source: PreparedContextRecordSource,
+): Promise<void> {
+  if (source.sourceRefType === 'source_span') {
+    await requireRow(
+      db,
+      'SELECT id FROM source_spans WHERE id = ?1',
+      [source.sourceRefId],
+      `source span ${source.sourceRefId}`,
+    );
+    return;
+  }
+  if (source.sourceRefType === 'artifact_version') {
+    const row = await db.prepare(
+      'SELECT id, content_hash, content_text FROM artifact_versions WHERE id = ?1',
+    ).bind(source.sourceRefId).first<{
+      id: string;
+      content_hash: string;
+      content_text: string | null;
+    }>();
+    if (!row) throw new Error(`artifact version ${source.sourceRefId} does not exist`);
+    if (source.contentHash !== null && source.contentHash !== row.content_hash) {
+      throw new Error(`artifact version ${source.sourceRefId} contentHash does not match`);
+    }
+    if (source.exactText !== null && row.content_text !== null && source.exactText !== row.content_text) {
+      throw new Error(`artifact version ${source.sourceRefId} exactText does not match`);
+    }
+    return;
+  }
+  if (source.sourceRefType === 'repo_source_span') {
+    const row = await db.prepare(
+      'SELECT id, exact_text, content_hash FROM repo_source_spans WHERE id = ?1',
+    ).bind(source.sourceRefId).first<{
+      id: string;
+      exact_text: string;
+      content_hash: string;
+    }>();
+    if (!row) throw new Error(`repo source span ${source.sourceRefId} does not exist`);
+    if (source.exactText !== null && source.exactText !== row.exact_text) {
+      throw new Error(`repo source span ${source.sourceRefId} exactText does not match`);
+    }
+    if (source.contentHash !== null && source.contentHash !== row.content_hash) {
+      throw new Error(`repo source span ${source.sourceRefId} contentHash does not match`);
+    }
+    return;
+  }
+  if (source.sourceRefType === 'review_challenge_packet') {
+    await requireRow(
+      db,
+      'SELECT id FROM review_challenge_packets WHERE id = ?1',
+      [source.sourceRefId],
+      `review challenge packet ${source.sourceRefId}`,
+    );
+    return;
+  }
+  if (source.sourceRefType === 'match_run') {
+    await requireRow(
+      db,
+      'SELECT id FROM match_runs WHERE id = ?1',
+      [source.sourceRefId],
+      `match run ${source.sourceRefId}`,
+    );
+    return;
+  }
+  if (source.sourceRefType === 'role_context') {
+    await requireRow(
+      db,
+      'SELECT id FROM role_contexts WHERE id = ?1',
+      [source.sourceRefId],
+      `role context ${source.sourceRefId}`,
+    );
+    return;
+  }
+  if (source.sourceRefType === 'role_source') {
+    const locator = JSON.parse(source.locatorJson) as { roleContextId?: unknown };
+    const roleContextId = typeof locator.roleContextId === 'string'
+      ? locator.roleContextId.trim()
+      : '';
+    if (!roleContextId) {
+      throw new Error(`role source ${source.sourceRefId} requires roleContextId`);
+    }
+    await requireRow(
+      db,
+      'SELECT id FROM role_contexts WHERE id = ?1',
+      [roleContextId],
+      `role context ${roleContextId}`,
+    );
+    return;
+  }
+  if (
+    source.locatorJson === '{}'
+    && source.exactText === null
+    && source.contentHash === null
+  ) {
+    throw new Error(
+      `source ref ${source.sourceRefType}:${source.sourceRefId} requires locator, exactText, or contentHash`,
+    );
+  }
+}
+
 export class LivingContextStore {
   constructor(
     private readonly db: D1Database,
@@ -143,7 +345,7 @@ export class LivingContextStore {
        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
        ON CONFLICT(ingestion_key) DO UPDATE SET
          relationship_summary = excluded.relationship_summary,
-         context_json = excluded.context_json,
+         context_json = json_patch(workspace_people.context_json, excluded.context_json),
          updated_at = excluded.updated_at`,
     ).bind(
       id,
@@ -451,6 +653,276 @@ export class LivingContextStore {
       input.observedAt ?? null,
       now,
     ).run();
+    return { id, ingestionKey: input.ingestionKey };
+  }
+
+  async upsertContextRecord(input: ContextRecordInput): Promise<PersistedEntity> {
+    if (!Array.isArray(input.sources) || input.sources.length === 0) {
+      throw new Error('Context record requires at least one source span or source ref');
+    }
+    const id = await this.id('context_record', input.ingestionKey);
+    const now = this.clock();
+    const workspacePersonId = optionalNonEmpty(input.workspacePersonId);
+    const scopeType = requireNonEmpty(
+      input.scopeType ?? (workspacePersonId ? 'workspace_person' : ''),
+      'scopeType',
+    );
+    const scopeId = requireNonEmpty(input.scopeId ?? workspacePersonId ?? '', 'scopeId');
+    if (scopeType === 'workspace_person' && !workspacePersonId) {
+      throw new Error('workspacePersonId is required for workspace_person context records');
+    }
+    const recordType = requireNonEmpty(input.recordType, 'recordType');
+    const narrative = requireNonEmpty(input.narrative, 'narrative');
+    const predicate = input.predicate?.trim() || null;
+    const confidence = requireScore(input.confidence, 'confidence');
+    const polarity = requirePolarity(input.polarity);
+
+    const sourceKeys = new Set<string>();
+    const sources: PreparedContextRecordSource[] = [];
+    for (const source of input.sources) {
+      const sourceSpanId = optionalNonEmpty(source.sourceSpanId);
+      const explicitRefType = optionalNonEmpty(source.sourceRefType);
+      if (sourceSpanId && explicitRefType && explicitRefType !== 'source_span') {
+        throw new Error('sourceSpanId can only be used with sourceRefType source_span');
+      }
+      const sourceRefType = requireNonEmpty(
+        explicitRefType ?? (sourceSpanId ? 'source_span' : ''),
+        'sourceRefType',
+      );
+      const sourceRefId = requireNonEmpty(source.sourceRefId ?? sourceSpanId ?? '', 'sourceRefId');
+      const evidenceRole = source.evidenceRole?.trim() || 'support';
+      const key = `${sourceRefType}\u0000${sourceRefId}\u0000${evidenceRole}`;
+      if (sourceKeys.has(key)) continue;
+      sourceKeys.add(key);
+      sources.push({
+        sourceSpanId,
+        sourceRefType,
+        sourceRefId,
+        evidenceRole,
+        locatorJson: stableJson(normalizeJson(source.locator, {})),
+        exactText: source.exactText ?? null,
+        contentHash: source.contentHash?.trim() || null,
+        metadataJson: stableJson(normalizeJson(source.metadata, {})),
+      });
+    }
+    if (sources.length === 0) {
+      throw new Error('Context record requires at least one source span or source ref');
+    }
+
+    const entityKeys = new Set<string>();
+    const entities: PreparedContextRecordEntity[] = [];
+    for (const entity of input.entities ?? []) {
+      const entityType = requireNonEmpty(entity.entityType, 'entityType');
+      const relationship = requireNonEmpty(entity.relationship, 'entity relationship');
+      const entityId = entity.entityId?.trim() || null;
+      if (!entityId && entity.value === undefined) {
+        throw new Error('Context record entity requires entityId or value');
+      }
+      const valueJson = entity.value === undefined ? null : stableJson(entity.value);
+      const entityKey = `${entityType}\u0000${entityId ?? valueJson}`;
+      const key = `${entityKey}\u0000${relationship}`;
+      if (entityKeys.has(key)) continue;
+      entityKeys.add(key);
+      entities.push({
+        entityKey,
+        entityType,
+        entityId,
+        relationship,
+        valueJson,
+        confidence: requireScore(entity.confidence, 'entity confidence'),
+        metadataJson: stableJson(normalizeJson(entity.metadata, {})),
+      });
+    }
+
+    const conceptKeys = new Set<string>();
+    const concepts: PreparedContextRecordConcept[] = [];
+    for (const concept of input.concepts ?? []) {
+      const conceptId = requireNonEmpty(concept.conceptId, 'conceptId');
+      const relationship = requireNonEmpty(concept.relationship, 'concept relationship');
+      const weight = requireScore(concept.weight ?? 1, 'concept weight') ?? 1;
+      const key = `${conceptId}\u0000${relationship}`;
+      if (conceptKeys.has(key)) continue;
+      conceptKeys.add(key);
+      concepts.push({ conceptId, relationship, weight });
+    }
+
+    if (workspacePersonId) {
+      await requireRow(
+        this.db,
+        'SELECT id FROM workspace_people WHERE id = ?1',
+        [workspacePersonId],
+        `workspace person ${workspacePersonId}`,
+      );
+    }
+    if (input.interactionId) {
+      if (!workspacePersonId) throw new Error('workspacePersonId is required with interactionId');
+      await requireRow(
+        this.db,
+        'SELECT id FROM interactions WHERE id = ?1 AND workspace_person_id = ?2',
+        [input.interactionId, workspacePersonId],
+        `interaction ${input.interactionId}`,
+      );
+    }
+    if (input.applicationId) {
+      if (!workspacePersonId) throw new Error('workspacePersonId is required with applicationId');
+      await requireRow(
+        this.db,
+        'SELECT id FROM applications WHERE id = ?1 AND workspace_person_id = ?2',
+        [input.applicationId, workspacePersonId],
+        `application ${input.applicationId}`,
+      );
+    }
+    if (input.episodeId) {
+      if (!workspacePersonId) throw new Error('workspacePersonId is required with episodeId');
+      await requireRow(
+        this.db,
+        'SELECT id FROM episodes WHERE id = ?1 AND workspace_person_id = ?2',
+        [input.episodeId, workspacePersonId],
+        `episode ${input.episodeId}`,
+      );
+    }
+    if (input.assertionId) {
+      if (!workspacePersonId) throw new Error('workspacePersonId is required with assertionId');
+      await requireRow(
+        this.db,
+        'SELECT id FROM semantic_assertions WHERE id = ?1 AND workspace_person_id = ?2',
+        [input.assertionId, workspacePersonId],
+        `semantic assertion ${input.assertionId}`,
+      );
+    }
+    for (const source of sources) {
+      if (source.sourceSpanId && workspacePersonId) {
+        await requireSourceSpanForWorkspacePerson(
+          this.db,
+          source.sourceSpanId,
+          workspacePersonId,
+        );
+      } else {
+        await requireContextSourceRef(this.db, source);
+      }
+    }
+    for (const concept of concepts) {
+      await requireRow(
+        this.db,
+        'SELECT id FROM concepts WHERE id = ?1',
+        [concept.conceptId],
+        `concept ${concept.conceptId}`,
+      );
+    }
+
+    await this.db.prepare(
+      `INSERT INTO context_records (
+         id, ingestion_key, scope_type, scope_id, workspace_person_id,
+         interaction_id, application_id, episode_id, assertion_id, record_type,
+         predicate, narrative, qualifiers_json, confidence, polarity,
+         extraction_version, observed_at, created_at, updated_at
+       ) VALUES (
+         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?18
+       ) ON CONFLICT(ingestion_key) DO UPDATE SET
+         scope_type = excluded.scope_type,
+         scope_id = excluded.scope_id,
+         workspace_person_id = excluded.workspace_person_id,
+         interaction_id = excluded.interaction_id,
+         application_id = excluded.application_id,
+         episode_id = excluded.episode_id,
+         assertion_id = excluded.assertion_id,
+         record_type = excluded.record_type,
+         predicate = excluded.predicate,
+         narrative = excluded.narrative,
+         qualifiers_json = excluded.qualifiers_json,
+         confidence = excluded.confidence,
+         polarity = excluded.polarity,
+         extraction_version = excluded.extraction_version,
+         observed_at = excluded.observed_at,
+         updated_at = excluded.updated_at`,
+    ).bind(
+      id,
+      input.ingestionKey,
+      scopeType,
+      scopeId,
+      workspacePersonId,
+      input.interactionId ?? null,
+      input.applicationId ?? null,
+      input.episodeId ?? null,
+      input.assertionId ?? null,
+      recordType,
+      predicate,
+      narrative,
+      stableJson(normalizeJson(input.qualifiers, {})),
+      confidence,
+      polarity,
+      input.extractionVersion ?? null,
+      input.observedAt ?? null,
+      now,
+    ).run();
+
+    await this.db.prepare(
+      'DELETE FROM context_record_source_refs WHERE context_record_id = ?1',
+    ).bind(id).run();
+    await this.db.prepare(
+      'DELETE FROM context_record_source_spans WHERE context_record_id = ?1',
+    ).bind(id).run();
+    await this.db.prepare(
+      'DELETE FROM context_record_entities WHERE context_record_id = ?1',
+    ).bind(id).run();
+    await this.db.prepare(
+      'DELETE FROM context_record_concepts WHERE context_record_id = ?1',
+    ).bind(id).run();
+
+    for (const source of sources) {
+      await this.db.prepare(
+        `INSERT INTO context_record_source_refs (
+           context_record_id, source_ref_type, source_ref_id, source_span_id,
+           evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+      ).bind(
+        id,
+        source.sourceRefType,
+        source.sourceRefId,
+        source.sourceSpanId,
+        source.evidenceRole,
+        source.locatorJson,
+        source.exactText,
+        source.contentHash,
+        source.metadataJson,
+        now,
+      ).run();
+      if (source.sourceSpanId) {
+        await this.db.prepare(
+          `INSERT INTO context_record_source_spans (
+             context_record_id, source_span_id, evidence_role, created_at
+           ) VALUES (?1, ?2, ?3, ?4)`,
+        ).bind(id, source.sourceSpanId, source.evidenceRole, now).run();
+      }
+    }
+
+    for (const entity of entities) {
+      await this.db.prepare(
+        `INSERT INTO context_record_entities (
+           context_record_id, entity_key, entity_type, entity_id, relationship,
+           value_json, confidence, metadata_json, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      ).bind(
+        id,
+        entity.entityKey,
+        entity.entityType,
+        entity.entityId,
+        entity.relationship,
+        entity.valueJson,
+        entity.confidence,
+        entity.metadataJson,
+        now,
+      ).run();
+    }
+
+    for (const concept of concepts) {
+      await this.db.prepare(
+        `INSERT INTO context_record_concepts (
+           context_record_id, concept_id, relationship, weight, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5)`,
+      ).bind(id, concept.conceptId, concept.relationship, concept.weight, now).run();
+    }
+
     return { id, ingestionKey: input.ingestionKey };
   }
 

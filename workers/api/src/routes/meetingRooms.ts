@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
-import { hashRoomToken } from '../lib/roomTokens';
+import { generateRoomToken, hashRoomToken } from '../lib/roomTokens';
 import {
   transcribeAudioDeepgramStructured,
   transcribeAudioWhisper,
@@ -11,7 +12,7 @@ import type {
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
-import type { Env } from '../types';
+import type { Env, Variables } from '../types';
 
 type RoomRole = 'HOST' | 'GUEST';
 
@@ -500,3 +501,395 @@ meetingRooms.post('/:token/recording', async (c) => {
   c.executionCtx.waitUntil(processRecording(c.env, room, recordingKey));
   return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
+
+// ─── Authenticated meeting management ───────────────────────────────────────
+// These routes let a recruiter create meetings, list them, and invite guests.
+// The token-based room runtime above remains public (the opaque token IS the
+// credential). Management of meetings themselves requires Clerk JWT auth.
+
+const MEETING_TYPES = ['DISCOVERY', 'INTERVIEW', 'FOLLOW_UP', 'DEMO', 'OTHER'] as const;
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const createMeetingSchema = z.object({
+  contactId: z.string().min(1).optional(),
+  recipientEmail: z.string().email().optional(),
+  recipientName: z.string().max(200).optional(),
+  title: z.string().max(200).optional(),
+  description: z.string().max(2000).optional(),
+  meetingType: z.enum(MEETING_TYPES).optional(),
+  scheduledAt: z.string().optional(),
+  scheduledInterviewId: z.string().min(1).optional(),
+}).refine(
+  (data) => Boolean(data.contactId) || (Boolean(data.recipientEmail) && Boolean(data.recipientName)),
+  'Either contactId or both recipientEmail and recipientName are required.',
+);
+
+const inviteGuestSchema = z.object({
+  email: z.string().email(),
+  message: z.string().max(1000).optional(),
+});
+
+interface MeetingRow {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  scheduled_at: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  duration_secs: number | null;
+  meeting_url: string | null;
+  meeting_type: string;
+  transcript_status: string;
+  recording_r2_key: string | null;
+  scheduled_interview_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RoomRow {
+  id: string;
+  meeting_id: string;
+  session_id: string;
+  status: string;
+}
+
+async function createRoomAndHostToken(
+  db: D1Database,
+  meetingId: string,
+  ownerId: string,
+): Promise<{ room: RoomRow; hostToken: string }> {
+  const roomId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db.prepare(
+    `INSERT INTO meeting_rooms (id, meeting_id, session_id, status, created_at, updated_at)
+     VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+  ).bind(roomId, meetingId, sessionId, now, now).run();
+
+  const hostToken = generateRoomToken();
+  const hostHash = await hashRoomToken(hostToken);
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  await db.prepare(
+    `INSERT INTO meeting_room_tokens (id, room_id, token_hash, role, expires_at, created_at)
+     VALUES (?, ?, ?, 'HOST', ?, ?)`,
+  ).bind(crypto.randomUUID(), roomId, hostHash, expiresAt, now).run();
+
+  return {
+    room: { id: roomId, meeting_id: meetingId, session_id: sessionId, status: 'WAITING' },
+    hostToken,
+  };
+}
+
+async function mintGuestToken(
+  db: D1Database,
+  roomId: string,
+  participantId: string | null,
+): Promise<string> {
+  const guestToken = generateRoomToken();
+  const guestHash = await hashRoomToken(guestToken);
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  await db.prepare(
+    `INSERT INTO meeting_room_tokens (id, room_id, token_hash, role, participant_id, expires_at, created_at)
+     VALUES (?, ?, ?, 'GUEST', ?, ?, ?)`,
+  ).bind(crypto.randomUUID(), roomId, guestHash, participantId, expiresAt, now).run();
+  return guestToken;
+}
+
+const meetingsAuth = new Hono<{ Bindings: Env; Variables: Variables }>();
+meetingsAuth.use('*', authMiddleware);
+
+// POST / — create a meeting + room + host token
+meetingsAuth.post('/', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = createMeetingSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
+  }
+  const data = parsed.data;
+
+  // Resolve a contact when contactId is provided; otherwise create one from recipient info.
+  let contactId: string | null = null;
+  if (data.contactId) {
+    const contact = await db
+      .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+      .bind(data.contactId, userId)
+      .first<{ id: string }>();
+    if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+    contactId = contact.id;
+  } else if (data.recipientEmail && data.recipientName) {
+    // Reuse an existing contact with this email if present, else create one.
+    const existing = await db
+      .prepare('SELECT id FROM contacts WHERE owner_id = ? AND email = ?')
+      .bind(userId, data.recipientEmail)
+      .first<{ id: string }>();
+    if (existing) {
+      contactId = existing.id;
+    } else {
+      contactId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await db.prepare(
+        `INSERT INTO contacts (id, owner_id, email, name, type, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'lead', ?, ?)`,
+      ).bind(contactId, userId, data.recipientEmail, data.recipientName, now, now).run();
+    }
+  }
+
+  const meetingId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const title = data.title ?? (data.recipientName ?? 'Meeting');
+  const meetingType = data.meetingType ?? 'OTHER';
+
+  await db.prepare(
+    `INSERT INTO meetings
+     (id, owner_id, title, description, status, scheduled_at, meeting_type,
+      scheduled_interview_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'SCHEDULED', ?, ?, ?, ?, ?)`,
+  ).bind(
+    meetingId, userId, title, data.description ?? null,
+    data.scheduledAt ?? null, meetingType,
+    data.scheduledInterviewId ?? null, now, now,
+  ).run();
+
+  // Link the contact as a participant (ATTENDEE; host is the recruiter).
+  if (contactId) {
+    await db.prepare(
+      `INSERT INTO meeting_participants (id, meeting_id, contact_id, role, created_at, updated_at)
+       VALUES (?, ?, ?, 'ATTENDEE', ?, ?)`,
+    ).bind(crypto.randomUUID(), meetingId, contactId, now, now).run();
+  }
+
+  const { room, hostToken } = await createRoomAndHostToken(db, meetingId, userId);
+
+  return c.json({
+    meeting: {
+      id: meetingId,
+      title,
+      description: data.description ?? null,
+      status: 'SCHEDULED',
+      meetingType,
+      scheduledAt: data.scheduledAt ?? null,
+      scheduledInterviewId: data.scheduledInterviewId ?? null,
+      contactId,
+    },
+    room: { id: room.id, sessionId: room.session_id, status: room.status },
+    hostToken,
+  }, 201);
+});
+
+// GET / — list owner's meetings with room status + participants
+meetingsAuth.get('/', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+
+  const meetings = await db.prepare(
+    `SELECT m.* FROM meetings m
+     WHERE m.owner_id = ?
+     ORDER BY m.created_at DESC
+     LIMIT 100`,
+  ).bind(userId).all<MeetingRow>();
+
+  if (!meetings.results.length) {
+    return c.json({ meetings: [] });
+  }
+
+  const meetingIds = meetings.results.map((m) => m.id);
+  const placeholders = meetingIds.map(() => '?').join(',');
+  const rooms = await db.prepare(
+    `SELECT mr.* FROM meeting_rooms mr
+     WHERE mr.meeting_id IN (${placeholders})`,
+  ).bind(...meetingIds).all<RoomRow>();
+
+  const participants = await db.prepare(
+    `SELECT mp.meeting_id, mp.role, c.id AS contact_id, c.name, c.email
+     FROM meeting_participants mp
+     INNER JOIN contacts c ON c.id = mp.contact_id
+     WHERE mp.meeting_id IN (${placeholders})`,
+  ).bind(...meetingIds).all<{
+    meeting_id: string; role: string; contact_id: string; name: string | null; email: string | null;
+  }>();
+
+  const roomsByMeeting = new Map(rooms.results.map((r) => [r.meeting_id, r]));
+  const participantsByMeeting = new Map<string, Array<{
+    role: string; contactId: string; name: string | null; email: string | null;
+  }>>();
+  for (const p of participants.results) {
+    const list = participantsByMeeting.get(p.meeting_id) ?? [];
+    list.push({ role: p.role, contactId: p.contact_id, name: p.name, email: p.email });
+    participantsByMeeting.set(p.meeting_id, list);
+  }
+
+  const result = meetings.results.map((m) => {
+    const room = roomsByMeeting.get(m.id);
+    return {
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      status: m.status,
+      meetingType: m.meeting_type,
+      scheduledAt: m.scheduled_at,
+      startedAt: m.started_at,
+      endedAt: m.ended_at,
+      durationSecs: m.duration_secs,
+      transcriptStatus: m.transcript_status,
+      recordingR2Key: m.recording_r2_key,
+      scheduledInterviewId: m.scheduled_interview_id,
+      room: room ? { id: room.id, sessionId: room.session_id, status: room.status } : null,
+      participants: participantsByMeeting.get(m.id) ?? [],
+      createdAt: m.created_at,
+    };
+  });
+
+  return c.json({ meetings: result });
+});
+
+// GET /:id — meeting detail with transcript status
+meetingsAuth.get('/:id', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const meeting = await db.prepare(
+    'SELECT * FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(id, userId).first<MeetingRow>();
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const room = await db.prepare(
+    'SELECT * FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(id).first<RoomRow>();
+
+  const participants = await db.prepare(
+    `SELECT mp.role, mp.joined_at, mp.left_at, c.id AS contact_id, c.name, c.email
+     FROM meeting_participants mp
+     INNER JOIN contacts c ON c.id = mp.contact_id
+     WHERE mp.meeting_id = ?`,
+  ).bind(id).all<{
+    role: string; joined_at: string | null; left_at: string | null;
+    contact_id: string; name: string | null; email: string | null;
+  }>();
+
+  return c.json({
+    meeting: {
+      id: meeting.id,
+      title: meeting.title,
+      description: meeting.description,
+      status: meeting.status,
+      meetingType: meeting.meeting_type,
+      scheduledAt: meeting.scheduled_at,
+      startedAt: meeting.started_at,
+      endedAt: meeting.ended_at,
+      durationSecs: meeting.duration_secs,
+      transcriptStatus: meeting.transcript_status,
+      transcriptSummary: meeting.transcript_summary,
+      recordingR2Key: meeting.recording_r2_key,
+      scheduledInterviewId: meeting.scheduled_interview_id,
+      room: room ? { id: room.id, sessionId: room.session_id, status: room.status } : null,
+      participants: participants.results.map((p) => ({
+        role: p.role,
+        joinedAt: p.joined_at,
+        leftAt: p.left_at,
+        contactId: p.contact_id,
+        name: p.name,
+        email: p.email,
+      })),
+      createdAt: meeting.created_at,
+      updatedAt: meeting.updated_at,
+    },
+  });
+});
+
+// POST /:id/invite — mint a guest token and send via Resend with the join link
+meetingsAuth.post('/:id/invite', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const meeting = await db.prepare(
+    'SELECT id, title, owner_id FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(id, userId).first<{ id: string; title: string; owner_id: string }>();
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const room = await db.prepare(
+    'SELECT id FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(id).first<{ id: string }>();
+  if (!room) return apiError(c, 'NOT_FOUND', 'Meeting room not found.');
+
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = inviteGuestSchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
+  }
+  const { email, message: customMessage } = parsed.data;
+
+  // Resolve the participant for this email (must already be a meeting_participant).
+  const participant = await db.prepare(
+    `SELECT mp.id, c.name FROM meeting_participants mp
+     INNER JOIN contacts c ON c.id = mp.contact_id
+     WHERE mp.meeting_id = ? AND c.email = ?`,
+  ).bind(id, email).first<{ id: string; name: string | null }>();
+
+  const guestToken = await mintGuestToken(db, room.id, participant?.id ?? null);
+
+  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+  const joinUrl = `${baseUrl}/meeting/${guestToken}`;
+  const escapeHtml = (str: string): string =>
+    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const guestName = escapeHtml(participant?.name ?? email.split('@')[0] ?? 'there');
+  const safeJoinUrl = encodeURI(joinUrl);
+  const customBlock = customMessage
+    ? `<p style="font-size:16px;line-height:1.6;margin-bottom:24px;padding:16px;background:rgba(255,255,255,0.05);border-left:3px solid rgba(96,165,250,0.4);border-radius:4px;">${escapeHtml(customMessage)}</p>`
+    : '';
+
+  const html = `<div style="font-family:'Space Mono',monospace;max-width:600px;margin:0 auto;padding:40px 20px;color:#e0e0e0;background:#0c0c0e;">
+  <h1 style="font-size:24px;font-weight:700;margin-bottom:24px;color:#fff;">Hi ${guestName},</h1>
+  <p style="font-size:16px;line-height:1.6;margin-bottom:24px;">
+    You've been invited to a video call for <strong>${escapeHtml(meeting.title)}</strong>.
+  </p>
+  ${customBlock}
+  <a href="${safeJoinUrl}" style="display:inline-block;padding:14px 32px;background:#fff;color:#0c0c0e;text-decoration:none;font-weight:700;font-size:14px;letter-spacing:0.5px;border:none;">
+    JOIN VIDEO CALL →
+  </a>
+  <p style="font-size:12px;color:#666;margin-top:40px;">
+    If the button doesn't work, copy this link:<br/>
+    <a href="${safeJoinUrl}" style="color:#888;">${escapeHtml(joinUrl)}</a>
+  </p>
+</div>`;
+
+  if (!c.env.RESEND_API_KEY) {
+    // No email service — return the join link directly (dev/test path).
+    return c.json({ success: true, emailSent: false, joinUrl, guestToken });
+  }
+
+  const { Resend } = await import('resend');
+  const resend = new Resend(c.env.RESEND_API_KEY);
+  try {
+    const sendResult = await resend.emails.send({
+      from: 'Pipe <onboarding@resend.dev>',
+      to: email,
+      subject: `Video call invitation — ${meeting.title}`,
+      html,
+    });
+    if (sendResult.error) {
+      return c.json({ success: false, emailSent: false, joinUrl }, 502);
+    }
+  } catch (err) {
+    console.error('[meetings/invite] Email send failed:', err);
+    return c.json({ success: false, emailSent: false, joinUrl }, 502);
+  }
+
+  const now = new Date().toISOString();
+  await db.prepare(
+    `UPDATE meeting_participants SET invite_sent_at = COALESCE(invite_sent_at, ?), updated_at = ?
+     WHERE meeting_id = ? AND contact_id = ?`,
+  ).bind(now, now, id, participant?.id ?? '').run();
+
+  return c.json({ success: true, emailSent: true, joinUrl });
+});
+
+export { meetingRooms, meetingsAuth };

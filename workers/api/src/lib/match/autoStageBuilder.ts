@@ -60,13 +60,16 @@ export interface AutoStageBuilderResult {
   repoChoice: { repoId: number; fullName: string; rationale: string };
   stations: AutoStation[];
   /** Per-station match metadata for explainability + audit. */
-  perStationRepo: Record<StationType, { repoId: number; fullName: string; score: number }>;
+  perStationRepo: Partial<
+    Record<StationType, { repoId: number; fullName: string; score: number }>
+  >;
 }
 
 export interface AutoStageBuilderInput {
   db: D1Database;
   roleContext: RoleContextRow;
   matchConfig: PipelineMatchConfig;
+  requestedStationTypes?: Array<'CODE_REVIEW' | 'CODE_IMPLEMENTATION'>;
 }
 
 function exactSeniority(
@@ -256,6 +259,17 @@ export async function autoStageBuilder(
   input: AutoStageBuilderInput,
 ): Promise<AutoStageBuilderResult> {
   const { db, roleContext, matchConfig } = input;
+  const requestedStationTypes = new Set(
+    input.requestedStationTypes?.length
+      ? input.requestedStationTypes
+      : ['CODE_REVIEW', 'CODE_IMPLEMENTATION'],
+  );
+  const includeReview = requestedStationTypes.has('CODE_REVIEW');
+  const includeImplementation = requestedStationTypes.has('CODE_IMPLEMENTATION');
+
+  if (!includeReview && !includeImplementation) {
+    throw new Error('autoStageBuilder: requestedStations must include CODE_REVIEW and/or CODE_IMPLEMENTATION');
+  }
 
   const baseRequest = buildMatchRequest(roleContext);
   if (baseRequest.mustHaveSkills.length === 0) {
@@ -264,18 +278,29 @@ export async function autoStageBuilder(
     );
   }
 
-  // 1. Match for CODE_REVIEW.
-  const reviewMatches = await matchRepos(db, baseRequest);
-  const reviewRepo: MatchedRepo | undefined = reviewMatches[0];
-  if (!reviewRepo) {
-    throw new Error('autoStageBuilder: matchRepos returned no candidate repos for review station');
-  }
+  let reviewRepo: MatchedRepo | undefined;
+  let implRepo: MatchedRepo | undefined;
 
-  // 2. Match for CODE_IMPLEMENTATION.
-  let implRepo: MatchedRepo;
-  if (matchConfig.stage_linkage === 'shared-repo') {
-    implRepo = reviewRepo;
-  } else {
+  if (includeReview) {
+    const reviewMatches = await matchRepos(db, baseRequest);
+    reviewRepo = reviewMatches[0];
+    if (!reviewRepo) {
+      throw new Error('autoStageBuilder: matchRepos returned no candidate repos for review station');
+    }
+
+    if (includeImplementation && matchConfig.stage_linkage === 'per-stage') {
+      const implMatches = await matchRepos(db, baseRequest);
+      const top = implMatches[0];
+      if (!top) {
+        throw new Error(
+          'autoStageBuilder: matchRepos returned no candidate repos for implementation station',
+        );
+      }
+      implRepo = top;
+    } else if (includeImplementation) {
+      implRepo = reviewRepo;
+    }
+  } else if (includeImplementation) {
     const implMatches = await matchRepos(db, baseRequest);
     const top = implMatches[0];
     if (!top) {
@@ -299,21 +324,21 @@ export async function autoStageBuilder(
     const term = openSemanticTerm(surface);
     return term ? [term.canonicalKey] : [];
   });
-  const pr = await pickReviewPr(db, reviewRepo.id, roleConcepts, requiredConcepts);
-  if (!pr) {
-    throw new Error(
-      `autoStageBuilder: no source-backed role-safe review challenge found for repo ${reviewRepo.fullName} (id=${reviewRepo.id})`,
-    );
-  }
-  const issue = await pickImplementationIssue(db, implRepo.id, baseRequest.seniority);
-  if (!issue) {
-    throw new Error(
-      `autoStageBuilder: no eligible implementation issue found for repo ${implRepo.fullName} (id=${implRepo.id})`,
-    );
-  }
+  const stations: AutoStation[] = [];
+  const perStationRepo: AutoStageBuilderResult['perStationRepo'] = {};
 
-  const stations: AutoStation[] = [
-    {
+  if (includeReview) {
+    if (!reviewRepo) {
+      throw new Error('autoStageBuilder: internal inconsistency while resolving review station');
+    }
+
+    const pr = await pickReviewPr(db, reviewRepo.id, roleConcepts, requiredConcepts);
+    if (!pr) {
+      throw new Error(
+        `autoStageBuilder: no source-backed role-safe review challenge found for repo ${reviewRepo.fullName} (id=${reviewRepo.id})`,
+      );
+    }
+    stations.push({
       type: 'CODE_REVIEW',
       title: `Review PR #${pr.prNumber}: ${pr.prTitle}`,
       repoId: reviewRepo.id,
@@ -321,33 +346,67 @@ export async function autoStageBuilder(
       githubPrNumber: pr.prNumber,
       prTitle: pr.prTitle,
       sortOrder: 0,
-    },
-    {
+    });
+    perStationRepo.CODE_REVIEW = {
+      repoId: reviewRepo.id,
+      fullName: reviewRepo.fullName,
+      score: reviewRepo.score,
+    };
+  }
+
+  if (includeImplementation) {
+    if (!implRepo) {
+      throw new Error('autoStageBuilder: internal inconsistency while resolving implementation station');
+    }
+    const issue = await pickImplementationIssue(db, implRepo.id, baseRequest.seniority);
+    if (!issue) {
+      throw new Error(
+        `autoStageBuilder: no eligible implementation issue found for repo ${implRepo.fullName} (id=${implRepo.id})`,
+      );
+    }
+    stations.push({
       type: 'CODE_IMPLEMENTATION',
       title: `Implement issue #${issue.issueNumber}: ${issue.issueTitle}`,
       repoId: implRepo.id,
       githubRepoUrl: implRepo.githubUrl,
       issueNumber: issue.issueNumber,
       issueTitle: issue.issueTitle,
-      sortOrder: 1,
-    },
-  ];
+      sortOrder: includeReview ? 1 : 0,
+    });
+    perStationRepo.CODE_IMPLEMENTATION = {
+      repoId: implRepo.id,
+      fullName: implRepo.fullName,
+      score: implRepo.score,
+    };
+  }
+
+  const first = stations[0];
+  const primaryRepo = first ?
+    (first.type === 'CODE_REVIEW'
+      ? reviewRepo
+      : implRepo)
+    : undefined;
+
+  if (!primaryRepo || !first) {
+    throw new Error('autoStageBuilder: no stations were built for this request');
+  }
 
   const rationale =
-    matchConfig.stage_linkage === 'shared-repo'
-      ? `Matched ${reviewRepo.fullName} (score ${reviewRepo.score.toFixed(3)}) covering all ${baseRequest.mustHaveSkills.length} non-negotiable skill(s); shared across both stations.`
-      : `Per-stage linkage: review on ${reviewRepo.fullName} (score ${reviewRepo.score.toFixed(3)}), implementation on ${implRepo.fullName} (score ${implRepo.score.toFixed(3)}).`;
+    stations.length === 1
+      ? includeReview
+        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) for code review.`
+        : `Matched ${implRepo!.fullName} (score ${implRepo!.score.toFixed(3)}) for implementation.`
+      : matchConfig.stage_linkage === 'shared-repo'
+        ? `Matched ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}) covering all ${baseRequest.mustHaveSkills.length} non-negotiable skill(s); shared across both stations.`
+        : `Per-stage linkage: review on ${reviewRepo!.fullName} (score ${reviewRepo!.score.toFixed(3)}), implementation on ${implRepo!.fullName} (score ${implRepo!.score.toFixed(3)}).`;
 
   return {
     repoChoice: {
-      repoId: reviewRepo.id,
-      fullName: reviewRepo.fullName,
+      repoId: primaryRepo.id,
+      fullName: primaryRepo.fullName,
       rationale,
     },
     stations,
-    perStationRepo: {
-      CODE_REVIEW: { repoId: reviewRepo.id, fullName: reviewRepo.fullName, score: reviewRepo.score },
-      CODE_IMPLEMENTATION: { repoId: implRepo.id, fullName: implRepo.fullName, score: implRepo.score },
-    },
+    perStationRepo,
   };
 }

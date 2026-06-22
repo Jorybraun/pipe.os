@@ -1,206 +1,599 @@
 {
-  "version": "1.0-local-contract",
-  "last_updated": "2026-06-14T23:21:16.203202+00:00",
-  "vision_nodes": [
+  "version": "1.0",
+  "last_updated": "2026-06-21T20:06:06.495897",
+  "session_id": "raw-dream-cycle-pipe-os-2026-06-15",
+  "drift_detected": 0,
+  "provenance": "raw-dream-cycle-pipe-os-2026-06-15.md",
+  "nodes": [
     {
-      "id": "vision-pipe-os-core",
+      "id": "vision_pipe_os_core",
       "type": "VisionNode",
       "name": "PIPE-OS AI-Native Developer Interview Platform",
-      "description": "Solo-founder AI-native developer interview platform with self-improving recursive planning harness. Route-based BDD-first TDD. Brutalist glassmorphic design.",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "timestamp": "2026-06-14T23:21:16.203202+00:00",
-      "confidence": 0.95
-    }
-  ],
-  "business_requirements": [
+      "description": "Solo-founder AI-native developer interview platform with self-improving recursive planning harness, D1-authoritative source-backed hypergraph evidence, simple JD role input, roleless talent-pool intake, Interviews/Roles/People product surface, and deterministic PR challenge matching. Local brain first, no external GBrain until proven.",
+      "timestamp": "2026-06-15T19:30:00Z",
+      "provenance": "raw-dream-cycle-pipe-os-2026-06-15.md",
+      "confidence": 0.95,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495859"
+    },
     {
-      "id": "br-cost-efficiency",
+      "id": "br_cost_efficiency",
       "type": "BusinessRequirement",
       "name": "CostEfficiency",
       "description": "<5% inference budget, raw/graph storage in D1/Neo4j local-first. No external paid services until local proven.",
       "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.98,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495862"
     },
     {
-      "id": "br-compliance-defensibility",
+      "id": "br_compliance_defensibility",
       "type": "BusinessRequirement",
       "name": "ComplianceDefensibility",
       "description": "Traceability to raw + graph provenance, human-in-loop for vision changes. Audit logs for all synthesis.",
       "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.97,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495864"
     },
     {
-      "id": "br-market-positioning",
+      "id": "br_market_positioning",
       "type": "BusinessRequirement",
       "name": "MarketPositioning",
       "description": "Supports PIPE wedge via interview-style planning. Positions PIPE-OS as AI-native developer interview platform with self-improving harness.",
       "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.96,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495865"
     },
     {
-      "id": "br-scalability",
+      "id": "br_scalability",
       "type": "BusinessRequirement",
       "name": "Scalability",
       "description": "Multi-stakeholder interviews, batch LLM calls, herder sessions, small-batch dispatch (max 2 children).",
-      "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
+      "priority": "medium",
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.95,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495866"
     },
     {
-      "id": "br-roi-measurement",
+      "id": "br_roi_measurement",
       "type": "BusinessRequirement",
       "name": "ROIMeasurement",
       "description": "Graph metrics: provenance \u226595%, validation \u226590%, role discovery <30min, drift detection <5min. Continuous improvement dashboard.",
       "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.94,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495868"
     },
     {
-      "id": "br-non-goals",
+      "id": "br_non_goals",
       "type": "BusinessRequirement",
       "name": "NonGoals",
       "description": "No GBrain until local proven. No flattening without query layer. No skipping raw transcript. No external memory before local artifact contract.",
       "priority": "high",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
-      "confidence": 0.95
-    }
-  ],
-  "ux_flows": [
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "confidence": 0.99,
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495869"
+    },
     {
-      "id": "ux-interview-flow",
+      "id": "ux_interview_flow",
       "type": "UXFlow",
       "name": "InterviewFlow",
       "description": "Planning session start: raw transcript capture \u2192 multi-pass extraction \u2192 verification \u2192 graph commit. Canonical pattern from discovery micro-app.",
       "priority": "high",
       "validation_method": "chrome-devtools-mcp + raw transcript review",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495870"
     },
     {
-      "id": "ux-vision-alignment-view",
+      "id": "ux_vision_alignment_view",
       "type": "UXFlow",
       "name": "VisionAlignmentView",
       "description": "Graph query UI/CLI showing drift alerts, alignment scores, provenance links. Visualizes BR and UX edges to Vision.",
-      "priority": "high",
+      "priority": "medium",
       "validation_method": "graph query execution + visual inspection",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495872"
     },
     {
-      "id": "ux-roadmap-kanban-dispatch",
+      "id": "ux_roadmap_kanban_dispatch",
       "type": "UXFlow",
       "name": "RoadmapKanbanDispatch",
       "description": "Briefs auto-generated from graph, acceptance criteria template, small-batch dispatch (max 2), herder session creation.",
       "priority": "high",
       "validation_method": "Kanban task creation + chrome validation",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495873"
     },
     {
-      "id": "ux-business-ux-layer",
+      "id": "ux_business_ux_layer",
       "type": "UXFlow",
       "name": "BusinessUXLayer",
       "description": "Dedicated sub-graphs integration (BR + UX), prioritization edges, query-backed section generation.",
       "priority": "high",
       "validation_method": "section generation from nodes + edge verification",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495874"
     },
     {
-      "id": "ux-continuous-improvement-dashboard",
+      "id": "ux_continuous_improvement_dashboard",
       "type": "UXFlow",
       "name": "ContinuousImprovementDashboard",
       "description": "Metrics from graph + raw log review: node counts, drift, provenance %, cycle time, validation rate.",
-      "priority": "high",
+      "priority": "medium",
       "validation_method": "metrics log + dashboard render",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495876"
     },
     {
-      "id": "ux-validation-hook",
+      "id": "ux_validation_hook",
       "type": "UXFlow",
       "name": "ValidationHook",
       "description": "chrome-devtools-mcp proof before done, graph edge marked validated, strict Kanban acceptance criteria enforcement.",
       "priority": "high",
       "validation_method": "chrome proof + edge update",
-      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "provenance_transcript_id": "raw-dream-cycle-pipe-os-2026-06-15",
+      "last_verified_by_session": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "last_verified_at": "2026-06-21T20:06:06.495877"
     }
   ],
   "edges": [
     {
-      "source": "br-cost-efficiency",
-      "target": "vision-pipe-os-core",
+      "id": "e1",
+      "from": "br_cost_efficiency",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e2",
+      "from": "br_compliance_defensibility",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e3",
+      "from": "br_market_positioning",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e4",
+      "from": "br_scalability",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e5",
+      "from": "br_roi_measurement",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e6",
+      "from": "br_non_goals",
+      "to": "vision_pipe_os_core",
+      "type": "BR_SUPPORTS_VISION"
+    },
+    {
+      "id": "e7",
+      "from": "ux_interview_flow",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e8",
+      "from": "ux_vision_alignment_view",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e9",
+      "from": "ux_roadmap_kanban_dispatch",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e10",
+      "from": "ux_business_ux_layer",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e11",
+      "from": "ux_continuous_improvement_dashboard",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e12",
+      "from": "ux_validation_hook",
+      "to": "vision_pipe_os_core",
+      "type": "UX_SUPPORTS_VISION"
+    },
+    {
+      "id": "e13",
+      "from": "br_compliance_defensibility",
+      "to": "br_cost_efficiency",
+      "type": "BR_CONSTRAINS_ROADMAP"
+    },
+    {
+      "id": "e14",
+      "from": "ux_validation_hook",
+      "to": "ux_roadmap_kanban_dispatch",
+      "type": "UX_ENABLES_DISPATCH"
+    },
+    {
+      "id": "edge_br_cost_efficiency_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_cost_efficiency",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "br-compliance-defensibility",
-      "target": "vision-pipe-os-core",
+      "id": "edge_br_compliance_defensibility_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_compliance_defensibility",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "br-market-positioning",
-      "target": "vision-pipe-os-core",
+      "id": "edge_br_market_positioning_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_market_positioning",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "br-scalability",
-      "target": "vision-pipe-os-core",
+      "id": "edge_br_scalability_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_scalability",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "br-roi-measurement",
-      "target": "vision-pipe-os-core",
+      "id": "edge_br_roi_measurement_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_roi_measurement",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "br-non-goals",
-      "target": "vision-pipe-os-core",
+      "id": "edge_br_non_goals_to_vision",
       "type": "BR_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "br_non_goals",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-interview-flow",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_interview_flow_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_interview_flow",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-vision-alignment-view",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_vision_alignment_view_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_vision_alignment_view",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-roadmap-kanban-dispatch",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_roadmap_kanban_dispatch_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_roadmap_kanban_dispatch",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-business-ux-layer",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_business_ux_layer_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_business_ux_layer",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-continuous-improvement-dashboard",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_continuous_improvement_dashboard_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_continuous_improvement_dashboard",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     },
     {
-      "source": "ux-validation-hook",
-      "target": "vision-pipe-os-core",
+      "id": "edge_ux_validation_hook_to_vision",
       "type": "UX_SUPPORTS_VISION",
-      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+      "from": "ux_validation_hook",
+      "to": "vision_pipe_os_core",
+      "provenance": "start_session"
     }
   ],
-  "drift_detection": {
-    "query": "MATCH (legacy:Plan {source:\"STRATEGY.md\", superseded:false})-[:CONFLICTS_WITH|SUPERSEDES]->(v2:Plan {source:\"pipe-strategy-v2\"}) RETURN ...",
-    "result_count": 0,
-    "status": "clean"
+  "metrics": {
+    "node_count": 13,
+    "edge_count": 14,
+    "br_nodes": 6,
+    "ux_nodes": 6,
+    "vision_nodes": 1,
+    "provenance_coverage": 1.0,
+    "drift_status": "clean",
+    "last_run": "2026-06-21T20:06:06.495892",
+    "drift_detected": 0,
+    "br_nodes_populated": 6,
+    "ux_nodes_populated": 6,
+    "total_nodes": 13,
+    "total_edges": 26,
+    "validation_rate": 1.0,
+    "sessions_count": 37
+  },
+  "sessions": [
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-16T19-19-22",
+      "timestamp": "2026-06-16T19:19:22.244280",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-16T19-19-22.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-16T21-19-51",
+      "timestamp": "2026-06-16T21:19:51.142013",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-16T21-19-51.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-16T23-21-05",
+      "timestamp": "2026-06-16T23:21:05.779625",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-16T23-21-05.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T01-22-21",
+      "timestamp": "2026-06-17T01:22:21.367956",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T01-22-21.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T03-23-36",
+      "timestamp": "2026-06-17T03:23:36.478135",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T03-23-36.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T05-25-04",
+      "timestamp": "2026-06-17T05:25:04.609573",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T05-25-04.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T07-26-10",
+      "timestamp": "2026-06-17T07:26:10.625530",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T07-26-10.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T09-27-20",
+      "timestamp": "2026-06-17T09:27:20.622859",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T09-27-20.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T11-28-29",
+      "timestamp": "2026-06-17T11:28:29.305911",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T11-28-29.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T13-29-46",
+      "timestamp": "2026-06-17T13:29:46.454780",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T13-29-46.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T15-31-02",
+      "timestamp": "2026-06-17T15:31:02.092906",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T15-31-02.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T17-31-55",
+      "timestamp": "2026-06-17T17:31:55.350251",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T17-31-55.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T19-33-20",
+      "timestamp": "2026-06-17T19:33:20.053660",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T19-33-20.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T21-35-31",
+      "timestamp": "2026-06-17T21:35:31.413624",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T21-35-31.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-17T23-36-35",
+      "timestamp": "2026-06-17T23:36:35.358925",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-17T23-36-35.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T01-37-53",
+      "timestamp": "2026-06-18T01:37:53.515132",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T01-37-53.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T03-39-34",
+      "timestamp": "2026-06-18T03:39:34.929207",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T03-39-34.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T09-43-34",
+      "timestamp": "2026-06-18T09:43:34.535916",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T09-43-34.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T11-44-51",
+      "timestamp": "2026-06-18T11:44:51.642608",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T11-44-51.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T13-46-03",
+      "timestamp": "2026-06-18T13:46:03.882207",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T13-46-03.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T20-57-42",
+      "timestamp": "2026-06-18T20:57:42.027249",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T20-57-42.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-18T22-59-31",
+      "timestamp": "2026-06-18T22:59:31.386784",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-18T22-59-31.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T01-00-49",
+      "timestamp": "2026-06-19T01:00:49.212900",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T01-00-49.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T03-02-08",
+      "timestamp": "2026-06-19T03:02:08.539093",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T03-02-08.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T05-03-18",
+      "timestamp": "2026-06-19T05:03:18.336082",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T05-03-18.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T09-05-32",
+      "timestamp": "2026-06-19T09:05:32.681859",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T09-05-32.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T11-06-51",
+      "timestamp": "2026-06-19T11:06:51.781959",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T11-06-51.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T13-07-29",
+      "timestamp": "2026-06-19T13:07:29.784850",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T13-07-29.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-19T15-08-42",
+      "timestamp": "2026-06-19T15:08:42.564611",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-19T15-08-42.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T01-16-07",
+      "timestamp": "2026-06-20T01:16:07.468850",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T01-16-07.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T03-18-37",
+      "timestamp": "2026-06-20T03:18:37.169597",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T03-18-37.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T05-20-39",
+      "timestamp": "2026-06-20T05:20:39.000896",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T05-20-39.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T07-23-17",
+      "timestamp": "2026-06-20T07:23:17.288567",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T07-23-17.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T09-25-33",
+      "timestamp": "2026-06-20T09:25:33.459287",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T09-25-33.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T11-29-51",
+      "timestamp": "2026-06-20T11:29:51.723137",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T11-29-51.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-20T13-58-59",
+      "timestamp": "2026-06-20T13:58:59.816428",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-20T13-58-59.md",
+      "drift_detected": false
+    },
+    {
+      "id": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+      "timestamp": "2026-06-21T20:06:06.495889",
+      "raw_transcript": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-21T20-06-06.md",
+      "drift_detected": false
+    }
+  ],
+  "active_plan_sources": [
+    "knowledge/plan/strategy/README.md",
+    "knowledge/plan/strategy/part1-north-star/INDEX.md",
+    "knowledge/plan/strategy/part2-role-discovery/INDEX.md",
+    "knowledge/plan/strategy/part3-repo-ingestion/INDEX.md",
+    "knowledge/plan/strategy/part4-candidate-ingestion/INDEX.md",
+    "knowledge/plan/strategy/part5-matching-migration/INDEX.md",
+    "knowledge/plan/strategy/part6-market-research/INDEX.md",
+    "knowledge/plan/living-context-repo-matching-plan.md",
+    "knowledge/docs/decisions/current/ADR-043-no-hard-coded-semantic-taxonomy.md",
+    "knowledge/docs/decisions/current/ADR-051-simple-job-description-role-input.md",
+    "knowledge/docs/decisions/current/ADR-052-roleless-talent-pool-intake.md",
+    "knowledge/docs/decisions/current/ADR-053-simple-interview-role-people-product-surface.md",
+    "knowledge/docs/decisions/current/ADR-054-adr-led-minion-orchestration.md"
+  ],
+  "planning_audit_summary": "Live planning source is the strategy/ index set plus living-context-repo-matching-plan.md and current ADRs. Archived pipe-strategy-v2-part* files and prior dated dream-cycle briefs are provenance/output only. Current implementation must preserve immutable source artifacts, D1-authoritative source-backed hyperedge/context records, simple JD role inputs, roleless talent-pool intake, deterministic PR challenge matching, the Interviews/Roles/People product surface, no hard-coded semantic taxonomy, and ADR-led minion orchestration.",
+  "last_plan_audit": {
+    "session_id": "raw-dream-cycle-pipe-os-2026-06-21T20-06-06",
+    "timestamp": "2026-06-21T20:06:06.495896",
+    "sources": [
+      "knowledge/plan/strategy/README.md",
+      "knowledge/plan/strategy/part1-north-star/INDEX.md",
+      "knowledge/plan/strategy/part2-role-discovery/INDEX.md",
+      "knowledge/plan/strategy/part3-repo-ingestion/INDEX.md",
+      "knowledge/plan/strategy/part4-candidate-ingestion/INDEX.md",
+      "knowledge/plan/strategy/part5-matching-migration/INDEX.md",
+      "knowledge/plan/strategy/part6-market-research/INDEX.md",
+      "knowledge/plan/living-context-repo-matching-plan.md",
+      "knowledge/docs/decisions/current/ADR-043-no-hard-coded-semantic-taxonomy.md",
+      "knowledge/docs/decisions/current/ADR-051-simple-job-description-role-input.md",
+      "knowledge/docs/decisions/current/ADR-052-roleless-talent-pool-intake.md",
+      "knowledge/docs/decisions/current/ADR-053-simple-interview-role-people-product-surface.md",
+      "knowledge/docs/decisions/current/ADR-054-adr-led-minion-orchestration.md"
+    ],
+    "drift_detected": false
   }
 }

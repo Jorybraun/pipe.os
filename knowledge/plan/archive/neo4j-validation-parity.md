@@ -3,7 +3,7 @@ See: workers/api/src/lib/neo4j/, infra/neo4j/, docs/decisions/current/ADR-043*.m
 
 # Neo4j: Validation and Parity Testing
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 413–421)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 413–421)
 **Phase:** 2 (runs concurrently with Phases B and C)
 **Status:** PENDING
 **Estimate:** 1 week

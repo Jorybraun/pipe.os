@@ -65,6 +65,20 @@ export interface CreatePipelineResponse {
   };
 }
 
+export interface SimpleJobDescriptionRoleContextResponse {
+  id: string;
+  pipelineId: string | null;
+  status: 'COMPLETE';
+  baseline: {
+    title: string;
+    source: 'simple_job_description';
+  };
+  jobDescription: string;
+  selectedTerms: string[];
+  rejectedSelectedTerms: string[];
+  roleSnapshotId: string;
+}
+
 // ─── Stage ────────────────────────────────────────────────────────────────────
 
 export type ChallengeType =
@@ -787,6 +801,42 @@ export interface StandaloneReviewAlignment {
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
 
+export type StandaloneReviewExclusionReason =
+  | 'DEMAND_WITHOUT_SOURCE_SPANS'
+  | 'MISSING_DEMAND_SOURCE_SPANS'
+  | 'ROLE_GUARDRAIL_FAILED'
+  | 'PACKET_NOT_PRODUCTION_READY';
+
+export interface StandaloneReviewExcludedPacket {
+  id: string;
+  repoId: string | null;
+  prNumber: number | null;
+  reason: StandaloneReviewExclusionReason;
+  demandIds: string[];
+  missingSourceSpanIds: string[];
+  gateFailures: string[];
+  qualityScore: number | null;
+}
+
+export interface StandaloneReviewEvaluatedChallenge {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  recallRank: number | null;
+  rank: number | null;
+  eligible: boolean;
+  rejectionReasons: string[];
+  provenanceComplete: boolean;
+  alignedDemandCount: number;
+  stretchCount: number;
+}
+
+export interface StandaloneReviewDiagnostics {
+  recalledPacketIds: string[];
+  excludedPackets: StandaloneReviewExcludedPacket[];
+  evaluatedChallenges: StandaloneReviewEvaluatedChallenge[];
+}
+
 export interface StandaloneReviewSubmissionSummary {
   verdict: string | null;
   summary: string | null;
@@ -814,6 +864,7 @@ export interface StandaloneReviewMatchRecord {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   gaps: string[];
+  diagnostics: StandaloneReviewDiagnostics;
   submitted: boolean;
   submission: StandaloneReviewSubmissionSummary | null;
   completedAt: string | null;
@@ -977,6 +1028,45 @@ export interface LivingContextAssertion {
   sources: LivingContextSourceRef[];
 }
 
+export interface LivingContextRecordEntity {
+  entityType: string;
+  entityId: string | null;
+  relationship: string;
+  value: unknown;
+  confidence: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface LivingContextRecordConcept {
+  id: string;
+  canonicalKey: string;
+  namespace: string;
+  label: string;
+  relationship: string;
+  weight: number;
+}
+
+export interface LivingContextRecord {
+  id: string;
+  scopeType: string;
+  scopeId: string;
+  interactionId: string | null;
+  applicationId: string | null;
+  episodeId: string | null;
+  assertionId: string | null;
+  recordType: string;
+  predicate: string | null;
+  narrative: string;
+  qualifiers: Record<string, unknown>;
+  confidence: number | null;
+  polarity: number;
+  extractionVersion: string | null;
+  observedAt: string | null;
+  entities: LivingContextRecordEntity[];
+  concepts: LivingContextRecordConcept[];
+  sources: LivingContextSourceRef[];
+}
+
 export interface LivingContextSignalEvidence {
   id: string;
   interactionId: string | null;
@@ -1017,6 +1107,7 @@ export interface LivingContextInteraction {
   updatedAt: string;
   metadata: Record<string, unknown>;
   artifactIds: string[];
+  contextRecordIds: string[];
   assertionIds: string[];
   signalKeys: string[];
 }
@@ -1045,12 +1136,14 @@ export interface LivingContextReadModel {
   summary: {
     interactionCount: number;
     artifactCount: number;
+    contextRecordCount: number;
     assertionCount: number;
     signalCount: number;
     sourceSpanCount: number;
   };
   interactions: LivingContextInteraction[];
   artifacts: LivingContextArtifact[];
+  contextRecords: LivingContextRecord[];
   assertions: LivingContextAssertion[];
   signals: LivingContextSignal[];
   relationships: Array<{

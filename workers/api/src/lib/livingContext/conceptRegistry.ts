@@ -148,16 +148,56 @@ function parseJsonRecord(value: string): Record<string, unknown> {
 function parseJsonArray(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter((entry): entry is string => typeof entry === 'string')
-      : [];
+    return parseStringArrayValue(parsed);
   } catch {
     return [];
   }
 }
 
+function parseStringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function conceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function conceptSurface(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const tail = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return tail.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
+
+function repoSpanLocator(row: {
+  path: string | null;
+  line_start: number | null;
+  line_end: number | null;
+  byte_start: number | null;
+  byte_end: number | null;
+  source_span_id: string;
+}): string {
+  const path = row.path ?? 'repo-source-span';
+  const lineRange = row.line_start != null && row.line_end != null
+    ? `:${row.line_start}-${row.line_end}`
+    : '';
+  const byteRange = row.byte_start != null && row.byte_end != null
+    ? `#bytes=${row.byte_start}-${row.byte_end}`
+    : '';
+  return `${path}${lineRange}${byteRange}@${row.source_span_id}`;
+}
+
 class D1ConceptRegistry implements ConceptRegistry {
   constructor(private readonly db: D1Database) {}
+
+  private async tableExists(tableName: string): Promise<boolean> {
+    const row = await this.db.prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
+    ).bind(tableName).first<{ name: string }>();
+    return Boolean(row);
+  }
 
   async registerConcept(input: RegisterConceptInput): Promise<{
     conceptId: string;
@@ -648,6 +688,63 @@ class D1ConceptRegistry implements ConceptRegistry {
         processed++;
         if (result.isNewConcept) created++;
         else updated++;
+      }
+    }
+
+    if (
+      await this.tableExists('repo_semantic_assertions')
+      && await this.tableExists('repo_assertion_source_spans')
+      && await this.tableExists('repo_source_spans')
+    ) {
+      const repoRows = await this.db.prepare(
+        `SELECT rsa.id AS assertion_id, rsa.repo_snapshot_id, rsa.qualifiers_json,
+                rsa.confidence, rsa.created_at, rass.source_span_id,
+                rss.artifact_version_id, rss.path, rss.byte_start, rss.byte_end,
+                rss.line_start, rss.line_end, rss.exact_text
+           FROM repo_semantic_assertions rsa
+           JOIN repo_assertion_source_spans rass ON rass.assertion_id = rsa.id
+           JOIN repo_source_spans rss ON rss.id = rass.source_span_id
+          ORDER BY rsa.id, rass.source_span_id`,
+      ).all<{
+        assertion_id: string;
+        repo_snapshot_id: string;
+        qualifiers_json: string;
+        confidence: number;
+        created_at: number;
+        source_span_id: string;
+        artifact_version_id: string;
+        path: string | null;
+        byte_start: number | null;
+        byte_end: number | null;
+        line_start: number | null;
+        line_end: number | null;
+        exact_text: string;
+      }>();
+      for (const row of repoRows.results ?? []) {
+        const conceptKeys = parseStringArrayValue(parseJsonRecord(row.qualifiers_json).conceptKeys);
+        for (const canonicalKey of conceptKeys) {
+          const result = await this.registerConcept({
+            canonicalKey,
+            namespace: conceptNamespace(canonicalKey),
+            label: conceptSurface(canonicalKey),
+            surface: conceptSurface(canonicalKey),
+            confidence: row.confidence,
+            resolverVersion: 'repo-semantic-assertion-v1',
+            metadata: {
+              source: 'repo_semantic_assertion',
+              assertionId: row.assertion_id,
+              repoSnapshotId: row.repo_snapshot_id,
+              sourceSpanId: row.source_span_id,
+            },
+            evidenceEntityType: 'repo_source_span',
+            evidenceEntityId: row.source_span_id,
+            evidenceLocator: repoSpanLocator(row),
+            observedAt: row.created_at,
+          });
+          processed++;
+          if (result.isNewConcept) created++;
+          else updated++;
+        }
       }
     }
 

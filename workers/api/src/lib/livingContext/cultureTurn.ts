@@ -10,7 +10,7 @@ import {
   LivingContextStore,
   stableJson,
 } from './persistence';
-import type { JsonValue } from './types';
+import type { JsonObject, JsonValue } from './types';
 
 const PROJECTION_TYPE = 'culture_turn_semantics';
 
@@ -55,6 +55,25 @@ async function removePriorProjection(
       WHERE spr.artifact_id = ?1 AND spr.projection_type = ?2`,
   ).bind(artifactId, PROJECTION_TYPE)
     .all<{ workspace_person_id: string; signal_key: string }>();
+  await db.prepare(
+    `DELETE FROM context_records
+      WHERE assertion_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'assertion'
+      )
+         OR episode_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'episode'
+      )`,
+  ).bind(artifactId, PROJECTION_TYPE).run();
   await db.prepare(
     `DELETE FROM semantic_relationships
       WHERE id IN (
@@ -191,6 +210,42 @@ export async function ingestCultureTurnToLivingContext(
     exactText: input.answer,
     metadata: { role: 'candidate', turnIndex: input.turnIndex },
   });
+  await store.upsertContextRecord({
+    ingestionKey: `culture-session:${input.sessionId}:turn:${input.turnIndex}:${version.id}:context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'culture_interview_turn',
+    predicate: 'preserves culture interview turn',
+    narrative: `Culture interview turn ${input.turnIndex} source evidence.`,
+    qualifiers: {
+      sessionId: input.sessionId,
+      turnIndex: input.turnIndex,
+      questionSpanId: questionSpan.id,
+      answerSpanId: answerSpan.id,
+      videoStorageKey: input.videoStorageKey ?? null,
+    },
+    confidence: null,
+    extractionVersion: 'culture-turn-ingestion-v1',
+    observedAt: input.observedAt,
+    sources: [
+      {
+        sourceSpanId: questionSpan.id,
+        evidenceRole: 'question',
+        exactText: input.question,
+      },
+      {
+        sourceSpanId: answerSpan.id,
+        evidenceRole: 'answer',
+        exactText: input.answer,
+      },
+    ],
+    entities: [{
+      entityType: 'culture_session',
+      entityId: input.sessionId,
+      relationship: 'source_event',
+      metadata: { turnIndex: input.turnIndex },
+    }],
+  });
 
   const priorSignals = await removePriorProjection(db, artifact.id);
   const outputHash = await deterministicEntityId(
@@ -298,6 +353,41 @@ export async function ingestCultureTurnToLivingContext(
     assertionByStatementId.set(statement.id, assertion.id);
     await linkProjectionEntity(db, runId, 'assertion', assertion.id, now);
     await store.linkAssertionSourceSpan(assertion.id, supportingSpanId, 'source');
+    await store.upsertContextRecord({
+      ingestionKey: `culture-session:${input.sessionId}:turn:${input.turnIndex}:statement:${version.id}:${semanticKey}:context`,
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: interaction.id,
+      episodeId: episode.id,
+      assertionId: assertion.id,
+      recordType: 'culture_statement',
+      predicate: statement.type,
+      narrative: statement.phrase,
+      qualifiers: {
+        questionSpanId: questionSpan.id,
+        answerSpanId: answerSpan.id,
+        statementId: statement.id,
+        artifactVersionId: version.id,
+        semanticProjectionRunId: runId,
+        sourceQuote,
+      },
+      confidence: boundedScore(statement.confidence),
+      extractionVersion: extractorVersion,
+      observedAt: input.observedAt,
+      sources: [{
+        sourceSpanId: supportingSpanId,
+        evidenceRole: 'source',
+        exactText: sourceQuote,
+      }],
+      entities: [{
+        entityType: 'culture_statement',
+        relationship: 'statement',
+        value: {
+          statementId: statement.id,
+          type: statement.type,
+          surface: statement.surface,
+        } satisfies JsonObject,
+      }],
+    });
     for (const termInput of statement.semanticTerms ?? []) {
       if (!sourceQuote || !sourceQuote.includes(termInput.surface)) continue;
       const term = openSemanticTerm(termInput.surface);

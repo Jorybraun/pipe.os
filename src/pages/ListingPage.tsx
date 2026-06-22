@@ -98,11 +98,11 @@ export default function ListingPage(): JSX.Element {
   }, [pipelines]);
 
   const handleRoleClick = (id: string): void => {
-    navigate(`/pipeline/${id}`);
+    navigate(`/roles/${id}`);
   };
 
   const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
-    if (!window.confirm(`Are you sure you want to delete the pipeline "${title}"? This action cannot be undone.`)) {
+    if (!window.confirm(`Delete role "${title}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -115,7 +115,7 @@ export default function ListingPage(): JSX.Element {
       });
       await refetch();
     } catch (err) {
-      console.error("[ListingPage] Error deleting pipeline:", err);
+      console.error("[ListingPage] Error deleting role:", err);
     }
   };
 
@@ -123,7 +123,7 @@ export default function ListingPage(): JSX.Element {
     const count = selectedIds.size;
     if (count === 0) return;
 
-    if (!window.confirm(`Delete ${count} selected pipeline${count > 1 ? 's' : ''}? This cannot be undone.`)) {
+    if (!window.confirm(`Delete ${count} selected role${count > 1 ? 's' : ''}? This cannot be undone.`)) {
       return;
     }
 
@@ -133,7 +133,7 @@ export default function ListingPage(): JSX.Element {
       await refetch();
     } catch (err) {
       console.error("[ListingPage] Bulk delete error:", err);
-      alert("Failed to delete some pipelines.");
+      alert("Failed to delete some roles.");
     }
   };
 
@@ -171,7 +171,7 @@ export default function ListingPage(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            RECRUITMENT_PIPELINES
+            ROLES
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
             Active Roles
@@ -242,14 +242,14 @@ export default function ListingPage(): JSX.Element {
                   )}
                 </div>
                 <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
-                  {selectedIds.size > 0 ? `${selectedIds.size}_SELECTED` : 'SELECT_ALL'}
+                  {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
                 </span>
               </div>
               <div style={{ width: 1, height: 16, background: 'var(--pipe-surface)' }} />
               <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
-                placeholder="SEARCH_BY_TITLE..."
+                placeholder="Search roles..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 style={{
@@ -286,12 +286,12 @@ export default function ListingPage(): JSX.Element {
                 onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.1)'}
               >
                 <Trash2 size={14} />
-                DELETE_SELECTED ({selectedIds.size})
+                DELETE SELECTED ({selectedIds.size})
               </button>
             )}
             <div style={{ width: 1, height: 20, background: 'var(--pipe-surface-hover)' }} />
             <button 
-              onClick={() => navigate("/pipeline/new")}
+              onClick={() => navigate("/roles/new")}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -308,7 +308,7 @@ export default function ListingPage(): JSX.Element {
               }}
             >
               <Plus size={14} />
-              NEW_ROLE
+              NEW ROLE
             </button>
           </div>
 
@@ -325,7 +325,7 @@ export default function ListingPage(): JSX.Element {
             }}>
               <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
               <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
-                NO_ROLES_FOUND
+                No roles yet
               </p>
             </div>
           ) : (

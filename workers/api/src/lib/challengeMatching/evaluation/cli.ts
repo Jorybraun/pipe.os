@@ -298,9 +298,19 @@ export function generateHumanReadableReport(result: EvaluationResult): string {
     `Byte-identical comparison: ${result.metrics.byteIdenticalRerun ? 'PASS' : 'NOT PROVEN'}`,
     `Expert labels: ${result.metrics.expertLabelCount}`,
     `Synthetic labels: ${result.metrics.syntheticFixtureCount}`,
-    '',
-    result.passed ? 'RESULT: PASS' : 'RESULT: FAIL',
   ];
+  if (result.metrics.determinismComparisons.length > 0) {
+    lines.push(
+      '',
+      'Determinism comparisons:',
+      ...result.metrics.determinismComparisons.map((comparison) =>
+        `- ${comparison.candidateId}/${comparison.roleId}: ${comparison.matchRunId}`
+        + ` vs ${comparison.comparisonMatchRunId ?? '(missing)'}`
+        + ` => ${comparison.identical ? 'PASS' : 'FAIL'}`
+      ),
+    );
+  }
+  lines.push('', result.passed ? 'RESULT: PASS' : 'RESULT: FAIL');
   if (result.failures.length > 0) {
     lines.push('', 'Failures:', ...result.failures.map((failure) => `- ${failure}`));
   }

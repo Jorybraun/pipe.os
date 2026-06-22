@@ -13,6 +13,10 @@ const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
 );
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
@@ -81,6 +85,7 @@ describe('culture turn living-context ingestion', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
@@ -130,6 +135,8 @@ describe('culture turn living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(1);
     expect(count(sqlite, 'artifact_versions')).toBe(1);
     expect(count(sqlite, 'source_spans')).toBe(3);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(3);
     expect(count(sqlite, 'semantic_assertions')).toBe(1);
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(1);
@@ -178,6 +185,21 @@ describe('culture turn living-context ingestion', () => {
       predicate: 'novel replay-system implementation',
       narrative: 'built FluxCapacitorX for order replay in Zürich',
     });
+    const contextRecords = sqlite.prepare(
+      `SELECT record_type, predicate
+         FROM context_records
+        ORDER BY record_type`,
+    ).all();
+    expect(contextRecords).toEqual([
+      {
+        record_type: 'culture_interview_turn',
+        predicate: 'preserves culture interview turn',
+      },
+      {
+        record_type: 'culture_statement',
+        predicate: 'novel replay-system implementation',
+      },
+    ]);
 
     const concept = sqlite.prepare(
       `SELECT c.canonical_key, c.label, ac.relationship
@@ -217,6 +239,13 @@ describe('culture turn living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(1);
     expect(count(sqlite, 'artifact_versions')).toBe(1);
     expect(count(sqlite, 'source_spans')).toBe(2);
+    expect(count(sqlite, 'context_records')).toBe(1);
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate FROM context_records`,
+    ).get()).toEqual({
+      record_type: 'culture_interview_turn',
+      predicate: 'preserves culture interview turn',
+    });
     expect(count(sqlite, 'episodes')).toBe(1);
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
@@ -383,6 +412,7 @@ describe('culture turn living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(1);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(6);
+    expect(count(sqlite, 'context_records')).toBe(3);
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(1);
@@ -402,6 +432,18 @@ describe('culture turn living-context ingestion', () => {
     ).get() as { narrative: string; signal_key: string };
     expect(current.narrative).toContain('NewEngine');
     expect(current.signal_key).toBe('term:new-engine');
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'culture_statement'
+          AND narrative LIKE '%NewEngine%'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'culture_statement'
+          AND narrative LIKE '%OldEngine%'`,
+    ).get()).toEqual({ count: 0 });
 
     const staleSnapshot = sqlite.prepare(
       `SELECT id FROM signal_snapshots WHERE signal_key = 'term:old-engine'`,

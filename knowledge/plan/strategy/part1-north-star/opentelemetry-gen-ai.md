@@ -1,6 +1,6 @@
 # OpenTelemetry gen_ai Semantic Conventions
 
-**Source:** knowledge/plan/pipe-strategy-v2-part1-north-star.md (line 214)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1-north-star.md (line 214)
 **Status:** REDIRECT
 
 > OpenTelemetry gen_ai semantic conventions are the right target for when you add structured observability… Part 5 frames it as an observability maturity axis.

@@ -89,6 +89,12 @@ function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
     ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
 }
 
+function reviewSourceStatus(sources: StandaloneReviewSourceRef[]): string {
+  return sources.length > 0
+    ? sources.map(reviewSourceLabel).join(', ')
+    : 'missing source evidence';
+}
+
 function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | null {
   return sources
     .map((source) => source.exactText?.trim())
@@ -102,6 +108,7 @@ function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): s
 function reviewExclusionReasonLabel(reason: StandaloneReviewExcludedPacket['reason']): string {
   if (reason === 'DEMAND_WITHOUT_SOURCE_SPANS') return 'Demand lacks source spans';
   if (reason === 'MISSING_DEMAND_SOURCE_SPANS') return 'Missing repo source spans';
+  if (reason === 'PACKET_NOT_PRODUCTION_READY') return 'Packet not production-ready';
   return 'Job-description guardrail';
 }
 
@@ -111,6 +118,8 @@ function reviewExclusionDetail(packet: StandaloneReviewExcludedPacket): string {
     packet.prNumber !== null ? `PR #${packet.prNumber}` : null,
     packet.demandIds.length ? `demands ${packet.demandIds.join(', ')}` : null,
     packet.missingSourceSpanIds.length ? `missing spans ${packet.missingSourceSpanIds.join(', ')}` : null,
+    packet.gateFailures.length ? `failed gates ${packet.gateFailures.join(', ')}` : null,
+    packet.qualityScore !== null ? `quality ${packet.qualityScore.toFixed(2)}` : null,
   ].filter((value): value is string => Boolean(value));
   return details.join(' · ') || packet.id;
 }
@@ -119,6 +128,7 @@ function reviewedChallengeDetail(challenge: StandaloneReviewEvaluatedChallenge):
   const parts = [
     `PR #${challenge.prNumber}`,
     `${challenge.alignedDemandCount} aligned demand${challenge.alignedDemandCount === 1 ? '' : 's'}`,
+    `${challenge.stretchCount} stretch area${challenge.stretchCount === 1 ? '' : 's'}`,
     challenge.provenanceComplete ? 'provenance complete' : 'provenance incomplete',
   ];
   if (challenge.rejectionReasons.length > 0) {
@@ -136,6 +146,12 @@ function StandaloneReviewMatchPanel({
   const primaryEvidence = match.evidence.slice(0, 3);
   const excludedPackets = match.diagnostics.excludedPackets.slice(0, 4);
   const evaluatedChallenges = match.diagnostics.evaluatedChallenges.slice(0, 4);
+  const recalledPacketIds = match.diagnostics.recalledPacketIds.slice(0, 6);
+  const selectedChallenge = evaluatedChallenges.find((challenge) =>
+    challenge.prNumber === match.prNumber
+      && (match.repoId === null || challenge.repoId === String(match.repoId)),
+  ) ?? evaluatedChallenges.find((challenge) => challenge.rank === 1) ?? null;
+  const selectedStretchCount = selectedChallenge?.stretchCount ?? null;
   return (
     <section className="living-context__review-match" aria-label="Standalone code review match">
       <div className="living-context__review-match-head">
@@ -163,6 +179,9 @@ function StandaloneReviewMatchPanel({
             </a>
           )}
           {match.score !== null && <span>{Math.round(match.score * 100)}% match score</span>}
+          {selectedStretchCount !== null && selectedStretchCount > 0 && (
+            <span>{selectedStretchCount} stretch area{selectedStretchCount === 1 ? '' : 's'}</span>
+          )}
           {match.submitted && <span>Review submitted</span>}
         </div>
       )}
@@ -210,8 +229,12 @@ function StandaloneReviewMatchPanel({
                     {entry.atomId} → {entry.demandId}
                   </div>
                   <div className="living-context__review-evidence-sources">
-                    <span>candidate: {entry.candidateSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
-                    <span>PR: {entry.challengeSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                    <span className={entry.candidateSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                      candidate: {reviewSourceStatus(entry.candidateSourceRefs)}
+                    </span>
+                    <span className={entry.challengeSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                      PR: {reviewSourceStatus(entry.challengeSourceRefs)}
+                    </span>
                   </div>
                   {(candidateSnippet || challengeSnippet) && (
                     <div className="living-context__review-source-snippets">
@@ -256,8 +279,19 @@ function StandaloneReviewMatchPanel({
         </div>
       )}
 
-      {(excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
+      {(recalledPacketIds.length > 0 || excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
         <div className="living-context__review-diagnostics">
+          {recalledPacketIds.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Recalled packets</div>
+              <div className="living-context__packet-strip">
+                {recalledPacketIds.map((packetId) => (
+                  <span key={packetId}>{packetId}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {excludedPackets.length > 0 && (
             <div>
               <div className="living-context__eyebrow">Excluded challenge packets</div>

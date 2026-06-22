@@ -351,6 +351,25 @@ async function removePriorSemanticProjection(
     .all<{ workspace_person_id: string; signal_key: string }>();
 
   await db.prepare(
+    `DELETE FROM context_records
+      WHERE assertion_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'assertion'
+      )
+         OR episode_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'episode'
+      )`,
+  ).bind(artifactId, TRANSCRIPT_PROJECTION_TYPE).run();
+  await db.prepare(
     `DELETE FROM semantic_assertions
       WHERE id IN (
         SELECT spe.entity_id
@@ -626,6 +645,37 @@ export async function ingestMeetingTranscriptToLivingContext(
     });
   }
 
+  if (canonical.segments.length > 0) {
+    await store.upsertContextRecord({
+      ingestionKey: `meeting:${input.meetingId}:transcript:${version.id}:context`,
+      scopeType: 'meeting',
+      scopeId: input.meetingId,
+      recordType: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+      narrative: `Meeting transcript source evidence for meeting ${input.meetingId}.`,
+      qualifiers: {
+        meetingId: input.meetingId,
+        ownerId: input.ownerId,
+        provider: input.provider ?? null,
+        recordingKey: input.recordingKey ?? null,
+        segmentCount: canonical.segments.length,
+      },
+      confidence: null,
+      extractionVersion: 'meeting-transcript-ingestion-v1',
+      observedAt,
+      sources: canonical.segments.map((segment) => ({
+        sourceSpanId: spanBySegmentId.get(segment.stableSegmentId)?.id,
+        evidenceRole: 'transcript_segment',
+        exactText: segment.text,
+      })),
+      entities: [{
+        entityType: 'meeting',
+        entityId: input.meetingId,
+        relationship: 'source_event',
+      }],
+    });
+  }
+
   let outputHash = contentHash;
   let runId: string | null = null;
   let assertionCount = 0;
@@ -736,6 +786,44 @@ export async function ingestMeetingTranscriptToLivingContext(
     for (const sourceSpan of sourceSpans) {
       await store.linkAssertionSourceSpan(assertion.id, sourceSpan.id, 'source');
     }
+    await store.upsertContextRecord({
+      ingestionKey: `meeting:${input.meetingId}:assertion:${version.id}:${semanticKey}:context`,
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: identity.interactionId,
+      episodeId: episode.id,
+      assertionId: assertion.id,
+      recordType: 'meeting_transcript_assertion',
+      predicate: extracted.predicate.trim(),
+      narrative: extracted.narrative.trim(),
+      qualifiers: {
+        ...(extracted.qualifiers ?? {}),
+        artifactVersionId: version.id,
+        subjectSegmentId: extracted.subjectSegmentId,
+        semanticProjectionRunId: semanticRunId,
+      },
+      confidence: boundedScore(extracted.confidence),
+      polarity: boundedPolarity(extracted.polarity),
+      extractionVersion: extractorVersion,
+      observedAt,
+      sources: sourceSpans.map((sourceSpan) => ({
+        sourceSpanId: sourceSpan.id,
+        evidenceRole: 'source',
+      })),
+      entities: [
+        {
+          entityType: 'meeting',
+          entityId: input.meetingId,
+          relationship: 'source_event',
+        },
+        ...(extracted.objectValue === undefined
+          ? []
+          : [{
+              entityType: extracted.objectType?.trim() || 'assertion_object',
+              relationship: 'object',
+              value: extracted.objectValue,
+            }]),
+      ],
+    });
     for (const conceptInput of extracted.concepts ?? []) {
       const term = openSemanticTerm(conceptInput.surface);
       const relationship = conceptInput.relationship.trim();

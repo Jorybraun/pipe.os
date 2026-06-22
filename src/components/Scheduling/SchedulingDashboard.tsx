@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Calendar, RefreshCw, UserPlus } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
@@ -67,6 +68,15 @@ export function SchedulingDashboard(): JSX.Element {
   const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setShowInviteModal(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Group interviews by timeline, then sort within each group by time
   const groupedInterviews = useMemo(() => {
@@ -123,10 +133,10 @@ export function SchedulingDashboard(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            INTERVIEW_SCHEDULE
+            INTERVIEWS
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
-            Schedule
+            Interviews
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
@@ -149,7 +159,7 @@ export function SchedulingDashboard(): JSX.Element {
             }}
           >
             <UserPlus size={14} />
-            INVITE CANDIDATE
+            NEW INTERVIEW
           </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {interviews.length} total
@@ -192,7 +202,7 @@ export function SchedulingDashboard(): JSX.Element {
         >
           <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
-            No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.
+            No interviews yet. Create a roleless interview or invite someone from a role round.
           </p>
         </div>
       ) : (
@@ -214,10 +224,10 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown';
+                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown person';
                   const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
-                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId ?? 'Talent Pool';
-                  const stageTitle = iv.stageTitle ?? iv.stageId ?? iv.interviewType ?? 'Interview';
+                  const pipelineTitle = iv.pipelineTitle ?? 'Talent Pool';
+                  const stageTitle = iv.stageTitle ?? iv.interviewType ?? 'Interview';
 
                   return (
                     <InterviewCard
