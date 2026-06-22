@@ -261,6 +261,12 @@ export async function runEvaluation(
   );
 
   if (options.persistResult) {
+    if (!thresholds.requireExpertLabels) {
+      throw new Error('Persisted evaluations must keep the expert-label gate enabled');
+    }
+    if (result.metrics.syntheticFixtureCount > 0 || result.metrics.expertLabelCount === 0) {
+      throw new Error('Persisted evaluations require a fully expert-labelled corpus');
+    }
     await db.prepare(
       `INSERT INTO evaluation_results (
          id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,6 +6,8 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runEvaluationCli } from '../../../../../scripts/evaluateMatching';
+import { createMockD1 } from '../../../../__tests__/helpers/mockD1';
+import { runEvaluation } from '../cli';
 
 const evaluationMigration = readFileSync(
   new URL('../../../../../migrations/0093_matching_evaluation.sql', import.meta.url),
@@ -15,7 +18,7 @@ const corpusFixture = new URL(
   import.meta.url,
 );
 
-function writeExpertCorpusFixture(directory: string): string {
+function expertCorpusJson(): string {
   const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as {
     corpusId: string;
     description: string;
@@ -30,9 +33,12 @@ function writeExpertCorpusFixture(directory: string): string {
     labeledBy: 'expert-reviewer-1',
   }));
   corpus.metadata.syntheticFixtureCount = 0;
+  return JSON.stringify(corpus);
+}
 
+function writeExpertCorpusFixture(directory: string): string {
   const corpusPath = join(directory, 'expert-corpus.json');
-  writeFileSync(corpusPath, JSON.stringify(corpus));
+  writeFileSync(corpusPath, expertCorpusJson());
   return corpusPath;
 }
 
@@ -111,6 +117,35 @@ function seedMatchRuns(db: InstanceType<typeof Database>): void {
   insert.run('run-comparison', rankedResults(), 2);
 }
 
+function insertEvaluationCorpus(
+  db: InstanceType<typeof Database>,
+  corpusJson: string,
+): void {
+  const corpus = JSON.parse(corpusJson) as {
+    corpusId: string;
+    version: string;
+    createdAt: string;
+    expertLabels: Array<{ labeledBy: string }>;
+  };
+  const syntheticFixtureCount = corpus.expertLabels.filter(
+    (label) => label.labeledBy === 'synthetic-fixture',
+  ).length;
+  db.prepare(
+    `INSERT INTO evaluation_corpora (
+       corpus_id, schema_version, corpus_hash, corpus_json,
+       expert_label_count, synthetic_fixture_count, frozen_at, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+  ).run(
+    corpus.corpusId,
+    corpus.version,
+    createHash('sha256').update(corpusJson).digest('hex'),
+    corpusJson,
+    corpus.expertLabels.length - syntheticFixtureCount,
+    syntheticFixtureCount,
+    Math.floor(Date.parse(corpus.createdAt) / 1000),
+  );
+}
+
 describe('matching evaluation CLI', () => {
   let directory: string | undefined;
 
@@ -187,6 +222,43 @@ describe('matching evaluation CLI', () => {
     ])).rejects.toThrow(
       '--allow-synthetic cannot be combined with --persist',
     );
+  });
+
+  it('refuses direct API persistence when expert-label gate is disabled', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, expertCorpusJson());
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'expert-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+      thresholds: { requireExpertLabels: false },
+    })).rejects.toThrow('Persisted evaluations must keep the expert-label gate enabled');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
+  });
+
+  it('refuses direct API persistence for synthetic corpora', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'sample-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+    })).rejects.toThrow('Persisted evaluations require a fully expert-labelled corpus');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
   });
 
   it('rejects synthetic labels when --allow-synthetic is omitted', async () => {

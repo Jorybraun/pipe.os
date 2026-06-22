@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrated evaluation CLI test and `evaluateMatching.ts` script from experimental `node:sqlite` to `better-sqlite3`, fixing test failures on Node 20 (CI) and Node 22 without `--experimental-sqlite`.
 - Prevented `--allow-synthetic` fixture-mode evaluations from being persisted as acceptance evidence.
+- Hardened the shared `runEvaluation()` persistence path so direct callers cannot store results with the expert-label gate disabled or with synthetic/zero-expert corpora.
 - Added shared `mockD1` helper (`src/__tests__/helpers/mockD1.ts`) for D1-style `?N` parameter rewriting with better-sqlite3.
 - Added test: synthetic labels are rejected when `--allow-synthetic` is omitted (`requireExpertLabels` gate).
 - Added test: forbidden expert labels trigger guardrail violation detection.
