@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, User, Calendar } from 'lucide-react';
-import type { MeetingType, SchedulingProvider } from '../../lib/scheduling/types';
+import { X, Copy, Check, Video, Calendar, Code2, SquareTerminal } from 'lucide-react';
+import type { InterviewType, MeetingType, SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
 interface InviteCreationModalProps {
@@ -10,28 +10,34 @@ interface InviteCreationModalProps {
     recipientName: string;
     recipientEmail: string;
     meetingType: MeetingType;
+    interviewType: InterviewType;
     scheduledAt?: string;
     schedulingProvider?: SchedulingProvider;
     schedulingUrl?: string;
   }) => Promise<{ id: string }>;
-  initialMeetingType?: MeetingType;
+  initialInterviewType?: InterviewType;
 }
 
-const MEETING_TYPES: Array<{ value: MeetingType; label: string; icon: React.ReactNode }> = [
-  { value: 'DIRECT_VIDEO_CALL', label: 'Direct Video Call', icon: <Video size={16} /> },
-  { value: 'SCREENING_INTERVIEW', label: 'Screening Interview', icon: <User size={16} /> },
+const INTERVIEW_MODES: Array<{
+  value: InterviewType;
+  label: string;
+  icon: React.ReactNode;
+}> = [
+  { value: 'VIDEO', label: 'Video interview', icon: <Video size={16} /> },
+  { value: 'CODE_REVIEW', label: 'Automated code review', icon: <Code2 size={16} /> },
+  { value: 'TECHNICAL', label: 'Code sandbox challenge', icon: <SquareTerminal size={16} /> },
 ];
 
 export function InviteCreationModal({
   isOpen,
   onClose,
   onCreateInvite,
-  initialMeetingType = 'DIRECT_VIDEO_CALL',
+  initialInterviewType = 'VIDEO',
 }: InviteCreationModalProps): JSX.Element | null {
   const { connection } = useSchedulingConnection();
   const [recipientName, setRecipientName] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [meetingType, setMeetingType] = useState<MeetingType>(initialMeetingType);
+  const [interviewType, setInterviewType] = useState<InterviewType>(initialInterviewType);
   const [scheduledAt, setScheduledAt] = useState('');
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [isCreating, setIsCreating] = useState(false);
@@ -42,10 +48,10 @@ export function InviteCreationModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setMeetingType(initialMeetingType);
+      setInterviewType(initialInterviewType);
       setSchedulingMode('manual');
     }
-  }, [isOpen, initialMeetingType]);
+  }, [isOpen, initialInterviewType]);
 
   // Auto-select Calendly mode if Calendly is connected
   useEffect(() => {
@@ -90,13 +96,15 @@ export function InviteCreationModal({
         recipientName: string;
         recipientEmail: string;
         meetingType: MeetingType;
+        interviewType: InterviewType;
         scheduledAt?: string;
         schedulingProvider?: SchedulingProvider;
         schedulingUrl?: string;
       } = {
         recipientName: recipientName.trim(),
         recipientEmail: recipientEmail.trim(),
-        meetingType,
+        meetingType: interviewType === 'VIDEO' ? 'DIRECT_VIDEO_CALL' : 'SCREENING_INTERVIEW',
+        interviewType,
       };
       
       if (schedulingMode === 'calendly' && hasCalendly) {
@@ -121,7 +129,7 @@ export function InviteCreationModal({
 
   const handleCopy = () => {
     if (createdInviteId) {
-      const inviteUrl = `${window.location.origin}/invite/${createdInviteId}`;
+      const inviteUrl = `${window.location.origin}/interviews/${createdInviteId}`;
       navigator.clipboard.writeText(inviteUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -131,7 +139,7 @@ export function InviteCreationModal({
   const handleClose = () => {
     setRecipientName('');
     setRecipientEmail('');
-    setMeetingType('DIRECT_VIDEO_CALL');
+    setInterviewType('VIDEO');
     setScheduledAt('');
     setSchedulingMode('manual');
     setCreateError(null);
@@ -170,11 +178,11 @@ export function InviteCreationModal({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <div>
             <div style={{ fontSize: 11, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
-              CREATE_INVITE
+              INTERVIEW
             </div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)' }}>
-              {createdInviteId ? 'Invite Created' : 'New Meeting Invite'}
-            </div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)' }}>
+              {createdInviteId ? 'Interview Created' : 'New interview'}
+            </h2>
           </div>
           <button
             onClick={handleClose}
@@ -198,7 +206,7 @@ export function InviteCreationModal({
               }}
             >
               <div style={{ fontSize: 12, color: 'var(--pipe-text)', marginBottom: 12, fontFamily: '"Space Mono", monospace' }}>
-                Invite link created for <strong>{recipientName}</strong> ({recipientEmail})
+                Interview created for <strong>{recipientName}</strong> ({recipientEmail})
               </div>
               <div
                 style={{
@@ -212,7 +220,7 @@ export function InviteCreationModal({
                 }}
               >
                 <div style={{ flex: 1, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {window.location.origin}/invite/{createdInviteId}
+                  {window.location.origin}/interviews/{createdInviteId}
                 </div>
                 <button
                   onClick={handleCopy}
@@ -239,6 +247,24 @@ export function InviteCreationModal({
             </div>
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+              <a
+                href={`/interviews/${createdInviteId}`}
+                style={{
+                  padding: '10px 20px',
+                  background: '#ffffff',
+                  border: '1px solid #ffffff',
+                  color: '#0c0c0e',
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  borderRadius: 4,
+                  textDecoration: 'none',
+                }}
+              >
+                VIEW INTERVIEW
+              </a>
               <button
                 onClick={handleClose}
                 style={{
@@ -262,12 +288,12 @@ export function InviteCreationModal({
           <div>
             {/* Meeting type selector */}
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>MEETING TYPE</label>
+              <label style={labelStyle}>INTERVIEW TYPE</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                {MEETING_TYPES.map((type) => (
+                {INTERVIEW_MODES.map((type) => (
                   <button
                     key={type.value}
-                    onClick={() => setMeetingType(type.value)}
+                    onClick={() => setInterviewType(type.value)}
                     style={{
                       flex: 1,
                       display: 'flex',
@@ -275,9 +301,9 @@ export function InviteCreationModal({
                       justifyContent: 'center',
                       gap: 8,
                       padding: '12px 16px',
-                      background: meetingType === type.value ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
-                      border: `1px solid ${meetingType === type.value ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
-                      color: meetingType === type.value ? '#60a5fa' : 'var(--pipe-text-dim)',
+                      background: interviewType === type.value ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+                      border: `1px solid ${interviewType === type.value ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+                      color: interviewType === type.value ? '#60a5fa' : 'var(--pipe-text-dim)',
                       fontSize: 11,
                       letterSpacing: '0.1em',
                       fontFamily: '"Space Mono", monospace',
@@ -354,7 +380,7 @@ export function InviteCreationModal({
 
             {/* Recipient name */}
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>RECIPIENT NAME</label>
+              <label style={labelStyle}>PERSON NAME</label>
               <input
                 type="text"
                 value={recipientName}
@@ -366,7 +392,7 @@ export function InviteCreationModal({
 
             {/* Recipient email */}
             <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>RECIPIENT EMAIL</label>
+              <label style={labelStyle}>PERSON EMAIL</label>
               <input
                 type="email"
                 value={recipientEmail}
@@ -379,7 +405,7 @@ export function InviteCreationModal({
             {/* Optional scheduled time - only show in manual mode */}
             {schedulingMode === 'manual' && (
               <div style={{ marginBottom: 28 }}>
-                <label style={labelStyle}>SCHEDULED TIME (OPTIONAL)</label>
+                <label style={labelStyle}>WHEN (OPTIONAL)</label>
                 <input
                   type="datetime-local"
                   value={scheduledAt ? scheduledAt.slice(0, 16) : ''}
@@ -387,7 +413,7 @@ export function InviteCreationModal({
                   style={inputStyle}
                 />
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
-                  Leave empty for instant invite
+                  Leave empty to create the interview now and schedule later.
                 </div>
               </div>
             )}
@@ -432,7 +458,7 @@ export function InviteCreationModal({
                   transition: 'all 0.2s',
                 }}
               >
-                {isCreating ? 'CREATING...' : 'CREATE INVITE'}
+                {isCreating ? 'CREATING...' : 'CREATE INTERVIEW'}
               </button>
             </div>
           </div>
