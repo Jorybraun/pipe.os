@@ -89,6 +89,7 @@ interface IssueFixture {
   body: string | null;
   state_at_crawl: 'open' | 'closed';
   contextReady?: boolean;
+  conceptKeys?: string[];
   has_merged_pr: boolean;
   difficulty_band: 'junior' | 'mid' | 'senior';
   disqualified: boolean;
@@ -155,6 +156,49 @@ function buildStubDb(state: DbState): StubDb {
           },
 
           async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
+            if (normalized.startsWith('SELECT ri.id AS issue_id')) {
+              const [repoId, band] = args as [number, string];
+              const candidates = state.issues
+                .filter(
+                  (i) =>
+                    i.repo_id === repoId &&
+                    i.state_at_crawl === 'open' &&
+                    Boolean(i.body?.trim()) &&
+                    i.contextReady !== false &&
+                    !i.has_merged_pr &&
+                    !i.disqualified &&
+                    i.difficulty_band === band,
+                )
+                .sort(
+                  (a, b) =>
+                    b.implementability_score - a.implementability_score ||
+                    b.clarity_score - a.clarity_score,
+                )
+                .slice(0, 20)
+                .map((issue) => ({
+                  issue_id: issue.issue_id,
+                  issue_number: issue.issue_number,
+                  title: issue.title,
+                  implementability_score: issue.implementability_score,
+                  clarity_score: issue.clarity_score,
+                }));
+              return { results: candidates as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT crsr.source_ref_id AS issue_id')) {
+              const roleConcepts = (args as unknown[]).filter(
+                (arg): arg is string => typeof arg === 'string' && arg.startsWith('term:'),
+              );
+              const rows = state.issues.flatMap((issue) => {
+                const overlap = (issue.conceptKeys ?? [])
+                  .filter((concept) => roleConcepts.includes(concept)).length;
+                return overlap > 0
+                  ? [{ issue_id: String(issue.issue_id), overlap }]
+                  : [];
+              });
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
             if (normalized.startsWith('SELECT id, rcd_version, source_section, narrative_text, extracted_properties_json FROM role_nodes')) {
               return { results: [] as T[], success: true, meta: {} };
             }

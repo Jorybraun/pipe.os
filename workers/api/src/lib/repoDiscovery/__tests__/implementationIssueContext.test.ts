@@ -220,4 +220,32 @@ describe('repo implementation issue context records', () => {
       count: 1,
     });
   });
+
+  it('prefers source-backed issue concept overlap over raw implementation score', async () => {
+    insertIssue(sqlite, {
+      id: 701,
+      issueNumber: 201,
+      title: 'Generic backend work',
+      body: 'Exact source body for generic backend work.',
+      labels: ['backend'],
+      implementability: 0.95,
+    });
+    insertIssue(sqlite, {
+      id: 702,
+      issueNumber: 202,
+      title: 'Kafka idempotency work',
+      body: 'Exact source body for Kafka idempotency work.',
+      labels: ['Kafka Idempotency'],
+      implementability: 0.5,
+    });
+
+    const selected = await pickImplementationIssue(db, 10, 'mid', [
+      'term:kafka-idempotency',
+    ]);
+
+    expect(selected).toEqual({
+      issueNumber: 202,
+      issueTitle: 'Kafka idempotency work',
+    });
+  });
 });

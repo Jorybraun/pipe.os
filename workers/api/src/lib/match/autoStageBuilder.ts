@@ -406,12 +406,60 @@ export async function pickReviewPr(
     : null;
 }
 
+interface ImplementationIssueCandidate {
+  issue_id: number;
+  issue_number: number;
+  title: string;
+  implementability_score: number | null;
+  clarity_score: number | null;
+}
+
+async function loadImplementationIssueConceptOverlaps(
+  db: D1Database,
+  repoId: number,
+  issueIds: readonly number[],
+  roleConcepts: readonly string[],
+): Promise<Map<number, number>> {
+  if (issueIds.length === 0 || roleConcepts.length === 0) return new Map();
+  const uniqueRoleConcepts = [...new Set(roleConcepts)].sort();
+  const issuePlaceholders = issueIds.map(() => '?').join(', ');
+  const conceptPlaceholders = uniqueRoleConcepts.map(() => '?').join(', ');
+  const result = await db.prepare(
+    `SELECT crsr.source_ref_id AS issue_id,
+            COUNT(DISTINCT c.canonical_key) AS overlap
+       FROM context_records cr
+       JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+       JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+       JOIN concepts c ON c.id = crc.concept_id
+      WHERE cr.record_type = 'repo_implementation_issue'
+        AND cr.scope_type = 'qualified_repo'
+        AND cr.scope_id = ?
+        AND crsr.source_ref_type = 'repo_issue'
+        AND crsr.source_ref_id IN (${issuePlaceholders})
+        AND c.canonical_key IN (${conceptPlaceholders})
+      GROUP BY crsr.source_ref_id`,
+  ).bind(String(repoId), ...issueIds.map(String), ...uniqueRoleConcepts).all<{
+    issue_id: string;
+    overlap: number;
+  }>();
+
+  return new Map((result.results ?? []).map((row) => [
+    Number(row.issue_id),
+    row.overlap,
+  ]));
+}
+
+function scoreValue(value: number | null): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
 /**
  * Pick the top implementation issue for a given repo. Constraints:
  *   - issue_challenge_signals.disqualified = 0 (passed scoring gate)
  *   - repo_issues.has_merged_pr = 0 (no contamination from existing PR)
  *   - repo_issues.state_at_crawl = 'open'
  *   - repo_issues.body contains captured source text for the candidate to inspect
+ *   - when role concepts are available, source-backed issue concepts rank first
  *   - difficulty_band matches normalized persona seniority (or any band if
  *     persona is unknown)
  */
@@ -419,15 +467,20 @@ export async function pickImplementationIssue(
   db: D1Database,
   repoId: number,
   seniority?: 'junior' | 'mid' | 'senior' | 'staff',
+  roleConcepts: string[] = [],
 ): Promise<{ issueNumber: number; issueTitle: string } | null> {
   await backfillRepoImplementationIssueContextRecords(db, { repoId });
 
   const band = seniority === 'staff' ? 'senior' : seniority;
   const difficultyClause = band ? 'AND ics.difficulty_band = ?' : '';
 
-  const row = await db
+  const rows = await db
     .prepare(
-      `SELECT ri.issue_number, ri.title
+      `SELECT ri.id AS issue_id,
+              ri.issue_number,
+              ri.title,
+              ics.implementability_score,
+              ics.clarity_score
          FROM repo_issues ri
          JOIN issue_challenge_signals ics ON ics.issue_id = ri.id
         WHERE ri.repo_id = ?
@@ -450,13 +503,28 @@ export async function pickImplementationIssue(
           )
           ${difficultyClause}
         ORDER BY ics.implementability_score DESC, ics.clarity_score DESC
-        LIMIT 1`,
+        LIMIT 20`,
     )
     .bind(repoId, ...(band ? [band] : []))
-    .first<{ issue_number: number; title: string }>();
+    .all<ImplementationIssueCandidate>();
 
-  if (!row) return null;
-  return { issueNumber: row.issue_number, issueTitle: row.title };
+  const candidates = rows.results ?? [];
+  if (candidates.length === 0) return null;
+
+  const overlaps = await loadImplementationIssueConceptOverlaps(
+    db,
+    repoId,
+    candidates.map((candidate) => candidate.issue_id),
+    roleConcepts,
+  );
+  const selected = [...candidates].sort((left, right) =>
+    (overlaps.get(right.issue_id) ?? 0) - (overlaps.get(left.issue_id) ?? 0)
+    || scoreValue(right.implementability_score) - scoreValue(left.implementability_score)
+    || scoreValue(right.clarity_score) - scoreValue(left.clarity_score)
+    || left.issue_number - right.issue_number
+  )[0]!;
+
+  return { issueNumber: selected.issue_number, issueTitle: selected.title };
 }
 
 export async function autoStageBuilder(
@@ -571,7 +639,12 @@ export async function autoStageBuilder(
     if (!implRepo) {
       throw new Error('autoStageBuilder: internal inconsistency while resolving implementation station');
     }
-    const issue = await pickImplementationIssue(db, implRepo.id, baseRequest.seniority);
+    const issue = await pickImplementationIssue(
+      db,
+      implRepo.id,
+      baseRequest.seniority,
+      roleConcepts,
+    );
     if (!issue) {
       throw new Error(
         `autoStageBuilder: no eligible implementation issue found for repo ${implRepo.fullName} (id=${implRepo.id})`,

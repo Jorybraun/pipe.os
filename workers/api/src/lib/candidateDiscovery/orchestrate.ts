@@ -452,6 +452,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     db,
     winnerRepoId,
     candidateSeniority,
+    roleSemantics?.relevantConcepts,
   );
   const catalogWinner = matchedRepos.find((repo) => repo.id === winnerRepoId);
 
