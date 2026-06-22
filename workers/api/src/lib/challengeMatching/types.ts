@@ -130,6 +130,9 @@ export interface ChallengePacket {
   prNumber: number;
   sourceVersion: string;
   packetContentHash?: string | null;
+  contextRecordId?: string | null;
+  repoSourceRefCount?: number | null;
+  conceptLinkCount?: number | null;
   challengeReady: boolean;
   languages: string[];
   seniority?: Seniority;
@@ -270,6 +273,7 @@ export interface MatchExplanation {
     missingSourceSpanIds?: string[];
     gateFailures?: string[];
     provenanceFailures?: string[];
+    contextProjectionFailures?: string[];
     qualityScore?: number | null;
   }>;
   missingEvidence: Array<{

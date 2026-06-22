@@ -338,6 +338,14 @@ describe('Standalone CODE_REVIEW match summary', () => {
         gateFailures: ['production_language'],
         provenanceFailures: [],
         qualityScore: 0.4,
+      }, {
+        id: 'packet-context-incomplete',
+        repoId: '16',
+        prNumber: 90,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        demandIds: ['demand-context'],
+        missingSourceSpanIds: [],
+        provenanceFailures: [],
       }]),
       [],
     );
@@ -345,10 +353,11 @@ describe('Standalone CODE_REVIEW match summary', () => {
     const summary = buildStandaloneReviewMatchSummary('NO_ROLE_SAFE_CHALLENGE', null, diagnostics);
 
     expect(diagnostics.recalledPacketIds).toEqual(['packet-source-backed']);
-    expect(diagnostics.excludedPackets).toHaveLength(2);
+    expect(diagnostics.excludedPackets).toHaveLength(3);
     expect(summary.gaps).toEqual([
       'packet-missing-span was excluded because PR demand provenance references missing repo source spans. Demand: demand-events. Missing span: repo-span-missing.',
       'packet-unsafe was excluded because its repo packet is not production-ready. Quality score: 0.40. Failed gate: production_language.',
+      'packet-context-incomplete was excluded because its repo packet is missing source-backed graph context.',
     ]);
   });
 

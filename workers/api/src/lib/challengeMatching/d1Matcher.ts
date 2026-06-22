@@ -53,12 +53,16 @@ interface CandidateEvidenceRow {
 
 interface PacketRow {
   id: string;
+  repo_snapshot_id: string;
   repo_id: number;
   pr_number: number | null;
   production_ready: number;
   quality_score: number | null;
   source_hash: string | null;
   packet_json: string;
+  context_record_id: string | null;
+  repo_source_ref_count: number | null;
+  concept_link_count: number | null;
 }
 
 interface RepoSpanRow {
@@ -80,11 +84,16 @@ export interface ChallengePacketLoadExclusion {
     | 'DEMAND_WITHOUT_SOURCE_SPANS'
     | 'MISSING_DEMAND_SOURCE_SPANS'
     | 'PACKET_NOT_PRODUCTION_READY'
-    | 'PACKET_PROVENANCE_INVALID';
+    | 'PACKET_PROVENANCE_INVALID'
+    | 'PACKET_CONTEXT_PROJECTION_INCOMPLETE';
   demandIds: string[];
   missingSourceSpanIds: string[];
   gateFailures?: string[];
   provenanceFailures?: string[];
+  contextProjectionFailures?: string[];
+  contextRecordId?: string | null;
+  repoSourceRefCount?: number | null;
+  conceptLinkCount?: number | null;
   qualityScore?: number | null;
 }
 
@@ -111,6 +120,10 @@ export interface ChallengeMatchDiagnostics {
     eligible: boolean;
     rejectionReasons: string[];
     provenanceComplete: boolean;
+    contextProjectionComplete: boolean;
+    contextRecordId?: string | null;
+    repoSourceRefCount?: number | null;
+    conceptLinkCount?: number | null;
     alignedDemandCount: number;
     stretchCount: number;
   }>;
@@ -442,6 +455,11 @@ export function materializeChallengePacketForMatching(
   spanById: Map<string, RepoSpanRow>,
   roleConcepts?: string[],
   packetContentHash?: string | null,
+  contextProjection?: {
+    contextRecordId: string;
+    repoSourceRefCount: number;
+    conceptLinkCount: number;
+  },
 ): { packet: ChallengePacket } | { exclusion: ChallengePacketLoadExclusion } {
   const demandsWithoutSpans = packet.demands
     .filter((demand) => demand.sourceSpanIds.length === 0)
@@ -495,6 +513,9 @@ export function materializeChallengePacketForMatching(
       prNumber: packet.pullRequest.number,
       sourceVersion: packet.repoSnapshotId,
       packetContentHash: packetContentHash ?? packet.contentHash,
+      contextRecordId: contextProjection?.contextRecordId,
+      repoSourceRefCount: contextProjection?.repoSourceRefCount,
+      conceptLinkCount: contextProjection?.conceptLinkCount,
       challengeReady: packet.quality.eligible,
       languages: [packet.languageSupport.normalizedLanguage],
       seniority: undefined,
@@ -530,14 +551,54 @@ export function materializeChallengePacketForMatching(
   };
 }
 
+function packetContextProjectionFailures(row: PacketRow): string[] {
+  const failures: string[] = [];
+  const repoSourceRefCount = row.repo_source_ref_count ?? 0;
+  const conceptLinkCount = row.concept_link_count ?? 0;
+  if (!row.context_record_id) {
+    failures.push(`review challenge packet ${row.id} is missing its repo_challenge_packet context record`);
+  }
+  if (repoSourceRefCount <= 0) {
+    failures.push(`review challenge packet ${row.id} is missing repo_source_span context refs`);
+  }
+  if (conceptLinkCount <= 0) {
+    failures.push(`review challenge packet ${row.id} is missing context_record_concepts links`);
+  }
+  return failures.sort();
+}
+
 async function loadChallengePackets(
   db: D1Database,
   roleConcepts?: string[],
 ): Promise<ChallengePacketLoadResult> {
   const rows = await db.prepare(
-    `SELECT id, repo_id, pr_number, production_ready, quality_score, source_hash, packet_json
-       FROM review_challenge_packets
-      ORDER BY repo_id, pr_number`,
+    `SELECT rcp.id,
+            rcp.repo_snapshot_id,
+            rcp.repo_id,
+            rcp.pr_number,
+            rcp.production_ready,
+            rcp.quality_score,
+            rcp.source_hash,
+            rcp.packet_json,
+            cr.id AS context_record_id,
+            (
+              SELECT COUNT(*)
+                FROM context_record_source_refs crsr
+               WHERE crsr.context_record_id = cr.id
+                 AND crsr.source_ref_type = 'repo_source_span'
+            ) AS repo_source_ref_count,
+            (
+              SELECT COUNT(*)
+                FROM context_record_concepts crc
+               WHERE crc.context_record_id = cr.id
+            ) AS concept_link_count
+       FROM review_challenge_packets rcp
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+      ORDER BY rcp.repo_id, rcp.pr_number`,
   ).all<PacketRow>();
   const packets: ChallengePacket[] = [];
   const exclusions: ChallengePacketLoadExclusion[] = [];
@@ -599,6 +660,25 @@ async function loadChallengePackets(
       continue;
     }
 
+    const contextProjectionFailures = packetContextProjectionFailures(row);
+    if (contextProjectionFailures.length > 0) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        contextProjectionFailures,
+        contextRecordId: row.context_record_id,
+        repoSourceRefCount: row.repo_source_ref_count ?? 0,
+        conceptLinkCount: row.concept_link_count ?? 0,
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
     const spanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
     if (spanIds.length === 0) {
       const loaded = materializeChallengePacketForMatching(
@@ -607,6 +687,11 @@ async function loadChallengePackets(
         new Map(),
         roleConcepts,
         row.source_hash ?? packet.contentHash,
+        {
+          contextRecordId: row.context_record_id!,
+          repoSourceRefCount: row.repo_source_ref_count ?? 0,
+          conceptLinkCount: row.concept_link_count ?? 0,
+        },
       );
       if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
       continue;
@@ -623,6 +708,11 @@ async function loadChallengePackets(
       spanById,
       roleConcepts,
       row.source_hash ?? packet.contentHash,
+      {
+        contextRecordId: row.context_record_id!,
+        repoSourceRefCount: row.repo_source_ref_count ?? 0,
+        conceptLinkCount: row.concept_link_count ?? 0,
+      },
     );
     if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
     else packets.push(loaded.packet);
@@ -967,6 +1057,9 @@ function rejectedPacketExplanations(
       missingSourceSpanIds: 'missingSourceSpanIds' in packet ? packet.missingSourceSpanIds : undefined,
       gateFailures: 'gateFailures' in packet ? packet.gateFailures : undefined,
       provenanceFailures: 'provenanceFailures' in packet ? packet.provenanceFailures : undefined,
+      contextProjectionFailures: 'contextProjectionFailures' in packet
+        ? packet.contextProjectionFailures
+        : undefined,
       qualityScore: 'qualityScore' in packet ? packet.qualityScore : undefined,
     });
   }
@@ -1028,7 +1121,13 @@ function diagnosticMissingEvidence(input: {
         sourceRefs: [],
       });
     }
-    if ('reason' in packet && packet.reason === 'PACKET_PROVENANCE_INVALID') {
+    if (
+      'reason' in packet
+      && (
+        packet.reason === 'PACKET_PROVENANCE_INVALID'
+        || packet.reason === 'PACKET_CONTEXT_PROJECTION_INCOMPLETE'
+      )
+    ) {
       missing.push({
         scope: 'repo',
         reason: packet.reason,
@@ -1164,6 +1263,12 @@ export async function matchCandidateToReviewChallenge(
     eligible: alignment.eligible,
     rejectionReasons: alignment.rejectionReasons,
     provenanceComplete: alignment.provenanceComplete,
+    contextProjectionComplete: Boolean(alignment.challenge.contextRecordId)
+      && (alignment.challenge.repoSourceRefCount ?? 0) > 0
+      && (alignment.challenge.conceptLinkCount ?? 0) > 0,
+    contextRecordId: alignment.challenge.contextRecordId ?? null,
+    repoSourceRefCount: alignment.challenge.repoSourceRefCount ?? null,
+    conceptLinkCount: alignment.challenge.conceptLinkCount ?? null,
     alignedDemandCount: alignment.alignments.length,
     stretchCount: alignment.stretchCount,
   }));

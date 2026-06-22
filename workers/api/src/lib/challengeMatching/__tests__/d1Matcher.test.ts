@@ -399,6 +399,81 @@ async function seedProductionReadyPacket(
   return data;
 }
 
+function testConceptIdForKey(canonicalKey: string): string {
+  return `repo-context-concept-${canonicalKey.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+}
+
+function testConceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function testConceptLabel(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const raw = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return raw.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
+
+function seedReviewPacketContextProjection(
+  sqlite: NodeSqliteDatabase,
+  packet: RepoChallengePacket,
+): void {
+  const contextRecordId = `context-record-${packet.id}`;
+  sqlite.prepare(
+    `INSERT INTO context_records (
+       id, ingestion_key, scope_type, scope_id, record_type, predicate, narrative,
+       qualifiers_json, confidence, polarity, extraction_version, observed_at, created_at, updated_at
+     ) VALUES (?, ?, 'repo_snapshot', ?, 'repo_challenge_packet',
+       'defines reviewable pull request challenge', ?, '{}', ?, 1, ?, ?, ?, ?)`,
+  ).run(
+    contextRecordId,
+    `repo-challenge-packet-context:${packet.id}`,
+    packet.repoSnapshotId,
+    `Review challenge packet for ${packet.repository.owner}/${packet.repository.name} PR #${packet.pullRequest.number}: ${packet.pullRequest.title}`,
+    packet.quality.metrics.provenanceCoverage,
+    packet.schemaVersion,
+    OBSERVED_AT,
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+
+  for (const spanId of [...new Set(packet.sourceSpanIds)].sort()) {
+    sqlite.prepare(
+      `INSERT INTO context_record_source_refs (
+         context_record_id, source_ref_type, source_ref_id, source_span_id,
+         evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, 'repo_source_span', ?, NULL, 'source', '{}', NULL, NULL, '{}', ?)`,
+    ).run(contextRecordId, spanId, OBSERVED_AT);
+  }
+
+  for (const canonicalKey of [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))].sort()) {
+    const existing = sqlite.prepare(
+      'SELECT id FROM concepts WHERE canonical_key = ?',
+    ).get(canonicalKey) as { id: string } | undefined;
+    const conceptId = existing?.id ?? testConceptIdForKey(canonicalKey);
+    if (!existing) {
+      sqlite.prepare(
+        `INSERT INTO concepts (
+           id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
+      ).run(
+        conceptId,
+        `repo-context-concept:${canonicalKey}`,
+        canonicalKey,
+        testConceptNamespace(canonicalKey),
+        testConceptLabel(canonicalKey),
+        OBSERVED_AT,
+        OBSERVED_AT,
+      );
+    }
+    sqlite.prepare(
+      `INSERT INTO context_record_concepts (
+         context_record_id, concept_id, relationship, weight, created_at
+       ) VALUES (?, ?, 'concept', 1, ?)`,
+    ).run(contextRecordId, conceptId, OBSERVED_AT);
+  }
+}
+
 async function seedProductionReadyPacketWithoutSourceSpans(
   sqlite: NodeSqliteDatabase,
   repoId = 1,
@@ -436,6 +511,7 @@ async function seedProductionReadyPacketWithoutSourceSpans(
     JSON.stringify(data.packet.demandFamilies),
     JSON.stringify(data.packet),
   );
+  seedReviewPacketContextProjection(sqlite, data.packet);
   return data;
 }
 
@@ -906,6 +982,75 @@ describe('matchCandidateToReviewChallenge', () => {
       source_ref_id: result.matchRunId,
       evidence_role: 'decision_record',
     });
+  });
+
+  it('rejects production-ready packets whose source-backed context projection is missing', async () => {
+    seedCandidateEvidence(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 42);
+    sqlite.prepare(
+      `DELETE FROM context_records
+        WHERE ingestion_key = ?`,
+    ).run(`repo-challenge-packet-context:${data.packet.id}`);
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '42',
+        prNumber: data.packet.pullRequest.number,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        contextRecordId: null,
+        repoSourceRefCount: 0,
+        conceptLinkCount: 0,
+        contextProjectionFailures: expect.arrayContaining([
+          `review challenge packet ${data.packet.id} is missing its repo_challenge_packet context record`,
+          `review challenge packet ${data.packet.id} is missing repo_source_span context refs`,
+          `review challenge packet ${data.packet.id} is missing context_record_concepts links`,
+        ]),
+      }),
+    ]);
+    expect(result.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '42',
+        prNumber: data.packet.pullRequest.number,
+        reasons: ['PACKET_CONTEXT_PROJECTION_INCOMPLETE'],
+        contextProjectionFailures: expect.arrayContaining([
+          `review challenge packet ${data.packet.id} is missing its repo_challenge_packet context record`,
+        ]),
+      }),
+    ]);
+    expect(result.explanation?.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'repo',
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        challengeId: data.packet.id,
+      }),
+    ]));
+
+    const row = sqlite.prepare(
+      'SELECT selected_packet_id, excluded_packets_json, ranked_results_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      selected_packet_id: string | null;
+      excluded_packets_json: string;
+      ranked_results_json: string;
+    };
+    expect(row.selected_packet_id).toBeNull();
+    expect(JSON.parse(row.excluded_packets_json)).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        contextRecordId: null,
+        repoSourceRefCount: 0,
+        conceptLinkCount: 0,
+      }),
+    ]);
+    expect(JSON.parse(row.ranked_results_json)).toEqual([]);
   });
 
   it('rejects production-ready packets whose demand spans are not persisted', async () => {
