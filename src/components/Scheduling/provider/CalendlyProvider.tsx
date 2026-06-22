@@ -123,7 +123,7 @@ export const CalendlyPlugin: SchedulingPlugin = {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'scheduled_events:read',
+      scope: 'event_types:read scheduled_events:read users:read webhooks:read webhooks:write',
       state,
     });
     if (codeChallenge) {

@@ -636,7 +636,7 @@ schedulingAuth.post('/connect', async (c) => {
       client_id: clientId,
       response_type: 'code',
       redirect_uri: redirectUri,
-      scope: 'scheduled_events:read',
+      scope: 'event_types:read scheduled_events:read users:read webhooks:read webhooks:write',
     });
     if (codeChallenge) {
       params.set('code_challenge', codeChallenge);
