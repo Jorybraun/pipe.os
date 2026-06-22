@@ -410,4 +410,67 @@ describe('legacy contact/candidate identity compatibility', () => {
       'I implemented Novel Source Surface with an Unscored Context Term.',
     );
   });
+
+  it('uses validated resume source quotes as context record source text', async () => {
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-1',
+      'workspace-1',
+      'pipeline-1',
+      'Ada Example',
+      'ada@example.com',
+      'active',
+    );
+
+    await mirrorCandidateNodeToLivingContext(db, {
+      ...node({
+        source_quote: 'Built Kafka order processing pipelines at scale.',
+        source_quote_validated: true,
+        source_quote_char_start: 42,
+        source_quote_char_end: 91,
+        semantic_terms: [{
+          surface: 'Kafka order processing',
+          canonical_key: 'term:kafka-order-processing',
+          evidence_level: 'implemented',
+        }],
+      }),
+      source_type: 'resume',
+      narrative_text: 'Candidate implemented Kafka order processing pipelines.',
+      confidence: 0.88,
+    });
+
+    const sourceRow = sqlite.prepare(
+      `SELECT ss.exact_text, ss.char_start, ss.char_end, ss.metadata_json, av.content_text
+         FROM context_records cr
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id`,
+    ).get() as {
+      exact_text: string;
+      char_start: number;
+      char_end: number;
+      metadata_json: string;
+      content_text: string;
+    };
+    expect(sourceRow.exact_text).toBe('Built Kafka order processing pipelines at scale.');
+    expect(sourceRow.content_text).toBe('Built Kafka order processing pipelines at scale.');
+    expect(sourceRow.char_start).toBe(0);
+    expect(sourceRow.char_end).toBe('Built Kafka order processing pipelines at scale.'.length);
+    expect(JSON.parse(sourceRow.metadata_json)).toMatchObject({
+      sourceQuoteValidated: true,
+      originalCharStart: 42,
+      originalCharEnd: 91,
+      generatedNarrative: 'Candidate implemented Kafka order processing pipelines.',
+    });
+
+    const graph = await loadCandidateLivingContext(db, 'candidate-1');
+    expect(graph?.contextRecords[0]?.sources[0]?.exactText).toBe(
+      'Built Kafka order processing pipelines at scale.',
+    );
+    expect(graph?.contextRecords[0]?.narrative).toBe(
+      'Candidate implemented Kafka order processing pipelines.',
+    );
+  });
 });

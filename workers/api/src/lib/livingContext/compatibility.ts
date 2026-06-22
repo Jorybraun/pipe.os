@@ -202,6 +202,49 @@ export function candidateNodeTerms(node: CandidateNode): CandidateSemanticTerm[]
   return [];
 }
 
+function candidateNodeSourceText(node: CandidateNode): {
+  text: string;
+  metadata: JsonObject;
+} {
+  const fallback = {
+    text: node.narrative_text,
+    metadata: { sourceReference: node.source_reference } as JsonObject,
+  };
+  try {
+    const properties = node.extracted_properties_json
+      ? JSON.parse(node.extracted_properties_json) as {
+        source_quote?: unknown;
+        source_quote_validated?: unknown;
+        source_quote_char_start?: unknown;
+        source_quote_char_end?: unknown;
+      }
+      : {};
+    if (
+      properties.source_quote_validated !== true
+      || typeof properties.source_quote !== 'string'
+      || properties.source_quote.trim().length === 0
+    ) {
+      return fallback;
+    }
+    return {
+      text: properties.source_quote.trim(),
+      metadata: {
+        sourceReference: node.source_reference,
+        generatedNarrative: node.narrative_text,
+        sourceQuoteValidated: true,
+        ...(typeof properties.source_quote_char_start === 'number'
+          ? { originalCharStart: properties.source_quote_char_start }
+          : {}),
+        ...(typeof properties.source_quote_char_end === 'number'
+          ? { originalCharEnd: properties.source_quote_char_end }
+          : {}),
+      },
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export async function ensureCandidateLivingContext(
   db: D1Database,
   candidateId: string,
@@ -320,15 +363,16 @@ export async function mirrorCandidateNodeToLivingContext(
     logicalKey: node.id,
     metadata: { sourceType: node.source_type },
   });
-  const contentHash = await deterministicEntityId('content', node.narrative_text);
-  const byteLength = new TextEncoder().encode(node.narrative_text).byteLength;
+  const sourceText = candidateNodeSourceText(node);
+  const contentHash = await deterministicEntityId('content', sourceText.text);
+  const byteLength = new TextEncoder().encode(sourceText.text).byteLength;
   const version = await store.createArtifactVersion({
     ingestionKey: `candidate-node:${node.id}:version:1`,
     artifactId: artifact.id,
     versionNumber: 1,
     contentHash,
     mediaType: 'text/plain',
-    contentText: node.narrative_text,
+    contentText: sourceText.text,
     byteLength,
     metadata: { compatibilityProjection: true },
   });
@@ -339,9 +383,9 @@ export async function mirrorCandidateNodeToLivingContext(
     byteStart: 0,
     byteEnd: byteLength,
     charStart: 0,
-    charEnd: node.narrative_text.length,
-    exactText: node.narrative_text,
-    metadata: { sourceReference: node.source_reference },
+    charEnd: sourceText.text.length,
+    exactText: sourceText.text,
+    metadata: sourceText.metadata,
   });
   const episode = await store.upsertEpisode({
     ingestionKey: `candidate-node:${node.id}:episode`,

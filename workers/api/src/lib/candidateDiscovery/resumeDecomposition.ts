@@ -31,6 +31,7 @@ import type { Env, CandidateNode } from '../../types';
 import type { ParsedCV } from '../cvParser';
 import {
   embedCandidateNode,
+  insertCandidateNode,
 } from './candidateNodes';
 import { computeCandidateCoverageWithFallback } from '../neo4j/candidateGraphQueries';
 import { writeCandidateGraph } from '../neo4j/writeCandidateGraph';
@@ -98,10 +99,29 @@ function mergeSemanticTerms(
   return [...terms.values()];
 }
 
+function sourceQuoteProperties(resumeText: string, sourceQuote?: string): {
+  source_quote?: string;
+  source_quote_validated?: boolean;
+  source_quote_char_start?: number;
+  source_quote_char_end?: number;
+} {
+  const quote = sourceQuote?.trim();
+  if (!quote) return {};
+  const index = resumeText.indexOf(quote);
+  if (index < 0) return {};
+  return {
+    source_quote: quote,
+    source_quote_validated: true,
+    source_quote_char_start: index,
+    source_quote_char_end: index + quote.length,
+  };
+}
+
 function experienceToNode(
   candidateId: string,
   exp: DecomposedExperience,
   index: number,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -122,6 +142,7 @@ function experienceToNode(
         exp.skills_demonstrated,
         'demonstrated',
       ),
+      ...sourceQuoteProperties(resumeText, exp.source_quote),
       index,
     }),
     embedding_json: null,
@@ -139,6 +160,7 @@ function projectToNode(
   candidateId: string,
   proj: DecomposedProject,
   index: number,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -154,6 +176,7 @@ function projectToNode(
         proj.skills_demonstrated,
         'demonstrated',
       ),
+      ...sourceQuoteProperties(resumeText, proj.source_quote),
       index,
     }),
     embedding_json: null,
@@ -171,6 +194,7 @@ function skillToNode(
   candidateId: string,
   skill: DecomposedSkill,
   index: number,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -187,6 +211,7 @@ function skillToNode(
         [skill.name],
         'mentioned',
       ),
+      ...sourceQuoteProperties(resumeText, skill.source_quote),
       index,
     }),
     embedding_json: null,
@@ -204,6 +229,7 @@ function educationToNode(
   candidateId: string,
   edu: DecomposedEducation,
   index: number,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -215,6 +241,7 @@ function educationToNode(
       field: edu.field,
       year: edu.year,
       semantic_terms: mergeSemanticTerms(edu.semantic_terms, [], 'mentioned'),
+      ...sourceQuoteProperties(resumeText, edu.source_quote),
       index,
     }),
     embedding_json: null,
@@ -232,6 +259,7 @@ function credentialToNode(
   candidateId: string,
   cred: DecomposedCredential,
   index: number,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -242,6 +270,7 @@ function credentialToNode(
       issuer: cred.issuer,
       year: cred.year,
       semantic_terms: mergeSemanticTerms(cred.semantic_terms, [], 'mentioned'),
+      ...sourceQuoteProperties(resumeText, cred.source_quote),
       index,
     }),
     embedding_json: null,
@@ -259,6 +288,7 @@ function careerArcToNode(
   candidateId: string,
   arc: DecomposedCareerArc,
   decomposition: DecompositionResult,
+  resumeText: string,
 ): Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'> {
   return {
     candidate_id: candidateId,
@@ -272,6 +302,7 @@ function careerArcToNode(
       ownership_progression: decomposition.ownership_progression,
       impact_themes: decomposition.impact_themes,
       semantic_terms: mergeSemanticTerms(arc.semantic_terms, [], 'mentioned'),
+      ...sourceQuoteProperties(resumeText, arc.source_quote),
     }),
     embedding_json: null,
     source_type: 'resume',
@@ -430,23 +461,11 @@ async function writeParserOnlyNodes(
       embedded++;
       embeddings.push(embedding);
 
-      candidateNodes.push({
-        id: crypto.randomUUID(),
-        candidate_id: node.candidate_id,
-        node_type: node.node_type,
-        narrative_text: node.narrative_text,
-        extracted_properties_json: node.extracted_properties_json,
+      const insertedNode = await insertCandidateNode(_db, {
+        ...node,
         embedding_json: JSON.stringify(embedding),
-        source_type: node.source_type,
-        source_reference: node.source_reference,
-        captured_at: node.captured_at,
-        confidence: node.confidence,
-        supersedes: node.supersedes,
-        superseded_at: node.superseded_at,
-        decomposition_version: node.decomposition_version,
-        created_at: now,
-        updated_at: now,
       });
+      candidateNodes.push(insertedNode);
       inserted++;
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
@@ -558,25 +577,25 @@ export async function decomposeResumeToGraph(
 
     for (let i = 0; i < decomposition.experiences.length; i++) {
       const exp = decomposition.experiences[i]!;
-      nodesToInsert.push(experienceToNode(candidateId, exp, i));
+      nodesToInsert.push(experienceToNode(candidateId, exp, i, resumeText));
     }
     for (let i = 0; i < decomposition.projects.length; i++) {
       const proj = decomposition.projects[i]!;
-      nodesToInsert.push(projectToNode(candidateId, proj, i));
+      nodesToInsert.push(projectToNode(candidateId, proj, i, resumeText));
     }
     for (let i = 0; i < decomposition.skills.length; i++) {
       const skill = decomposition.skills[i]!;
-      nodesToInsert.push(skillToNode(candidateId, skill, i));
+      nodesToInsert.push(skillToNode(candidateId, skill, i, resumeText));
     }
     for (let i = 0; i < decomposition.education.length; i++) {
       const edu = decomposition.education[i]!;
-      nodesToInsert.push(educationToNode(candidateId, edu, i));
+      nodesToInsert.push(educationToNode(candidateId, edu, i, resumeText));
     }
     for (let i = 0; i < decomposition.credentials.length; i++) {
       const cred = decomposition.credentials[i]!;
-      nodesToInsert.push(credentialToNode(candidateId, cred, i));
+      nodesToInsert.push(credentialToNode(candidateId, cred, i, resumeText));
     }
-    nodesToInsert.push(careerArcToNode(candidateId, decomposition.career_arc, decomposition));
+    nodesToInsert.push(careerArcToNode(candidateId, decomposition.career_arc, decomposition, resumeText));
   } else {
     // No decomposition — fall back to parser-only nodes with lower confidence
     console.log('[resumeDecomposition] No decomposition result provided; falling back to parser-only nodes');
@@ -628,30 +647,17 @@ export async function decomposeResumeToGraph(
 
   // Step 3: Embed nodes and build CandidateNode array
   const candidateNodes: CandidateNode[] = [];
-  const now = nowEpoch();
   for (const node of nodesToInsert) {
     try {
       const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       result.nodesEmbedded++;
       result.embeddings.push(embedding);
 
-      candidateNodes.push({
-        id: crypto.randomUUID(),
-        candidate_id: node.candidate_id,
-        node_type: node.node_type,
-        narrative_text: node.narrative_text,
-        extracted_properties_json: node.extracted_properties_json,
+      const insertedNode = await insertCandidateNode(db, {
+        ...node,
         embedding_json: JSON.stringify(embedding),
-        source_type: node.source_type,
-        source_reference: node.source_reference,
-        captured_at: node.captured_at,
-        confidence: node.confidence,
-        supersedes: node.supersedes,
-        superseded_at: node.superseded_at,
-        decomposition_version: node.decomposition_version,
-        created_at: now,
-        updated_at: now,
       });
+      candidateNodes.push(insertedNode);
       result.nodesInserted++;
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
