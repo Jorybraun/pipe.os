@@ -1,7 +1,7 @@
 /**
  * EvidenceNodeBadge — small badge showing source icon + node type icon.
  *
- * Maps source_type and node_type to emoji icons and source colors.
+ * Maps source_type to provenance styling while keeping node_type open-ended.
  */
 
 import type { EvidenceNode } from '../../lib/api/types';
@@ -27,16 +27,21 @@ const sourceColorMap: Record<string, string> = {
   enrichment: '#2dd4bf',    // Teal
 };
 
-const nodeTypeIconMap: Record<string, string> = {
-  Experience: '💼',
-  TechnicalDemonstration: '🔧',
-  Skill: '🎯',
-  CulturalSignal: '💬',
-};
+function nodeTypeAbbreviation(nodeType: string): string {
+  const words = nodeType
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean);
+  if (words.length === 0) return '?';
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]!.toUpperCase())
+    .join('');
+}
 
 export function EvidenceNodeBadge({ sourceType, nodeType }: EvidenceNodeBadgeProps): JSX.Element {
   const sourceIcon = sourceIconMap[sourceType] ?? '📎';
-  const nodeIcon = nodeTypeIconMap[nodeType] ?? '📎';
+  const nodeLabel = nodeTypeAbbreviation(nodeType);
   const sourceColor = sourceColorMap[sourceType] ?? '#9ca3af';
 
   return (
@@ -57,7 +62,7 @@ export function EvidenceNodeBadge({ sourceType, nodeType }: EvidenceNodeBadgePro
       }}
       title={`${nodeType} from ${sourceType}`}
     >
-      <span>{nodeIcon}</span>
+      <span>{nodeLabel}</span>
       <span>{sourceIcon}</span>
     </span>
   );

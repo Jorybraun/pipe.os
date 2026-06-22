@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Match Explanation Visualization Proof
 
+- Match evidence node badges now accept open-ended semantic node types and render data-derived labels, so previously unseen node classifications remain visible instead of being constrained to a fixed frontend taxonomy.
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
 - Added a `LivingContextGraph` regression for crawler/backfill-shaped CODE_REVIEW match explanations, proving accumulated resume and meeting evidence can render against repo source spans for previously unseen concepts in the repository overlay.
 - Candidate profile CODE_REVIEW match explanations now preserve `sourceRefType`, `sourceRefId`, and `sourceSpanId` in public source refs so recruiter surfaces and downstream audits can distinguish candidate spans from repo spans.

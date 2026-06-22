@@ -914,7 +914,7 @@ export interface CandidateEnrichmentRecord {
 
 export interface EvidenceNode {
   nodeId: string;
-  nodeType: 'Experience' | 'TechnicalDemonstration' | 'Skill' | 'CulturalSignal';
+  nodeType: string;
   narrative: string;
   similarity: number;
   barsScore?: number;
