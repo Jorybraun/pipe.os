@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "corpusId": "seed-corpus-v1-2026-06",
   "createdAt": "2026-06-21T20:00:00Z",
-  "description": "Seed evaluation corpus for living context graph matching quality. Three candidates across backend/platform, frontend, and data engineering. Two roles: Senior Platform Engineer, Staff Frontend Engineer. Five challenge PRs from real repo graph patterns.",
+  "description": "Seed evaluation corpus for living context graph matching quality. Five candidates across backend/platform, frontend, data engineering, fullstack, and DevOps/SRE. Three roles: Senior Platform Engineer, Staff Frontend Engineer, Senior DevOps Engineer. Six challenge PRs from real repo graph patterns with cross-domain and stretch matching.",
   "candidateEvidence": [
     {
       "candidateId": "cand-platform-eng-001",
@@ -164,6 +164,98 @@
           "exactText": "We moved from nightly batch Spark jobs to Structured Streaming with checkpoint-based offset tracking. The sinks are idempotent — if a micro-batch retries, it overwrites the same partition key..."
         }
       ]
+    },
+    {
+      "candidateId": "cand-fullstack-eng-004",
+      "evidenceId": "ev-fullstack-react-node-001",
+      "episodeId": "ep-meeting-transcript-005",
+      "narrative": "Built real-time collaborative editor using React, WebSocket server on Node.js with operational transform, TypeScript shared types between client and server, and optimistic UI updates with conflict resolution.",
+      "concepts": ["term:react", "term:web-socket", "term:operational-transform", "term:type-script", "term:node-js", "term:optimistic-ui"],
+      "problems": ["concurrent-editing-conflicts", "real-time-synchronization"],
+      "mechanisms": ["operational-transform", "optimistic-concurrency-control", "shared-type-contracts"],
+      "domains": ["frontend-architecture", "real-time-systems"],
+      "businessObjects": ["collaborative-editor", "websocket-server"],
+      "ownershipActions": ["built", "architected", "deployed"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-04-15",
+          "artifactVersion": "v-transcript-005",
+          "contentHash": "sha256-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1c4",
+          "startOffset": 500,
+          "endOffset": 1300,
+          "locator": "meeting:2026-04-15:para:5-14",
+          "exactText": "The editor uses operational transform on the server side with a Node.js WebSocket server. The React client applies optimistic updates immediately and reconciles when the server broadcasts the canonical transform..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-fullstack-eng-004",
+      "evidenceId": "ev-fullstack-api-gateway-002",
+      "episodeId": "ep-code-review-003",
+      "narrative": "Designed API gateway with rate limiting, circuit breaker pattern, and request coalescing for high-traffic GraphQL endpoint serving 50k RPM with p99 under 200ms.",
+      "concepts": ["term:api-gateway", "term:rate-limiting", "term:circuit-breaker", "term:graph-ql", "term:request-coalescing"],
+      "problems": ["api-reliability-under-load", "cascading-failures"],
+      "mechanisms": ["circuit-breaker-pattern", "token-bucket-rate-limiter", "request-deduplication"],
+      "domains": ["backend-architecture", "api-design"],
+      "businessObjects": ["api-gateway", "graphql-endpoint"],
+      "ownershipActions": ["designed", "implemented", "load-tested"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-code-review-2026-04-20",
+          "artifactVersion": "v-review-003",
+          "contentHash": "sha256-b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2d5",
+          "startOffset": 300,
+          "endOffset": 1050,
+          "locator": "code-review:2026-04-20:section:1-3",
+          "exactText": "The gateway uses a token bucket rate limiter per API key with a circuit breaker that trips after 5 consecutive 5xx responses. Request coalescing deduplicates identical in-flight GraphQL queries..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-devops-sre-005",
+      "evidenceId": "ev-devops-cicd-001",
+      "episodeId": "ep-meeting-transcript-006",
+      "narrative": "Built zero-downtime deployment pipeline with blue-green strategy on Kubernetes, automated canary analysis using Prometheus metrics, and rollback triggers based on error rate SLO violations.",
+      "concepts": ["term:kubernetes", "term:blue-green-deployment", "term:canary-analysis", "term:prometheus", "term:slo", "term:ci-cd"],
+      "problems": ["deployment-risk", "manual-rollback-delays"],
+      "mechanisms": ["blue-green-switching", "canary-metric-analysis", "automated-rollback-trigger"],
+      "domains": ["devops", "site-reliability"],
+      "businessObjects": ["deployment-pipeline", "canary-release"],
+      "ownershipActions": ["built", "automated", "monitored"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-05-05",
+          "artifactVersion": "v-transcript-006",
+          "contentHash": "sha256-c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3e6",
+          "startOffset": 1800,
+          "endOffset": 2600,
+          "locator": "meeting:2026-05-05:para:18-26",
+          "exactText": "The pipeline does blue-green on K8s with automated canary analysis — it watches Prometheus error rate and p99 latency for 15 minutes. If the canary exceeds the SLO threshold, it triggers an automatic rollback..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-devops-sre-005",
+      "evidenceId": "ev-devops-iac-002",
+      "episodeId": "ep-code-review-004",
+      "narrative": "Implemented infrastructure-as-code framework using Terraform modules with automated drift detection, cost estimation before apply, and state locking via DynamoDB for team collaboration.",
+      "concepts": ["term:terraform", "term:infrastructure-as-code", "term:drift-detection", "term:dynamo-db", "term:state-management"],
+      "problems": ["infrastructure-drift", "uncontrolled-cloud-costs"],
+      "mechanisms": ["terraform-modules", "plan-cost-estimation", "state-locking"],
+      "domains": ["devops", "cloud-infrastructure"],
+      "businessObjects": ["terraform-module", "infrastructure-state"],
+      "ownershipActions": ["implemented", "automated", "governed"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-code-review-2026-05-12",
+          "artifactVersion": "v-review-004",
+          "contentHash": "sha256-d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4f7",
+          "startOffset": 100,
+          "endOffset": 850,
+          "locator": "code-review:2026-05-12:section:1-2",
+          "exactText": "The Terraform modules use a composition pattern with DynamoDB state locking. Before every apply, the pipeline runs a cost estimation step and blocks if the delta exceeds the team budget threshold..."
+        }
+      ]
     }
   ],
   "roleRequirements": [
@@ -193,6 +285,20 @@
           "entityId": "role-entity-frontend-jd-001",
           "locator": "jd:role-staff-frontend-eng:section:requirements",
           "conceptKeys": ["term:react", "term:type-script", "term:design-system", "term:performance"]
+        }
+      ]
+    },
+    {
+      "roleId": "role-senior-devops-eng",
+      "requiredLanguages": ["Python", "Bash"],
+      "relevantConcepts": ["term:kubernetes", "term:terraform", "term:ci-cd", "term:prometheus", "term:docker"],
+      "genericConcepts": ["term:linux", "term:git"],
+      "requiredConcepts": ["term:kubernetes", "term:ci-cd"],
+      "sourceReferences": [
+        {
+          "entityId": "role-entity-devops-jd-001",
+          "locator": "jd:role-senior-devops-eng:section:requirements",
+          "conceptKeys": ["term:kubernetes", "term:terraform", "term:ci-cd", "term:prometheus", "term:blue-green-deployment"]
         }
       ]
     }
@@ -305,13 +411,145 @@
       "labelVersion": "1.0.0",
       "labeledAt": "2026-06-21T18:00:00Z",
       "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-fullstack-frontend-pr303",
+      "candidateId": "cand-fullstack-eng-004",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-react-design-system-pr-303",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Fullstack engineer has React and TypeScript experience from the collaborative editor. Design system PR is relevant but candidate's React work is more real-time focused than component-library focused.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-fullstack-frontend-pr404",
+      "candidateId": "cand-fullstack-eng-004",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-virtualized-list-pr-404",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Fullstack engineer has React performance experience from optimistic UI and WebSocket rendering. List virtualization PR is a reasonable stretch from their real-time rendering work.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-fullstack-frontend-pr101",
+      "candidateId": "cand-fullstack-eng-004",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Fullstack engineer has no Kafka or event streaming experience. Backend work is Node.js API gateway, not distributed messaging.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-fullstack-platform-pr101",
+      "candidateId": "cand-fullstack-eng-004",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "borderline",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101"],
+      "explanation": "Fullstack engineer has backend systems experience (API gateway, circuit breakers, rate limiting) which shares distributed systems concepts. However, no direct Kafka or event streaming experience — significant domain stretch.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-fullstack-platform-pr202",
+      "candidateId": "cand-fullstack-eng-004",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101"],
+      "explanation": "Fullstack engineer has no Kubernetes operator or CRD experience. Application-level Node.js and React work does not transfer to K8s controller development.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-devops-devops-pr606",
+      "candidateId": "cand-devops-sre-005",
+      "roleId": "role-senior-devops-eng",
+      "challengeId": "challenge-ci-pipeline-pr-606",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": ["challenge-ci-pipeline-pr-606", "challenge-k8s-operator-pr-202"],
+      "explanation": "DevOps/SRE has direct CI/CD pipeline experience with blue-green deployments, canary analysis, and Kubernetes. PR #606 tests exactly this domain — pipeline reliability and deployment automation.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-devops-devops-pr202",
+      "candidateId": "cand-devops-sre-005",
+      "roleId": "role-senior-devops-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-ci-pipeline-pr-606", "challenge-k8s-operator-pr-202"],
+      "explanation": "DevOps/SRE has Kubernetes experience from deployment pipelines and infrastructure management. K8s operator PR is relevant though the candidate's K8s work is more operational than controller-development focused.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-devops-platform-pr202",
+      "candidateId": "cand-devops-sre-005",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-k8s-operator-pr-202"],
+      "explanation": "DevOps/SRE has strong Kubernetes operational experience. The K8s operator PR aligns with their infrastructure domain, though the platform role expects deeper Go and event-sourcing expertise.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-devops-platform-pr101",
+      "candidateId": "cand-devops-sre-005",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-k8s-operator-pr-202"],
+      "explanation": "DevOps/SRE has no Kafka consumer or event streaming experience. Infrastructure automation skills do not transfer to distributed messaging system development.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-platform-devops-pr202",
+      "candidateId": "cand-platform-eng-001",
+      "roleId": "role-senior-devops-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-k8s-operator-pr-202", "challenge-ci-pipeline-pr-606"],
+      "explanation": "Platform engineer built a K8s operator with reconciliation loops. Strong K8s domain overlap for a DevOps role, though the candidate's focus is on application-level operators rather than CI/CD pipelines.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-platform-devops-pr606",
+      "candidateId": "cand-platform-eng-001",
+      "roleId": "role-senior-devops-eng",
+      "challengeId": "challenge-ci-pipeline-pr-606",
+      "relevanceGrade": "borderline",
+      "eligibleChallengeIds": ["challenge-k8s-operator-pr-202", "challenge-ci-pipeline-pr-606"],
+      "explanation": "Platform engineer has K8s and observability experience which partially overlaps with CI/CD pipeline work. However, no direct deployment automation or IaC experience — significant domain stretch.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-22T08:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
     }
   ],
   "metadata": {
-    "totalLabels": 9,
-    "totalCandidates": 3,
-    "totalRoles": 2,
-    "totalChallenges": 5,
+    "totalLabels": 20,
+    "totalCandidates": 5,
+    "totalRoles": 3,
+    "totalChallenges": 6,
     "syntheticFixtureCount": 0
   }
 }

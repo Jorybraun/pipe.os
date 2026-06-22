@@ -19,10 +19,10 @@ describe('seed corpus v1 — production evaluation baseline', () => {
 
   it('contains expected candidate/role/challenge counts', () => {
     corpus = loadCorpus(corpusJson);
-    expect(corpus.metadata.totalCandidates).toBe(3);
-    expect(corpus.metadata.totalRoles).toBe(2);
-    expect(corpus.metadata.totalChallenges).toBe(5);
-    expect(corpus.metadata.totalLabels).toBe(9);
+    expect(corpus.metadata.totalCandidates).toBe(5);
+    expect(corpus.metadata.totalRoles).toBe(3);
+    expect(corpus.metadata.totalChallenges).toBe(6);
+    expect(corpus.metadata.totalLabels).toBe(20);
     expect(corpus.metadata.syntheticFixtureCount).toBe(0);
   });
 
@@ -81,6 +81,14 @@ describe('seed corpus v1 — production evaluation baseline', () => {
     expect(platformEvidence).toHaveLength(3);
     expect(platformEvidence.every((e) => e.evidenceReferences.length > 0)).toBe(true);
     expect(platformEvidence.every((e) => e.concepts.length > 0)).toBe(true);
+
+    const fullstackEvidence = getCandidateEvidence(corpus, 'cand-fullstack-eng-004');
+    expect(fullstackEvidence).toHaveLength(2);
+    expect(fullstackEvidence.every((e) => e.evidenceReferences.length > 0)).toBe(true);
+
+    const devopsEvidence = getCandidateEvidence(corpus, 'cand-devops-sre-005');
+    expect(devopsEvidence).toHaveLength(2);
+    expect(devopsEvidence.every((e) => e.evidenceReferences.length > 0)).toBe(true);
   });
 
   it('retrieves role requirements with concept keys', () => {
@@ -99,7 +107,47 @@ describe('seed corpus v1 — production evaluation baseline', () => {
     expect(challenges).toContain('challenge-react-design-system-pr-303');
     expect(challenges).toContain('challenge-virtualized-list-pr-404');
     expect(challenges).toContain('challenge-schema-evolution-pr-505');
-    expect(challenges).toHaveLength(5);
+    expect(challenges).toContain('challenge-ci-pipeline-pr-606');
+    expect(challenges).toHaveLength(6);
+  });
+
+  it('devops eng is highly relevant for ci-pipeline challenge', () => {
+    corpus = loadCorpus(corpusJson);
+    const labels = getLabelsForCandidateRole(corpus, 'cand-devops-sre-005', 'role-senior-devops-eng');
+    const ciLabel = labels.find((l) => l.challengeId === 'challenge-ci-pipeline-pr-606');
+    const k8sLabel = labels.find((l) => l.challengeId === 'challenge-k8s-operator-pr-202');
+    expect(ciLabel?.relevanceGrade).toBe('highly_relevant');
+    expect(k8sLabel?.relevanceGrade).toBe('relevant');
+  });
+
+  it('fullstack eng is relevant for frontend but borderline for platform', () => {
+    corpus = loadCorpus(corpusJson);
+    const frontendLabels = getLabelsForCandidateRole(corpus, 'cand-fullstack-eng-004', 'role-staff-frontend-eng');
+    const reactLabel = frontendLabels.find((l) => l.challengeId === 'challenge-react-design-system-pr-303');
+    expect(reactLabel?.relevanceGrade).toBe('relevant');
+
+    const platformLabels = getLabelsForCandidateRole(corpus, 'cand-fullstack-eng-004', 'role-senior-platform-eng');
+    const kafkaLabel = platformLabels.find((l) => l.challengeId === 'challenge-kafka-consumer-pr-101');
+    expect(kafkaLabel?.relevanceGrade).toBe('borderline');
+  });
+
+  it('cross-domain labels exercise stretch matching between roles', () => {
+    corpus = loadCorpus(corpusJson);
+    const platformAsDevops = getLabelsForCandidateRole(corpus, 'cand-platform-eng-001', 'role-senior-devops-eng');
+    expect(platformAsDevops).toHaveLength(2);
+    const k8sLabel = platformAsDevops.find((l) => l.challengeId === 'challenge-k8s-operator-pr-202');
+    const ciLabel = platformAsDevops.find((l) => l.challengeId === 'challenge-ci-pipeline-pr-606');
+    expect(k8sLabel?.relevanceGrade).toBe('relevant');
+    expect(ciLabel?.relevanceGrade).toBe('borderline');
+  });
+
+  it('devops role requires kubernetes and ci-cd concepts', () => {
+    corpus = loadCorpus(corpusJson);
+    const devopsRole = getRoleRequirements(corpus, 'role-senior-devops-eng');
+    expect(devopsRole).toBeDefined();
+    expect(devopsRole!.requiredLanguages).toContain('Python');
+    expect(devopsRole!.requiredConcepts).toContain('term:kubernetes');
+    expect(devopsRole!.requiredConcepts).toContain('term:ci-cd');
   });
 
   it('eligible challenge sets are consistent within candidate-role pairs', () => {
@@ -108,6 +156,11 @@ describe('seed corpus v1 — production evaluation baseline', () => {
       ['cand-platform-eng-001', 'role-senior-platform-eng'],
       ['cand-frontend-eng-002', 'role-staff-frontend-eng'],
       ['cand-data-eng-003', 'role-senior-platform-eng'],
+      ['cand-fullstack-eng-004', 'role-staff-frontend-eng'],
+      ['cand-fullstack-eng-004', 'role-senior-platform-eng'],
+      ['cand-devops-sre-005', 'role-senior-devops-eng'],
+      ['cand-devops-sre-005', 'role-senior-platform-eng'],
+      ['cand-platform-eng-001', 'role-senior-devops-eng'],
     ] as const;
     for (const [candidateId, roleId] of pairs) {
       const labels = getLabelsForCandidateRole(corpus, candidateId, roleId);
