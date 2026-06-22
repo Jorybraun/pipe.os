@@ -107,6 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Video Meeting Brain Proof
 
+- Added a route-level meeting room proof that creates a meeting, mints a guest room token, uploads a host recording, drains transcript processing, then verifies the recorded guest transcript assertion, exact source span, open concept, and signal survive when the same email later joins as a roleless talent-pool candidate.
 - `meetingTranscript.test.ts`: Added focused proof test (`grows a person-centered living context graph from a meeting transcript`) verifying the complete person-graph growth chain: person/workspace_people identity, meeting interaction, immutable artifact version, exact source spans, semantic assertion with open predicate, persisted concept/signal, signal snapshot, projection outbox entry, idempotency, and corrected-transcript immutable versioning.
 - Fixed mock D1 adapter (`normalizeD1Params`): `node:sqlite` does not support D1-style `?1` numbered parameters with positional bindings — the adapter now rewrites `?N` to plain `?` and reorders bindings accordingly, unblocking all 5 previously broken async tests.
 
