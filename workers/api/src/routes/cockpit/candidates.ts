@@ -202,6 +202,7 @@ export interface StandaloneReviewExcludedPacket {
   missingSourceSpanIds: string[];
   gateFailures: string[];
   provenanceFailures: string[];
+  contextProjectionFailures: string[];
   qualityScore: number | null;
 }
 
@@ -500,6 +501,7 @@ function parseStandaloneReviewExcludedPackets(value: string | null): StandaloneR
       missingSourceSpanIds: asStringArray(item.missingSourceSpanIds),
       gateFailures: asStringArray(item.gateFailures),
       provenanceFailures: asStringArray(item.provenanceFailures),
+      contextProjectionFailures: asStringArray(item.contextProjectionFailures),
       qualityScore: typeof item.qualityScore === 'number' ? item.qualityScore : null,
     }];
   });
@@ -554,7 +556,10 @@ function standaloneReviewExclusionGap(packet: StandaloneReviewExcludedPacket): s
     return `${packet.id} was excluded because its repo packet provenance is invalid.${failureSuffix}`;
   }
   if (packet.reason === 'PACKET_CONTEXT_PROJECTION_INCOMPLETE') {
-    return `${packet.id} was excluded because its repo packet is missing source-backed graph context.`;
+    const failureSuffix = packet.contextProjectionFailures.length
+      ? ` ${packet.contextProjectionFailures.slice(0, 3).join(' ')}`
+      : '';
+    return `${packet.id} was excluded because its repo packet is missing source-backed graph context.${failureSuffix}`;
   }
   const demandSuffix = packet.demandIds.length
     ? ` Demand${packet.demandIds.length === 1 ? '' : 's'}: ${packet.demandIds.join(', ')}.`

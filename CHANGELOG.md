@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Match decision context records now persist the selected/considered review packet content hash, and living-context persistence rejects missing or mismatched `review_challenge_packet` source hashes.
 - Matcher regression coverage now uses packets persisted through `buildChallengePacket` + `persistReviewChallengeGraph` for valid selection paths, and keeps hand-shaped packet rows only as invalid legacy fixtures.
 - Candidate-to-PR matching now excludes otherwise valid packet rows until their `repo_challenge_packet` context record has repo source-span refs and concept links, keeping matcher eligibility aligned with the source-backed graph projection.
+- Cockpit candidate profiles now preserve graph-context projection failures from rejected review packets instead of collapsing them into a generic no-match gap.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
 ### Fixed — Repo Graph Projection

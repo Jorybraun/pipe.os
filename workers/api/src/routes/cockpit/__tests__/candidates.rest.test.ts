@@ -346,6 +346,9 @@ describe('Standalone CODE_REVIEW match summary', () => {
         demandIds: ['demand-context'],
         missingSourceSpanIds: [],
         provenanceFailures: [],
+        contextProjectionFailures: [
+          'review challenge packet packet-context-incomplete is missing repo_source_span context refs',
+        ],
       }]),
       [],
     );
@@ -357,7 +360,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
     expect(summary.gaps).toEqual([
       'packet-missing-span was excluded because PR demand provenance references missing repo source spans. Demand: demand-events. Missing span: repo-span-missing.',
       'packet-unsafe was excluded because its repo packet is not production-ready. Quality score: 0.40. Failed gate: production_language.',
-      'packet-context-incomplete was excluded because its repo packet is missing source-backed graph context.',
+      'packet-context-incomplete was excluded because its repo packet is missing source-backed graph context. review challenge packet packet-context-incomplete is missing repo_source_span context refs',
     ]);
   });
 
@@ -749,6 +752,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       missingSourceSpanIds: ['repo-span-missing'],
       gateFailures: [],
       provenanceFailures: [],
+      contextProjectionFailures: [],
       qualityScore: null,
     }]);
     expect(body.standaloneReviewMatch.diagnostics.evaluatedChallenges).toEqual([{
