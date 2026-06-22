@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ingestReposToNeo4j` no longer synthesizes metadata-only repo searchable profiles when Pass-3/source-backed profile evidence is missing; repos without `repo_searchable_profile` now fail closed and are skipped from the semantic projection.
 - `ingestReposToNeo4j` now projects PullRequest nodes only from production-ready review challenge packets that have `repo_challenge_packet` context records, repo source refs, and concept links, excluding fixture/disabled/incomplete packet rows instead of projecting raw sampled PR metadata.
 - Neo4j repo nodes now keep semantic type as `node_type` data instead of using a fixed label/whitelist taxonomy, and repo match queries consider all embedded repo nodes so previously unseen repo concepts survive projection and matching.
+- Neo4j PullRequest projection text now comes from source-backed review packet JSON demand/body content and discards crawler `repo_sample_prs.pr_narrative` embeddings, preventing generic PR summaries from becoming projected match/search evidence.
 
 ### Added — Review Graph Readiness Gate
 

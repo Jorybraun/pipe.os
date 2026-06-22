@@ -7,6 +7,7 @@ import {
   discoverLocalDatabase,
   loadSourceBackedReviewPullRequests,
   parseArgs,
+  sourceBackedPullRequestNarrative,
   sourceBackedRepoProfile,
 } from './ingestReposToNeo4j';
 
@@ -64,6 +65,24 @@ describe('ingestReposToNeo4j CLI helpers', () => {
     expect(sourceBackedRepoProfile(null)).toBeNull();
   });
 
+  it('builds PR projection text from review packet content', () => {
+    const narrative = sourceBackedPullRequestNarrative(JSON.stringify({
+      pullRequest: {
+        title: 'Refactor retry scheduling',
+        body: 'Packet body from GitHub PR metadata.',
+      },
+      demands: [
+        { narrative: 'Reviewer must understand idempotent retry orchestration.' },
+        { narrative: 'Reviewer must inspect queue visibility timeout handling.' },
+      ],
+    }));
+
+    expect(narrative).toContain('Title: Refactor retry scheduling');
+    expect(narrative).toContain('Packet body from GitHub PR metadata.');
+    expect(narrative).toContain('Reviewer must understand idempotent retry orchestration.');
+    expect(sourceBackedPullRequestNarrative('not json')).toBeNull();
+  });
+
   it('loads only context-ready review challenge packets for PR projection', () => {
     const sqlite = new Database(':memory:');
     try {
@@ -90,7 +109,8 @@ describe('ingestReposToNeo4j CLI helpers', () => {
           pr_number INTEGER NOT NULL,
           production_ready INTEGER NOT NULL,
           repo_snapshot_id TEXT NOT NULL,
-          source_hash TEXT NOT NULL
+          source_hash TEXT NOT NULL,
+          packet_json TEXT NOT NULL
         );
         CREATE TABLE context_records (
           id TEXT PRIMARY KEY,
@@ -123,12 +143,12 @@ describe('ingestReposToNeo4j CLI helpers', () => {
           (3, 42, 'https://github.com/pipe/incomplete/pull/42', 'Incomplete PR', 'incomplete', NULL, 3, 1),
           (4, 42, 'https://github.com/pipe/disabled/pull/42', 'Disabled PR', 'disabled', NULL, 3, 1);
         INSERT INTO review_challenge_packets (
-          id, repo_id, pr_number, production_ready, repo_snapshot_id, source_hash
+          id, repo_id, pr_number, production_ready, repo_snapshot_id, source_hash, packet_json
         ) VALUES
-          ('packet-ready', 1, 42, 1, 'snapshot-ready', 'sha256:ready'),
-          ('packet-fixture', 2, 42, 1, 'snapshot-fixture', 'sha256:fixture'),
-          ('packet-incomplete', 3, 42, 1, 'snapshot-incomplete', 'sha256:incomplete'),
-          ('packet-disabled', 4, 42, 1, 'snapshot-disabled', 'sha256:disabled');
+          ('packet-ready', 1, 42, 1, 'snapshot-ready', 'sha256:ready', '{"pullRequest":{"title":"Ready PR packet","body":"Packet body"},"demands":[{"narrative":"Packet demand narrative"}]}'),
+          ('packet-fixture', 2, 42, 1, 'snapshot-fixture', 'sha256:fixture', '{"pullRequest":{"title":"Fixture PR packet"},"demands":[{"narrative":"Fixture demand"}]}'),
+          ('packet-incomplete', 3, 42, 1, 'snapshot-incomplete', 'sha256:incomplete', '{"pullRequest":{"title":"Incomplete PR packet"},"demands":[{"narrative":"Incomplete demand"}]}'),
+          ('packet-disabled', 4, 42, 1, 'snapshot-disabled', 'sha256:disabled', '{"pullRequest":{"title":"Disabled PR packet"},"demands":[{"narrative":"Disabled demand"}]}');
         INSERT INTO context_records (id, ingestion_key, scope_type, scope_id, record_type)
         VALUES
           ('context-ready', 'repo-challenge-packet-context:packet-ready', 'repo_snapshot', 'snapshot-ready', 'repo_challenge_packet'),
@@ -160,7 +180,10 @@ describe('ingestReposToNeo4j CLI helpers', () => {
         context_record_id: 'context-ready',
         repo_source_ref_count: 1,
         concept_link_count: 1,
+        pr_narrative: 'Title: Ready PR packet\n\nBody: Packet body\n\nSource-backed demands:\n- Packet demand narrative',
+        pr_narrative_embedding_json: null,
       });
+      expect(prs[0]?.pr_narrative).not.toContain('source-backed ready pr');
     } finally {
       sqlite.close();
     }

@@ -97,6 +97,10 @@ interface RepoPR {
   concept_link_count: number;
 }
 
+interface RepoPRQueryRow extends Omit<RepoPR, 'pr_narrative' | 'pr_narrative_embedding_json'> {
+  packet_json: string;
+}
+
 const env = {
   NEO4J_URI: process.env['NEO4J_URI']!,
   NEO4J_USER: process.env['NEO4J_USER']!,
@@ -238,6 +242,43 @@ export function sourceBackedRepoProfile(
   return profile ? profile : null;
 }
 
+export function sourceBackedPullRequestNarrative(packetJson: string): string | null {
+  let packet: unknown;
+  try {
+    packet = JSON.parse(packetJson);
+  } catch {
+    return null;
+  }
+  if (typeof packet !== 'object' || packet === null) return null;
+  const record = packet as {
+    pullRequest?: { title?: unknown; body?: unknown };
+    demands?: unknown;
+  };
+  const title = typeof record.pullRequest?.title === 'string'
+    ? record.pullRequest.title.trim()
+    : '';
+  const body = typeof record.pullRequest?.body === 'string'
+    ? record.pullRequest.body.trim()
+    : '';
+  const demandNarratives = Array.isArray(record.demands)
+    ? record.demands
+      .map((demand) => {
+        if (typeof demand !== 'object' || demand === null) return '';
+        const narrative = (demand as { narrative?: unknown }).narrative;
+        return typeof narrative === 'string' ? narrative.trim() : '';
+      })
+      .filter(Boolean)
+    : [];
+
+  const sections = [
+    title ? `Title: ${title}` : '',
+    body ? `Body: ${body}` : '',
+    demandNarratives.length > 0 ? `Source-backed demands:\n${demandNarratives.map((n) => `- ${n}`).join('\n')}` : '',
+  ].filter(Boolean);
+
+  return sections.length > 0 ? sections.join('\n\n') : null;
+}
+
 export function loadSourceBackedReviewPullRequests(db: SqliteLike): RepoPR[] {
   const requiredTables = [
     'qualified_repos',
@@ -255,13 +296,12 @@ export function loadSourceBackedReviewPullRequests(db: SqliteLike): RepoPR[] {
       rsp.pr_number,
       rsp.pr_url,
       rsp.title,
-      rsp.pr_narrative,
-      rsp.pr_narrative_embedding_json,
       rsp.changed_file_count,
       rsp.swe_bench_eligible,
       rcp.id AS packet_id,
       rcp.repo_snapshot_id,
       rcp.source_hash AS packet_content_hash,
+      rcp.packet_json,
       cr.id AS context_record_id,
       (
         SELECT COUNT(*)
@@ -300,7 +340,17 @@ export function loadSourceBackedReviewPullRequests(db: SqliteLike): RepoPR[] {
       ) > 0
     ORDER BY rsp.repo_id, rsp.pr_number
   `).all?.() ?? [];
-  return rows as RepoPR[];
+  return (rows as RepoPRQueryRow[])
+    .map((row) => {
+      const prNarrative = sourceBackedPullRequestNarrative(row.packet_json);
+      if (!prNarrative) return null;
+      return {
+        ...row,
+        pr_narrative: prNarrative,
+        pr_narrative_embedding_json: null,
+      } satisfies RepoPR;
+    })
+    .filter((row): row is RepoPR => row !== null);
 }
 
 /** Parse challenge surfaces JSON into flat key/value pairs. */
