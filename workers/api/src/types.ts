@@ -60,6 +60,8 @@ export interface Env {
   SESSION_TOKEN_SECRET: string;
   /** When 'true', bypasses Clerk JWT verification in local dev. Never set in production. */
   DEV_AUTH_BYPASS?: string;
+  /** Deployment environment label from wrangler env blocks. Used for gated test-only routes. */
+  ENV?: string;
   /** User ID to use when DEV_AUTH_BYPASS is enabled. */
   DEV_BYPASS_USER_ID?: string;
   /**

@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Playwright local `webServer` commands now derive the Worker and Vite ports from `API_BASE` / `APP_BASE`, so focused E2E runs can use alternate ports when stale local servers occupy `8787` or `5173`.
 - Standalone CODE_REVIEW §MVP.4 now requires thin-evidence candidates to receive `WAITING_FOR_MATCH` exactly, with no repo URL, PR number, or cached diff, proving fail-closed matching instead of accepting ambiguous fallback states.
+- Standalone CODE_REVIEW §MVP.6 now seeds source-backed candidate evidence plus an unseen-concept repo challenge packet through a guarded local/test route, then requires `/rpc/get-challenge` to return a real `CODE_REVIEW` with PR metadata, packet-derived diff, match diagnostics, and candidate/repo source refs.
+- Standalone packet-backed review challenges now render from persisted repo source spans before attempting a live GitHub fetch, so local E2E proves D1 source provenance without depending on network availability or fixture repos existing on GitHub.
 - Standalone CODE_REVIEW §MVP.7 now submits through the real `{ order, submission }` candidate RPC contract and verifies completion in the same deterministic flow instead of relying on parallel test ordering.
 - Alternate-port Playwright runs now inject `VITE_API_URL` and `VITE_API_BASE_URL` into the Vite dev server so browser UI assertions hit the same Worker/database as API setup requests.
 - Worker CORS now accepts local `localhost` / `127.0.0.1` dev origins on arbitrary ports, allowing focused Playwright runs to avoid stale default-port servers without browser fetch failures.

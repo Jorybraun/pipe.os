@@ -17,7 +17,7 @@ import { candidateAuth, type CandidateVariables } from '../middleware/candidateA
 import { review } from './assessment/review';
 import { repo } from './assessment/repo';
 import { devContainer, devContainerProxyPublic } from './assessment/devContainer';
-import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
+import { fetchGitHubDiff, type GitHubDiffResult } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
@@ -35,6 +35,7 @@ import {
   loadRoleChallengeSemantics,
   matchCandidateToReviewChallenge,
 } from '../lib/challengeMatching';
+import type { ChallengePacket as RepoChallengePacket } from '../lib/repoSemanticGraph';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -369,6 +370,91 @@ async function matchStandaloneReview(
      WHERE id = ?5`,
   ).bind(match.repoId, repo.github_url, match.prNumber, new Date().toISOString(), interview.id).run();
   return { repoUrl: repo.github_url, prNumber: match.prNumber };
+}
+
+async function loadSourceBackedReviewDiff(
+  db: D1Database,
+  repoUrl: string,
+  prNumber: number,
+): Promise<GitHubDiffResult | null> {
+  const row = await db.prepare(
+    `SELECT rcp.packet_json
+       FROM review_challenge_packets rcp
+       JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE qr.github_url = ?1
+        AND rcp.pr_number = ?2
+        AND rcp.production_ready = 1
+      ORDER BY rcp.quality_score DESC, rcp.updated_at DESC
+      LIMIT 1`,
+  ).bind(repoUrl, prNumber).first<{ packet_json: string }>();
+  if (!row?.packet_json) return null;
+
+  let packet: RepoChallengePacket;
+  try {
+    packet = JSON.parse(row.packet_json) as RepoChallengePacket;
+  } catch {
+    return null;
+  }
+  const sourceSpanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
+  if (sourceSpanIds.length === 0) return null;
+
+  const placeholders = sourceSpanIds.map(() => '?').join(',');
+  const spans = await db.prepare(
+    `SELECT id, path, exact_text, line_start, line_end
+       FROM repo_source_spans
+      WHERE id IN (${placeholders})`,
+  ).bind(...sourceSpanIds).all<{
+    id: string;
+    path: string | null;
+    exact_text: string;
+    line_start: number | null;
+    line_end: number | null;
+  }>();
+  const spanById = new Map((spans.results ?? []).map((span) => [span.id, span]));
+  const files = new Map<string, GitHubDiffResult['diff']['files'][number]>();
+
+  for (const spanId of sourceSpanIds) {
+    const span = spanById.get(spanId);
+    if (!span) return null;
+    const filename = span.path ?? span.id;
+    const file = files.get(filename) ?? {
+      filename,
+      status: 'modified',
+      additions: 0,
+      deletions: 0,
+      hunks: [],
+      headContent: span.exact_text,
+      headContentUrl: `${repoUrl}/pull/${prNumber}`,
+    };
+    const lineStart = span.line_start ?? 1;
+    const lines = span.exact_text.split('\n');
+    file.additions += lines.length;
+    file.hunks.push({
+      header: `@@ source-backed ${filename}:${lineStart}-${span.line_end ?? lineStart + lines.length - 1} @@`,
+      lines: lines.map((line, index) => ({
+        type: 'added' as const,
+        content: line,
+        lineNumber: lineStart + index,
+      })),
+    });
+    files.set(filename, file);
+  }
+
+  return {
+    diff: { files: [...files.values()].sort((left, right) => left.filename.localeCompare(right.filename)) },
+    metadata: {
+      title: packet.pullRequest.title,
+      author: packet.pullRequest.author,
+      created_at: packet.pullRequest.mergedAt ?? new Date(0).toISOString(),
+      state: packet.pullRequest.mergedAt ? 'merged' : 'open',
+      base: 'base',
+      head: 'head',
+      base_sha: packet.pullRequest.baseSha,
+      head_sha: packet.pullRequest.headSha,
+      merged_at: packet.pullRequest.mergedAt,
+      description: packet.pullRequest.body ?? 'Source-backed review packet reconstructed from persisted repo spans.',
+    },
+  };
 }
 
 /** Parse a submission (object or JSON string) and return it if it is a CV intake payload.
@@ -1006,16 +1092,29 @@ rpcAuth.post('/get-challenge', async (c) => {
 
     let cachedDiffJson: unknown = null;
     let githubPrTitle: string | null = null;
-    try {
-      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-      const result = await fetchGitHubDiff(match.repoUrl, match.prNumber, token);
+    const sourceBackedDiff = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
+    if (sourceBackedDiff) {
+      cachedDiffJson = sourceBackedDiff.diff;
+      githubPrTitle = sourceBackedDiff.metadata.title;
+    } else {
+      try {
+        const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+        const result = await fetchGitHubDiff(match.repoUrl, match.prNumber, token);
+        if (result) {
+          cachedDiffJson = result.diff;
+          const meta = result.metadata as { title?: string } | undefined;
+          githubPrTitle = meta?.title ?? null;
+        }
+      } catch (err) {
+        console.error('[standaloneReview] diff fetch failed:', err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (!cachedDiffJson) {
+      const result = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
       if (result) {
         cachedDiffJson = result.diff;
-        const meta = result.metadata as { title?: string } | undefined;
-        githubPrTitle = meta?.title ?? null;
+        githubPrTitle = result.metadata.title;
       }
-    } catch (err) {
-      console.error('[standaloneReview] diff fetch failed:', err instanceof Error ? err.message : String(err));
     }
 
     return c.json({

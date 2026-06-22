@@ -77,6 +77,16 @@ interface ChallengeResponse {
   error?: { code: string; message: string };
 }
 
+interface SeedStandaloneReviewFixtureResponse {
+  ok: boolean;
+  fixtureId: string;
+  repoUrl: string;
+  prNumber: number;
+  packetId: string;
+  candidateSourceSpanIds: string[];
+  repoSourceSpanIds: string[];
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -145,6 +155,110 @@ async function resolveToken(
   });
   expect(res.status()).toBe(200);
   return (await res.json()) as ResolveTokenResponse;
+}
+
+async function seedStandaloneReviewMatchFixture(
+  request: APIRequestContext,
+  authToken: string,
+  candidate: StandaloneCandidate,
+): Promise<SeedStandaloneReviewFixtureResponse> {
+  const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
+  const conceptKey = `term:e2e-source-backed-${suffix}`;
+  const conceptLabel = `e2e source backed ${suffix}`;
+  const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
+  const prNumber = 42;
+  const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
+    headers: recruiterHeaders(authToken),
+    data: {
+      fixtureId: `standalone-review-match-${suffix}`,
+      candidateId: candidate.id,
+      concepts: [
+        {
+          canonicalKey: conceptKey,
+          namespace: 'term',
+          label: conceptLabel,
+        },
+      ],
+      candidateEvidence: [
+        {
+          exactText: `Implemented ${conceptLabel} idempotency with source-backed evidence.`,
+          predicate: 'implemented',
+          narrative: `Candidate implemented ${conceptLabel} idempotency.`,
+          conceptKeys: [conceptKey],
+          evidenceLevel: 'implemented',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Validated ${conceptLabel} retry behavior with tests.`,
+          predicate: 'validated',
+          narrative: `Candidate validated ${conceptLabel} retry behavior.`,
+          conceptKeys: [conceptKey],
+          evidenceLevel: 'validated',
+          strength: 1,
+          confidence: 1,
+        },
+      ],
+      repo: {
+        githubUrl: repoUrl,
+        fullName: `pipe/e2e-source-backed-${suffix}`,
+        primaryLanguage: 'TypeScript',
+        description: 'Source-backed deterministic E2E fixture repository.',
+      },
+      pullRequest: {
+        number: prNumber,
+        title: 'Review source-backed retry idempotency',
+        author: 'pipe-e2e',
+        baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        headSha: 'dddddddddddddddddddddddddddddddddddddddd',
+        mergedAt: '2026-06-14T08:00:00.000Z',
+      },
+      repoSpans: [
+        {
+          key: 'implementation',
+          path: 'src/retry-idempotency.ts',
+          exactText: `Implement ${conceptLabel} idempotency for reviewable retry events.`,
+          artifactType: 'source',
+          lineStart: 10,
+          lineEnd: 10,
+        },
+        {
+          key: 'validation',
+          path: 'src/retry-idempotency.test.ts',
+          exactText: `Validate ${conceptLabel} retry behavior with deterministic tests.`,
+          artifactType: 'test',
+          lineStart: 22,
+          lineEnd: 22,
+        },
+      ],
+      demands: [
+        {
+          id: 'implementation-demand',
+          family: 'source-backed:e2e-implementation',
+          narrative: `Review implemented ${conceptLabel} idempotency.`,
+          conceptKeys: [conceptKey],
+          sourceSpanKeys: ['implementation'],
+          weight: 0.5,
+        },
+        {
+          id: 'validation-demand',
+          family: 'source-backed:e2e-validation',
+          narrative: `Review validated ${conceptLabel} retry behavior.`,
+          conceptKeys: [conceptKey],
+          sourceSpanKeys: ['validation'],
+          weight: 0.5,
+        },
+      ],
+    },
+  });
+  expect(res.status()).toBe(200);
+  const body = (await res.json()) as SeedStandaloneReviewFixtureResponse;
+  expect(body.ok).toBe(true);
+  expect(body.repoUrl).toBe(repoUrl);
+  expect(body.prNumber).toBe(prNumber);
+  expect(body.candidateSourceSpanIds.length).toBeGreaterThan(0);
+  expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
+  return body;
 }
 
 // ─── §MVP.1 Recruiter creates standalone CODE_REVIEW invite ─────────────────
@@ -478,7 +592,9 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     const intakeBody = await intakeRes.json() as { success?: boolean };
     expect(intakeBody.success).toBe(true);
 
-    // Step 2: Get challenge — should now be CODE_REVIEW or WAITING_FOR_MATCH
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
+
+    // Step 2: Get challenge — source-backed candidate evidence and repo packet must match deterministically.
     const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
       headers: candidateHeaders(sessionToken),
       data: { order: 0 },
@@ -487,23 +603,70 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
 
     const challenge = (await challengeRes.json()) as ChallengeResponse;
 
-    // If matched, verify real PR metadata with source-backed evidence
-    if (challenge.type === 'CODE_REVIEW') {
-      expect(challenge.githubPrNumber).toBeGreaterThan(0);
-      expect(challenge.githubRepoUrl).toBeTruthy();
-      expect(challenge.githubRepoUrl).toMatch(/^https:\/\/github\.com\//);
-      expect(challenge.cachedDiffJson).toBeTruthy();
-      expect(challenge.title).toBeTruthy();
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubRepoUrl).toMatch(/^https:\/\/github\.com\//);
+    expect(challenge.cachedDiffJson).toBeTruthy();
+    expect(challenge.githubPrTitle).toBe('Review source-backed retry idempotency');
+    expect(challenge.title).toBeTruthy();
 
-      // No ground truth leaked
-      const raw = JSON.stringify(challenge);
-      expect(raw).not.toContain('groundTruth');
-      expect(raw).not.toContain('plantedBugs');
-      expect(raw).not.toContain('scoringRubric');
-    } else {
-      // WAITING_FOR_MATCH is acceptable — matcher needs more evidence
-      expect(challenge.type).toBe('WAITING_FOR_MATCH');
-    }
+    const diff = challenge.cachedDiffJson as { files?: Array<{ filename?: string; hunks?: unknown[] }> };
+    expect(Array.isArray(diff.files)).toBe(true);
+    expect(diff.files!.map((file) => file.filename)).toEqual([
+      'src/retry-idempotency.test.ts',
+      'src/retry-idempotency.ts',
+    ]);
+    expect(diff.files!.every((file) => Array.isArray(file.hunks) && file.hunks.length > 0)).toBe(true);
+
+    const raw = JSON.stringify(challenge);
+    expect(raw).not.toContain('groundTruth');
+    expect(raw).not.toContain('plantedBugs');
+    expect(raw).not.toContain('scoringRubric');
+
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+    const profile = await profileRes.json() as {
+      standaloneReviewMatch?: {
+        matchStatus?: string;
+        repoUrl?: string | null;
+        prNumber?: number | null;
+        prUrl?: string | null;
+        packetId?: string;
+        evidence?: Array<{
+          candidateSourceRefs?: unknown[];
+          challengeSourceRefs?: unknown[];
+          sharedConcepts?: string[];
+        }>;
+        gaps?: string[];
+        diagnostics?: {
+          recalledPacketIds?: string[];
+          evaluatedChallenges?: Array<{ challengeId?: string; eligible?: boolean }>;
+        };
+      };
+    };
+    const match = profile.standaloneReviewMatch;
+    expect(match).toBeDefined();
+    expect(match!.matchStatus).toBe('MATCHED');
+    expect(match!.repoUrl).toBe(fixture.repoUrl);
+    expect(match!.prNumber).toBe(fixture.prNumber);
+    expect(match!.prUrl).toBe(`${fixture.repoUrl}/pull/${fixture.prNumber}`);
+    expect(match!.evidence?.length).toBeGreaterThan(0);
+    expect(match!.evidence!.every((entry) =>
+      Array.isArray(entry.candidateSourceRefs)
+      && entry.candidateSourceRefs.length > 0
+      && Array.isArray(entry.challengeSourceRefs)
+      && entry.challengeSourceRefs.length > 0
+      && Array.isArray(entry.sharedConcepts)
+      && entry.sharedConcepts.length > 0
+    )).toBe(true);
+    expect(match!.gaps ?? []).toEqual([]);
+    expect(match!.diagnostics?.recalledPacketIds).toContain(fixture.packetId);
+    expect(match!.diagnostics?.evaluatedChallenges?.some((entry) =>
+      entry.challengeId === fixture.packetId && entry.eligible === true
+    )).toBe(true);
   });
 });
 
