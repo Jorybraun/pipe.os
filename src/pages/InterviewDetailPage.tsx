@@ -203,8 +203,8 @@ export default function InterviewDetailPage(): JSX.Element {
     [interview?.transcriptArtifact],
   );
 
-  const prepareRoom = useCallback(async () => {
-    if (!interview) return;
+  const ensureRoomLinks = useCallback(async (): Promise<PreparedRoomLinks | null> => {
+    if (!interview) return null;
     setRoomError(null);
     setRoomNotice(null);
     setIsPreparingRoom(true);
@@ -220,7 +220,7 @@ export default function InterviewDetailPage(): JSX.Element {
         const email = interview.candidateEmail ?? interview.recipientEmail;
         if (!email) {
           setRoomError('Add an email before creating a video room.');
-          return;
+          return null;
         }
         const role = interview.pipelineTitle ?? 'Talent Pool';
         const stage = interview.stageTitle ?? interview.interviewType ?? 'Interview';
@@ -242,12 +242,30 @@ export default function InterviewDetailPage(): JSX.Element {
       );
       setRoomLinks(prepared.room);
       await load();
+      return prepared.room;
     } catch (err) {
       setRoomError(err instanceof Error ? err.message : 'Unable to prepare video room');
+      return null;
     } finally {
       setIsPreparingRoom(false);
     }
   }, [api, interview, load]);
+
+  const openHostRoom = useCallback(async () => {
+    const links = await ensureRoomLinks();
+    if (!links?.hostUrl) return;
+    const opened = window.open(links.hostUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) window.location.assign(links.hostUrl);
+  }, [ensureRoomLinks]);
+
+  const copyGuestLink = useCallback(async () => {
+    const existingGuestUrl = roomLinks?.guestUrl ?? interview?.linkedMeeting?.meetingUrl ?? null;
+    const links = existingGuestUrl ? null : await ensureRoomLinks();
+    const guestUrl = existingGuestUrl ?? links?.guestUrl ?? null;
+    if (!guestUrl) return;
+    await navigator.clipboard.writeText(guestUrl);
+    setRoomNotice('Guest link copied.');
+  }, [ensureRoomLinks, interview?.linkedMeeting?.meetingUrl, roomLinks?.guestUrl]);
 
   const sendInvite = useCallback(async () => {
     if (!interview) return;
@@ -446,34 +464,26 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={FIELD_VALUE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</div>
               <div style={ROOM_LINK_TEXT}>
-                {guestRoomUrl ? 'Guest link ready' : 'Create a room to generate host and guest links'}
+                {guestRoomUrl ? 'Guest link ready' : 'Open the host room to create the guest link'}
               </div>
             </div>
             <div style={ROOM_ACTIONS}>
-              {roomLinks?.hostUrl ? (
-                <ActionLink href={roomLinks.hostUrl} tone="green">
-                  <Video size={14} />
-                  OPEN HOST ROOM
-                </ActionLink>
-              ) : (
-                <button
-                  onClick={() => void prepareRoom()}
-                  disabled={isPreparingRoom}
-                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-                >
-                  {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-                  START HOST ROOM
-                </button>
-              )}
-              {guestRoomUrl && (
-                <button
-                  onClick={() => void navigator.clipboard.writeText(guestRoomUrl)}
-                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
-                >
-                  <Copy size={14} />
-                  COPY GUEST LINK
-                </button>
-              )}
+              <button
+                onClick={() => void openHostRoom()}
+                disabled={isPreparingRoom}
+                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+              >
+                {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+                OPEN HOST ROOM
+              </button>
+              <button
+                onClick={() => void copyGuestLink()}
+                disabled={isPreparingRoom}
+                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+              >
+                <Copy size={14} />
+                COPY GUEST LINK
+              </button>
               {personEmail && (
                 <button
                   onClick={() => void sendInvite()}
