@@ -14,7 +14,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, it, expect } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
-import { ensureCandidateLivingContext, LivingContextStore } from '../../../lib/livingContext';
+import {
+  ensureCandidateLivingContext,
+  ensureContactLivingContext,
+  LivingContextStore,
+} from '../../../lib/livingContext';
 import type { Env, Variables } from '../../../types';
 import {
   canInterviewStatusTransition,
@@ -195,6 +199,20 @@ describe('GET /interviews/:id detail', () => {
         name TEXT,
         email TEXT
       );
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        email TEXT,
+        name TEXT,
+        company TEXT,
+        role TEXT,
+        phone TEXT,
+        linkedin TEXT,
+        notes TEXT,
+        type TEXT NOT NULL DEFAULT 'lead',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
       CREATE TABLE pipelines (
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL,
@@ -280,6 +298,15 @@ describe('GET /interviews/:id detail', () => {
       VALUES ('candidate-1', 'owner-1', 'pipeline-1', 'ACTIVE', 'Ada Lovelace', 'ada@example.com')
     `).run();
     sqlite.prepare(`
+      INSERT INTO contacts (
+        id, owner_id, email, name, company, role, phone, linkedin, notes, type, created_at, updated_at
+      ) VALUES (
+        'contact-1', 'owner-1', 'client@example.com', 'Grace Hopper', 'Acme',
+        'CTO', NULL, NULL, NULL, 'lead',
+        '2026-06-22T17:00:00.000Z', '2026-06-22T17:00:00.000Z'
+      )
+    `).run();
+    sqlite.prepare(`
       INSERT INTO pipelines (id, owner_id, title)
       VALUES ('pipeline-1', 'owner-1', 'Principal Systems Engineer')
     `).run();
@@ -302,6 +329,23 @@ describe('GET /interviews/:id detail', () => {
         'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
         NULL, NULL, NULL, NULL, NULL, NULL, NULL,
         '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-roleless-1', NULL, NULL, NULL, 'owner-1',
+        'VIDEO', 'DIRECT_VIDEO_CALL', 'SCHEDULED', '2026-06-23T18:00:00.000Z',
+        NULL, 'MANUAL', NULL, NULL, 'Discuss client architecture context.',
+        'MANUAL', NULL, '2026-06-22T17:50:00.000Z', '2026-06-22T17:50:00.000Z',
+        'Grace Hopper', 'client@example.com', NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:50:00.000Z', '2026-06-22T17:55:00.000Z'
       )
     `).run();
     sqlite.prepare(`
@@ -416,6 +460,81 @@ describe('GET /interviews/:id detail', () => {
     });
   }
 
+  async function seedContactLivingContext(): Promise<void> {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const db = createMockD1(sqlite);
+    const identity = await ensureContactLivingContext(db, 'contact-1');
+    if (!identity) throw new Error('contact living context was not created');
+
+    const store = new LivingContextStore(db, () => '2026-06-22T18:10:01.000Z');
+    const interaction = await store.upsertInteraction({
+      ingestionKey: 'direct-call:interview-roleless-1',
+      workspacePersonId: identity.workspacePersonId,
+      interactionType: 'direct_video_call',
+      externalReference: 'interview-roleless-1',
+      startedAt: '2026-06-23T18:00:00.000Z',
+      metadata: { scheduledInterviewId: 'interview-roleless-1' },
+    });
+    const artifact = await store.upsertArtifact({
+      ingestionKey: 'direct-call:interview-roleless-1:note',
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: interaction.id,
+      artifactType: 'recruiter_note',
+      logicalKey: 'interview-roleless-1/note',
+      metadata: { scheduledInterviewId: 'interview-roleless-1' },
+    });
+    const noteText = 'Grace wants to discuss event-sourced billing architecture.';
+    const version = await store.createArtifactVersion({
+      ingestionKey: 'direct-call:interview-roleless-1:note:v1',
+      artifactId: artifact.id,
+      versionNumber: 1,
+      contentHash: sha256Hex(noteText),
+      mediaType: 'text/plain',
+      contentText: noteText,
+      byteLength: noteText.length,
+      metadata: { source: 'roleless-direct-call-test' },
+    });
+    const span = await store.createSourceSpan({
+      ingestionKey: 'direct-call:interview-roleless-1:note:span-0001',
+      artifactVersionId: version.id,
+      stableSegmentId: 'note-0001',
+      charStart: 0,
+      charEnd: noteText.length,
+      exactText: noteText,
+      metadata: { author: 'recruiter' },
+    });
+    const concept = await store.upsertConcept({
+      ingestionKey: 'term:event-sourced-billing',
+      canonicalKey: 'term:event-sourced-billing',
+      namespace: 'term',
+      label: 'event-sourced billing',
+      metadata: { source: 'roleless_direct_call_test' },
+    });
+    await store.upsertContextRecord({
+      ingestionKey: 'direct-call:interview-roleless-1:event-sourced-billing',
+      workspacePersonId: identity.workspacePersonId,
+      interactionId: interaction.id,
+      recordType: 'direct_call_context',
+      predicate: 'client wants to discuss architecture',
+      narrative: 'Grace wants to discuss event-sourced billing architecture.',
+      qualifiers: { scheduledInterviewId: 'interview-roleless-1' },
+      confidence: 1,
+      extractionVersion: 'scheduling-detail-test-v1',
+      observedAt: '2026-06-22T18:10:00.000Z',
+      sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+      entities: [{
+        entityType: 'workspace_person',
+        entityId: identity.workspacePersonId,
+        relationship: 'participant',
+      }],
+      concepts: [{
+        conceptId: concept.id,
+        relationship: 'discussion_topic',
+        weight: 1,
+      }],
+    });
+  }
+
   it('returns the interview, generated join URL, linked meeting, room, and transcript artifact', async () => {
     seedInterviewDetailFixture();
     await seedInterviewLivingContext();
@@ -498,6 +617,68 @@ describe('GET /interviews/:id detail', () => {
       }],
       sources: [{
         exactText: 'I built idempotent Kafka consumers.',
+      }],
+    });
+  });
+
+  it('returns source-backed contact graph for a roleless direct-call interview', async () => {
+    seedInterviewDetailFixture();
+    await seedContactLivingContext();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews/interview-roleless-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        candidateId: string | null;
+        recipientName: string | null;
+        recipientEmail: string | null;
+        pipelineId: string | null;
+        stageId: string | null;
+        livingContext: {
+          person: {
+            displayName: string | null;
+            primaryEmail: string | null;
+            roles: Array<{ roleType: string }>;
+          };
+          summary: { contextRecordCount: number; sourceSpanCount: number };
+          contextRecords: Array<{
+            recordType: string;
+            narrative: string;
+            concepts: Array<{ canonicalKey: string; label: string }>;
+            sources: Array<{ exactText: string }>;
+          }>;
+        } | null;
+      };
+    };
+
+    expect(body.interview).toMatchObject({
+      id: 'interview-roleless-1',
+      candidateId: null,
+      recipientName: 'Grace Hopper',
+      recipientEmail: 'client@example.com',
+      pipelineId: null,
+      stageId: null,
+    });
+    expect(body.interview.livingContext?.person).toMatchObject({
+      displayName: 'Grace Hopper',
+      primaryEmail: 'client@example.com',
+      roles: [{ roleType: 'lead' }],
+    });
+    expect(body.interview.livingContext?.summary).toMatchObject({
+      contextRecordCount: 1,
+      sourceSpanCount: 1,
+    });
+    expect(body.interview.livingContext?.contextRecords[0]).toMatchObject({
+      recordType: 'direct_call_context',
+      narrative: 'Grace wants to discuss event-sourced billing architecture.',
+      concepts: [{
+        canonicalKey: 'term:event-sourced-billing',
+        label: 'event-sourced billing',
+      }],
+      sources: [{
+        exactText: 'Grace wants to discuss event-sourced billing architecture.',
       }],
     });
   });

@@ -485,7 +485,7 @@ export default function InterviewDetailPage(): JSX.Element {
         </aside>
       </div>
 
-      {interview.candidateId && interview.livingContext && (
+      {interview.livingContext && (
         <section style={GRAPH_SECTION}>
           <div style={GRAPH_HEADER}>
             <div>
@@ -497,8 +497,8 @@ export default function InterviewDetailPage(): JSX.Element {
             </div>
           </div>
           <LivingContextGraph
-            candidateId={interview.candidateId}
-            livingContextEndpoint={`/api/v1/candidates/${interview.candidateId}/living-context`}
+            candidateId={interview.candidateId ?? `interview:${interview.id}`}
+            livingContextEndpoint={`/api/v1/scheduling/interviews/${interview.id}`}
             initialLivingContext={interview.livingContext}
           />
         </section>

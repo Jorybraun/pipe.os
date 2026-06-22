@@ -21,7 +21,12 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
-import { ensureCandidateLivingContext, loadCandidateLivingContext } from '../../lib/livingContext';
+import {
+  ensureCandidateLivingContext,
+  ensureContactLivingContext,
+  loadCandidateLivingContext,
+  loadContactLivingContext,
+} from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -131,6 +136,52 @@ function buildInternalVideoUrl(c: { env: Env }, interview: { id: string; stage_i
   const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
   const sessionStageId = interview.stage_id ?? interview.id;
   return `${baseUrl}/video/${sessionStageId}--${interview.candidate_id}`;
+}
+
+type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
+
+async function loadScheduledInterviewLivingContext(
+  db: D1Database,
+  ownerId: string,
+  interview: {
+    id: string;
+    candidate_id: string | null;
+    recipient_email: string | null;
+  },
+): Promise<InterviewLivingContext> {
+  if (interview.candidate_id) {
+    await ensureCandidateLivingContext(db, interview.candidate_id);
+    return loadCandidateLivingContext(db, interview.candidate_id);
+  }
+
+  const recipientEmail = interview.recipient_email?.trim().toLowerCase();
+  const recipientContact = recipientEmail
+    ? await db.prepare(
+      `SELECT id
+         FROM contacts
+        WHERE owner_id = ?1
+          AND lower(email) = ?2
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+    ).bind(ownerId, recipientEmail).first<{ id: string }>()
+    : null;
+  const meetingContact = recipientContact
+    ? null
+    : await db.prepare(
+      `SELECT c.id
+         FROM meetings m
+         JOIN meeting_participants mp ON mp.meeting_id = m.id
+         JOIN contacts c ON c.id = mp.contact_id
+        WHERE m.scheduled_interview_id = ?1
+          AND m.owner_id = ?2
+        ORDER BY mp.created_at DESC
+        LIMIT 1`,
+    ).bind(interview.id, ownerId).first<{ id: string }>();
+  const contactId = recipientContact?.id ?? meetingContact?.id ?? null;
+  if (!contactId) return null;
+
+  await ensureContactLivingContext(db, contactId);
+  return loadContactLivingContext(db, contactId);
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -776,11 +827,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       room_status: string | null;
     }>();
 
-  let livingContext: Awaited<ReturnType<typeof loadCandidateLivingContext>> = null;
-  if (interview.candidate_id) {
-    await ensureCandidateLivingContext(db, interview.candidate_id);
-    livingContext = await loadCandidateLivingContext(db, interview.candidate_id);
-  }
+  const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
 
   return c.json({
     interview: {

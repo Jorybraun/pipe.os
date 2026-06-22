@@ -15,7 +15,7 @@ export interface UseLivingContextOptions {
 }
 
 function unwrapLivingContext(
-  response: LivingContextResponse | LivingContextReadModel,
+  response: LivingContextResponse | LivingContextReadModel | { interview?: { livingContext?: LivingContextReadModel | null } },
 ): LivingContextReadModel {
   if (
     response
@@ -24,6 +24,17 @@ function unwrapLivingContext(
     && response.livingContext
   ) {
     return response.livingContext;
+  }
+  if (
+    response
+    && typeof response === 'object'
+    && 'interview' in response
+    && response.interview
+    && typeof response.interview === 'object'
+    && 'livingContext' in response.interview
+    && response.interview.livingContext
+  ) {
+    return response.interview.livingContext;
   }
   return response as LivingContextReadModel;
 }
@@ -52,7 +63,11 @@ export function useLivingContext(
     setIsLoading(true);
     setError(null);
     try {
-      const response = await api.get<LivingContextResponse | LivingContextReadModel>(endpoint);
+      const response = await api.get<
+        LivingContextResponse
+        | LivingContextReadModel
+        | { interview?: { livingContext?: LivingContextReadModel | null } }
+      >(endpoint);
       setLivingContext(unwrapLivingContext(response));
     } catch (cause) {
       setError(cause instanceof Error ? cause : new Error('Failed to load living context'));
