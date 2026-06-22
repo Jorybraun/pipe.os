@@ -665,8 +665,17 @@ function MeetingEvidencePanel({
       const assertions = livingContext.assertions.filter(
         (assertion) => assertion.interactionId === interaction.id,
       );
+      const sourceSpanIds = new Set(
+        artifacts
+          .flatMap((artifact) => artifact.sourceSpans)
+          .map((source) => source.sourceSpanId),
+      );
       const contextRecords = livingContext.contextRecords.filter(
-        (record) => record.interactionId === interaction.id,
+        (record) => record.interactionId === interaction.id
+          || record.sources.some((source) => (
+            typeof source.sourceSpanId === 'string'
+            && sourceSpanIds.has(source.sourceSpanId)
+          )),
       );
       const sourceSpans = artifacts.flatMap((artifact) => artifact.sourceSpans);
       const signalLabels = livingContext.signals

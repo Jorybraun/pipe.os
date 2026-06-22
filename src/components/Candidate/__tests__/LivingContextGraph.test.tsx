@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LivingContextGraph } from '../LivingContextGraph';
 import type {
   LivingContextReadModel,
@@ -255,53 +255,118 @@ function makeMeetingSourceRef(overrides: Partial<LivingContextSourceRef> = {}): 
   };
 }
 
-function makeMeetingLivingContext(): LivingContextReadModel {
+function makeRolelessMessageSourceRef(overrides: Partial<LivingContextSourceRef> = {}): LivingContextSourceRef {
+  return {
+    sourceSpanId: 'span-roleless-message-1',
+    evidenceRole: 'source',
+    artifactId: 'artifact-roleless-message',
+    artifactType: 'message',
+    artifactLogicalKey: 'roleless_candidate_intake_message',
+    artifactVersionId: 'artifact-version-roleless-message-1',
+    artifactVersionNumber: 1,
+    mediaType: 'text/plain',
+    storageKey: null,
+    stableSegmentId: 'full-message',
+    exactText: 'Roleless follow-up: the same person can discuss temporal shard knitting and join the talent pool.',
+    byteStart: 0,
+    byteEnd: 92,
+    charStart: 0,
+    charEnd: 92,
+    lineStart: null,
+    lineEnd: null,
+    timestampStartMs: null,
+    timestampEndMs: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+function makeMeetingLivingContext(options: { includeRolelessMessage?: boolean } = {}): LivingContextReadModel {
   const sourceRef = makeMeetingSourceRef();
+  const messageSourceRef = makeRolelessMessageSourceRef();
+  const includeRolelessMessage = options.includeRolelessMessage ?? false;
   return {
     ...makeLivingContext(),
     summary: {
-      interactionCount: 1,
-      artifactCount: 1,
+      interactionCount: includeRolelessMessage ? 2 : 1,
+      artifactCount: includeRolelessMessage ? 2 : 1,
       contextRecordCount: 1,
       assertionCount: 1,
       signalCount: 1,
-      sourceSpanCount: 1,
+      sourceSpanCount: includeRolelessMessage ? 2 : 1,
     },
-    interactions: [{
-      id: 'interaction-meeting-1',
-      interactionType: 'video_meeting',
-      externalReference: 'meeting-1',
-      startedAt: '2026-06-13T10:00:00.000Z',
-      endedAt: '2026-06-13T10:30:00.000Z',
-      createdAt: '2026-06-13T10:00:00.000Z',
-      updatedAt: '2026-06-13T10:30:00.000Z',
-      metadata: {},
-      artifactIds: ['artifact-meeting-transcript'],
-      contextRecordIds: ['record-meeting-transcript'],
-      assertionIds: ['assertion-temporal-shards'],
-      signalKeys: ['term:temporal-shard-knitting'],
-    }],
-    artifacts: [{
-      id: 'artifact-meeting-transcript',
-      interactionId: 'interaction-meeting-1',
-      artifactType: 'meeting_transcript',
-      logicalKey: 'meeting-1',
-      metadata: {},
-      latestVersionId: 'artifact-version-meeting-1',
-      latestVersionNumber: 1,
-      versionCount: 1,
-      mediaType: 'text/plain',
-      storageKey: null,
-      createdAt: '2026-06-13T10:00:00.000Z',
-      updatedAt: '2026-06-13T10:30:00.000Z',
-      sourceSpans: [sourceRef],
-    }],
+    interactions: [
+      {
+        id: 'interaction-meeting-1',
+        interactionType: 'video_meeting',
+        externalReference: 'meeting-1',
+        startedAt: '2026-06-13T10:00:00.000Z',
+        endedAt: '2026-06-13T10:30:00.000Z',
+        createdAt: '2026-06-13T10:00:00.000Z',
+        updatedAt: '2026-06-13T10:30:00.000Z',
+        metadata: {},
+        artifactIds: ['artifact-meeting-transcript'],
+        contextRecordIds: [],
+        assertionIds: ['assertion-temporal-shards'],
+        signalKeys: ['term:temporal-shard-knitting'],
+      },
+      ...(includeRolelessMessage
+        ? [{
+            id: 'interaction-roleless-message-1',
+            interactionType: 'message',
+            externalReference: 'candidate-1',
+            startedAt: '2026-06-13T11:00:00.000Z',
+            endedAt: null,
+            createdAt: '2026-06-13T11:00:00.000Z',
+            updatedAt: '2026-06-13T11:00:00.000Z',
+            metadata: { source: 'roleless_candidate_intake', roleless: true },
+            artifactIds: ['artifact-roleless-message'],
+            contextRecordIds: [],
+            assertionIds: [],
+            signalKeys: [],
+          }]
+        : []),
+    ],
+    artifacts: [
+      {
+        id: 'artifact-meeting-transcript',
+        interactionId: 'interaction-meeting-1',
+        artifactType: 'meeting_transcript',
+        logicalKey: 'meeting-1',
+        metadata: {},
+        latestVersionId: 'artifact-version-meeting-1',
+        latestVersionNumber: 1,
+        versionCount: 1,
+        mediaType: 'text/plain',
+        storageKey: null,
+        createdAt: '2026-06-13T10:00:00.000Z',
+        updatedAt: '2026-06-13T10:30:00.000Z',
+        sourceSpans: [sourceRef],
+      },
+      ...(includeRolelessMessage
+        ? [{
+            id: 'artifact-roleless-message',
+            interactionId: 'interaction-roleless-message-1',
+            artifactType: 'message',
+            logicalKey: 'roleless_candidate_intake_message',
+            metadata: { source: 'roleless_candidate_intake', roleless: true },
+            latestVersionId: 'artifact-version-roleless-message-1',
+            latestVersionNumber: 1,
+            versionCount: 1,
+            mediaType: 'text/plain',
+            storageKey: null,
+            createdAt: '2026-06-13T11:00:00.000Z',
+            updatedAt: '2026-06-13T11:00:00.000Z',
+            sourceSpans: [messageSourceRef],
+          }]
+        : []),
+    ],
     contextRecords: [{
       id: 'record-meeting-transcript',
       scopeType: 'meeting',
       scopeId: 'meeting-1',
-      interactionId: 'interaction-meeting-1',
-      applicationId: 'application-1',
+      interactionId: null,
+      applicationId: null,
       episodeId: null,
       assertionId: null,
       recordType: 'meeting_transcript',
@@ -496,7 +561,7 @@ describe('LivingContextGraph standalone review explanation', () => {
   });
 
   it('surfaces meeting transcript evidence as an interaction-level graph branch', () => {
-    mocks.livingContext = makeMeetingLivingContext();
+    mocks.livingContext = makeMeetingLivingContext({ includeRolelessMessage: true });
 
     render(<LivingContextGraph candidateId="candidate-1" />);
 
@@ -514,5 +579,13 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(panel).getByText('Ada described implementing temporal shard knitting for order replay.')).toBeInTheDocument();
     expect(within(panel).getAllByText('temporal shard knitting').length).toBeGreaterThan(0);
     expect(within(panel).getByRole('button', { name: /Meeting Transcript.*line 1/i })).toBeInTheDocument();
+
+    expect(screen.getByText('Message')).toBeInTheDocument();
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /All context/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Message.*chars 0-92/i }));
+    expect(screen.getByText(
+      'Roleless follow-up: the same person can discuss temporal shard knitting and join the talent pool.',
+    )).toBeInTheDocument();
   });
 });
