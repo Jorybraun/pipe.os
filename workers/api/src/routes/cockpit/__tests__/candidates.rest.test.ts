@@ -790,6 +790,276 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       exactText: 'Add idempotent retry handling around order event publication.',
     });
   });
+
+  it('hydrates selected PR metadata from persisted packet_json using real D1-shaped rows', async () => {
+    const sqlite = new Database(':memory:');
+    try {
+      sqlite.exec(`
+        CREATE TABLE pipelines (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL
+        );
+        CREATE TABLE candidates (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          pipeline_id TEXT,
+          name TEXT,
+          email TEXT,
+          status TEXT NOT NULL,
+          current_stage_id TEXT,
+          resume_s3_key TEXT,
+          phone_number TEXT,
+          invite_token TEXT NOT NULL,
+          skills TEXT,
+          years_of_experience INTEGER,
+          current_role TEXT,
+          education TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE stages (
+          id TEXT PRIMARY KEY,
+          pipeline_id TEXT,
+          title TEXT,
+          sort_order INTEGER,
+          mode TEXT
+        );
+        CREATE TABLE challenges (
+          id TEXT PRIMARY KEY,
+          stage_id TEXT,
+          type TEXT,
+          title TEXT,
+          instructions TEXT,
+          config TEXT,
+          server_config TEXT,
+          sort_order INTEGER
+        );
+        CREATE TABLE challenge_submissions (
+          id TEXT PRIMARY KEY,
+          challenge_id TEXT,
+          candidate_id TEXT,
+          score INTEGER,
+          feedback TEXT,
+          response_json TEXT,
+          submitted_at TEXT,
+          scored_at TEXT
+        );
+        CREATE TABLE review_sessions (
+          id TEXT PRIMARY KEY,
+          challenge_id TEXT,
+          candidate_id TEXT,
+          status TEXT,
+          current_round INTEGER,
+          max_rounds INTEGER,
+          score_report TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE scheduled_interviews (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT NOT NULL,
+          pipeline_id TEXT,
+          stage_id TEXT,
+          interview_type TEXT,
+          meeting_type TEXT,
+          status TEXT,
+          scheduled_at TEXT,
+          meeting_url TEXT,
+          scheduling_provider TEXT,
+          scheduling_url TEXT,
+          matched_repo_id INTEGER,
+          github_repo_url TEXT,
+          github_pr_number INTEGER,
+          submission_json TEXT,
+          completed_at TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        );
+        CREATE TABLE role_contexts (
+          id TEXT PRIMARY KEY,
+          pipeline_id TEXT
+        );
+        CREATE TABLE qualified_repos (
+          id INTEGER PRIMARY KEY,
+          full_name TEXT,
+          github_url TEXT
+        );
+        CREATE TABLE repo_sample_prs (
+          repo_id INTEGER,
+          pr_number INTEGER,
+          title TEXT,
+          pr_url TEXT
+        );
+        CREATE TABLE review_challenge_packets (
+          id TEXT PRIMARY KEY,
+          repo_id INTEGER,
+          pr_number INTEGER,
+          packet_json TEXT
+        );
+        CREATE TABLE match_runs (
+          id TEXT PRIMARY KEY,
+          candidate_id TEXT,
+          role_snapshot_id TEXT,
+          status TEXT,
+          recalled_packets_json TEXT,
+          excluded_packets_json TEXT,
+          ranked_results_json TEXT,
+          selected_packet_id TEXT,
+          created_at TEXT
+        );
+      `);
+
+      const rankedResults = [{
+        rank: 1,
+        recallRank: 1,
+        challengeId: 'packet-from-backfill',
+        repoId: '77',
+        prNumber: 314,
+        score: 0.88,
+        alignedDemandCount: 1,
+        stretchCount: 0,
+        provenanceComplete: true,
+        eligible: true,
+        alignments: [{
+          atomId: 'candidate-atom-ledger',
+          demandId: 'repo-demand-ledger',
+          purpose: 'validation',
+          pairScore: 0.93,
+          sharedConcepts: ['term:crystalline-quorum-ledger'],
+          candidateSourceRefs: [{
+            artifactId: 'resume-artifact',
+            artifactVersion: 'v1',
+            contentHash: 'candidate-hash',
+            startOffset: 0,
+            endOffset: 68,
+            sourceRefType: 'source_span',
+            sourceRefId: 'candidate-span-ledger',
+            sourceSpanId: 'candidate-span-ledger',
+            locator: 'resume line 4',
+            exactText: 'Implemented CrystallineQuorumLedger commits for order recovery.',
+          }],
+          challengeSourceRefs: [{
+            artifactId: 'repo-artifact',
+            artifactVersion: 'commit-backfill',
+            contentHash: 'repo-hash',
+            startOffset: 10,
+            endOffset: 82,
+            sourceRefType: 'repo_source_span',
+            sourceRefId: 'repo-span-ledger',
+            locator: 'src/orders/crystallineQuorumLedger.ts:1',
+            exactText: 'Write CrystallineQuorumLedger recovery entries from retryable orders.',
+          }],
+        }],
+        rejectionReasons: [],
+      }];
+      const packetJson = {
+        repository: {
+          provider: 'github',
+          owner: 'pipe-labs',
+          name: 'orders',
+          canonicalUrl: 'https://github.com/pipe-labs/orders',
+        },
+        pullRequest: {
+          number: 314,
+          url: 'https://github.com/pipe-labs/orders/pull/314',
+          title: 'Backfill CrystallineQuorumLedger recovery packet',
+        },
+      };
+
+      sqlite.prepare(`
+        INSERT INTO candidates (
+          id, owner_id, pipeline_id, name, email, status, current_stage_id,
+          resume_s3_key, phone_number, invite_token, skills, years_of_experience,
+          current_role, education, created_at, updated_at
+        ) VALUES (
+          'candidate-graph', 'test-user', NULL, 'Graph Candidate', 'graph@example.com',
+          'INVITED', NULL, NULL, NULL, 'invite-graph', NULL, NULL, NULL, NULL,
+          '2026-06-22T00:00:00.000Z', '2026-06-22T00:00:00.000Z'
+        )
+      `).run();
+      sqlite.prepare(`
+        INSERT INTO scheduled_interviews (
+          id, candidate_id, pipeline_id, stage_id, interview_type, meeting_type, status,
+          scheduled_at, meeting_url, scheduling_provider, scheduling_url, matched_repo_id,
+          github_repo_url, github_pr_number, submission_json, completed_at, created_at, updated_at
+        ) VALUES (
+          'interview-graph', 'candidate-graph', NULL, NULL, 'CODE_REVIEW', NULL, 'MATCHED',
+          NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+          '2026-06-22T00:05:00.000Z', '2026-06-22T00:05:00.000Z'
+        )
+      `).run();
+      sqlite.prepare(`
+        INSERT INTO review_challenge_packets (id, repo_id, pr_number, packet_json)
+        VALUES ('packet-from-backfill', 77, 314, ?)
+      `).run(JSON.stringify(packetJson));
+      sqlite.prepare(`
+        INSERT INTO match_runs (
+          id, candidate_id, role_snapshot_id, status, recalled_packets_json,
+          excluded_packets_json, ranked_results_json, selected_packet_id, created_at
+        ) VALUES (
+          'match-run-graph', 'candidate-graph', 'standalone-code-review-v1', 'MATCHED',
+          ?, '[]', ?, 'packet-from-backfill', '2026-06-22T00:06:00.000Z'
+        )
+      `).run(
+        JSON.stringify(['packet-from-backfill']),
+        JSON.stringify(rankedResults),
+      );
+
+      const app = new Hono<{ Bindings: Env }>();
+      app.use('*', async (c, next) => {
+        // @ts-expect-error route test overrides Worker bindings.
+        c.env = {
+          DB: createMockD1(sqlite),
+          CLERK_SECRET_KEY: 'test',
+          DEV_AUTH_BYPASS: 'true',
+          DEV_BYPASS_USER_ID: 'test-user',
+        };
+        await next();
+      });
+      app.route('/', candidateOps);
+
+      const response = await app.request('/candidate-graph');
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        standaloneReviewMatch: {
+          repoId: number | null;
+          repoName: string | null;
+          repoUrl: string | null;
+          prNumber: number | null;
+          prUrl: string | null;
+          prTitle: string | null;
+          evidence: Array<{
+            sharedConcepts: string[];
+            candidateSourceRefs: Array<{ sourceRefId?: string; exactText?: string }>;
+            challengeSourceRefs: Array<{ sourceRefType?: string; sourceRefId?: string; exactText?: string }>;
+          }>;
+        };
+      };
+
+      expect(body.standaloneReviewMatch).toMatchObject({
+        repoId: 77,
+        repoName: 'pipe-labs/orders',
+        repoUrl: 'https://github.com/pipe-labs/orders',
+        prNumber: 314,
+        prUrl: 'https://github.com/pipe-labs/orders/pull/314',
+        prTitle: 'Backfill CrystallineQuorumLedger recovery packet',
+      });
+      expect(body.standaloneReviewMatch.evidence[0].sharedConcepts).toEqual([
+        'term:crystalline-quorum-ledger',
+      ]);
+      expect(body.standaloneReviewMatch.evidence[0].candidateSourceRefs[0]).toMatchObject({
+        sourceRefId: 'candidate-span-ledger',
+        exactText: 'Implemented CrystallineQuorumLedger commits for order recovery.',
+      });
+      expect(body.standaloneReviewMatch.evidence[0].challengeSourceRefs[0]).toMatchObject({
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-ledger',
+        exactText: 'Write CrystallineQuorumLedger recovery entries from retryable orders.',
+      });
+    } finally {
+      sqlite.close();
+    }
+  });
 });
 
 describe('Standalone CODE_REVIEW submission summary', () => {
