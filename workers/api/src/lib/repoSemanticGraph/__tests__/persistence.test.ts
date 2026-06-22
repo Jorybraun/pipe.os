@@ -703,6 +703,38 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
     });
   });
 
+  it('does not replace existing semantic graph rows when stored source span text conflicts with input', async () => {
+    const data = await fixture();
+    await persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, data.graph);
+
+    sqlite.prepare(
+      'UPDATE repo_source_spans SET exact_text = ? WHERE id = ?',
+    ).run('corrupted source text from a stale cache', data.ids.spans[0]);
+
+    await expect(
+      persistReviewChallengeGraph(createMockD1(sqlite), 41, data.input, data.packet, {
+        structuralFacts: [],
+        codeEpisodes: [],
+        facets: [],
+        semanticAssertions: [],
+        repoSignals: [],
+      }),
+    ).rejects.toThrow(/does not match immutable input fields: exact_text/);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM review_challenge_packets').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_semantic_assertions').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM repo_signals').get()).toEqual({
+      count: 1,
+    });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM context_records').get()).toEqual({
+      count: 1,
+    });
+  });
+
   it('keeps packet persistence idempotent and backed by exact stored source spans', async () => {
     const data = await fixture();
 

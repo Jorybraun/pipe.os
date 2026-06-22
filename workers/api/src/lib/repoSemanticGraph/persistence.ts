@@ -79,6 +79,60 @@ function repoSpanLocator(
   };
 }
 
+async function assertPersistedSourceSpanMatchesInput(
+  db: D1Database,
+  span: SourceSpan,
+  path: string | undefined,
+  input: NormalizedPullRequestInput,
+): Promise<void> {
+  const row = await db.prepare(
+    `SELECT artifact_version_id, content_hash, path, byte_start, byte_end,
+            line_start, line_end, pr_side, base_sha, head_sha, exact_text
+       FROM repo_source_spans
+      WHERE id = ?1`,
+  ).bind(span.id).first<{
+    artifact_version_id: string;
+    content_hash: string;
+    path: string | null;
+    byte_start: number | null;
+    byte_end: number | null;
+    line_start: number | null;
+    line_end: number | null;
+    pr_side: string | null;
+    base_sha: string | null;
+    head_sha: string | null;
+    exact_text: string;
+  }>();
+  if (!row) {
+    throw new RepoSemanticGraphPersistenceError(
+      `repo source span ${span.id} was not persisted`,
+    );
+  }
+
+  const expected = {
+    artifact_version_id: span.artifactVersionId,
+    content_hash: span.contentHash,
+    path: path ?? null,
+    byte_start: span.start.byteOffset,
+    byte_end: span.end.byteOffset,
+    line_start: span.start.line,
+    line_end: span.end.line,
+    pr_side: span.prSide ?? null,
+    base_sha: input.baseSha,
+    head_sha: input.headSha,
+    exact_text: span.exactText,
+  };
+  const mismatches = Object.entries(expected)
+    .filter(([key, value]) => row[key as keyof typeof row] !== value)
+    .map(([key]) => key)
+    .sort();
+  if (mismatches.length > 0) {
+    throw new RepoSemanticGraphPersistenceError(
+      `repo source span ${span.id} does not match immutable input fields: ${mismatches.join(', ')}`,
+    );
+  }
+}
+
 function conceptNamespace(canonicalKey: string): string {
   const separator = canonicalKey.indexOf(':');
   return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
@@ -753,6 +807,7 @@ export async function persistReviewChallengeGraph(
 
   for (const span of input.sourceSpans) {
     if (!persistedVersions.has(span.artifactVersionId)) continue;
+    const path = artifactPaths.get(span.artifactId);
     await db.prepare(
       `INSERT INTO repo_source_spans (
          id, artifact_version_id, content_hash, path,
@@ -764,7 +819,7 @@ export async function persistReviewChallengeGraph(
       span.id,
       span.artifactVersionId,
       span.contentHash,
-      artifactPaths.get(span.artifactId) ?? null,
+      path ?? null,
       span.start.byteOffset,
       span.end.byteOffset,
       span.start.line,
@@ -774,6 +829,7 @@ export async function persistReviewChallengeGraph(
       input.headSha,
       span.exactText,
     ).run();
+    await assertPersistedSourceSpanMatchesInput(db, span, path, input);
     persistedSpanIds.add(span.id);
   }
 
