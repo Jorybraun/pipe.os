@@ -60,6 +60,15 @@ function makeLivingContext(): LivingContextReadModel {
   };
 }
 
+function reviewSourceCardByText(scope: HTMLElement, text: string | RegExp): HTMLElement {
+  const node = within(scope).getByText(text);
+  const card = node.closest('[data-testid="review-source-card"]');
+  if (!(card instanceof HTMLElement)) {
+    throw new Error(`No review source card found for ${String(text)}`);
+  }
+  return card;
+}
+
 function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
   return {
     interviewId: 'interview-1',
@@ -86,6 +95,9 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         contentHash: 'candidate-hash',
         startOffset: 14,
         endOffset: 88,
+        sourceRefType: 'source_span',
+        sourceRefId: 'candidate-span-kafka',
+        sourceSpanId: 'candidate-span-kafka',
         locator: 'resume line 7',
         exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
       }],
@@ -95,6 +107,8 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         contentHash: 'repo-hash',
         startOffset: 120,
         endOffset: 210,
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-retry',
         locator: 'src/orders/retry.ts:18',
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
@@ -161,6 +175,9 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
           contentHash: 'candidate-resume-hash',
           startOffset: 0,
           endOffset: 65,
+          sourceRefType: 'source_span',
+          sourceRefId: 'candidate-span-1',
+          sourceSpanId: 'candidate-span-1',
           locator: 'candidate-span-1',
           exactText: 'resume: implemented CrystallineQuorumLedger commits for order recovery',
         },
@@ -170,6 +187,9 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
           contentHash: 'candidate-meeting-hash',
           startOffset: 0,
           endOffset: 64,
+          sourceRefType: 'source_span',
+          sourceRefId: 'candidate-span-2',
+          sourceSpanId: 'candidate-span-2',
           locator: 'candidate-span-2',
           exactText: 'meeting: debugged CrystallineQuorumLedger replay during an outage',
         },
@@ -180,6 +200,8 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         contentHash: 'repo-source-hash',
         startOffset: 0,
         endOffset: 148,
+        sourceRefType: 'repo_source_span',
+        sourceRefId: 'repo-span-crystalline-quorum-ledger',
         locator: 'src/orders/crystallineQuorumLedger.ts:1',
         exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
       }],
@@ -445,6 +467,28 @@ describe('LivingContextGraph standalone review explanation', () => {
       'meeting: debugged CrystallineQuorumLedger replay during an outage',
     )).toBeInTheDocument();
     expect(within(repoOverlay).getByText(/writeCrystallineQuorumLedger/)).toBeInTheDocument();
+
+    const resumeCard = reviewSourceCardByText(
+      repoOverlay,
+      'resume: implemented CrystallineQuorumLedger commits for order recovery',
+    );
+    expect(resumeCard).toHaveAttribute('data-source-ref-type', 'source_span');
+    expect(resumeCard).toHaveAttribute('data-source-ref-id', 'candidate-span-1');
+    expect(resumeCard).toHaveAttribute('data-source-span-id', 'candidate-span-1');
+    expect(resumeCard).toHaveAttribute('data-content-hash', 'candidate-resume-hash');
+
+    const meetingCard = reviewSourceCardByText(
+      repoOverlay,
+      'meeting: debugged CrystallineQuorumLedger replay during an outage',
+    );
+    expect(meetingCard).toHaveAttribute('data-source-ref-type', 'source_span');
+    expect(meetingCard).toHaveAttribute('data-source-ref-id', 'candidate-span-2');
+    expect(meetingCard).toHaveAttribute('data-source-span-id', 'candidate-span-2');
+
+    const repoCard = reviewSourceCardByText(repoOverlay, /writeCrystallineQuorumLedger/);
+    expect(repoCard).toHaveAttribute('data-source-ref-type', 'repo_source_span');
+    expect(repoCard).toHaveAttribute('data-source-ref-id', 'repo-span-crystalline-quorum-ledger');
+    expect(repoCard).toHaveAttribute('data-content-hash', 'repo-source-hash');
 
     expect(screen.getByText('Evaluated challenge evidence')).toBeInTheDocument();
     expect(screen.getAllByText('review-packet-77-42').length).toBeGreaterThan(1);

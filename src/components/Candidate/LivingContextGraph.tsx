@@ -186,6 +186,11 @@ function ReviewSourceList({
           <div
             key={`${label}:${source.artifactId}:${source.startOffset}:${source.endOffset}:${index}`}
             className="living-context__repo-source"
+            data-testid="review-source-card"
+            data-source-ref-type={source.sourceRefType}
+            data-source-ref-id={source.sourceRefId}
+            data-source-span-id={source.sourceSpanId}
+            data-content-hash={source.contentHash}
           >
             <div>
               <strong>{reviewSourceLabel(source)}</strong>
