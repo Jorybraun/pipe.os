@@ -396,4 +396,56 @@ None (test-only addition).
 3. Run full standalone CODE_REVIEW E2E with Playwright (criterion #8 final proof).
 4. Wire real repo graph data through live contact endpoint (criterion #7 remaining gap).
 5. Expand seed corpus with real recruiter annotations (criterion #8).
-6. Promote evaluation from non-blocking CI to hard gate once corpus coverage is sufficient.
+6. ~~Promote evaluation from non-blocking CI to hard gate once corpus coverage is sufficient.~~ ✓ Done in session c489f729.
+
+---
+
+## Session: 2026-06-22T14:01Z
+
+**Agent**: Devin (session c489f7292520497c842a71e6e6ffccfc)
+**Branch**: `devin/1782137081-living-context-production-merge`
+**Trigger**: Scheduled automation — analyze open PRs, merge aligned work, continue toward goal.
+
+### Actions taken
+
+1. Analyzed ALL open PRs (#53, #62–#77) — identified PR #77 as the definitive consolidation.
+2. Verified PR #77 branch locally: tsc 0 errors, lint 0 errors, 124 files / 1166 tests pass.
+3. Created PR #96 as a squash merge consolidation of all living-context work into a single clean commit.
+4. Attempted to close superseded PRs #53, #62-#77 — blocked by session auth limitations; documented in PR description.
+5. CI verified: Typecheck/Lint/Unit Tests ✅, Matching Evaluation ✅. Infra failures (Workers/E2E/Deploy) preexisting.
+6. Promoted evaluation CI from non-blocking (`continue-on-error: true`) to hard gate (criterion #8).
+7. Added `rolloutEnforcement.ts` — runtime gate checking middleware with `checkGate`, `requireGate`, `gatedField`.
+8. Wired `requireGate('contact_living_context')` into contacts API route — first production gate enforcement.
+9. Added `rolloutEnforcement.test.ts` — 8 tests proving runtime enforcement.
+10. Updated CHANGELOG and coordination log.
+
+### Files modified
+
+- `.github/workflows/evaluation-report.yml` — promoted to hard gate
+- `workers/api/src/lib/livingContext/rolloutEnforcement.ts` — new
+- `workers/api/src/lib/livingContext/__tests__/rolloutEnforcement.test.ts` — new (8 tests)
+- `workers/api/src/lib/livingContext/index.ts` — added rolloutEnforcement export
+- `workers/api/src/routes/cockpit/contacts.ts` — wired `requireGate` middleware
+- `CHANGELOG.md` — session entries
+- `docs/plans/agent-coordination-log.md` — this entry
+
+### Validation
+
+- `npx tsc --noEmit` (root + workers/api) — 0 errors
+- `npm run lint` — 0 errors, 86 warnings (pre-existing)
+- `npx vitest run` — 125 files, 1174 tests pass, 15 skipped, 0 failures
+- 3 preexisting timing errors in `retryHelper.test.ts` (unrelated)
+
+### Contracts touched
+
+- `rolloutEnforcement.ts` exports: `checkGate`, `requireGate`, `gatedField`, `GateCheckResult`
+- `GET /api/v1/contacts/:id/living-context` — now gated by `contact_living_context` rollout gate
+
+### Recommendations for next agent
+
+1. Merge PR #96 (user must mark ready-for-review and merge, or auto-merge if configured).
+2. Close superseded PRs #53, #62–#77 (user must do manually; automated session cannot close PRs).
+3. Run full standalone CODE_REVIEW E2E with Playwright (criterion #8 final proof).
+4. Wire `requireGate` into more API routes (match explanation, repo overlay endpoints).
+5. Expand seed corpus with real recruiter annotations (criterion #8).
+6. Add gate stage progression API for ops — allow promoting gates via admin endpoint.

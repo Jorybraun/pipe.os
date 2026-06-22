@@ -12,7 +12,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { ensureContactLivingContext, loadContactLivingContext } from '../../lib/livingContext';
+import { ensureContactLivingContext, loadContactLivingContext, requireGate } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -151,10 +151,10 @@ contacts.get('/:id', async (c) => {
   return c.json({ contact });
 });
 
-// GET /:id/living-context — contact living context graph
-contacts.get('/:id/living-context', async (c) => {
+// GET /:id/living-context — contact living context graph (gated: contact_living_context)
+contacts.get('/:id/living-context', requireGate('contact_living_context'), async (c) => {
   const userId = c.var.userId;
-  const { id } = c.req.param();
+  const id = c.req.param('id') as string;
   const db = c.env.DB;
 
   // Verify ownership

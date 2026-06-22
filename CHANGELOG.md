@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Evaluation CI Promoted to Hard Gate (Criterion #8)
+
+- Evaluation CI workflow (`evaluation-report.yml`) is now a required check — removed `continue-on-error: true` and `exit 0` fallback. Failing matching proof tests now block PR merges, enforcing production quality.
+
+### Added — Runtime Rollout Gate Enforcement (Criterion #8)
+
+- Added `rolloutEnforcement.ts` — runtime gate checking (`checkGate`, `requireGate` middleware, `gatedField` conditional inclusion). Returns structured results without leaking internal gate details.
+- Wired `requireGate('contact_living_context')` into `GET /api/v1/contacts/:id/living-context` — endpoint now enforced by rollout gates at runtime.
+- Added `rolloutEnforcement.test.ts` — 8 tests proving runtime gate checking works for all configured gates (GA, canary, internal_only, unknown).
+
 ### Added — Expert-Labelled Evaluation Corpus Seed (Criterion #8)
 
 - Added `seed-corpus-v1.json` — production evaluation baseline with 3 candidates (platform eng, frontend eng, data eng), 2 roles, 5 challenge PRs, and 9 expert labels covering highly_relevant, relevant, borderline, and irrelevant grades. All evidence has immutable source identity (artifact versions, content hashes, exact text spans). Zero synthetic fixtures — all labels attributed to expert-recruiter.

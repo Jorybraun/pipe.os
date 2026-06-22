@@ -14,9 +14,8 @@ permissions:
 
 jobs:
   evaluation:
-    name: Matching Evaluation (non-blocking)
+    name: Matching Evaluation
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout
@@ -46,7 +45,7 @@ jobs:
             --reporter=verbose 2>&1 | tee /tmp/evaluation-output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           echo "evaluation_exit_code=$EXIT_CODE" >> "$GITHUB_ENV"
-          exit 0
+          exit $EXIT_CODE
 
       - name: Generate evaluation summary
         run: |
