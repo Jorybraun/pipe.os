@@ -174,7 +174,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [roomLinks, setRoomLinks] = useState<PreparedRoomLinks | null>(null);
   const [isPreparingRoom, setIsPreparingRoom] = useState(false);
+  const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [roomNotice, setRoomNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!interviewId) return;
@@ -204,6 +206,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const prepareRoom = useCallback(async () => {
     if (!interview) return;
     setRoomError(null);
+    setRoomNotice(null);
     setIsPreparingRoom(true);
     try {
       let meetingId = interview.linkedMeeting?.id ?? null;
@@ -243,6 +246,33 @@ export default function InterviewDetailPage(): JSX.Element {
       setRoomError(err instanceof Error ? err.message : 'Unable to prepare video room');
     } finally {
       setIsPreparingRoom(false);
+    }
+  }, [api, interview, load]);
+
+  const sendInvite = useCallback(async () => {
+    if (!interview) return;
+    const email = interview.candidateEmail ?? interview.recipientEmail;
+    if (!email) {
+      setRoomError('Add an email before sending an invite.');
+      return;
+    }
+    setRoomError(null);
+    setRoomNotice(null);
+    setIsSendingInvite(true);
+    try {
+      const result = await api.post<{
+        success: boolean;
+        emailSent: boolean;
+        meetingUrl: string;
+      }>(`/api/v1/scheduling/interviews/${interview.id}/invite`, { email });
+      setRoomNotice(result.emailSent
+        ? 'Invite sent.'
+        : 'Guest link is ready. Email delivery is not configured locally.');
+      await load();
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Unable to send invite');
+    } finally {
+      setIsSendingInvite(false);
     }
   }, [api, interview, load]);
 
@@ -444,11 +474,22 @@ export default function InterviewDetailPage(): JSX.Element {
                   COPY GUEST LINK
                 </button>
               )}
+              {personEmail && (
+                <button
+                  onClick={() => void sendInvite()}
+                  disabled={isSendingInvite}
+                  style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+                >
+                  {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+                  {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
+                </button>
+              )}
               {roomLinks?.expiresAt && (
                 <div style={ROOM_LINK_TEXT}>
                   Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
                 </div>
               )}
+              {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
               {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
             </div>
           </Section>
@@ -684,6 +725,16 @@ const ERROR_NOTE: CSSProperties = {
   border: '1px solid rgba(248,113,113,0.35)',
   background: 'rgba(248,113,113,0.08)',
   color: '#fca5a5',
+  fontSize: 11,
+  lineHeight: 1.5,
+};
+
+const SUCCESS_NOTE: CSSProperties = {
+  padding: 10,
+  borderRadius: 6,
+  border: '1px solid rgba(74,222,128,0.35)',
+  background: 'rgba(74,222,128,0.08)',
+  color: '#86efac',
   fontSize: 11,
   lineHeight: 1.5,
 };

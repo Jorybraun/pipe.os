@@ -11,6 +11,9 @@ export const API_BASE: string =
 export const APP_BASE: string =
   process.env.APP_BASE || 'http://localhost:5173';
 
+export const VIDEO_ROOM_BASE: string =
+  process.env.VIDEO_ROOM_BASE || 'http://localhost:5175';
+
 /** True when running against a remote (non-localhost) deployment. */
 export const IS_REMOTE: boolean =
-  !API_BASE.includes('localhost') || !APP_BASE.includes('localhost');
+  !API_BASE.includes('localhost') || !APP_BASE.includes('localhost') || !VIDEO_ROOM_BASE.includes('localhost');

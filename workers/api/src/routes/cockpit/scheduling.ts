@@ -1497,10 +1497,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const { id } = c.req.param();
   const db = c.env.DB;
 
-  if (!c.env.RESEND_API_KEY) {
-    return apiError(c, 'SERVICE_UNAVAILABLE', 'Email service not configured.');
-  }
-
   const body = await c.req.json();
   const parsed = inviteToCallSchema.safeParse(body);
   if (!parsed.success) {
@@ -1601,6 +1597,14 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const subject = scheduledTime
     ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
     : `Video call invitation — ${rawPipelineTitle}`;
+
+  if (!c.env.RESEND_API_KEY) {
+    return c.json({
+      success: true,
+      emailSent: false,
+      meetingUrl,
+    });
+  }
 
   // Send the email via Resend with our custom video-call HTML
   const { Resend } = await import('resend');

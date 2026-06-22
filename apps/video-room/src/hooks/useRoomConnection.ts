@@ -79,7 +79,10 @@ export function useRoomConnection(token: string, role: RoomRole): RoomConnection
       });
     };
     peer.ontrack = ({ streams }) => {
-      if (streams[0]) setRemoteStream(streams[0]);
+      if (streams[0]) {
+        setRemoteStream(streams[0]);
+        setPhase('connected');
+      }
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') setPhase('connected');
