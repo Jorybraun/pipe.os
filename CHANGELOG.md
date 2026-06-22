@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — E2E Test Reliability
 
+- Worker health checks now respond at both `/health` and `/api/health`, and Playwright local `webServer` readiness uses `/api/health` so stale compatible local API servers no longer block focused E2E startup.
 - Playwright local `webServer` commands now derive the Worker and Vite ports from `API_BASE` / `APP_BASE`, so focused E2E runs can use alternate ports when stale local servers occupy `8787` or `5173`.
 - Standalone CODE_REVIEW §MVP.4 now requires thin-evidence candidates to receive `WAITING_FOR_MATCH` exactly, with no repo URL, PR number, or cached diff, proving fail-closed matching instead of accepting ambiguous fallback states.
 - Standalone CODE_REVIEW §MVP.6 now seeds source-backed candidate evidence plus an unseen-concept repo challenge packet through a guarded local/test route, then requires `/rpc/get-challenge` to return a real `CODE_REVIEW` with PR metadata, packet-derived diff, match diagnostics, and candidate/repo source refs.

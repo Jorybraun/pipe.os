@@ -194,9 +194,12 @@ app.route('/api/v1/internal', neo4jHealth);
 app.route('/api/v1/internal/e2e', e2eSeed);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
-app.get('/health', (c) =>
-  c.json({ status: 'ok', timestamp: new Date().toISOString() }),
-);
+function healthPayload(): { status: 'ok'; timestamp: string } {
+  return { status: 'ok', timestamp: new Date().toISOString() };
+}
+
+app.get('/health', (c) => c.json(healthPayload()));
+app.get('/api/health', (c) => c.json(healthPayload()));
 
 // ─── AI test endpoint (dev only) ─────────────────────────────────────────────
 app.post('/dev/test-ai', async (c) => {
