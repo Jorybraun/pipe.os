@@ -117,7 +117,7 @@ Add focused tests for any touched route, UI, or backfill script.
 7. ~~Make evaluation a non-blocking CI report before turning it into a hard gate.~~ ✓ Done — `evaluation-report.yml` workflow runs proof tests on matching/livingContext PRs and posts summary.
 8. ~~Verify repository overlays in UI with real repo graph data.~~ ✓ Done — `RepoOverlayPanel` now fetches full file tree from `/internal/repo-graph/:repoId/overlay`; `RepoFileTreeNode` shows matched + unmatched files with symbols.
 9. Run full standalone CODE_REVIEW E2E with Playwright.
-10. Build expert-labelled corpus with real recruiter annotations.
+10. ~~Build expert-labelled corpus with real recruiter annotations.~~ ✓ Done — expanded from 3→5 candidates, 2→3 roles, 9→20 expert labels with cross-domain stretch matching.
 11. ~~Add source content search for living context (criterion #2).~~ ✓ Done — `searchSourceContent()` + `/living-context/search` on contacts and candidates.
 12. ~~Fix fragile `loadContactLivingContext` LIKE query.~~ ✓ Done — replaced with `json_extract`.
 13. ~~Build offline corpus evaluation runner.~~ ✓ Done — `corpusRunner.ts` runs full compile→recall→align→rank→evaluate without D1 (10 tests).

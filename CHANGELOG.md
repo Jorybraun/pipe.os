@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Expanded Expert-Labelled Evaluation Corpus (Criterion #8)
+
+- Expanded seed corpus from 3 to 5 candidates: added fullstack engineer (React + Node.js + API gateway) and DevOps/SRE (K8s deployments + Terraform IaC).
+- Added Senior DevOps Engineer role with K8s and CI/CD concept requirements.
+- Added `challenge-ci-pipeline-pr-606` for CI/CD pipeline reliability domain.
+- Added 11 cross-domain expert labels exercising stretch/borderline matching between roles — total labels now 20.
+- Added 4 new seed corpus tests: DevOps relevance, fullstack cross-role matching, cross-domain stretch labels, DevOps role requirements.
+- Full suite: 130 files, 1237 tests, 0 failures.
+
 ### Changed — D1-Backed Rollout Gate Middleware (Criterion #8)
 
 - Updated `requireGate` middleware to query D1 for gate state at request time (with 60 s in-memory cache), falling back to hardcoded defaults when D1 is unavailable. Ops can now toggle feature gates via the admin API without redeploying.
