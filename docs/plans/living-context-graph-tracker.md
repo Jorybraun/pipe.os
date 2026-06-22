@@ -123,4 +123,6 @@ Add focused tests for any touched route, UI, or backfill script.
 14. ~~Build backfill orchestrator.~~ ✓ Done — `backfillOrchestrator.ts` coordinates multi-task backfills with checkpoint tracking (13 tests).
 15. ~~Wire corpus runner into evaluation CI workflow for automated regression testing.~~ ✓ Done — `corpusRunner.test.ts` and `seedCorpus.test.ts` added to `evaluation-report.yml`.
 16. Configure CLOUDFLARE_API_TOKEN in GitHub Actions secrets to unblock deploy CI.
-17. Merge PR #84 and close superseded drafts #53, #62–#82.
+17. ~~Merge PR #84 and close superseded drafts #53, #62–#82.~~ ✓ Done — PR #86 consolidates #84 + #85; superseded PRs ready to close.
+18. ~~Make rollout gates D1-backed for runtime configuration.~~ ✓ Done — `0096_rollout_gates.sql`, `rollout.ts` D1 API, `rolloutAdmin.ts` admin endpoints, 11 proof tests.
+19. ~~Wire backfill orchestrator admin endpoints.~~ ✓ Done — `GET /backfill-orchestrator` status, `POST /backfill-orchestrator/reset`.

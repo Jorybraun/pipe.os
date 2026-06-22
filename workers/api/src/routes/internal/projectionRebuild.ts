@@ -15,6 +15,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../../types';
 import { processProjectionOutbox, listCheckpoints, resetCheckpoint } from '../../lib/livingContext';
+import { getOrchestratorStatus, resetAllBackfillTasks } from '../../lib/livingContext/backfillOrchestrator';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -118,6 +119,28 @@ app.post('/backfill-reset', async (c) => {
 
   const removed = await resetCheckpoint(c.env.DB, name);
   return c.json({ removed, backfillName: name });
+});
+
+app.get('/backfill-orchestrator', async (c) => {
+  const adminToken = c.req.header('X-Admin-Token');
+  const expectedToken = c.env.ADMIN_TTL_OVERRIDE_SECRET;
+  if (!expectedToken || adminToken !== expectedToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const status = await getOrchestratorStatus(c.env.DB);
+  return c.json(status);
+});
+
+app.post('/backfill-orchestrator/reset', async (c) => {
+  const adminToken = c.req.header('X-Admin-Token');
+  const expectedToken = c.env.ADMIN_TTL_OVERRIDE_SECRET;
+  if (!expectedToken || adminToken !== expectedToken) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+
+  const removed = await resetAllBackfillTasks(c.env.DB);
+  return c.json({ removed, message: 'All backfill checkpoints reset.' });
 });
 
 export const projectionRebuild = app;

@@ -46,6 +46,8 @@ import neo4jHealth from './routes/internal/neo4jHealth';
 import { projectionRebuild } from './routes/internal/projectionRebuild';
 // Repo graph overlay (criterion #7 — full repo structure for visualization)
 import { repoGraph } from './routes/internal/repoGraph';
+// Rollout gate administration (criterion #8 — staged rollout without redeployment)
+import { rolloutAdmin } from './routes/internal/rolloutAdmin';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -194,6 +196,9 @@ app.route('/api/v1/internal', projectionRebuild);
 
 // Internal: Repo graph overlay (admin-token auth)
 app.route('/api/v1/internal/repo-graph', repoGraph);
+
+// Internal: Rollout gate administration (admin-token auth)
+app.route('/api/v1/internal', rolloutAdmin);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

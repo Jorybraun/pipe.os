@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — D1-Backed Rollout Gate Configuration (Criterion #8)
+
+- Added `0096_rollout_gates.sql` migration — stores rollout gate stages in D1 for runtime configuration without redeployment.
+- Extended `rollout.ts` with D1-backed API: `loadGatesFromD1`, `getGateFromD1`, `updateGateStage`, `validateD1GatePrerequisites`. Hardcoded defaults serve as fallback.
+- Added `rolloutAdmin.ts` — internal admin endpoints for gate management (`GET/PUT /api/v1/internal/rollout/:key`, `POST /rollout/validate`).
+- Added `backfill-orchestrator` endpoints to `projectionRebuild.ts` — `GET /backfill-orchestrator` status and `POST /backfill-orchestrator/reset`.
+- Added `rolloutD1.test.ts` — 11 tests proving D1 round-trip, prerequisite enforcement, dependent protection, and fallback behavior.
+
 ### Changed — Evaluation CI Expansion (Criterion #8)
 
 - Added `corpusRunner.test.ts` and `seedCorpus.test.ts` to the `evaluation-report.yml` CI workflow, expanding automated regression coverage from 4 to 6 test suites.

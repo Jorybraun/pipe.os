@@ -1,10 +1,10 @@
 /**
  * Staged rollout configuration for living context graph features.
  *
- * Controls which living-context capabilities are active in production.
- * Each gate must be explicitly enabled — new features default OFF.
+ * Gates are stored in D1 (rollout_gates table) and loaded at request time.
+ * Hardcoded defaults serve as fallback when D1 is unavailable or for tests.
  *
- * Acceptance criterion #8: controlled staged rollout.
+ * Acceptance criterion #8: controlled staged rollout without redeployment.
  */
 
 export interface RolloutGate {
@@ -21,7 +21,10 @@ export type RolloutStage =
   | 'canary'
   | 'general_availability';
 
-const ROLLOUT_GATES: readonly RolloutGate[] = [
+const VALID_STAGES: readonly string[] = ['disabled', 'internal_only', 'canary', 'general_availability'];
+
+/** Hardcoded defaults — used as fallback when D1 is unavailable. */
+const DEFAULT_GATES: readonly RolloutGate[] = [
   {
     key: 'living_context_ingestion',
     label: 'Living Context Ingestion',
@@ -87,35 +90,168 @@ const ROLLOUT_GATES: readonly RolloutGate[] = [
   },
 ] as const;
 
-const gateMap = new Map(ROLLOUT_GATES.map((g) => [g.key, g]));
+const defaultGateMap = new Map(DEFAULT_GATES.map((g) => [g.key, g]));
+
+// --- In-memory fallback API (used by tests and middleware when no D1 context) ---
 
 export function getRolloutGate(key: string): RolloutGate | undefined {
-  return gateMap.get(key);
+  return defaultGateMap.get(key);
 }
 
 export function isGateEnabled(key: string): boolean {
-  const gate = gateMap.get(key);
+  const gate = defaultGateMap.get(key);
   if (!gate) return false;
   return gate.stage !== 'disabled';
 }
 
 export function isGateGA(key: string): boolean {
-  const gate = gateMap.get(key);
+  const gate = defaultGateMap.get(key);
   if (!gate) return false;
   return gate.stage === 'general_availability';
 }
 
 export function getGatesByStage(stage: RolloutStage): readonly RolloutGate[] {
-  return ROLLOUT_GATES.filter((g) => g.stage === stage);
+  return DEFAULT_GATES.filter((g) => g.stage === stage);
 }
 
 export function getAllGates(): readonly RolloutGate[] {
-  return ROLLOUT_GATES;
+  return DEFAULT_GATES;
 }
 
 export function validateGatePrerequisites(): string[] {
+  return validateGatePrerequisitesFrom(DEFAULT_GATES);
+}
+
+// --- D1-backed API ---
+
+interface RolloutGateRow {
+  gate_key: string;
+  label: string;
+  description: string;
+  stage: string;
+  prerequisites: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+function parseGateRow(row: RolloutGateRow): RolloutGate {
+  let prereqs: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.prerequisites);
+    if (Array.isArray(parsed)) {
+      prereqs = parsed.filter((p): p is string => typeof p === 'string');
+    }
+  } catch {
+    prereqs = [];
+  }
+  const stage = VALID_STAGES.includes(row.stage)
+    ? row.stage as RolloutStage
+    : 'disabled';
+  return {
+    key: row.gate_key,
+    label: row.label,
+    description: row.description,
+    stage,
+    prerequisiteGates: prereqs,
+  };
+}
+
+interface D1Database {
+  prepare(query: string): D1PreparedStatement;
+}
+
+interface D1PreparedStatement {
+  bind(...values: unknown[]): D1PreparedStatement;
+  all<T>(): Promise<{ results: T[] }>;
+  run(): Promise<{ meta: { changes: number } }>;
+  first<T>(): Promise<T | null>;
+}
+
+export async function loadGatesFromD1(db: D1Database): Promise<readonly RolloutGate[]> {
+  try {
+    const { results } = await db
+      .prepare('SELECT gate_key, label, description, stage, prerequisites, updated_at, updated_by FROM rollout_gates ORDER BY gate_key')
+      .all<RolloutGateRow>();
+    if (results.length === 0) return DEFAULT_GATES;
+    return results.map(parseGateRow);
+  } catch {
+    return DEFAULT_GATES;
+  }
+}
+
+export async function getGateFromD1(db: D1Database, key: string): Promise<RolloutGate | undefined> {
+  try {
+    const row = await db
+      .prepare('SELECT gate_key, label, description, stage, prerequisites, updated_at, updated_by FROM rollout_gates WHERE gate_key = ?')
+      .bind(key)
+      .first<RolloutGateRow>();
+    if (!row) return defaultGateMap.get(key);
+    return parseGateRow(row);
+  } catch {
+    return defaultGateMap.get(key);
+  }
+}
+
+export async function updateGateStage(
+  db: D1Database,
+  key: string,
+  stage: RolloutStage,
+  updatedBy: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!VALID_STAGES.includes(stage)) {
+    return { success: false, error: `Invalid stage: ${stage}` };
+  }
+
+  const allGates = await loadGatesFromD1(db);
+  const gateMap = new Map(allGates.map((g) => [g.key, g]));
+  const target = gateMap.get(key);
+  if (!target) {
+    return { success: false, error: `Unknown gate: ${key}` };
+  }
+
+  if (stage !== 'disabled') {
+    for (const prereq of target.prerequisiteGates) {
+      const prereqGate = gateMap.get(prereq);
+      if (!prereqGate || prereqGate.stage === 'disabled') {
+        return {
+          success: false,
+          error: `Cannot enable "${key}" — prerequisite "${prereq}" is disabled.`,
+        };
+      }
+    }
+  }
+
+  if (stage === 'disabled') {
+    const dependents = allGates.filter(
+      (g) => g.prerequisiteGates.includes(key) && g.stage !== 'disabled',
+    );
+    if (dependents.length > 0) {
+      const names = dependents.map((g) => g.key).join(', ');
+      return {
+        success: false,
+        error: `Cannot disable "${key}" — it is required by enabled gates: ${names}.`,
+      };
+    }
+  }
+
+  try {
+    await db
+      .prepare(
+        'UPDATE rollout_gates SET stage = ?, updated_at = datetime(\'now\'), updated_by = ? WHERE gate_key = ?',
+      )
+      .bind(stage, updatedBy, key)
+      .run();
+    return { success: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
+
+function validateGatePrerequisitesFrom(gates: readonly RolloutGate[]): string[] {
   const errors: string[] = [];
-  for (const gate of ROLLOUT_GATES) {
+  const gateMap = new Map(gates.map((g) => [g.key, g]));
+  for (const gate of gates) {
     if (gate.stage === 'disabled') continue;
     for (const prereq of gate.prerequisiteGates) {
       const prereqGate = gateMap.get(prereq);
@@ -131,4 +267,9 @@ export function validateGatePrerequisites(): string[] {
     }
   }
   return errors;
+}
+
+export async function validateD1GatePrerequisites(db: D1Database): Promise<string[]> {
+  const gates = await loadGatesFromD1(db);
+  return validateGatePrerequisitesFrom(gates);
 }
