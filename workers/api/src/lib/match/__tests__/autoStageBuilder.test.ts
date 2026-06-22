@@ -3,6 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types';
 import {
   autoStageBuilder,
   buildMatchRequest,
+  pickReviewPr,
   resolveMustHaveSkills,
   type PipelineMatchConfig,
 } from '../autoStageBuilder';
@@ -146,7 +147,7 @@ function buildStubDb(state: DbState): StubDb {
           },
 
           async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
-            if (normalized.startsWith('SELECT pr_number, quality_score, packet_json FROM review_challenge_packets')) {
+            if (normalized.startsWith('SELECT rcp.pr_number, rcp.quality_score, rcp.packet_json FROM review_challenge_packets')) {
               const [repoId] = args as [number];
               const repo = state.repos.find((candidate) => candidate.id === repoId);
               const rows = state.prs
@@ -501,5 +502,32 @@ describe('autoStageBuilder', () => {
         matchConfig: baseConfig(),
       }),
     ).rejects.toThrow(/no eligible implementation issue/);
+  });
+});
+
+describe('pickReviewPr', () => {
+  it('only considers context-ready source-backed review packets', async () => {
+    const sqls: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        sqls.push(sql);
+        return {
+          bind() {
+            return {
+              async all<T>() {
+                return { results: [] as T[], success: true, meta: {} };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await pickReviewPr(db, 101, ['term:typescript']);
+
+    expect(sqls[0]).toContain('JOIN context_records cr');
+    expect(sqls[0]).toContain("cr.record_type = 'repo_challenge_packet'");
+    expect(sqls[0]).toContain("crsr.source_ref_type = 'repo_source_span'");
+    expect(sqls[0]).toContain('FROM context_record_concepts crc');
   });
 });

@@ -176,12 +176,30 @@ export async function pickReviewPr(
   if (roleConcepts.length === 0) return null;
   const rows = await db
     .prepare(
-      `SELECT pr_number, quality_score, packet_json
-         FROM review_challenge_packets
-        WHERE repo_id = ?
-          AND production_ready = 1
-          AND quality_score >= 0.70
-        ORDER BY quality_score DESC, pr_number`,
+      `SELECT rcp.pr_number,
+              rcp.quality_score,
+              rcp.packet_json
+         FROM review_challenge_packets rcp
+         JOIN context_records cr
+           ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+          AND cr.scope_type = 'repo_snapshot'
+          AND cr.scope_id = rcp.repo_snapshot_id
+          AND cr.record_type = 'repo_challenge_packet'
+        WHERE rcp.repo_id = ?
+          AND rcp.production_ready = 1
+          AND rcp.quality_score >= 0.70
+          AND (
+            SELECT COUNT(*)
+              FROM context_record_source_refs crsr
+             WHERE crsr.context_record_id = cr.id
+               AND crsr.source_ref_type = 'repo_source_span'
+          ) > 0
+          AND (
+            SELECT COUNT(*)
+              FROM context_record_concepts crc
+             WHERE crc.context_record_id = cr.id
+          ) > 0
+        ORDER BY rcp.quality_score DESC, rcp.pr_number`,
     )
     .bind(repoId)
     .all<{ pr_number: number; quality_score: number; packet_json: string }>();
