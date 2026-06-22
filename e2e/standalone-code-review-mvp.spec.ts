@@ -157,6 +157,26 @@ async function resolveToken(
   return (await res.json()) as ResolveTokenResponse;
 }
 
+async function submitStandaloneIntakeEvidence(
+  request: APIRequestContext,
+  sessionToken: string,
+): Promise<void> {
+  const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+    headers: candidateHeaders(sessionToken),
+    data: {
+      order: 0,
+      submission: {
+        resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
+        githubHandle: 'e2e-test-user',
+      },
+    },
+  });
+  expect([200, 201]).toContain(intakeRes.status());
+
+  const intakeBody = await intakeRes.json() as { success?: boolean };
+  expect(intakeBody.success).toBe(true);
+}
+
 async function seedStandaloneReviewMatchFixture(
   request: APIRequestContext,
   authToken: string,
@@ -310,44 +330,32 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
     expect(interviews![0].status).toBe('INVITED');
   });
 
-  test('UI flow: /schedule → INVITE CANDIDATE → CODE_REVIEW', async ({ browser }) => {
+  test('UI flow: /schedule exposes current NEW INTERVIEW modal', async ({ browser }) => {
     const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/schedule`);
     await page.waitForLoadState('networkidle');
 
-    // Click INVITE CANDIDATE button
-    const inviteBtn = page.locator('button:has-text("INVITE CANDIDATE")');
+    // CODE_REVIEW candidate creation is covered by the recruiter API tests above.
+    // The current schedule UI creates meeting invites from the same interview surface.
+    const inviteBtn = page.getByRole('main').getByRole('button', { name: /NEW INTERVIEW/i }).first();
     await expect(inviteBtn).toBeVisible({ timeout: 10000 });
     await inviteBtn.click();
 
-    // Modal should open
-    const modal = page.locator('text=INVITE CANDIDATE').first();
-    await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('NEW INTERVIEW').first()).toBeVisible({ timeout: 5000 });
 
-    // Fill NAME
     const nameInput = page.locator('input[placeholder="Jane Smith"]');
     await expect(nameInput).toBeVisible();
     await nameInput.fill('E2E Code Review Test');
 
-    // Fill EMAIL
     const emailInput = page.locator('input[placeholder="jane@example.com"]');
     await expect(emailInput).toBeVisible();
     await emailInput.fill(`standalone-ui+${Date.now()}@pipe-test.dev`);
 
-    // Select CODE_REVIEW interview type
-    const codeReviewBtn = page.locator('button:has-text("CODE_REVIEW")');
-    await expect(codeReviewBtn).toBeVisible();
-    await codeReviewBtn.click();
-
-    // Send invite
-    const sendBtn = page.locator('button:has-text("SEND INVITE")');
-    await expect(sendBtn).toBeVisible();
-    await sendBtn.click();
-
-    // Expect success confirmation
-    await expect(page.locator('text=INVITE SENT')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /^VIDEO$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^CODE_REVIEW$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /CREATE INTERVIEW/i })).toBeEnabled();
 
     await context.close();
   });
@@ -575,22 +583,8 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     // The candidate submits text-based evidence via submit-challenge-response,
     // which triggers ingestion and deterministic matching.
 
-    // Step 1: Submit resume/profile evidence via the challenge-response intake path
-    const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
-      headers: candidateHeaders(sessionToken),
-      data: {
-        order: 0,
-        submission: {
-          resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
-          githubHandle: 'e2e-test-user',
-        },
-      },
-    });
-    // Intake must be accepted
-    expect([200, 201]).toContain(intakeRes.status());
-
-    const intakeBody = await intakeRes.json() as { success?: boolean };
-    expect(intakeBody.success).toBe(true);
+    // Step 1: Submit resume/profile evidence via the challenge-response intake path.
+    await submitStandaloneIntakeEvidence(request, sessionToken);
 
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
 
@@ -692,36 +686,63 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     sessionToken = session.sessionToken;
   });
 
-  test('submit-challenge-response accepts standalone CODE_REVIEW submission and completes the interview', async ({ request }) => {
-    // Submit a code review response for the standalone interview.
+  test('submit-challenge-response requires a selected PR, then completes the matched review', async ({ request }) => {
+    const prematureRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      headers: candidateHeaders(sessionToken),
+      data: {
+        order: 0,
+        submission: {
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'This should not be accepted before a source-backed PR is selected.',
+          annotations: [],
+        },
+      },
+    });
+    expect(prematureRes.status()).toBe(409);
+    const prematureBody = await prematureRes.json() as {
+      error?: { code?: string };
+      challenge?: { type?: string };
+    };
+    expect(prematureBody.error?.code).toBe('WAITING_FOR_MATCH');
+    expect(prematureBody.challenge?.type).toBe('WAITING_FOR_MATCH');
+
+    await submitStandaloneIntakeEvidence(request, sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
+
+    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
+      headers: candidateHeaders(sessionToken),
+      data: { order: 0 },
+    });
+    expect(challengeRes.status()).toBe(200);
+    const challenge = await challengeRes.json() as ChallengeResponse;
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+
     const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
         order: 0,
         submission: {
           type: 'CODE_REVIEW',
-          verdict: 'REQUEST_CHANGES',
+          verdict: 'request_changes',
           summary: 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.',
-          comments: [
+          annotations: [
             {
               file: 'src/pages/Search.tsx',
               line: 43,
-              category: 'functionality',
               severity: 'blocking',
-              what: 'No debounce on search input — fires request per keystroke',
-              why: 'Creates N requests for N characters typed',
-              suggestion: 'Add 300ms debounce with AbortController',
+              comment: 'No debounce on search input; add a 300ms debounce with AbortController.',
             },
           ],
         },
       },
     });
 
-    // Expect success — the submission should persist
     expect([200, 201]).toContain(submitRes.status());
 
     const body = await submitRes.json() as Record<string, unknown>;
-    // Submission should not leak scoring info
     expect(JSON.stringify(body)).not.toContain('groundTruth');
     expect(body.success).toBe(true);
 
@@ -735,11 +756,45 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
       interviewType: string;
       status: string;
     }> | undefined;
+    const standaloneReviewMatch = profile.standaloneReviewMatch as {
+      matchStatus?: string;
+      repoUrl?: string | null;
+      prNumber?: number | null;
+      submitted?: boolean;
+      submission?: {
+        verdict?: string | null;
+        summary?: string | null;
+        annotationCount?: number;
+      } | null;
+      evidence?: Array<{
+        candidateSourceRefs?: unknown[];
+        challengeSourceRefs?: unknown[];
+      }>;
+      diagnostics?: {
+        recalledPacketIds?: string[];
+      };
+    } | null;
 
     expect(interviews).toBeDefined();
     const codeReview = interviews!.find((i) => i.interviewType === 'CODE_REVIEW');
     expect(codeReview).toBeDefined();
     expect(codeReview!.status).toBe('COMPLETED');
+    expect(standaloneReviewMatch).not.toBeNull();
+    expect(standaloneReviewMatch!.matchStatus).toBe('MATCHED');
+    expect(standaloneReviewMatch!.repoUrl).toBe(fixture.repoUrl);
+    expect(standaloneReviewMatch!.prNumber).toBe(fixture.prNumber);
+    expect(standaloneReviewMatch!.submitted).toBe(true);
+    expect(standaloneReviewMatch!.submission?.verdict).toBe('request_changes');
+    expect(standaloneReviewMatch!.submission?.summary).toContain('critical debounce issue');
+    expect(standaloneReviewMatch!.submission?.annotationCount).toBe(1);
+    expect(standaloneReviewMatch!.evidence?.length).toBeGreaterThan(0);
+    expect(standaloneReviewMatch!.evidence!.every((entry) =>
+      Array.isArray(entry.candidateSourceRefs)
+      && entry.candidateSourceRefs.length > 0
+      && Array.isArray(entry.challengeSourceRefs)
+      && entry.challengeSourceRefs.length > 0
+    )).toBe(true);
+    expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toContain(fixture.packetId);
   });
 });
 

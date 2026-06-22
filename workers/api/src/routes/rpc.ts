@@ -1396,6 +1396,16 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
     if (standaloneReview) {
+      const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
+      if (!match) {
+        return c.json({
+          error: {
+            code: 'WAITING_FOR_MATCH',
+            message: 'A source-backed review challenge has not been selected yet.',
+          },
+          challenge: STANDALONE_WAITING_CHALLENGE,
+        }, 409);
+      }
       const now = new Date().toISOString();
       const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
       await c.env.DB.prepare(

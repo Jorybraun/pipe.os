@@ -1518,9 +1518,26 @@ candidateOps.get('/:candidateId', async (c) => {
            FROM match_runs
           WHERE candidate_id = ?1
             AND role_snapshot_id = 'standalone-code-review-v1'
-          ORDER BY created_at DESC
+          ORDER BY
+            CASE
+              WHEN ?2 IS NOT NULL
+               AND ?3 IS NOT NULL
+               AND status = 'MATCHED'
+               AND selected_packet_id IN (
+                 SELECT id FROM review_challenge_packets
+                  WHERE repo_id = ?2 AND pr_number = ?3
+               )
+              THEN 0
+              ELSE 1
+            END,
+            created_at DESC,
+            id DESC
           LIMIT 1`,
-      ).bind(candidateId).first<{
+      ).bind(
+        candidateId,
+        standaloneInterview.matched_repo_id,
+        standaloneInterview.github_pr_number,
+      ).first<{
         id: string;
         status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
         recalled_packets_json: string | null;
