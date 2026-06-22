@@ -20,7 +20,11 @@ function source(id: string): SourceRef {
     contentHash: `sha256-${id}`,
     startOffset: 10,
     endOffset: 30,
+    sourceRefType: id.startsWith('challenge-') ? 'repo_source_span' : 'source_span',
+    sourceRefId: `source-ref-${id}`,
+    sourceSpanId: id.startsWith('challenge-') ? undefined : `source-ref-${id}`,
     locator: `${id}:1:10-30`,
+    exactText: `Exact source text for ${id}.`,
   };
 }
 
@@ -235,6 +239,34 @@ describe('compileCandidateMatchQuery', () => {
     expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
     expect(result.query.validationAtoms).toEqual([]);
     expect(result.query.recallOnlyAtoms).toHaveLength(1);
+  });
+
+  it('excludes source refs that cannot point to exact original evidence', () => {
+    const complete = source('candidate-valid');
+    const result = compile([
+      signal('missing-ref-type', {
+        sourceRefs: [{ ...complete, sourceRefType: undefined }],
+      }),
+      signal('missing-ref-id', {
+        sourceRefs: [{ ...complete, sourceRefId: undefined }],
+      }),
+      signal('missing-exact-text', {
+        sourceRefs: [{ ...complete, exactText: undefined }],
+      }),
+      signal('blank-exact-text', {
+        sourceRefs: [{ ...complete, exactText: '   ' }],
+      }),
+      signal('valid', { sourceRefs: [complete] }),
+    ]);
+
+    expect(result.status).toBe('READY');
+    expect(result.query.validationAtoms.map((atom) => atom.id)).toEqual(['valid']);
+    expect(result.excludedSignalIds).toEqual([
+      'blank-exact-text',
+      'missing-exact-text',
+      'missing-ref-id',
+      'missing-ref-type',
+    ]);
   });
 });
 

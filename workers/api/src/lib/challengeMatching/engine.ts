@@ -52,11 +52,18 @@ function normalized(values: string[] | undefined): string[] {
   return [...new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean))].sort();
 }
 
+function nonEmptyString(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function hasCompleteSourceRefs(refs: QueryAtom['sourceRefs']): boolean {
   return refs.length > 0 && refs.every((ref) =>
     Boolean(ref.artifactId)
     && Boolean(ref.artifactVersion)
     && Boolean(ref.contentHash)
+    && nonEmptyString(ref.sourceRefType)
+    && nonEmptyString(ref.sourceRefId)
+    && nonEmptyString(ref.exactText)
     && Number.isInteger(ref.startOffset)
     && Number.isInteger(ref.endOffset)
     && ref.startOffset >= 0
