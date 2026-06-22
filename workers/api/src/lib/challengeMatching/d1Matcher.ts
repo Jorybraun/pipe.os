@@ -765,8 +765,16 @@ export interface CandidateReviewChallengeOptions {
 function sourceRefToContextSource(
   ref: SourceRef,
   evidenceRole: string,
-): ContextRecordSourceInput | null {
-  if (!ref.sourceRefType || !ref.sourceRefId) return null;
+): ContextRecordSourceInput {
+  if (!ref.sourceRefType?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing sourceRefType`);
+  }
+  if (!ref.sourceRefId?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing sourceRefId`);
+  }
+  if (!ref.exactText?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing exactText`);
+  }
   return {
     sourceRefType: ref.sourceRefType,
     sourceRefId: ref.sourceRefId,
@@ -779,7 +787,7 @@ function sourceRefToContextSource(
       startOffset: ref.startOffset,
       endOffset: ref.endOffset,
     },
-    exactText: ref.exactText ?? null,
+    exactText: ref.exactText,
     contentHash: ref.contentHash,
   };
 }
@@ -909,13 +917,13 @@ function buildMatchContextRecordInput(input: {
         const source = sourceRefToContextSource(sourceRef, alignment.challenge.id === selectedPacketId
           ? 'selected_candidate_evidence'
           : 'candidate_evidence');
-        if (source) evidenceSources.push(source);
+        evidenceSources.push(source);
       }
       for (const sourceRef of entry.demand.sourceRefs) {
         const source = sourceRefToContextSource(sourceRef, alignment.challenge.id === selectedPacketId
           ? 'selected_repo_evidence'
           : 'repo_evidence');
-        if (source) evidenceSources.push(source);
+        evidenceSources.push(source);
       }
     }
   }

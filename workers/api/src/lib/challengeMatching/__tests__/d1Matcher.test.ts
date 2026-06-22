@@ -1435,7 +1435,7 @@ describe('matchCandidateToReviewChallenge', () => {
     }));
 
     const refs = sqlite.prepare(
-      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, content_hash
+      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, exact_text, content_hash
          FROM context_record_source_refs
         WHERE context_record_id = ?
         ORDER BY source_ref_type, source_ref_id, evidence_role`,
@@ -1446,6 +1446,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: result.matchRunId,
         source_span_id: null,
         evidence_role: 'decision_record',
+        exact_text: null,
         content_hash: null,
       },
       {
@@ -1453,6 +1454,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: data.packet.id,
         source_span_id: null,
         evidence_role: 'selected_packet',
+        exact_text: null,
         content_hash: data.packet.contentHash,
       },
       {
@@ -1460,6 +1462,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: 'context-record-jd',
         source_span_id: null,
         evidence_role: 'role_source',
+        exact_text: null,
         content_hash: null,
       },
       {
@@ -1467,6 +1470,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: 'candidate-span-1',
         source_span_id: 'candidate-span-1',
         evidence_role: 'selected_candidate_evidence',
+        exact_text: 'implemented kafka idempotency',
         content_hash: 'sha256:candidate',
       },
       {
@@ -1474,6 +1478,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: 'candidate-span-2',
         source_span_id: 'candidate-span-2',
         evidence_role: 'selected_candidate_evidence',
+        exact_text: 'validated retry handling',
         content_hash: 'sha256:candidate',
       },
       {
@@ -1481,6 +1486,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: data.packet.demands[0]!.sourceSpanIds[0]!,
         source_span_id: null,
         evidence_role: 'selected_repo_evidence',
+        exact_text: expect.any(String),
         content_hash: expect.any(String),
       },
       {
@@ -1488,6 +1494,7 @@ describe('matchCandidateToReviewChallenge', () => {
         source_ref_id: data.packet.demands[1]!.sourceSpanIds[0]!,
         source_span_id: null,
         evidence_role: 'selected_repo_evidence',
+        exact_text: expect.any(String),
         content_hash: expect.any(String),
       },
     ]));
