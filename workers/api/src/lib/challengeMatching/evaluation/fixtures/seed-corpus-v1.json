@@ -1,0 +1,317 @@
+{
+  "version": "1.0.0",
+  "corpusId": "seed-corpus-v1-2026-06",
+  "createdAt": "2026-06-21T20:00:00Z",
+  "description": "Seed evaluation corpus for living context graph matching quality. Three candidates across backend/platform, frontend, and data engineering. Two roles: Senior Platform Engineer, Staff Frontend Engineer. Five challenge PRs from real repo graph patterns.",
+  "candidateEvidence": [
+    {
+      "candidateId": "cand-platform-eng-001",
+      "evidenceId": "ev-platform-kafka-001",
+      "episodeId": "ep-meeting-transcript-001",
+      "narrative": "Redesigned event ingestion pipeline from RabbitMQ to Kafka with manual offset commit and consumer group rebalancing, achieving p99 40ms to 9ms latency improvement under 2M events/day load.",
+      "concepts": ["term:kafka", "term:event-sourcing", "term:consumer-groups", "term:latency-optimization", "term:rabbit-mq"],
+      "problems": ["high-latency-ingestion", "consumer-rebalance-storms"],
+      "mechanisms": ["manual-offset-commit", "partition-assignment-strategy"],
+      "domains": ["distributed-systems", "event-streaming"],
+      "businessObjects": ["ingestion-pipeline", "event-consumer"],
+      "ownershipActions": ["redesigned", "migrated", "benchmarked"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-03-15",
+          "artifactVersion": "v-transcript-001",
+          "contentHash": "sha256-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+          "startOffset": 1240,
+          "endOffset": 1890,
+          "locator": "meeting:2026-03-15:para:12-18",
+          "exactText": "I redesigned the consumers around Kafka consumer groups with manual offset commits. The key insight was switching from automatic rebalancing to a cooperative sticky assignor..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-platform-eng-001",
+      "evidenceId": "ev-platform-k8s-002",
+      "episodeId": "ep-code-review-001",
+      "narrative": "Implemented Kubernetes operator for automatic shard rebalancing with custom CRD, reconciliation loop, and leader election using client-go leases.",
+      "concepts": ["term:kubernetes", "term:operator-pattern", "term:custom-resource-definition", "term:leader-election", "term:client-go"],
+      "problems": ["manual-shard-rebalancing", "split-brain-prevention"],
+      "mechanisms": ["reconciliation-loop", "lease-based-leader-election"],
+      "domains": ["cloud-infrastructure", "container-orchestration"],
+      "businessObjects": ["shard-operator", "custom-resource"],
+      "ownershipActions": ["implemented", "designed", "deployed"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-code-review-2026-04-02",
+          "artifactVersion": "v-review-transcript-001",
+          "contentHash": "sha256-b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3",
+          "startOffset": 450,
+          "endOffset": 1120,
+          "locator": "code-review:2026-04-02:section:2",
+          "exactText": "The operator uses a reconciliation loop that watches for ShardAssignment CRD changes and triggers rebalancing via client-go lease-based leader election..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-platform-eng-001",
+      "evidenceId": "ev-platform-observability-003",
+      "episodeId": "ep-meeting-transcript-002",
+      "narrative": "Built distributed tracing integration with OpenTelemetry collector, custom span processors for Kafka consumer lag metrics, and Grafana dashboard automation.",
+      "concepts": ["term:open-telemetry", "term:distributed-tracing", "term:grafana", "term:kafka", "term:observability"],
+      "problems": ["lack-of-visibility", "debugging-distributed-failures"],
+      "mechanisms": ["custom-span-processor", "collector-pipeline"],
+      "domains": ["observability", "distributed-systems"],
+      "businessObjects": ["tracing-pipeline", "dashboard"],
+      "ownershipActions": ["built", "integrated", "automated"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-04-10",
+          "artifactVersion": "v-transcript-002",
+          "contentHash": "sha256-c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+          "startOffset": 2100,
+          "endOffset": 2780,
+          "locator": "meeting:2026-04-10:para:22-28",
+          "exactText": "For the tracing piece, I built custom span processors that attach Kafka consumer lag as span attributes so we can correlate latency spikes with partition assignment changes..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-frontend-eng-002",
+      "evidenceId": "ev-frontend-react-001",
+      "episodeId": "ep-meeting-transcript-003",
+      "narrative": "Architected design system with compound component patterns, TypeScript strict generics for polymorphic components, and automated visual regression via Chromatic.",
+      "concepts": ["term:react", "term:type-script", "term:design-system", "term:compound-components", "term:visual-regression-testing"],
+      "problems": ["inconsistent-ui-patterns", "type-safety-in-polymorphic-components"],
+      "mechanisms": ["compound-component-pattern", "generic-polymorphic-props"],
+      "domains": ["frontend-architecture", "design-systems"],
+      "businessObjects": ["component-library", "design-token"],
+      "ownershipActions": ["architected", "implemented", "maintained"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-05-01",
+          "artifactVersion": "v-transcript-003",
+          "contentHash": "sha256-d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5",
+          "startOffset": 800,
+          "endOffset": 1500,
+          "locator": "meeting:2026-05-01:para:8-15",
+          "exactText": "The design system uses compound components with render props and TypeScript strict generics. The Button component is polymorphic — it can render as a link, button, or any custom element while preserving full type safety..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-frontend-eng-002",
+      "evidenceId": "ev-frontend-perf-002",
+      "episodeId": "ep-code-review-002",
+      "narrative": "Optimized React render performance with virtualized lists, React.memo boundaries, and custom useDeferredValue hook for search-as-you-type with 60fps scroll.",
+      "concepts": ["term:react", "term:virtualization", "term:render-optimization", "term:deferred-value", "term:performance"],
+      "problems": ["jank-on-large-lists", "input-lag-during-search"],
+      "mechanisms": ["windowing", "memo-boundary", "deferred-rendering"],
+      "domains": ["frontend-performance", "user-experience"],
+      "businessObjects": ["search-ui", "data-grid"],
+      "ownershipActions": ["optimized", "profiled", "measured"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-code-review-2026-05-10",
+          "artifactVersion": "v-review-002",
+          "contentHash": "sha256-e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6",
+          "startOffset": 200,
+          "endOffset": 900,
+          "locator": "code-review:2026-05-10:section:1",
+          "exactText": "Used react-virtual for the candidate list — renders only visible rows plus 5-row overscan. Combined with React.memo on CandidateCard and a custom useDeferredValue for the search input, scroll stays at 60fps even with 10k candidates..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-data-eng-003",
+      "evidenceId": "ev-data-airflow-001",
+      "episodeId": "ep-meeting-transcript-004",
+      "narrative": "Built notebook-to-production template for Airflow DAGs with parameterized operators, data quality checks via Great Expectations, and automated schema evolution handling.",
+      "concepts": ["term:airflow", "term:data-pipeline", "term:great-expectations", "term:schema-evolution", "term:notebook-to-production"],
+      "problems": ["notebook-production-gap", "schema-drift"],
+      "mechanisms": ["parameterized-operators", "expectation-suites", "schema-registry-integration"],
+      "domains": ["data-engineering", "ml-ops"],
+      "businessObjects": ["dag", "data-quality-check"],
+      "ownershipActions": ["built", "templated", "automated"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-05-20",
+          "artifactVersion": "v-transcript-004",
+          "contentHash": "sha256-f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7",
+          "startOffset": 3200,
+          "endOffset": 3900,
+          "locator": "meeting:2026-05-20:para:32-38",
+          "exactText": "The template takes a notebook and wraps it in a parameterized Airflow operator with Great Expectations quality checks at each stage boundary. Schema evolution is handled automatically via a registry integration..."
+        }
+      ]
+    },
+    {
+      "candidateId": "cand-data-eng-003",
+      "evidenceId": "ev-data-spark-002",
+      "episodeId": "ep-meeting-transcript-004",
+      "narrative": "Designed incremental processing framework on Spark Structured Streaming with exactly-once semantics via checkpoint-based offset tracking and idempotent sink writes.",
+      "concepts": ["term:spark", "term:structured-streaming", "term:exactly-once", "term:checkpoint", "term:idempotent-writes"],
+      "problems": ["batch-to-streaming-migration", "duplicate-processing"],
+      "mechanisms": ["checkpoint-offset-tracking", "idempotent-sink-pattern"],
+      "domains": ["data-engineering", "stream-processing"],
+      "businessObjects": ["streaming-job", "data-lake"],
+      "ownershipActions": ["designed", "migrated", "validated"],
+      "evidenceReferences": [
+        {
+          "artifactId": "artifact-meeting-2026-05-20",
+          "artifactVersion": "v-transcript-004",
+          "contentHash": "sha256-f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7",
+          "startOffset": 4100,
+          "endOffset": 4800,
+          "locator": "meeting:2026-05-20:para:40-46",
+          "exactText": "We moved from nightly batch Spark jobs to Structured Streaming with checkpoint-based offset tracking. The sinks are idempotent — if a micro-batch retries, it overwrites the same partition key..."
+        }
+      ]
+    }
+  ],
+  "roleRequirements": [
+    {
+      "roleId": "role-senior-platform-eng",
+      "requiredLanguages": ["Go", "TypeScript"],
+      "relevantConcepts": ["term:kafka", "term:kubernetes", "term:event-sourcing", "term:distributed-tracing", "term:open-telemetry"],
+      "genericConcepts": ["term:docker", "term:git"],
+      "requiredConcepts": ["term:kafka", "term:kubernetes"],
+      "sourceReferences": [
+        {
+          "entityId": "role-entity-platform-jd-001",
+          "locator": "jd:role-senior-platform-eng:section:requirements",
+          "conceptKeys": ["term:kafka", "term:kubernetes", "term:event-sourcing", "term:distributed-tracing"]
+        }
+      ]
+    },
+    {
+      "roleId": "role-staff-frontend-eng",
+      "requiredLanguages": ["TypeScript"],
+      "relevantConcepts": ["term:react", "term:type-script", "term:design-system", "term:performance", "term:accessibility"],
+      "genericConcepts": ["term:html", "term:css"],
+      "requiredConcepts": ["term:react", "term:type-script"],
+      "forbiddenConcepts": ["term:jquery"],
+      "sourceReferences": [
+        {
+          "entityId": "role-entity-frontend-jd-001",
+          "locator": "jd:role-staff-frontend-eng:section:requirements",
+          "conceptKeys": ["term:react", "term:type-script", "term:design-system", "term:performance"]
+        }
+      ]
+    }
+  ],
+  "expertLabels": [
+    {
+      "labelId": "label-platform-platform-pr101",
+      "candidateId": "cand-platform-eng-001",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-k8s-operator-pr-202"],
+      "explanation": "Candidate has direct Kafka consumer group experience with manual offset commits. PR #101 tests exactly this pattern — rebalancing logic with cooperative sticky assignor. Strong alignment on distributed systems domain.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-platform-platform-pr202",
+      "candidateId": "cand-platform-eng-001",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-k8s-operator-pr-202"],
+      "explanation": "Candidate built a K8s operator with reconciliation loop and leader election. PR #202 requires reviewing an operator that handles CRD lifecycle. Direct match.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-platform-platform-pr303",
+      "candidateId": "cand-platform-eng-001",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-react-design-system-pr-303",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-k8s-operator-pr-202"],
+      "explanation": "Platform engineer has no frontend/React evidence. React design system PR is not appropriate for this candidate-role pair.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-frontend-frontend-pr303",
+      "candidateId": "cand-frontend-eng-002",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-react-design-system-pr-303",
+      "relevanceGrade": "highly_relevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Candidate architected a design system with compound components and TypeScript strict generics. PR #303 is a design system refactor requiring exactly this expertise.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-frontend-frontend-pr404",
+      "candidateId": "cand-frontend-eng-002",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-virtualized-list-pr-404",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Candidate has direct virtualization and render optimization experience. PR #404 is a list performance optimization. Good fit but not as precise as the design system PR.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-frontend-frontend-pr101",
+      "candidateId": "cand-frontend-eng-002",
+      "roleId": "role-staff-frontend-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-react-design-system-pr-303", "challenge-virtualized-list-pr-404"],
+      "explanation": "Frontend engineer has no backend/Kafka experience. Kafka consumer PR is not appropriate for this candidate-role pair.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-data-platform-pr101",
+      "candidateId": "cand-data-eng-003",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-kafka-consumer-pr-101",
+      "relevanceGrade": "borderline",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-schema-evolution-pr-505"],
+      "explanation": "Data engineer has stream processing experience (Spark Structured Streaming) which shares some concepts with Kafka consumers (offset management, exactly-once). However, the implementation domain (K8s operators, Go) is a stretch.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-data-platform-pr202",
+      "candidateId": "cand-data-eng-003",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-k8s-operator-pr-202",
+      "relevanceGrade": "irrelevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-schema-evolution-pr-505"],
+      "explanation": "Data engineer has no Kubernetes operator experience. The K8s operator PR requires domain-specific knowledge of reconciliation loops and CRD lifecycle that this candidate lacks.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    },
+    {
+      "labelId": "label-data-platform-pr505",
+      "candidateId": "cand-data-eng-003",
+      "roleId": "role-senior-platform-eng",
+      "challengeId": "challenge-schema-evolution-pr-505",
+      "relevanceGrade": "relevant",
+      "eligibleChallengeIds": ["challenge-kafka-consumer-pr-101", "challenge-schema-evolution-pr-505"],
+      "explanation": "Data engineer has direct schema evolution handling experience with registry integration. PR #505 involves schema compatibility checks in an event pipeline — strong conceptual alignment even though the platform role has different language requirements.",
+      "labelVersion": "1.0.0",
+      "labeledAt": "2026-06-21T18:00:00Z",
+      "labeledBy": "expert-recruiter-jory"
+    }
+  ],
+  "metadata": {
+    "totalLabels": 9,
+    "totalCandidates": 3,
+    "totalRoles": 2,
+    "totalChallenges": 5,
+    "syntheticFixtureCount": 0
+  }
+}

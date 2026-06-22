@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  Code,
   ExternalLink,
   FileText,
   GitPullRequest,
+  MessageSquare,
+  Mic,
   Network,
   Quote,
   RefreshCw,
   Search,
   UserRound,
+  Video,
 } from 'lucide-react';
 import type {
   LivingContextArtifact,
@@ -18,8 +22,12 @@ import type {
   LivingContextSourceRef,
   StandaloneReviewMatchRecord,
   StandaloneReviewSourceRef,
+  StandaloneReviewUnmatchedDemand,
+  StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { useRepoOverlay } from '../../hooks/useRepoOverlay';
+import type { RepoOverlayFile } from '../../hooks/useRepoOverlay';
 import './LivingContextGraph.css';
 
 function titleCase(value: string): string {
@@ -70,6 +78,33 @@ function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
 }
 
+function interactionDuration(interaction: LivingContextInteraction): string | null {
+  if (!interaction.startedAt || !interaction.endedAt) return null;
+  const start = new Date(interaction.startedAt).getTime();
+  const end = new Date(interaction.endedAt).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  const minutes = Math.round((end - start) / 60000);
+  if (minutes <= 0) return null;
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function InteractionIcon({ type }: { type: string }): JSX.Element {
+  const normalized = type.toLowerCase();
+  if (normalized.includes('meeting') || normalized.includes('video')) {
+    return <Video size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('interview') || normalized.includes('call')) {
+    return <Mic size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('message') || normalized.includes('email')) {
+    return <MessageSquare size={11} color="var(--lc-structural)" />;
+  }
+  if (normalized.includes('code') || normalized.includes('review')) {
+    return <Code size={11} color="var(--lc-structural)" />;
+  }
+  return <Activity size={11} color="var(--lc-structural)" />;
+}
+
 function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
   return source.locator
     ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
@@ -83,6 +118,90 @@ function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | nul
 
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
   return status.replace(/_/g, ' ');
+}
+
+function UnmatchedDemandsPanel({
+  demands,
+}: {
+  demands: StandaloneReviewUnmatchedDemand[];
+}): JSX.Element {
+  return (
+    <div className="living-context__unmatched-demands">
+      <div className="living-context__eyebrow">
+        Unmatched demands ({demands.length})
+      </div>
+      <div className="living-context__demand-list">
+        {demands.map((demand) => (
+          <div key={demand.demandId} className="living-context__demand-item">
+            <div className="living-context__demand-head">
+              <span className="living-context__demand-family">{demand.family}</span>
+              <span className="living-context__demand-weight">
+                {Math.round(demand.weight * 100)}% weight
+              </span>
+              {demand.roleRequirement && (
+                <span className="living-context__demand-badge">role req</span>
+              )}
+            </div>
+            <div className="living-context__demand-narrative">{demand.narrative}</div>
+            {demand.concepts.length > 0 && (
+              <div className="living-context__concepts">
+                {demand.concepts.slice(0, 4).map((concept) => (
+                  <span key={`${demand.demandId}:${concept}`} className="living-context__concept">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+            {demand.challengeSourceRefs.length > 0 && (
+              <div className="living-context__demand-source">
+                {demand.challengeSourceRefs.slice(0, 2).map((ref, index) => (
+                  <span key={`${demand.demandId}:source:${index}`} className="living-context__demand-ref">
+                    {ref.locator ?? `${ref.artifactId.slice(0, 8)}:${ref.startOffset}-${ref.endOffset}`}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StretchAreasPanel({
+  areas,
+}: {
+  areas: StandaloneReviewStretchArea[];
+}): JSX.Element {
+  return (
+    <div className="living-context__stretch-areas">
+      <div className="living-context__eyebrow">
+        Stretch areas ({areas.length})
+      </div>
+      <div className="living-context__stretch-list">
+        {areas.map((area, index) => (
+          <div key={`${area.atomId}:${area.demandId}:${index}`} className="living-context__stretch-item">
+            <div className="living-context__stretch-head">
+              <span className="living-context__stretch-dimension">{area.dimension}</span>
+              <span className="living-context__stretch-concepts">
+                {area.atomConcept} → {area.demandConcept}
+              </span>
+            </div>
+            <div className="living-context__stretch-narratives">
+              <div className="living-context__stretch-narrative">
+                <span className="living-context__stretch-label">Candidate</span>
+                <span>{area.candidateNarrative}</span>
+              </div>
+              <div className="living-context__stretch-narrative">
+                <span className="living-context__stretch-label">Demand</span>
+                <span>{area.demandNarrative}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function StandaloneReviewMatchPanel({
@@ -210,6 +329,268 @@ function StandaloneReviewMatchPanel({
             ))}
           </ul>
         </div>
+      )}
+
+      {match.unmatchedDemands && match.unmatchedDemands.length > 0 && (
+        <UnmatchedDemandsPanel demands={match.unmatchedDemands} />
+      )}
+
+      {match.stretchAreas && match.stretchAreas.length > 0 && (
+        <StretchAreasPanel areas={match.stretchAreas} />
+      )}
+    </section>
+  );
+}
+
+interface MatchedSpanEntry {
+  atomId: string;
+  demandId: string;
+  pairScore: number;
+  exactText: string;
+  startOffset: number;
+  endOffset: number;
+  sharedConcepts: string[];
+}
+
+function buildMatchedFileMap(
+  match: StandaloneReviewMatchRecord,
+): Map<string, MatchedSpanEntry[]> {
+  const fileMap = new Map<string, MatchedSpanEntry[]>();
+  for (const entry of match.evidence) {
+    for (const ref of entry.challengeSourceRefs) {
+      const filePath = ref.locator?.split(':')[0] ?? ref.artifactId;
+      const existing = fileMap.get(filePath) ?? [];
+      existing.push({
+        atomId: entry.atomId,
+        demandId: entry.demandId,
+        pairScore: entry.pairScore,
+        exactText: ref.exactText ?? '',
+        startOffset: ref.startOffset,
+        endOffset: ref.endOffset,
+        sharedConcepts: entry.sharedConcepts,
+      });
+      fileMap.set(filePath, existing);
+    }
+  }
+  return fileMap;
+}
+
+function RepoFileTreeNode({
+  file,
+  matchedSpans,
+}: {
+  file: RepoOverlayFile;
+  matchedSpans: MatchedSpanEntry[];
+}): JSX.Element {
+  const [expanded, setExpanded] = useState(matchedSpans.length > 0);
+  const hasMatches = matchedSpans.length > 0;
+  const hasDemands = file.spans.some((span) => span.demandIds.length > 0);
+
+  return (
+    <div className={`living-context__repo-file${hasMatches ? ' living-context__repo-file--matched' : ''}`}>
+      <button
+        type="button"
+        className="living-context__repo-file-path"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+      >
+        <FileText size={11} />
+        <span>{file.path}</span>
+        {hasMatches && (
+          <span className="living-context__count living-context__count--matched">
+            {matchedSpans.length} matched
+          </span>
+        )}
+        {!hasMatches && hasDemands && (
+          <span className="living-context__count living-context__count--demand">
+            {file.spans.filter((s) => s.demandIds.length > 0).length} demands
+          </span>
+        )}
+        {file.symbols.length > 0 && (
+          <span className="living-context__count">
+            {file.symbols.length} symbol{file.symbols.length === 1 ? '' : 's'}
+          </span>
+        )}
+        <span className="living-context__file-size">
+          {file.byteLength > 1024
+            ? `${(file.byteLength / 1024).toFixed(1)}KB`
+            : `${file.byteLength}B`}
+        </span>
+      </button>
+      {expanded && matchedSpans.length > 0 && (
+        <div className="living-context__repo-file-spans">
+          {matchedSpans.map((span, index) => (
+            <div
+              key={`${file.path}:${span.startOffset}:${span.demandId}:${index}`}
+              className="living-context__repo-span"
+            >
+              <div className="living-context__repo-span-head">
+                <span className="living-context__repo-span-score">
+                  {Math.round(span.pairScore * 100)}%
+                </span>
+                <span>{span.demandId}</span>
+                <span>bytes {span.startOffset}-{span.endOffset}</span>
+              </div>
+              {span.exactText && (
+                <blockquote className="living-context__repo-span-text">
+                  {span.exactText.length > 120
+                    ? `${span.exactText.slice(0, 120)}...`
+                    : span.exactText}
+                </blockquote>
+              )}
+              {span.sharedConcepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {span.sharedConcepts.slice(0, 3).map((concept) => (
+                    <span key={`${file.path}:${span.demandId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {expanded && matchedSpans.length === 0 && file.symbols.length > 0 && (
+        <div className="living-context__repo-file-symbols">
+          {file.symbols.slice(0, 5).map((symbol) => (
+            <div key={symbol.id} className="living-context__repo-symbol">
+              <Code size={10} />
+              <span className="living-context__repo-symbol-name">{symbol.qualifiedName}</span>
+              <span className="living-context__repo-symbol-kind">{symbol.kind}</span>
+            </div>
+          ))}
+          {file.symbols.length > 5 && (
+            <div className="living-context__repo-symbol-overflow">
+              +{file.symbols.length - 5} more
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepoOverlayPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord | null;
+}): JSX.Element | null {
+  const [showFullTree, setShowFullTree] = useState(false);
+  const { overlay, isLoading: overlayLoading } = useRepoOverlay(
+    match?.repoId ?? null,
+  );
+
+  const matchedFileMap = useMemo(
+    () => (match ? buildMatchedFileMap(match) : new Map<string, MatchedSpanEntry[]>()),
+    [match],
+  );
+
+  const toggleFullTree = useCallback(() => {
+    setShowFullTree((prev) => !prev);
+  }, []);
+
+  if (!match || match.evidence.length === 0) return null;
+  if (matchedFileMap.size === 0) return null;
+
+  const overlayFiles = overlay?.files ?? [];
+  const matchedPaths = new Set(matchedFileMap.keys());
+  const unmatchedFiles = overlayFiles.filter((f) => !matchedPaths.has(f.path));
+
+  return (
+    <section className="living-context__repo-overlay" aria-label="Repository structure overlay">
+      <div className="living-context__section-head">
+        <div className="living-context__section-title">Repository overlay</div>
+        <GitPullRequest size={14} color="var(--lc-structural)" />
+      </div>
+      <div className="living-context__eyebrow">
+        {match.repoName ?? 'repository'} PR #{match.prNumber}
+        {' · '}{matchedFileMap.size} file{matchedFileMap.size === 1 ? '' : 's'} matched
+        {overlay && ` · ${overlay.fileCount} total · ${overlay.symbolCount} symbols`}
+      </div>
+
+      <div className="living-context__repo-files">
+        {overlay ? (
+          <>
+            {overlayFiles
+              .filter((f) => matchedPaths.has(f.path))
+              .map((file) => (
+                <RepoFileTreeNode
+                  key={file.path}
+                  file={file}
+                  matchedSpans={matchedFileMap.get(file.path) ?? []}
+                />
+              ))}
+
+            {unmatchedFiles.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className="living-context__repo-tree-toggle"
+                  onClick={toggleFullTree}
+                  aria-expanded={showFullTree}
+                >
+                  {showFullTree
+                    ? `Hide ${unmatchedFiles.length} unmatched files`
+                    : `Show ${unmatchedFiles.length} unmatched files`}
+                </button>
+                {showFullTree && unmatchedFiles.map((file) => (
+                  <RepoFileTreeNode
+                    key={file.path}
+                    file={file}
+                    matchedSpans={[]}
+                  />
+                ))}
+              </>
+            )}
+          </>
+        ) : (
+          [...matchedFileMap.entries()].map(([filePath, spans]) => (
+            <div key={filePath} className="living-context__repo-file living-context__repo-file--matched">
+              <div className="living-context__repo-file-path">
+                <FileText size={11} />
+                <span>{filePath}</span>
+                <span className="living-context__count">{spans.length}</span>
+              </div>
+              <div className="living-context__repo-file-spans">
+                {spans.map((span, index) => (
+                  <div
+                    key={`${filePath}:${span.startOffset}:${span.demandId}:${index}`}
+                    className="living-context__repo-span"
+                  >
+                    <div className="living-context__repo-span-head">
+                      <span className="living-context__repo-span-score">
+                        {Math.round(span.pairScore * 100)}%
+                      </span>
+                      <span>{span.demandId}</span>
+                      <span>bytes {span.startOffset}-{span.endOffset}</span>
+                    </div>
+                    {span.exactText && (
+                      <blockquote className="living-context__repo-span-text">
+                        {span.exactText.length > 120
+                          ? `${span.exactText.slice(0, 120)}...`
+                          : span.exactText}
+                      </blockquote>
+                    )}
+                    {span.sharedConcepts.length > 0 && (
+                      <div className="living-context__concepts">
+                        {span.sharedConcepts.slice(0, 3).map((concept) => (
+                          <span key={`${filePath}:${span.demandId}:${concept}`} className="living-context__concept">
+                            {concept}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {overlayLoading && (
+        <div className="living-context__repo-loading">Loading full repository context...</div>
       )}
     </section>
   );
@@ -487,6 +868,7 @@ export function LivingContextGraph({
 
   const summaryMetrics = [
     ['Interactions', livingContext.summary.interactionCount],
+    ['Concepts', livingContext.summary.conceptCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
     ['Assertions', livingContext.summary.assertionCount],
@@ -518,6 +900,7 @@ export function LivingContextGraph({
       </div>
 
       <StandaloneReviewMatchPanel match={standaloneReviewMatch ?? null} />
+      <RepoOverlayPanel match={standaloneReviewMatch ?? null} />
 
       <div className="living-context__summary">
         {summaryMetrics.map(([label, value]) => (
@@ -548,6 +931,16 @@ export function LivingContextGraph({
             <div className="living-context__section-title">Interactions</div>
             <div className="living-context__count">{livingContext.interactions.length}</div>
           </div>
+          {Object.keys(livingContext.summary.interactionTypeBreakdown).length > 1 && (
+            <div className="living-context__type-breakdown">
+              {Object.entries(livingContext.summary.interactionTypeBreakdown).map(([type, count]) => (
+                <span key={type} className="living-context__type-badge">
+                  <InteractionIcon type={type} />
+                  {count}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="living-context__interactions">
             <button
               type="button"
@@ -567,14 +960,30 @@ export function LivingContextGraph({
                 className={`living-context__interaction ${selectedInteractionId === interaction.id ? 'living-context__interaction--active' : ''}`}
                 onClick={() => setSelectedInteractionId(interaction.id)}
               >
-                <div className="living-context__interaction-title">
-                  {titleCase(interaction.interactionType)}
+                <div className="living-context__interaction-header">
+                  <InteractionIcon type={interaction.interactionType} />
+                  <div className="living-context__interaction-title">
+                    {titleCase(interaction.interactionType)}
+                  </div>
                 </div>
                 <div className="living-context__interaction-meta">
                   <span>{interactionDate(interaction)}</span>
                   <span>{interaction.assertionIds.length} assertions</span>
                   <span>{interaction.signalKeys.length} signals</span>
+                  {interaction.conceptCount > 0 && (
+                    <span>{interaction.conceptCount} concepts</span>
+                  )}
                 </div>
+                {interaction.artifactIds.length > 0 && (
+                  <div className="living-context__interaction-artifacts">
+                    <span>{interaction.artifactIds.length} artifact{interaction.artifactIds.length === 1 ? '' : 's'}</span>
+                  </div>
+                )}
+                {interactionDuration(interaction) && (
+                  <div className="living-context__interaction-duration">
+                    {interactionDuration(interaction)}
+                  </div>
+                )}
               </button>
             ))}
           </div>
