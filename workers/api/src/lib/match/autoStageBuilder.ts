@@ -4,20 +4,23 @@
  * the /auto-build route writes into pipelines/stages/challenges in one
  * transaction.
  *
- * Pure function (no D1 writes). Reads only.
+ * Deterministic builder. It may write/replay source-backed implementation issue
+ * context records before selecting implementation stations.
  *
  * v1 scope per .claude/plans/polymorphic-wobbling-tiger.md:
  *   - 2 stations (CODE_REVIEW + CODE_IMPLEMENTATION). ADR_REVIEW deferred.
- *   - Top-1 repo from matchRepos by score. Tolerance band → cosine threshold
- *     mapping is OQ-W1 — v1 uses raw score rank.
+ *   - Top-1 repo from source-backed context overlap when available. Legacy
+ *     matchRepos remains a compatibility path when role context evidence is
+ *     absent.
  *   - shared-repo: same repo for both stations.
  *   - per-stage: CODE_REVIEW uses source-backed review packets and
- *     CODE_IMPLEMENTATION uses matchRepos; they may legitimately return the
- *     same repo (OQ-W2 — v1 accepts).
+ *     CODE_IMPLEMENTATION uses source-backed issue context when available; they
+ *     may legitimately return the same repo (OQ-W2 — v1 accepts).
  *   - CODE_REVIEW selects repos and PRs from source-backed role context concepts
  *     against context-ready review packets.
- *   - CODE_IMPLEMENTATION still uses the legacy matchRepos skill path until
- *     implementation issue matching is moved onto source-backed context records.
+ *   - CODE_IMPLEMENTATION selects repos from source-backed implementation issue
+ *     context when role concepts exist, falling back to legacy matchRepos only
+ *     when role context evidence is unavailable.
  */
 
 import type { CandidatePersona, RoleContextDocument, RoleContextRow } from '../../types';
@@ -73,6 +76,24 @@ interface ReviewPacketRepoRow {
   pr_title: string | null;
   quality_score: number;
   packet_json: string;
+}
+
+interface ImplementationIssueRepoRow {
+  repo_id: number;
+  full_name: string;
+  github_url: string;
+  description: string | null;
+  seniority_band: string;
+  detected_domain: string;
+  pr_quality_score: number;
+  stars: number;
+  primary_language: string;
+  issue_id: number;
+  issue_number: number;
+  issue_title: string;
+  implementability_score: number | null;
+  clarity_score: number | null;
+  canonical_key: string;
 }
 
 export interface AutoStageBuilderResult {
@@ -454,6 +475,129 @@ function scoreValue(value: number | null): number {
 }
 
 /**
+ * Select implementation repos from source-backed implementation issue context.
+ * The concepts come from persisted issue context records, not package aliases or
+ * code-owned skill lists.
+ */
+export async function matchImplementationReposByRoleConcepts(
+  db: D1Database,
+  roleConcepts: string[],
+  requiredConcepts: string[] = [],
+  limit = 5,
+): Promise<MatchedRepo[]> {
+  const uniqueRoleConcepts = [...new Set(roleConcepts)].sort();
+  if (uniqueRoleConcepts.length === 0) return [];
+
+  await backfillRepoImplementationIssueContextRecords(db, { limit: 500 });
+
+  const conceptPlaceholders = uniqueRoleConcepts.map(() => '?').join(', ');
+  const rows = await db.prepare(
+    `SELECT qr.id AS repo_id,
+            qr.full_name,
+            qr.github_url,
+            qr.description,
+            qr.seniority_band,
+            qr.detected_domain,
+            qr.pr_quality_score,
+            qr.stars,
+            qr.primary_language,
+            ri.id AS issue_id,
+            ri.issue_number,
+            ri.title AS issue_title,
+            ics.implementability_score,
+            ics.clarity_score,
+            c.canonical_key
+       FROM context_records cr
+       JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+       JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+       JOIN concepts c ON c.id = crc.concept_id
+       JOIN repo_issues ri ON CAST(ri.id AS TEXT) = crsr.source_ref_id
+       JOIN issue_challenge_signals ics ON ics.issue_id = ri.id
+       JOIN qualified_repos qr ON qr.id = ri.repo_id
+      WHERE cr.record_type = 'repo_implementation_issue'
+        AND cr.scope_type = 'qualified_repo'
+        AND cr.scope_id = CAST(qr.id AS TEXT)
+        AND crsr.source_ref_type = 'repo_issue'
+        AND crsr.exact_text IS NOT NULL
+        AND crsr.content_hash IS NOT NULL
+        AND ri.state_at_crawl = 'open'
+        AND ri.has_merged_pr = 0
+        AND NULLIF(TRIM(COALESCE(ri.body, '')), '') IS NOT NULL
+        AND ics.disqualified = 0
+        AND COALESCE(qr.disqualified, 0) = 0
+        AND c.canonical_key IN (${conceptPlaceholders})
+      ORDER BY qr.id, ri.issue_number, c.canonical_key`,
+  ).bind(...uniqueRoleConcepts).all<ImplementationIssueRepoRow>();
+
+  const required = new Set(requiredConcepts);
+  const issueRows = new Map<number, {
+    row: ImplementationIssueRepoRow;
+    concepts: Set<string>;
+  }>();
+  for (const row of rows.results ?? []) {
+    const issue = issueRows.get(row.issue_id) ?? {
+      row,
+      concepts: new Set<string>(),
+    };
+    issue.concepts.add(row.canonical_key);
+    issueRows.set(row.issue_id, issue);
+  }
+
+  const byRepo = new Map<number, MatchedRepo & {
+    bestOverlap: number;
+    bestIssueScore: number;
+  }>();
+  for (const issue of issueRows.values()) {
+    if ([...required].some((concept) => !issue.concepts.has(concept))) continue;
+    const overlap = issue.concepts.size;
+    if (overlap === 0) continue;
+    const row = issue.row;
+    const issueScore = scoreValue(row.implementability_score) + scoreValue(row.clarity_score);
+    const current = byRepo.get(row.repo_id);
+    if (
+      current
+      && (
+        current.bestOverlap > overlap
+        || (
+          current.bestOverlap === overlap
+          && current.bestIssueScore > issueScore
+        )
+      )
+    ) {
+      continue;
+    }
+    byRepo.set(row.repo_id, {
+      id: row.repo_id,
+      fullName: row.full_name,
+      githubUrl: row.github_url,
+      description: row.description,
+      seniorityBand: row.seniority_band,
+      detectedDomain: row.detected_domain,
+      prQualityScore: row.pr_quality_score,
+      stars: row.stars,
+      primaryLanguage: row.primary_language,
+      score: overlap + issueScore,
+      matchedMustSkills: [],
+      matchedNiceSkills: [...issue.concepts].sort(),
+      matchedConstructs: [],
+      samplePrs: [],
+      bestOverlap: overlap,
+      bestIssueScore: issueScore,
+    });
+  }
+
+  return [...byRepo.values()]
+    .sort((left, right) =>
+      right.bestOverlap - left.bestOverlap
+      || right.bestIssueScore - left.bestIssueScore
+      || right.score - left.score
+      || left.id - right.id
+    )
+    .slice(0, limit)
+    .map(({ bestOverlap: _bestOverlap, bestIssueScore: _bestIssueScore, ...repo }) => repo);
+}
+
+/**
  * Pick the top implementation issue for a given repo. Constraints:
  *   - issue_challenge_signals.disqualified = 0 (passed scoring gate)
  *   - repo_issues.has_merged_pr = 0 (no contamination from existing PR)
@@ -558,6 +702,7 @@ export async function autoStageBuilder(
   }
   if (
     includeImplementation
+    && roleConcepts.length === 0
     && baseRequest.mustHaveSkills.length === 0
     && (!includeReview || matchConfig.stage_linkage === 'per-stage')
   ) {
@@ -582,11 +727,21 @@ export async function autoStageBuilder(
     }
 
     if (includeImplementation && matchConfig.stage_linkage === 'per-stage') {
-      const implMatches = await matchRepos(db, baseRequest);
+      const sourceBackedImplementation = roleConcepts.length > 0;
+      const implMatches = roleConcepts.length > 0
+        ? await matchImplementationReposByRoleConcepts(
+          db,
+          roleConcepts,
+          requiredConcepts,
+          baseRequest.limit,
+        )
+        : await matchRepos(db, baseRequest);
       const top = implMatches[0];
       if (!top) {
         throw new Error(
-          'autoStageBuilder: matchRepos returned no candidate repos for implementation station',
+          sourceBackedImplementation
+            ? 'autoStageBuilder: no source-backed implementation repo matched role evidence'
+            : 'autoStageBuilder: matchRepos returned no candidate repos for implementation station',
         );
       }
       implRepo = top;
@@ -594,11 +749,21 @@ export async function autoStageBuilder(
       implRepo = reviewRepo;
     }
   } else if (includeImplementation) {
-    const implMatches = await matchRepos(db, baseRequest);
+    const sourceBackedImplementation = roleConcepts.length > 0;
+    const implMatches = roleConcepts.length > 0
+      ? await matchImplementationReposByRoleConcepts(
+        db,
+        roleConcepts,
+        requiredConcepts,
+        baseRequest.limit,
+      )
+      : await matchRepos(db, baseRequest);
     const top = implMatches[0];
     if (!top) {
       throw new Error(
-        'autoStageBuilder: matchRepos returned no candidate repos for implementation station',
+        sourceBackedImplementation
+          ? 'autoStageBuilder: no source-backed implementation repo matched role evidence'
+          : 'autoStageBuilder: matchRepos returned no candidate repos for implementation station',
       );
     }
     implRepo = top;

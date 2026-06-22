@@ -129,29 +129,6 @@ function buildStubDb(state: DbState): StubDb {
               return (row ? { pr_number: row.pr_number, title: row.title } : null) as T | null;
             }
 
-            // pickImplementationIssue
-            if (normalized.startsWith('SELECT ri.issue_number, ri.title FROM repo_issues')) {
-              const [repoId, band] = args as [number, string];
-              const candidates = state.issues
-                .filter(
-                  (i) =>
-                    i.repo_id === repoId &&
-                    i.state_at_crawl === 'open' &&
-                    Boolean(i.body?.trim()) &&
-                    i.contextReady !== false &&
-                    !i.has_merged_pr &&
-                    !i.disqualified &&
-                    i.difficulty_band === band,
-                )
-                .sort(
-                  (a, b) =>
-                    b.implementability_score - a.implementability_score ||
-                    b.clarity_score - a.clarity_score,
-                );
-              const row = candidates[0];
-              return (row ? { issue_number: row.issue_number, title: row.title } : null) as T | null;
-            }
-
             return null;
           },
 
@@ -195,6 +172,48 @@ function buildStubDb(state: DbState): StubDb {
                 return overlap > 0
                   ? [{ issue_id: String(issue.issue_id), overlap }]
                   : [];
+              });
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
+            if (
+              normalized.startsWith('SELECT qr.id AS repo_id') &&
+              normalized.includes("cr.record_type = 'repo_implementation_issue'")
+            ) {
+              const roleConcepts = (args as unknown[]).filter(
+                (arg): arg is string => typeof arg === 'string' && arg.startsWith('term:'),
+              );
+              const rows = state.issues.flatMap((issue) => {
+                if (
+                  issue.contextReady === false ||
+                  issue.state_at_crawl !== 'open' ||
+                  !issue.body?.trim() ||
+                  issue.has_merged_pr ||
+                  issue.disqualified
+                ) {
+                  return [];
+                }
+                const repo = state.repos.find((candidate) => candidate.id === issue.repo_id);
+                if (!repo) return [];
+                return (issue.conceptKeys ?? [])
+                  .filter((concept) => roleConcepts.includes(concept))
+                  .map((concept) => ({
+                    repo_id: repo.id,
+                    full_name: repo.full_name,
+                    github_url: repo.github_url,
+                    description: repo.description,
+                    seniority_band: repo.seniority_band,
+                    detected_domain: repo.detected_domain,
+                    pr_quality_score: repo.pr_quality_score,
+                    stars: repo.stars,
+                    primary_language: repo.primary_language,
+                    issue_id: issue.issue_id,
+                    issue_number: issue.issue_number,
+                    issue_title: issue.title,
+                    implementability_score: issue.implementability_score,
+                    clarity_score: issue.clarity_score,
+                    canonical_key: concept,
+                  }));
               });
               return { results: rows as T[], success: true, meta: {} };
             }
@@ -462,10 +481,10 @@ describe('autoStageBuilder', () => {
       ],
       roleContextConcepts: [{ canonicalKey: 'term:typescript', label: 'typescript' }],
       issues: [
-        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', body: 'Cache expensive widget lookups.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
-        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', body: 'Expose request metrics for widgets.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
-        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', body: 'Already solved in a merged PR.', state_at_crawl: 'open', has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
-        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', body: 'Implement the thing endpoint.', state_at_crawl: 'open', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', body: 'Cache expensive widget lookups.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', body: 'Expose request metrics for widgets.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
+        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', body: 'Already solved in a merged PR.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
+        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', body: 'Implement the thing endpoint.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
       ],
     };
   }
@@ -489,20 +508,17 @@ describe('autoStageBuilder', () => {
     expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('runs implementation matchRepos once when stage_linkage=per-stage', async () => {
+  it('uses source-backed implementation repo matching when stage_linkage=per-stage', async () => {
     const stub = buildStubDb(fixtureState());
     await autoStageBuilder({
       db: stub.db,
       roleContext: makeRoleContext(),
       matchConfig: baseConfig({ stage_linkage: 'per-stage' }),
     });
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('uses non_negotiable_skills (subset of mustHaveSkills) to filter repos', async () => {
-    // Non-negotiable = [typescript, react]; persona.must = [..., postgres]
-    // With stricter must=postgres, repo 102 would be filtered out.
-    // Without postgres in must list, both repos qualify.
+  it('builds implementation from source-backed concepts without legacy repo matching', async () => {
     const stub = buildStubDb(fixtureState());
     const result = await autoStageBuilder({
       db: stub.db,
@@ -515,7 +531,7 @@ describe('autoStageBuilder', () => {
     // Top-1 by pr_quality_score is still 101 (0.9 > 0.6).
     expect(result.stations[0]!.repoId).toBe(101);
     expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
   it('uses persisted role context concepts to select source-backed review PRs', async () => {
@@ -589,7 +605,9 @@ describe('autoStageBuilder', () => {
   });
 
   it('throws when implementation has no must-have skills and no review repo to share', async () => {
-    const stub = buildStubDb(fixtureState());
+    const state = fixtureState();
+    state.roleContextConcepts = [];
+    const stub = buildStubDb(state);
     await expect(
       autoStageBuilder({
         db: stub.db,
@@ -625,7 +643,7 @@ describe('autoStageBuilder', () => {
     expect(result.stations).toHaveLength(1);
     expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
     expect(result.perStationRepo.CODE_REVIEW).toBeUndefined();
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
   it('defaults to both stations when requested station list is empty', async () => {

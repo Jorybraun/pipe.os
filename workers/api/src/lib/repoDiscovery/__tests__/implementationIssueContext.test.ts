@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
-import { pickImplementationIssue } from '../../match/autoStageBuilder';
+import {
+  matchImplementationReposByRoleConcepts,
+  pickImplementationIssue,
+} from '../../match/autoStageBuilder';
 import { backfillRepoImplementationIssueContextRecords } from '../implementationIssueContext';
 
 const livingContextMigration = readFileSync(
@@ -25,7 +28,14 @@ function createRepoIssueSchema(sqlite: BetterSqliteDb): void {
     CREATE TABLE qualified_repos (
       id INTEGER PRIMARY KEY,
       full_name TEXT NOT NULL,
-      github_url TEXT NOT NULL
+      github_url TEXT NOT NULL,
+      description TEXT,
+      seniority_band TEXT NOT NULL DEFAULT 'mid',
+      detected_domain TEXT NOT NULL DEFAULT 'general',
+      pr_quality_score REAL NOT NULL DEFAULT 0.8,
+      stars INTEGER NOT NULL DEFAULT 0,
+      primary_language TEXT NOT NULL DEFAULT 'typescript',
+      disqualified INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE repo_issues (
       id INTEGER PRIMARY KEY,
@@ -61,6 +71,7 @@ function insertIssue(
   sqlite: BetterSqliteDb,
   input: {
     id: number;
+    repoId?: number;
     issueNumber: number;
     title: string;
     body: string | null;
@@ -75,9 +86,10 @@ function insertIssue(
     `INSERT INTO repo_issues (
        id, repo_id, issue_number, title, body, labels_json,
        github_updated_at, crawled_at, state_at_crawl, has_merged_pr
-     ) VALUES (?, 10, ?, ?, ?, ?, '2026-06-20T10:00:00.000Z', '2026-06-20T11:00:00.000Z', ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, '2026-06-20T10:00:00.000Z', '2026-06-20T11:00:00.000Z', ?, ?)`,
   ).run(
     input.id,
+    input.repoId ?? 10,
     input.issueNumber,
     input.title,
     input.body,
@@ -247,5 +259,40 @@ describe('repo implementation issue context records', () => {
       issueNumber: 202,
       issueTitle: 'Kafka idempotency work',
     });
+  });
+
+  it('selects implementation repos by source-backed issue concept overlap', async () => {
+    sqlite.prepare(
+      'INSERT INTO qualified_repos (id, full_name, github_url) VALUES (?, ?, ?)',
+    ).run(11, 'acme/orders', 'https://github.com/acme/orders');
+    insertIssue(sqlite, {
+      id: 801,
+      repoId: 10,
+      issueNumber: 301,
+      title: 'Generic backend work',
+      body: 'Exact source body for generic backend work.',
+      labels: ['backend'],
+      implementability: 0.95,
+    });
+    insertIssue(sqlite, {
+      id: 802,
+      repoId: 11,
+      issueNumber: 302,
+      title: 'Kafka idempotency work',
+      body: 'Exact source body for Kafka idempotency work.',
+      labels: ['Kafka Idempotency'],
+      implementability: 0.5,
+    });
+
+    const matches = await matchImplementationReposByRoleConcepts(db, [
+      'term:kafka-idempotency',
+    ]);
+
+    expect(matches[0]).toMatchObject({
+      id: 11,
+      fullName: 'acme/orders',
+      matchedNiceSkills: ['term:kafka-idempotency'],
+    });
+    expect(matches.map((match) => match.id)).toEqual([11]);
   });
 });
