@@ -13,6 +13,17 @@ const appBase = process.env.APP_BASE || "http://localhost:5173";
 const apiBase = process.env.API_BASE || "http://localhost:8787";
 const isRemote = !appBase.includes("localhost");
 
+function localPort(baseUrl: string, fallback: string): string {
+  try {
+    return new URL(baseUrl).port || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const appPort = localPort(appBase, "5173");
+const apiPort = localPort(apiBase, "8787");
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -60,13 +71,13 @@ export default defineConfig({
     : {
         webServer: [
           {
-            command: "cd workers/api && npx wrangler dev --port 8787",
+            command: `cd workers/api && npx wrangler dev --port ${apiPort}`,
             url: `${apiBase}/health`,
             reuseExistingServer: true,
             timeout: 120000,
           },
           {
-            command: "npm run dev -- --port 5173",
+            command: `npm run dev -- --port ${appPort}`,
             url: appBase,
             reuseExistingServer: true,
             timeout: 60000,
