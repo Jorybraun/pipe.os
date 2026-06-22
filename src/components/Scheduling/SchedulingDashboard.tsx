@@ -6,7 +6,6 @@ import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
 import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
-import { ConnectionSetup } from './ConnectionSetup';
 import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider } from '../../lib/scheduling/types';
 
 // Timeline grouping
@@ -166,9 +165,6 @@ export function SchedulingDashboard(): JSX.Element {
           </span>
         </div>
       </div>
-
-      {/* OAuth connection setup */}
-      <ConnectionSetup />
 
       {/* Timeline groups */}
       {interviews.length === 0 ? (
