@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty contact living-context responses now preserve the shared read-model shape, including `contextRecordCount` and `contextRecords`.
 - Contact living-context identity now follows the stable legacy contact link before email lookup, so contact email edits update the same person/workspace graph instead of forking it.
 
+### Added — Match Explanation Visualization Proof
+
+- Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
+
 ### Added — Tree Projection UI Over Semantic Hypergraph
 
 - Added `ContextRecordTree` component (`src/components/Candidate/ContextRecordTree.tsx`) — renders source-backed hyperedge/context records as expandable tree nodes with entities, concepts, and source spans as children. Each source span is clickable and populates the existing source evidence inspector.

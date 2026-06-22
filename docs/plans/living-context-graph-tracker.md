@@ -1,6 +1,6 @@
 # Living Context Graph + Candidate-to-PR Matching Tracker
 
-Last updated: 2026-06-14
+Last updated: 2026-06-22
 
 ## Goal
 
@@ -25,8 +25,8 @@ Every PR, child session, and merge recommendation must map to at least one accep
 | 3 | Learn semantics dynamically: no hard-coded skills/signals/domains/aliases/node types/semantic edges; unknown concepts survive ingestion. | ADR-043 remains the governing invariant. #55 proves `term:temporal-shard-knitting` survives as a previously unseen source-backed concept. #53, if merged, improves CamelCase open-term normalization. | Partial proof | Add regression tests that unknown concepts survive across resume, meeting, and code-review evidence without taxonomy whitelists. |
 | 4 | Understand repositories the same way: files, exact spans, symbols, structural facts, behavioral episodes, assertions, signals, commit/line provenance. | #60 proves repo graph persistence is deterministic, idempotent, and source-span backed, including exact source text and incomplete-provenance ineligibility. | Strong partial proof | Rebuild Neo4j/search projections from the D1 repo graph and verify repository overlays in UI. |
 | 5 | Evidence-based matching: represent candidate evidence, role requirements, and repos in the same model; select a specific PR challenge; no fabricated seniority/default evidence/generic fallback/embedding-only decision. | #54 wires text intake into candidate ingestion and deterministic PR matching for standalone CODE_REVIEW. #60 ensures incomplete repo provenance is not production-ready for matching. | Partial proof | Prove a full golden path selects a real reviewable PR from source-backed repo graph data using accumulated person evidence. |
-| 6 | Explain every match: show candidate evidence aligned to code demand, link both sides to sources, report gaps/stretch areas. | #54 verifies recruiter CONTEXT has match evidence with candidate and challenge source refs. | Partial proof | Add UI/E2E assertions for missing evidence and stretch areas, not just positive alignments. |
-| 7 | Visualize the living graph: navigable person/context graph, accumulated evidence, repository structure, candidate-to-code overlays. | #57 documents the visualization plan and identifies the missing Meetings UI seam. Existing `LivingContextGraph` renders recruiter CONTEXT graph and CODE_REVIEW evidence. | Planned | Implement contact/person living-context endpoints and meeting-level graph cards. |
+| 6 | Explain every match: show candidate evidence aligned to code demand, link both sides to sources, report gaps/stretch areas. | #54 verifies recruiter CONTEXT has match evidence with candidate and challenge source refs. Local branch proof now asserts `LivingContextGraph` renders candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics. | Strong partial proof | Add full E2E assertions for the same match explanation after real intake/matching/review submission. |
+| 7 | Visualize the living graph: navigable person/context graph, accumulated evidence, repository structure, candidate-to-code overlays. | #57 documents the visualization plan. Existing `LivingContextGraph` renders recruiter CONTEXT graph, CODE_REVIEW evidence, context-record trees, contact/person context data, and candidate-to-code match diagnostics. | Partial proof | Implement meeting-level graph cards and repository overlay navigation from selected match evidence. |
 | 8 | Production quality: deterministic/idempotent backfills, rebuildable projections, expert-labelled evaluation, full E2E, staged rollout. | #59 adds evaluation guardrails for synthetic labels, forbidden labels, and missing provenance. #60 adds repo graph idempotency/source-span proof. #58 improves E2E remote env plumbing. | Partial proof | Stabilize main CI, add expert-labelled corpus, run the full standalone CODE_REVIEW E2E, and define staged rollout gates. |
 
 ## Current PR ledger
@@ -106,5 +106,5 @@ Add focused tests for any touched route, UI, or backfill script.
 1. Rebase/audit #53 against latest `main`; decide whether it is still needed or should be superseded by #59/#60.
 2. Stabilize mainline unit failures, especially `probeLibrarian`/planner expectations that currently fail on `main`.
 3. Create one full E2E proof: meeting/resume evidence grows the graph, deterministic matching selects a reviewable PR, candidate submits review, recruiter CONTEXT displays accumulated source-backed evidence, gaps, and stretch areas.
-4. Implement the first #57 UI slice: contact/person context summary from living-context data.
+4. Implement meeting-level graph cards and repository overlay navigation from selected match evidence.
 5. Add the first expert-labelled evaluation corpus and make evaluation a non-blocking report before turning it into a hard CI gate.
