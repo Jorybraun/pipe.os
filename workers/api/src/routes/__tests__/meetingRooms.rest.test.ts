@@ -355,6 +355,35 @@ describe('meeting room recording living-context route', () => {
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
 
+    const endedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    const endedState = sqlite.prepare(
+      `SELECT mr.status AS room_status,
+              m.status AS meeting_status,
+              m.started_at,
+              m.ended_at,
+              m.duration_secs
+         FROM meeting_rooms mr
+         INNER JOIN meetings m ON m.id = mr.meeting_id
+        WHERE m.id = ?`,
+    ).get(created.meeting.id) as {
+      room_status: string;
+      meeting_status: string;
+      started_at: string | null;
+      ended_at: string | null;
+      duration_secs: number | null;
+    };
+    expect(endedState.room_status).toBe('ENDED');
+    expect(endedState.meeting_status).toBe('COMPLETED');
+    expect(endedState.started_at).toEqual(expect.any(String));
+    expect(endedState.ended_at).toEqual(expect.any(String));
+    expect(endedState.duration_secs).not.toBeNull();
+
     expect(sqlite.prepare(
       `SELECT transcript_status, transcript_summary FROM meetings WHERE id = ?`,
     ).get(created.meeting.id)).toEqual({
