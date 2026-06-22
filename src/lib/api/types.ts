@@ -950,10 +950,31 @@ export interface CultureInterviewSession {
   createdAt: string;
 }
 
+export interface ScheduledInterviewSummary {
+  id: string;
+  candidateId: string;
+  pipelineId: string | null;
+  stageId: string | null;
+  interviewType: string;
+  meetingType: string | null;
+  status: string;
+  scheduledAt: string | null;
+  meetingUrl: string | null;
+  schedulingProvider: string | null;
+  schedulingUrl: string | null;
+  matchedRepoId: number | null;
+  githubRepoUrl: string | null;
+  githubPrNumber: number | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CandidateProfileResponse {
   candidate: CandidateProfileRecord;
   stages: ProfileStage[];
   phoneCalls: PhoneCallRecord[];
+  scheduledInterviews: ScheduledInterviewSummary[];
   reviewSessions?: ReviewSessionListItem[];
   ingestion: CandidateEnrichmentRecord | null;
   standaloneReviewMatch: StandaloneReviewMatchRecord | null;

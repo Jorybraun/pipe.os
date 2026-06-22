@@ -513,6 +513,30 @@ function createStandaloneReviewProfileApp() {
               return null;
             },
             async all() {
+              if (normalized.includes('FROM scheduled_interviews')
+                && normalized.includes('ORDER BY created_at DESC')) {
+                return {
+                  results: [{
+                    id: 'interview-1',
+                    candidate_id: 'candidate-1',
+                    pipeline_id: null,
+                    stage_id: null,
+                    interview_type: 'CODE_REVIEW',
+                    meeting_type: null,
+                    status: 'MATCHED',
+                    scheduled_at: null,
+                    meeting_url: null,
+                    scheduling_provider: null,
+                    scheduling_url: null,
+                    matched_repo_id: null,
+                    github_repo_url: null,
+                    github_pr_number: null,
+                    completed_at: '2026-06-22T01:00:00.000Z',
+                    created_at: '2026-06-22T00:00:00.000Z',
+                    updated_at: '2026-06-22T01:00:00.000Z',
+                  }],
+                };
+              }
               return { results: [] };
             },
             async run() {
@@ -583,8 +607,24 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           annotationCount: number;
         } | null;
       };
+      scheduledInterviews: Array<{
+        id: string;
+        pipelineId: string | null;
+        stageId: string | null;
+        interviewType: string;
+        status: string;
+        completedAt: string | null;
+      }>;
     };
 
+    expect(body.scheduledInterviews).toEqual([expect.objectContaining({
+      id: 'interview-1',
+      pipelineId: null,
+      stageId: null,
+      interviewType: 'CODE_REVIEW',
+      status: 'MATCHED',
+      completedAt: '2026-06-22T01:00:00.000Z',
+    })]);
     expect(body.standaloneReviewMatch).toMatchObject({
       matchStatus: 'MATCHED',
       repoName: 'pipe/source-backed-orders',

@@ -1178,19 +1178,54 @@ candidateOps.get('/:candidateId', async (c) => {
   // Fetch scheduled interviews for this candidate
   const interviewsResult = await db
     .prepare(
-      `SELECT id, stage_id, status, scheduled_at, meeting_url, scheduling_provider
+      `SELECT id, candidate_id, pipeline_id, stage_id, interview_type, meeting_type,
+              status, scheduled_at, meeting_url, scheduling_provider, scheduling_url,
+              matched_repo_id, github_repo_url, github_pr_number, completed_at,
+              created_at, updated_at
        FROM scheduled_interviews
-       WHERE candidate_id = ?`
+       WHERE candidate_id = ?
+       ORDER BY created_at DESC`
     )
     .bind(candidateId)
     .all<{
       id: string;
-      stage_id: string;
+      candidate_id: string;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
+      meeting_type: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
       scheduling_provider: string | null;
+      scheduling_url: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      completed_at: string | null;
+      created_at: string;
+      updated_at: string;
     }>();
+
+  const scheduledInterviews = (interviewsResult.results ?? []).map((interview) => ({
+    id: interview.id,
+    candidateId: interview.candidate_id,
+    pipelineId: interview.pipeline_id,
+    stageId: interview.stage_id,
+    interviewType: interview.interview_type ?? 'VIDEO',
+    meetingType: interview.meeting_type,
+    status: interview.status,
+    scheduledAt: interview.scheduled_at,
+    meetingUrl: interview.meeting_url,
+    schedulingProvider: interview.scheduling_provider,
+    schedulingUrl: interview.scheduling_url,
+    matchedRepoId: interview.matched_repo_id,
+    githubRepoUrl: interview.github_repo_url,
+    githubPrNumber: interview.github_pr_number,
+    completedAt: interview.completed_at,
+    createdAt: interview.created_at,
+    updatedAt: interview.updated_at,
+  }));
 
   const interviewsByStage = new Map(
     (interviewsResult.results ?? []).map((iv) => [iv.stage_id, iv])
@@ -1734,6 +1769,7 @@ candidateOps.get('/:candidateId', async (c) => {
     },
     stages: stagesWithChallenges,
     phoneCalls,
+    scheduledInterviews,
     ingestion,
     standaloneReviewMatch,
     profileSections,

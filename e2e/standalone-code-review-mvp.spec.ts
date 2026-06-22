@@ -181,18 +181,18 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
 
     const profile = await profileRes.json() as Record<string, unknown>;
     const interviews = profile.scheduledInterviews as Array<{
-      interview_type: string;
-      pipeline_id: string | null;
-      stage_id: string | null;
+      interviewType: string;
+      pipelineId: string | null;
+      stageId: string | null;
       status: string;
     }> | undefined;
 
     // The candidate profile should expose scheduled interviews
     expect(interviews).toBeDefined();
     expect(interviews).toHaveLength(1);
-    expect(interviews![0].interview_type).toBe('CODE_REVIEW');
-    expect(interviews![0].pipeline_id).toBeNull();
-    expect(interviews![0].stage_id).toBeNull();
+    expect(interviews![0].interviewType).toBe('CODE_REVIEW');
+    expect(interviews![0].pipelineId).toBeNull();
+    expect(interviews![0].stageId).toBeNull();
     expect(interviews![0].status).toBe('INVITED');
   });
 
@@ -579,12 +579,12 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
 
     const profile = await profileRes.json() as Record<string, unknown>;
     const interviews = profile.scheduledInterviews as Array<{
-      interview_type: string;
+      interviewType: string;
       status: string;
     }> | undefined;
 
     expect(interviews).toBeDefined();
-    const codeReview = interviews!.find((i) => i.interview_type === 'CODE_REVIEW');
+    const codeReview = interviews!.find((i) => i.interviewType === 'CODE_REVIEW');
     expect(codeReview).toBeDefined();
     expect(codeReview!.status).toBe('COMPLETED');
   });
