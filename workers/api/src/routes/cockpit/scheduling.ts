@@ -319,6 +319,7 @@ async function ensureScheduledInterviewRoomLinks(
     db,
     meeting.id,
     env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175',
+    env,
   );
   await db.prepare(
     `UPDATE scheduled_interviews

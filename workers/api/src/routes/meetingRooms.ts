@@ -578,6 +578,7 @@ export async function ensureMeetingRoomLinks(
   db: D1Database,
   meetingId: string,
   roomAppUrl: string,
+  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD'>,
 ): Promise<{
   id: string;
   sessionId: string;
@@ -662,10 +663,28 @@ export async function ensureMeetingRoomLinks(
   return {
     id: room.id,
     sessionId: room.session_id,
-    hostUrl,
-    guestUrl,
+    hostUrl: withDevBasicAuth(hostUrl, env),
+    guestUrl: withDevBasicAuth(guestUrl, env),
     expiresAt,
   };
+}
+
+export function withDevBasicAuth(
+  rawUrl: string,
+  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD'>,
+): string {
+  if (env?.ENV !== 'dev' || !env.DEV_BASIC_AUTH_USER || !env.DEV_BASIC_AUTH_PASSWORD) {
+    return rawUrl;
+  }
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return rawUrl;
+    url.username = env.DEV_BASIC_AUTH_USER;
+    url.password = env.DEV_BASIC_AUTH_PASSWORD;
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 async function mintGuestToken(
@@ -904,6 +923,7 @@ meetingsAuth.post('/:id/room', async (c) => {
     db,
     meeting.id,
     c.env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175',
+    c.env,
   );
 
   return c.json({ room });
@@ -942,7 +962,7 @@ meetingsAuth.post('/:id/invite', async (c) => {
   const guestToken = await mintGuestToken(db, room.id, participant?.id ?? null);
 
   const baseUrl = (c.env.VIDEO_ROOM_APP_URL ?? c.env.APP_BASE_URL ?? 'https://pipe.build').replace(/\/$/, '');
-  const joinUrl = `${baseUrl}/room/${guestToken}`;
+  const joinUrl = withDevBasicAuth(`${baseUrl}/room/${guestToken}`, c.env);
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');

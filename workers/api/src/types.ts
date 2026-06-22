@@ -154,6 +154,10 @@ export interface Env {
   VIDEO_ROOM_APP_URL?: string;
   /** Shared secret accepted only from the authenticated dev room proxy. */
   DEV_PROXY_SECRET?: string;
+  /** Dev-only Basic Auth username embedded into generated room links. */
+  DEV_BASIC_AUTH_USER?: string;
+  /** Dev-only Basic Auth password embedded into generated room links. */
+  DEV_BASIC_AUTH_PASSWORD?: string;
   /** Twilio Account SID for phone screening. */
   TWILIO_ACCOUNT_SID?: string;
   /** Twilio Auth Token for webhook signature validation. */

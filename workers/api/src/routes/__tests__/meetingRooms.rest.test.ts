@@ -332,6 +332,50 @@ describe('meeting room recording living-context route', () => {
     ]);
   });
 
+  it('embeds basic auth in returned dev room links without persisting credentials', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    env.ENV = 'dev';
+    env.DEV_BASIC_AUTH_USER = 'pipe-user';
+    env.DEV_BASIC_AUTH_PASSWORD = 'room pass!';
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Dev Room Person',
+        recipientEmail: 'dev-room@example.com',
+        title: 'Dev room interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const body = await roomRes.json() as {
+      room: { hostUrl: string; guestUrl: string };
+    };
+
+    const hostUrl = new URL(body.room.hostUrl);
+    const guestUrl = new URL(body.room.guestUrl);
+    expect(hostUrl.username).toBe('pipe-user');
+    expect(hostUrl.password).toBe('room%20pass!');
+    expect(guestUrl.username).toBe('pipe-user');
+    expect(guestUrl.password).toBe('room%20pass!');
+
+    const stored = sqlite.prepare(
+      'SELECT meeting_url FROM meetings WHERE id = ?',
+    ).get(created.meeting.id) as { meeting_url: string };
+    const storedUrl = new URL(stored.meeting_url);
+    expect(storedUrl.username).toBe('');
+    expect(storedUrl.password).toBe('');
+    expect(storedUrl.pathname).toBe(guestUrl.pathname);
+  });
+
   it('routes a recorded meeting transcript into the same graph after roleless candidate convergence', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
