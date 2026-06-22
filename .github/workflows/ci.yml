@@ -45,5 +45,44 @@ jobs:
         working-directory: workers/api
         run: npx vitest run
 
+      - name: Matching evaluation readiness report
+        continue-on-error: true
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN:       ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          MATCHING_EVALUATION_CORPUS_ID: ${{ vars.MATCHING_EVALUATION_CORPUS_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_D1_DATABASE_ID" ] || [ -z "$MATCHING_EVALUATION_CORPUS_ID" ]; then
+            cat > matching-evaluation-readiness.json <<'JSON'
+          {
+            "ready": false,
+            "status": "not_configured",
+            "failures": [
+              "Set CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, CLOUDFLARE_D1_DATABASE_ID, and MATCHING_EVALUATION_CORPUS_ID to run the production matching evaluation readiness report."
+            ]
+          }
+          JSON
+            cat matching-evaluation-readiness.json
+            exit 0
+          fi
+          npm run matching-eval:readiness -- \
+            --corpus-id "$MATCHING_EVALUATION_CORPUS_ID" \
+            --json matching-evaluation-readiness.json \
+            --report matching-evaluation-readiness.txt
+          cat matching-evaluation-readiness.json
+
+      - name: Upload matching evaluation readiness report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matching-evaluation-readiness-${{ github.run_id }}
+          path: |
+            workers/api/matching-evaluation-readiness.json
+            workers/api/matching-evaluation-readiness.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Build frontend
         run: npm run build

@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The readiness gate fails closed with explicit next actions for missing graph tables, no backfilled packets, fixture-only packets, incomplete packet context projections, and GitHub API connectivity failures.
 - The repo crawler workflow now uploads a non-blocking remote review-graph readiness report after pass 2 so ops can watch packet/context/source/concept coverage before converting it into a hard rollout gate.
 
+### Added — Matching Evaluation Readiness Report
+
+- CI now uploads a non-blocking matching evaluation readiness report when Cloudflare D1 credentials and `MATCHING_EVALUATION_CORPUS_ID` are configured, using the existing production expert-label gate rather than any synthetic corpus fallback.
+
 ### Added — Match Explanation Visualization Proof
 
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
