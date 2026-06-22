@@ -208,16 +208,11 @@ async function embedText(text: string): Promise<number[] | null> {
   return vec;
 }
 
-/** Build a synthetic searchable profile for repos without Pass-3 signals. */
-function buildSyntheticProfile(repo: QualifiedRepo): string {
-  const parts = [
-    `Repository: ${repo.full_name}.`,
-    `Primary language: ${repo.primary_language}.`,
-    repo.seniority_band ? `Complexity level: ${repo.seniority_band}.` : '',
-    repo.detected_domain ? `Domain: ${repo.detected_domain}.` : '',
-    repo.description ? `Description: ${repo.description}` : '',
-  ];
-  return parts.filter(Boolean).join(' ');
+export function sourceBackedRepoProfile(
+  signal: { repo_searchable_profile?: string | null } | null | undefined,
+): string | null {
+  const profile = signal?.repo_searchable_profile?.trim();
+  return profile ? profile : null;
 }
 
 /** Parse challenge surfaces JSON into flat key/value pairs. */
@@ -316,6 +311,7 @@ async function main(argv = process.argv.slice(2)) {
   let constructsWritten = 0;
   let embeddingsGenerated = 0;
   let embeddingsReused = 0;
+  let skippedNoProfile = 0;
   let errors = 0;
 
   // Process in batches
@@ -326,6 +322,11 @@ async function main(argv = process.argv.slice(2)) {
     if (options.dryRun) {
       for (const repo of batch) {
         const signal = signalByRepo.get(repo.id);
+        const searchableProfile = sourceBackedRepoProfile(signal);
+        if (!searchableProfile) {
+          skippedNoProfile++;
+          continue;
+        }
         const repoConstructs = constructsByRepo.get(repo.id) ?? [];
         const repoPRs = prsByRepo.get(repo.id) ?? [];
 
@@ -355,14 +356,17 @@ async function main(argv = process.argv.slice(2)) {
           const repoConstructs = constructsByRepo.get(repo.id) ?? [];
           const repoPRs = prsByRepo.get(repo.id) ?? [];
 
-          // Determine searchable profile and embedding
-          let searchableProfile: string;
+          // Determine searchable profile and embedding. Do not invent a profile:
+          // D1 must already contain source-backed repo_searchable_profile text.
+          const searchableProfile = sourceBackedRepoProfile(signal);
           let embedding: number[] | null = null;
 
-          if (signal?.repo_searchable_profile) {
-            searchableProfile = signal.repo_searchable_profile;
-          } else {
-            searchableProfile = buildSyntheticProfile(repo);
+          if (!searchableProfile) {
+            skippedNoProfile++;
+            console.warn(
+              `  ⚠ Skipping repo ${repo.id} (${repo.full_name}) — no source-backed repo_searchable_profile`,
+            );
+            continue;
           }
 
           // Try to reuse existing embedding
@@ -545,6 +549,7 @@ async function main(argv = process.argv.slice(2)) {
   console.log(`  PRs ${options.dryRun ? 'projected' : 'written'}:          ${prsWritten}`);
   console.log(`  Embeddings reused:    ${embeddingsReused}`);
   console.log(`  Embeddings generated: ${embeddingsGenerated}`);
+  console.log(`  Skipped no profile:   ${skippedNoProfile}`);
   console.log(`  Errors:               ${errors}`);
   console.log('═══════════════════════════════════════════════════════');
 }

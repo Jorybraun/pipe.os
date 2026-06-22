@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { discoverLocalDatabase, parseArgs } from './ingestReposToNeo4j';
+import { discoverLocalDatabase, parseArgs, sourceBackedRepoProfile } from './ingestReposToNeo4j';
 
 describe('ingestReposToNeo4j CLI helpers', () => {
   it('parses dry-run, batch, limit, and database path options', () => {
@@ -47,5 +47,14 @@ describe('ingestReposToNeo4j CLI helpers', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('requires an existing source-backed repo profile instead of synthesizing metadata', () => {
+    expect(sourceBackedRepoProfile({
+      repo_searchable_profile: '  Source-backed PR and repo evidence.  ',
+    })).toBe('Source-backed PR and repo evidence.');
+
+    expect(sourceBackedRepoProfile({ repo_searchable_profile: '   ' })).toBeNull();
+    expect(sourceBackedRepoProfile(null)).toBeNull();
   });
 });
