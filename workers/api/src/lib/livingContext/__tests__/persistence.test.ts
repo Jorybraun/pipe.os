@@ -156,6 +156,34 @@ describe('LivingContextStore', () => {
     });
   });
 
+  it('reuses open concepts by canonical key across ingestion sources', async () => {
+    const candidateConcept = await store.upsertConcept({
+      ingestionKey: 'open-term:term:kafka',
+      canonicalKey: 'term:kafka',
+      namespace: 'term',
+      label: 'Kafka',
+      metadata: { source: 'candidate_context' },
+    });
+    const repoConcept = await store.upsertConcept({
+      ingestionKey: 'repo-open-concept:term:kafka',
+      canonicalKey: 'term:kafka',
+      namespace: 'term',
+      label: 'kafka',
+      metadata: { source: 'repo_challenge_packet' },
+    });
+
+    expect(repoConcept.id).toBe(candidateConcept.id);
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM concepts').get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      'SELECT ingestion_key, canonical_key, namespace, label FROM concepts WHERE id = ?',
+    ).get(candidateConcept.id)).toEqual({
+      ingestion_key: 'open-term:term:kafka',
+      canonical_key: 'term:kafka',
+      namespace: 'term',
+      label: 'kafka',
+    });
+  });
+
   it('stores exact immutable provenance and rejects a conflicting replay', async () => {
     const person = await store.upsertPerson({ ingestionKey: 'person:1' });
     const workspacePerson = await store.upsertWorkspacePerson({

@@ -30,7 +30,8 @@ import type {
 } from '../livingContext/types';
 
 interface CandidateEvidenceRow {
-  assertion_id: string;
+  context_record_id: string | null;
+  assertion_id: string | null;
   source_span_id: string;
   episode_id: string | null;
   narrative: string;
@@ -151,9 +152,16 @@ function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   }
 }
 
+function candidateEvidenceId(row: CandidateEvidenceRow): string {
+  return row.assertion_id ?? row.context_record_id ?? row.source_span_id;
+}
+
 function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
   const start = row.byte_start ?? row.char_start ?? 0;
   const end = row.byte_end ?? row.char_end ?? Math.max(1, row.exact_text.length);
+  const locator = row.context_record_id
+    ? `context_record:${row.context_record_id}`
+    : `assertion:${row.assertion_id}`;
   return {
     artifactId: row.artifact_version_id,
     artifactVersion: row.artifact_version_id,
@@ -163,7 +171,7 @@ function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
     sourceRefType: 'source_span',
     sourceRefId: row.source_span_id,
     sourceSpanId: row.source_span_id,
-    locator: `assertion:${row.assertion_id}`,
+    locator,
     exactText: row.exact_text,
   };
 }
@@ -173,7 +181,7 @@ async function loadCandidateSignals(
   candidateId: string,
 ): Promise<CandidateSignal[]> {
   const result = await db.prepare(
-    `SELECT sa.id AS assertion_id, ss.id AS source_span_id,
+    `SELECT NULL AS context_record_id, sa.id AS assertion_id, ss.id AS source_span_id,
             sa.episode_id, sa.narrative, sa.confidence,
             sa.qualifiers_json,
             (SELECT evidence_level
@@ -206,13 +214,55 @@ async function loadCandidateSignals(
       ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC, sa.id, c.canonical_key`,
   ).bind(candidateId).all<CandidateEvidenceRow>();
 
+  const contextResult = await db.prepare(
+    `SELECT cr.id AS context_record_id, cr.assertion_id, ss.id AS source_span_id,
+            cr.episode_id, cr.narrative, cr.confidence,
+            cr.qualifiers_json,
+            (SELECT evidence_level
+               FROM signal_evidence selected_evidence
+              WHERE cr.assertion_id IS NOT NULL
+                AND selected_evidence.assertion_id = cr.assertion_id
+                AND selected_evidence.concept_id = crc.concept_id
+              ORDER BY selected_evidence.strength DESC, selected_evidence.id
+              LIMIT 1) AS evidence_level,
+            (SELECT MAX(strength)
+               FROM signal_evidence strongest_evidence
+              WHERE cr.assertion_id IS NOT NULL
+                AND strongest_evidence.assertion_id = cr.assertion_id
+                AND strongest_evidence.concept_id = crc.concept_id) AS strength,
+            ss.artifact_version_id, av.content_hash,
+            ss.byte_start, ss.byte_end, ss.char_start, ss.char_end, ss.exact_text,
+            c.canonical_key AS concept_key, crc.weight AS concept_weight
+       FROM applications app
+       JOIN context_records cr ON cr.workspace_person_id = app.workspace_person_id
+       JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+       JOIN source_spans ss ON ss.id = crsr.source_span_id
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+       JOIN concepts c ON c.id = crc.concept_id
+      WHERE app.legacy_candidate_id = ?1
+      ORDER BY COALESCE(cr.observed_at, cr.created_at) DESC, cr.id, c.canonical_key`,
+  ).bind(candidateId).all<CandidateEvidenceRow>();
+
   const signals: CandidateSignal[] = [];
-  for (const row of result.results ?? []) {
+  const seen = new Set<string>();
+  for (const row of [...(result.results ?? []), ...(contextResult.results ?? [])]) {
     const concepts = conceptsFromRow(row);
+    const baseId = candidateEvidenceId(row);
     const purpose: QueryPurpose = 'validation';
+    const id = row.concept_key ? `${baseId}:${row.concept_key}` : baseId;
+    const sourceRef = candidateSourceRef(row);
+    const dedupeKey = [
+      id,
+      sourceRef.sourceSpanId ?? sourceRef.sourceRefId ?? sourceRef.locator ?? '',
+      row.evidence_level ?? '',
+      row.strength ?? '',
+    ].join('\u0000');
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const signal: CandidateSignal = {
-      id: row.concept_key ? `${row.assertion_id}:${row.concept_key}` : row.assertion_id,
-      episodeId: row.episode_id ?? row.assertion_id,
+      id,
+      episodeId: row.episode_id ?? baseId,
       narrative: row.narrative,
       purpose,
       evidenceLevel: row.evidence_level,
@@ -221,7 +271,7 @@ async function loadCandidateSignals(
         : null,
       confidence: row.confidence,
       concepts,
-      sourceRefs: [candidateSourceRef(row)],
+      sourceRefs: [sourceRef],
     };
     signals.push(signal);
   }

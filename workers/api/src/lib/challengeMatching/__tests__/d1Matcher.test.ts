@@ -540,6 +540,48 @@ function seedCandidateEvidence(sqlite: NodeSqliteDatabase): void {
   `);
 }
 
+function moveCandidateMeaningToContextRecords(sqlite: NodeSqliteDatabase): void {
+  const now = OBSERVED_AT;
+  sqlite.exec(`
+    DELETE FROM assertion_source_spans;
+    DELETE FROM assertion_concepts;
+    INSERT INTO context_records (
+      id, ingestion_key, scope_type, scope_id, workspace_person_id,
+      interaction_id, application_id, episode_id, assertion_id, record_type,
+      predicate, narrative, qualifiers_json, confidence, polarity,
+      extraction_version, observed_at, created_at, updated_at
+    ) VALUES
+      (
+        'context-record-1', 'context-record-1', 'workspace_person', 'workspace-person-1', 'workspace-person-1',
+        'interaction-1', 'application-1', 'episode-1', 'assertion-1', 'assessment_context_assertion',
+        'implemented', 'Candidate implemented Kafka idempotency.', '{}', 1, 1,
+        'test', '${now}', '${now}', '${now}'
+      ),
+      (
+        'context-record-2', 'context-record-2', 'workspace_person', 'workspace-person-1', 'workspace-person-1',
+        'interaction-1', 'application-1', 'episode-2', 'assertion-2', 'assessment_context_assertion',
+        'validated', 'Candidate validated retry handling.', '{}', 1, 1,
+        'test', '${now}', '${now}', '${now}'
+      );
+    INSERT INTO context_record_source_refs (
+      context_record_id, source_ref_type, source_ref_id, source_span_id,
+      evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+    ) VALUES
+      (
+        'context-record-1', 'source_span', 'candidate-span-1', 'candidate-span-1',
+        'source', '{}', 'implemented kafka idempotency', 'sha256:candidate', '{}', '${now}'
+      ),
+      (
+        'context-record-2', 'source_span', 'candidate-span-2', 'candidate-span-2',
+        'source', '{}', 'validated retry handling', 'sha256:candidate', '{}', '${now}'
+      );
+    INSERT INTO context_record_concepts (context_record_id, concept_id, relationship, weight, created_at)
+    VALUES
+      ('context-record-1', 'concept-kafka', 'about', 1, '${now}'),
+      ('context-record-2', 'concept-kafka', 'about', 1, '${now}');
+  `);
+}
+
 function seedIneligiblePacket(sqlite: NodeSqliteDatabase): void {
   const packet: RepoChallengePacket = {
     schemaVersion: '1.0.0',
@@ -987,6 +1029,52 @@ describe('matchCandidateToReviewChallenge', () => {
         stretchCount: 0,
       }),
     ]);
+  });
+
+  it('loads source-backed candidate semantics from context records when assertion projections are absent', async () => {
+    seedCandidateEvidence(sqlite);
+    moveCandidateMeaningToContextRecords(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assertion_source_spans').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assertion_concepts').get()).toEqual({ count: 0 });
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(3);
+    expect(result.prNumber).toBe(data.packet.pullRequest.number);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.evidence).toHaveLength(2);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((ref) => ref.exactText),
+    ).sort()).toEqual([
+      'implemented kafka idempotency',
+      'validated retry handling',
+    ]);
+
+    const row = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as { query_json: string };
+    const query = JSON.parse(row.query_json) as {
+      validationAtoms: Array<{
+        id: string;
+        concepts: string[];
+        sourceRefs: Array<{ locator?: string; sourceRefType?: string; exactText?: string }>;
+      }>;
+    };
+    expect(query.validationAtoms.map((atom) => atom.id).sort()).toEqual([
+      'assertion-1:term:kafka',
+      'assertion-2:term:kafka',
+    ]);
+    expect(query.validationAtoms.every((atom) =>
+      atom.concepts.includes('term:kafka')
+      && atom.sourceRefs.some((ref) =>
+        ref.locator?.startsWith('context_record:')
+        && ref.sourceRefType === 'source_span'
+        && ref.exactText,
+      ),
+    )).toBe(true);
   });
 
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {

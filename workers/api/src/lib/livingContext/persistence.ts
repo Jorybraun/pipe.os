@@ -951,6 +951,30 @@ export class LivingContextStore {
   async upsertConcept(input: ConceptInput): Promise<PersistedEntity> {
     const id = await this.id('concept', input.ingestionKey);
     const now = this.clock();
+    const existing = await this.db.prepare(
+      'SELECT id, ingestion_key FROM concepts WHERE canonical_key = ?1',
+    ).bind(input.canonicalKey).first<{ id: string; ingestion_key: string }>();
+    if (existing) {
+      await this.db.prepare(
+        `UPDATE concepts
+            SET namespace = ?2,
+                label = ?3,
+                description = ?4,
+                aliases_json = ?5,
+                metadata_json = ?6,
+                updated_at = ?7
+          WHERE id = ?1`,
+      ).bind(
+        existing.id,
+        input.namespace,
+        input.label,
+        input.description ?? null,
+        stableJson(input.aliases ?? []),
+        stableJson(normalizeJson(input.metadata, {})),
+        now,
+      ).run();
+      return { id: existing.id, ingestionKey: existing.ingestion_key };
+    }
     await this.db.prepare(
       `INSERT INTO concepts (
          id, ingestion_key, canonical_key, namespace, label, description,
