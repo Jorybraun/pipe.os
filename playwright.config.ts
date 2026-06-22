@@ -77,7 +77,7 @@ export default defineConfig({
             timeout: 120000,
           },
           {
-            command: `npm run dev -- --port ${appPort}`,
+            command: `VITE_API_URL=${apiBase} VITE_API_BASE_URL=${apiBase} npm run dev -- --port ${appPort}`,
             url: appBase,
             reuseExistingServer: true,
             timeout: 60000,

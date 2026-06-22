@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — E2E Test Reliability
 
 - Playwright local `webServer` commands now derive the Worker and Vite ports from `API_BASE` / `APP_BASE`, so focused E2E runs can use alternate ports when stale local servers occupy `8787` or `5173`.
+- Standalone CODE_REVIEW §MVP.4 now requires thin-evidence candidates to receive `WAITING_FOR_MATCH` exactly, with no repo URL, PR number, or cached diff, proving fail-closed matching instead of accepting ambiguous fallback states.
+- Standalone CODE_REVIEW §MVP.7 now submits through the real `{ order, submission }` candidate RPC contract and verifies completion in the same deterministic flow instead of relying on parallel test ordering.
+- Alternate-port Playwright runs now inject `VITE_API_URL` and `VITE_API_BASE_URL` into the Vite dev server so browser UI assertions hit the same Worker/database as API setup requests.
+- Worker CORS now accepts local `localhost` / `127.0.0.1` dev origins on arbitrary ports, allowing focused Playwright runs to avoid stale default-port servers without browser fetch failures.
+- `LivingContextGraph` now exposes a stable `data-testid="living-context-graph"` root so E2E coverage can assert the real graph surface instead of fragile text selectors.
 - Centralized `API_BASE` / `APP_BASE` into `e2e/env.ts` (reads `process.env` with localhost fallbacks) so specs work against both local dev and deployed Cloudflare test env.
 - `playwright.config.ts` now skips local `webServer` startup when `IS_REMOTE` (running against deployed test env).
 - `.github/workflows/e2e-test.yml` now passes `E2E_EMAIL`, `E2E_PASSWORD`, and `CLERK_PUBLISHABLE_KEY` to the Playwright step.

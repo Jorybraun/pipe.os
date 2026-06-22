@@ -643,7 +643,7 @@ export function LivingContextGraph({
   ] as const;
 
   return (
-    <div className="living-context">
+    <div className="living-context" data-testid="living-context-graph">
       <div className="living-context__toolbar">
         <div className="living-context__search">
           <Search size={13} />

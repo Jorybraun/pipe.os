@@ -340,7 +340,8 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
     const session = await resolveToken(request, candidate.inviteToken);
     sessionToken = session.sessionToken;
 
-    // Submit minimal resume so candidate passes intake but has thin evidence
+    // Submit minimal resume so candidate passes intake but has thin evidence.
+    // This must not be enough to select a reviewable PR.
     const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
@@ -350,9 +351,10 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
         },
       },
     });
-    // Intake submission may succeed or return a specific status —
-    // either way we proceed to check the matching behavior
-    expect([200, 201, 400, 404].includes(intakeRes.status())).toBe(true);
+    expect(intakeRes.status()).toBe(200);
+    const intakeBody = await intakeRes.json() as { success?: boolean; message?: string };
+    expect(intakeBody.success).toBe(true);
+    expect(intakeBody.message).toBe('INTAKE submission received');
   });
 
   test('candidate with thin evidence sees WAITING_FOR_MATCH, not a generic PR', async ({ request }) => {
@@ -364,19 +366,11 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
 
     const challenge = (await res.json()) as ChallengeResponse;
 
-    // Must be WAITING_FOR_MATCH or INTAKE — never a fake CODE_REVIEW
-    if (challenge.type === 'CODE_REVIEW') {
-      // If matching somehow succeeded, verify it's a real PR not a fallback
-      expect(challenge.githubPrNumber).toBeTruthy();
-      expect(challenge.githubRepoUrl).toBeTruthy();
-      // Ensure it's not a generic "smallest PR" placeholder
-      expect(challenge.title).not.toContain('generic');
-      expect(challenge.title).not.toContain('placeholder');
-      expect(challenge.title).not.toContain('sample');
-    } else {
-      // Expected: WAITING_FOR_MATCH or INTAKE (still waiting for evidence)
-      expect(['WAITING_FOR_MATCH', 'INTAKE']).toContain(challenge.type);
-    }
+    expect(challenge.type).toBe('WAITING_FOR_MATCH');
+    expect(challenge.githubPrNumber).toBeUndefined();
+    expect(challenge.githubRepoUrl).toBeUndefined();
+    expect(challenge.cachedDiffJson).toBeUndefined();
+    expect(challenge.title).toBe('Building your personalized challenge');
   });
 
   test('WAITING_FOR_MATCH challenge never exposes ground truth', async ({ request }) => {
@@ -535,15 +529,14 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     sessionToken = session.sessionToken;
   });
 
-  test('submit-challenge-response accepts standalone CODE_REVIEW submission', async ({ request }) => {
+  test('submit-challenge-response accepts standalone CODE_REVIEW submission and completes the interview', async ({ request }) => {
     // Submit a code review response for the standalone interview.
-    // This will FAIL until standalone submission is fully wired.
     const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
-        challengeId: 'standalone-review',
-        type: 'CODE_REVIEW',
-        response: {
+        order: 0,
+        submission: {
+          type: 'CODE_REVIEW',
           verdict: 'REQUEST_CHANGES',
           summary: 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.',
           comments: [
@@ -564,14 +557,11 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     // Expect success — the submission should persist
     expect([200, 201]).toContain(submitRes.status());
 
-    if (submitRes.status() === 200 || submitRes.status() === 201) {
-      const body = await submitRes.json() as Record<string, unknown>;
-      // Submission should not leak scoring info
-      expect(JSON.stringify(body)).not.toContain('groundTruth');
-    }
-  });
+    const body = await submitRes.json() as Record<string, unknown>;
+    // Submission should not leak scoring info
+    expect(JSON.stringify(body)).not.toContain('groundTruth');
+    expect(body.success).toBe(true);
 
-  test('after submission, standalone scheduled_interview status becomes COMPLETED', async ({ request }) => {
     const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -637,9 +627,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await contextTab.click();
 
     // Living context graph component should render
-    await expect(
-      page.locator('[data-testid="living-context-graph"], text=/context|graph|evidence/i').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="living-context-graph"]')).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });
@@ -662,9 +650,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await context.close();
   });
 
-  test('recruiter can see matched PR information for completed candidate', async ({ request }) => {
-    // After a candidate completes the full flow, the recruiter should
-    // be able to see which PR was selected and why via standaloneReviewMatch.
+  test('recruiter API exposes pending standalone match without fabricated PR data', async ({ request }) => {
     const res = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -672,7 +658,6 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     const profile = await res.json() as Record<string, unknown>;
 
-    // standaloneReviewMatch is the actual API field for standalone code review context
     const standaloneReviewMatch = profile.standaloneReviewMatch as {
       interviewId?: string;
       interviewStatus?: string;
@@ -693,21 +678,16 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     expect(standaloneReviewMatch).toBeDefined();
     expect(standaloneReviewMatch).not.toBeNull();
-    if (standaloneReviewMatch?.matchStatus === 'MATCHED') {
-      expect(standaloneReviewMatch.repoUrl).toBeTruthy();
-      expect(standaloneReviewMatch.prNumber).toBeGreaterThan(0);
-      // Evidence alignments must include source refs from both sides
-      expect(standaloneReviewMatch.evidence).toBeDefined();
-      expect(standaloneReviewMatch.evidence!.length).toBeGreaterThan(0);
-      const firstEvidence = standaloneReviewMatch.evidence![0];
-      expect(firstEvidence.candidateSourceRefs).toBeDefined();
-      expect(firstEvidence.challengeSourceRefs).toBeDefined();
-    }
+    expect(standaloneReviewMatch!.matchStatus).toBe('PENDING_INTAKE');
+    expect(standaloneReviewMatch!.interviewStatus).toBe('INVITED');
+    expect(standaloneReviewMatch!.repoUrl).toBeNull();
+    expect(standaloneReviewMatch!.prNumber).toBeNull();
+    expect(standaloneReviewMatch!.score).toBeNull();
+    expect(standaloneReviewMatch!.submitted).toBe(false);
+    expect(standaloneReviewMatch!.submission).toBeNull();
   });
 
-  test('match explanation includes source evidence, not naked scores', async ({ request }) => {
-    // Recruiter must be able to answer: which PR, why, what evidence.
-    // Naked aggregate scores without evidence trail are forbidden.
+  test('pending match explanation reports missing candidate evidence without naked scores', async ({ request }) => {
     const res = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -723,22 +703,24 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
       }>;
       gaps?: string[];
       summary?: string;
+      score?: number | null;
+      diagnostics?: {
+        recalledPacketIds?: unknown[];
+        excludedPackets?: unknown[];
+        evaluatedChallenges?: unknown[];
+      };
     } | null;
 
     expect(standaloneReviewMatch).toBeDefined();
     expect(standaloneReviewMatch).not.toBeNull();
-    if (standaloneReviewMatch) {
-      // Source-backed evidence trail is mandatory
-      expect(standaloneReviewMatch.evidence).toBeDefined();
-      expect(standaloneReviewMatch.gaps).toBeDefined();
-      expect(standaloneReviewMatch.summary).toBeTruthy();
-      // Each evidence entry carries candidate + challenge source refs
-      if (standaloneReviewMatch.evidence && standaloneReviewMatch.evidence.length > 0) {
-        for (const entry of standaloneReviewMatch.evidence) {
-          expect(entry.candidateSourceRefs).toBeDefined();
-          expect(entry.challengeSourceRefs).toBeDefined();
-        }
-      }
-    }
+    expect(standaloneReviewMatch!.summary).toBe(
+      'Waiting for candidate resume/profile evidence before matching to a PR.',
+    );
+    expect(standaloneReviewMatch!.evidence).toEqual([]);
+    expect(standaloneReviewMatch!.gaps).toContain('Candidate has not submitted source evidence yet.');
+    expect(standaloneReviewMatch!.score).toBeNull();
+    expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(standaloneReviewMatch!.diagnostics?.excludedPackets).toEqual([]);
+    expect(standaloneReviewMatch!.diagnostics?.evaluatedChallenges).toEqual([]);
   });
 });

@@ -77,6 +77,8 @@ app.use(
         'http://localhost:5175',
         'http://localhost:4173',
         'http://localhost:8080',
+        /^http:\/\/localhost:\d+$/,
+        /^http:\/\/127\.0\.0\.1:\d+$/,
       ];
 
       for (const pattern of allowed) {
