@@ -69,8 +69,12 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
+        'https://dev.hire-pipe.com',
+        'https://room-dev.hire-pipe.com',
+        'https://pipe-video-room-dev.pages.dev',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,
+        /https:\/\/.*\.pipe-video-room-dev\.pages\.dev$/,
         // Marketing site (deployed via Devin / static host)
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
@@ -95,6 +99,42 @@ app.use(
     maxAge: 86400,
   }),
 );
+
+// Dev deployments are reachable only through the authenticated room proxy.
+// The proxy injects X-Pipe-Dev-Proxy-Secret after HTTP Basic Auth succeeds.
+app.use('*', async (c, next) => {
+  if (c.env.ENV !== 'dev') return next();
+  if (c.req.method === 'OPTIONS') return next();
+
+  const { pathname } = new URL(c.req.url);
+  if (pathname === '/health' || pathname === '/api/health') return next();
+
+  if (!c.env.DEV_PROXY_SECRET) {
+    return c.json(
+      {
+        error: {
+          code: 'DEV_PROXY_NOT_CONFIGURED',
+          message: 'Dev proxy secret is not configured.',
+        },
+      },
+      503,
+    );
+  }
+
+  if (c.req.header('X-Pipe-Dev-Proxy-Secret') !== c.env.DEV_PROXY_SECRET) {
+    return c.json(
+      {
+        error: {
+          code: 'DEV_PROXY_REQUIRED',
+          message: 'Use the authenticated dev app URL.',
+        },
+      },
+      401,
+    );
+  }
+
+  return next();
+});
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.route('/api/v1/pipelines', pipelines);

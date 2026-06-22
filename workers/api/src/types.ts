@@ -133,6 +133,8 @@ export interface Env {
   APP_BASE_URL?: string;
   /** Base URL for the standalone host/guest video room app. */
   VIDEO_ROOM_APP_URL?: string;
+  /** Shared secret accepted only from the authenticated dev room proxy. */
+  DEV_PROXY_SECRET?: string;
   /** Twilio Account SID for phone screening. */
   TWILIO_ACCOUNT_SID?: string;
   /** Twilio Auth Token for webhook signature validation. */
