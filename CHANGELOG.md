@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match Narrative Formatter (Criterion #6, Session 2026-06-22T13:01Z)
+
+- `formatMatchNarrative()` in `matchNarrative.ts` — produces recruiter-facing human-readable narratives from structured `MatchExplanation` data.
+- Sections: Direct Evidence Alignments, Stretch Alignments, Evidence Gaps (role-required vs other), Stretch Areas with source quotes.
+- Classifies alignment strength (strong ≥80%, moderate ≥50%, partial <50%) with source locators.
+- `MatchNarrative` and `NarrativeSection` types exported from `challengeMatching/index.ts`.
+- 12 new tests in `matchNarrative.test.ts` proving narrative structure, source linking, gap categorization, and edge cases.
+
 ### Changed — PR Consolidation (Session 2026-06-22T12:01Z)
 
 - Consolidated 32 open draft PRs (#53, #62–#93) into single merge-ready PR #94.

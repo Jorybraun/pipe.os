@@ -39,3 +39,5 @@ export type {
 export * from './d1Matcher';
 export * from './roleGuardrails';
 export * from './evaluation';
+export { formatMatchNarrative } from './matchNarrative';
+export type { MatchNarrative, NarrativeSection } from './matchNarrative';
