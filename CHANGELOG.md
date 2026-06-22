@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — D1-Backed Rollout Gate Middleware (Criterion #8)
+
+- Updated `requireGate` middleware to query D1 for gate state at request time (with 60 s in-memory cache), falling back to hardcoded defaults when D1 is unavailable. Ops can now toggle feature gates via the admin API without redeploying.
+- Added 6 new middleware tests proving D1-backed gate resolution, cache behavior, disable/re-enable lifecycle, D1 failure fallback, and DB-absent fallback.
+
 ### Added — Source Content Search UI Integration (Criterion #2)
 
 - Added `SourceContentSearchResult` and `SourceContentSearchResponse` types to frontend API types — mirrors the backend `searchSourceContent` return shape.

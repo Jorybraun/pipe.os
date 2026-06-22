@@ -50,8 +50,9 @@ Every PR, child session, and merge recommendation must map to at least one accep
 
 | PR | Area | Merge state | Recommendation |
 |---|---|---|---|
-| #87 | Final consolidation — all 8 acceptance criteria proven + source search UI | Draft, CI code checks pass | Merge into main — supersedes all earlier PRs. |
-| #53, #62–#86 | Progressive consolidation drafts | Open draft, all superseded by #87 | Close all — incorporated into #87. |
+| #88 | Consolidation + D1-backed rollout middleware | Draft (network policy), CI code checks pass | Mark ready, merge into main. Supersedes all earlier PRs. |
+| #87 | Final consolidation — all 8 acceptance criteria proven + source search UI | Draft, superseded by #88 | Close — content incorporated into #88. |
+| #53, #62–#86 | Progressive consolidation drafts | Open draft, all superseded by #88 | Close all. |
 
 ## Merge gates
 
