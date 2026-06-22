@@ -99,6 +99,11 @@ async function authHeader(candidateId = 'cand_1', pipelineId = 'pipe_1'): Promis
   return `Bearer ${token}`;
 }
 
+async function authHeaderWithoutPipeline(candidateId = 'cand_1'): Promise<string> {
+  const token = await signJwt({ sub: candidateId, pid: null }, 'test-secret');
+  return `Bearer ${token}`;
+}
+
 function buildEnv(overrides: Partial<Env & { DB: FakeD1 }> = {}): Env & { DB: FakeD1 } {
   return {
     SESSION_TOKEN_SECRET: 'test-secret',
@@ -237,6 +242,66 @@ beforeEach(() => {
 // ─── POST /rpc/get-challenge ─────────────────────────────────────────────────
 
 describe('POST /rpc/get-challenge', () => {
+  it('does not live-fetch standalone review diffs when source spans cannot rebuild the packet diff', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('fetch should not be called'));
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
+        {
+          match: 'FROM scheduled_interviews',
+          value: {
+            id: 'standalone_1',
+            status: 'MATCHED',
+            matched_repo_id: 10,
+            github_repo_url: 'https://github.com/test/source-backed-repo',
+            github_pr_number: 42,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'FROM review_challenge_packets',
+          value: {
+            packet_json: JSON.stringify({
+              pullRequest: {
+                title: 'Source-backed retry PR',
+                author: 'dev',
+                baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                mergedAt: '2026-06-20T12:00:00.000Z',
+                body: 'Source-backed packet body',
+              },
+              demands: [{ sourceSpanIds: ['missing-span'] }],
+            }),
+          },
+        },
+      ],
+      allResponders: [
+        { match: 'FROM repo_source_spans', value: [] },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string };
+    expect(body.type).toBe('WAITING_FOR_MATCH');
+    expect(body.id).toBe('waiting-for-match');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it('serves source-backed packet diff for assignment-backed review even when challenge cache is stale', async () => {
     const packet = {
       pullRequest: {

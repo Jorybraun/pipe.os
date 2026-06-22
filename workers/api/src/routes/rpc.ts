@@ -1037,30 +1037,15 @@ rpcAuth.post('/get-challenge', async (c) => {
 
     let cachedDiffJson: unknown = null;
     let githubPrTitle: string | null = null;
+    let githubPrDescription: string | null = null;
     const sourceBackedDiff = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
       githubPrTitle = sourceBackedDiff.metadata.title;
-    } else {
-      try {
-        const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-        const result = await fetchGitHubDiff(match.repoUrl, match.prNumber, token);
-        if (result) {
-          cachedDiffJson = result.diff;
-          const meta = result.metadata as { title?: string } | undefined;
-          githubPrTitle = meta?.title ?? null;
-        }
-      } catch (err) {
-        console.error('[standaloneReview] diff fetch failed:', err instanceof Error ? err.message : String(err));
-      }
+      githubPrDescription = sourceBackedDiff.metadata.description ?? null;
     }
-    if (!cachedDiffJson) {
-      const result = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
-      if (result) {
-        cachedDiffJson = result.diff;
-        githubPrTitle = result.metadata.title;
-      }
-    }
+
+    if (!cachedDiffJson) return c.json(STANDALONE_WAITING_CHALLENGE);
 
     return c.json({
       id: `standalone-review-${standaloneReview.id}`,
@@ -1072,7 +1057,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       githubPrTitle,
       githubPrNumber: match.prNumber,
       githubRepoUrl: match.repoUrl,
-      githubPrDescription: null,
+      githubPrDescription,
       devContainerRepoUrl: null,
     });
   }

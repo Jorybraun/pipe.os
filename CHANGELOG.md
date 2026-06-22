@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Assignment-backed CODE_REVIEW scoring now reconstructs scorer diff context from context-ready review packet source spans and drops generic challenge planted-bug ground truth, preventing stale challenge fixtures from becoming living-context score evidence.
 - Recruiter transcript analysis now hides generic challenge ground truth/server config for assignment-backed CODE_REVIEW sessions and reports source-backed packet readiness plus PR metadata instead of stale challenge fixtures.
 - Assignment-backed CODE_REVIEW PR descriptions now come only from source-backed packet metadata across challenge serving, prompts, scoring, and transcript analysis, avoiding fallback to generic challenge text.
+- Standalone CODE_REVIEW challenge serving now fails closed when source-backed packet spans cannot reconstruct the diff, instead of live-fetching GitHub data outside the graph provenance gate.
 - Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
 
 ### Fixed — Repo Graph Projection
