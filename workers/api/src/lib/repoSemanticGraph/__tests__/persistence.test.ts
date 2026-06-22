@@ -325,6 +325,25 @@ describe('persistReviewChallengeGraph semantic persistence', () => {
          FROM context_record_entities
         WHERE entity_type = 'challenge_demand'`,
     ).get()).toEqual({ count: data.packet.demands.length });
+    const contextConceptRows = sqlite.prepare(
+      `SELECT c.canonical_key, c.namespace, c.label, crc.relationship, crc.weight
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        ORDER BY c.canonical_key`,
+    ).all() as Array<{
+      canonical_key: string;
+      namespace: string;
+      label: string;
+      relationship: string;
+      weight: number;
+    }>;
+    expect(contextConceptRows).toEqual(expect.arrayContaining([{
+      canonical_key: 'term:quantum-ledger',
+      namespace: 'term',
+      label: 'quantum ledger',
+      relationship: 'concept',
+      weight: 1,
+    }]));
   });
 
   it('replaces stale derived semantics when the same snapshot is rebuilt', async () => {

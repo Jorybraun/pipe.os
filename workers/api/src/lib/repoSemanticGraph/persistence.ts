@@ -79,9 +79,21 @@ function repoSpanLocator(
   };
 }
 
+function conceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function conceptLabel(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const raw = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return raw.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
+
 function buildChallengePacketContextRecordInput(
   input: NormalizedPullRequestInput,
   packet: ChallengePacket,
+  contextConcepts: Array<{ conceptId: string; canonicalKey: string }>,
 ): ContextRecordInput {
   const pathByArtifactId = new Map(
     [
@@ -191,6 +203,11 @@ function buildChallengePacketContextRecordInput(
         value: { canonicalKey: conceptKey },
       })),
     ],
+    concepts: contextConcepts.map((concept) => ({
+      conceptId: concept.conceptId,
+      relationship: 'concept',
+      weight: 1,
+    })),
   };
 }
 
@@ -803,8 +820,29 @@ export async function persistReviewChallengeGraph(
     persistedSpanIds,
     symbolIds,
   );
-  await new LivingContextStore(db, () => input.repoSnapshot.observedAt).upsertContextRecord(
-    buildChallengePacketContextRecordInput(input, packet),
+  const contextStore = new LivingContextStore(db, () => input.repoSnapshot.observedAt);
+  const contextConcepts: Array<{ conceptId: string; canonicalKey: string }> = [];
+  const packetConceptKeys = [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))]
+    .map((conceptKey) => conceptKey.trim())
+    .filter((conceptKey) => conceptKey.length > 0)
+    .sort();
+  for (const canonicalKey of packetConceptKeys) {
+    const concept = await contextStore.upsertConcept({
+      ingestionKey: `repo-open-concept:${canonicalKey}`,
+      canonicalKey,
+      namespace: conceptNamespace(canonicalKey),
+      label: conceptLabel(canonicalKey),
+      metadata: {
+        source: 'repo_challenge_packet',
+        repoSnapshotId: input.repoSnapshot.id,
+        packetId: packet.id,
+        policyVersion: packet.policyVersion,
+      },
+    });
+    contextConcepts.push({ conceptId: concept.id, canonicalKey });
+  }
+  await contextStore.upsertContextRecord(
+    buildChallengePacketContextRecordInput(input, packet, contextConcepts),
   );
   await persistChallengePacket(db, repoId, packet);
 }
