@@ -258,7 +258,7 @@ async function ensureScheduledInterviewRoomLinks(
     interview_type: string | null;
   },
   inviteEmail: string,
-): Promise<{ hostUrl: string; guestUrl: string; expiresAt: string }> {
+): Promise<{ hostUrl: string; guestUrl: string; expiresAt: string; contactId: string; meetingId: string }> {
   const email = inviteEmail.trim().toLowerCase();
   const name = (
     interview.candidate_name
@@ -330,6 +330,8 @@ async function ensureScheduledInterviewRoomLinks(
     hostUrl: room.hostUrl,
     guestUrl: room.guestUrl,
     expiresAt: room.expiresAt,
+    contactId,
+    meetingId: meeting.id,
   };
 }
 
@@ -464,6 +466,143 @@ async function persistContactFirstInterviewInviteContext(
         entityType: 'contact',
         entityId: input.contactId,
         relationship: 'participant',
+      },
+    ],
+  });
+}
+
+function inviteDeliverySourceText(input: {
+  recipientEmail: string;
+  subject: string;
+  meetingUrl: string;
+  customMessage: string | null;
+  emailSent: boolean;
+  providerMessageId: string | null;
+  createdAt: string;
+}): string {
+  return [
+    'Scheduled interview invite delivery',
+    `Recipient email: ${input.recipientEmail}`,
+    `Subject: ${input.subject}`,
+    `Meeting URL: ${input.meetingUrl}`,
+    `Custom message: ${input.customMessage ?? 'none'}`,
+    `Email sent: ${input.emailSent ? 'yes' : 'no'}`,
+    `Provider message id: ${input.providerMessageId ?? 'none'}`,
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistScheduledInterviewInviteDeliveryContext(
+  db: D1Database,
+  input: {
+    contactId: string;
+    ownerId: string;
+    interviewId: string;
+    meetingId: string;
+    recipientEmail: string;
+    subject: string;
+    meetingUrl: string;
+    customMessage: string | null;
+    emailSent: boolean;
+    providerMessageId: string | null;
+    createdAt: string;
+  },
+): Promise<void> {
+  const identity = await ensureContactLivingContext(db, input.contactId);
+  if (!identity) return;
+
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionType: 'scheduled_interview_invite_delivery',
+    externalReference: input.interviewId,
+    startedAt: input.createdAt,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      emailSent: input.emailSent,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}:artifact`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'scheduled_interview_invite_delivery',
+    logicalKey: `${input.interviewId}:invite-delivery:${input.createdAt}`,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      contactId: input.contactId,
+      ownerId: input.ownerId,
+      emailSent: input.emailSent,
+    },
+  });
+  const sourceText = inviteDeliverySourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.createdAt}:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      source: 'scheduled_interview_invite_delivery',
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'invite-delivery-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      source: 'scheduled_interview_invite_delivery',
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}:context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'scheduled_interview_invite_delivery',
+    predicate: 'preserves scheduled interview invite delivery',
+    narrative: `Scheduled interview invite delivery for ${input.recipientEmail}.`,
+    qualifiers: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      contactId: input.contactId,
+      emailSent: input.emailSent,
+    },
+    confidence: 1,
+    extractionVersion: 'scheduled-interview-invite-delivery-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.interviewId,
+        relationship: 'source_event',
+      },
+      {
+        entityType: 'meeting',
+        entityId: input.meetingId,
+        relationship: 'delivery_link_target',
+      },
+      {
+        entityType: 'contact',
+        entityId: input.contactId,
+        relationship: 'recipient',
       },
     ],
   });
@@ -1597,8 +1736,30 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const subject = scheduledTime
     ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
     : `Video call invitation — ${rawPipelineTitle}`;
+  const now = new Date().toISOString();
 
   if (!c.env.RESEND_API_KEY) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, now, id)
+      .run();
+    await persistScheduledInterviewInviteDeliveryContext(db, {
+      contactId: roomLinks.contactId,
+      ownerId: userId,
+      interviewId: id,
+      meetingId: roomLinks.meetingId,
+      recipientEmail: email.trim().toLowerCase(),
+      subject,
+      meetingUrl,
+      customMessage: customMessage ?? null,
+      emailSent: false,
+      providerMessageId: null,
+      createdAt: now,
+    });
     return c.json({
       success: true,
       emailSent: false,
@@ -1623,7 +1784,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   }
 
   // Update the interview to track the invite
-  const now = new Date().toISOString();
   if (result) {
     await db
       .prepare(
@@ -1634,6 +1794,20 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(now, now, now, id)
       .run();
   }
+
+  await persistScheduledInterviewInviteDeliveryContext(db, {
+    contactId: roomLinks.contactId,
+    ownerId: userId,
+    interviewId: id,
+    meetingId: roomLinks.meetingId,
+    recipientEmail: email.trim().toLowerCase(),
+    subject,
+    meetingUrl,
+    customMessage: customMessage ?? null,
+    emailSent: Boolean(result),
+    providerMessageId: result?.id ?? null,
+    createdAt: now,
+  });
 
   if (!result) {
     return c.json({ success: false, emailSent: false, meetingUrl }, 502);

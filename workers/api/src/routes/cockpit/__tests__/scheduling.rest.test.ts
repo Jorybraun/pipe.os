@@ -274,7 +274,7 @@ describe('GET /interviews/:id detail', () => {
         duration_secs INTEGER,
         meeting_url TEXT,
         meeting_type TEXT NOT NULL,
-        transcript_status TEXT NOT NULL,
+        transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
         recording_r2_key TEXT,
         created_at TEXT NOT NULL,
@@ -287,6 +287,27 @@ describe('GET /interviews/:id detail', () => {
         status TEXT,
         created_at TEXT,
         updated_at TEXT
+      );
+      CREATE TABLE meeting_participants (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        contact_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'ATTENDEE',
+        invite_sent_at TEXT,
+        joined_at TEXT,
+        left_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meeting_room_tokens (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        participant_id TEXT,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL
       );
     `);
     sqlite.exec(livingContextMigration);
@@ -826,6 +847,142 @@ describe('GET /interviews/:id detail', () => {
     });
     expect(detailBody.interview.livingContext?.contextRecords[0]?.sources[0]?.exactText)
       .toContain('Recipient email: edsger@example.com');
+  });
+
+  it('records source-backed invite delivery separately from interview creation', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Barbara Liskov',
+        recipientEmail: 'barbara@example.com',
+        meetingType: 'SCREENING_INTERVIEW',
+        interviewType: 'CODE_REVIEW',
+        scheduledAt: '2026-06-25T19:00:00.000Z',
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string; contactId: string | null };
+    };
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'barbara@example.com',
+        message: 'Please join prepared code review discussion.',
+      }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      meetingUrl: string;
+    };
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: false,
+    });
+    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT interview_type, meeting_url, invite_link_sent_at, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      interview_type: string;
+      meeting_url: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduledRow.interview_type).toBe('CODE_REVIEW');
+    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
+    expect(scheduledRow.email_sent_at).toBeNull();
+
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM meetings
+        WHERE scheduled_interview_id = ?
+          AND meeting_url = ?`,
+    ).get(created.interview.id, inviteBody.meetingUrl)).toEqual({ count: 1 });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM meeting_room_tokens mrt
+         JOIN meeting_rooms mr ON mr.id = mrt.room_id
+         JOIN meetings m ON m.id = mr.meeting_id
+        WHERE m.scheduled_interview_id = ?
+          AND mrt.role = 'GUEST'
+          AND mrt.revoked_at IS NULL`,
+    ).get(created.interview.id)).toEqual({ count: 1 });
+
+    const graphRows = sqlite!.prepare(
+      `SELECT cr.record_type,
+              cr.predicate,
+              cr.narrative,
+              ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+        ORDER BY cr.created_at, cr.record_type`,
+    ).all('barbara@example.com') as Array<{
+      record_type: string;
+      predicate: string | null;
+      narrative: string;
+      exact_text: string;
+    }>;
+    expect(graphRows.map((row) => row.record_type).sort()).toEqual([
+      'scheduled_interview_invite',
+      'scheduled_interview_invite_delivery',
+    ]);
+    expect(graphRows.find((row) => row.record_type === 'scheduled_interview_invite'))
+      .toMatchObject({
+        predicate: 'preserves contact-first interview invite',
+        narrative: 'Contact-first interview invite for Barbara Liskov.',
+      });
+    expect(graphRows.find((row) => row.record_type === 'scheduled_interview_invite')?.exact_text.split('\n'))
+      .toEqual(expect.arrayContaining([
+        'Recipient email: barbara@example.com',
+        'Meeting type: SCREENING_INTERVIEW',
+        'Interview type: CODE_REVIEW',
+      ]));
+    const deliveryRecord = graphRows.find((row) => row.record_type === 'scheduled_interview_invite_delivery');
+    expect(deliveryRecord).toMatchObject({
+      predicate: 'preserves scheduled interview invite delivery',
+      narrative: 'Scheduled interview invite delivery for barbara@example.com.',
+    });
+    expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Recipient email: barbara@example.com',
+      expect.stringMatching(/^Subject: Video call invitation — Interview \(.+\)$/),
+      `Meeting URL: ${inviteBody.meetingUrl}`,
+      'Custom message: Please join prepared code review discussion.',
+      'Email sent: no',
+      'Provider message id: none',
+    ]));
+
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM interactions i
+         JOIN workspace_people wp ON wp.id = i.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE p.primary_email = ?`,
+    ).get('barbara@example.com')).toEqual({ count: 2 });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_concepts crc
+         JOIN context_records cr ON cr.id = crc.context_record_id
+         JOIN workspace_people wp ON wp.id = cr.workspace_person_id
+         JOIN people p ON p.id = wp.person_id
+        WHERE p.primary_email = ?`,
+    ).get('barbara@example.com')).toEqual({ count: 0 });
+    expect(sqlite!.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
   });
 });
 
