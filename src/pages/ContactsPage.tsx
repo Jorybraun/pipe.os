@@ -17,6 +17,7 @@ import {
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
 } from 'lucide-react';
 import { createApiClient } from '../lib/api/client';
+import type { LivingContextReadModel } from '../lib/api/types';
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -931,14 +932,15 @@ function SourceSearchPanel({ api, onContact }: {
 // ─── Contact Living Context ─────────────────────────────────────────────────────
 
 function ContactLivingContext({ contactId, api }: { contactId: string; api: ReturnType<typeof createApiClient> }): JSX.Element {
-  const [livingContext, setLivingContext] = useState<any>(null);
+  const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const endpoint = `/api/v1/contacts/${contactId}/living-context`;
 
   useEffect(() => {
     (async () => {
       setIsLoading(true);
       try {
-        const res = await api.get(`/api/v1/contacts/${contactId}/living-context`);
+        const res = await api.get<LivingContextReadModel>(endpoint);
         setLivingContext(res);
       } catch {
         setLivingContext(null);
@@ -946,12 +948,18 @@ function ContactLivingContext({ contactId, api }: { contactId: string; api: Retu
         setIsLoading(false);
       }
     })();
-  }, [contactId, api]);
+  }, [api, endpoint]);
 
   if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>LOADING_CONTEXT</div>;
   if (!livingContext || livingContext.summary.interactionCount === 0) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>NO_CONTEXT_YET</div>;
   }
 
-  return <LivingContextGraph candidateId={contactId} />;
+  return (
+    <LivingContextGraph
+      candidateId={contactId}
+      livingContextEndpoint={endpoint}
+      initialLivingContext={livingContext}
+    />
+  );
 }

@@ -14,6 +14,7 @@ import type {
   LivingContextArtifact,
   LivingContextAssertion,
   LivingContextInteraction,
+  LivingContextReadModel,
   LivingContextSignal,
   LivingContextSourceRef,
   StandaloneReviewExcludedPacket,
@@ -484,12 +485,21 @@ function ArtifactNode({
 
 export function LivingContextGraph({
   candidateId,
+  livingContextEndpoint,
+  initialLivingContext,
   standaloneReviewMatch,
 }: {
   candidateId: string;
+  livingContextEndpoint?: string;
+  initialLivingContext?: LivingContextReadModel | null;
   standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
 }): JSX.Element {
-  const { livingContext, isLoading, error, refetch } = useLivingContext(candidateId);
+  const livingContextSource = livingContextEndpoint
+    ? initialLivingContext === undefined
+      ? { endpoint: livingContextEndpoint }
+      : { endpoint: livingContextEndpoint, initialLivingContext }
+    : candidateId;
+  const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
