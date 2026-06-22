@@ -66,6 +66,7 @@ export interface Options {
   databasePath?: string;
   dryRun: boolean;
   force: boolean;
+  preflightGithub: boolean;
   batchSize: number;
   repoId?: number;
   repo?: string;
@@ -174,6 +175,7 @@ function usage(): string {
     'Usage: npx tsx scripts/backfillReviewChallengePackets.ts [options]',
     '',
     'Options:',
+    '  --preflight-github   Check GitHub API connectivity and exit',
     '  --local               Read and write the local Wrangler D1 database (default)',
     '  --remote              Read and write Cloudflare D1',
     '  --database-path PATH  Override local SQLite discovery',
@@ -208,6 +210,7 @@ function parseArgs(argv: string[]): Options {
     target: 'local',
     dryRun: false,
     force: false,
+    preflightGithub: false,
     batchSize: DEFAULT_BATCH_SIZE,
   };
 
@@ -215,6 +218,8 @@ function parseArgs(argv: string[]): Options {
     const arg = argv[index]!;
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--preflight-github') {
+      options.preflightGithub = true;
     } else if (arg === '--local') {
       options.target = 'local';
     } else if (arg === '--remote') {
@@ -826,6 +831,53 @@ function formatError(error: unknown): string {
   return `${error.message} (cause: ${cause.message}${code ? `; code=${code}` : ''})`;
 }
 
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+export interface GitHubConnectivityResult {
+  ok: boolean;
+  endpoint: string;
+  status: number | null;
+  message: string;
+  rateLimitRemaining: string | null;
+}
+
+export async function checkGitHubApiConnectivity(input: {
+  token?: string;
+  timeoutMs?: number;
+  fetchImpl?: FetchLike;
+} = {}): Promise<GitHubConnectivityResult> {
+  const endpoint = 'https://api.github.com/rate_limit';
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'pipe-api/1.0',
+  };
+  if (input.token) headers.Authorization = `Bearer ${input.token}`;
+  try {
+    const response = await (input.fetchImpl ?? fetch)(endpoint, {
+      headers,
+      signal: AbortSignal.timeout(input.timeoutMs ?? 10_000),
+    });
+    const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      message: response.ok
+        ? 'GitHub API reachable'
+        : `GitHub API returned ${response.status} ${response.statusText}`,
+      rateLimitRemaining,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      endpoint,
+      status: null,
+      message: formatError(error),
+      rateLimitRemaining: null,
+    };
+  }
+}
+
 export async function backfillReviewChallengePackets(
   input: BackfillReviewChallengePacketsInput,
 ): Promise<Stats> {
@@ -933,6 +985,18 @@ export async function backfillReviewChallengePackets(
 }
 
 async function run(options: Options): Promise<void> {
+  if (options.preflightGithub) {
+    const result = await checkGitHubApiConnectivity({
+      token: process.env['GITHUB_TOKEN'],
+    });
+    console.log(`[challenge-backfill] github preflight ${result.ok ? 'ok' : 'failed'} ${result.endpoint}`);
+    console.log(`  status:          ${result.status ?? 'unreachable'}`);
+    console.log(`  message:         ${result.message}`);
+    console.log(`  rate remaining:  ${result.rateLimitRemaining ?? 'unknown'}`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
   let localDatabase: LocalSqliteDatabase | undefined;
   const client: QueryClient = options.target === 'remote'
     ? new D1Client(loadD1Config())

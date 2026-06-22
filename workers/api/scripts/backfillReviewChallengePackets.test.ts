@@ -7,6 +7,7 @@ import type { GitHubDiffResult } from '../src/lib/fetchGitHubDiff';
 import type { ChallengePacket as RepoChallengePacket } from '../src/lib/repoSemanticGraph';
 import {
   backfillReviewChallengePackets,
+  checkGitHubApiConnectivity,
   type Options,
   type PullRequestRefs,
   type QueryClient,
@@ -419,6 +420,7 @@ describe('backfillReviewChallengePackets', () => {
       target: 'local',
       dryRun: false,
       force: false,
+      preflightGithub: false,
       batchSize: 10,
     };
     const stats = await backfillReviewChallengePackets({
@@ -691,5 +693,41 @@ describe('backfillReviewChallengePackets', () => {
         || ref.exact_text?.includes('retry order event')
       ),
     )).toBe(true);
+  });
+
+  it('reports GitHub API preflight success with rate-limit visibility', async () => {
+    const result = await checkGitHubApiConnectivity({
+      fetchImpl: async () => new Response('{}', {
+        status: 200,
+        headers: { 'x-ratelimit-remaining': '42' },
+      }),
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      endpoint: 'https://api.github.com/rate_limit',
+      status: 200,
+      message: 'GitHub API reachable',
+      rateLimitRemaining: '42',
+    });
+  });
+
+  it('reports GitHub API preflight network causes', async () => {
+    const cause = Object.assign(new Error('Connect Timeout Error'), {
+      code: 'UND_ERR_CONNECT_TIMEOUT',
+    });
+    const result = await checkGitHubApiConnectivity({
+      fetchImpl: async () => {
+        throw new Error('fetch failed', { cause });
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      endpoint: 'https://api.github.com/rate_limit',
+      status: null,
+      message: 'fetch failed (cause: Connect Timeout Error; code=UND_ERR_CONNECT_TIMEOUT)',
+      rateLimitRemaining: null,
+    });
   });
 });
