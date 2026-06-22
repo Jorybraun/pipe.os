@@ -682,6 +682,90 @@ describe('GET /interviews/:id detail', () => {
       }],
     });
   });
+
+  it('creates a contact-first scheduled interview without candidate, role, or application', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Edsger Dijkstra',
+        recipientEmail: 'EDSGER@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        scheduledAt: '2026-06-24T18:00:00.000Z',
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        candidateId: string | null;
+        contactId: string | null;
+        pipelineId: string | null;
+        stageId: string | null;
+        recipientName: string | null;
+        recipientEmail: string | null;
+        meetingType: string | null;
+      };
+    };
+
+    expect(body.interview).toMatchObject({
+      candidateId: null,
+      pipelineId: null,
+      stageId: null,
+      recipientName: 'Edsger Dijkstra',
+      recipientEmail: 'edsger@example.com',
+      meetingType: 'DIRECT_VIDEO_CALL',
+    });
+    expect(body.interview.contactId).toEqual(expect.any(String));
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT candidate_id, pipeline_id, stage_id, recipient_name, recipient_email, meeting_type
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.interview.id) as {
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      meeting_type: string | null;
+    };
+    expect(scheduledRow).toEqual({
+      candidate_id: null,
+      pipeline_id: null,
+      stage_id: null,
+      recipient_name: 'Edsger Dijkstra',
+      recipient_email: 'edsger@example.com',
+      meeting_type: 'DIRECT_VIDEO_CALL',
+    });
+
+    const contactRow = sqlite!.prepare(
+      'SELECT id, owner_id, email, name, type FROM contacts WHERE email = ?',
+    ).get('edsger@example.com') as {
+      id: string;
+      owner_id: string;
+      email: string;
+      name: string;
+      type: string;
+    };
+    expect(contactRow).toMatchObject({
+      id: body.interview.contactId,
+      owner_id: 'owner-1',
+      email: 'edsger@example.com',
+      name: 'Edsger Dijkstra',
+      type: 'lead',
+    });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM workspace_people wp
+         JOIN people p ON p.id = wp.person_id
+        WHERE p.primary_email = ?`,
+    ).get('edsger@example.com')).toEqual({ count: 1 });
+    expect(sqlite!.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+  });
 });
 
 // ─── Meeting type tests ─────────────────────────────────────────────────────

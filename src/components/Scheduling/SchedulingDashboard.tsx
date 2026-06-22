@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Calendar, RefreshCw, UserPlus } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
+import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
-import { InviteCandidateModal } from './InviteCandidateModal';
+import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
-import type { ScheduledInterview } from '../../lib/scheduling/types';
+import type { MeetingType, ScheduledInterview, SchedulingProvider } from '../../lib/scheduling/types';
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
@@ -67,6 +68,7 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
 export function SchedulingDashboard(): JSX.Element {
   const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
   const { connection } = useSchedulingConnection();
+  const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -248,13 +250,26 @@ export function SchedulingDashboard(): JSX.Element {
         </div>
       )}
 
-      {/* Invite candidate modal */}
-      {showInviteModal && (
-        <InviteCandidateModal
-          onClose={() => setShowInviteModal(false)}
-          onSuccess={() => void refetch()}
-        />
-      )}
+      {/* Contact-first interview invite */}
+      <InviteCreationModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onCreateInvite={async (data: {
+          recipientName: string;
+          recipientEmail: string;
+          meetingType: MeetingType;
+          scheduledAt?: string;
+          schedulingProvider?: SchedulingProvider;
+          schedulingUrl?: string;
+        }) => {
+          const result = await api.post<{ interview: { id: string } }>(
+            '/api/v1/scheduling/interviews',
+            data,
+          );
+          await refetch();
+          return { id: result.interview.id };
+        }}
+      />
     </div>
   );
 }

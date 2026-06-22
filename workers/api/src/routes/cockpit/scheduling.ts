@@ -85,13 +85,33 @@ const callbackSchema = z.object({
 });
 
 const createInterviewSchema = z.object({
-  candidateId: z.string().min(1),
+  candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
   stageId: z.string().optional(),
+  recipientName: z.string().trim().min(1).max(200).optional(),
+  recipientEmail: z.string().trim().email().optional(),
+  meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
   interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const hasCandidate = Boolean(value.candidateId);
+  const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
+  if (!hasCandidate && !hasRecipient) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'candidateId or recipientName plus recipientEmail is required.',
+      path: ['recipientEmail'],
+    });
+  }
+  if (!hasCandidate && (value.pipelineId || value.stageId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'pipelineId and stageId require candidateId.',
+      path: ['candidateId'],
+    });
+  }
 });
 
 export const INTERVIEW_STATUS_VALUES = [
@@ -182,6 +202,44 @@ async function loadScheduledInterviewLivingContext(
 
   await ensureContactLivingContext(db, contactId);
   return loadContactLivingContext(db, contactId);
+}
+
+async function ensureRecipientContact(
+  db: D1Database,
+  ownerId: string,
+  recipient: { name: string; email: string },
+): Promise<string> {
+  const email = recipient.email.trim().toLowerCase();
+  const name = recipient.name.trim();
+  const existing = await db.prepare(
+    `SELECT id
+       FROM contacts
+      WHERE owner_id = ?1
+        AND lower(email) = ?2
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(ownerId, email).first<{ id: string }>();
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await db.prepare(
+      `UPDATE contacts
+          SET name = COALESCE(NULLIF(name, ''), ?1),
+              updated_at = ?2
+        WHERE id = ?3`,
+    ).bind(name, now, existing.id).run();
+    await ensureContactLivingContext(db, existing.id);
+    return existing.id;
+  }
+
+  const contactId = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO contacts (
+       id, owner_id, email, name, type, created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, 'lead', ?5, ?5)`,
+  ).bind(contactId, ownerId, email, name, now).run();
+  await ensureContactLivingContext(db, contactId);
+  return contactId;
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -1032,19 +1090,36 @@ schedulingAuth.post('/interviews', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { candidateId, pipelineId, stageId, interviewType, scheduledAt, schedulingProvider, schedulingUrl } = parsed.data;
+  const {
+    candidateId,
+    pipelineId,
+    stageId,
+    recipientName,
+    recipientEmail,
+    meetingType,
+    interviewType,
+    scheduledAt,
+    schedulingProvider,
+    schedulingUrl,
+  } = parsed.data;
 
-  const candidate = await db
-    .prepare('SELECT id, pipeline_id FROM candidates WHERE id = ? AND owner_id = ?')
-    .bind(candidateId, userId)
-    .first<{ id: string; pipeline_id: string | null }>();
-  if (!candidate) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  let candidate: { id: string; pipeline_id: string | null } | null = null;
+  if (candidateId) {
+    candidate = await db
+      .prepare('SELECT id, pipeline_id FROM candidates WHERE id = ? AND owner_id = ?')
+      .bind(candidateId, userId)
+      .first<{ id: string; pipeline_id: string | null }>();
+    if (!candidate) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  }
 
   if (stageId && !pipelineId) {
     return apiError(c, 'VALIDATION_ERROR', 'stageId requires pipelineId.');
   }
 
   if (pipelineId) {
+    if (!candidate) {
+      return apiError(c, 'VALIDATION_ERROR', 'pipelineId requires candidateId.');
+    }
     const pipeline = await db
       .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
       .bind(pipelineId, userId)
@@ -1066,19 +1141,25 @@ schedulingAuth.post('/interviews', async (c) => {
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
+  const contactId = !candidateId && recipientName && recipientEmail
+    ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
+    : null;
 
   await db
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
-        interview_type, scheduled_at, scheduling_provider, scheduling_url,
-        sync_source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, 'MANUAL', ?, ?)`
+        interview_type, meeting_type, scheduled_at, scheduling_provider,
+        scheduling_url, recipient_name, recipient_email, sync_source,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`
     )
     .bind(
-      id, candidateId, pipelineId ?? null, stageId ?? null, userId,
-      interviewType ?? 'VIDEO', scheduledAt ?? null,
+      id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
+      interviewType ?? 'VIDEO', effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
+      recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       now, now,
     )
     .run();
@@ -1086,9 +1167,13 @@ schedulingAuth.post('/interviews', async (c) => {
   return c.json({
     interview: {
       id,
-      candidateId,
+      candidateId: candidateId ?? null,
+      contactId,
       pipelineId: pipelineId ?? null,
       stageId: stageId ?? null,
+      recipientName: recipientName ?? null,
+      recipientEmail: recipientEmail?.trim().toLowerCase() ?? null,
+      meetingType: effectiveMeetingType,
       status: 'INVITED',
       interviewType: interviewType ?? 'VIDEO',
       scheduledAt: scheduledAt ?? null,
