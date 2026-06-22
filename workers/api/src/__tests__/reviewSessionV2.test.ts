@@ -126,6 +126,16 @@ const CHALLENGE_NON_MULTITURN = {
   config: JSON.stringify({ isMultiTurn: false }),
 };
 
+const ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET = {
+  ...CHALLENGE_ROW,
+  cached_diff_json: null,
+  github_repo_url: null,
+  github_pr_number: null,
+  assignment_id: 'assign_1',
+  effective_repo_url: 'https://github.com/test/source-backed-repo',
+  effective_pr_number: 42,
+};
+
 const ASSESSMENT_ROW = { id: 'assessment_1' };
 
 const SESSION_PENDING = {
@@ -365,6 +375,38 @@ describe('POST /rpc/review/session/init', () => {
     expect(body.pr.repoUrl).toBe('https://github.com/test/repo');
     expect(body.pr.prNumber).toBe(1);
     expect(body.pr.diff).toContain('const x = 1;');
+  });
+
+  it('returns waiting without creating a session when an assigned PR lacks source-backed packet context', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM challenges', value: ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET },
+        { match: 'FROM assessments', value: ASSESSMENT_ROW },
+        { match: 'candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3', value: null },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/session/init',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ challengeId: 'ch_1' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('WAITING_FOR_MATCH');
+    expect(body.error.message).toContain('source-backed review challenge');
+    expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
+    expect(db.__calls.find((call) => call.sql.includes('INSERT INTO review_sessions'))).toBeUndefined();
   });
 });
 

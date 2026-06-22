@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasSourceBackedReviewPacket, loadSourceBackedReviewDiff } from '../routes/rpc';
+import { hasSourceBackedReviewPacket, loadSourceBackedReviewDiff } from '../lib/review/sourceBackedReviewDiff';
 
 function createDiffDb(input: {
   packetJson?: string | null;

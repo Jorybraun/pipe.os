@@ -40,6 +40,7 @@ import type { RepoKnowledgeInput } from '../../lib/explainerPrompts';
 import { loadRcdForAssessment } from '../../lib/rcd';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 import { scoreAndPropagate } from '../../lib/review/scoreAndPropagate';
+import { loadSourceBackedReviewDiff } from '../../lib/review/sourceBackedReviewDiff';
 import { recordSessionEvent } from '../../lib/telemetry/sessionEvents';
 import {
   ingestCodeReviewTranscriptToLivingContext,
@@ -78,6 +79,12 @@ interface ChallengeConfigRow {
   github_pr_description: string | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
+}
+
+class SourceBackedReviewNotReadyError extends Error {
+  constructor() {
+    super('SOURCE_BACKED_REVIEW_NOT_READY');
+  }
 }
 
 /** Shape of transcript stored in D1 — review rounds + optional explainer exchanges */
@@ -299,7 +306,11 @@ function buildThreadsForResponse(rounds: ReviewRound[]): Array<{
  */
 async function buildPrContext(
   db: D1Database,
-  ch: ChallengeConfigRow & { effective_repo_url?: string | null; effective_pr_number?: number | null },
+  ch: ChallengeConfigRow & {
+    assignment_id?: string | null;
+    effective_repo_url?: string | null;
+    effective_pr_number?: number | null;
+  },
   env: Env,
 ): Promise<{
   title: string | null;
@@ -311,27 +322,53 @@ async function buildPrContext(
   let cachedDiffJson = parseJsonColumn<unknown>(ch.cached_diff_json);
   const repoUrl = ch.effective_repo_url ?? ch.github_repo_url ?? null;
   const prNumber = ch.effective_pr_number ?? ch.github_pr_number ?? null;
+  const usesCandidateAssignment = typeof ch.assignment_id === 'string';
 
   if (!cachedDiffJson && repoUrl && prNumber) {
-    try {
-      const token = (env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-      const result = await fetchGitHubDiff(repoUrl, prNumber, token);
-      if (result) {
-        cachedDiffJson = result.diff;
-        await db.prepare(
-          `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+    const sourceBackedDiff = await loadSourceBackedReviewDiff(db, repoUrl, prNumber);
+    if (sourceBackedDiff) {
+      cachedDiffJson = sourceBackedDiff.diff;
+      ch.github_pr_title = sourceBackedDiff.metadata.title;
+      ch.github_pr_description = sourceBackedDiff.metadata.description ?? ch.github_pr_description;
+      await db.prepare(
+        `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
+      )
+        .bind(
+          JSON.stringify(sourceBackedDiff.diff),
+          JSON.stringify(sourceBackedDiff.metadata),
+          new Date().toISOString(),
+          ch.id,
         )
-          .bind(
-            JSON.stringify(result.diff),
-            JSON.stringify(result.metadata),
-            new Date().toISOString(),
-            ch.id,
+        .run();
+    } else if (usesCandidateAssignment) {
+      throw new SourceBackedReviewNotReadyError();
+    } else {
+      try {
+        const token = (env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
+        const result = await fetchGitHubDiff(repoUrl, prNumber, token);
+        if (result) {
+          cachedDiffJson = result.diff;
+          ch.github_pr_title = result.metadata.title ?? ch.github_pr_title;
+          ch.github_pr_description = result.metadata.description ?? ch.github_pr_description;
+          await db.prepare(
+            `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
           )
-          .run();
+            .bind(
+              JSON.stringify(result.diff),
+              JSON.stringify(result.metadata),
+              new Date().toISOString(),
+              ch.id,
+            )
+            .run();
+        }
+      } catch (err) {
+        console.error('[buildPrContext] Self-heal diff fetch failed:', err);
       }
-    } catch (err) {
-      console.error('[buildPrContext] Self-heal diff fetch failed:', err);
     }
+  }
+
+  if (!cachedDiffJson && usesCandidateAssignment) {
+    throw new SourceBackedReviewNotReadyError();
   }
 
   const diff = extractDiffText(cachedDiffJson);
@@ -342,6 +379,15 @@ async function buildPrContext(
     repoUrl,
     prNumber,
     diff,
+  };
+}
+
+function sourceBackedReviewNotReadyResponse() {
+  return {
+    error: {
+      code: 'WAITING_FOR_MATCH',
+      message: 'A source-backed review challenge has not been selected yet.',
+    },
   };
 }
 
@@ -563,6 +609,7 @@ review.post('/session/init', async (c) => {
       ch.id, ch.config, ch.server_config, ch.cached_diff_json, ch.instructions,
       ch.github_pr_title, ch.github_pr_description,
       ch.github_repo_url, ch.github_pr_number,
+      cca.id as assignment_id,
       COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
       COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number
     FROM challenges ch
@@ -571,7 +618,11 @@ review.post('/session/init', async (c) => {
     WHERE ch.id = ?1
   `)
     .bind(challengeId, candidateId)
-    .first<ChallengeConfigRow & { effective_repo_url?: string | null; effective_pr_number?: number | null }>();
+    .first<ChallengeConfigRow & {
+      assignment_id?: string | null;
+      effective_repo_url?: string | null;
+      effective_pr_number?: number | null;
+    }>();
 
   if (!ch) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Challenge not found.' } }, 404);
@@ -617,10 +668,18 @@ review.post('/session/init', async (c) => {
       transcript: string;
       next_comment_id: number;
       max_rounds: number;
-    }>();
+  }>();
 
   if (existingSession) {
-    const pr = await buildPrContext(c.env.DB, ch, c.env);
+    let pr: Awaited<ReturnType<typeof buildPrContext>>;
+    try {
+      pr = await buildPrContext(c.env.DB, ch, c.env);
+    } catch (err) {
+      if (err instanceof SourceBackedReviewNotReadyError) {
+        return c.json(sourceBackedReviewNotReadyResponse(), 409);
+      }
+      throw err;
+    }
     return c.json({
       sessionId: existingSession.id,
       status: existingSession.status,
@@ -628,6 +687,16 @@ review.post('/session/init', async (c) => {
       maxRounds: existingSession.max_rounds,
       currentRound: existingSession.current_round,
     });
+  }
+
+  let pr: Awaited<ReturnType<typeof buildPrContext>>;
+  try {
+    pr = await buildPrContext(c.env.DB, ch, c.env);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
   }
 
   // Create new pending session
@@ -652,8 +721,6 @@ review.post('/session/init', async (c) => {
     eventType: 'started',
     payload: { challengeId, assessmentId: assessment.id, maxRounds, persona },
   });
-
-  const pr = await buildPrContext(c.env.DB, ch, c.env);
 
   return c.json({
     sessionId,
