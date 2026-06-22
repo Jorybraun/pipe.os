@@ -18,7 +18,16 @@ vi.mock('../lib/implementerAgent', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/explainerAgent', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/explainerAgent')>();
+  return {
+    ...actual,
+    callExplainerAgent: vi.fn(),
+  };
+});
+
 import { callImplementerAgent } from '../lib/implementerAgent';
+import { callExplainerAgent } from '../lib/explainerAgent';
 
 // ─── Fake D1 ─────────────────────────────────────────────────────────────────
 
@@ -217,6 +226,12 @@ beforeEach(() => {
   vi.mocked(callImplementerAgent).mockResolvedValue([
     { to_comment_id: 1, move: 'comment', content: 'Mock implementer response' },
   ]);
+  vi.mocked(callExplainerAgent).mockReset();
+  vi.mocked(callExplainerAgent).mockResolvedValue({
+    content: 'Mock explainer response',
+    context_provided: ['surrounding_code'],
+    depth_level: 'surface',
+  });
 });
 
 // ─── POST /rpc/get-challenge ─────────────────────────────────────────────────
@@ -319,6 +334,52 @@ describe('POST /rpc/get-challenge', () => {
       filename: 'src/orders/retry.ts',
       headContent: 'publishWithRetry(order)',
     });
+  });
+});
+
+// ─── POST /rpc/review/ask ────────────────────────────────────────────────────
+
+describe('POST /rpc/review/ask', () => {
+  it('does not call explainer agent when assigned PR prompt context lacks source-backed packet graph', async () => {
+    const assignedExplainerChallenge = {
+      ...ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET,
+      config: JSON.stringify({ enableExplainer: true, maxExplainerQuestions: 4 }),
+    };
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM assessments', value: ASSESSMENT_ROW },
+        { match: 'FROM review_sessions', value: null },
+        { match: 'FROM challenges ch', value: assignedExplainerChallenge },
+        { match: 'FROM review_challenge_packets', value: null },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges',
+          value: [assignedExplainerChallenge],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/ask',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ challengeOrder: 0, question: 'What is this PR doing?' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('WAITING_FOR_MATCH');
+    expect(vi.mocked(callExplainerAgent)).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
   });
 });
 
@@ -576,6 +637,39 @@ describe('POST /rpc/review/session/:id/message', () => {
     );
     expect(transcriptUpdate).toBeTruthy();
     expect(transcriptUpdate?.ran).toBe(true);
+  });
+
+  it('does not call implementer agent when assigned PR prompt context lacks source-backed packet graph', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'implementer_persona', value: SESSION_PENDING },
+        { match: 'FROM challenges ch', value: ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET },
+        { match: 'FROM review_challenge_packets', value: null },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/session/sess_1/message',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({
+          annotations: [{ content: 'Missing edge-case handling', file: 'src/index.ts', line: 5 }],
+          summary: 'Initial review round',
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json() as { error: { code: string } };
+    expect(body.error.code).toBe('WAITING_FOR_MATCH');
+    expect(vi.mocked(callImplementerAgent)).not.toHaveBeenCalled();
+    expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
   });
 
   it('follow-up message: appends round, respects maxRounds', async () => {

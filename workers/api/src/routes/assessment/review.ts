@@ -390,6 +390,61 @@ function sourceBackedReviewNotReadyResponse() {
   };
 }
 
+type ReviewChallengeWithAssignment = ChallengeConfigRow & {
+  assignment_id?: string | null;
+  effective_repo_url?: string | null;
+  effective_pr_number?: number | null;
+};
+
+async function loadReviewChallengeForCandidate(
+  db: D1Database,
+  candidateId: string,
+  challengeId: string,
+): Promise<ReviewChallengeWithAssignment | null> {
+  return await db.prepare(
+    `SELECT ch.id,
+            ch.config,
+            ch.server_config,
+            ch.cached_diff_json,
+            ch.instructions,
+            ch.github_pr_title,
+            ch.github_pr_description,
+            ch.github_repo_url,
+            ch.github_pr_number,
+            cca.id as assignment_id,
+            COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
+            COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number
+       FROM challenges ch
+       LEFT JOIN candidate_challenge_assignment cca
+         ON cca.challenge_id = ch.id
+        AND cca.candidate_id = ?1
+      WHERE ch.id = ?2`,
+  ).bind(candidateId, challengeId).first<ReviewChallengeWithAssignment>();
+}
+
+async function buildReviewPromptContext(
+  db: D1Database,
+  env: Env,
+  candidateId: string,
+  challengeId: string,
+): Promise<{
+  prBrief: string;
+  prDiff: string;
+  repoKnowledge: RepoKnowledgeInput | null;
+}> {
+  const ch = await loadReviewChallengeForCandidate(db, candidateId, challengeId);
+  if (!ch) {
+    throw new Error(`Review challenge ${challengeId} was not found`);
+  }
+  const pr = await buildPrContext(db, ch, env);
+  const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
+  return {
+    prBrief: pr.description ?? pr.title ?? ch.instructions ?? '',
+    prDiff: pr.diff,
+    repoKnowledge: (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null,
+  };
+}
+
 /**
  * Shared implementer round execution.
  * Calls the agent, persists the new round, and returns the updated view.
@@ -407,20 +462,13 @@ async function executeReviewRound(
   threads: ReturnType<typeof buildThreadsForResponse>;
   transcript: StoredTranscript;
 }> {
-  const ch = await db.prepare(
-    `SELECT config, server_config, cached_diff_json, instructions, github_pr_title, github_pr_description
-     FROM challenges WHERE id = ?1`,
-  )
-    .bind(session.challenge_id)
-    .first<ChallengeConfigRow>();
-
-  const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
-  const prDiff = extractDiffText(cachedDiffJson);
-  const prBrief =
-    ch?.github_pr_description ??
-    ch?.github_pr_title ??
-    ch?.instructions ??
-    'Implement the described feature.';
+  const { prBrief: rawPrBrief, prDiff } = await buildReviewPromptContext(
+    db,
+    env,
+    session.candidate_id,
+    session.challenge_id,
+  );
+  const prBrief = rawPrBrief || 'Implement the described feature.';
   const llmProvider = 'workers-ai' as const;
   const apiKey = '';
 
@@ -805,9 +853,17 @@ review.post('/session/:id/message', async (c) => {
       .bind(now, sessionId)
       .run();
 
-    const result = await executeReviewRound(
-      c.env.DB, c.env, { ...session, status: 'in_progress' }, newComments, summary as string, nextId,
-    );
+    let result: Awaited<ReturnType<typeof executeReviewRound>>;
+    try {
+      result = await executeReviewRound(
+        c.env.DB, c.env, { ...session, status: 'in_progress' }, newComments, summary as string, nextId,
+      );
+    } catch (err) {
+      if (err instanceof SourceBackedReviewNotReadyError) {
+        return c.json(sourceBackedReviewNotReadyResponse(), 409);
+      }
+      throw err;
+    }
 
     await recordSessionEvent(c.env.DB, {
       sessionId,
@@ -874,7 +930,15 @@ review.post('/session/:id/message', async (c) => {
     );
   }
 
-  const result = await executeReviewRound(c.env.DB, c.env, session, newComments, undefined, nextId);
+  let result: Awaited<ReturnType<typeof executeReviewRound>>;
+  try {
+    result = await executeReviewRound(c.env.DB, c.env, session, newComments, undefined, nextId);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
+  }
 
   await recordSessionEvent(c.env.DB, {
     sessionId,
@@ -1131,7 +1195,15 @@ review.post('/submit', async (c) => {
     };
   }
 
-  const result = await executeReviewRound(c.env.DB, c.env, session, reviewerComments, summary as string, nextCommentId);
+  let result: Awaited<ReturnType<typeof executeReviewRound>>;
+  try {
+    result = await executeReviewRound(c.env.DB, c.env, session, reviewerComments, summary as string, nextCommentId);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
+  }
 
   return c.json({
     sessionId,
@@ -1231,7 +1303,15 @@ review.post('/:sessionId/respond', async (c) => {
     );
   }
 
-  const result = await executeReviewRound(c.env.DB, c.env, session, newComments, undefined, nextId);
+  let result: Awaited<ReturnType<typeof executeReviewRound>>;
+  try {
+    result = await executeReviewRound(c.env.DB, c.env, session, newComments, undefined, nextId);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
+  }
 
   return c.json({ round: result.round, rounds: result.transcript.rounds, threads: result.threads });
 });
@@ -1329,13 +1409,17 @@ review.post('/ask', async (c) => {
     ...(typeof body.line === 'number' ? { line: body.line as number } : {}),
   };
 
-  const cachedDiffJson = parseJsonColumn<unknown>(ch.cached_diff_json);
-  const prDiff = extractDiffText(cachedDiffJson);
-  const prBrief = ch.github_pr_description ?? ch.github_pr_title ?? ch.instructions ?? '';
+  let promptContext: Awaited<ReturnType<typeof buildReviewPromptContext>>;
+  try {
+    promptContext = await buildReviewPromptContext(c.env.DB, c.env, candidateId, ch.id);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
+  }
   const llmProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
   const apiKey = c.env.GOOGLE_AI_API_KEY ?? '';
-  const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
-  const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
 
   if (existingSession) {
     // Append to existing session
@@ -1354,7 +1438,9 @@ review.post('/ask', async (c) => {
     try {
       answer = await callExplainerAgent({
         apiKey, provider: llmProvider, ai: c.env.AI,
-        prBrief, prDiff, repoKnowledge,
+        prBrief: promptContext.prBrief,
+        prDiff: promptContext.prDiff,
+        repoKnowledge: promptContext.repoKnowledge,
         previousExchanges: exchanges,
         newQuestion: question,
       });
@@ -1392,7 +1478,9 @@ review.post('/ask', async (c) => {
   try {
     answer = await callExplainerAgent({
       apiKey, provider: llmProvider, ai: c.env.AI,
-      prBrief, prDiff, repoKnowledge,
+      prBrief: promptContext.prBrief,
+      prDiff: promptContext.prDiff,
+      repoKnowledge: promptContext.repoKnowledge,
       previousExchanges: [],
       newQuestion: question,
     });
@@ -1516,19 +1604,25 @@ review.post('/:sessionId/ask', async (c) => {
     ...(typeof body.line === 'number' ? { line: body.line as number } : {}),
   };
 
-  const cachedDiffJson = parseJsonColumn<unknown>(ch?.cached_diff_json ?? null);
-  const prDiff = extractDiffText(cachedDiffJson);
-  const prBrief = ch?.github_pr_description ?? ch?.github_pr_title ?? ch?.instructions ?? '';
+  let promptContext: Awaited<ReturnType<typeof buildReviewPromptContext>>;
+  try {
+    promptContext = await buildReviewPromptContext(c.env.DB, c.env, candidateId, session.challenge_id);
+  } catch (err) {
+    if (err instanceof SourceBackedReviewNotReadyError) {
+      return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    throw err;
+  }
   const llmProvider = c.env.GOOGLE_AI_API_KEY ? 'google-ai' as const : 'workers-ai' as const;
   const apiKey = c.env.GOOGLE_AI_API_KEY ?? '';
-  const serverConfig = parseJsonColumn<Record<string, unknown>>(ch?.server_config ?? null);
-  const repoKnowledge = (serverConfig?.repoKnowledge as RepoKnowledgeInput | undefined) ?? null;
 
   let answer: ExplainerResponse;
   try {
     answer = await callExplainerAgent({
       apiKey, provider: llmProvider, ai: c.env.AI,
-      prBrief, prDiff, repoKnowledge,
+      prBrief: promptContext.prBrief,
+      prDiff: promptContext.prDiff,
+      repoKnowledge: promptContext.repoKnowledge,
       previousExchanges: exchanges,
       newQuestion: question,
     });
