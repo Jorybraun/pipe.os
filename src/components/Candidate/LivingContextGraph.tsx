@@ -50,6 +50,10 @@ function scoreLabel(value: number | null): string {
   return value === null ? 'No interaction score' : `${Math.round(value * 100)}%`;
 }
 
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 function locatorLabel(source: LivingContextSourceRef): string {
   if (source.lineStart !== null && source.lineEnd !== null) {
     return source.lineStart === source.lineEnd
@@ -100,6 +104,15 @@ function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | nul
   return sources
     .map((source) => source.exactText?.trim())
     .find((text): text is string => Boolean(text)) ?? null;
+}
+
+function isMeetingEvidenceInteraction(
+  interaction: LivingContextInteraction,
+  artifacts: LivingContextArtifact[],
+): boolean {
+  const interactionType = interaction.interactionType.toLowerCase();
+  return interactionType.includes('meeting')
+    || artifacts.some((artifact) => artifact.artifactType.toLowerCase() === 'meeting_transcript');
 }
 
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
@@ -487,6 +500,137 @@ function ArtifactNode({
   );
 }
 
+function MeetingEvidencePanel({
+  livingContext,
+  onSelectSource,
+}: {
+  livingContext: LivingContextReadModel;
+  onSelectSource: (source: LivingContextSourceRef) => void;
+}): JSX.Element | null {
+  const branches = livingContext.interactions
+    .map((interaction) => {
+      const artifacts = livingContext.artifacts.filter(
+        (artifact) => artifact.interactionId === interaction.id,
+      );
+      const assertions = livingContext.assertions.filter(
+        (assertion) => assertion.interactionId === interaction.id,
+      );
+      const contextRecords = livingContext.contextRecords.filter(
+        (record) => record.interactionId === interaction.id,
+      );
+      const sourceSpans = artifacts.flatMap((artifact) => artifact.sourceSpans);
+      const signalLabels = livingContext.signals
+        .filter((signal) => signal.evidence.some((evidence) => evidence.interactionId === interaction.id))
+        .map((signal) => signal.label);
+
+      return {
+        interaction,
+        artifacts,
+        assertions,
+        contextRecords,
+        sourceSpans,
+        signalLabels,
+      };
+    })
+    .filter((branch) => isMeetingEvidenceInteraction(branch.interaction, branch.artifacts));
+
+  if (branches.length === 0) return null;
+
+  return (
+    <section
+      className="living-context__meeting-evidence"
+      aria-label="Meeting evidence"
+      data-testid="meeting-evidence-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Meeting evidence</div>
+          <div className="living-context__eyebrow">
+            Transcript-backed interaction branches
+          </div>
+        </div>
+        <div className="living-context__count">{branches.length}</div>
+      </div>
+
+      <div className="living-context__meeting-grid">
+        {branches.map((branch) => (
+          <article
+            key={branch.interaction.id}
+            className="living-context__meeting-card"
+            data-testid="meeting-evidence-card"
+          >
+            <div className="living-context__meeting-head">
+              <div>
+                <div className="living-context__meeting-title">
+                  {titleCase(branch.interaction.interactionType)}
+                </div>
+                <div className="living-context__meeting-meta">
+                  <span>{interactionDate(branch.interaction)}</span>
+                  {branch.interaction.externalReference && (
+                    <span>{branch.interaction.externalReference}</span>
+                  )}
+                </div>
+              </div>
+              <div className="living-context__meeting-counts">
+                <span>{countLabel(branch.artifacts.length, 'artifact')}</span>
+                <span>{countLabel(branch.sourceSpans.length, 'span')}</span>
+                <span>{countLabel(branch.assertions.length, 'assertion')}</span>
+              </div>
+            </div>
+
+            {branch.sourceSpans.length > 0 && (
+              <div className="living-context__meeting-sources">
+                {branch.sourceSpans.slice(0, 2).map((source) => (
+                  <div
+                    key={`${branch.interaction.id}:${source.sourceSpanId}`}
+                    className="living-context__meeting-source"
+                    data-testid="meeting-evidence-source"
+                  >
+                    <SourceButton source={source} onSelect={onSelectSource} />
+                    <blockquote>{source.exactText}</blockquote>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.contextRecords.length > 0 && (
+              <div className="living-context__meeting-records">
+                {branch.contextRecords.slice(0, 2).map((record) => (
+                  <div key={record.id} className="living-context__meeting-record">
+                    <span>{titleCase(record.recordType)}</span>
+                    <p>{record.narrative}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.assertions.length > 0 && (
+              <div className="living-context__meeting-assertions">
+                {branch.assertions.slice(0, 2).map((assertion) => (
+                  <div key={assertion.id}>
+                    <span>{assertion.predicate}</span>
+                    <p>{assertion.narrative}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.signalLabels.length > 0 && (
+              <div className="living-context__concepts">
+                {branch.signalLabels.slice(0, 4).map((label) => (
+                  <span key={`${branch.interaction.id}:${label}`} className="living-context__concept">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
   livingContextEndpoint,
@@ -680,6 +824,11 @@ export function LivingContextGraph({
           </div>
         ))}
       </div>
+
+      <MeetingEvidencePanel
+        livingContext={livingContext}
+        onSelectSource={setSelectedSource}
+      />
 
       <div className="living-context__workspace">
         <aside className="living-context__rail">

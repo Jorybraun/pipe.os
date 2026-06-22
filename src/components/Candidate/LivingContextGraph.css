@@ -77,6 +77,107 @@
   background: rgba(10, 12, 17, 0.72);
 }
 
+.living-context__meeting-evidence {
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.035);
+}
+
+.living-context__meeting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.living-context__meeting-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.living-context__meeting-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.living-context__meeting-title {
+  overflow-wrap: anywhere;
+  color: var(--pipe-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.living-context__meeting-meta,
+.living-context__meeting-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__meeting-counts {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  max-width: 145px;
+  margin-top: 0;
+  text-transform: uppercase;
+}
+
+.living-context__meeting-sources,
+.living-context__meeting-records,
+.living-context__meeting-assertions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.living-context__meeting-source,
+.living-context__meeting-record,
+.living-context__meeting-assertions div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.living-context__meeting-source blockquote {
+  margin: 8px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--lc-source);
+  color: var(--pipe-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.living-context__meeting-record span,
+.living-context__meeting-assertions span {
+  display: block;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.living-context__meeting-record p,
+.living-context__meeting-assertions p {
+  margin: 5px 0 0;
+  color: var(--pipe-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .living-context__metric-value {
   color: var(--pipe-text);
   font-size: 18px;
@@ -823,6 +924,15 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .living-context__meeting-head {
+    display: grid;
+  }
+
+  .living-context__meeting-counts {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
   .living-context__workspace {
     display: block;
   }
@@ -853,6 +963,15 @@
 @container living-context (max-width: 720px) {
   .living-context__summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .living-context__meeting-head {
+    display: grid;
+  }
+
+  .living-context__meeting-counts {
+    justify-content: flex-start;
+    max-width: none;
   }
 
   .living-context__workspace {
