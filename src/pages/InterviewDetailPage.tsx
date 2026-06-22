@@ -7,6 +7,7 @@ import {
   Calendar,
   CheckCircle,
   Clock,
+  Copy,
   ExternalLink,
   FileText,
   GitPullRequest,
@@ -33,6 +34,14 @@ const STATUS_COLORS: Record<string, string> = {
   CANCELLED: '#f87171',
   NO_SHOW: '#9ca3af',
 };
+
+interface PreparedRoomLinks {
+  id: string;
+  sessionId: string | null;
+  hostUrl: string;
+  guestUrl: string;
+  expiresAt: string;
+}
 
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
   if (!value) return fallback;
@@ -109,7 +118,7 @@ function Section({
   );
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }): JSX.Element {
+function Field({ label, value }: { label: string; value: ReactNode }): JSX.Element {
   return (
     <div style={{ minWidth: 0 }}>
       <div style={FIELD_LABEL}>{label}</div>
@@ -163,6 +172,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [interview, setInterview] = useState<ScheduledInterviewDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [roomLinks, setRoomLinks] = useState<PreparedRoomLinks | null>(null);
+  const [isPreparingRoom, setIsPreparingRoom] = useState(false);
+  const [roomError, setRoomError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!interviewId) return;
@@ -188,6 +200,51 @@ export default function InterviewDetailPage(): JSX.Element {
     () => parseTranscript(interview?.transcriptArtifact),
     [interview?.transcriptArtifact],
   );
+
+  const prepareRoom = useCallback(async () => {
+    if (!interview) return;
+    setRoomError(null);
+    setIsPreparingRoom(true);
+    try {
+      let meetingId = interview.linkedMeeting?.id ?? null;
+      if (!meetingId) {
+        const name =
+          interview.candidateName
+          ?? interview.recipientName
+          ?? interview.candidateEmail
+          ?? interview.recipientEmail
+          ?? 'Interview guest';
+        const email = interview.candidateEmail ?? interview.recipientEmail;
+        if (!email) {
+          setRoomError('Add an email before creating a video room.');
+          return;
+        }
+        const role = interview.pipelineTitle ?? 'Talent Pool';
+        const stage = interview.stageTitle ?? interview.interviewType ?? 'Interview';
+        const created = await api.post<{ meeting: { id: string } }>('/api/v1/meetings', {
+          recipientName: name,
+          recipientEmail: email,
+          title: `${name} interview`,
+          description: `${role} · ${stage}`,
+          meetingType: 'INTERVIEW',
+          scheduledAt: interview.scheduledAt ?? undefined,
+          scheduledInterviewId: interview.id,
+        });
+        meetingId = created.meeting.id;
+      }
+
+      const prepared = await api.post<{ room: PreparedRoomLinks }>(
+        `/api/v1/meetings/${meetingId}/room`,
+        {},
+      );
+      setRoomLinks(prepared.room);
+      await load();
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Unable to prepare video room');
+    } finally {
+      setIsPreparingRoom(false);
+    }
+  }, [api, interview, load]);
 
   if (isLoading) {
     return (
@@ -250,10 +307,17 @@ export default function InterviewDetailPage(): JSX.Element {
               PERSON
             </button>
           )}
-          <ActionLink href={interview.meetingUrl} tone="green">
-            <Video size={14} />
-            JOIN
-          </ActionLink>
+          {roomLinks?.hostUrl ? (
+            <ActionLink href={roomLinks.hostUrl} tone="green">
+              <Video size={14} />
+              HOST ROOM
+            </ActionLink>
+          ) : (
+            <button onClick={() => void prepareRoom()} disabled={isPreparingRoom} style={PRIMARY_BUTTON}>
+              {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+              PREPARE ROOM
+            </button>
+          )}
           <ActionLink href={interview.schedulingUrl}>
             <Calendar size={14} />
             BOOKING
@@ -356,6 +420,45 @@ export default function InterviewDetailPage(): JSX.Element {
               <Field label="Meeting status" value={interview.linkedMeeting?.status ?? 'None'} />
               <Field label="Started" value={formatDate(interview.linkedMeeting?.startedAt, 'Not started')} />
               <Field label="Ended" value={formatDate(interview.linkedMeeting?.endedAt, 'Not ended')} />
+            </div>
+            <div style={ROOM_ACTIONS}>
+              <button
+                onClick={() => void prepareRoom()}
+                disabled={isPreparingRoom}
+                style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+              >
+                {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+                {roomLinks ? 'REFRESH HOST LINK' : 'PREPARE VIDEO ROOM'}
+              </button>
+              {roomLinks && (
+                <>
+                  <ActionLink href={roomLinks.hostUrl} tone="green">
+                    <Video size={14} />
+                    OPEN HOST ROOM
+                  </ActionLink>
+                  <button
+                    onClick={() => void navigator.clipboard.writeText(roomLinks.guestUrl)}
+                    style={{ ...PRIMARY_BUTTON, justifyContent: 'center', width: '100%' }}
+                  >
+                    <Copy size={14} />
+                    COPY GUEST LINK
+                  </button>
+                  <div style={ROOM_LINK_TEXT}>
+                    Guest link expires {formatDate(roomLinks.expiresAt, 'after token expiry')}
+                  </div>
+                </>
+              )}
+              {!roomLinks && interview.linkedMeeting?.meetingUrl && (
+                <Field
+                  label="Current guest link"
+                  value={(
+                    <a href={interview.linkedMeeting.meetingUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                      {interview.linkedMeeting.meetingUrl}
+                    </a>
+                  )}
+                />
+              )}
+              {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
             </div>
           </Section>
 
@@ -530,6 +633,30 @@ const INLINE_LINK: CSSProperties = {
   color: '#60a5fa',
   textDecoration: 'none',
   overflowWrap: 'anywhere',
+};
+
+const ROOM_ACTIONS: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr',
+  gap: 10,
+  marginTop: 16,
+};
+
+const ROOM_LINK_TEXT: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  lineHeight: 1.5,
+};
+
+const ERROR_NOTE: CSSProperties = {
+  padding: 10,
+  borderRadius: 6,
+  border: '1px solid rgba(248,113,113,0.35)',
+  background: 'rgba(248,113,113,0.08)',
+  color: '#fca5a5',
+  fontSize: 11,
+  lineHeight: 1.5,
 };
 
 const NOTE: CSSProperties = {

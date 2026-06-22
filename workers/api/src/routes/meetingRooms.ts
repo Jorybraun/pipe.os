@@ -583,6 +583,106 @@ async function createRoomAndHostToken(
   };
 }
 
+async function ensureMeetingRoomLinks(
+  db: D1Database,
+  meetingId: string,
+  roomAppUrl: string,
+): Promise<{
+  id: string;
+  sessionId: string;
+  hostUrl: string;
+  guestUrl: string;
+  expiresAt: string;
+}> {
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
+  let room = await db.prepare(
+    'SELECT id, session_id FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(meetingId).first<{ id: string; session_id: string }>();
+
+  if (!room) {
+    room = {
+      id: crypto.randomUUID(),
+      session_id: crypto.randomUUID(),
+    };
+    await db.prepare(
+      `INSERT INTO meeting_rooms (id, meeting_id, session_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'WAITING', ?, ?)`,
+    ).bind(room.id, meetingId, room.session_id, now, now).run();
+  }
+
+  await db.prepare(
+    `UPDATE meeting_room_tokens
+     SET revoked_at = ?
+     WHERE room_id = ? AND role = 'HOST' AND revoked_at IS NULL`,
+  ).bind(now, room.id).run();
+
+  const hostToken = generateRoomToken();
+  const hostHash = await hashRoomToken(hostToken);
+  await db.prepare(
+    `INSERT INTO meeting_room_tokens (id, room_id, token_hash, role, expires_at, created_at)
+     VALUES (?, ?, ?, 'HOST', ?, ?)`,
+  ).bind(crypto.randomUUID(), room.id, hostHash, expiresAt, now).run();
+
+  const meeting = await db.prepare(
+    'SELECT meeting_url FROM meetings WHERE id = ?',
+  ).bind(meetingId).first<{ meeting_url: string | null }>();
+  const participants = await db.prepare(
+    `SELECT id FROM meeting_participants
+     WHERE meeting_id = ?
+     ORDER BY created_at, id`,
+  ).bind(meetingId).all<{ id: string }>();
+  const guestParticipantId = participants.results.length === 1
+    ? participants.results[0]?.id ?? null
+    : null;
+
+  let guestToken: string | null = null;
+  if (meeting?.meeting_url) {
+    try {
+      const existingUrl = new URL(meeting.meeting_url);
+      guestToken = existingUrl.pathname.split('/').filter(Boolean).pop() ?? null;
+      if (guestToken) {
+        const existingHash = await hashRoomToken(guestToken);
+        const valid = await db.prepare(
+          `SELECT id FROM meeting_room_tokens
+           WHERE room_id = ? AND token_hash = ? AND role = 'GUEST'
+             AND revoked_at IS NULL AND expires_at > ?`,
+        ).bind(room.id, existingHash, now).first<{ id: string }>();
+        if (!valid) {
+          guestToken = null;
+        } else if (guestParticipantId) {
+          await db.prepare(
+            `UPDATE meeting_room_tokens
+             SET participant_id = ?
+             WHERE id = ? AND participant_id IS NULL`,
+          ).bind(guestParticipantId, valid.id).run();
+        }
+      }
+    } catch {
+      guestToken = null;
+    }
+  }
+
+  if (!guestToken) {
+    guestToken = await mintGuestToken(db, room.id, guestParticipantId);
+  }
+
+  const cleanRoomAppUrl = roomAppUrl.replace(/\/$/, '');
+  const hostUrl = `${cleanRoomAppUrl}/room/${hostToken}`;
+  const guestUrl = `${cleanRoomAppUrl}/room/${guestToken}`;
+  await db.prepare(
+    'UPDATE meetings SET meeting_url = ?, updated_at = ? WHERE id = ?',
+  ).bind(guestUrl, now, meetingId).run();
+
+  return {
+    id: room.id,
+    sessionId: room.session_id,
+    hostUrl,
+    guestUrl,
+    expiresAt,
+  };
+}
+
 async function mintGuestToken(
   db: D1Database,
   roomId: string,
@@ -802,6 +902,26 @@ meetingsAuth.get('/:id', async (c) => {
       updatedAt: meeting.updated_at,
     },
   });
+});
+
+// POST /:id/room — create/reopen a standalone video room for a meeting.
+meetingsAuth.post('/:id/room', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const meeting = await db.prepare(
+    'SELECT id FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(id, userId).first<{ id: string }>();
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const room = await ensureMeetingRoomLinks(
+    db,
+    meeting.id,
+    c.env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175',
+  );
+
+  return c.json({ room });
 });
 
 // POST /:id/invite — mint a guest token and send via Resend with the join link

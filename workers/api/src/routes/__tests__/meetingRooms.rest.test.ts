@@ -241,6 +241,7 @@ describe('meeting room recording living-context route', () => {
       DEV_AUTH_BYPASS: 'true',
       DEV_BYPASS_USER_ID: 'owner-1',
       APP_BASE_URL: 'http://localhost:5173',
+      VIDEO_ROOM_APP_URL: 'http://localhost:5175',
       DEEPGRAM_API_KEY: 'test-deepgram',
     } as unknown as Env;
   });
@@ -248,6 +249,62 @@ describe('meeting room recording living-context route', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     sqlite.close();
+  });
+
+  it('prepares stable guest and fresh host video room links for a meeting', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Room Prep Person',
+        recipientEmail: 'room-prep@example.com',
+        title: 'Room prep interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const firstRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(firstRes.status).toBe(200);
+    const first = await firstRes.json() as {
+      room: { id: string; sessionId: string; hostUrl: string; guestUrl: string; expiresAt: string };
+    };
+    expect(first.room.hostUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(first.room.guestUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(sqlite.prepare(
+      'SELECT meeting_url FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({ meeting_url: first.room.guestUrl });
+
+    const secondRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(secondRes.status).toBe(200);
+    const second = await secondRes.json() as {
+      room: { id: string; sessionId: string; hostUrl: string; guestUrl: string; expiresAt: string };
+    };
+    expect(second.room.id).toBe(first.room.id);
+    expect(second.room.sessionId).toBe(first.room.sessionId);
+    expect(second.room.hostUrl).not.toBe(first.room.hostUrl);
+    expect(second.room.guestUrl).toBe(first.room.guestUrl);
+
+    const tokenCounts = sqlite.prepare(
+      `SELECT role,
+              COUNT(*) AS count,
+              SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) AS active
+         FROM meeting_room_tokens
+        GROUP BY role
+        ORDER BY role`,
+    ).all();
+    expect(tokenCounts).toEqual([
+      { role: 'GUEST', count: 1, active: 1 },
+      { role: 'HOST', count: 3, active: 1 },
+    ]);
   });
 
   it('routes a recorded meeting transcript into the same graph after roleless candidate convergence', async () => {

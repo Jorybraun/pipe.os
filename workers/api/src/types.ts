@@ -131,6 +131,8 @@ export interface Env {
    * Defaults to 'https://pipe.build' in production.
    */
   APP_BASE_URL?: string;
+  /** Base URL for the standalone host/guest video room app. */
+  VIDEO_ROOM_APP_URL?: string;
   /** Twilio Account SID for phone screening. */
   TWILIO_ACCOUNT_SID?: string;
   /** Twilio Auth Token for webhook signature validation. */
