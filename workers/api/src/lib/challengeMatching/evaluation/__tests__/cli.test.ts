@@ -31,6 +31,15 @@ function expertCorpusJson(): string {
     ...label,
     labelId: `expert-label-${index + 1}`,
     labeledBy: 'expert-reviewer-1',
+    labelProvenance: {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: `expert-review-artifact-${index + 1}`,
+      reviewArtifactVersion: `expert-review-version-${index + 1}`,
+      contentHash: `sha256:expert-review-${index + 1}`,
+      locator: `expert-review:${index + 1}`,
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    },
   }));
   corpus.metadata.syntheticFixtureCount = 0;
   return JSON.stringify(corpus);
@@ -401,6 +410,42 @@ describe('matching evaluation CLI', () => {
     );
   });
 
+  it('fails the readiness gate for expert-looking labels without reviewer source provenance', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    const corpus = JSON.parse(expertCorpusJson()) as {
+      expertLabels: Array<{ labelProvenance?: unknown }>;
+    };
+    corpus.expertLabels = corpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return rest;
+    });
+    insertEvaluationCorpus(sqlite, JSON.stringify(corpus));
+    insertEvaluationResult(sqlite, persistedResultFixture());
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.failures).toContain(
+      'expert label is missing reviewer/source provenance: expert-label-1',
+    );
+  });
+
   it('refuses direct API persistence when expert-label gate is disabled', async () => {
     directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
     const databasePath = join(directory, 'evaluation.sqlite');
@@ -433,6 +478,31 @@ describe('matching evaluation CLI', () => {
       comparisonMatchRunIds: ['run-comparison'],
       persistResult: true,
     })).rejects.toThrow('Persisted evaluations require a fully expert-labelled corpus');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
+  });
+
+  it('refuses direct API persistence for labels without reviewer source provenance', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    const corpus = JSON.parse(expertCorpusJson()) as {
+      expertLabels: Array<{ labelProvenance?: unknown }>;
+    };
+    corpus.expertLabels = corpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return rest;
+    });
+    insertEvaluationCorpus(sqlite, JSON.stringify(corpus));
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'expert-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+    })).rejects.toThrow('Production corpus validation failed');
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
       .toEqual({ count: 0 });
     sqlite.close();

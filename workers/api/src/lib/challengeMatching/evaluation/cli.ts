@@ -1,4 +1,4 @@
-import { getLabelsForCandidateRole, loadCorpus } from './corpus';
+import { getLabelsForCandidateRole, loadCorpus, validateProductionCorpus } from './corpus';
 import { checkAcceptanceThresholds, evaluateMatchRuns } from './metrics';
 import {
   DEFAULT_ACCEPTANCE_THRESHOLDS,
@@ -267,6 +267,7 @@ export async function runEvaluation(
     if (result.metrics.syntheticFixtureCount > 0 || result.metrics.expertLabelCount === 0) {
       throw new Error('Persisted evaluations require a fully expert-labelled corpus');
     }
+    validateProductionCorpus(corpus);
     await db.prepare(
       `INSERT INTO evaluation_results (
          id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,

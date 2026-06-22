@@ -76,6 +76,15 @@ export interface ExpertLabel {
   labelVersion: string;
   labeledAt: string;
   labeledBy: string;
+  labelProvenance?: {
+    reviewerId: string;
+    reviewerRole?: string;
+    reviewArtifactId: string;
+    reviewArtifactVersion: string;
+    contentHash: string;
+    locator: string;
+    rubricVersion: string;
+  };
 }
 
 export interface EvaluationCorpus {

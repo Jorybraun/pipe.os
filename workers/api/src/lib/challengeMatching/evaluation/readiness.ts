@@ -1,9 +1,11 @@
+import { loadCorpus, productionCorpusFailures } from './corpus';
 import type { EvaluationMetrics, EvaluationResult } from './types';
 
 interface EvaluationResultRow {
   id: string;
   corpus_id: string;
   metrics_json: string;
+  corpus_json: string;
   result_json: string;
   passed: number;
   created_at: number;
@@ -44,7 +46,7 @@ export async function checkLatestProductionEvaluation(
   options: EvaluationReadinessOptions,
 ): Promise<EvaluationReadinessReport> {
   const row = await db.prepare(
-    `SELECT r.id, r.corpus_id, r.metrics_json, r.result_json, r.passed, r.created_at,
+    `SELECT r.id, r.corpus_id, r.metrics_json, c.corpus_json, r.result_json, r.passed, r.created_at,
             c.expert_label_count, c.synthetic_fixture_count
        FROM evaluation_results r
        JOIN evaluation_corpora c ON c.corpus_id = r.corpus_id
@@ -70,6 +72,14 @@ export async function checkLatestProductionEvaluation(
   const failures: string[] = [];
   const warnings = [...(result.warnings ?? [])];
   const thresholds = result.thresholds;
+  let corpusProductionFailures: string[];
+  try {
+    corpusProductionFailures = productionCorpusFailures(loadCorpus(row.corpus_json));
+  } catch (error) {
+    corpusProductionFailures = [
+      `Stored evaluation corpus is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    ];
+  }
 
   if (row.passed !== 1 || result.passed !== true) {
     failures.push('Latest persisted evaluation did not pass');
@@ -95,6 +105,7 @@ export async function checkLatestProductionEvaluation(
   if (metrics.syntheticFixtureCount !== 0) {
     failures.push('Production rollout requires zero synthetic fixture labels');
   }
+  failures.push(...corpusProductionFailures);
   if (metrics.guardrailViolationCount !== 0) {
     failures.push(`Guardrail violations must be zero; got ${metrics.guardrailViolationCount}`);
   }

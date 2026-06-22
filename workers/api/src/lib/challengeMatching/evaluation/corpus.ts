@@ -17,6 +17,16 @@ export class CorpusValidationError extends Error {
   }
 }
 
+export class ProductionCorpusValidationError extends Error {
+  readonly failures: string[];
+
+  constructor(failures: string[]) {
+    super(`Production corpus validation failed: ${failures.join('; ')}`);
+    this.name = 'ProductionCorpusValidationError';
+    this.failures = failures;
+  }
+}
+
 function pairKey(candidateId: string, roleId: string): string {
   return JSON.stringify([candidateId, roleId]);
 }
@@ -167,6 +177,46 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     failures.push('metadata.syntheticFixtureCount does not match labeling provenance');
   }
   if (failures.length > 0) throw new CorpusValidationError(failures);
+}
+
+export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
+  const failures: string[] = [];
+  if (corpus.expertLabels.length === 0) {
+    failures.push('production corpus requires at least one expert label');
+  }
+  const syntheticLabels = corpus.expertLabels.filter(
+    (label) => label.labeledBy === 'synthetic-fixture',
+  );
+  if (syntheticLabels.length > 0 || corpus.metadata.syntheticFixtureCount > 0) {
+    failures.push('production corpus cannot contain synthetic fixture labels');
+  }
+
+  for (const label of corpus.expertLabels) {
+    const provenance = label.labelProvenance;
+    if (!provenance) {
+      failures.push(`expert label is missing reviewer/source provenance: ${label.labelId}`);
+      continue;
+    }
+    if (
+      !provenance.reviewerId
+      || !provenance.reviewArtifactId
+      || !provenance.reviewArtifactVersion
+      || !provenance.contentHash
+      || !provenance.locator
+      || !provenance.rubricVersion
+    ) {
+      failures.push(`expert label provenance is incomplete: ${label.labelId}`);
+    }
+    if (!provenance.contentHash.startsWith('sha256:')) {
+      failures.push(`expert label provenance must include an immutable sha256 content hash: ${label.labelId}`);
+    }
+  }
+  return failures;
+}
+
+export function validateProductionCorpus(corpus: EvaluationCorpus): void {
+  const failures = productionCorpusFailures(corpus);
+  if (failures.length > 0) throw new ProductionCorpusValidationError(failures);
 }
 
 export function loadCorpus(json: string): EvaluationCorpus {
