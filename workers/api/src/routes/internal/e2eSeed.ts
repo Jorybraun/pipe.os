@@ -23,6 +23,10 @@ import {
   type SourceArtifactKind,
   type StructuralFact,
 } from '../../lib/repoSemanticGraph';
+import {
+  loadRoleChallengeSemantics,
+  matchCandidateToReviewChallenge,
+} from '../../lib/challengeMatching';
 
 type SeedConceptInput = {
   canonicalKey: string;
@@ -64,11 +68,18 @@ type SeedDemandInput = {
   ownershipActions?: string[];
 };
 
+type SeedRoleSourceInput = {
+  title?: string;
+  jobDescriptionMd: string;
+  selectedConceptKeys: string[];
+};
+
 type SeedRequest = {
   fixtureId?: string;
   candidateId: string;
   omitSamplePrRow?: boolean;
   concepts: SeedConceptInput[];
+  roleSource?: SeedRoleSourceInput;
   candidateEvidence: SeedCandidateEvidenceInput[];
   repo: {
     githubUrl: string;
@@ -171,6 +182,7 @@ function parseSeedRequest(value: unknown): SeedRequest {
   const pullRequest = requireRecord(body.pullRequest, 'pullRequest');
   const conceptsRaw = body.concepts;
   const candidateEvidenceRaw = body.candidateEvidence;
+  const roleSourceRaw = body.roleSource;
   const repoSpansRaw = body.repoSpans;
   const demandsRaw = body.demands;
   if (!Array.isArray(conceptsRaw) || conceptsRaw.length === 0) throw new Error('concepts must be a non-empty array');
@@ -194,6 +206,16 @@ function parseSeedRequest(value: unknown): SeedRequest {
         description: optionalString(concept, 'description'),
       };
     }),
+    roleSource: roleSourceRaw === undefined
+      ? undefined
+      : (() => {
+          const roleSource = requireRecord(roleSourceRaw, 'roleSource');
+          return {
+            title: optionalString(roleSource, 'title'),
+            jobDescriptionMd: requireString(roleSource, 'jobDescriptionMd'),
+            selectedConceptKeys: stringArray(roleSource.selectedConceptKeys, 'selectedConceptKeys'),
+          };
+        })(),
     candidateEvidence: candidateEvidenceRaw.map((entry, index) => {
       const evidence = requireRecord(entry, `candidateEvidence[${index}]`);
       const evidenceLevel = requireString(evidence, 'evidenceLevel') as EvidenceLevel;
@@ -748,6 +770,166 @@ export async function buildFixtureChallengeInput(input: {
   };
 }
 
+async function seedRoleSourceContext(input: {
+  db: D1Database;
+  fixtureId: string;
+  seed: SeedRequest;
+  conceptIds: Map<string, string>;
+  ownerId: string;
+  pipelineId: string | null;
+  now: string;
+}): Promise<{
+  roleContextId: string;
+  roleSnapshotId: string;
+  relevantConcepts: string[];
+  requiredConcepts: string[];
+  resolverVersion: string;
+  sourceReferences: Array<{ entityId: string; locator: string; conceptKeys: string[] }>;
+} | null> {
+  const { db, fixtureId, seed, conceptIds, ownerId, pipelineId, now } = input;
+  const roleSource = seed.roleSource;
+  if (!roleSource) return null;
+  const roleContextId = `e2e-role-context-${fixtureId.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 96)}`;
+  const selectedConcepts = roleSource.selectedConceptKeys.map((conceptKey) => {
+    const concept = seed.concepts.find((entry) => entry.canonicalKey === conceptKey);
+    const conceptId = conceptIds.get(conceptKey);
+    if (!concept || !conceptId) {
+      throw new Error(`roleSource selectedConceptKeys references unknown concept ${conceptKey}`);
+    }
+    return {
+      conceptKey,
+      conceptId,
+      label: concept.label ?? concept.canonicalKey.split(':').at(-1) ?? concept.canonicalKey,
+    };
+  });
+  const selectedTerms = selectedConcepts.map((concept) => concept.label);
+  const jobDescriptionHash = await contentHash(roleSource.jobDescriptionMd);
+
+  await db.prepare(
+    `INSERT INTO role_contexts (
+       id, pipeline_id, owner_id, baseline, knowledge_state, exchanges,
+       question_budget, questions_asked, status, job_description_md,
+       rcd_version, rcd_json, validation_metadata, non_negotiable_skills_json,
+       created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, '{}', '[]', 0, 0, 'COMPLETE', ?5,
+       'simple-jd-v1', NULL, ?6, ?7, ?8, ?8)
+     ON CONFLICT(id) DO UPDATE SET
+       job_description_md = excluded.job_description_md,
+       validation_metadata = excluded.validation_metadata,
+       non_negotiable_skills_json = excluded.non_negotiable_skills_json,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    roleContextId,
+    pipelineId,
+    ownerId,
+    JSON.stringify({ title: roleSource.title ?? 'E2E source-backed role', source: 'e2e_seed' }),
+    roleSource.jobDescriptionMd,
+    JSON.stringify({
+      source: 'e2e_seed',
+      fixtureId,
+      selectedConceptKeys: roleSource.selectedConceptKeys,
+      contentHash: jobDescriptionHash,
+    }),
+    JSON.stringify(selectedTerms),
+    now,
+  ).run();
+
+  const store = new LivingContextStore(db);
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `e2e:${fixtureId}:role:${roleContextId}:artifact`,
+    artifactType: 'job_description',
+    logicalKey: `standalone-review-match-fixture:${fixtureId}:role-source`,
+    metadata: { source: 'e2e_seed', roleContextId },
+  });
+  const version = await store.createArtifactVersion({
+    ingestionKey: `e2e:${fixtureId}:role:${roleContextId}:artifact-version:${jobDescriptionHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash: jobDescriptionHash,
+    mediaType: 'text/markdown',
+    contentText: roleSource.jobDescriptionMd,
+    byteLength: byteLength(roleSource.jobDescriptionMd),
+    metadata: { source: 'e2e_seed', roleContextId },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `e2e:${fixtureId}:role:${roleContextId}:source-span:${jobDescriptionHash}`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'job-description',
+    byteStart: 0,
+    byteEnd: byteLength(roleSource.jobDescriptionMd),
+    charStart: 0,
+    charEnd: roleSource.jobDescriptionMd.length,
+    lineStart: 1,
+    lineEnd: roleSource.jobDescriptionMd.split('\n').length,
+    exactText: roleSource.jobDescriptionMd,
+    metadata: { source: 'e2e_seed', roleContextId },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `e2e:${fixtureId}:role:${roleContextId}:job-description-context`,
+    scopeType: 'role_context',
+    scopeId: roleContextId,
+    recordType: 'simple_job_description',
+    predicate: 'defines role source text',
+    narrative: `E2E source-backed role source for ${roleSource.title ?? roleContextId}.`,
+    qualifiers: {
+      roleContextId,
+      pipelineId,
+      selectedTerms,
+      selectedConceptKeys: roleSource.selectedConceptKeys,
+      contentHash: jobDescriptionHash,
+    },
+    confidence: 1,
+    extractionVersion: 'simple-jd-v1',
+    observedAt: now,
+    sources: [{
+      sourceSpanId: span.id,
+      evidenceRole: 'source',
+      exactText: roleSource.jobDescriptionMd,
+      contentHash: jobDescriptionHash,
+      locator: { fixtureId, source: 'job_description' },
+    }],
+    entities: [
+      { entityType: 'role_context', entityId: roleContextId, relationship: 'scope' },
+      {
+        entityType: 'job_description',
+        entityId: artifact.id,
+        relationship: 'source_artifact',
+        metadata: { artifactVersionId: version.id, sourceSpanId: span.id, contentHash: jobDescriptionHash },
+      },
+      ...selectedTerms.map((term) => ({
+        entityType: 'selected_term',
+        relationship: 'literal_term',
+        value: { surface: term },
+      })),
+    ],
+    concepts: selectedConcepts.map((concept) => ({
+      conceptId: concept.conceptId,
+      relationship: 'source_term',
+      weight: 1,
+    })),
+  });
+
+  const roleSemantics = await loadRoleChallengeSemantics(db, {
+    id: roleContextId,
+    rcd_version: 'simple-jd-v1',
+    rcd_json: null,
+    job_description_md: roleSource.jobDescriptionMd,
+    non_negotiable_skills_json: JSON.stringify(selectedTerms),
+  });
+  return {
+    roleContextId,
+    roleSnapshotId: roleSemantics.roleSnapshotId,
+    relevantConcepts: roleSemantics.relevantConcepts,
+    requiredConcepts: roleSemantics.requiredConcepts,
+    resolverVersion: roleSemantics.resolverVersion,
+    sourceReferences: roleSemantics.sources.map((source) => ({
+      entityId: source.roleNodeId,
+      locator: source.sourceSection ?? 'role_context',
+      conceptKeys: source.conceptKeys,
+    })),
+  };
+}
+
 async function seedRepoChallenge(input: {
   db: D1Database;
   fixtureId: string;
@@ -893,6 +1075,51 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
       seed,
       now,
     });
+    const roleContext = await seedRoleSourceContext({
+      db: c.env.DB,
+      fixtureId,
+      seed,
+      conceptIds: candidate.conceptIds,
+      ownerId: c.get('userId'),
+      pipelineId: identity.pipelineId,
+      now,
+    });
+    const seededMatch = roleContext
+      ? await matchCandidateToReviewChallenge(c.env.DB, identity.candidateId, {
+          roleContextId: roleContext.roleContextId,
+          roleSnapshotId: 'standalone-code-review-v1',
+          roleConcepts: roleContext.relevantConcepts,
+          requiredConcepts: roleContext.requiredConcepts,
+          conceptResolverVersion: roleContext.resolverVersion,
+          roleSourceReferences: roleContext.sourceReferences,
+        })
+      : null;
+    if (roleContext && (seededMatch?.status !== 'MATCHED' || !seededMatch.repoId || !seededMatch.prNumber)) {
+      throw new Error(`fixture role-backed matcher returned ${seededMatch?.status ?? 'NO_MATCH'}`);
+    }
+    if (roleContext && seededMatch?.repoId && seededMatch.prNumber) {
+      const matchedRepo = await c.env.DB.prepare(
+        `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+      ).bind(seededMatch.repoId).first<{ github_url: string | null }>();
+      if (!matchedRepo?.github_url) throw new Error('fixture role-backed match selected repo without github_url');
+      await c.env.DB.prepare(
+        `UPDATE scheduled_interviews
+            SET matched_repo_id = ?1,
+                github_repo_url = ?2,
+                github_pr_number = ?3,
+                updated_at = ?4
+          WHERE candidate_id = ?5
+            AND interview_type = 'CODE_REVIEW'
+            AND stage_id IS NULL
+            AND status NOT IN ('COMPLETED', 'CANCELLED')`,
+      ).bind(
+        seededMatch.repoId,
+        matchedRepo.github_url,
+        seededMatch.prNumber,
+        now,
+        identity.candidateId,
+      ).run();
+    }
 
     return c.json({
       ok: true,
@@ -909,6 +1136,8 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
       demandFamilies: repo.demandFamilies,
       repoUrl: seed.repo.githubUrl,
       prNumber: seed.pullRequest.number,
+      roleContextId: roleContext?.roleContextId ?? null,
+      roleSources: roleContext?.sourceReferences ?? [],
     });
   } catch (err) {
     console.error('[e2eSeed] Failed to seed standalone review fixture:', err);

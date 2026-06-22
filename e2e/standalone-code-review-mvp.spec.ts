@@ -82,6 +82,12 @@ interface SeedStandaloneReviewFixtureResponse {
   repoUrl: string;
   prNumber: number;
   packetId: string;
+  roleContextId: string | null;
+  roleSources: Array<{
+    entityId: string;
+    locator: string;
+    conceptKeys: string[];
+  }>;
   demandIds: string[];
   demandFamilies: string[];
   candidateSourceSpanIds: string[];
@@ -232,6 +238,11 @@ async function seedStandaloneReviewMatchFixture(
           label: 'vitest',
         },
       ],
+      roleSource: {
+        title: `Source-backed ${conceptLabel} role`,
+        jobDescriptionMd: `Review TypeScript PRs that implement ${conceptLabel} retry idempotency with source-backed evidence.`,
+        selectedConceptKeys: [conceptKey],
+      },
       candidateEvidence: [
         {
           exactText: `Implemented ${conceptLabel} idempotency with source-backed evidence.`,
@@ -378,6 +389,11 @@ async function seedStandaloneReviewMatchFixture(
   expect(body.ok).toBe(true);
   expect(body.repoUrl).toBe(repoUrl);
   expect(body.prNumber).toBe(prNumber);
+  expect(body.roleContextId).toBeTruthy();
+  expect(body.roleSources).toEqual([expect.objectContaining({
+    locator: expect.stringContaining('simple_job_description:source_span:'),
+    conceptKeys: expect.arrayContaining([conceptKey]),
+  })]);
   expect(body.candidateSourceSpanIds.length).toBeGreaterThan(0);
   expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
   expect(body.demandIds.length).toBeGreaterThanOrEqual(2);
@@ -766,6 +782,11 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
         prNumber?: number | null;
         prUrl?: string | null;
         packetId?: string;
+        roleSources?: Array<{
+          entityId?: string;
+          locator?: string;
+          conceptKeys?: string[];
+        }>;
         evidence?: Array<{
           candidateSourceRefs?: unknown[];
           challengeSourceRefs?: unknown[];
@@ -784,6 +805,10 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     expect(match!.repoUrl).toBe(fixture.repoUrl);
     expect(match!.prNumber).toBe(fixture.prNumber);
     expect(match!.prUrl).toBe(`${fixture.repoUrl}/pull/${fixture.prNumber}`);
+    expect(match!.roleSources).toEqual([expect.objectContaining({
+      locator: fixture.roleSources[0]!.locator,
+      conceptKeys: expect.arrayContaining([fixture.conceptKey]),
+    })]);
     expect(match!.evidence?.length).toBeGreaterThan(0);
     expect(match!.evidence!.every((entry) =>
       Array.isArray(entry.candidateSourceRefs)
@@ -890,6 +915,10 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
         summary?: string | null;
         annotationCount?: number;
       } | null;
+      roleSources?: Array<{
+        locator?: string;
+        conceptKeys?: string[];
+      }>;
       evidence?: Array<{
         candidateSourceRefs?: unknown[];
         challengeSourceRefs?: unknown[];
@@ -911,6 +940,10 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     expect(standaloneReviewMatch!.submission?.verdict).toBe('request_changes');
     expect(standaloneReviewMatch!.submission?.summary).toBe(reviewSummary);
     expect(standaloneReviewMatch!.submission?.annotationCount).toBe(1);
+    expect(standaloneReviewMatch!.roleSources).toEqual([expect.objectContaining({
+      locator: fixture.roleSources[0]!.locator,
+      conceptKeys: expect.arrayContaining([fixture.conceptKey]),
+    })]);
     expect(standaloneReviewMatch!.evidence?.length).toBeGreaterThan(0);
     expect(standaloneReviewMatch!.evidence!.every((entry) =>
       Array.isArray(entry.candidateSourceRefs)
@@ -1110,6 +1143,10 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(matchPanel).toContainText(`${fixture.repoFullName} #${fixture.prNumber}`);
     await expect(matchPanel).toContainText('Review source-backed retry idempotency');
     await expect(matchPanel).toContainText('Review submitted');
+    const roleSources = page.getByTestId('standalone-review-role-sources');
+    await expect(roleSources).toContainText('Role sources');
+    await expect(roleSources).toContainText(fixture.roleSources[0]!.locator);
+    await expect(roleSources).toContainText(fixture.conceptKey);
 
     const submission = page.getByTestId('standalone-review-submission');
     await expect(submission).toContainText('Candidate review result');
