@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Empty contact living-context responses now preserve the shared read-model shape, including `contextRecordCount` and `contextRecords`.
 - Contact living-context identity now follows the stable legacy contact link before email lookup, so contact email edits update the same person/workspace graph instead of forking it.
 
+### Fixed — Challenge Matching Provenance Guardrails
+
+- Candidate-to-PR matching now rejects stale or hand-shaped `review_challenge_packets` with `PACKET_PROVENANCE_INVALID` before recall/ranking by recomputing packet IDs, packet content hashes, demand IDs, demand hashes, demand-family consistency, row PR consistency, and source-hash consistency.
+- Match explanations, cockpit candidate profiles, and the `LivingContextGraph` diagnostics now preserve and render invalid packet provenance failures so reviewers can see why a repo packet was excluded instead of receiving an opaque no-match result.
+- Matcher regression coverage now uses packets persisted through `buildChallengePacket` + `persistReviewChallengeGraph` for valid selection paths, and keeps hand-shaped packet rows only as invalid legacy fixtures.
+
 ### Added — Match Explanation Visualization Proof
 
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.

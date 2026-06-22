@@ -13,7 +13,12 @@ import type {
   QueryPurpose,
   SourceRef,
 } from './types';
-import type { ChallengePacket as RepoChallengePacket } from '../repoSemanticGraph';
+import {
+  hashObject,
+  stableId,
+  stableJson,
+  type ChallengePacket as RepoChallengePacket,
+} from '../repoSemanticGraph';
 import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
 import type {
@@ -50,6 +55,7 @@ interface PacketRow {
   pr_number: number | null;
   production_ready: number;
   quality_score: number | null;
+  source_hash: string | null;
   packet_json: string;
 }
 
@@ -67,10 +73,15 @@ export interface ChallengePacketLoadExclusion {
   id: string;
   repoId: string;
   prNumber: number | null;
-  reason: 'DEMAND_WITHOUT_SOURCE_SPANS' | 'MISSING_DEMAND_SOURCE_SPANS' | 'PACKET_NOT_PRODUCTION_READY';
+  reason:
+    | 'DEMAND_WITHOUT_SOURCE_SPANS'
+    | 'MISSING_DEMAND_SOURCE_SPANS'
+    | 'PACKET_NOT_PRODUCTION_READY'
+    | 'PACKET_PROVENANCE_INVALID';
   demandIds: string[];
   missingSourceSpanIds: string[];
   gateFailures?: string[];
+  provenanceFailures?: string[];
   qualityScore?: number | null;
 }
 
@@ -233,6 +244,133 @@ function packetSourceRef(span: RepoSpanRow): SourceRef {
   };
 }
 
+function packetDemandIds(packet: Partial<RepoChallengePacket> | null): string[] {
+  return Array.isArray(packet?.demands)
+    ? packet.demands
+      .map((demand) => demand?.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .sort()
+    : [];
+}
+
+function packetGateFailures(packet: Partial<RepoChallengePacket> | null): string[] {
+  return Array.isArray(packet?.quality?.gates)
+    ? packet.quality.gates
+      .filter((gate) => gate && gate.passed === false && typeof gate.gate === 'string')
+      .map((gate) => gate.gate)
+      .sort()
+    : [];
+}
+
+function packetPrNumber(row: PacketRow, packet: Partial<RepoChallengePacket> | null): number | null {
+  return row.pr_number ?? (
+    typeof packet?.pullRequest?.number === 'number' ? packet.pullRequest.number : null
+  );
+}
+
+function packetIdentity(packet: RepoChallengePacket): {
+  repoSnapshotId: string;
+  prNumber: number;
+  baseSha: string;
+  headSha: string;
+  policyVersion: 'repo-challenge-v1';
+} {
+  return {
+    repoSnapshotId: packet.repoSnapshotId,
+    prNumber: packet.pullRequest.number,
+    baseSha: packet.pullRequest.baseSha.toLowerCase(),
+    headSha: packet.pullRequest.headSha.toLowerCase(),
+    policyVersion: packet.policyVersion,
+  };
+}
+
+async function challengePacketIntegrityFailures(
+  row: PacketRow,
+  packet: RepoChallengePacket,
+): Promise<string[]> {
+  const failures: string[] = [];
+  const identity = packetIdentity(packet);
+  const expectedPacketId = await stableId('challenge_packet', identity);
+  const packetSpanIds = new Set(packet.sourceSpanIds);
+  const demandFamilies = packet.demands.map((demand) => demand.family).sort();
+  const content = {
+    ...identity,
+    repository: packet.repository,
+    pullRequest: {
+      number: packet.pullRequest.number,
+      url: packet.pullRequest.url,
+      title: packet.pullRequest.title,
+      body: packet.pullRequest.body,
+      author: packet.pullRequest.author,
+      baseSha: identity.baseSha,
+      headSha: identity.headSha,
+      mergedAt: packet.pullRequest.mergedAt,
+    },
+    languageSupport: packet.languageSupport,
+    changedFilePaths: packet.changedFilePaths,
+    changedSymbolIds: packet.changedSymbolIds,
+    sourceSpanIds: packet.sourceSpanIds,
+    testChanges: packet.testChanges,
+    issue: packet.issue,
+    demands: packet.demands,
+    demandFamilies: packet.demandFamilies,
+    quality: packet.quality,
+  };
+  const expectedPacketHash = await hashObject(content);
+
+  if (packet.id !== row.id) {
+    failures.push(`packet row id ${row.id} does not match packet JSON id ${packet.id}`);
+  }
+  if (row.pr_number !== null && row.pr_number !== packet.pullRequest.number) {
+    failures.push(`packet row PR ${row.pr_number} does not match packet PR ${packet.pullRequest.number}`);
+  }
+  if (packet.id !== expectedPacketId) {
+    failures.push(`packet id ${packet.id} does not match normalized identity ${expectedPacketId}`);
+  }
+  if (row.source_hash !== packet.contentHash) {
+    failures.push('packet source_hash does not match packet contentHash');
+  }
+  if (packet.contentHash !== expectedPacketHash) {
+    failures.push(`packet contentHash is stale; expected ${expectedPacketHash}`);
+  }
+  if (stableJson(packet.demandFamilies) !== stableJson(demandFamilies)) {
+    failures.push('packet demandFamilies do not match packet demands');
+  }
+
+  for (const demand of packet.demands) {
+    const demandSpansMissingFromPacket = demand.sourceSpanIds.filter((spanId) => !packetSpanIds.has(spanId));
+    if (demandSpansMissingFromPacket.length > 0) {
+      failures.push(`demand ${demand.id} references spans absent from packet: ${demandSpansMissingFromPacket.join(', ')}`);
+    }
+    const demandIdentity = {
+      repoSnapshotId: packet.repoSnapshotId,
+      prNumber: packet.pullRequest.number,
+      family: demand.family,
+      sourceSpanIds: demand.sourceSpanIds,
+    };
+    const expectedDemandId = await stableId('challenge_demand', demandIdentity);
+    const expectedDemandHash = await hashObject({
+      ...demandIdentity,
+      narrative: demand.narrative,
+      conceptKeys: demand.conceptKeys,
+      problems: demand.problems,
+      mechanisms: demand.mechanisms,
+      domains: demand.domains,
+      businessObjects: demand.businessObjects,
+      ownershipActions: demand.ownershipActions,
+      changedSymbolIds: demand.changedSymbolIds,
+    });
+    if (demand.id !== expectedDemandId) {
+      failures.push(`demand ${demand.id} does not match normalized identity ${expectedDemandId}`);
+    }
+    if (demand.contentHash !== expectedDemandHash) {
+      failures.push(`demand ${demand.id} contentHash is stale`);
+    }
+  }
+
+  return failures.sort();
+}
+
 export function materializeChallengePacketForMatching(
   repoId: number,
   packet: RepoChallengePacket,
@@ -328,7 +466,7 @@ async function loadChallengePackets(
   roleConcepts?: string[],
 ): Promise<ChallengePacketLoadResult> {
   const rows = await db.prepare(
-    `SELECT id, repo_id, pr_number, production_ready, quality_score, packet_json
+    `SELECT id, repo_id, pr_number, production_ready, quality_score, source_hash, packet_json
        FROM review_challenge_packets
       ORDER BY repo_id, pr_number`,
   ).all<PacketRow>();
@@ -336,22 +474,59 @@ async function loadChallengePackets(
   const exclusions: ChallengePacketLoadExclusion[] = [];
 
   for (const row of rows.results ?? []) {
-    const packet = JSON.parse(row.packet_json) as RepoChallengePacket;
-    if (row.production_ready !== 1 || (row.quality_score ?? 0) < 0.70) {
+    let packet: RepoChallengePacket | null = null;
+    try {
+      packet = JSON.parse(row.packet_json) as RepoChallengePacket;
+    } catch {
       exclusions.push({
         id: row.id,
         repoId: String(row.repo_id),
-        prNumber: row.pr_number ?? packet.pullRequest?.number ?? null,
-        reason: 'PACKET_NOT_PRODUCTION_READY',
-        demandIds: packet.demands.map((demand) => demand.id),
+        prNumber: row.pr_number,
+        reason: 'PACKET_PROVENANCE_INVALID',
+        demandIds: [],
         missingSourceSpanIds: [],
-        gateFailures: packet.quality.gates
-          .filter((gate) => !gate.passed)
-          .map((gate) => gate.gate),
+        provenanceFailures: ['packet_json could not be parsed'],
         qualityScore: row.quality_score,
       });
       continue;
     }
+
+    if (row.production_ready !== 1 || (row.quality_score ?? 0) < 0.70) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        reason: 'PACKET_NOT_PRODUCTION_READY',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        gateFailures: packetGateFailures(packet),
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
+    let provenanceFailures: string[];
+    try {
+      provenanceFailures = await challengePacketIntegrityFailures(row, packet);
+    } catch (error) {
+      provenanceFailures = [
+        `packet_json does not match challenge packet schema: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+    if (provenanceFailures.length > 0) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        reason: 'PACKET_PROVENANCE_INVALID',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        provenanceFailures,
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
     const spanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
     if (spanIds.length === 0) {
       const loaded = materializeChallengePacketForMatching(row.repo_id, packet, new Map(), roleConcepts);
@@ -650,6 +825,7 @@ function rejectedPacketExplanations(
       demandIds: 'demandIds' in packet ? packet.demandIds : undefined,
       missingSourceSpanIds: 'missingSourceSpanIds' in packet ? packet.missingSourceSpanIds : undefined,
       gateFailures: 'gateFailures' in packet ? packet.gateFailures : undefined,
+      provenanceFailures: 'provenanceFailures' in packet ? packet.provenanceFailures : undefined,
       qualityScore: 'qualityScore' in packet ? packet.qualityScore : undefined,
     });
   }
@@ -686,6 +862,14 @@ function diagnosticMissingEvidence(input: {
   }
   for (const packet of input.diagnostics.excludedPackets) {
     if ('missingSourceSpanIds' in packet && packet.missingSourceSpanIds.length > 0) {
+      missing.push({
+        scope: 'repo',
+        reason: packet.reason,
+        challengeId: packet.id,
+        sourceRefs: [],
+      });
+    }
+    if ('reason' in packet && packet.reason === 'PACKET_PROVENANCE_INVALID') {
       missing.push({
         scope: 'repo',
         reason: packet.reason,

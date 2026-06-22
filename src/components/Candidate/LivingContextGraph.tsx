@@ -141,6 +141,7 @@ function reviewExclusionReasonLabel(reason: StandaloneReviewExcludedPacket['reas
   if (reason === 'DEMAND_WITHOUT_SOURCE_SPANS') return 'Demand lacks source spans';
   if (reason === 'MISSING_DEMAND_SOURCE_SPANS') return 'Missing repo source spans';
   if (reason === 'PACKET_NOT_PRODUCTION_READY') return 'Packet not production-ready';
+  if (reason === 'PACKET_PROVENANCE_INVALID') return 'Invalid packet provenance';
   return 'Job-description guardrail';
 }
 
@@ -151,6 +152,7 @@ function reviewExclusionDetail(packet: StandaloneReviewExcludedPacket): string {
     packet.demandIds.length ? `demands ${packet.demandIds.join(', ')}` : null,
     packet.missingSourceSpanIds.length ? `missing spans ${packet.missingSourceSpanIds.join(', ')}` : null,
     packet.gateFailures.length ? `failed gates ${packet.gateFailures.join(', ')}` : null,
+    packet.provenanceFailures.length ? `provenance ${packet.provenanceFailures.slice(0, 2).join(', ')}` : null,
     packet.qualityScore !== null ? `quality ${packet.qualityScore.toFixed(2)}` : null,
   ].filter((value): value is string => Boolean(value));
   return details.join(' · ') || packet.id;

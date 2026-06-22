@@ -263,6 +263,7 @@ export interface MatchExplanation {
     demandIds?: string[];
     missingSourceSpanIds?: string[];
     gateFailures?: string[];
+    provenanceFailures?: string[];
     qualityScore?: number | null;
   }>;
   missingEvidence: Array<{

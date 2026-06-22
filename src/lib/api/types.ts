@@ -805,7 +805,8 @@ export type StandaloneReviewExclusionReason =
   | 'DEMAND_WITHOUT_SOURCE_SPANS'
   | 'MISSING_DEMAND_SOURCE_SPANS'
   | 'ROLE_GUARDRAIL_FAILED'
-  | 'PACKET_NOT_PRODUCTION_READY';
+  | 'PACKET_NOT_PRODUCTION_READY'
+  | 'PACKET_PROVENANCE_INVALID';
 
 export interface StandaloneReviewExcludedPacket {
   id: string;
@@ -815,6 +816,7 @@ export interface StandaloneReviewExcludedPacket {
   demandIds: string[];
   missingSourceSpanIds: string[];
   gateFailures: string[];
+  provenanceFailures: string[];
   qualityScore: number | null;
 }
 

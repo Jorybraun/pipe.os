@@ -112,6 +112,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         demandIds: ['demand-without-span'],
         missingSourceSpanIds: ['repo-span-missing'],
         gateFailures: [],
+        provenanceFailures: [],
         qualityScore: null,
       }],
       evaluatedChallenges: [{

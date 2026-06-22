@@ -171,7 +171,8 @@ export type StandaloneReviewExclusionReason =
   | 'DEMAND_WITHOUT_SOURCE_SPANS'
   | 'MISSING_DEMAND_SOURCE_SPANS'
   | 'ROLE_GUARDRAIL_FAILED'
-  | 'PACKET_NOT_PRODUCTION_READY';
+  | 'PACKET_NOT_PRODUCTION_READY'
+  | 'PACKET_PROVENANCE_INVALID';
 
 export interface StandaloneReviewExcludedPacket {
   id: string;
@@ -181,6 +182,7 @@ export interface StandaloneReviewExcludedPacket {
   demandIds: string[];
   missingSourceSpanIds: string[];
   gateFailures: string[];
+  provenanceFailures: string[];
   qualityScore: number | null;
 }
 
@@ -394,6 +396,7 @@ function parseStandaloneReviewExcludedPackets(value: string | null): StandaloneR
       && item.reason !== 'MISSING_DEMAND_SOURCE_SPANS'
       && item.reason !== 'ROLE_GUARDRAIL_FAILED'
       && item.reason !== 'PACKET_NOT_PRODUCTION_READY'
+      && item.reason !== 'PACKET_PROVENANCE_INVALID'
     ) {
       return [];
     }
@@ -405,6 +408,7 @@ function parseStandaloneReviewExcludedPackets(value: string | null): StandaloneR
       demandIds: asStringArray(item.demandIds),
       missingSourceSpanIds: asStringArray(item.missingSourceSpanIds),
       gateFailures: asStringArray(item.gateFailures),
+      provenanceFailures: asStringArray(item.provenanceFailures),
       qualityScore: typeof item.qualityScore === 'number' ? item.qualityScore : null,
     }];
   });
@@ -451,6 +455,12 @@ function standaloneReviewExclusionGap(packet: StandaloneReviewExcludedPacket): s
       ? ` Failed gate${packet.gateFailures.length === 1 ? '' : 's'}: ${packet.gateFailures.join(', ')}.`
       : '';
     return `${packet.id} was excluded because its repo packet is not production-ready.${scoreSuffix}${gateSuffix}`;
+  }
+  if (packet.reason === 'PACKET_PROVENANCE_INVALID') {
+    const failureSuffix = packet.provenanceFailures.length
+      ? ` ${packet.provenanceFailures.slice(0, 3).join(' ')}`
+      : '';
+    return `${packet.id} was excluded because its repo packet provenance is invalid.${failureSuffix}`;
   }
   const demandSuffix = packet.demandIds.length
     ? ` Demand${packet.demandIds.length === 1 ? '' : 's'}: ${packet.demandIds.join(', ')}.`

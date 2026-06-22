@@ -327,6 +327,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
         reason: 'MISSING_DEMAND_SOURCE_SPANS',
         demandIds: ['demand-events'],
         missingSourceSpanIds: ['repo-span-missing'],
+        provenanceFailures: [],
       }, {
         id: 'packet-unsafe',
         repoId: '15',
@@ -335,6 +336,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
         demandIds: ['demand-rust'],
         missingSourceSpanIds: [],
         gateFailures: ['production_language'],
+        provenanceFailures: [],
         qualityScore: 0.4,
       }]),
       [],
@@ -434,6 +436,7 @@ function createStandaloneReviewProfileApp() {
     demandIds: ['demand-without-span'],
     missingSourceSpanIds: ['repo-span-missing'],
     gateFailures: [],
+    provenanceFailures: [],
     qualityScore: null,
   }];
 
@@ -670,6 +673,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       demandIds: ['demand-without-span'],
       missingSourceSpanIds: ['repo-span-missing'],
       gateFailures: [],
+      provenanceFailures: [],
       qualityScore: null,
     }]);
     expect(body.standaloneReviewMatch.diagnostics.evaluatedChallenges).toEqual([{
