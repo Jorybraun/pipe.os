@@ -8,6 +8,7 @@
  *   DELETE /api/v1/scheduling/connection      — disconnect provider
  *   GET    /api/v1/scheduling/event-types     — list provider event types
  *   GET    /api/v1/scheduling/interviews      — list scheduled interviews
+ *   GET    /api/v1/scheduling/interviews/:id  — scheduled interview detail
  *   POST   /api/v1/scheduling/interviews      — create scheduled interview
  *   PATCH  /api/v1/scheduling/interviews/:id  — update interview status
  *
@@ -111,6 +112,14 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 function canTransition(from: string, to: string): boolean {
   return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+function buildInternalVideoUrl(c: { env: Env }, interview: { id: string; stage_id: string | null; candidate_id: string | null; meeting_url: string | null }): string | null {
+  if (interview.meeting_url) return interview.meeting_url;
+  if (!interview.candidate_id) return null;
+  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+  const sessionStageId = interview.stage_id ?? interview.id;
+  return `${baseUrl}/video/${sessionStageId}--${interview.candidate_id}`;
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -555,10 +564,13 @@ schedulingAuth.get('/interviews', async (c) => {
   const result = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
-              si.interview_type, si.status,
+              si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
-              si.scheduling_url, si.recruiter_notes, si.sync_source,
-              si.last_synced_at, si.created_at, si.updated_at,
+              si.scheduling_url, si.external_event_id, si.recruiter_notes,
+              si.sync_source, si.last_synced_at, si.invite_link_sent_at,
+              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -572,18 +584,28 @@ schedulingAuth.get('/interviews', async (c) => {
     .bind(userId)
     .all<{
       id: string;
-      candidate_id: string;
+      candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
       interview_type: string | null;
+      meeting_type: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
       scheduling_provider: string | null;
       scheduling_url: string | null;
+      external_event_id: string | null;
       recruiter_notes: string | null;
       sync_source: string | null;
       last_synced_at: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      completed_at: string | null;
       created_at: string;
       updated_at: string;
       candidate_name: string | null;
@@ -598,14 +620,24 @@ schedulingAuth.get('/interviews', async (c) => {
     pipelineId: r.pipeline_id,
     stageId: r.stage_id,
     interviewType: r.interview_type,
+    meetingType: r.meeting_type,
     status: r.status,
     scheduledAt: r.scheduled_at,
-    meetingUrl: r.meeting_url,
+    meetingUrl: buildInternalVideoUrl(c, r),
     schedulingProvider: r.scheduling_provider,
     schedulingUrl: r.scheduling_url,
+    externalEventId: r.external_event_id,
     recruiterNotes: r.recruiter_notes,
     syncSource: r.sync_source,
     lastSyncedAt: r.last_synced_at,
+    inviteLinkSentAt: r.invite_link_sent_at,
+    emailSentAt: r.email_sent_at,
+    recipientName: r.recipient_name,
+    recipientEmail: r.recipient_email,
+    matchedRepoId: r.matched_repo_id,
+    githubRepoUrl: r.github_repo_url,
+    githubPrNumber: r.github_pr_number,
+    completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     candidateName: r.candidate_name,
@@ -615,6 +647,189 @@ schedulingAuth.get('/interviews', async (c) => {
   }));
 
   return c.json({ interviews });
+});
+
+// GET /interviews/:id — scheduled interview detail
+schedulingAuth.get('/interviews/:id', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.interview_type, si.meeting_type, si.status,
+              si.scheduled_at, si.meeting_url, si.scheduling_provider,
+              si.scheduling_url, si.external_event_id, si.recruiter_notes,
+              si.sync_source, si.last_synced_at, si.invite_link_sent_at,
+              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.submission_json, si.completed_at, si.created_at, si.updated_at,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       WHERE si.id = ? AND si.owner_id = ?`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
+      meeting_type: string | null;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+      external_event_id: string | null;
+      recruiter_notes: string | null;
+      sync_source: string | null;
+      last_synced_at: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      submission_json: string | null;
+      completed_at: string | null;
+      created_at: string;
+      updated_at: string;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+    }>();
+
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const transcriptArtifact = await db
+    .prepare(
+      `SELECT id, scheduled_interview_id, status, transcript_json, error_message,
+              created_at, updated_at
+       FROM transcript_artifacts
+       WHERE scheduled_interview_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1`
+    )
+    .bind(id)
+    .first<{
+      id: string;
+      scheduled_interview_id: string;
+      status: string;
+      transcript_json: string | null;
+      error_message: string | null;
+      created_at: string;
+      updated_at: string;
+    }>();
+
+  const linkedMeeting = await db
+    .prepare(
+      `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
+              m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
+              m.meeting_type, m.transcript_status, m.transcript_summary,
+              m.recording_r2_key, m.created_at, m.updated_at,
+              mr.id AS room_id, mr.session_id, mr.status AS room_status
+       FROM meetings m
+       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
+       ORDER BY m.created_at DESC
+       LIMIT 1`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      title: string;
+      description: string | null;
+      status: string;
+      scheduled_at: string | null;
+      started_at: string | null;
+      ended_at: string | null;
+      duration_secs: number | null;
+      meeting_url: string | null;
+      meeting_type: string;
+      transcript_status: string;
+      transcript_summary: string | null;
+      recording_r2_key: string | null;
+      created_at: string;
+      updated_at: string;
+      room_id: string | null;
+      session_id: string | null;
+      room_status: string | null;
+    }>();
+
+  return c.json({
+    interview: {
+      id: interview.id,
+      candidateId: interview.candidate_id,
+      pipelineId: interview.pipeline_id,
+      stageId: interview.stage_id,
+      interviewType: interview.interview_type ?? 'VIDEO',
+      meetingType: interview.meeting_type,
+      status: interview.status,
+      scheduledAt: interview.scheduled_at,
+      meetingUrl: buildInternalVideoUrl(c, interview),
+      schedulingProvider: interview.scheduling_provider,
+      schedulingUrl: interview.scheduling_url,
+      externalEventId: interview.external_event_id,
+      recruiterNotes: interview.recruiter_notes,
+      syncSource: interview.sync_source,
+      lastSyncedAt: interview.last_synced_at,
+      inviteLinkSentAt: interview.invite_link_sent_at,
+      emailSentAt: interview.email_sent_at,
+      recipientName: interview.recipient_name,
+      recipientEmail: interview.recipient_email,
+      candidateName: interview.candidate_name,
+      candidateEmail: interview.candidate_email,
+      pipelineTitle: interview.pipeline_title,
+      stageTitle: interview.stage_title,
+      matchedRepoId: interview.matched_repo_id,
+      githubRepoUrl: interview.github_repo_url,
+      githubPrNumber: interview.github_pr_number,
+      submissionJson: interview.submission_json,
+      completedAt: interview.completed_at,
+      transcriptArtifact: transcriptArtifact ? {
+        id: transcriptArtifact.id,
+        interviewId: transcriptArtifact.scheduled_interview_id,
+        status: transcriptArtifact.status,
+        transcriptJson: transcriptArtifact.transcript_json,
+        errorMessage: transcriptArtifact.error_message,
+        createdAt: transcriptArtifact.created_at,
+        updatedAt: transcriptArtifact.updated_at,
+      } : null,
+      linkedMeeting: linkedMeeting ? {
+        id: linkedMeeting.id,
+        title: linkedMeeting.title,
+        description: linkedMeeting.description,
+        status: linkedMeeting.status,
+        scheduledAt: linkedMeeting.scheduled_at,
+        startedAt: linkedMeeting.started_at,
+        endedAt: linkedMeeting.ended_at,
+        durationSecs: linkedMeeting.duration_secs,
+        meetingUrl: linkedMeeting.meeting_url,
+        meetingType: linkedMeeting.meeting_type,
+        transcriptStatus: linkedMeeting.transcript_status,
+        transcriptSummary: linkedMeeting.transcript_summary,
+        recordingR2Key: linkedMeeting.recording_r2_key,
+        room: linkedMeeting.room_id ? {
+          id: linkedMeeting.room_id,
+          sessionId: linkedMeeting.session_id,
+          status: linkedMeeting.room_status,
+        } : null,
+        createdAt: linkedMeeting.created_at,
+        updatedAt: linkedMeeting.updated_at,
+      } : null,
+      createdAt: interview.created_at,
+      updatedAt: interview.updated_at,
+    },
+  });
 });
 
 // POST /interviews/sync — poll Calendly for recent events and update interviews
@@ -918,8 +1133,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     .first<{
       id: string;
       candidate_id: string;
-      pipeline_id: string;
-      stage_id: string;
+      pipeline_id: string | null;
+      stage_id: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
@@ -934,7 +1149,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   // Build the meeting link — prefer existing meetingUrl, else generate app video link
   const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
   const meetingUrl = interview.meeting_url
-    ?? `${baseUrl}/video/${interview.stage_id}--${interview.candidate_id}`;
+    ?? `${baseUrl}/video/${interview.stage_id ?? interview.id}--${interview.candidate_id}`;
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {

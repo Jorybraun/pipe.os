@@ -40,6 +40,7 @@ const ContactsPage = lazy(() =>
   })),
 );
 const SchedulingPage = lazy(() => import("./pages/SchedulingPage"));
+const InterviewDetailPage = lazy(() => import("./pages/InterviewDetailPage"));
 const OutreachPage = lazy(() => import("./pages/OutreachPage"));
 const DevContainerSandboxPage = lazy(() => import("./pages/DevContainerSandboxPage"));
 const CandidateReportPrototype = lazy(() => import("./pages/CandidateReportPrototype"));
@@ -443,6 +444,7 @@ function App(): JSX.Element {
                   <Route element={<AppLayout />}>
                     <Route path="/" element={<SchedulingPage />} />
                     <Route path="/interviews" element={<SchedulingPage />} />
+                    <Route path="/interviews/:interviewId" element={<InterviewDetailPage />} />
                     <Route path="/schedule" element={<ScheduleRedirect />} />
                     <Route path="/roles" element={<ListingPage />} />
                     <Route path="/roles/new" element={<PipelineNewRoutePage />} />

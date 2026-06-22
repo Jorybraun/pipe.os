@@ -29,6 +29,7 @@ import {
   Network,
   Upload,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { LiquidMetalCard, SubTitle } from "../components";
 import { PhoneCallDrawer } from "../components/Phone/PhoneCallDrawer";
@@ -1111,6 +1112,7 @@ function CandidateNotFoundState({ message }: { message: string }): JSX.Element {
 
 export default function CandidateProfilePage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { getToken } = useClerkAuth();
   const api = useApiClient();
   const { candidate, stages, phoneCalls, ingestion, standaloneReviewMatch, profileSections, cultureInterviewSessions, isLoading, error, refetch, updateSubmissionScore, updateSubmissionFeedback } =
@@ -1852,6 +1854,30 @@ export default function CandidateProfilePage(): JSX.Element {
                         <SubTitle>LIVE_INTERVIEW_SESSION</SubTitle>
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
+                        {activeStage.scheduledInterview?.id && (
+                          <button
+                            onClick={() => navigate(`/interviews/${activeStage.scheduledInterview!.id}`)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '6px 14px',
+                              background: 'rgba(255,255,255,0.05)',
+                              border: '1px solid var(--pipe-border)',
+                              borderRadius: 4,
+                              color: 'var(--pipe-text)',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.08em',
+                              fontFamily: '"Space Mono", monospace',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                          >
+                            <ExternalLink size={10} />
+                            DETAILS
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             // Reset the interview back to INVITED and resend booking link

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Video, RefreshCw, Mail } from 'lucide-react';
 import type { ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
@@ -49,6 +50,7 @@ export function InterviewCard({
   updateStatus,
   sendInvite,
 }: InterviewCardProps): JSX.Element {
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
 
@@ -76,6 +78,15 @@ export function InterviewCard({
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => navigate(`/interviews/${interview.id}`)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            navigate(`/interviews/${interview.id}`);
+          }
+        }}
         style={{
           display: 'flex',
           alignItems: 'flex-start',
@@ -85,6 +96,7 @@ export function InterviewCard({
           border: '1px solid var(--pipe-border)',
           borderRadius: 8,
           transition: 'all 0.2s',
+          cursor: 'pointer',
         }}
       >
         {/* Left: dot + time */}
@@ -153,7 +165,10 @@ export function InterviewCard({
         {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
-            onClick={() => setIsInviteOpen(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsInviteOpen(true);
+            }}
             title="Invite to video call via email"
             style={{
               display: 'flex',
@@ -177,7 +192,8 @@ export function InterviewCard({
           </button>
           <button
             disabled={!joinable}
-            onClick={() => {
+            onClick={(event) => {
+              event.stopPropagation();
               if (interview.meetingUrl) {
                 window.open(interview.meetingUrl, '_blank', 'noopener,noreferrer');
               }
@@ -206,7 +222,10 @@ export function InterviewCard({
 
           {/* Edit / override status */}
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsModalOpen(true);
+            }}
             title="Update status"
             style={{
               display: 'flex',

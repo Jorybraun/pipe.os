@@ -36,18 +36,28 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       const result = await api.get<{
         interviews: Array<{
           id: string;
-          candidateId: string;
+          candidateId: string | null;
           pipelineId: string | null;
           stageId: string | null;
           interviewType: string | null;
+          meetingType: string | null;
           status: InterviewStatus;
           scheduledAt: string | null;
           meetingUrl: string | null;
           schedulingProvider: string | null;
           schedulingUrl: string | null;
+          externalEventId: string | null;
           recruiterNotes: string | null;
           syncSource: string | null;
           lastSyncedAt: string | null;
+          inviteLinkSentAt: string | null;
+          emailSentAt: string | null;
+          recipientName: string | null;
+          recipientEmail: string | null;
+          matchedRepoId: number | null;
+          githubRepoUrl: string | null;
+          githubPrNumber: number | null;
+          completedAt: string | null;
           createdAt: string;
           updatedAt: string;
           candidateName: string | null;
@@ -66,14 +76,24 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           pipelineId: r.pipelineId,
           stageId: r.stageId,
           interviewType: (r.interviewType as ScheduledInterview['interviewType']) ?? null,
+          meetingType: (r.meetingType as ScheduledInterview['meetingType']) ?? null,
           status: r.status,
           scheduledAt: r.scheduledAt,
           meetingUrl: r.meetingUrl,
           schedulingProvider: (r.schedulingProvider as ScheduledInterview['schedulingProvider']) ?? null,
           schedulingUrl: r.schedulingUrl,
+          externalEventId: r.externalEventId,
           recruiterNotes: r.recruiterNotes,
           syncSource: (r.syncSource as ScheduledInterview['syncSource']) ?? null,
           lastSyncedAt: r.lastSyncedAt,
+          inviteLinkSentAt: r.inviteLinkSentAt,
+          emailSentAt: r.emailSentAt,
+          recipientName: r.recipientName,
+          recipientEmail: r.recipientEmail,
+          matchedRepoId: r.matchedRepoId,
+          githubRepoUrl: r.githubRepoUrl,
+          githubPrNumber: r.githubPrNumber,
+          completedAt: r.completedAt,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
           pipelineTitle: r.pipelineTitle,
