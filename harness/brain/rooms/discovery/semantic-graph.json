@@ -1,0 +1,206 @@
+{
+  "version": "1.0-local-contract",
+  "last_updated": "2026-06-14T23:21:16.203202+00:00",
+  "vision_nodes": [
+    {
+      "id": "vision-pipe-os-core",
+      "type": "VisionNode",
+      "name": "PIPE-OS AI-Native Developer Interview Platform",
+      "description": "Solo-founder AI-native developer interview platform with self-improving recursive planning harness. Route-based BDD-first TDD. Brutalist glassmorphic design.",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "timestamp": "2026-06-14T23:21:16.203202+00:00",
+      "confidence": 0.95
+    }
+  ],
+  "business_requirements": [
+    {
+      "id": "br-cost-efficiency",
+      "type": "BusinessRequirement",
+      "name": "CostEfficiency",
+      "description": "<5% inference budget, raw/graph storage in D1/Neo4j local-first. No external paid services until local proven.",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    },
+    {
+      "id": "br-compliance-defensibility",
+      "type": "BusinessRequirement",
+      "name": "ComplianceDefensibility",
+      "description": "Traceability to raw + graph provenance, human-in-loop for vision changes. Audit logs for all synthesis.",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    },
+    {
+      "id": "br-market-positioning",
+      "type": "BusinessRequirement",
+      "name": "MarketPositioning",
+      "description": "Supports PIPE wedge via interview-style planning. Positions PIPE-OS as AI-native developer interview platform with self-improving harness.",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    },
+    {
+      "id": "br-scalability",
+      "type": "BusinessRequirement",
+      "name": "Scalability",
+      "description": "Multi-stakeholder interviews, batch LLM calls, herder sessions, small-batch dispatch (max 2 children).",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    },
+    {
+      "id": "br-roi-measurement",
+      "type": "BusinessRequirement",
+      "name": "ROIMeasurement",
+      "description": "Graph metrics: provenance \u226595%, validation \u226590%, role discovery <30min, drift detection <5min. Continuous improvement dashboard.",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    },
+    {
+      "id": "br-non-goals",
+      "type": "BusinessRequirement",
+      "name": "NonGoals",
+      "description": "No GBrain until local proven. No flattening without query layer. No skipping raw transcript. No external memory before local artifact contract.",
+      "priority": "high",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md",
+      "confidence": 0.95
+    }
+  ],
+  "ux_flows": [
+    {
+      "id": "ux-interview-flow",
+      "type": "UXFlow",
+      "name": "InterviewFlow",
+      "description": "Planning session start: raw transcript capture \u2192 multi-pass extraction \u2192 verification \u2192 graph commit. Canonical pattern from discovery micro-app.",
+      "priority": "high",
+      "validation_method": "chrome-devtools-mcp + raw transcript review",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "id": "ux-vision-alignment-view",
+      "type": "UXFlow",
+      "name": "VisionAlignmentView",
+      "description": "Graph query UI/CLI showing drift alerts, alignment scores, provenance links. Visualizes BR and UX edges to Vision.",
+      "priority": "high",
+      "validation_method": "graph query execution + visual inspection",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "id": "ux-roadmap-kanban-dispatch",
+      "type": "UXFlow",
+      "name": "RoadmapKanbanDispatch",
+      "description": "Briefs auto-generated from graph, acceptance criteria template, small-batch dispatch (max 2), herder session creation.",
+      "priority": "high",
+      "validation_method": "Kanban task creation + chrome validation",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "id": "ux-business-ux-layer",
+      "type": "UXFlow",
+      "name": "BusinessUXLayer",
+      "description": "Dedicated sub-graphs integration (BR + UX), prioritization edges, query-backed section generation.",
+      "priority": "high",
+      "validation_method": "section generation from nodes + edge verification",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "id": "ux-continuous-improvement-dashboard",
+      "type": "UXFlow",
+      "name": "ContinuousImprovementDashboard",
+      "description": "Metrics from graph + raw log review: node counts, drift, provenance %, cycle time, validation rate.",
+      "priority": "high",
+      "validation_method": "metrics log + dashboard render",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "id": "ux-validation-hook",
+      "type": "UXFlow",
+      "name": "ValidationHook",
+      "description": "chrome-devtools-mcp proof before done, graph edge marked validated, strict Kanban acceptance criteria enforcement.",
+      "priority": "high",
+      "validation_method": "chrome proof + edge update",
+      "provenance_transcript_id": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    }
+  ],
+  "edges": [
+    {
+      "source": "br-cost-efficiency",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "br-compliance-defensibility",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "br-market-positioning",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "br-scalability",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "br-roi-measurement",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "br-non-goals",
+      "target": "vision-pipe-os-core",
+      "type": "BR_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-interview-flow",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-vision-alignment-view",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-roadmap-kanban-dispatch",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-business-ux-layer",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-continuous-improvement-dashboard",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    },
+    {
+      "source": "ux-validation-hook",
+      "target": "vision-pipe-os-core",
+      "type": "UX_SUPPORTS_VISION",
+      "provenance": "/Users/hans/Code/PIPE/PIPE-OS/harness/brain/rooms/discovery/raw-dream-cycle-pipe-os-2026-06-14.md"
+    }
+  ],
+  "drift_detection": {
+    "query": "MATCH (legacy:Plan {source:\"STRATEGY.md\", superseded:false})-[:CONFLICTS_WITH|SUPERSEDES]->(v2:Plan {source:\"pipe-strategy-v2\"}) RETURN ...",
+    "result_count": 0,
+    "status": "clean"
+  }
+}

@@ -42,6 +42,14 @@ import { waitlist } from './routes/waitlist';
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
+// Projection rebuild management (living context graph)
+import { projectionRebuild } from './routes/internal/projectionRebuild';
+// Repo graph overlay (criterion #7 — full repo structure for visualization)
+import { repoGraph } from './routes/internal/repoGraph';
+// Rollout gate administration (criterion #8 — staged rollout without redeployment)
+import { rolloutAdmin } from './routes/internal/rolloutAdmin';
+// Living context subsystem health check
+import { livingContextHealth } from './routes/internal/livingContextHealth';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -184,6 +192,18 @@ app.route('/internal/calibrate', calibrate);
 
 // Internal: Neo4j health check (no auth — dev/ops smoke test)
 app.route('/api/v1/internal', neo4jHealth);
+
+// Internal: Projection rebuild (admin-token auth)
+app.route('/api/v1/internal', projectionRebuild);
+
+// Internal: Repo graph overlay (admin-token auth)
+app.route('/api/v1/internal/repo-graph', repoGraph);
+
+// Internal: Rollout gate administration (admin-token auth)
+app.route('/api/v1/internal', rolloutAdmin);
+
+// Internal: Living context subsystem health check (admin-token auth)
+app.route('/api/v1/internal', livingContextHealth);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>

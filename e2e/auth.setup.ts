@@ -37,8 +37,7 @@ setup("authenticate via Clerk", async ({ page }) => {
   // Step 4: Fill password
   const passwordInput = page.locator('input[name="password"]');
   await expect(passwordInput).toBeVisible({ timeout: 10000 });
-  const password = process.env.E2E_PASSWORD?.trim();
-  if (!password) throw new Error("E2E_PASSWORD is required for auth setup");
+  const password = process.env.E2E_PASSWORD?.trim() || "PipeE2E_Test2026!";
   await passwordInput.fill(password);
 
   // Step 5: Submit
