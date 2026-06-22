@@ -11,7 +11,7 @@
  */
 
 import { fetchGitHubDiff } from '../fetchGitHubDiff';
-import type { ChallengePacket } from '../repoSemanticGraph/challengePacket';
+import type { ChallengePacket } from '../repoSemanticGraph/model';
 import type { DiscoveredRepoRow, SeniorityBand } from '../../types';
 
 export interface ConvertResult {

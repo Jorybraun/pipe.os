@@ -47,7 +47,7 @@ async function deleteContact(
   const res = await request.delete(`${API_BASE}/api/v1/contacts/${contactId}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  expect([204, 404]).toContain(res.status());
+  expect([200, 204, 404]).toContain(res.status());
 }
 
 async function waitForClerkLoaded(page: Page): Promise<void> {
@@ -133,12 +133,37 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     await expect(page).toHaveURL(/\/people/);
     await expect(page.getByRole("button", { name: /add person/i })).toBeVisible();
     await page.getByRole("button", { name: /add person/i }).click();
-    await page.getByPlaceholder("email@example.com").fill(rolelessEmail);
-    await page.getByPlaceholder("Full name").fill("MVP Smoke Person");
-    await page.getByPlaceholder("Company").fill("PIPE Smoke Co");
-    await page.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
-    await page.getByRole("button", { name: /^add$/i }).click();
+    const addContactPanel = page
+      .getByText("ADD_CONTACT")
+      .locator("xpath=ancestor::div[contains(@style, 'height: 100%')]");
+    await addContactPanel.getByPlaceholder("email@example.com").fill(rolelessEmail);
+    await addContactPanel.getByPlaceholder("Full name").fill("MVP Smoke Person");
+    await addContactPanel.getByPlaceholder("Company").fill("PIPE Smoke Co");
+    await addContactPanel.getByPlaceholder("Role / title").fill("Roleless Engineering Lead");
+    await addContactPanel.getByRole("button", { name: /^add$/i }).click();
     await expect(page.getByText(rolelessEmail)).toBeVisible({ timeout: 15000 });
+
+    const token = await getAuthToken(page);
+    const contactsRes = await request.get(`${API_BASE}/api/v1/contacts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(contactsRes.ok(), `contacts list failed: ${await contactsRes.text()}`).toBeTruthy();
+    const contactsBody = (await contactsRes.json()) as {
+      contacts: Array<{ id: string; email: string }>;
+    };
+    const createdContact = contactsBody.contacts.find((contact) => contact.email === rolelessEmail);
+    expect(createdContact).toBeTruthy();
+    createdContactId = createdContact!.id;
+
+    const contactContextRes = await request.get(
+      `${API_BASE}/api/v1/contacts/${createdContactId}/living-context`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(
+      contactContextRes.ok(),
+      `contact living-context read failed: ${await contactContextRes.text()}`,
+    ).toBeTruthy();
+
     await page.getByRole("button", { name: /^context$/i }).click();
     await expect(
       page
@@ -147,7 +172,6 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
         .first(),
     ).toBeVisible({ timeout: 15000 });
 
-    const token = await getAuthToken(page);
     const rolelessRes = await request.post(`${API_BASE}/api/v1/candidates`, {
       headers: authHeaders(token),
       data: {
@@ -183,16 +207,5 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     };
     expect(contextBody.livingContext.summary.interactionCount).toBeGreaterThan(0);
     expect(contextBody.livingContext.summary.sourceSpanCount).toBeGreaterThan(0);
-
-    const contactsRes = await request.get(`${API_BASE}/api/v1/contacts`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(contactsRes.ok(), `contacts list failed: ${await contactsRes.text()}`).toBeTruthy();
-    const contactsBody = (await contactsRes.json()) as {
-      contacts: Array<{ id: string; email: string }>;
-    };
-    const createdContact = contactsBody.contacts.find((contact) => contact.email === rolelessEmail);
-    expect(createdContact).toBeTruthy();
-    createdContactId = createdContact!.id;
   });
 });

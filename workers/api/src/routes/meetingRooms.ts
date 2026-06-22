@@ -542,6 +542,7 @@ interface MeetingRow {
   meeting_url: string | null;
   meeting_type: string;
   transcript_status: string;
+  transcript_summary: string | null;
   recording_r2_key: string | null;
   scheduled_interview_id: string | null;
   created_at: string;
@@ -598,7 +599,7 @@ async function mintGuestToken(
   return guestToken;
 }
 
-const meetingsAuth = new Hono<{ Bindings: Env; Variables: Variables }>();
+export const meetingsAuth = new Hono<{ Bindings: Env; Variables: Variables }>();
 meetingsAuth.use('*', authMiddleware);
 
 // POST / — create a meeting + room + host token
@@ -891,5 +892,3 @@ meetingsAuth.post('/:id/invite', async (c) => {
 
   return c.json({ success: true, emailSent: true, joinUrl });
 });
-
-export { meetingRooms, meetingsAuth };

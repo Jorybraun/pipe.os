@@ -531,7 +531,7 @@ export async function loadContactLivingContext(
        FROM workspace_people wp
        JOIN people p ON p.id = wp.person_id
        JOIN contacts c ON c.id = ?1
-      WHERE wp.context_json LIKE '%"contactId":"' || ?1 || '"%'
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
       LIMIT 1`,
   ).bind(contactId).first<IdentityRow>();
   if (!identity) return null;
