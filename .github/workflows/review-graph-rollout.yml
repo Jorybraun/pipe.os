@@ -123,6 +123,16 @@ jobs:
             2> >(tee review-graph-backfill.log >&2)
           cat review-graph-backfill.json
 
+      - name: Validate review packet backfill report
+        working-directory: workers/api
+        env:
+          REVIEW_GRAPH_MODE: ${{ inputs.mode }}
+        run: |
+          npm run review-graph:backfill-report-gate -- \
+            --file review-graph-backfill.json \
+            --expected-mode "$REVIEW_GRAPH_MODE" \
+            --json | tee review-graph-backfill-gate.json
+
       - name: Final review graph readiness
         if: always()
         continue-on-error: ${{ inputs.mode == 'dry-run' }}
@@ -144,6 +154,7 @@ jobs:
             workers/api/review-graph-readiness-after-migrations.json
             workers/api/review-graph-readiness-final.json
             workers/api/review-graph-backfill.json
+            workers/api/review-graph-backfill-gate.json
             workers/api/review-graph-backfill.log
           if-no-files-found: ignore
           retention-days: 14

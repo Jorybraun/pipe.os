@@ -12,6 +12,7 @@
     "review-graph:rollout-gate": "tsx scripts/checkReviewChallengeGraphReadiness.ts --remote --require-github",
     "review-graph:migrate-production": "wrangler d1 migrations apply pipe-db --env production --remote",
     "review-graph:backfill-remote": "tsx scripts/backfillReviewChallengePackets.ts --remote",
+    "review-graph:backfill-report-gate": "tsx scripts/checkReviewGraphBackfillReport.ts",
     "matching-eval:readiness": "tsx scripts/evaluateMatching.ts --remote --check-latest-production-pass"
   },
   "dependencies": {

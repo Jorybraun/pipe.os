@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remote review-graph readiness now emits remote-specific migration guidance when crawler data exists but graph/context tables are not yet applied, instead of pointing operators at the local D1 prep script.
 - `backfillReviewChallengePackets` write mode now refuses to fetch or persist until all review graph/context tables are present, with the full required migration list in the error.
 - `backfillReviewChallengePackets --json` now emits a machine-readable rollout report with mode, target, filters, batch size, deterministic stats, and row-level PR outcomes with packet IDs/content hashes when built plus persisted context-record/source-ref/concept-link coverage for write-mode packets, while keeping progress logs on stderr.
+- Added `checkReviewGraphBackfillReport.ts` and wired the manual Review Graph Rollout workflow to fail closed unless dry-run mode builds at least one eligible packet or write mode persists at least one context-ready packet.
 - Added a manual Review Graph Rollout workflow that can apply production D1 migrations, run a bounded dry-run or write-mode review packet backfill, run GitHub preflight, validate dispatch inputs, and upload before/after/final readiness plus backfill JSON artifacts.
 - The repo crawler workflow now uploads a non-blocking remote review-graph readiness report after pass 2 so ops can watch packet/context/source/concept coverage before converting it into a hard rollout gate.
 
