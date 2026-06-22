@@ -82,6 +82,8 @@ interface SeedStandaloneReviewFixtureResponse {
   repoUrl: string;
   prNumber: number;
   packetId: string;
+  demandIds: string[];
+  demandFamilies: string[];
   candidateSourceSpanIds: string[];
   repoSourceSpanIds: string[];
 }
@@ -190,6 +192,10 @@ async function seedStandaloneReviewMatchFixture(
   const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
   const conceptKey = `term:e2e-source-backed-${suffix}`;
   const conceptLabel = `e2e source backed ${suffix}`;
+  const retryConceptKey = 'term:retry';
+  const idempotencyConceptKey = 'term:idempotency';
+  const publisherConceptKey = 'term:publisher';
+  const vitestConceptKey = 'term:vitest';
   const repoFullName = `pipe/e2e-source-backed-${suffix}`;
   const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
   const prNumber = 42;
@@ -204,13 +210,33 @@ async function seedStandaloneReviewMatchFixture(
           namespace: 'term',
           label: conceptLabel,
         },
+        {
+          canonicalKey: retryConceptKey,
+          namespace: 'term',
+          label: 'retry',
+        },
+        {
+          canonicalKey: idempotencyConceptKey,
+          namespace: 'term',
+          label: 'idempotency',
+        },
+        {
+          canonicalKey: publisherConceptKey,
+          namespace: 'term',
+          label: 'publisher',
+        },
+        {
+          canonicalKey: vitestConceptKey,
+          namespace: 'term',
+          label: 'vitest',
+        },
       ],
       candidateEvidence: [
         {
           exactText: `Implemented ${conceptLabel} idempotency with source-backed evidence.`,
           predicate: 'implemented',
           narrative: `Candidate implemented ${conceptLabel} idempotency.`,
-          conceptKeys: [conceptKey],
+          conceptKeys: [conceptKey, idempotencyConceptKey],
           evidenceLevel: 'implemented',
           strength: 1,
           confidence: 1,
@@ -219,7 +245,25 @@ async function seedStandaloneReviewMatchFixture(
           exactText: `Validated ${conceptLabel} retry behavior with tests.`,
           predicate: 'validated',
           narrative: `Candidate validated ${conceptLabel} retry behavior.`,
-          conceptKeys: [conceptKey],
+          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
+          evidenceLevel: 'validated',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Published ${conceptLabel} retry envelopes through a deterministic publisher.`,
+          predicate: 'implemented',
+          narrative: `Candidate implemented ${conceptLabel} publisher behavior.`,
+          conceptKeys: [publisherConceptKey],
+          evidenceLevel: 'implemented',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Explained how ${conceptLabel} prevents duplicate retry acknowledgements.`,
+          predicate: 'explained',
+          narrative: `Candidate explained ${conceptLabel} duplicate acknowledgement prevention.`,
+          conceptKeys: [retryConceptKey, idempotencyConceptKey],
           evidenceLevel: 'validated',
           strength: 1,
           confidence: 1,
@@ -243,18 +287,61 @@ async function seedStandaloneReviewMatchFixture(
         {
           key: 'implementation',
           path: 'src/retry-idempotency.ts',
-          exactText: `Implement ${conceptLabel} idempotency for reviewable retry events.`,
+          exactText: [
+            `export type RetryEvent = { id: string; attempt: number; key: string };`,
+            ``,
+            `// Implement ${conceptLabel} idempotency for reviewable retry events.`,
+            `export function buildRetryEnvelope(event: RetryEvent) {`,
+            `  const idempotencyKey = \`\${event.key}:\${event.attempt}\`;`,
+            `  return {`,
+            `    id: event.id,`,
+            `    idempotencyKey,`,
+            `    topic: '${conceptLabel}',`,
+            `    shouldPublish: event.attempt > 0,`,
+            `  };`,
+            `}`,
+            ``,
+            `export function acknowledgeRetry(event: RetryEvent) {`,
+            `  return buildRetryEnvelope(event).shouldPublish;`,
+            `}`,
+          ].join('\n'),
           artifactType: 'source',
           lineStart: 10,
-          lineEnd: 10,
+        },
+        {
+          key: 'publisher',
+          path: 'src/retry-publisher.ts',
+          exactText: [
+            `import { buildRetryEnvelope, type RetryEvent } from './retry-idempotency';`,
+            ``,
+            `export function publishRetry(event: RetryEvent, publish: (topic: string, key: string) => void) {`,
+            `  const envelope = buildRetryEnvelope(event);`,
+            `  if (!envelope.shouldPublish) return 'skipped';`,
+            `  publish(envelope.topic, envelope.idempotencyKey);`,
+            `  return 'published';`,
+            `}`,
+          ].join('\n'),
+          artifactType: 'source',
+          lineStart: 40,
         },
         {
           key: 'validation',
           path: 'src/retry-idempotency.test.ts',
-          exactText: `Validate ${conceptLabel} retry behavior with deterministic tests.`,
+          exactText: [
+            `import { describe, expect, it } from 'vitest';`,
+            `import { buildRetryEnvelope } from './retry-idempotency';`,
+            ``,
+            `describe('${conceptLabel} retry behavior', () => {`,
+            `  it('keeps retry acknowledgement idempotent', () => {`,
+            `    // Validate ${conceptLabel} retry behavior with deterministic tests.`,
+            `    const envelope = buildRetryEnvelope({ id: 'evt-1', attempt: 2, key: 'retry' });`,
+            `    expect(envelope.idempotencyKey).toBe('retry:2');`,
+            `    expect(envelope.shouldPublish).toBe(true);`,
+            `  });`,
+            `});`,
+          ].join('\n'),
           artifactType: 'test',
           lineStart: 22,
-          lineEnd: 22,
         },
       ],
       demands: [
@@ -262,17 +349,25 @@ async function seedStandaloneReviewMatchFixture(
           id: 'implementation-demand',
           family: 'source-backed:e2e-implementation',
           narrative: `Review implemented ${conceptLabel} idempotency.`,
-          conceptKeys: [conceptKey],
+          conceptKeys: [conceptKey, idempotencyConceptKey],
           sourceSpanKeys: ['implementation'],
           weight: 0.5,
+        },
+        {
+          id: 'publisher-demand',
+          family: 'source-backed:e2e-publisher',
+          narrative: `Review published ${conceptLabel} retry envelopes.`,
+          conceptKeys: [publisherConceptKey],
+          sourceSpanKeys: ['publisher'],
+          weight: 0.25,
         },
         {
           id: 'validation-demand',
           family: 'source-backed:e2e-validation',
           narrative: `Review validated ${conceptLabel} retry behavior.`,
-          conceptKeys: [conceptKey],
+          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
           sourceSpanKeys: ['validation'],
-          weight: 0.5,
+          weight: 0.25,
         },
       ],
     },
@@ -284,6 +379,8 @@ async function seedStandaloneReviewMatchFixture(
   expect(body.prNumber).toBe(prNumber);
   expect(body.candidateSourceSpanIds.length).toBeGreaterThan(0);
   expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
+  expect(body.demandIds.length).toBeGreaterThanOrEqual(2);
+  expect(body.demandFamilies.length).toBeGreaterThanOrEqual(2);
   return { ...body, conceptKey, conceptLabel, repoFullName };
 }
 
@@ -1032,9 +1129,11 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(repoOverlay).toBeVisible();
     await expect(repoOverlay).toContainText('Repository evidence overlay');
     await expect(repoOverlay).toContainText(`${fixture.repoFullName} · PR #${fixture.prNumber}`);
-    await expect(repoOverlay).toContainText('implementation-demand');
-    await expect(repoOverlay).toContainText('validation-demand');
+    for (const demandId of fixture.demandIds.slice(0, 2)) {
+      await expect(repoOverlay).toContainText(demandId);
+    }
     await expect(repoOverlay).toContainText('src/retry-idempotency.ts');
+    await expect(repoOverlay).toContainText('src/retry-publisher.ts');
     await expect(repoOverlay).toContainText('src/retry-idempotency.test.ts');
     await expect(repoOverlay).toContainText('Candidate source');
     await expect(repoOverlay).toContainText('PR demand source');

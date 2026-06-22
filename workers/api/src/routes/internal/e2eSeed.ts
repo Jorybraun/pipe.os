@@ -2,12 +2,27 @@ import { Hono } from 'hono';
 import { authMiddleware } from '../../middleware/auth';
 import type { Env, Variables } from '../../types';
 import {
-  deterministicEntityId,
   LivingContextStore,
   stableJson,
   type EvidenceLevel,
+  type JsonValue,
 } from '../../lib/livingContext';
-import type { ChallengePacket } from '../../lib/repoSemanticGraph';
+import {
+  buildChallengePacket,
+  buildRepoSnapshot,
+  buildSourceArtifact,
+  buildSourceArtifactVersion,
+  buildSourceSpan,
+  buildStructuralFact,
+  buildSymbol,
+  deriveRepoSemantics,
+  persistReviewChallengeGraph,
+  type NormalizedPullRequestFile,
+  type NormalizedPullRequestInput,
+  type RepositoryRef,
+  type SourceArtifactKind,
+  type StructuralFact,
+} from '../../lib/repoSemanticGraph';
 
 type SeedConceptInput = {
   canonicalKey: string;
@@ -248,6 +263,61 @@ function byteLength(value: string): number {
   return new TextEncoder().encode(value).length;
 }
 
+const SOURCE_ARTIFACT_KINDS = new Set<SourceArtifactKind>([
+  'source',
+  'test',
+  'manifest',
+  'documentation',
+  'ci',
+  'issue',
+  'pull_request',
+  'patch',
+  'commit_metadata',
+  'other',
+]);
+
+function lineCount(value: string): number {
+  return value.split('\n').length;
+}
+
+function sourceEndColumn(value: string): number {
+  return (value.split('\n').at(-1) ?? '').length + 1;
+}
+
+function normalizeArtifactKind(span: SeedRepoSpanInput): SourceArtifactKind {
+  const requested = span.artifactType?.trim().toLowerCase();
+  if (requested && SOURCE_ARTIFACT_KINDS.has(requested as SourceArtifactKind)) {
+    return requested as SourceArtifactKind;
+  }
+  return /\.(test|spec)\.[cm]?[jt]sx?$/i.test(span.path) ? 'test' : 'source';
+}
+
+function normalizedLanguage(language: string | undefined): string {
+  return (language ?? 'TypeScript').trim().toLowerCase();
+}
+
+function repositoryRef(seed: SeedRequest): RepositoryRef {
+  const [owner, ...nameParts] = seed.repo.fullName.split('/');
+  return {
+    provider: 'github',
+    owner: owner || 'pipe',
+    name: nameParts.join('/') || seed.repo.fullName,
+    canonicalUrl: seed.repo.githubUrl,
+  };
+}
+
+function testFrameworkForPath(path: string): string | undefined {
+  if (/vitest|\.test\.[cm]?[jt]sx?$/i.test(path)) return 'vitest';
+  if (/jest|\.spec\.[cm]?[jt]sx?$/i.test(path)) return 'jest';
+  return undefined;
+}
+
+function symbolNameForSpan(span: SeedRepoSpanInput): string {
+  const key = span.key.replace(/[^A-Za-z0-9_$]+/g, '_').replace(/^_+|_+$/g, '');
+  if (key) return key;
+  return span.path.split('/').at(-1)?.replace(/\.[^.]+$/, '') || 'changedSymbol';
+}
+
 async function loadCandidateIdentity(db: D1Database, candidateId: string, userId: string): Promise<{
   candidateId: string;
   name: string;
@@ -473,12 +543,216 @@ async function seedCandidateEvidence(input: {
   return { conceptIds, sourceSpanIds };
 }
 
+export async function buildFixtureChallengeInput(input: {
+  fixtureId: string;
+  seed: SeedRequest;
+  now: string;
+}): Promise<{
+  challengeInput: NormalizedPullRequestInput;
+  structuralFacts: StructuralFact[];
+}> {
+  const { fixtureId, seed, now } = input;
+  const repository = repositoryRef(seed);
+  const snapshot = await buildRepoSnapshot({
+    repository,
+    commitSha: seed.pullRequest.headSha ?? 'dddddddddddddddddddddddddddddddddddddddd',
+    defaultBranch: 'main',
+    observedAt: now,
+    treeHash: await contentHash(stableJson({
+      fixtureId,
+      spans: seed.repoSpans.map((span) => ({
+        key: span.key,
+        path: span.path,
+        exactText: span.exactText,
+      })),
+    })),
+    parentCommitShas: [seed.pullRequest.baseSha ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
+  });
+
+  const metadataContent = stableJson({
+    author: seed.pullRequest.author ?? 'pipe-e2e',
+    baseSha: seed.pullRequest.baseSha ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    headSha: seed.pullRequest.headSha ?? 'dddddddddddddddddddddddddddddddddddddddd',
+    mergedAt: seed.pullRequest.mergedAt ?? now,
+    number: seed.pullRequest.number,
+    repository: seed.repo.fullName,
+    title: seed.pullRequest.title,
+    url: `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
+  } as JsonValue);
+  const metadataArtifact = await buildSourceArtifact({
+    repoSnapshotId: snapshot.id,
+    kind: 'pull_request',
+    path: `.pipe/pull-requests/${seed.pullRequest.number}.json`,
+    externalRef: `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
+    language: 'json',
+    mediaType: 'application/json',
+  });
+  const metadataVersion = await buildSourceArtifactVersion({
+    artifactId: metadataArtifact.id,
+    repoSnapshotId: snapshot.id,
+    content: metadataContent,
+    createdAt: now,
+  });
+  const metadataSpan = await buildSourceSpan({
+    repoSnapshotId: snapshot.id,
+    artifactId: metadataArtifact.id,
+    artifactVersionId: metadataVersion.id,
+    contentHash: metadataVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: {
+      byteOffset: metadataVersion.byteLength,
+      line: lineCount(metadataContent),
+      column: sourceEndColumn(metadataContent),
+    },
+    exactText: metadataContent,
+    displayLabel: `${seed.repo.fullName}#${seed.pullRequest.number} metadata`,
+    prSide: 'metadata',
+  });
+
+  const changedFiles: NormalizedPullRequestFile[] = [];
+  const sourceArtifacts = [metadataArtifact];
+  const sourceArtifactVersions = [metadataVersion];
+  const sourceSpans = [metadataSpan];
+  const spanIdsByKey = new Map<string, string>();
+  const symbolIdsByKey = new Map<string, string>();
+  const artifactKindsByKey = new Map<string, SourceArtifactKind>();
+
+  for (const span of seed.repoSpans) {
+    const kind = normalizeArtifactKind(span);
+    const language = normalizedLanguage(seed.repo.primaryLanguage);
+    const artifact = await buildSourceArtifact({
+      repoSnapshotId: snapshot.id,
+      kind,
+      path: span.path,
+      externalRef: `${seed.repo.githubUrl}/blob/${seed.pullRequest.headSha}/${span.path}`,
+      language,
+    });
+    const version = await buildSourceArtifactVersion({
+      artifactId: artifact.id,
+      repoSnapshotId: snapshot.id,
+      content: span.exactText,
+      createdAt: now,
+    });
+    const sourceSpan = await buildSourceSpan({
+      repoSnapshotId: snapshot.id,
+      artifactId: artifact.id,
+      artifactVersionId: version.id,
+      contentHash: version.contentHash,
+      start: { byteOffset: 0, line: span.lineStart ?? 1, column: 1 },
+      end: {
+        byteOffset: version.byteLength,
+        line: span.lineEnd ?? ((span.lineStart ?? 1) + lineCount(span.exactText) - 1),
+        column: sourceEndColumn(span.exactText),
+      },
+      exactText: span.exactText,
+      displayLabel: `${span.path}:${span.lineStart ?? 1}`,
+      prSide: 'head',
+    });
+    const symbolName = symbolNameForSpan(span);
+    const symbol = await buildSymbol({
+      repoSnapshotId: snapshot.id,
+      language,
+      qualifiedName: `${span.path}:${symbolName}`,
+      name: symbolName,
+      kind: kind === 'test' ? 'test' : 'function',
+      definingSpanId: sourceSpan.id,
+      exported: kind !== 'test',
+    });
+
+    sourceArtifacts.push(artifact);
+    sourceArtifactVersions.push(version);
+    sourceSpans.push(sourceSpan);
+    spanIdsByKey.set(span.key, sourceSpan.id);
+    symbolIdsByKey.set(span.key, symbol.id);
+    artifactKindsByKey.set(span.key, kind);
+    changedFiles.push({
+      path: span.path,
+      status: 'modified',
+      language,
+      additions: lineCount(span.exactText),
+      deletions: 0,
+      artifact,
+      artifactVersion: version,
+      hunks: [{
+        header: `@@ ${span.key} @@`,
+        patch: span.exactText,
+        sourceSpan,
+        changedSymbolIds: [symbol.id],
+      }],
+      symbols: [symbol],
+    });
+  }
+
+  const factsById = new Map<string, StructuralFact>();
+  for (const demand of seed.demands) {
+    const sourceSpanIds = demand.sourceSpanKeys.map((key) => {
+      const spanId = spanIdsByKey.get(key);
+      if (!spanId) throw new Error(`demand ${demand.id} references unknown repo span key ${key}`);
+      return spanId;
+    });
+    const subjectSymbolId = demand.sourceSpanKeys
+      .map((key) => symbolIdsByKey.get(key))
+      .find((id): id is string => Boolean(id));
+    if (!subjectSymbolId) throw new Error(`demand ${demand.id} has no symbol-backed source span`);
+    const touchesTest = demand.sourceSpanKeys.some((key) => artifactKindsByKey.get(key) === 'test');
+    for (const conceptKey of demand.conceptKeys) {
+      const fact = await buildStructuralFact({
+        repoSnapshotId: snapshot.id,
+        kind: touchesTest ? 'tests' : 'contains',
+        subject: { symbolId: subjectSymbolId },
+        object: { concept: conceptKey },
+        sourceSpanIds,
+        confidence: 1,
+        parser: 'e2e-source-backed-fixture',
+      });
+      factsById.set(fact.id, fact);
+    }
+  }
+
+  const tests = changedFiles
+    .filter((file) => file.artifact.kind === 'test')
+    .map((file) => ({
+      path: file.path,
+      framework: testFrameworkForPath(file.path),
+      sourceSpanIds: file.hunks.map((hunk) => hunk.sourceSpan.id),
+      relatedSymbolIds: [...new Set(file.hunks.flatMap((hunk) => hunk.changedSymbolIds))].sort(),
+    }));
+
+  return {
+    challengeInput: {
+      repoSnapshot: snapshot,
+      number: seed.pullRequest.number,
+      url: `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
+      title: seed.pullRequest.title,
+      author: seed.pullRequest.author ?? 'pipe-e2e',
+      primaryLanguage: seed.repo.primaryLanguage ?? 'TypeScript',
+      baseSha: seed.pullRequest.baseSha ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      headSha: seed.pullRequest.headSha ?? 'dddddddddddddddddddddddddddddddddddddddd',
+      mergedAt: seed.pullRequest.mergedAt ?? now,
+      metadataSourceSpanIds: [metadataSpan.id],
+      sourceArtifacts,
+      sourceArtifactVersions,
+      sourceSpans,
+      changedFiles,
+      tests,
+      structuralFacts: [...factsById.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    },
+    structuralFacts: [...factsById.values()].sort((left, right) => left.id.localeCompare(right.id)),
+  };
+}
+
 async function seedRepoChallenge(input: {
   db: D1Database;
   fixtureId: string;
   seed: SeedRequest;
   now: string;
-}): Promise<{ repoId: number; packetId: string; repoSourceSpanIds: string[] }> {
+}): Promise<{
+  repoId: number;
+  packetId: string;
+  repoSourceSpanIds: string[];
+  demandIds: string[];
+  demandFamilies: string[];
+}> {
   const { db, fixtureId, seed, now } = input;
   await db.prepare(
     `INSERT INTO qualified_repos (
@@ -539,243 +813,35 @@ async function seedRepoChallenge(input: {
     JSON.stringify(seed.repoSpans.map((span) => span.path)),
   ).run();
 
-  const snapshotId = await deterministicEntityId(
-    'repo_snapshot',
-    `e2e:${fixtureId}:${seed.repo.githubUrl}:${seed.pullRequest.headSha}`,
-  );
-  await db.prepare(
-    `INSERT INTO repo_snapshots (id, repo_id, commit_sha, tree_hash, extractor_version)
-     VALUES (?1, ?2, ?3, ?4, 'e2e-source-backed-v1')
-     ON CONFLICT(id) DO UPDATE SET
-       commit_sha = excluded.commit_sha,
-       tree_hash = excluded.tree_hash,
-       extractor_version = excluded.extractor_version`,
-  ).bind(snapshotId, repo.id, seed.pullRequest.headSha, await contentHash(fixtureId)).run();
-
-  const repoSourceSpanIdsByKey = new Map<string, string>();
-  for (const span of seed.repoSpans) {
-    const spanHash = await contentHash(span.exactText);
-    const artifactId = await deterministicEntityId(
-      'repo_artifact',
-      `e2e:${fixtureId}:${snapshotId}:${span.artifactType}:${span.path}`,
-    );
-    await db.prepare(
-      `INSERT INTO repo_source_artifacts (
-         id, repo_snapshot_id, artifact_type, path, external_reference
-       ) VALUES (?1, ?2, ?3, ?4, ?5)
-       ON CONFLICT(id) DO UPDATE SET
-         artifact_type = excluded.artifact_type,
-         path = excluded.path,
-         external_reference = excluded.external_reference`,
-    ).bind(
-      artifactId,
-      snapshotId,
-      span.artifactType ?? 'source',
-      span.path,
-      `${seed.repo.githubUrl}/blob/${seed.pullRequest.headSha}/${span.path}`,
-    ).run();
-
-    const versionId = await deterministicEntityId(
-      'repo_artifact_version',
-      `e2e:${fixtureId}:${artifactId}:${spanHash}`,
-    );
-    await db.prepare(
-      `INSERT INTO repo_artifact_versions (
-         id, artifact_id, content_hash, storage_key, inline_content,
-         byte_length, media_type
-       ) VALUES (?1, ?2, ?3, NULL, ?4, ?5, 'text/plain')
-       ON CONFLICT(id) DO UPDATE SET
-         content_hash = excluded.content_hash,
-         inline_content = excluded.inline_content,
-         byte_length = excluded.byte_length,
-         media_type = excluded.media_type`,
-    ).bind(versionId, artifactId, spanHash, span.exactText, byteLength(span.exactText)).run();
-
-    const spanId = await deterministicEntityId(
-      'repo_source_span',
-      `e2e:${fixtureId}:${versionId}:${span.key}:${spanHash}`,
-    );
-    await db.prepare(
-      `INSERT INTO repo_source_spans (
-         id, artifact_version_id, content_hash, path, byte_start, byte_end,
-         line_start, line_end, pr_side, base_sha, head_sha, exact_text
-       ) VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6, ?7, 'head', ?8, ?9, ?10)
-       ON CONFLICT(id) DO UPDATE SET
-         content_hash = excluded.content_hash,
-         path = excluded.path,
-         byte_end = excluded.byte_end,
-         line_start = excluded.line_start,
-         line_end = excluded.line_end,
-         pr_side = excluded.pr_side,
-         base_sha = excluded.base_sha,
-         head_sha = excluded.head_sha,
-         exact_text = excluded.exact_text`,
-    ).bind(
-      spanId,
-      versionId,
-      spanHash,
-      span.path,
-      byteLength(span.exactText),
-      span.lineStart ?? 1,
-      span.lineEnd ?? span.lineStart ?? 1,
-      seed.pullRequest.baseSha,
-      seed.pullRequest.headSha,
-      span.exactText,
-    ).run();
-    repoSourceSpanIdsByKey.set(span.key, spanId);
+  const { challengeInput, structuralFacts } = await buildFixtureChallengeInput({ fixtureId, seed, now });
+  const packet = await buildChallengePacket(challengeInput);
+  if (!packet.quality.eligible) {
+    const failedGates = packet.quality.gates
+      .filter((gate) => !gate.passed)
+      .map((gate) => `${gate.gate}: ${gate.reason}`)
+      .join('; ');
+    throw new Error(`fixture did not produce a production-ready review challenge packet: ${failedGates}`);
   }
-
-  const demands: ChallengePacket['demands'] = [];
-  for (const demand of seed.demands) {
-    const sourceSpanIds = demand.sourceSpanKeys.map((key) => {
-      const spanId = repoSourceSpanIdsByKey.get(key);
-      if (!spanId) throw new Error(`demand ${demand.id} references unknown repo span key ${key}`);
-      return spanId;
-    });
-    demands.push({
-      id: demand.id,
-      family: demand.family,
-      narrative: demand.narrative,
-      conceptKeys: demand.conceptKeys,
-      problems: demand.problems,
-      mechanisms: demand.mechanisms,
-      domains: demand.domains,
-      businessObjects: demand.businessObjects,
-      ownershipActions: demand.ownershipActions,
-      sourceSpanIds,
-      changedSymbolIds: [],
-      weight: demand.weight,
-      contentHash: await contentHash(stableJson({
-        family: demand.family,
-        narrative: demand.narrative,
-        conceptKeys: demand.conceptKeys,
-        sourceSpanIds,
-      })),
-    });
-  }
-
-  const demandFamilies = [...new Set(demands.map((demand) => demand.family))];
-  const packetId = await deterministicEntityId(
-    'review_challenge_packet',
-    `e2e:${fixtureId}:${repo.id}:${seed.pullRequest.number}`,
-  );
-  const packetHash = await contentHash(stableJson({
-    fixtureId,
-    repoId: repo.id,
-    prNumber: seed.pullRequest.number,
-    demandIds: demands.map((demand) => demand.id),
-    sourceSpanIds: [...repoSourceSpanIdsByKey.values()],
-  }));
-  const packet: ChallengePacket = {
-    schemaVersion: '1.0.0',
-    policyVersion: 'repo-challenge-v1',
-    id: packetId,
-    repoSnapshotId: snapshotId,
-    repository: {
-      provider: 'github',
-      owner: seed.repo.fullName.split('/')[0] ?? 'pipe',
-      name: seed.repo.fullName.split('/')[1] ?? seed.repo.fullName,
-      canonicalUrl: seed.repo.githubUrl,
-    },
-    pullRequest: {
-      number: seed.pullRequest.number,
-      url: `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
-      title: seed.pullRequest.title,
-      author: seed.pullRequest.author ?? 'pipe-e2e',
-      baseSha: seed.pullRequest.baseSha ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      headSha: seed.pullRequest.headSha ?? 'dddddddddddddddddddddddddddddddddddddddd',
-      mergedAt: seed.pullRequest.mergedAt ?? now,
-    },
-    languageSupport: {
-      language: seed.repo.primaryLanguage ?? 'TypeScript',
-      normalizedLanguage: (seed.repo.primaryLanguage ?? 'TypeScript').toLowerCase(),
-      level: 'production',
-      parser: 'source-backed-e2e-fixture',
-      challengePacketsAllowed: true,
-      reason: 'source-backed fixture supplied exact spans',
-    },
-    changedFilePaths: [...new Set(seed.repoSpans.map((span) => span.path))],
-    changedSymbolIds: [],
-    sourceSpanIds: [...repoSourceSpanIdsByKey.values()],
-    testChanges: [],
-    demands,
-    demandFamilies,
-    quality: {
-      score: 1,
-      metrics: {
-        provenanceCoverage: 1,
-        reviewableSize: 1,
-        testCoverage: 1,
-        issueContext: 1,
-        demandDiversity: demandFamilies.length > 1 ? 1 : 0.5,
-      },
-      gates: [],
-      eligible: true,
-    },
-    contentHash: packetHash,
-  };
-
-  await db.prepare(
-    `INSERT INTO review_challenge_packets (
-       id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash,
-       language, production_ready, quality_score, demand_families_json, packet_json
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 1, ?8, ?9)
-     ON CONFLICT(id) DO UPDATE SET
-       repo_snapshot_id = excluded.repo_snapshot_id,
-       repo_id = excluded.repo_id,
-       pr_number = excluded.pr_number,
-       packet_version = excluded.packet_version,
-       source_hash = excluded.source_hash,
-       language = excluded.language,
-       production_ready = excluded.production_ready,
-       quality_score = excluded.quality_score,
-       demand_families_json = excluded.demand_families_json,
-       packet_json = excluded.packet_json,
-       updated_at = unixepoch()`,
-  ).bind(
-    packet.id,
-    packet.repoSnapshotId,
-    repo.id,
-    packet.pullRequest.number,
-    packet.policyVersion,
-    packet.contentHash,
-    packet.languageSupport.normalizedLanguage,
-    JSON.stringify(packet.demandFamilies),
-    JSON.stringify(packet),
-  ).run();
-
-  await new LivingContextStore(db).upsertContextRecord({
-    ingestionKey: `e2e:${fixtureId}:repo:${repo.id}:packet:${packet.id}:context-record`,
-    scopeType: 'review_challenge_packet',
-    scopeId: packet.id,
-    recordType: 'repo_challenge_context',
-    predicate: 'requires_review_of',
-    narrative: `Review packet ${packet.id} preserves ${packet.demands.length} source-backed demands for ${seed.repo.githubUrl}#${seed.pullRequest.number}.`,
-    confidence: 1,
-    polarity: 1,
-    extractionVersion: 'e2e-source-backed-v1',
-    observedAt: now,
-    sources: [
-      {
-        sourceRefType: 'review_challenge_packet',
-        sourceRefId: packet.id,
-        evidenceRole: 'packet',
-        locator: { repoUrl: seed.repo.githubUrl, prNumber: seed.pullRequest.number },
-        contentHash: packet.contentHash,
-      },
-      ...[...repoSourceSpanIdsByKey.values()].map((spanId) => ({
-        sourceRefType: 'repo_source_span',
-        sourceRefId: spanId,
-        evidenceRole: 'demand_source',
-      })),
-    ],
-    entities: [
-      { entityType: 'repository', entityId: String(repo.id), relationship: 'source', confidence: 1 },
-      { entityType: 'pull_request', entityId: `${repo.id}:${seed.pullRequest.number}`, relationship: 'target', confidence: 1 },
-    ],
+  const semantics = await deriveRepoSemantics({
+    pullRequest: challengeInput,
+    packet,
+    structuralFacts,
+  });
+  await persistReviewChallengeGraph(db, repo.id, challengeInput, packet, {
+    structuralFacts,
+    codeEpisodes: semantics.episodes,
+    facets: semantics.facets,
+    semanticAssertions: semantics.assertions,
+    repoSignals: semantics.signals,
   });
 
-  return { repoId: repo.id, packetId: packet.id, repoSourceSpanIds: [...repoSourceSpanIdsByKey.values()] };
+  return {
+    repoId: repo.id,
+    packetId: packet.id,
+    repoSourceSpanIds: packet.sourceSpanIds,
+    demandIds: packet.demands.map((demand) => demand.id),
+    demandFamilies: packet.demandFamilies,
+  };
 }
 
 e2eSeed.post('/standalone-review-match-fixture', async (c) => {
@@ -825,6 +891,8 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
       repoId: repo.repoId,
       packetId: repo.packetId,
       repoSourceSpanIds: repo.repoSourceSpanIds,
+      demandIds: repo.demandIds,
+      demandFamilies: repo.demandFamilies,
       repoUrl: seed.repo.githubUrl,
       prNumber: seed.pullRequest.number,
     });
