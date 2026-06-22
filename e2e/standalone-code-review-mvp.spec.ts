@@ -204,6 +204,7 @@ async function seedStandaloneReviewMatchFixture(
     data: {
       fixtureId: `standalone-review-match-${suffix}`,
       candidateId: candidate.id,
+      omitSamplePrRow: true,
       concepts: [
         {
           canonicalKey: conceptKey,

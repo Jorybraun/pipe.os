@@ -67,6 +67,7 @@ type SeedDemandInput = {
 type SeedRequest = {
   fixtureId?: string;
   candidateId: string;
+  omitSamplePrRow?: boolean;
   concepts: SeedConceptInput[];
   candidateEvidence: SeedCandidateEvidenceInput[];
   repo: {
@@ -142,6 +143,11 @@ function optionalNumber(record: Record<string, unknown>, key: string): number | 
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function stringArray(value: unknown, key: string): string[] {
   if (!Array.isArray(value)) throw new Error(`${key} must be an array`);
   const entries = value.map((entry) => {
@@ -177,6 +183,7 @@ function parseSeedRequest(value: unknown): SeedRequest {
   return {
     fixtureId: optionalString(body, 'fixtureId'),
     candidateId: requireString(body, 'candidateId'),
+    omitSamplePrRow: optionalBoolean(body, 'omitSamplePrRow') ?? false,
     concepts: conceptsRaw.map((entry, index) => {
       const concept = requireRecord(entry, `concepts[${index}]`);
       const canonicalKey = requireString(concept, 'canonicalKey');
@@ -788,31 +795,37 @@ async function seedRepoChallenge(input: {
   ).bind(seed.repo.githubUrl).first<{ id: number }>();
   if (!repo) throw new Error('failed to persist fixture repo');
 
-  await db.prepare(
-    `INSERT INTO repo_sample_prs (
-       repo_id, pr_number, pr_url, title, merged_at, changed_file_count,
-       modifies_tests, additions, deletions, construct_slugs_json,
-       swe_bench_eligible, changed_file_paths_json
-     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0, '[]', 0, ?8)
-     ON CONFLICT(repo_id, pr_number) DO UPDATE SET
-       pr_url = excluded.pr_url,
-       title = excluded.title,
-       merged_at = excluded.merged_at,
-       changed_file_count = excluded.changed_file_count,
-       modifies_tests = excluded.modifies_tests,
-       additions = excluded.additions,
-       swe_bench_eligible = excluded.swe_bench_eligible,
-       changed_file_paths_json = excluded.changed_file_paths_json`,
-  ).bind(
-    repo.id,
-    seed.pullRequest.number,
-    `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
-    seed.pullRequest.title,
-    seed.pullRequest.mergedAt ?? now,
-    seed.repoSpans.length,
-    seed.repoSpans.reduce((sum, span) => sum + span.exactText.split('\n').length, 0),
-    JSON.stringify(seed.repoSpans.map((span) => span.path)),
-  ).run();
+  if (seed.omitSamplePrRow) {
+    await db.prepare(
+      `DELETE FROM repo_sample_prs WHERE repo_id = ?1 AND pr_number = ?2`,
+    ).bind(repo.id, seed.pullRequest.number).run();
+  } else {
+    await db.prepare(
+      `INSERT INTO repo_sample_prs (
+         repo_id, pr_number, pr_url, title, merged_at, changed_file_count,
+         modifies_tests, additions, deletions, construct_slugs_json,
+         swe_bench_eligible, changed_file_paths_json
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, 0, '[]', 0, ?8)
+       ON CONFLICT(repo_id, pr_number) DO UPDATE SET
+         pr_url = excluded.pr_url,
+         title = excluded.title,
+         merged_at = excluded.merged_at,
+         changed_file_count = excluded.changed_file_count,
+         modifies_tests = excluded.modifies_tests,
+         additions = excluded.additions,
+         swe_bench_eligible = excluded.swe_bench_eligible,
+         changed_file_paths_json = excluded.changed_file_paths_json`,
+    ).bind(
+      repo.id,
+      seed.pullRequest.number,
+      `${seed.repo.githubUrl}/pull/${seed.pullRequest.number}`,
+      seed.pullRequest.title,
+      seed.pullRequest.mergedAt ?? now,
+      seed.repoSpans.length,
+      seed.repoSpans.reduce((sum, span) => sum + span.exactText.split('\n').length, 0),
+      JSON.stringify(seed.repoSpans.map((span) => span.path)),
+    ).run();
+  }
 
   const { challengeInput, structuralFacts } = await buildFixtureChallengeInput({ fixtureId, seed, now });
   const packet = await buildChallengePacket(challengeInput);
