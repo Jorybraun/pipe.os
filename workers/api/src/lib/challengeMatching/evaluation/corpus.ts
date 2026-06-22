@@ -1,6 +1,7 @@
 import type {
   CandidatePersonEvidence,
   EvaluationCorpus,
+  EvidenceReference,
   ExpertLabel,
   RelevanceGrade,
   RoleRequirements,
@@ -34,6 +35,34 @@ function pairKey(candidateId: string, roleId: string): string {
 function sameStringSet(left: string[], right: string[]): boolean {
   const normalize = (values: string[]) => Array.from(new Set(values)).sort();
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function sourceRefComplete(reference: EvidenceReference): boolean {
+  return nonEmptyString(reference.artifactId)
+    && nonEmptyString(reference.artifactVersion)
+    && nonEmptyString(reference.contentHash)
+    && nonEmptyString(reference.sourceRefType)
+    && nonEmptyString(reference.sourceRefId)
+    && nonEmptyString(reference.exactText)
+    && Number.isInteger(reference.startOffset)
+    && Number.isInteger(reference.endOffset)
+    && reference.startOffset >= 0
+    && reference.endOffset > reference.startOffset;
+}
+
+function roleSourceComplete(reference: RoleRequirements['sourceReferences'][number]): boolean {
+  return nonEmptyString(reference.entityId)
+    && nonEmptyString(reference.locator)
+    && Array.isArray(reference.conceptKeys)
+    && reference.conceptKeys.length > 0
+    && nonEmptyString(reference.sourceRefType)
+    && nonEmptyString(reference.sourceRefId)
+    && nonEmptyString(reference.exactText)
+    && nonEmptyString(reference.contentHash);
 }
 
 export function validateCorpus(corpus: EvaluationCorpus): void {
@@ -70,16 +99,8 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
       continue;
     }
     for (const reference of evidence.evidenceReferences) {
-      if (!reference.artifactId || !reference.artifactVersion || !reference.contentHash) {
-        failures.push(`evidence reference missing immutable source identity: ${evidence.evidenceId}`);
-      }
-      if (
-        !Number.isInteger(reference.startOffset)
-        || !Number.isInteger(reference.endOffset)
-        || reference.startOffset < 0
-        || reference.endOffset <= reference.startOffset
-      ) {
-        failures.push(`evidence reference offsets invalid: ${evidence.evidenceId}`);
+      if (!sourceRefComplete(reference)) {
+        failures.push(`evidence reference missing exact immutable source provenance: ${evidence.evidenceId}`);
       }
     }
   }
@@ -94,6 +115,12 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     }
     if (!Array.isArray(role.sourceReferences) || role.sourceReferences.length === 0) {
       failures.push(`role must contain persisted source references: ${role.roleId}`);
+      continue;
+    }
+    for (const reference of role.sourceReferences) {
+      if (!roleSourceComplete(reference)) {
+        failures.push(`role source reference missing exact immutable source provenance: ${role.roleId}`);
+      }
     }
   }
 

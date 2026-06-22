@@ -19,6 +19,10 @@
           "artifactId": "artifact-1",
           "artifactVersion": "version-1",
           "contentHash": "sha256:abc123",
+          "sourceRefType": "source_span",
+          "sourceRefId": "candidate-source-span-1",
+          "sourceSpanId": "candidate-source-span-1",
+          "exactText": "Implemented quantum-resistant cryptography using lattice-based schemes",
           "startOffset": 0,
           "endOffset": 100
         }
@@ -35,7 +39,12 @@
         {
           "entityId": "role-1",
           "locator": "technical_context",
-          "conceptKeys": ["term:quantum-cryptography"]
+          "conceptKeys": ["term:quantum-cryptography"],
+          "sourceRefType": "source_span",
+          "sourceRefId": "role-source-span-1",
+          "sourceSpanId": "role-source-span-1",
+          "exactText": "Role requires quantum cryptography experience.",
+          "contentHash": "sha256:role-source-1"
         }
       ]
     }

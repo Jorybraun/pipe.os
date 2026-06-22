@@ -40,6 +40,8 @@ function dcg(scores: number[]): number {
 }
 
 function sourceRefsComplete(alignment: PersistedMatchAlignment): boolean {
+  const nonEmptyString = (value: string | undefined) =>
+    typeof value === 'string' && value.trim().length > 0;
   const complete = (references: PersistedMatchAlignment['candidateSourceRefs']) =>
     Array.isArray(references)
     && references.length > 0
@@ -47,6 +49,9 @@ function sourceRefsComplete(alignment: PersistedMatchAlignment): boolean {
       Boolean(reference.artifactId)
       && Boolean(reference.artifactVersion)
       && Boolean(reference.contentHash)
+      && nonEmptyString(reference.sourceRefType)
+      && nonEmptyString(reference.sourceRefId)
+      && nonEmptyString(reference.exactText)
       && Number.isInteger(reference.startOffset)
       && Number.isInteger(reference.endOffset)
       && reference.startOffset >= 0

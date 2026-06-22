@@ -52,10 +52,15 @@ function writeExpertCorpusFixture(directory: string): string {
 }
 
 function sourceRef(overrides?: Partial<Record<string, unknown>>) {
+  const artifactId = typeof overrides?.artifactId === 'string' ? overrides.artifactId : 'artifact-1';
   return {
-    artifactId: 'artifact-1',
+    artifactId,
     artifactVersion: 'version-1',
     contentHash: 'sha256:abc123',
+    sourceRefType: artifactId.startsWith('repo-') ? 'repo_source_span' : 'source_span',
+    sourceRefId: `${artifactId}-source-span`,
+    sourceSpanId: artifactId.startsWith('repo-') ? undefined : `${artifactId}-source-span`,
+    exactText: `Exact source text for ${artifactId}.`,
     startOffset: 0,
     endOffset: 10,
     ...overrides,
@@ -568,6 +573,11 @@ describe('matching evaluation CLI', () => {
           entityId: 'role-1',
           locator: 'technical_context',
           conceptKeys: ['term:quantum-cryptography'],
+          sourceRefType: 'source_span',
+          sourceRefId: 'role-source-span-1',
+          sourceSpanId: 'role-source-span-1',
+          exactText: 'Role source for quantum cryptography.',
+          contentHash: 'sha256:role-source-1',
         }],
       }],
       expertLabels: [{

@@ -1,5 +1,6 @@
 import type {
   PairScore,
+  RoleSourceReference,
   SourceRef,
   StretchMatch,
 } from '../types';
@@ -55,11 +56,7 @@ export interface RoleRequirements {
   requiredConcepts?: string[];
   forbiddenConcepts?: string[];
   minimumSeniority?: 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
-  sourceReferences: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  sourceReferences: RoleSourceReference[];
 }
 
 export interface ExpertLabel {
