@@ -300,6 +300,7 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'assertion_source_spans')).toBe(2);
     expect(count(sqlite, 'context_records')).toBe(2);
     expect(count(sqlite, 'context_record_source_spans')).toBe(4);
+    expect(count(sqlite, 'context_record_concepts')).toBe(1);
     expect(count(sqlite, 'source_span_attributions')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(1);
     expect(sqlite.prepare(
@@ -327,6 +328,15 @@ describe('meeting transcript living-context ingestion', () => {
     ).get()).toEqual({
       relationship: 'mechanism used for order replay',
       weight: 0.87,
+    });
+    expect(sqlite.prepare(
+      `SELECT crc.relationship, crc.weight, c.canonical_key
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id`,
+    ).get()).toEqual({
+      relationship: 'mechanism used for order replay',
+      weight: 0.87,
+      canonical_key: 'term:temporal-shard-knitting',
     });
     expect(sqlite.prepare(
       `SELECT conversation_score, total_score, evidence_count, source_diversity
@@ -656,6 +666,16 @@ describe('meeting transcript living-context ingestion', () => {
     expect(candidateGraph?.contextRecords.map((record) => record.recordType).sort()).toEqual([
       'meeting_transcript',
       'meeting_transcript_assertion',
+    ]);
+    const assertionContext = candidateGraph?.contextRecords.find(
+      (record) => record.recordType === 'meeting_transcript_assertion',
+    );
+    expect(assertionContext?.concepts).toEqual([
+      expect.objectContaining({
+        canonicalKey: 'term:temporal-shard-knitting',
+        relationship: 'mechanism used for order replay',
+        weight: 0.87,
+      }),
     ]);
 
     expect(count(sqlite, 'people')).toBe(1);
