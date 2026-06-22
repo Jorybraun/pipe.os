@@ -256,6 +256,11 @@ export interface MatchExplanation {
     demandId: string;
     sourceRefs: SourceRef[];
   }>;
+  roleSources: Array<{
+    entityId: string;
+    locator: string;
+    conceptKeys: string[];
+  }>;
   rejectedPackets: Array<{
     id: string;
     repoId?: string;

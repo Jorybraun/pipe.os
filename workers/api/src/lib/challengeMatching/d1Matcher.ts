@@ -982,6 +982,24 @@ function rejectedPacketExplanations(
   return [...rejected.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function normalizeRoleSourcesForExplanation(
+  sources: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>,
+): MatchExplanation['roleSources'] {
+  const deduped = new Map<string, MatchExplanation['roleSources'][number]>();
+  for (const source of sources) {
+    const normalized = {
+      entityId: source.entityId,
+      locator: source.locator,
+      conceptKeys: [...new Set(source.conceptKeys)].sort(),
+    };
+    deduped.set(JSON.stringify(normalized), normalized);
+  }
+  return [...deduped.values()].sort((left, right) =>
+    left.entityId.localeCompare(right.entityId)
+    || left.locator.localeCompare(right.locator)
+  );
+}
+
 function diagnosticMissingEvidence(input: {
   status: CandidateReviewChallengeMatch['status'];
   compiledStatus: ReturnType<typeof compileCandidateMatchQuery>['status'];
@@ -1038,6 +1056,7 @@ function buildRunExplanation(input: {
   compiled: ReturnType<typeof compileCandidateMatchQuery>;
   selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
   diagnostics: ChallengeMatchDiagnostics;
+  roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
 }): MatchExplanation {
   const rejectedPackets = rejectedPacketExplanations(input.diagnostics);
   const missingEvidence = diagnosticMissingEvidence({
@@ -1046,8 +1065,9 @@ function buildRunExplanation(input: {
     excludedSignalIds: input.compiled.excludedSignalIds,
     diagnostics: input.diagnostics,
   });
+  const roleSources = normalizeRoleSourcesForExplanation(input.roleSourceReferences);
   if (input.selected) {
-    return explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence });
+    return explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence, roleSources });
   }
   return {
     status: input.status,
@@ -1058,6 +1078,7 @@ function buildRunExplanation(input: {
     evidence: [],
     candidateSpans: [],
     repoSpans: [],
+    roleSources,
     rejectedPackets,
     missingEvidence,
     stretchAreas: [],
@@ -1239,6 +1260,7 @@ export async function matchCandidateToReviewChallenge(
     compiled,
     selected,
     diagnostics,
+    roleSourceReferences: options.roleSourceReferences ?? [],
   });
 
   if (!selected) return { status, matchRunId, explanation, diagnostics };

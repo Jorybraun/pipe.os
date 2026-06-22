@@ -850,6 +850,7 @@ describe('matchCandidateToReviewChallenge', () => {
       PRAGMA foreign_keys = ON;
       CREATE TABLE candidates (id TEXT PRIMARY KEY);
       CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
+      CREATE TABLE role_contexts (id TEXT PRIMARY KEY);
       INSERT INTO candidates (id) VALUES ('candidate-1');
     `);
     sqlite.exec(livingMigration);
@@ -1211,9 +1212,22 @@ describe('matchCandidateToReviewChallenge', () => {
 
   it('persists matched explanations as source-backed match context records', async () => {
     seedCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO role_contexts (id) VALUES (?)').run('role-context-1');
     const data = await seedProductionReadyPacket(sqlite, 3);
+    const roleSourceReferences = [{
+      entityId: 'context-record-jd',
+      locator: 'simple_job_description:source_span:jd-span-1',
+      conceptKeys: ['term:kafka'],
+    }];
 
-    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      roleContextId: 'role-context-1',
+      roleSnapshotId: 'role-context:role-context-1:source-backed:simple-jd-v1',
+      roleConcepts: ['term:kafka'],
+      requiredConcepts: ['term:kafka'],
+      conceptResolverVersion: 'open-term-v1',
+      roleSourceReferences,
+    });
 
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
@@ -1227,6 +1241,7 @@ describe('matchCandidateToReviewChallenge', () => {
     });
     expect(result.explanation?.candidateSpans).toHaveLength(2);
     expect(result.explanation?.repoSpans).toHaveLength(2);
+    expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.missingEvidence).toEqual([]);
     expect(result.diagnostics?.evaluatedChallenges).toEqual([
@@ -1256,6 +1271,24 @@ describe('matchCandidateToReviewChallenge', () => {
     });
     expect(contextRecord.confidence).toBeGreaterThanOrEqual(0.6);
 
+    const matchRun = sqlite.prepare(
+      `SELECT role_context_id, role_snapshot_id, query_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(result.matchRunId) as {
+      role_context_id: string;
+      role_snapshot_id: string;
+      query_json: string;
+    };
+    expect(matchRun.role_context_id).toBe('role-context-1');
+    expect(matchRun.role_snapshot_id).toBe('role-context:role-context-1:source-backed:simple-jd-v1');
+    expect(JSON.parse(matchRun.query_json)).toEqual(expect.objectContaining({
+      roleGuardrails: expect.objectContaining({
+        requiredConcepts: ['term:kafka'],
+        sourceReferences: roleSourceReferences,
+      }),
+    }));
+
     const refs = sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, content_hash
          FROM context_record_source_refs
@@ -1276,6 +1309,13 @@ describe('matchCandidateToReviewChallenge', () => {
         source_span_id: null,
         evidence_role: 'selected_packet',
         content_hash: data.packet.contentHash,
+      },
+      {
+        source_ref_type: 'role_source',
+        source_ref_id: 'context-record-jd',
+        source_span_id: null,
+        evidence_role: 'role_source',
+        content_hash: null,
       },
       {
         source_ref_type: 'source_span',
@@ -1320,6 +1360,32 @@ describe('matchCandidateToReviewChallenge', () => {
       entity_type: 'review_challenge_packet',
       entity_id: data.packet.id,
       relationship: 'selected_packet',
+    });
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+          AND relationship = 'role_context'`,
+    ).get(contextRecord.id)).toEqual({
+      entity_type: 'role_context',
+      entity_id: 'role-context-1',
+      relationship: 'role_context',
+    });
+    const roleSourceRef = sqlite.prepare(
+      `SELECT locator_json, metadata_json
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+          AND source_ref_type = 'role_source'`,
+    ).get(contextRecord.id) as {
+      locator_json: string;
+      metadata_json: string;
+    };
+    expect(JSON.parse(roleSourceRef.locator_json)).toEqual({
+      roleContextId: 'role-context-1',
+      locator: 'simple_job_description:source_span:jd-span-1',
+    });
+    expect(JSON.parse(roleSourceRef.metadata_json)).toEqual({
+      conceptKeys: ['term:kafka'],
     });
     expect(sqlite.prepare(
       `SELECT c.canonical_key, crc.relationship, crc.weight

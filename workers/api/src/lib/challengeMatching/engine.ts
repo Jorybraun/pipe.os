@@ -642,9 +642,10 @@ export function rankReviewChallenges(
 
 export function explainChallengeMatch(
   alignment: ChallengeAlignment,
-  context: Pick<MatchExplanation, 'rejectedPackets' | 'missingEvidence'> = {
+  context: Partial<Pick<MatchExplanation, 'rejectedPackets' | 'missingEvidence' | 'roleSources'>> = {
     rejectedPackets: [],
     missingEvidence: [],
+    roleSources: [],
   },
 ): MatchExplanation {
   const status = alignment.eligible ? 'MATCHED' : 'NO_ROLE_SAFE_CHALLENGE';
@@ -707,8 +708,9 @@ export function explainChallengeMatch(
       demandId: entry.demandId,
       sourceRefs: entry.challengeSourceRefs,
     })),
-    rejectedPackets: context.rejectedPackets,
-    missingEvidence: [...alignmentMissingEvidence, ...context.missingEvidence],
+    roleSources: context.roleSources ?? [],
+    rejectedPackets: context.rejectedPackets ?? [],
+    missingEvidence: [...alignmentMissingEvidence, ...(context.missingEvidence ?? [])],
     stretchAreas: alignment.alignments.flatMap((entry) =>
       entry.stretch
         ? [{
