@@ -1,30 +1,20 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import {
   ingestPhoneCallToLivingContext,
   ingestPhoneRecruiterNote,
 } from '../phoneCall';
 
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-  setReturnArrays(enabled: boolean): void;
-}
 
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
 const transcriptProjectionMigration = readFileSync(
@@ -32,66 +22,20 @@ const transcriptProjectionMigration = readFileSync(
   'utf8',
 );
 
-function createMockD1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const prepared = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return prepared;
-        },
-        async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return {
-            success: true,
-            meta: { changes: Number(result.changes) },
-            results: [],
-          };
-        },
-        async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          return {
-            success: true,
-            results: sqlite.prepare(query).all(...bindings) as T[],
-            meta: {},
-          };
-        },
-        async raw<T>() {
-          const statement = sqlite.prepare(query);
-          statement.setReturnArrays(true);
-          return statement.all(...bindings) as T[];
-        },
-      };
-      return prepared;
-    },
-    async batch(statements: D1PreparedStatement[]) {
-      return Promise.all(statements.map((statement) => statement.run()));
-    },
-    async exec(query: string) {
-      sqlite.exec(query);
-      return { count: 0, duration: 0 };
-    },
-    async dump() {
-      return new ArrayBuffer(0);
-    },
-  } as unknown as D1Database;
-}
 
-function count(sqlite: SqliteDatabase, table: string): number {
+
+function count(sqlite: BetterSqliteDb, table: string): number {
   return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
     count: number;
   }).count;
 }
 
 describe('phone call living-context ingestion', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
   let db: D1Database;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE candidates (
@@ -104,6 +48,7 @@ describe('phone call living-context ingestion', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
@@ -149,6 +94,9 @@ describe('phone call living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(1);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_refs')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     expect(count(sqlite, 'projection_outbox')).toBe(1);
@@ -183,6 +131,21 @@ describe('phone call living-context ingestion', () => {
         WHERE a.artifact_type = 'phone_call_recording'`,
     ).get() as { storage_key: string };
     expect(audio.storage_key).toBe(input.recording.storageKey);
+    const contextRecords = sqlite.prepare(
+      `SELECT record_type, predicate
+         FROM context_records
+        ORDER BY record_type`,
+    ).all();
+    expect(contextRecords).toEqual([
+      {
+        record_type: 'phone_call_recording',
+        predicate: 'preserves phone call recording',
+      },
+      {
+        record_type: 'phone_call_transcript',
+        predicate: 'preserves phone call transcript',
+      },
+    ]);
   });
 
   it('stores recruiter note edits as attributed immutable evidence without signals', async () => {
@@ -207,6 +170,9 @@ describe('phone call living-context ingestion', () => {
     expect(count(sqlite, 'artifacts')).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(2);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_refs')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(2);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     const metadata = sqlite.prepare(
@@ -216,5 +182,11 @@ describe('phone call living-context ingestion', () => {
       authorType: 'recruiter',
       authorId: 'recruiter-1',
     });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type = 'recruiter_note'
+          AND predicate = 'preserves recruiter note'`,
+    ).get()).toEqual({ count: 2 });
   });
 });

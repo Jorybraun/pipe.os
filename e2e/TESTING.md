@@ -134,6 +134,8 @@ test('candidate completes code review', async ({ page }) => {
 ## 8. Fast Feedback Loop
 
 - Run a single test: `npx playwright test e2e/foo.spec.ts --grep "scenario name"`
+- If another local app is already using `5173` or `8787`, run on alternate ports:
+  `API_BASE=http://localhost:8790 APP_BASE=http://localhost:5174 npx playwright test e2e/foo.spec.ts --grep "scenario name" --project=authenticated --reporter=line`
 - Use `--reporter=line` for concise output.
 - Use `--headed` to see the browser if a test is confusing.
 - Screenshot on failure is automatic (`screenshot: "only-on-failure"` in config).

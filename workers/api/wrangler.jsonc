@@ -97,6 +97,44 @@
 		"PRIMARY_MATCH_STORE": "neo4j"
 	},
 	"env": {
+		"dev": {
+			"name": "pipe-api-dev",
+			"vars": {
+				"APP_BASE_URL": "https://dev.hire-pipe.com",
+				// Switch to https://room-dev.hire-pipe.com after DNS is writable/resolved.
+				"VIDEO_ROOM_APP_URL": "https://pipe-video-room-dev.pages.dev",
+				"ENV": "dev",
+				"DEV_AUTH_BYPASS": "true",
+				"DEV_BYPASS_USER_ID": "dev-user",
+				"DEV_CONTAINER_DEFAULT_TTL_SECONDS": "3600",
+				"DEV_CONTAINER_MAX_TTL_SECONDS": "7200",
+				"DEV_CONTAINER_WARN_BEFORE_SECONDS": "60",
+				"PRIMARY_MATCH_STORE": "neo4j"
+			},
+			"d1_databases": [
+				{ "binding": "DB", "database_name": "pipe-db-test", "database_id": "0abe92df-9296-46f5-9f9d-a1fb1bcd3be1", "migrations_dir": "migrations" },
+				{ "binding": "pipe_db", "database_name": "pipe-db-test", "database_id": "0abe92df-9296-46f5-9f9d-a1fb1bcd3be1", "remote": true }
+			],
+			"r2_buckets": [
+				{ "binding": "STORAGE", "bucket_name": "pipe-assets-test" }
+			],
+			"ai": { "binding": "AI", "remote": true },
+			"vectorize": [
+				{ "binding": "REPO_INDEX", "index_name": "repo-profiles-test" },
+				{ "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-test" },
+				{ "binding": "ROLE_INDEX", "index_name": "role-profiles-test" }
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "VIDEO_ROOM", "class_name": "VideoRoom" },
+					{ "name": "VOICE_SESSION", "class_name": "VoiceSessionDO" }
+				]
+			},
+			"migrations": [
+				{ "tag": "dev-v1", "new_classes": ["VideoRoom"] },
+				{ "tag": "dev-v2", "new_classes": ["VoiceSessionDO"] }
+			]
+		},
 		"staging": {
 			"name": "pipe-api-staging",
 			"vars": {

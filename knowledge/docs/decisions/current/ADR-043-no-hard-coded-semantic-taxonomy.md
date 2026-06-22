@@ -24,17 +24,20 @@ who wrote the list rather than the source evidence.
 PIPE must not hard-code semantic skills, signals, concepts, labels, aliases, or
 meaning-bearing edge types in application code.
 
-Semantic meaning is data:
+Semantic meaning is source-backed hypergraph data:
 
 - Extracted meaning must retain an exact reference to immutable source content.
+- Source-backed hyperedge/context records are the semantic source of truth.
+  Immutable source artifacts and spans are the proof layer beneath them.
 - Concepts and aliases belong in the persisted concept registry with versions,
   provenance, confidence, and resolver metadata.
-- Signals are accumulated from source-backed assertions and evidence; they are
-  not selected from a code-owned whitelist.
-- Semantic relationships use open predicates or reified assertions. New
-  predicates do not require a schema or code release.
-- Role constraints must reference persisted role assertions/concepts, not
-  translate free text through a code-owned skill map.
+- Signals are accumulated from source-backed hyperedge/context records and
+  evidence; they are not selected from a code-owned whitelist.
+- Semantic relationships use open predicates on hyperedge/context records. New
+  predicates do not require a schema or code release, and pairwise edges are
+  projections only.
+- Role constraints must reference persisted role hyperedge/context records and
+  concepts, not translate free text through a code-owned skill map.
 - Candidate-to-repository matching must compare the same shared semantic
   representation on both sides.
 - Unknown or unresolved meaning remains searchable source-backed evidence. It
@@ -54,13 +57,14 @@ that enforce protocol or storage integrity are not semantic taxonomies.
   `EXPERT_IN`, or `MATCHES_TECHNOLOGY`.
 - Dropping unrecognized concepts during extraction or query compilation.
 - Treating embedding similarity as semantic truth without source-backed
-  assertions and provenance.
+  hyperedge/context records and provenance.
 
 ## Required Enforcement
 
-- Semantic extractors emit open, normalized keys plus the original source span.
+- Semantic extractors emit source-backed hyperedge/context records with open,
+  normalized keys plus the original source span.
 - Concept resolution is versioned and replayable; resolver changes can rebuild
-  projections from immutable artifacts.
+  projections from immutable artifacts and hyperedge records.
 - Match runs persist the candidate snapshot, role snapshot, concept resolver
   version, policy version, and evidence references used.
 - Tests include previously unseen concepts and predicates and prove they survive
@@ -73,4 +77,3 @@ that enforce protocol or storage integrity are not semantic taxonomies.
 The system can learn new terminology without deployments and can explain every
 match from original evidence. Resolver and registry quality become explicit
 runtime concerns, and unresolved concepts must be handled rather than hidden.
-

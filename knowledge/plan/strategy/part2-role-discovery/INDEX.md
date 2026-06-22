@@ -1,8 +1,13 @@
 # Part 2 — Role Discovery: Plan Index
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md
 **Generated:** 2026-04-25  
 **Dedup reference:** [docs/plans/phase0-subagent-execution-plan.md](../../phase0-subagent-execution-plan.md)
+
+> 2026-06-19 correction: current matching does not require role-discovery
+> orchestration, stakeholder interviews, synthesized RCDs, or fixed `role_nodes`.
+> A role is a simple job description artifact plus optional explicit notes; see
+> ADR-051 and `../../living-context-repo-matching-plan.md`.
 
 ---
 
@@ -17,9 +22,9 @@
 | [phase0-cockpit-rcd-cutover.md](./phase0-cockpit-rcd-cutover.md) | 0 | PENDING | 0.5 wk | 1 |
 | [phase0-scorer-bars-anchor-audit.md](./phase0-scorer-bars-anchor-audit.md) | 0 | NEEDS-REFINEMENT | unclear | 0 |
 | [phase0-dealbreaker-gate-enforcement.md](./phase0-dealbreaker-gate-enforcement.md) | 0 | PENDING → redirect | — | → canonical at part5-matching-migration/dealbreaker-gate-enforcement.md |
-| [phase2-role-nodes-migration.md](./phase2-role-nodes-migration.md) | 2 | PENDING | 0.5 wk | 1 |
-| [phase2-rcd-decomposition.md](./phase2-rcd-decomposition.md) | 2 | PENDING | 2 wk | 3 |
-| [phase2-role-nodes-backfill.md](./phase2-role-nodes-backfill.md) | 2 | PENDING | 0.5 wk | 1 |
+| phase2-role-nodes-migration.md | 2 | ARCHIVED — fixed semantic node taxonomy | — | — |
+| phase2-rcd-decomposition.md | 2 | ARCHIVED — RCD/role-discovery path | — | — |
+| phase2-role-nodes-backfill.md | 2 | ARCHIVED — RCD/role-discovery path | — | — |
 | [phase4-uar-shared-infra.md](./phase4-uar-shared-infra.md) | 4 | NEEDS-REFINEMENT | 1 wk | 0 |
 | [phase4-uar-plugin-port.md](./phase4-uar-plugin-port.md) | 4 | PENDING | 2 wk | 2 |
 | [phase4-uar-synthesis-hook.md](./phase4-uar-synthesis-hook.md) | 4 | PENDING | 1 wk | 2 |
@@ -47,12 +52,8 @@ Phase 0 (parallel batch — no file conflicts between these):
   phase0-scorer-bars-anchor-audit         ← NEEDS-REFINEMENT, decision required
   phase0-dealbreaker-gate-enforcement     ← run AFTER phase0 Subagent G (triangulateMatch.ts conflict)
 
-Phase 2 (serial within phase):
-  phase2-role-nodes-migration
-    ↓
-  phase2-rcd-decomposition
-    ↓
-  phase2-role-nodes-backfill
+Phase 2 role-node/RCD plans are archived for the current path. Current work
+starts from JD source artifacts and source-backed role assertions.
 
 Phase 4 (serial within phase):
   phase4-uar-shared-infra          ← NEEDS-REFINEMENT
@@ -69,18 +70,18 @@ Phase 4 (serial within phase):
 ## File conflict notes
 
 - `routes/discovery/roleContexts.ts` was modified in phase0 Subagent F. Phase 4 route swap modifies it again — serial across phases, no conflict.
-- `lib/roleAgent/synthesizeRcd.ts` is touched in Phase 2 (add decomposition hook) and Phase 4 (synthesis moves into UAR post-FSM). Phase 4 owns the relocation; Phase 2 should add the hook minimally without restructuring exports.
+- `lib/roleAgent/synthesizeRcd.ts` belongs to the archived role-discovery/RCD path for current matching work. Do not add new matcher dependencies on it.
 - `workers/api/src/lib/match/triangulateMatch.ts` is touched by phase0 Subagent G (vector signals) and phase0 dealbreaker gate. Run dealbreaker gate plan after Subagent G to avoid conflict.
 
 ---
 
 ## Items not planned (out of scope for Part 2)
 
-- **Per-requirement matching layer** — explicitly deferred to Part 5 (strategy line 143: "Details live in Part 5")
-- **Phase 5 graph migration** — `role_nodes` → Neo4j `:RoleNode` nodes (strategy lines 225–227)
+- **Per-requirement matching layer** — current matching compiles demands from JD-backed source assertions, not `role_nodes`.
+- **Phase 5 graph migration** — `role_nodes` → Neo4j `:RoleNode` is archived for current scope.
 - **Recruiter training / product guardrails** — strategic framing in "honest caveats" section, not a work request
 - **Golden-set measurement / A/B match quality** — called for in caveats but no concrete work items specified; candidate for a future Part 5 plan
-- **`matchReposForCandidate` cutover to sub-elements** (strategy line 217) — the Part 2 source asks for an update so matching reads `role_nodes` instead of flat RCD text. The cutover spans Part 2 (consumer call sites) and Part 5 (per-requirement match scoring). Canonical home: [`../part5-matching-migration/per-requirement-match-pipeline.md`](../part5-matching-migration/per-requirement-match-pipeline.md). Once `phase2-role-nodes-backfill.md` lands, Part 5's per-requirement pipeline switches the read path; no separate Part 2 plan required.
+- **`matchReposForCandidate` cutover to sub-elements** — superseded. Current work must remove hard skill/persona gates and compile from JD/person/repo assertions with provenance.
 
 ---
 

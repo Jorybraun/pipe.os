@@ -1,6 +1,6 @@
 # CodeSignal Phased Calibration Model — Rubric Maturity Path
 
-**Source:** knowledge/plan/pipe-strategy-v2-part6-market-research.md (lines 39–57)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part6-market-research.md (lines 39–57)
 **Phase:** 1
 **Status:** PENDING
 **Estimate:** 1 week

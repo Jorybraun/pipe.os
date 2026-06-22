@@ -37,7 +37,12 @@ vi.mock('neo4j-driver', () => {
 });
 
 import * as neo4jDriverModule from 'neo4j-driver';
-import { matchCandidatesForRole, checkDealbreakersForCandidate, scoreCandidateAgainstRole } from '../matchingQueries';
+import {
+  matchCandidatesForRole,
+  checkDealbreakersForCandidate,
+  scoreCandidateAgainstRole,
+  matchReposForCandidateNeo4j,
+} from '../matchingQueries';
 
 function getMocks() {
   return neo4jDriverModule as unknown as {
@@ -117,6 +122,24 @@ describe('matchingQueries', () => {
     expect(results[0]!.overall_score).toBe(0.85);
     expect(results[0]!.requirement_matches).toHaveLength(1);
     expect(results[0]!.requirement_matches[0]!.evidence[0]!.sim).toBe(0.88);
+  });
+
+  it('matchReposForCandidateNeo4j does not hardcode repo node types', async () => {
+    const { _mockSessionRun } = getMocks();
+    _mockSessionRun.mockResolvedValue({
+      records: [],
+      summary: { counters: { updates: () => ({}) } },
+    });
+    const driver = { session: vi.fn().mockReturnValue({ run: _mockSessionRun, close: vi.fn() }) } as unknown as import('neo4j-driver').Driver;
+
+    await matchReposForCandidateNeo4j(driver, 'cand_1');
+
+    expect(_mockSessionRun).toHaveBeenCalledOnce();
+    const [cypher] = _mockSessionRun.mock.calls[0]!;
+    expect(cypher).toContain('rn.embedding IS NOT NULL');
+    expect(cypher).toContain('node_type: rn.node_type');
+    expect(cypher).not.toContain("rn.node_type IN ['Feature', 'TechnicalStack', 'ArchitecturalPattern', 'PRSample']");
+    expect(cypher).not.toContain('labels(rn)[1]');
   });
 
   it('checkDealbreakersForCandidate reads threshold from Role node', async () => {

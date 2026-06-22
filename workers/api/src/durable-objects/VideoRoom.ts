@@ -166,14 +166,23 @@ export class VideoRoom {
 
     // POST /ensure — idempotently initialize a standalone meeting room.
     if (request.method === 'POST' && url.pathname === '/ensure') {
-      const body = await request.json() as { meetingId: string; hostId: string };
+      const body = await request.json() as {
+        meetingId: string;
+        hostId: string;
+        resetEnded?: boolean;
+      };
       if (!this.metadata.meetingId) {
         this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
         await this.state.storage.put('metadata', this.metadata);
       }
-      if (!await this.state.storage.get<SessionStatus>('status')) {
+      const storedStatus = await this.state.storage.get<SessionStatus>('status');
+      if (!storedStatus || (storedStatus === 'ENDED' && body.resetEnded)) {
         this.sessionStatus = 'WAITING';
         await this.state.storage.put('status', this.sessionStatus);
+        this._lastOffer = null;
+        await this.state.storage.delete('lastOffer');
+      } else {
+        this.sessionStatus = storedStatus;
       }
       return new Response(JSON.stringify({ status: this.sessionStatus }), {
         headers: { 'Content-Type': 'application/json' },
@@ -215,7 +224,7 @@ export class VideoRoom {
       // Accept the WebSocket with the role as a tag (survives hibernation)
       this.state.acceptWebSocket(server, [role]);
 
-      const peerCount = this.getAllWebSockets().length + 1; // +1 for the new connection being established
+      const peerCount = this.getAllWebSockets().length;
 
       // Send current status to the new peer
       server.send(JSON.stringify({

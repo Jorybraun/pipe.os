@@ -15,6 +15,9 @@ export interface SourceRef {
   contentHash: string;
   startOffset: number;
   endOffset: number;
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
   locator?: string;
   exactText?: string;
 }
@@ -51,6 +54,17 @@ export interface QueryAtom extends Omit<
 
 export type Seniority = 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
 
+export interface RoleSourceReference {
+  entityId: string;
+  locator: string;
+  conceptKeys: string[];
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  exactText?: string;
+  contentHash?: string;
+}
+
 export interface RoleGuardrailSnapshot {
   requiredLanguages: string[];
   forbiddenLanguages?: string[];
@@ -60,11 +74,7 @@ export interface RoleGuardrailSnapshot {
   forbiddenConcepts?: string[];
   minimumSeniority?: Seniority;
   conceptResolverVersion?: string;
-  sourceReferences?: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  sourceReferences?: RoleSourceReference[];
 }
 
 export interface CandidateMatchQuery {
@@ -126,6 +136,10 @@ export interface ChallengePacket {
   repoId: string;
   prNumber: number;
   sourceVersion: string;
+  packetContentHash?: string | null;
+  contextRecordId?: string | null;
+  repoSourceRefCount?: number | null;
+  conceptLinkCount?: number | null;
   challengeReady: boolean;
   languages: string[];
   seniority?: Seniority;
@@ -219,10 +233,16 @@ export interface RankReviewChallengesResult {
 }
 
 export interface MatchExplanation {
-  status: 'MATCHED' | 'NO_ROLE_SAFE_CHALLENGE';
-  challengeId: string;
-  repoId: string;
-  prNumber: number;
+  status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE';
+  challengeId?: string;
+  repoId?: string;
+  prNumber?: number;
+  selectedPr?: {
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    sourceVersion: string;
+  };
   score: number;
   summary: string;
   evidence: Array<{
@@ -235,5 +255,46 @@ export interface MatchExplanation {
     candidateSourceRefs: SourceRef[];
     challengeSourceRefs: SourceRef[];
   }>;
+  candidateSpans: Array<{
+    atomId: string;
+    demandId: string;
+    purpose: QueryPurpose;
+    sourceRefs: SourceRef[];
+  }>;
+  repoSpans: Array<{
+    atomId: string;
+    demandId: string;
+    sourceRefs: SourceRef[];
+  }>;
+  roleSources: RoleSourceReference[];
+  rejectedPackets: Array<{
+    id: string;
+    repoId?: string;
+    prNumber?: number | null;
+    reasons: string[];
+    demandIds?: string[];
+    missingSourceSpanIds?: string[];
+    gateFailures?: string[];
+    provenanceFailures?: string[];
+    contextProjectionFailures?: string[];
+    qualityScore?: number | null;
+  }>;
+  missingEvidence: Array<{
+    scope: 'candidate' | 'repo' | 'role' | 'challenge';
+    reason: string;
+    challengeId?: string;
+    demandId?: string;
+    sourceRefs?: SourceRef[];
+  }>;
+  stretchAreas: Array<{
+    atomId: string;
+    demandId: string;
+    atomConcept: string;
+    demandConcept: string;
+    dimension: StretchMatch['dimension'];
+    candidateSourceRefs: SourceRef[];
+    challengeSourceRefs: SourceRef[];
+  }>;
+  unmatchedDemandIds: string[];
   rejectionReasons: string[];
 }

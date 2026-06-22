@@ -1,6 +1,9 @@
 import type { RoomMetadata } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8787'
+  : window.location.origin;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || localApiBase;
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.ok) return response.json() as Promise<T>;

@@ -1,6 +1,6 @@
 # Reliability: Dead-Letter Queue for Permanent Failures
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 251–254)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 251–254)
 **Phase:** 0 (listed as ACTIVE in master list under "Reliability hardening")
 **Status:** PENDING
 **Estimate:** 1 week

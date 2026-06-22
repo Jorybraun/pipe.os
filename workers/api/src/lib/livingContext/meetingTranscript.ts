@@ -351,6 +351,25 @@ async function removePriorSemanticProjection(
     .all<{ workspace_person_id: string; signal_key: string }>();
 
   await db.prepare(
+    `DELETE FROM context_records
+      WHERE assertion_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'assertion'
+      )
+         OR episode_id IN (
+        SELECT spe.entity_id
+          FROM semantic_projection_runs spr
+          JOIN semantic_projection_entities spe ON spe.run_id = spr.id
+         WHERE spr.artifact_id = ?1
+           AND spr.projection_type = ?2
+           AND spe.entity_type = 'episode'
+      )`,
+  ).bind(artifactId, TRANSCRIPT_PROJECTION_TYPE).run();
+  await db.prepare(
     `DELETE FROM semantic_assertions
       WHERE id IN (
         SELECT spe.entity_id
@@ -626,6 +645,37 @@ export async function ingestMeetingTranscriptToLivingContext(
     });
   }
 
+  if (canonical.segments.length > 0) {
+    await store.upsertContextRecord({
+      ingestionKey: `meeting:${input.meetingId}:transcript:${version.id}:context`,
+      scopeType: 'meeting',
+      scopeId: input.meetingId,
+      recordType: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+      narrative: `Meeting transcript source evidence for meeting ${input.meetingId}.`,
+      qualifiers: {
+        meetingId: input.meetingId,
+        ownerId: input.ownerId,
+        provider: input.provider ?? null,
+        recordingKey: input.recordingKey ?? null,
+        segmentCount: canonical.segments.length,
+      },
+      confidence: null,
+      extractionVersion: 'meeting-transcript-ingestion-v1',
+      observedAt,
+      sources: canonical.segments.map((segment) => ({
+        sourceSpanId: spanBySegmentId.get(segment.stableSegmentId)?.id,
+        evidenceRole: 'transcript_segment',
+        exactText: segment.text,
+      })),
+      entities: [{
+        entityType: 'meeting',
+        entityId: input.meetingId,
+        relationship: 'source_event',
+      }],
+    });
+  }
+
   let outputHash = contentHash;
   let runId: string | null = null;
   let assertionCount = 0;
@@ -672,117 +722,176 @@ export async function ingestMeetingTranscriptToLivingContext(
     }
 
     for (const extracted of assertions) {
-    const subjectSpan = spanBySegmentId.get(extracted.subjectSegmentId);
-    if (!subjectSpan?.contactId) continue;
-    const identity = identities.get(subjectSpan.contactId);
-    if (!identity) continue;
-    const sourceSpans = [...new Set(extracted.sourceSegmentIds)]
-      .map((segmentId) => spanBySegmentId.get(segmentId))
-      .filter((span): span is { id: string; contactId: string | null } => Boolean(span));
-    if (
-      sourceSpans.length === 0
-      || !extracted.sourceSegmentIds.includes(extracted.subjectSegmentId)
-      || extracted.predicate.trim().length === 0
-      || extracted.narrative.trim().length === 0
-    ) {
-      continue;
-    }
-    const semanticKey = await deterministicEntityId(
-      'meeting_semantic',
-      stableJson({
-        sourceSegmentIds: [...new Set(extracted.sourceSegmentIds)],
-        subjectSegmentId: extracted.subjectSegmentId,
-        predicate: extracted.predicate.trim(),
+      const subjectSpan = spanBySegmentId.get(extracted.subjectSegmentId);
+      if (!subjectSpan?.contactId) continue;
+      const identity = identities.get(subjectSpan.contactId);
+      if (!identity) continue;
+      const sourceSpans = [...new Set(extracted.sourceSegmentIds)]
+        .map((segmentId) => spanBySegmentId.get(segmentId))
+        .filter((span): span is { id: string; contactId: string | null } => Boolean(span));
+      if (
+        sourceSpans.length === 0
+        || !extracted.sourceSegmentIds.includes(extracted.subjectSegmentId)
+        || extracted.predicate.trim().length === 0
+        || extracted.narrative.trim().length === 0
+      ) {
+        continue;
+      }
+      const semanticKey = await deterministicEntityId(
+        'meeting_semantic',
+        stableJson({
+          sourceSegmentIds: [...new Set(extracted.sourceSegmentIds)],
+          subjectSegmentId: extracted.subjectSegmentId,
+          predicate: extracted.predicate.trim(),
+          narrative: extracted.narrative.trim(),
+          objectType: extracted.objectType ?? null,
+          objectValue: extracted.objectValue ?? null,
+        }),
+      );
+      const episode = await store.upsertEpisode({
+        ingestionKey: `meeting:${input.meetingId}:episode:${version.id}:${semanticKey}`,
+        workspacePersonId: identity.workspacePersonId,
+        interactionId: identity.interactionId,
         narrative: extracted.narrative.trim(),
-        objectType: extracted.objectType ?? null,
-        objectValue: extracted.objectValue ?? null,
-      }),
-    );
-    const episode = await store.upsertEpisode({
-      ingestionKey: `meeting:${input.meetingId}:episode:${version.id}:${semanticKey}`,
-      workspacePersonId: identity.workspacePersonId,
-      interactionId: identity.interactionId,
-      narrative: extracted.narrative.trim(),
-      startedAt: effectiveStartedAt,
-      endedAt: effectiveEndedAt,
-      metadata: {
-        artifactVersionId: version.id,
-        semanticProjectionRunId: semanticRunId,
-      },
-    });
-    await linkProjectionEntity(db, semanticRunId, 'episode', episode.id, now);
-    const assertion = await store.upsertAssertion({
-      ingestionKey: `meeting:${input.meetingId}:assertion:${version.id}:${semanticKey}`,
-      workspacePersonId: identity.workspacePersonId,
-      episodeId: episode.id,
-      subjectType: 'workspace_person',
-      subjectId: identity.workspacePersonId,
-      predicate: extracted.predicate.trim(),
-      objectType: extracted.objectType?.trim() || null,
-      objectValue: extracted.objectValue,
-      narrative: extracted.narrative.trim(),
-      qualifiers: {
-        ...(extracted.qualifiers ?? {}),
-        artifactVersionId: version.id,
-        subjectSegmentId: extracted.subjectSegmentId,
-        semanticProjectionRunId: semanticRunId,
-      },
-      confidence: boundedScore(extracted.confidence),
-      polarity: boundedPolarity(extracted.polarity),
-      extractionVersion: extractorVersion,
-      observedAt,
-    });
-    await linkProjectionEntity(db, semanticRunId, 'assertion', assertion.id, now);
-    for (const sourceSpan of sourceSpans) {
-      await store.linkAssertionSourceSpan(assertion.id, sourceSpan.id, 'source');
-    }
-    for (const conceptInput of extracted.concepts ?? []) {
-      const term = openSemanticTerm(conceptInput.surface);
-      const relationship = conceptInput.relationship.trim();
-      const weight = boundedScore(conceptInput.weight);
-      if (!term || relationship.length === 0 || weight === null) continue;
-      const concept = await store.upsertConcept({
-        ingestionKey: `open-term:${term.canonicalKey}`,
-        canonicalKey: term.canonicalKey,
-        namespace: 'term',
-        label: term.surface,
+        startedAt: effectiveStartedAt,
+        endedAt: effectiveEndedAt,
         metadata: {
-          resolver: OPEN_TERM_RESOLVER_VERSION,
-          source: 'meeting_transcript',
+          artifactVersionId: version.id,
+          semanticProjectionRunId: semanticRunId,
         },
       });
-      await store.linkAssertionConcept(
-        assertion.id,
-        concept.id,
-        relationship,
-        weight,
-      );
-      const strength = boundedScore(conceptInput.strength);
-      if (conceptInput.evidenceLevel && strength !== null) {
-        await store.upsertSignalEvidence({
-          ingestionKey: `meeting:${input.meetingId}:evidence:${assertion.id}:${term.canonicalKey}`,
-          workspacePersonId: identity.workspacePersonId,
-          interactionId: identity.interactionId,
-          assertionId: assertion.id,
-          conceptId: concept.id,
-          signalKey: term.canonicalKey,
-          evidenceLevel: conceptInput.evidenceLevel,
-          strength,
-          polarity: boundedPolarity(extracted.polarity),
-          observedAt,
+      await linkProjectionEntity(db, semanticRunId, 'episode', episode.id, now);
+      const assertion = await store.upsertAssertion({
+        ingestionKey: `meeting:${input.meetingId}:assertion:${version.id}:${semanticKey}`,
+        workspacePersonId: identity.workspacePersonId,
+        episodeId: episode.id,
+        subjectType: 'workspace_person',
+        subjectId: identity.workspacePersonId,
+        predicate: extracted.predicate.trim(),
+        objectType: extracted.objectType?.trim() || null,
+        objectValue: extracted.objectValue,
+        narrative: extracted.narrative.trim(),
+        qualifiers: {
+          ...(extracted.qualifiers ?? {}),
+          artifactVersionId: version.id,
+          subjectSegmentId: extracted.subjectSegmentId,
+          semanticProjectionRunId: semanticRunId,
+        },
+        confidence: boundedScore(extracted.confidence),
+        polarity: boundedPolarity(extracted.polarity),
+        extractionVersion: extractorVersion,
+        observedAt,
+      });
+      await linkProjectionEntity(db, semanticRunId, 'assertion', assertion.id, now);
+      for (const sourceSpan of sourceSpans) {
+        await store.linkAssertionSourceSpan(assertion.id, sourceSpan.id, 'source');
+      }
+      const contextConcepts: Array<{
+        conceptId: string;
+        relationship: string;
+        weight: number;
+        signalInput: MeetingTranscriptConceptInput;
+        canonicalKey: string;
+      }> = [];
+      for (const conceptInput of extracted.concepts ?? []) {
+        const term = openSemanticTerm(conceptInput.surface);
+        const relationship = conceptInput.relationship.trim();
+        const weight = boundedScore(conceptInput.weight);
+        if (!term || relationship.length === 0 || weight === null) continue;
+        const concept = await store.upsertConcept({
+          ingestionKey: `open-term:${term.canonicalKey}`,
+          canonicalKey: term.canonicalKey,
+          namespace: 'term',
+          label: term.surface,
           metadata: {
-            artifactVersionId: version.id,
-            semanticProjectionRunId: semanticRunId,
+            resolver: OPEN_TERM_RESOLVER_VERSION,
+            source: 'meeting_transcript',
           },
         });
-        affectedSignals.set(`${identity.workspacePersonId}\u0000${term.canonicalKey}`, {
-          workspacePersonId: identity.workspacePersonId,
-          signalKey: term.canonicalKey,
-          interactionId: identity.interactionId,
+        contextConcepts.push({
+          conceptId: concept.id,
+          relationship,
+          weight,
+          signalInput: conceptInput,
+          canonicalKey: term.canonicalKey,
         });
       }
-    }
-    assertionCount++;
+      await store.upsertContextRecord({
+        ingestionKey: `meeting:${input.meetingId}:assertion:${version.id}:${semanticKey}:context`,
+        workspacePersonId: identity.workspacePersonId,
+        interactionId: identity.interactionId,
+        episodeId: episode.id,
+        assertionId: assertion.id,
+        recordType: 'meeting_transcript_assertion',
+        predicate: extracted.predicate.trim(),
+        narrative: extracted.narrative.trim(),
+        qualifiers: {
+          ...(extracted.qualifiers ?? {}),
+          artifactVersionId: version.id,
+          subjectSegmentId: extracted.subjectSegmentId,
+          semanticProjectionRunId: semanticRunId,
+        },
+        confidence: boundedScore(extracted.confidence),
+        polarity: boundedPolarity(extracted.polarity),
+        extractionVersion: extractorVersion,
+        observedAt,
+        sources: sourceSpans.map((sourceSpan) => ({
+          sourceSpanId: sourceSpan.id,
+          evidenceRole: 'source',
+        })),
+        entities: [
+          {
+            entityType: 'meeting',
+            entityId: input.meetingId,
+            relationship: 'source_event',
+          },
+          ...(extracted.objectValue === undefined
+            ? []
+            : [{
+                entityType: extracted.objectType?.trim() || 'assertion_object',
+                relationship: 'object',
+                value: extracted.objectValue,
+              }]),
+        ],
+        concepts: contextConcepts.map((concept) => ({
+          conceptId: concept.conceptId,
+          relationship: concept.relationship,
+          weight: concept.weight,
+        })),
+      });
+      for (const concept of contextConcepts) {
+        await store.linkAssertionConcept(
+          assertion.id,
+          concept.conceptId,
+          concept.relationship,
+          concept.weight,
+        );
+        const strength = boundedScore(concept.signalInput.strength);
+        if (concept.signalInput.evidenceLevel && strength !== null) {
+          await store.upsertSignalEvidence({
+            ingestionKey: `meeting:${input.meetingId}:evidence:${assertion.id}:${concept.canonicalKey}`,
+            workspacePersonId: identity.workspacePersonId,
+            interactionId: identity.interactionId,
+            assertionId: assertion.id,
+            conceptId: concept.conceptId,
+            signalKey: concept.canonicalKey,
+            evidenceLevel: concept.signalInput.evidenceLevel,
+            strength,
+            polarity: boundedPolarity(extracted.polarity),
+            observedAt,
+            metadata: {
+              artifactVersionId: version.id,
+              semanticProjectionRunId: semanticRunId,
+            },
+          });
+          affectedSignals.set(`${identity.workspacePersonId}\u0000${concept.canonicalKey}`, {
+            workspacePersonId: identity.workspacePersonId,
+            signalKey: concept.canonicalKey,
+            interactionId: identity.interactionId,
+          });
+        }
+      }
+      assertionCount++;
     }
 
     for (const affected of affectedSignals.values()) {

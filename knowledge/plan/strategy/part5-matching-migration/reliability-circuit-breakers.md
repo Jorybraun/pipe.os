@@ -1,6 +1,6 @@
 # Reliability: Circuit Breakers per AI Provider
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 228–235)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 228–235)
 **Phase:** 0 (listed as ACTIVE in master list under "Reliability hardening")
 **Status:** NEEDS-REFINEMENT
 **Estimate:** 1 week

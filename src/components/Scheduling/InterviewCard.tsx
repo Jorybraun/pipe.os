@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Video, RefreshCw, Mail } from 'lucide-react';
-import type { ScheduledInterview } from '../../lib/scheduling/types';
+import { useNavigate } from 'react-router-dom';
+import { Mail, Video } from 'lucide-react';
+import type { InterviewType, ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
@@ -29,6 +30,13 @@ interface InterviewCardProps {
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
+const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
+  VIDEO: 'Video interview',
+  CODE_REVIEW: 'Automated code review',
+  TECHNICAL: 'Code sandbox challenge',
+  SCREENING: 'Screening',
+};
+
 function isJoinable(interview: ScheduledInterview): boolean {
   // Allow host to join for both INVITED and SCHEDULED statuses
   if (interview.status !== 'SCHEDULED' && interview.status !== 'INVITED') return false;
@@ -49,6 +57,7 @@ export function InterviewCard({
   updateStatus,
   sendInvite,
 }: InterviewCardProps): JSX.Element {
+  const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
 
@@ -72,10 +81,25 @@ export function InterviewCard({
         timeStyle: 'short',
       })
     : '—';
+  const modeLabel = interview.interviewType
+    ? INTERVIEW_TYPE_LABELS[interview.interviewType] ?? interview.interviewType
+    : 'Interview';
+  const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
+    ? `${pipelineTitle}${stageTitle ? ` · ${stageTitle}` : ''}`
+    : null;
 
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => navigate(`/interviews/${interview.id}`)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            navigate(`/interviews/${interview.id}`);
+          }
+        }}
         style={{
           display: 'flex',
           alignItems: 'flex-start',
@@ -85,6 +109,7 @@ export function InterviewCard({
           border: '1px solid var(--pipe-border)',
           borderRadius: 8,
           transition: 'all 0.2s',
+          cursor: 'pointer',
         }}
       >
         {/* Left: dot + time */}
@@ -104,13 +129,13 @@ export function InterviewCard({
           </div>
         </div>
 
-        {/* Center: candidate + pipeline/stage + email */}
+        {/* Center: person + interview mode + optional role context */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4 }}>
             {candidateName}
           </div>
           <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
-            {pipelineTitle} · {stageTitle}
+            {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
           </div>
           {candidateEmail && (
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
@@ -119,41 +144,18 @@ export function InterviewCard({
           )}
         </div>
 
-        {/* Status badge + sync indicator */}
+        {/* Status badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <InterviewStatusBadge status={interview.status ?? 'INVITED'} />
-          {interview.syncSource === 'WEBHOOK' && (
-            <span
-              title={
-                interview.lastSyncedAt
-                  ? `Auto-synced ${new Date(interview.lastSyncedAt).toLocaleString()}`
-                  : 'Auto-synced via webhook'
-              }
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '2px 6px',
-                fontSize: 9,
-                letterSpacing: '0.08em',
-                fontFamily: '"Space Mono", monospace',
-                color: '#4ade80',
-                background: 'rgba(74,222,128,0.08)',
-                border: '1px solid rgba(74,222,128,0.15)',
-                borderRadius: 4,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <RefreshCw size={9} />
-              SYNCED
-            </span>
-          )}
         </div>
 
         {/* Right: INVITE + JOIN button + overflow menu */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button
-            onClick={() => setIsInviteOpen(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsInviteOpen(true);
+            }}
             title="Invite to video call via email"
             style={{
               display: 'flex',
@@ -177,12 +179,11 @@ export function InterviewCard({
           </button>
           <button
             disabled={!joinable}
-            onClick={() => {
-              if (interview.meetingUrl) {
-                window.open(interview.meetingUrl, '_blank', 'noopener,noreferrer');
-              }
+            onClick={(event) => {
+              event.stopPropagation();
+              navigate(`/interviews/${interview.id}`);
             }}
-            title={joinable ? 'Join the meeting' : 'Available 15 min before start'}
+            title={joinable ? 'Open room controls' : 'Available 15 min before start'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -201,12 +202,15 @@ export function InterviewCard({
             }}
           >
             <Video size={12} />
-            JOIN
+            ROOM
           </button>
 
           {/* Edit / override status */}
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsModalOpen(true);
+            }}
             title="Update status"
             style={{
               display: 'flex',

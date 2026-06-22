@@ -1,6 +1,6 @@
 # Per-Candidate PR Override UI (Recruiter)
 
-**Source:** knowledge/plan/pipe-strategy-v2-part3-repo-ingestion.md (lines 201–204)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part3-repo-ingestion.md (lines 201–204)
 **Phase:** 2
 **Status:** NEEDS-REFINEMENT
 **Estimate:** TBD

@@ -1,6 +1,6 @@
 # Issue Gemma Narratives (Phase 2+ Extension)
 
-**Source:** knowledge/plan/pipe-strategy-v2-part3-repo-ingestion.md (lines 284–285)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part3-repo-ingestion.md (lines 284–285)
 **Phase:** 2+
 **Status:** NEEDS-REFINEMENT
 **Estimate:** TBD

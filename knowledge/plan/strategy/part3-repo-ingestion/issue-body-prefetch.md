@@ -1,6 +1,6 @@
 # Issue Body Pre-Fetch
 
-**Source:** knowledge/plan/pipe-strategy-v2-part3-repo-ingestion.md (lines 241–242, 261)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part3-repo-ingestion.md (lines 241–242, 261)
 **Phase:** 0
 **Status:** PENDING
 **Estimate:** 0.5 weeks

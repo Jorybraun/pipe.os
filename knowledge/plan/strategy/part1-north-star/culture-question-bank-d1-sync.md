@@ -1,6 +1,6 @@
 # Culture Question Bank — D1 Sync
 
-**Source:** knowledge/plan/pipe-strategy-v2-part1-north-star.md (lines 120–121)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1-north-star.md (lines 120–121)
 **Phase:** 0
 **Status:** PENDING
 **Estimate:** 1 week

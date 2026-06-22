@@ -6,23 +6,24 @@ import {
   matchCandidateToReviewChallenge,
 } from '../d1Matcher';
 import type { ChallengePacket } from '../types';
-import type { ChallengePacket as RepoChallengePacket } from '../../repoSemanticGraph';
+import {
+  buildChallengePacket,
+  buildCodeEpisode,
+  buildFacet,
+  buildRepoSignal,
+  buildRepoSnapshot,
+  buildSemanticAssertion,
+  buildSourceArtifact,
+  buildSourceArtifactVersion,
+  buildSourceSpan,
+  buildStructuralFact,
+  buildSymbol,
+  persistReviewChallengeGraph,
+  type ChallengePacket as RepoChallengePacket,
+  type NormalizedPullRequestInput,
+} from '../../repoSemanticGraph';
 
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-}
 
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
 const livingMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
@@ -31,34 +32,492 @@ const matchingMigration = readFileSync(
   new URL('../../../../migrations/0083_repo_semantic_graph_and_match_runs.sql', import.meta.url),
   'utf8',
 );
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
 
-function d1(sqlite: SqliteDatabase): D1Database {
+type SqlValue = string | number | null;
+
+interface NodeSqliteStatement {
+  run(...values: SqlValue[]): unknown;
+  get(...values: SqlValue[]): unknown;
+  all(...values: SqlValue[]): unknown[];
+}
+
+interface NodeSqliteDatabase {
+  prepare(sql: string): NodeSqliteStatement;
+  exec(sql: string): void;
+  close(): void;
+}
+
+const require = createRequire(import.meta.url);
+const { DatabaseSync } = require('node:sqlite') as {
+  DatabaseSync: new (path: string) => NodeSqliteDatabase;
+};
+
+const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
+
+function rewriteNumberedParams(
+  sql: string,
+  bindings: unknown[],
+): { sql: string; args: unknown[] } {
+  const numbered = /\?(\d+)/g;
+  let match = numbered.exec(sql);
+  if (!match) return { sql, args: bindings };
+
+  const args: unknown[] = [];
+  let rewritten = '';
+  let lastIndex = 0;
+
+  numbered.lastIndex = 0;
+  while ((match = numbered.exec(sql)) !== null) {
+    rewritten += sql.slice(lastIndex, match.index) + '?';
+    args.push(bindings[parseInt(match[1]!, 10) - 1]);
+    lastIndex = numbered.lastIndex;
+  }
+  rewritten += sql.slice(lastIndex);
+  return { sql: rewritten, args };
+}
+
+function createNodeSqliteD1(sqlite: NodeSqliteDatabase): D1Database {
   return {
     prepare(query: string) {
       let bindings: unknown[] = [];
-      const statement = {
-        bind(...values: unknown[]) {
+      const prepared = {
+        bind(...values: SqlValue[]) {
           bindings = values;
-          return statement;
+          return prepared;
         },
         async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return { success: true, results: [], meta: { changes: Number(result.changes) } };
+          const { sql, args } = rewriteNumberedParams(query, bindings);
+          sqlite.prepare(sql).run(...args as SqlValue[]);
+          return { success: true, results: [], meta: {} };
         },
         async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
+          const { sql, args } = rewriteNumberedParams(query, bindings);
+          return (sqlite.prepare(sql).get(...args as SqlValue[]) as T | undefined) ?? null;
         },
         async all<T>() {
-          return { success: true, results: sqlite.prepare(query).all(...bindings) as T[], meta: {} };
+          const { sql, args } = rewriteNumberedParams(query, bindings);
+          return {
+            success: true,
+            results: sqlite.prepare(sql).all(...args as SqlValue[]) as T[],
+            meta: {},
+          };
         },
       };
-      return statement;
+      return prepared;
     },
   } as unknown as D1Database;
 }
 
-function seedCandidateEvidence(sqlite: SqliteDatabase): void {
-  const now = '2026-06-14T08:00:00.000Z';
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function sourceEndPosition(value: string): { byteOffset: number; line: number; column: number } {
+  const lines = value.split('\n');
+  return {
+    byteOffset: byteLength(value),
+    line: lines.length,
+    column: lines[lines.length - 1]!.length + 1,
+  };
+}
+
+async function buildRepoChangedFile(input: {
+  repoSnapshotId: string;
+  path: string;
+  content: string;
+  symbolName: string;
+  symbolKind: 'function' | 'test';
+  signature: string;
+}) {
+  const artifact = await buildSourceArtifact({
+    repoSnapshotId: input.repoSnapshotId,
+    kind: 'source',
+    path: input.path,
+    language: 'typescript',
+  });
+  const artifactVersion = await buildSourceArtifactVersion({
+    artifactId: artifact.id,
+    repoSnapshotId: input.repoSnapshotId,
+    content: input.content,
+    createdAt: OBSERVED_AT,
+  });
+  const sourceSpan = await buildSourceSpan({
+    repoSnapshotId: input.repoSnapshotId,
+    artifactId: artifact.id,
+    artifactVersionId: artifactVersion.id,
+    contentHash: artifactVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(input.content),
+    exactText: input.content,
+    displayLabel: `${input.path}:1-${input.content.split('\n').length}`,
+    prSide: 'head',
+  });
+  const symbol = await buildSymbol({
+    repoSnapshotId: input.repoSnapshotId,
+    language: 'typescript',
+    qualifiedName: `${input.path}:${input.symbolName}`,
+    name: input.symbolName,
+    kind: input.symbolKind,
+    signature: input.signature,
+    definingSpanId: sourceSpan.id,
+    exported: true,
+  });
+
+  return {
+    file: {
+      path: input.path,
+      status: 'modified' as const,
+      language: 'typescript',
+      additions: input.content.split('\n').length,
+      deletions: 0,
+      artifact,
+      artifactVersion,
+      hunks: [{
+        header: `@@ ${input.symbolName} @@`,
+        patch: input.content,
+        sourceSpan,
+        changedSymbolIds: [symbol.id],
+      }],
+      symbols: [symbol],
+    },
+    sourceSpan,
+    symbol,
+  };
+}
+
+async function buildProductionReadyRepoChallengeFixture(): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  const repoSnapshot = await buildRepoSnapshot({
+    repository: {
+      provider: 'github',
+      owner: 'pipe',
+      name: 'orders',
+      canonicalUrl: 'https://github.com/pipe/orders',
+    },
+    commitSha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    defaultBranch: 'main',
+    observedAt: OBSERVED_AT,
+  });
+  const primary = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/ordersKafkaRetry.ts',
+    symbolName: 'publishKafkaRetry',
+    symbolKind: 'function',
+    signature: 'export function publishKafkaRetry(eventId: string, attempt: number): KafkaRetryEnvelope',
+    content: [
+      'import { createKafkaRetryKey } from "./kafkaRetryKey";',
+      '',
+      'export function publishKafkaRetry(eventId: string, attempt: number) {',
+      '  const key = createKafkaRetryKey(eventId);',
+      '  const topic = "orders.retry.kafka";',
+      '  const headers = { "idempotency-key": key, attempt };',
+      '  return { key, topic, headers, idempotent: true };',
+      '}',
+    ].join('\n'),
+  });
+  const helper = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/kafkaRetryKey.ts',
+    symbolName: 'createKafkaRetryKey',
+    symbolKind: 'function',
+    signature: 'export function createKafkaRetryKey(eventId: string): string',
+    content: [
+      'export function createKafkaRetryKey(eventId: string) {',
+      '  const normalized = eventId.trim().toLowerCase();',
+      '  const prefix = "kafka-retry";',
+      '  const suffix = normalized || "missing-event";',
+      '  return `${prefix}:${suffix}`;',
+      '}',
+    ].join('\n'),
+  });
+  const test = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/ordersKafkaRetry.test.ts',
+    symbolName: 'validatesKafkaRetryIdempotency',
+    symbolKind: 'test',
+    signature: 'it("validates kafka retry idempotency", () => void)',
+    content: [
+      'import { describe, expect, it } from "vitest";',
+      'import { publishKafkaRetry } from "./ordersKafkaRetry";',
+      '',
+      'describe("publishKafkaRetry", () => {',
+      '  it("validates kafka retry idempotency", () => {',
+      '    const envelope = publishKafkaRetry("ORDER-123", 2);',
+      '    expect(envelope.key).toBe("kafka-retry:order-123");',
+      '    expect(envelope.headers["idempotency-key"]).toBe(envelope.key);',
+      '  });',
+      '});',
+    ].join('\n'),
+  });
+  const issueText = [
+    'Issue #88: Kafka retry publishing needs idempotent envelopes.',
+    'The review should check exact retry keys, Kafka topic routing, and test coverage.',
+  ].join('\n');
+  const issueArtifact = await buildSourceArtifact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'issue',
+    externalRef: 'https://github.com/pipe/orders/issues/88',
+    mediaType: 'text/markdown',
+  });
+  const issueVersion = await buildSourceArtifactVersion({
+    artifactId: issueArtifact.id,
+    repoSnapshotId: repoSnapshot.id,
+    content: issueText,
+    createdAt: OBSERVED_AT,
+  });
+  const issueSpan = await buildSourceSpan({
+    repoSnapshotId: repoSnapshot.id,
+    artifactId: issueArtifact.id,
+    artifactVersionId: issueVersion.id,
+    contentHash: issueVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(issueText),
+    exactText: issueText,
+    displayLabel: 'issues/88:1-2',
+    prSide: 'metadata',
+  });
+
+  const input: NormalizedPullRequestInput = {
+    repoSnapshot,
+    number: 88,
+    url: 'https://github.com/pipe/orders/pull/88',
+    title: 'Add idempotent Kafka retry publishing',
+    body: 'Implements exact Kafka retry keys and coverage for idempotent retry envelopes.',
+    author: 'engineer',
+    primaryLanguage: 'TypeScript',
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    headSha: repoSnapshot.commitSha,
+    mergedAt: OBSERVED_AT,
+    metadataSourceSpanIds: [issueSpan.id],
+    sourceArtifacts: [issueArtifact],
+    sourceArtifactVersions: [issueVersion],
+    sourceSpans: [primary.sourceSpan, helper.sourceSpan, test.sourceSpan, issueSpan],
+    changedFiles: [primary.file, helper.file, test.file],
+    tests: [{
+      path: test.file.path,
+      framework: 'vitest',
+      sourceSpanIds: [test.sourceSpan.id],
+      relatedSymbolIds: [test.symbol.id],
+    }],
+    issue: {
+      number: 88,
+      title: 'Kafka retry publishing needs idempotent envelopes',
+      body: issueText,
+      labels: [],
+      sourceSpanIds: [issueSpan.id],
+    },
+  };
+  const fact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'calls',
+    subject: { symbolId: primary.symbol.id },
+    object: { symbolId: helper.symbol.id },
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id],
+    confidence: 0.94,
+    parser: 'typescript-compiler-api-test',
+  });
+  const episode = await buildCodeEpisode({
+    repoSnapshotId: repoSnapshot.id,
+    title: 'kafka-retry-idempotency',
+    narrative: 'The PR implements Kafka retry idempotency and verifies the retry key contract.',
+    symbolIds: [primary.symbol.id, helper.symbol.id, test.symbol.id],
+    structuralFactIds: [fact.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    conceptKeys: ['term:kafka', 'term:retry', 'term:idempotency'],
+  });
+  const facet = await buildFacet({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'source-derived-mechanism',
+    key: 'kafka-retry-idempotency',
+    label: 'Kafka retry idempotency',
+    aliases: [],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.91,
+  });
+  const assertion = await buildSemanticAssertion({
+    repoSnapshotId: repoSnapshot.id,
+    episodeId: episode.id,
+    subject: primary.symbol.id,
+    predicate: 'implements.source.backed.kafka.retry.idempotency',
+    object: 'term:kafka',
+    narrative: 'The source implements Kafka retry idempotency with exact retry key verification.',
+    qualifiers: { source: 'normalized-pr-fixture' },
+    facetIds: [facet.id],
+    conceptKeys: ['term:kafka', 'term:retry', 'term:idempotency'],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.92,
+    extractor: 'repo-semantic-test-v1',
+  });
+  const signal = await buildRepoSignal({
+    repoSnapshotId: repoSnapshot.id,
+    key: 'kafka-retry-idempotency',
+    narrative: 'The repository demonstrates Kafka retry idempotency backed by exact source and test spans.',
+    assertionIds: [assertion.id],
+    facetIds: [facet.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.9,
+    sourceDiversity: 3,
+  });
+
+  return {
+    input,
+    packet: await buildChallengePacket(input),
+    graph: {
+      structuralFacts: [fact],
+      codeEpisodes: [episode],
+      facets: [facet],
+      semanticAssertions: [assertion],
+      repoSignals: [signal],
+    },
+  };
+}
+
+async function seedProductionReadyPacket(
+  sqlite: NodeSqliteDatabase,
+  repoId = 41,
+): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(repoId);
+  const data = await buildProductionReadyRepoChallengeFixture();
+  await persistReviewChallengeGraph(
+    createNodeSqliteD1(sqlite),
+    repoId,
+    data.input,
+    data.packet,
+    data.graph,
+  );
+  return data;
+}
+
+function testConceptIdForKey(canonicalKey: string): string {
+  return `repo-context-concept-${canonicalKey.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+}
+
+function testConceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function testConceptLabel(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const raw = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return raw.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
+
+function seedReviewPacketContextProjection(
+  sqlite: NodeSqliteDatabase,
+  packet: RepoChallengePacket,
+): void {
+  const contextRecordId = `context-record-${packet.id}`;
+  sqlite.prepare(
+    `INSERT INTO context_records (
+       id, ingestion_key, scope_type, scope_id, record_type, predicate, narrative,
+       qualifiers_json, confidence, polarity, extraction_version, observed_at, created_at, updated_at
+     ) VALUES (?, ?, 'repo_snapshot', ?, 'repo_challenge_packet',
+       'defines reviewable pull request challenge', ?, '{}', ?, 1, ?, ?, ?, ?)`,
+  ).run(
+    contextRecordId,
+    `repo-challenge-packet-context:${packet.id}`,
+    packet.repoSnapshotId,
+    `Review challenge packet for ${packet.repository.owner}/${packet.repository.name} PR #${packet.pullRequest.number}: ${packet.pullRequest.title}`,
+    packet.quality.metrics.provenanceCoverage,
+    packet.schemaVersion,
+    OBSERVED_AT,
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+
+  for (const spanId of [...new Set(packet.sourceSpanIds)].sort()) {
+    sqlite.prepare(
+      `INSERT INTO context_record_source_refs (
+         context_record_id, source_ref_type, source_ref_id, source_span_id,
+         evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, 'repo_source_span', ?, NULL, 'source', '{}', NULL, NULL, '{}', ?)`,
+    ).run(contextRecordId, spanId, OBSERVED_AT);
+  }
+
+  for (const canonicalKey of [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))].sort()) {
+    const existing = sqlite.prepare(
+      'SELECT id FROM concepts WHERE canonical_key = ?',
+    ).get(canonicalKey) as { id: string } | undefined;
+    const conceptId = existing?.id ?? testConceptIdForKey(canonicalKey);
+    if (!existing) {
+      sqlite.prepare(
+        `INSERT INTO concepts (
+           id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)`,
+      ).run(
+        conceptId,
+        `repo-context-concept:${canonicalKey}`,
+        canonicalKey,
+        testConceptNamespace(canonicalKey),
+        testConceptLabel(canonicalKey),
+        OBSERVED_AT,
+        OBSERVED_AT,
+      );
+    }
+    sqlite.prepare(
+      `INSERT INTO context_record_concepts (
+         context_record_id, concept_id, relationship, weight, created_at
+       ) VALUES (?, ?, 'concept', 1, ?)`,
+    ).run(contextRecordId, conceptId, OBSERVED_AT);
+  }
+}
+
+async function seedProductionReadyPacketWithoutSourceSpans(
+  sqlite: NodeSqliteDatabase,
+  repoId = 1,
+): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+}> {
+  sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(repoId);
+  const data = await buildProductionReadyRepoChallengeFixture();
+  sqlite.prepare(
+    `INSERT INTO repo_snapshots (
+       id, repo_id, commit_sha, extractor_version
+     ) VALUES (?, ?, ?, ?)`,
+  ).run(
+    data.input.repoSnapshot.id,
+    repoId,
+    data.input.repoSnapshot.commitSha,
+    '1.0.0',
+  );
+  sqlite.prepare(
+    `INSERT INTO review_challenge_packets (
+       id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash,
+       language, production_ready, quality_score, demand_families_json, packet_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    data.packet.id,
+    data.packet.repoSnapshotId,
+    repoId,
+    data.packet.pullRequest.number,
+    data.packet.policyVersion,
+    data.packet.contentHash,
+    data.packet.languageSupport.normalizedLanguage,
+    1,
+    data.packet.quality.score,
+    JSON.stringify(data.packet.demandFamilies),
+    JSON.stringify(data.packet),
+  );
+  seedReviewPacketContextProjection(sqlite, data.packet);
+  return data;
+}
+
+
+function seedCandidateEvidence(sqlite: NodeSqliteDatabase): void {
+  const now = OBSERVED_AT;
   sqlite.exec(`
     INSERT INTO people (
       id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
@@ -105,10 +564,15 @@ function seedCandidateEvidence(sqlite: SqliteDatabase): void {
       );
     INSERT INTO episodes (
       id, ingestion_key, workspace_person_id, interaction_id, narrative, metadata_json, created_at, updated_at
-    ) VALUES (
-      'episode-1', 'episode-1', 'workspace-person-1', 'interaction-1',
-      'Candidate described implemented Kafka idempotency and retry validation.', '{}', '${now}', '${now}'
-    );
+    ) VALUES
+      (
+        'episode-1', 'episode-1', 'workspace-person-1', 'interaction-1',
+        'Candidate described implemented Kafka idempotency.', '{}', '${now}', '${now}'
+      ),
+      (
+        'episode-2', 'episode-2', 'workspace-person-1', 'interaction-1',
+        'Candidate described validated retry handling.', '{}', '${now}', '${now}'
+      );
     INSERT INTO concepts (
       id, ingestion_key, canonical_key, namespace, label, aliases_json, metadata_json, created_at, updated_at
     ) VALUES (
@@ -125,7 +589,7 @@ function seedCandidateEvidence(sqlite: SqliteDatabase): void {
         'Candidate implemented Kafka idempotency.', '{}', 1, 1, 'test', '${now}', '${now}', '${now}'
       ),
       (
-        'assertion-2', 'assertion-2', 'workspace-person-1', 'episode-1', 'person', 'person-1',
+        'assertion-2', 'assertion-2', 'workspace-person-1', 'episode-2', 'person', 'person-1',
         'validated', 'concept', '{"value":"kafka"}',
         'Candidate validated retry handling.', '{}', 1, 1, 'test', '${now}', '${now}', '${now}'
       );
@@ -152,108 +616,49 @@ function seedCandidateEvidence(sqlite: SqliteDatabase): void {
   `);
 }
 
-function seedPacketWithMissingDemandSpans(sqlite: SqliteDatabase): void {
-  const packet: RepoChallengePacket = {
-    schemaVersion: '1.0.0',
-    policyVersion: 'repo-challenge-v1',
-    id: 'packet-missing-span',
-    repoSnapshotId: 'snapshot-1',
-    repository: {
-      provider: 'github',
-      owner: 'pipe',
-      name: 'orders',
-      canonicalUrl: 'https://github.com/pipe/orders',
-    },
-    pullRequest: {
-      number: 42,
-      url: 'https://github.com/pipe/orders/pull/42',
-      title: 'Retry Kafka events idempotently',
-      author: 'engineer',
-      baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-      mergedAt: '2026-06-14T08:00:00.000Z',
-    },
-    languageSupport: {
-      language: 'TypeScript',
-      normalizedLanguage: 'typescript',
-      level: 'production',
-      parser: 'typescript-compiler-api',
-      challengePacketsAllowed: true,
-      reason: 'typescript has a validated semantic extraction adapter',
-    },
-    changedFilePaths: ['src/orders.ts', 'src/orders.test.ts'],
-    changedSymbolIds: [],
-    sourceSpanIds: ['missing-repo-span-1', 'missing-repo-span-2'],
-    testChanges: [],
-    demands: [
-      {
-        id: 'demand-1',
-        family: 'artifact:source',
-        narrative: 'Review Kafka idempotency implementation.',
-        conceptKeys: ['term:kafka'],
-        mechanisms: ['term:kafka'],
-        sourceSpanIds: ['missing-repo-span-1'],
-        changedSymbolIds: [],
-        weight: 0.5,
-        contentHash: 'sha256:demand1',
-      },
-      {
-        id: 'demand-2',
-        family: 'verification:retry',
-        narrative: 'Review retry validation coverage.',
-        conceptKeys: ['term:kafka'],
-        mechanisms: ['term:kafka'],
-        sourceSpanIds: ['missing-repo-span-2'],
-        changedSymbolIds: [],
-        weight: 0.5,
-        contentHash: 'sha256:demand2',
-      },
-    ],
-    demandFamilies: ['artifact:source', 'verification:retry'],
-    quality: {
-      score: 1,
-      metrics: {
-        provenanceCoverage: 1,
-        reviewableSize: 1,
-        testCoverage: 1,
-        issueContext: 1,
-        demandDiversity: 1,
-      },
-      gates: [],
-      eligible: true,
-    },
-    contentHash: 'sha256:packet',
-  };
-
+function moveCandidateMeaningToContextRecords(sqlite: NodeSqliteDatabase): void {
+  const now = OBSERVED_AT;
   sqlite.exec(`
-    INSERT INTO qualified_repos (id) VALUES (1);
-    INSERT INTO repo_snapshots (
-      id, repo_id, commit_sha, extractor_version
-    ) VALUES (
-      'snapshot-1', 1, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '1.0.0'
-    );
+    DELETE FROM assertion_source_spans;
+    DELETE FROM assertion_concepts;
+    INSERT INTO context_records (
+      id, ingestion_key, scope_type, scope_id, workspace_person_id,
+      interaction_id, application_id, episode_id, assertion_id, record_type,
+      predicate, narrative, qualifiers_json, confidence, polarity,
+      extraction_version, observed_at, created_at, updated_at
+    ) VALUES
+      (
+        'context-record-1', 'context-record-1', 'workspace_person', 'workspace-person-1', 'workspace-person-1',
+        'interaction-1', 'application-1', 'episode-1', 'assertion-1', 'assessment_context_assertion',
+        'implemented', 'Candidate implemented Kafka idempotency.', '{}', 1, 1,
+        'test', '${now}', '${now}', '${now}'
+      ),
+      (
+        'context-record-2', 'context-record-2', 'workspace_person', 'workspace-person-1', 'workspace-person-1',
+        'interaction-1', 'application-1', 'episode-2', 'assertion-2', 'assessment_context_assertion',
+        'validated', 'Candidate validated retry handling.', '{}', 1, 1,
+        'test', '${now}', '${now}', '${now}'
+      );
+    INSERT INTO context_record_source_refs (
+      context_record_id, source_ref_type, source_ref_id, source_span_id,
+      evidence_role, locator_json, exact_text, content_hash, metadata_json, created_at
+    ) VALUES
+      (
+        'context-record-1', 'source_span', 'candidate-span-1', 'candidate-span-1',
+        'source', '{}', 'implemented kafka idempotency', 'sha256:candidate', '{}', '${now}'
+      ),
+      (
+        'context-record-2', 'source_span', 'candidate-span-2', 'candidate-span-2',
+        'source', '{}', 'validated retry handling', 'sha256:candidate', '{}', '${now}'
+      );
+    INSERT INTO context_record_concepts (context_record_id, concept_id, relationship, weight, created_at)
+    VALUES
+      ('context-record-1', 'concept-kafka', 'about', 1, '${now}'),
+      ('context-record-2', 'concept-kafka', 'about', 1, '${now}');
   `);
-  sqlite.prepare(
-    `INSERT INTO review_challenge_packets (
-       id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash,
-       language, production_ready, quality_score, demand_families_json, packet_json
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    packet.id,
-    packet.repoSnapshotId,
-    1,
-    packet.pullRequest.number,
-    packet.policyVersion,
-    packet.contentHash,
-    packet.languageSupport.normalizedLanguage,
-    1,
-    packet.quality.score,
-    JSON.stringify(packet.demandFamilies),
-    JSON.stringify(packet),
-  );
 }
 
-function seedIneligiblePacket(sqlite: SqliteDatabase): void {
+function seedIneligiblePacket(sqlite: NodeSqliteDatabase): void {
   const packet: RepoChallengePacket = {
     schemaVersion: '1.0.0',
     policyVersion: 'repo-challenge-v1',
@@ -371,8 +776,149 @@ function seedIneligiblePacket(sqlite: SqliteDatabase): void {
   );
 }
 
+function seedLegacyHandShapedPacket(sqlite: NodeSqliteDatabase): void {
+  const packet: RepoChallengePacket = {
+    schemaVersion: '1.0.0',
+    policyVersion: 'repo-challenge-v1',
+    id: 'packet-eligible',
+    repoSnapshotId: 'snapshot-eligible',
+    repository: {
+      provider: 'github',
+      owner: 'pipe',
+      name: 'orders',
+      canonicalUrl: 'https://github.com/pipe/orders',
+    },
+    pullRequest: {
+      number: 42,
+      url: 'https://github.com/pipe/orders/pull/42',
+      title: 'Retry Kafka events idempotently',
+      author: 'engineer',
+      baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      headSha: 'dddddddddddddddddddddddddddddddddddddddd',
+      mergedAt: '2026-06-14T08:00:00.000Z',
+    },
+    languageSupport: {
+      language: 'TypeScript',
+      normalizedLanguage: 'typescript',
+      level: 'production',
+      parser: 'typescript-compiler-api',
+      challengePacketsAllowed: true,
+      reason: 'typescript has a validated semantic extraction adapter',
+    },
+    changedFilePaths: ['src/orders.ts', 'src/orders.test.ts'],
+    changedSymbolIds: [],
+    sourceSpanIds: ['repo-span-1', 'repo-span-2'],
+    testChanges: [],
+    demands: [
+      {
+        id: 'demand-1',
+        family: 'artifact:source',
+        narrative: 'Review implemented Kafka idempotency.',
+        conceptKeys: ['term:kafka'],
+        mechanisms: ['term:kafka'],
+        sourceSpanIds: ['repo-span-1'],
+        changedSymbolIds: [],
+        weight: 0.5,
+        contentHash: 'sha256:demand1',
+      },
+      {
+        id: 'demand-2',
+        family: 'verification:retry',
+        narrative: 'Review validated retry handling for Kafka events.',
+        conceptKeys: ['term:kafka'],
+        mechanisms: ['term:kafka'],
+        sourceSpanIds: ['repo-span-2'],
+        changedSymbolIds: [],
+        weight: 0.5,
+        contentHash: 'sha256:demand2',
+      },
+    ],
+    demandFamilies: ['artifact:source', 'verification:retry'],
+    quality: {
+      score: 1,
+      metrics: {
+        provenanceCoverage: 1,
+        reviewableSize: 1,
+        testCoverage: 1,
+        issueContext: 1,
+        demandDiversity: 1,
+      },
+      gates: [],
+      eligible: true,
+    },
+    contentHash: 'sha256:packet-eligible',
+  };
+
+  sqlite.exec(`
+    INSERT INTO qualified_repos (id) VALUES (3);
+    INSERT INTO repo_snapshots (
+      id, repo_id, commit_sha, extractor_version
+    ) VALUES (
+      'snapshot-eligible', 3, 'dddddddddddddddddddddddddddddddddddddddd', '1.0.0'
+    );
+    INSERT INTO repo_source_artifacts (
+      id, repo_snapshot_id, artifact_type, path, external_reference
+    ) VALUES
+      (
+        'repo-artifact-1', 'snapshot-eligible', 'source', 'src/orders.ts',
+        'https://github.com/pipe/orders/blob/dddd/src/orders.ts'
+      ),
+      (
+        'repo-artifact-2', 'snapshot-eligible', 'test', 'src/orders.test.ts',
+        'https://github.com/pipe/orders/blob/dddd/src/orders.test.ts'
+      );
+    INSERT INTO repo_artifact_versions (
+      id, artifact_id, content_hash, inline_content, byte_length, media_type
+    ) VALUES
+      (
+        'repo-version-1', 'repo-artifact-1', 'sha256:repo-1',
+        'implement kafka idempotency for order events', 44, 'text/plain'
+      ),
+      (
+        'repo-version-2', 'repo-artifact-2', 'sha256:repo-2',
+        'validate retry handling for kafka events', 40, 'text/plain'
+      );
+    INSERT INTO repo_source_spans (
+      id, artifact_version_id, content_hash, path, byte_start, byte_end,
+      line_start, line_end, pr_side, base_sha, head_sha, exact_text
+    ) VALUES
+      (
+        'repo-span-1', 'repo-version-1', 'sha256:repo-span-1',
+        'src/orders.ts', 0, 44, 1, 1, 'head',
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'dddddddddddddddddddddddddddddddddddddddd',
+        'implement kafka idempotency for order events'
+      ),
+      (
+        'repo-span-2', 'repo-version-2', 'sha256:repo-span-2',
+        'src/orders.test.ts', 0, 40, 1, 1, 'head',
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'dddddddddddddddddddddddddddddddddddddddd',
+        'validate retry handling for kafka events'
+      );
+  `);
+  sqlite.prepare(
+    `INSERT INTO review_challenge_packets (
+       id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash,
+       language, production_ready, quality_score, demand_families_json, packet_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    packet.id,
+    packet.repoSnapshotId,
+    3,
+    packet.pullRequest.number,
+    packet.policyVersion,
+    packet.contentHash,
+    packet.languageSupport.normalizedLanguage,
+    1,
+    packet.quality.score,
+    JSON.stringify(packet.demandFamilies),
+    JSON.stringify(packet),
+  );
+}
+
 describe('matchCandidateToReviewChallenge', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: NodeSqliteDatabase;
 
   beforeEach(() => {
     sqlite = new DatabaseSync(':memory:');
@@ -380,69 +926,799 @@ describe('matchCandidateToReviewChallenge', () => {
       PRAGMA foreign_keys = ON;
       CREATE TABLE candidates (id TEXT PRIMARY KEY);
       CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
+      CREATE TABLE role_contexts (id TEXT PRIMARY KEY);
       INSERT INTO candidates (id) VALUES ('candidate-1');
     `);
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
+    sqlite.exec(contextRecordMigration);
   });
 
   afterEach(() => sqlite.close());
 
   it('records NEEDS_MORE_EVIDENCE instead of selecting a generic fallback PR', async () => {
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
     expect(result.repoId).toBeUndefined();
+    expect(result.explanation).toEqual(expect.objectContaining({
+      status: 'NEEDS_MORE_EVIDENCE',
+      evidence: [],
+      rejectedPackets: [],
+      missingEvidence: [
+        expect.objectContaining({
+          scope: 'candidate',
+          reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+        }),
+      ],
+      rejectionReasons: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+    }));
+    expect(result.explanation?.selectedPr).toBeUndefined();
+    expect(result.diagnostics).toEqual({
+      excludedPackets: [],
+      recalledPacketIds: [],
+      evaluatedChallenges: [],
+    });
     expect(sqlite.prepare(
       'SELECT status, selected_packet_id FROM match_runs WHERE id = ?',
     ).get(result.matchRunId)).toEqual({
       status: 'NEEDS_MORE_EVIDENCE',
       selected_packet_id: null,
     });
+    expect(sqlite.prepare(
+      'SELECT scope_type, scope_id, record_type, confidence FROM context_records WHERE scope_id = ?',
+    ).get(result.matchRunId)).toEqual({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+      confidence: null,
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, evidence_role
+         FROM context_record_source_refs
+        WHERE source_ref_id = ?`,
+    ).get(result.matchRunId)).toEqual({
+      source_ref_type: 'match_run',
+      source_ref_id: result.matchRunId,
+      evidence_role: 'decision_record',
+    });
+  });
+
+  it('rejects production-ready packets whose source-backed context projection is missing', async () => {
+    seedCandidateEvidence(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 42);
+    sqlite.prepare(
+      `DELETE FROM context_records
+        WHERE ingestion_key = ?`,
+    ).run(`repo-challenge-packet-context:${data.packet.id}`);
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '42',
+        prNumber: data.packet.pullRequest.number,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        contextRecordId: null,
+        repoSourceRefCount: 0,
+        conceptLinkCount: 0,
+        contextProjectionFailures: expect.arrayContaining([
+          `review challenge packet ${data.packet.id} is missing its repo_challenge_packet context record`,
+          `review challenge packet ${data.packet.id} is missing repo_source_span context refs`,
+          `review challenge packet ${data.packet.id} is missing context_record_concepts links`,
+        ]),
+      }),
+    ]);
+    expect(result.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '42',
+        prNumber: data.packet.pullRequest.number,
+        reasons: ['PACKET_CONTEXT_PROJECTION_INCOMPLETE'],
+        contextProjectionFailures: expect.arrayContaining([
+          `review challenge packet ${data.packet.id} is missing its repo_challenge_packet context record`,
+        ]),
+      }),
+    ]);
+    expect(result.explanation?.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'repo',
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        challengeId: data.packet.id,
+      }),
+    ]));
+
+    const row = sqlite.prepare(
+      'SELECT selected_packet_id, excluded_packets_json, ranked_results_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      selected_packet_id: string | null;
+      excluded_packets_json: string;
+      ranked_results_json: string;
+    };
+    expect(row.selected_packet_id).toBeNull();
+    expect(JSON.parse(row.excluded_packets_json)).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        contextRecordId: null,
+        repoSourceRefCount: 0,
+        conceptLinkCount: 0,
+      }),
+    ]);
+    expect(JSON.parse(row.ranked_results_json)).toEqual([]);
   });
 
   it('rejects production-ready packets whose demand spans are not persisted', async () => {
     seedCandidateEvidence(sqlite);
-    seedPacketWithMissingDemandSpans(sqlite);
+    const data = await seedProductionReadyPacketWithoutSourceSpans(sqlite);
+    const expectedDemandIds = data.packet.demands.map((demand) => demand.id).sort();
+    const expectedMissingSpanIds = [...new Set(
+      data.packet.demands.flatMap((demand) => demand.sourceSpanIds),
+    )].sort();
 
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(result.repoId).toBeUndefined();
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        reason: 'MISSING_DEMAND_SOURCE_SPANS',
+        demandIds: expectedDemandIds,
+        missingSourceSpanIds: expectedMissingSpanIds,
+      }),
+    ]);
+    expect(result.explanation).toEqual(expect.objectContaining({
+      status: 'NO_ROLE_SAFE_CHALLENGE',
+      rejectedPackets: [
+        expect.objectContaining({
+          id: data.packet.id,
+          reasons: ['MISSING_DEMAND_SOURCE_SPANS'],
+          demandIds: expectedDemandIds,
+          missingSourceSpanIds: expectedMissingSpanIds,
+        }),
+      ],
+      missingEvidence: [
+        expect.objectContaining({
+          scope: 'repo',
+          reason: 'MISSING_DEMAND_SOURCE_SPANS',
+          challengeId: data.packet.id,
+        }),
+      ],
+    }));
+    expect(result.explanation?.selectedPr).toBeUndefined();
+    expect(result.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
     const row = sqlite.prepare(
-      'SELECT selected_packet_id, ranked_results_json FROM match_runs WHERE id = ?',
+      'SELECT selected_packet_id, excluded_packets_json, ranked_results_json FROM match_runs WHERE id = ?',
     ).get(result.matchRunId) as {
       selected_packet_id: string | null;
+      excluded_packets_json: string;
       ranked_results_json: string;
     };
     expect(row.selected_packet_id).toBeNull();
-    expect(JSON.parse(row.ranked_results_json)).toEqual([
+    expect(JSON.parse(row.excluded_packets_json)).toEqual([
       expect.objectContaining({
-        challengeId: 'packet-missing-span',
-        eligible: false,
-        rejectionReasons: expect.arrayContaining(['INCOMPLETE_PROVENANCE']),
+        id: data.packet.id,
+        reason: 'MISSING_DEMAND_SOURCE_SPANS',
+        demandIds: expectedDemandIds,
+        missingSourceSpanIds: expectedMissingSpanIds,
       }),
     ]);
+    expect(JSON.parse(row.ranked_results_json)).toEqual([]);
+    const contextRecord = sqlite.prepare(
+      'SELECT id, scope_type, scope_id, record_type FROM context_records WHERE scope_id = ?',
+    ).get(result.matchRunId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, evidence_role
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+          AND source_ref_type = 'review_challenge_packet'`,
+    ).get(contextRecord.id)).toEqual({
+      source_ref_type: 'review_challenge_packet',
+      source_ref_id: data.packet.id,
+      evidence_role: 'considered_packet',
+    });
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+        FROM context_record_entities
+       WHERE context_record_id = ?
+          AND entity_id = ?
+          AND relationship = 'rejected_packet'`,
+    ).get(contextRecord.id, data.packet.id)).toEqual({
+      entity_type: 'review_challenge_packet',
+      entity_id: data.packet.id,
+      relationship: 'rejected_packet',
+    });
+  });
+
+  it('retains DB-loaded candidate rows with null evidence as excluded diagnostics', async () => {
+    seedCandidateEvidence(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+    sqlite.prepare("DELETE FROM signal_evidence WHERE id = 'evidence-2'").run();
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.explanation?.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'CANDIDATE_SIGNALS_EXCLUDED_FOR_MISSING_OR_NULL_EVIDENCE',
+      }),
+    ]));
+    const row = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as { query_json: string };
+    const query = JSON.parse(row.query_json) as {
+      validationAtoms: Array<{ id: string }>;
+    };
+    expect(query.validationAtoms.map((atom) => atom.id)).toEqual(['assertion-1:term:kafka']);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([
+      expect.objectContaining({
+        challengeId: data.packet.id,
+        alignedDemandCount: 1,
+        stretchCount: 0,
+      }),
+    ]);
+  });
+
+  it('loads source-backed candidate semantics from context records when assertion projections are absent', async () => {
+    seedCandidateEvidence(sqlite);
+    moveCandidateMeaningToContextRecords(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assertion_source_spans').get()).toEqual({ count: 0 });
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assertion_concepts').get()).toEqual({ count: 0 });
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(3);
+    expect(result.prNumber).toBe(data.packet.pullRequest.number);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.evidence).toHaveLength(2);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((ref) => ref.exactText),
+    ).sort()).toEqual([
+      'implemented kafka idempotency',
+      'validated retry handling',
+    ]);
+
+    const row = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as { query_json: string };
+    const query = JSON.parse(row.query_json) as {
+      validationAtoms: Array<{
+        id: string;
+        concepts: string[];
+        sourceRefs: Array<{ locator?: string; sourceRefType?: string; exactText?: string }>;
+      }>;
+    };
+    expect(query.validationAtoms.map((atom) => atom.id).sort()).toEqual([
+      'assertion-1:term:kafka',
+      'assertion-2:term:kafka',
+    ]);
+    expect(query.validationAtoms.every((atom) =>
+      atom.concepts.includes('term:kafka')
+      && atom.sourceRefs.some((ref) =>
+        ref.locator?.startsWith('context_record:')
+        && ref.sourceRefType === 'source_span'
+        && ref.exactText,
+      ),
+    )).toBe(true);
   });
 
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {
     seedCandidateEvidence(sqlite);
     seedIneligiblePacket(sqlite);
 
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(result.repoId).toBeUndefined();
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: 'packet-ineligible-smallest-pr',
+        repoId: '2',
+        prNumber: 1,
+        reason: 'PACKET_NOT_PRODUCTION_READY',
+        gateFailures: ['production_language'],
+        qualityScore: 0.4,
+      }),
+    ]);
+    expect(result.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: 'packet-ineligible-smallest-pr',
+        repoId: '2',
+        prNumber: 1,
+        reasons: ['PACKET_NOT_PRODUCTION_READY'],
+        gateFailures: ['production_language'],
+        qualityScore: 0.4,
+      }),
+    ]);
     const row = sqlite.prepare(
-      'SELECT status, selected_packet_id, ranked_results_json FROM match_runs WHERE id = ?',
+      'SELECT status, selected_packet_id, excluded_packets_json, ranked_results_json FROM match_runs WHERE id = ?',
     ).get(result.matchRunId) as {
       status: string;
       selected_packet_id: string | null;
+      excluded_packets_json: string;
       ranked_results_json: string;
     };
     expect(row.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(row.selected_packet_id).toBeNull();
+    expect(JSON.parse(row.excluded_packets_json)).toEqual([
+      expect.objectContaining({
+        id: 'packet-ineligible-smallest-pr',
+        reason: 'PACKET_NOT_PRODUCTION_READY',
+        gateFailures: ['production_language'],
+        qualityScore: 0.4,
+      }),
+    ]);
     expect(JSON.parse(row.ranked_results_json)).toEqual([]);
+  });
+
+  it('rejects legacy hand-shaped challenge packets before recall', async () => {
+    seedCandidateEvidence(sqlite);
+    seedLegacyHandShapedPacket(sqlite);
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.repoId).toBeUndefined();
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: 'packet-eligible',
+        repoId: '3',
+        prNumber: 42,
+        reason: 'PACKET_PROVENANCE_INVALID',
+        provenanceFailures: expect.arrayContaining([
+          expect.stringContaining('contentHash is stale'),
+        ]),
+      }),
+    ]);
+    expect(result.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: 'packet-eligible',
+        repoId: '3',
+        prNumber: 42,
+        reasons: ['PACKET_PROVENANCE_INVALID'],
+        provenanceFailures: expect.arrayContaining([
+          expect.stringContaining('contentHash is stale'),
+        ]),
+      }),
+    ]);
+    expect(result.explanation?.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'repo',
+        reason: 'PACKET_PROVENANCE_INVALID',
+        challengeId: 'packet-eligible',
+      }),
+    ]));
+  });
+
+  it('includes repo and PR context for role-guardrail rejected packets', async () => {
+    seedCandidateEvidence(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+
+    const result = await matchCandidateToReviewChallenge(
+      createNodeSqliteD1(sqlite),
+      'candidate-1',
+      { requiredLanguages: ['python'] },
+    );
+
+    expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(result.diagnostics?.excludedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        reason: 'ROLE_GUARDRAIL_FAILED',
+        repoId: '3',
+        prNumber: data.packet.pullRequest.number,
+      }),
+    ]);
+    expect(result.explanation?.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '3',
+        prNumber: data.packet.pullRequest.number,
+        reasons: ['ROLE_GUARDRAIL_FAILED'],
+      }),
+    ]);
+    const row = sqlite.prepare(
+      'SELECT excluded_packets_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as { excluded_packets_json: string };
+    expect(JSON.parse(row.excluded_packets_json)).toEqual([
+      expect.objectContaining({
+        id: data.packet.id,
+        repoId: '3',
+        prNumber: data.packet.pullRequest.number,
+        reason: 'ROLE_GUARDRAIL_FAILED',
+      }),
+    ]);
+  });
+
+  it('persists matched explanations as source-backed match context records', async () => {
+    seedCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO role_contexts (id) VALUES (?)').run('role-context-1');
+    const data = await seedProductionReadyPacket(sqlite, 3);
+    const roleSourceReferences = [{
+      entityId: 'context-record-jd',
+      locator: 'simple_job_description:source_span:jd-span-1',
+      conceptKeys: ['term:kafka'],
+    }];
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      roleContextId: 'role-context-1',
+      roleSnapshotId: 'role-context:role-context-1:source-backed:simple-jd-v1',
+      roleConcepts: ['term:kafka'],
+      requiredConcepts: ['term:kafka'],
+      conceptResolverVersion: 'open-term-v1',
+      roleSourceReferences,
+    });
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(3);
+    expect(result.prNumber).toBe(data.packet.pullRequest.number);
+    expect(result.explanation?.evidence).toHaveLength(2);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '3',
+      prNumber: data.packet.pullRequest.number,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.candidateSpans).toHaveLength(2);
+    expect(result.explanation?.repoSpans).toHaveLength(2);
+    expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([
+      expect.objectContaining({
+        challengeId: data.packet.id,
+        alignedDemandCount: 2,
+        stretchCount: 0,
+      }),
+    ]);
+
+    const contextRecord = sqlite.prepare(
+      `SELECT id, scope_type, scope_id, record_type, predicate, confidence
+         FROM context_records WHERE scope_id = ?`,
+    ).get(result.matchRunId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+      predicate: string;
+      confidence: number;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+      predicate: 'selects review challenge',
+    });
+    expect(contextRecord.confidence).toBeGreaterThanOrEqual(0.6);
+
+    const matchRun = sqlite.prepare(
+      `SELECT role_context_id, role_snapshot_id, query_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(result.matchRunId) as {
+      role_context_id: string;
+      role_snapshot_id: string;
+      query_json: string;
+    };
+    expect(matchRun.role_context_id).toBe('role-context-1');
+    expect(matchRun.role_snapshot_id).toBe('role-context:role-context-1:source-backed:simple-jd-v1');
+    expect(JSON.parse(matchRun.query_json)).toEqual(expect.objectContaining({
+      roleGuardrails: expect.objectContaining({
+        requiredConcepts: ['term:kafka'],
+        sourceReferences: roleSourceReferences,
+      }),
+    }));
+
+    const refs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role, exact_text, content_hash
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY source_ref_type, source_ref_id, evidence_role`,
+    ).all(contextRecord.id);
+    expect(refs).toEqual(expect.arrayContaining([
+      {
+        source_ref_type: 'match_run',
+        source_ref_id: result.matchRunId,
+        source_span_id: null,
+        evidence_role: 'decision_record',
+        exact_text: null,
+        content_hash: null,
+      },
+      {
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: data.packet.id,
+        source_span_id: null,
+        evidence_role: 'selected_packet',
+        exact_text: null,
+        content_hash: data.packet.contentHash,
+      },
+      {
+        source_ref_type: 'role_source',
+        source_ref_id: 'context-record-jd',
+        source_span_id: null,
+        evidence_role: 'role_source',
+        exact_text: null,
+        content_hash: null,
+      },
+      {
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-1',
+        source_span_id: 'candidate-span-1',
+        evidence_role: 'selected_candidate_evidence',
+        exact_text: 'implemented kafka idempotency',
+        content_hash: 'sha256:candidate',
+      },
+      {
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-2',
+        source_span_id: 'candidate-span-2',
+        evidence_role: 'selected_candidate_evidence',
+        exact_text: 'validated retry handling',
+        content_hash: 'sha256:candidate',
+      },
+      {
+        source_ref_type: 'repo_source_span',
+        source_ref_id: data.packet.demands[0]!.sourceSpanIds[0]!,
+        source_span_id: null,
+        evidence_role: 'selected_repo_evidence',
+        exact_text: expect.any(String),
+        content_hash: expect.any(String),
+      },
+      {
+        source_ref_type: 'repo_source_span',
+        source_ref_id: data.packet.demands[1]!.sourceSpanIds[0]!,
+        source_span_id: null,
+        evidence_role: 'selected_repo_evidence',
+        exact_text: expect.any(String),
+        content_hash: expect.any(String),
+      },
+    ]));
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_source_spans
+        WHERE context_record_id = ?`,
+    ).get(contextRecord.id)).toEqual({ count: 2 });
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+          AND relationship = 'selected_packet'`,
+    ).get(contextRecord.id)).toEqual({
+      entity_type: 'review_challenge_packet',
+      entity_id: data.packet.id,
+      relationship: 'selected_packet',
+    });
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+          AND relationship = 'role_context'`,
+    ).get(contextRecord.id)).toEqual({
+      entity_type: 'role_context',
+      entity_id: 'role-context-1',
+      relationship: 'role_context',
+    });
+    const roleSourceRef = sqlite.prepare(
+      `SELECT locator_json, metadata_json
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+          AND source_ref_type = 'role_source'`,
+    ).get(contextRecord.id) as {
+      locator_json: string;
+      metadata_json: string;
+    };
+    expect(JSON.parse(roleSourceRef.locator_json)).toEqual({
+      roleContextId: 'role-context-1',
+      locator: 'simple_job_description:source_span:jd-span-1',
+    });
+    expect(JSON.parse(roleSourceRef.metadata_json)).toEqual({
+      conceptKeys: ['term:kafka'],
+      roleSourceEntityId: 'context-record-jd',
+    });
+    expect(sqlite.prepare(
+      `SELECT c.canonical_key, crc.relationship, crc.weight
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(contextRecord.id)).toEqual([
+      {
+        canonical_key: 'term:kafka',
+        relationship: 'concept',
+        weight: 1,
+      },
+    ]);
+  });
+
+  it('matches against a production-ready packet persisted through repo graph ingestion', async () => {
+    seedCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(41);
+    const data = await buildProductionReadyRepoChallengeFixture();
+
+    expect(data.packet.quality.eligible).toBe(true);
+    expect(data.packet.quality.score).toBeGreaterThanOrEqual(0.7);
+    expect(data.packet.demandFamilies).toEqual([
+      'artifact:source',
+      'verification:term:vitest',
+    ]);
+    expect(data.packet.demands).toHaveLength(2);
+    expect(data.packet.demands.every((demand) =>
+      demand.sourceSpanIds.length > 0
+      && demand.conceptKeys.includes('term:kafka'),
+    )).toBe(true);
+
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      41,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    expect(sqlite.prepare(
+      `SELECT production_ready, quality_score, packet_json
+         FROM review_challenge_packets
+        WHERE id = ?`,
+    ).get(data.packet.id)).toEqual({
+      production_ready: 1,
+      quality_score: data.packet.quality.score,
+      packet_json: JSON.stringify(data.packet),
+    });
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(41);
+    expect(result.prNumber).toBe(88);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '41',
+      prNumber: 88,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.evidence).toHaveLength(2);
+    expect(result.explanation?.candidateSpans).toHaveLength(2);
+    expect(result.explanation?.repoSpans).toHaveLength(2);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([
+      expect.objectContaining({
+        challengeId: data.packet.id,
+        repoId: '41',
+        prNumber: 88,
+        alignedDemandCount: 2,
+        stretchCount: 0,
+        provenanceComplete: true,
+        eligible: true,
+      }),
+    ]);
+
+    const repoExactTexts = new Set(data.input.sourceSpans.map((span) => span.exactText));
+    expect(result.explanation?.evidence.every((entry) =>
+      entry.candidateSourceRefs.length > 0
+      && entry.challengeSourceRefs.length > 0
+      && entry.candidateSourceRefs.every((ref) => ref.sourceRefType === 'source_span' && ref.exactText)
+      && entry.challengeSourceRefs.every((ref) =>
+        ref.sourceRefType === 'repo_source_span'
+        && ref.exactText
+        && repoExactTexts.has(ref.exactText)
+        && ref.locator?.startsWith('src/')
+      ),
+    )).toBe(true);
+
+    const ranked = sqlite.prepare(
+      'SELECT ranked_results_json, selected_packet_id FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      ranked_results_json: string;
+      selected_packet_id: string;
+    };
+    expect(ranked.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(ranked.ranked_results_json) as Array<{
+      challengeId: string;
+      alignments: Array<{
+        sharedConcepts: string[];
+        candidateSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+        challengeSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+      }>;
+    }>;
+    expect(rankedResult).toEqual(expect.objectContaining({
+      challengeId: data.packet.id,
+    }));
+    expect(rankedResult.alignments.every((alignment) =>
+      alignment.sharedConcepts.includes('term:kafka')
+      && alignment.candidateSourceRefs.some((ref) => ref.sourceRefType === 'source_span' && ref.exactText)
+      && alignment.challengeSourceRefs.some((ref) => ref.sourceRefType === 'repo_source_span' && ref.exactText),
+    )).toBe(true);
+
+    const contextRecord = sqlite.prepare(
+      `SELECT id, scope_type, scope_id, record_type, predicate
+         FROM context_records
+        WHERE scope_id = ?
+          AND record_type = 'candidate_pr_match_decision'`,
+    ).get(result.matchRunId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+      predicate: string;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+      predicate: 'selects review challenge',
+    });
+
+    const contextRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text, content_hash, evidence_role
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY evidence_role, source_ref_id`,
+    ).all(contextRecord.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      exact_text: string | null;
+      content_hash: string | null;
+      evidence_role: string;
+    }>;
+    expect(contextRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: data.packet.id,
+        content_hash: data.packet.contentHash,
+        evidence_role: 'selected_packet',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-1',
+        exact_text: 'implemented kafka idempotency',
+        evidence_role: 'selected_candidate_evidence',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        source_ref_id: 'candidate-span-2',
+        exact_text: 'validated retry handling',
+        evidence_role: 'selected_candidate_evidence',
+      }),
+    ]));
+    const selectedRepoContextRefs = contextRefs.filter((ref) =>
+      ref.evidence_role === 'selected_repo_evidence'
+      && ref.source_ref_type === 'repo_source_span'
+      && ref.exact_text
+      && repoExactTexts.has(ref.exact_text),
+    );
+    const explanationRepoRefIds = new Set(
+      result.explanation?.evidence.flatMap((entry) =>
+        entry.challengeSourceRefs.flatMap((ref) => ref.sourceRefId ? [ref.sourceRefId] : [])
+      ) ?? [],
+    );
+    expect(selectedRepoContextRefs.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(selectedRepoContextRefs.map((ref) => ref.source_ref_id))).toEqual(explanationRepoRefIds);
   });
 });
 

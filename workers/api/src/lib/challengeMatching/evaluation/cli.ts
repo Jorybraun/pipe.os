@@ -1,4 +1,4 @@
-import { getLabelsForCandidateRole, loadCorpus } from './corpus';
+import { getLabelsForCandidateRole, loadCorpus, validateProductionCorpus } from './corpus';
 import { checkAcceptanceThresholds, evaluateMatchRuns } from './metrics';
 import {
   DEFAULT_ACCEPTANCE_THRESHOLDS,
@@ -261,6 +261,13 @@ export async function runEvaluation(
   );
 
   if (options.persistResult) {
+    if (!thresholds.requireExpertLabels) {
+      throw new Error('Persisted evaluations must keep the expert-label gate enabled');
+    }
+    if (result.metrics.syntheticFixtureCount > 0 || result.metrics.expertLabelCount === 0) {
+      throw new Error('Persisted evaluations require a fully expert-labelled corpus');
+    }
+    validateProductionCorpus(corpus);
     await db.prepare(
       `INSERT INTO evaluation_results (
          id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,
@@ -298,9 +305,19 @@ export function generateHumanReadableReport(result: EvaluationResult): string {
     `Byte-identical comparison: ${result.metrics.byteIdenticalRerun ? 'PASS' : 'NOT PROVEN'}`,
     `Expert labels: ${result.metrics.expertLabelCount}`,
     `Synthetic labels: ${result.metrics.syntheticFixtureCount}`,
-    '',
-    result.passed ? 'RESULT: PASS' : 'RESULT: FAIL',
   ];
+  if (result.metrics.determinismComparisons.length > 0) {
+    lines.push(
+      '',
+      'Determinism comparisons:',
+      ...result.metrics.determinismComparisons.map((comparison) =>
+        `- ${comparison.candidateId}/${comparison.roleId}: ${comparison.matchRunId}`
+        + ` vs ${comparison.comparisonMatchRunId ?? '(missing)'}`
+        + ` => ${comparison.identical ? 'PASS' : 'FAIL'}`
+      ),
+    );
+  }
+  lines.push('', result.passed ? 'RESULT: PASS' : 'RESULT: FAIL');
   if (result.failures.length > 0) {
     lines.push('', 'Failures:', ...result.failures.map((failure) => `- ${failure}`));
   }

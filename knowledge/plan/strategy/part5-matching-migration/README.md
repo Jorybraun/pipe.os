@@ -1,27 +1,23 @@
 # Part 5: Matching Migration
 
-## Neo4j migration (current primary workstream)
+> 2026-06-19 update: `skill-adjacency-table.md` was archived under
+> `../../archive/superseded-semantic-taxonomy-2026-06-19/` because static
+> semantic adjacency conflicts with ADR-043 and the living-context graph plan.
+> The Neo4j-first plan set was archived under
+> `../../archive/superseded-neo4j-first-2026-06-19/`; Neo4j is now a
+> rebuildable projection, not the semantic source of truth.
+
+## Archived Neo4j-First Migration
 
 | Plan | Phase |
 |---|---|
-| [neo4j-MASTER-PLAN.md](neo4j-MASTER-PLAN.md) | Overview — start here |
-| [neo4j-00-executive-summary.md](neo4j-00-executive-summary.md) | Goals, constraints, timeline |
-| [neo4j-02-schema-design.md](neo4j-02-schema-design.md) | Labels, properties, DDL |
-| [neo4j-03-phase-1-dead-code-removal.md](neo4j-03-phase-1-dead-code-removal.md) | Phase 1 |
-| [neo4j-04-phase-2-write-path-migration.md](neo4j-04-phase-2-write-path-migration.md) | Phase 2 |
-| [neo4j-05-phase-3-matching-cypher-queries.md](neo4j-05-phase-3-matching-cypher-queries.md) | Phase 3 |
-| [neo4j-06-phase-4-matching-ux-overhaul.md](neo4j-06-phase-4-matching-ux-overhaul.md) | Phase 4 |
-| [neo4j-07-phase-5-repo-backfill.md](neo4j-07-phase-5-repo-backfill.md) | Phase 5 |
-| [neo4j-08-implementation-sequencing.md](neo4j-08-implementation-sequencing.md) | Week-by-week execution |
-| [neo4j-01-neo4j-vector-search-deep-dive.md](neo4j-01-neo4j-vector-search-deep-dive.md) | Reference |
-| [neo4j-09-concrete-graph-example.md](neo4j-09-concrete-graph-example.md) | Reference |
-| [neo4j-11-how-similarity-works.md](neo4j-11-how-similarity-works.md) | Reference |
+| `../../archive/superseded-neo4j-first-2026-06-19/` | Historical only — use `../../living-context-repo-matching-plan.md` for current architecture |
 
 ## Other matching work
 
 | Plan | What |
 |---|---|
-| [skill-adjacency-table.md](skill-adjacency-table.md) | Skill adjacency + matchRepos rewrite |
+| skill-adjacency-table.md | **ARCHIVED** — static semantic adjacency is superseded by source-backed concept-registry relationships |
 | [match-reports-schema.md](match-reports-schema.md) | Match report storage schema |
 
 ## Reliability & observability

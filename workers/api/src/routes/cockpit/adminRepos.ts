@@ -203,6 +203,71 @@ interface SignalsRow {
   confidence_scored_at: number | null;
 }
 
+export interface ReviewChallengePacketRow {
+  id: string;
+  repo_snapshot_id: string;
+  pr_number: number;
+  packet_version: string;
+  source_hash: string;
+  language: string | null;
+  production_ready: number;
+  quality_score: number;
+  demand_families_json: string;
+  packet_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ReviewChallengePacketSummary {
+  id: string;
+  repoSnapshotId: string;
+  prNumber: number;
+  packetVersion: string;
+  sourceHash: string;
+  language: string | null;
+  productionReady: boolean;
+  qualityScore: number;
+  demandFamilies: string[];
+  gateFailures: string[];
+  updatedAt: number;
+}
+
+export function toReviewChallengePacketSummary(
+  packet: ReviewChallengePacketRow,
+): ReviewChallengePacketSummary {
+  let demandFamilies: string[] = [];
+  let gateFailures: string[] = [];
+  try {
+    const parsed = JSON.parse(packet.demand_families_json) as unknown;
+    if (Array.isArray(parsed)) demandFamilies = parsed.filter((value): value is string => typeof value === 'string');
+  } catch {
+    demandFamilies = [];
+  }
+  try {
+    const parsed = JSON.parse(packet.packet_json) as {
+      quality?: { gates?: Array<{ gate?: string; passed?: boolean; reason?: string }> };
+    };
+    gateFailures = (parsed.quality?.gates ?? [])
+      .filter((gate) => gate.passed === false)
+      .map((gate) => `${gate.gate ?? 'gate'}: ${gate.reason ?? 'failed'}`);
+  } catch {
+    gateFailures = ['packet_json could not be parsed'];
+  }
+  return {
+    id: packet.id,
+    repoSnapshotId: packet.repo_snapshot_id,
+    prNumber: packet.pr_number,
+    packetVersion: packet.packet_version,
+    sourceHash: packet.source_hash,
+    language: packet.language,
+    productionReady: packet.production_ready === 1,
+    qualityScore: packet.quality_score,
+    demandFamilies,
+    gateFailures,
+    updatedAt: packet.updated_at,
+  };
+}
+
 adminRepos.get('/repos/:id', async (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isFinite(id) || id <= 0) return apiError(c, 'VALIDATION_ERROR', 'invalid id');
@@ -244,7 +309,19 @@ adminRepos.get('/repos/:id', async (c) => {
      FROM repo_engineering_signals WHERE repo_id = ?`,
   ).bind(id).first<SignalsRow>();
 
-  return c.json({ repo, signals: signals ?? null });
+  const { results: packetRows } = await c.env.DB.prepare(
+    `SELECT id, repo_snapshot_id, pr_number, packet_version, source_hash,
+            language, production_ready, quality_score, demand_families_json,
+            packet_json, created_at, updated_at
+       FROM review_challenge_packets
+      WHERE repo_id = ?
+      ORDER BY production_ready DESC, quality_score DESC, updated_at DESC
+      LIMIT 10`,
+  ).bind(id).all<ReviewChallengePacketRow>();
+
+  const reviewChallengePackets = (packetRows ?? []).map(toReviewChallengePacketSummary);
+
+  return c.json({ repo, signals: signals ?? null, reviewChallengePackets });
 });
 
 // ─── GET /api/v1/admin/repos/:id/prs ─────────────────────────────────────────

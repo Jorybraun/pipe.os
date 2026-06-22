@@ -21,26 +21,30 @@ function StreamVideo({
   stream,
   muted = false,
   className,
+  testId,
 }: {
   stream: MediaStream | null;
   muted?: boolean;
   className: string;
+  testId?: string;
 }): JSX.Element {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
-  return <video ref={ref} autoPlay playsInline muted={muted} className={className} />;
+  return <video ref={ref} autoPlay playsInline muted={muted} className={className} data-testid={testId} />;
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
-  const room = useRoomConnection(token, metadata.role);
+  const [enteredRoom, setEnteredRoom] = useState(false);
+  const room = useRoomConnection(token, metadata.role, enteredRoom);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'uploading' | 'saved' | 'failed'>('idle');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
+  const autoAcceptingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,10 +88,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }).catch(() => setRecordingState('failed'));
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
+  useEffect(() => {
+    if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
+      return;
+    }
+    autoAcceptingRef.current = true;
+    void room.acceptCall().finally(() => {
+      autoAcceptingRef.current = false;
+    });
+  }, [metadata.role, room.acceptCall, room.phase]);
+
   const joinLobby = (): void => {
     if (!preview) return;
     room.setLocalStream(preview);
     setPreview(null);
+    setEnteredRoom(true);
     void postRoomEvent(token, 'JOINED');
   };
 
@@ -138,7 +153,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         </section>
         <section className="device-panel" data-testid="device-check">
           <div className="preview-shell">
-            {preview && <StreamVideo stream={preview} muted className="preview-video" />}
+            {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
             {deviceState === 'checking' && <Loader2 className="spin" size={28} />}
             {deviceState === 'error' && <CameraOff size={32} />}
           </div>
@@ -166,10 +181,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
 
   return (
-    <main className="call-stage">
-      <StreamVideo stream={room.remoteStream} className="remote-video" />
+    <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
+      <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
       {!room.remoteStream && (
-        <div className="waiting-state">
+        <div className="waiting-state" data-testid="waiting-state">
           <div className="pulse"><Users size={30} /></div>
           <h2>
             {room.phase === 'connecting'
@@ -197,14 +212,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <div className="brand"><span>PIPE</span> ROOM</div>
           <strong>{metadata.title}</strong>
         </div>
-        <div className={`recording ${recordingState}`}>
+        <div className={`recording ${recordingState}`} data-testid="recording-state">
           <Circle size={9} fill="currentColor" />
           {recordingState === 'recording' ? 'Recording' : recordingState}
         </div>
       </header>
 
       <div className="local-tile">
-        <StreamVideo stream={room.localStream} muted className="local-video" />
+        <StreamVideo stream={room.localStream} muted className="local-video" testId="local-video" />
         <span>You</span>
       </div>
 

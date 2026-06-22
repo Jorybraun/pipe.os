@@ -1,6 +1,6 @@
 # Phase 4 — UAR Shared Infrastructure (D1SessionStore + Route Auth)
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 177–178, 223)  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 177–178, 223)
 **Phase:** 4  
 **Status:** NEEDS-REFINEMENT  
 **Estimate:** 1 week (shared across Parts 2, culture, implementer)

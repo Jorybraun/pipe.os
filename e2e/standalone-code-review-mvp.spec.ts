@@ -14,8 +14,7 @@
  * PIPE matches to a real reviewable PR or waits safely → candidate submits
  * review → recruiter sees context graph and source-backed result.
  *
- * These tests are written BEFORE the implementation is complete (BDD approach)
- * and will fail until the full standalone path is wired end-to-end.
+ * These tests protect the source-backed standalone path end-to-end.
  *
  * Invariants asserted:
  *   - No generic repo / smallest-PR / fabricated evidence fallback
@@ -75,6 +74,30 @@ interface ChallengeResponse {
   githubRepoUrl?: string;
   githubPrDescription?: string | null;
   error?: { code: string; message: string };
+}
+
+interface SeedStandaloneReviewFixtureResponse {
+  ok: boolean;
+  fixtureId: string;
+  repoUrl: string;
+  prNumber: number;
+  packetId: string;
+  roleContextId: string | null;
+  roleSources: Array<{
+    entityId: string;
+    locator: string;
+    conceptKeys: string[];
+  }>;
+  demandIds: string[];
+  demandFamilies: string[];
+  candidateSourceSpanIds: string[];
+  repoSourceSpanIds: string[];
+}
+
+interface SeedStandaloneReviewFixture extends SeedStandaloneReviewFixtureResponse {
+  conceptKey: string;
+  conceptLabel: string;
+  repoFullName: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -147,6 +170,270 @@ async function resolveToken(
   return (await res.json()) as ResolveTokenResponse;
 }
 
+async function submitStandaloneIntakeEvidence(
+  request: APIRequestContext,
+  sessionToken: string,
+): Promise<void> {
+  const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+    headers: candidateHeaders(sessionToken),
+    data: {
+      order: 0,
+      submission: {
+        resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
+        githubHandle: 'e2e-test-user',
+      },
+    },
+  });
+  expect([200, 201]).toContain(intakeRes.status());
+
+  const intakeBody = await intakeRes.json() as { success?: boolean };
+  expect(intakeBody.success).toBe(true);
+}
+
+async function seedStandaloneReviewMatchFixture(
+  request: APIRequestContext,
+  authToken: string,
+  candidate: StandaloneCandidate,
+): Promise<SeedStandaloneReviewFixture> {
+  const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
+  const conceptKey = `term:e2e-source-backed-${suffix}`;
+  const conceptLabel = `e2e source backed ${suffix}`;
+  const retryConceptKey = 'term:retry';
+  const idempotencyConceptKey = 'term:idempotency';
+  const publisherConceptKey = 'term:publisher';
+  const vitestConceptKey = 'term:vitest';
+  const repoFullName = `pipe/e2e-source-backed-${suffix}`;
+  const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
+  const prNumber = 42;
+  const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
+    headers: recruiterHeaders(authToken),
+    data: {
+      fixtureId: `standalone-review-match-${suffix}`,
+      candidateId: candidate.id,
+      omitSamplePrRow: true,
+      concepts: [
+        {
+          canonicalKey: conceptKey,
+          namespace: 'term',
+          label: conceptLabel,
+        },
+        {
+          canonicalKey: retryConceptKey,
+          namespace: 'term',
+          label: 'retry',
+        },
+        {
+          canonicalKey: idempotencyConceptKey,
+          namespace: 'term',
+          label: 'idempotency',
+        },
+        {
+          canonicalKey: publisherConceptKey,
+          namespace: 'term',
+          label: 'publisher',
+        },
+        {
+          canonicalKey: vitestConceptKey,
+          namespace: 'term',
+          label: 'vitest',
+        },
+      ],
+      roleSource: {
+        title: `Source-backed ${conceptLabel} role`,
+        jobDescriptionMd: `Review TypeScript PRs that implement ${conceptLabel} retry idempotency with source-backed evidence.`,
+        selectedConceptKeys: [conceptKey],
+      },
+      candidateEvidence: [
+        {
+          exactText: `Implemented ${conceptLabel} idempotency with source-backed evidence.`,
+          predicate: 'implemented',
+          narrative: `Candidate implemented ${conceptLabel} idempotency.`,
+          conceptKeys: [conceptKey, idempotencyConceptKey],
+          evidenceLevel: 'implemented',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Validated ${conceptLabel} retry behavior with tests.`,
+          predicate: 'validated',
+          narrative: `Candidate validated ${conceptLabel} retry behavior.`,
+          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
+          evidenceLevel: 'validated',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Published ${conceptLabel} retry envelopes through a deterministic publisher.`,
+          predicate: 'implemented',
+          narrative: `Candidate implemented ${conceptLabel} publisher behavior.`,
+          conceptKeys: [publisherConceptKey],
+          evidenceLevel: 'implemented',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: `Explained how ${conceptLabel} prevents duplicate retry acknowledgements.`,
+          predicate: 'explained',
+          narrative: `Candidate explained ${conceptLabel} duplicate acknowledgement prevention.`,
+          conceptKeys: [retryConceptKey, idempotencyConceptKey],
+          evidenceLevel: 'validated',
+          strength: 1,
+          confidence: 1,
+        },
+      ],
+      repo: {
+        githubUrl: repoUrl,
+        fullName: repoFullName,
+        primaryLanguage: 'TypeScript',
+        description: 'Source-backed deterministic E2E fixture repository.',
+      },
+      pullRequest: {
+        number: prNumber,
+        title: 'Review source-backed retry idempotency',
+        author: 'pipe-e2e',
+        baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        headSha: 'dddddddddddddddddddddddddddddddddddddddd',
+        mergedAt: '2026-06-14T08:00:00.000Z',
+      },
+      repoSpans: [
+        {
+          key: 'implementation',
+          path: 'src/retry-idempotency.ts',
+          exactText: [
+            `export type RetryEvent = { id: string; attempt: number; key: string };`,
+            ``,
+            `// Implement ${conceptLabel} idempotency for reviewable retry events.`,
+            `export function buildRetryEnvelope(event: RetryEvent) {`,
+            `  const idempotencyKey = \`\${event.key}:\${event.attempt}\`;`,
+            `  return {`,
+            `    id: event.id,`,
+            `    idempotencyKey,`,
+            `    topic: '${conceptLabel}',`,
+            `    shouldPublish: event.attempt > 0,`,
+            `  };`,
+            `}`,
+            ``,
+            `export function acknowledgeRetry(event: RetryEvent) {`,
+            `  return buildRetryEnvelope(event).shouldPublish;`,
+            `}`,
+          ].join('\n'),
+          artifactType: 'source',
+          lineStart: 10,
+        },
+        {
+          key: 'publisher',
+          path: 'src/retry-publisher.ts',
+          exactText: [
+            `import { buildRetryEnvelope, type RetryEvent } from './retry-idempotency';`,
+            ``,
+            `export function publishRetry(event: RetryEvent, publish: (topic: string, key: string) => void) {`,
+            `  const envelope = buildRetryEnvelope(event);`,
+            `  if (!envelope.shouldPublish) return 'skipped';`,
+            `  publish(envelope.topic, envelope.idempotencyKey);`,
+            `  return 'published';`,
+            `}`,
+          ].join('\n'),
+          artifactType: 'source',
+          lineStart: 40,
+        },
+        {
+          key: 'validation',
+          path: 'src/retry-idempotency.test.ts',
+          exactText: [
+            `import { describe, expect, it } from 'vitest';`,
+            `import { buildRetryEnvelope } from './retry-idempotency';`,
+            ``,
+            `describe('${conceptLabel} retry behavior', () => {`,
+            `  it('keeps retry acknowledgement idempotent', () => {`,
+            `    // Validate ${conceptLabel} retry behavior with deterministic tests.`,
+            `    const envelope = buildRetryEnvelope({ id: 'evt-1', attempt: 2, key: 'retry' });`,
+            `    expect(envelope.idempotencyKey).toBe('retry:2');`,
+            `    expect(envelope.shouldPublish).toBe(true);`,
+            `  });`,
+            `});`,
+          ].join('\n'),
+          artifactType: 'test',
+          lineStart: 22,
+        },
+      ],
+      demands: [
+        {
+          id: 'implementation-demand',
+          family: 'source-backed:e2e-implementation',
+          narrative: `Review implemented ${conceptLabel} idempotency.`,
+          conceptKeys: [conceptKey, idempotencyConceptKey],
+          sourceSpanKeys: ['implementation'],
+          weight: 0.5,
+        },
+        {
+          id: 'publisher-demand',
+          family: 'source-backed:e2e-publisher',
+          narrative: `Review published ${conceptLabel} retry envelopes.`,
+          conceptKeys: [publisherConceptKey],
+          sourceSpanKeys: ['publisher'],
+          weight: 0.25,
+        },
+        {
+          id: 'validation-demand',
+          family: 'source-backed:e2e-validation',
+          narrative: `Review validated ${conceptLabel} retry behavior.`,
+          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
+          sourceSpanKeys: ['validation'],
+          weight: 0.25,
+        },
+      ],
+    },
+  });
+  expect(res.status()).toBe(200);
+  const body = (await res.json()) as SeedStandaloneReviewFixtureResponse;
+  expect(body.ok).toBe(true);
+  expect(body.repoUrl).toBe(repoUrl);
+  expect(body.prNumber).toBe(prNumber);
+  expect(body.roleContextId).toBeTruthy();
+  expect(body.roleSources).toEqual([expect.objectContaining({
+    locator: expect.stringContaining('simple_job_description:source_span:'),
+    conceptKeys: expect.arrayContaining([conceptKey]),
+  })]);
+  expect(body.candidateSourceSpanIds.length).toBeGreaterThan(0);
+  expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
+  expect(body.demandIds.length).toBeGreaterThanOrEqual(2);
+  expect(body.demandFamilies.length).toBeGreaterThanOrEqual(2);
+  return { ...body, conceptKey, conceptLabel, repoFullName };
+}
+
+async function submitStandaloneCodeReview(
+  request: APIRequestContext,
+  sessionToken: string,
+  options: {
+    summary: string;
+    annotations: Array<{
+      file: string;
+      line: number;
+      severity: string;
+      comment: string;
+    }>;
+  },
+): Promise<void> {
+  const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+    headers: candidateHeaders(sessionToken),
+    data: {
+      order: 0,
+      submission: {
+        type: 'CODE_REVIEW',
+        verdict: 'request_changes',
+        summary: options.summary,
+        annotations: options.annotations,
+      },
+    },
+  });
+
+  expect([200, 201]).toContain(submitRes.status());
+
+  const body = await submitRes.json() as Record<string, unknown>;
+  expect(JSON.stringify(body)).not.toContain('groundTruth');
+  expect(body.success).toBe(true);
+}
+
 // ─── §MVP.1 Recruiter creates standalone CODE_REVIEW invite ─────────────────
 
 test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () => {
@@ -181,59 +468,47 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
 
     const profile = await profileRes.json() as Record<string, unknown>;
     const interviews = profile.scheduledInterviews as Array<{
-      interview_type: string;
-      pipeline_id: string | null;
-      stage_id: string | null;
+      interviewType: string;
+      pipelineId: string | null;
+      stageId: string | null;
       status: string;
     }> | undefined;
 
     // The candidate profile should expose scheduled interviews
     expect(interviews).toBeDefined();
     expect(interviews).toHaveLength(1);
-    expect(interviews![0].interview_type).toBe('CODE_REVIEW');
-    expect(interviews![0].pipeline_id).toBeNull();
-    expect(interviews![0].stage_id).toBeNull();
+    expect(interviews![0].interviewType).toBe('CODE_REVIEW');
+    expect(interviews![0].pipelineId).toBeNull();
+    expect(interviews![0].stageId).toBeNull();
     expect(interviews![0].status).toBe('INVITED');
   });
 
-  test('UI flow: /schedule → INVITE CANDIDATE → CODE_REVIEW', async ({ browser }) => {
+  test('UI flow: /schedule exposes current NEW INTERVIEW modal', async ({ browser }) => {
     const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/schedule`);
     await page.waitForLoadState('networkidle');
 
-    // Click INVITE CANDIDATE button
-    const inviteBtn = page.locator('button:has-text("INVITE CANDIDATE")');
+    // CODE_REVIEW candidate creation is covered by the recruiter API tests above.
+    // The current schedule UI creates meeting invites from the same interview surface.
+    const inviteBtn = page.getByRole('main').getByRole('button', { name: /NEW INTERVIEW/i }).first();
     await expect(inviteBtn).toBeVisible({ timeout: 10000 });
     await inviteBtn.click();
 
-    // Modal should open
-    const modal = page.locator('text=INVITE CANDIDATE').first();
-    await expect(modal).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('NEW INTERVIEW').first()).toBeVisible({ timeout: 5000 });
 
-    // Fill NAME
     const nameInput = page.locator('input[placeholder="Jane Smith"]');
     await expect(nameInput).toBeVisible();
     await nameInput.fill('E2E Code Review Test');
 
-    // Fill EMAIL
     const emailInput = page.locator('input[placeholder="jane@example.com"]');
     await expect(emailInput).toBeVisible();
     await emailInput.fill(`standalone-ui+${Date.now()}@pipe-test.dev`);
 
-    // Select CODE_REVIEW interview type
-    const codeReviewBtn = page.locator('button:has-text("CODE_REVIEW")');
-    await expect(codeReviewBtn).toBeVisible();
-    await codeReviewBtn.click();
-
-    // Send invite
-    const sendBtn = page.locator('button:has-text("SEND INVITE")');
-    await expect(sendBtn).toBeVisible();
-    await sendBtn.click();
-
-    // Expect success confirmation
-    await expect(page.locator('text=INVITE SENT')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /^VIDEO$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^CODE_REVIEW$/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /CREATE INTERVIEW/i })).toBeEnabled();
 
     await context.close();
   });
@@ -340,7 +615,8 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
     const session = await resolveToken(request, candidate.inviteToken);
     sessionToken = session.sessionToken;
 
-    // Submit minimal resume so candidate passes intake but has thin evidence
+    // Submit minimal resume so candidate passes intake but has thin evidence.
+    // This must not be enough to select a reviewable PR.
     const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
@@ -350,9 +626,10 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
         },
       },
     });
-    // Intake submission may succeed or return a specific status —
-    // either way we proceed to check the matching behavior
-    expect([200, 201, 400, 404].includes(intakeRes.status())).toBe(true);
+    expect(intakeRes.status()).toBe(200);
+    const intakeBody = await intakeRes.json() as { success?: boolean; message?: string };
+    expect(intakeBody.success).toBe(true);
+    expect(intakeBody.message).toBe('INTAKE submission received');
   });
 
   test('candidate with thin evidence sees WAITING_FOR_MATCH, not a generic PR', async ({ request }) => {
@@ -364,19 +641,11 @@ test.describe('§MVP.4 — Deterministic matching: no generic/smallest-PR fallba
 
     const challenge = (await res.json()) as ChallengeResponse;
 
-    // Must be WAITING_FOR_MATCH or INTAKE — never a fake CODE_REVIEW
-    if (challenge.type === 'CODE_REVIEW') {
-      // If matching somehow succeeded, verify it's a real PR not a fallback
-      expect(challenge.githubPrNumber).toBeTruthy();
-      expect(challenge.githubRepoUrl).toBeTruthy();
-      // Ensure it's not a generic "smallest PR" placeholder
-      expect(challenge.title).not.toContain('generic');
-      expect(challenge.title).not.toContain('placeholder');
-      expect(challenge.title).not.toContain('sample');
-    } else {
-      // Expected: WAITING_FOR_MATCH or INTAKE (still waiting for evidence)
-      expect(['WAITING_FOR_MATCH', 'INTAKE']).toContain(challenge.type);
-    }
+    expect(challenge.type).toBe('WAITING_FOR_MATCH');
+    expect(challenge.githubPrNumber).toBeUndefined();
+    expect(challenge.githubRepoUrl).toBeUndefined();
+    expect(challenge.cachedDiffJson).toBeUndefined();
+    expect(challenge.title).toBe('Building your personalized challenge');
   });
 
   test('WAITING_FOR_MATCH challenge never exposes ground truth', async ({ request }) => {
@@ -467,24 +736,12 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     // The candidate submits text-based evidence via submit-challenge-response,
     // which triggers ingestion and deterministic matching.
 
-    // Step 1: Submit resume/profile evidence via the challenge-response intake path
-    const intakeRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
-      headers: candidateHeaders(sessionToken),
-      data: {
-        order: 0,
-        submission: {
-          resumeText: 'Senior software engineer with 8 years of TypeScript, React, and Node.js experience. Built large-scale frontend applications. Expert in component architecture, state management, and performance optimization. Contributed to open-source UI libraries.',
-          githubHandle: 'e2e-test-user',
-        },
-      },
-    });
-    // Intake must be accepted
-    expect([200, 201]).toContain(intakeRes.status());
+    // Step 1: Submit resume/profile evidence via the challenge-response intake path.
+    await submitStandaloneIntakeEvidence(request, sessionToken);
 
-    const intakeBody = await intakeRes.json() as { success?: boolean };
-    expect(intakeBody.success).toBe(true);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
 
-    // Step 2: Get challenge — should now be CODE_REVIEW or WAITING_FOR_MATCH
+    // Step 2: Get challenge — source-backed candidate evidence and repo packet must match deterministically.
     const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
       headers: candidateHeaders(sessionToken),
       data: { order: 0 },
@@ -493,23 +750,79 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
 
     const challenge = (await challengeRes.json()) as ChallengeResponse;
 
-    // If matched, verify real PR metadata with source-backed evidence
-    if (challenge.type === 'CODE_REVIEW') {
-      expect(challenge.githubPrNumber).toBeGreaterThan(0);
-      expect(challenge.githubRepoUrl).toBeTruthy();
-      expect(challenge.githubRepoUrl).toMatch(/^https:\/\/github\.com\//);
-      expect(challenge.cachedDiffJson).toBeTruthy();
-      expect(challenge.title).toBeTruthy();
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubRepoUrl).toMatch(/^https:\/\/github\.com\//);
+    expect(challenge.cachedDiffJson).toBeTruthy();
+    expect(challenge.githubPrTitle).toBe('Review source-backed retry idempotency');
+    expect(challenge.title).toBeTruthy();
 
-      // No ground truth leaked
-      const raw = JSON.stringify(challenge);
-      expect(raw).not.toContain('groundTruth');
-      expect(raw).not.toContain('plantedBugs');
-      expect(raw).not.toContain('scoringRubric');
-    } else {
-      // WAITING_FOR_MATCH is acceptable — matcher needs more evidence
-      expect(challenge.type).toBe('WAITING_FOR_MATCH');
-    }
+    const diff = challenge.cachedDiffJson as { files?: Array<{ filename?: string; hunks?: unknown[] }> };
+    expect(Array.isArray(diff.files)).toBe(true);
+    expect(diff.files!.map((file) => file.filename)).toEqual([
+      'src/retry-idempotency.test.ts',
+      'src/retry-idempotency.ts',
+    ]);
+    expect(diff.files!.every((file) => Array.isArray(file.hunks) && file.hunks.length > 0)).toBe(true);
+
+    const raw = JSON.stringify(challenge);
+    expect(raw).not.toContain('groundTruth');
+    expect(raw).not.toContain('plantedBugs');
+    expect(raw).not.toContain('scoringRubric');
+
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+    const profile = await profileRes.json() as {
+      standaloneReviewMatch?: {
+        matchStatus?: string;
+        repoUrl?: string | null;
+        prNumber?: number | null;
+        prUrl?: string | null;
+        packetId?: string;
+        roleSources?: Array<{
+          entityId?: string;
+          locator?: string;
+          conceptKeys?: string[];
+        }>;
+        evidence?: Array<{
+          candidateSourceRefs?: unknown[];
+          challengeSourceRefs?: unknown[];
+          sharedConcepts?: string[];
+        }>;
+        gaps?: string[];
+        diagnostics?: {
+          recalledPacketIds?: string[];
+          evaluatedChallenges?: Array<{ challengeId?: string; eligible?: boolean }>;
+        };
+      };
+    };
+    const match = profile.standaloneReviewMatch;
+    expect(match).toBeDefined();
+    expect(match!.matchStatus).toBe('MATCHED');
+    expect(match!.repoUrl).toBe(fixture.repoUrl);
+    expect(match!.prNumber).toBe(fixture.prNumber);
+    expect(match!.prUrl).toBe(`${fixture.repoUrl}/pull/${fixture.prNumber}`);
+    expect(match!.roleSources).toEqual([expect.objectContaining({
+      locator: fixture.roleSources[0]!.locator,
+      conceptKeys: expect.arrayContaining([fixture.conceptKey]),
+    })]);
+    expect(match!.evidence?.length).toBeGreaterThan(0);
+    expect(match!.evidence!.every((entry) =>
+      Array.isArray(entry.candidateSourceRefs)
+      && entry.candidateSourceRefs.length > 0
+      && Array.isArray(entry.challengeSourceRefs)
+      && entry.challengeSourceRefs.length > 0
+      && Array.isArray(entry.sharedConcepts)
+      && entry.sharedConcepts.length > 0
+    )).toBe(true);
+    expect(match!.gaps ?? []).toEqual([]);
+    expect(match!.diagnostics?.recalledPacketIds).toContain(fixture.packetId);
+    expect(match!.diagnostics?.evaluatedChallenges?.some((entry) =>
+      entry.challengeId === fixture.packetId && entry.eligible === true
+    )).toBe(true);
   });
 });
 
@@ -535,43 +848,53 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     sessionToken = session.sessionToken;
   });
 
-  test('submit-challenge-response accepts standalone CODE_REVIEW submission', async ({ request }) => {
-    // Submit a code review response for the standalone interview.
-    // This will FAIL until standalone submission is fully wired.
-    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+  test('submit-challenge-response requires a selected PR, then completes the matched review', async ({ request }) => {
+    const prematureRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
       headers: candidateHeaders(sessionToken),
       data: {
-        challengeId: 'standalone-review',
-        type: 'CODE_REVIEW',
-        response: {
-          verdict: 'REQUEST_CHANGES',
-          summary: 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.',
-          comments: [
-            {
-              file: 'src/pages/Search.tsx',
-              line: 43,
-              category: 'functionality',
-              severity: 'blocking',
-              what: 'No debounce on search input — fires request per keystroke',
-              why: 'Creates N requests for N characters typed',
-              suggestion: 'Add 300ms debounce with AbortController',
-            },
-          ],
+        order: 0,
+        submission: {
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'This should not be accepted before a source-backed PR is selected.',
+          annotations: [],
         },
       },
     });
+    expect(prematureRes.status()).toBe(409);
+    const prematureBody = await prematureRes.json() as {
+      error?: { code?: string };
+      challenge?: { type?: string };
+    };
+    expect(prematureBody.error?.code).toBe('WAITING_FOR_MATCH');
+    expect(prematureBody.challenge?.type).toBe('WAITING_FOR_MATCH');
 
-    // Expect success — the submission should persist
-    expect([200, 201]).toContain(submitRes.status());
+    await submitStandaloneIntakeEvidence(request, sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
 
-    if (submitRes.status() === 200 || submitRes.status() === 201) {
-      const body = await submitRes.json() as Record<string, unknown>;
-      // Submission should not leak scoring info
-      expect(JSON.stringify(body)).not.toContain('groundTruth');
-    }
-  });
+    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
+      headers: candidateHeaders(sessionToken),
+      data: { order: 0 },
+    });
+    expect(challengeRes.status()).toBe(200);
+    const challenge = await challengeRes.json() as ChallengeResponse;
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
 
-  test('after submission, standalone scheduled_interview status becomes COMPLETED', async ({ request }) => {
+    const reviewSummary = 'The PR introduces a search feature but has a critical debounce issue. Every keystroke triggers a network request which will overwhelm the API.';
+    await submitStandaloneCodeReview(request, sessionToken, {
+      summary: reviewSummary,
+      annotations: [
+        {
+          file: 'src/pages/Search.tsx',
+          line: 43,
+          severity: 'blocking',
+          comment: 'No debounce on search input; add a 300ms debounce with AbortController.',
+        },
+      ],
+    });
+
     const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -579,14 +902,56 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
 
     const profile = await profileRes.json() as Record<string, unknown>;
     const interviews = profile.scheduledInterviews as Array<{
-      interview_type: string;
+      interviewType: string;
       status: string;
     }> | undefined;
+    const standaloneReviewMatch = profile.standaloneReviewMatch as {
+      matchStatus?: string;
+      repoUrl?: string | null;
+      prNumber?: number | null;
+      submitted?: boolean;
+      submission?: {
+        verdict?: string | null;
+        summary?: string | null;
+        annotationCount?: number;
+      } | null;
+      roleSources?: Array<{
+        locator?: string;
+        conceptKeys?: string[];
+      }>;
+      evidence?: Array<{
+        candidateSourceRefs?: unknown[];
+        challengeSourceRefs?: unknown[];
+      }>;
+      diagnostics?: {
+        recalledPacketIds?: string[];
+      };
+    } | null;
 
     expect(interviews).toBeDefined();
-    const codeReview = interviews!.find((i) => i.interview_type === 'CODE_REVIEW');
+    const codeReview = interviews!.find((i) => i.interviewType === 'CODE_REVIEW');
     expect(codeReview).toBeDefined();
     expect(codeReview!.status).toBe('COMPLETED');
+    expect(standaloneReviewMatch).not.toBeNull();
+    expect(standaloneReviewMatch!.matchStatus).toBe('MATCHED');
+    expect(standaloneReviewMatch!.repoUrl).toBe(fixture.repoUrl);
+    expect(standaloneReviewMatch!.prNumber).toBe(fixture.prNumber);
+    expect(standaloneReviewMatch!.submitted).toBe(true);
+    expect(standaloneReviewMatch!.submission?.verdict).toBe('request_changes');
+    expect(standaloneReviewMatch!.submission?.summary).toBe(reviewSummary);
+    expect(standaloneReviewMatch!.submission?.annotationCount).toBe(1);
+    expect(standaloneReviewMatch!.roleSources).toEqual([expect.objectContaining({
+      locator: fixture.roleSources[0]!.locator,
+      conceptKeys: expect.arrayContaining([fixture.conceptKey]),
+    })]);
+    expect(standaloneReviewMatch!.evidence?.length).toBeGreaterThan(0);
+    expect(standaloneReviewMatch!.evidence!.every((entry) =>
+      Array.isArray(entry.candidateSourceRefs)
+      && entry.candidateSourceRefs.length > 0
+      && Array.isArray(entry.challengeSourceRefs)
+      && entry.challengeSourceRefs.length > 0
+    )).toBe(true);
+    expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toContain(fixture.packetId);
   });
 });
 
@@ -637,9 +1002,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await contextTab.click();
 
     // Living context graph component should render
-    await expect(
-      page.locator('[data-testid="living-context-graph"], text=/context|graph|evidence/i').first()
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="living-context-graph"]')).toBeVisible({ timeout: 10000 });
 
     await context.close();
   });
@@ -662,9 +1025,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await context.close();
   });
 
-  test('recruiter can see matched PR information for completed candidate', async ({ request }) => {
-    // After a candidate completes the full flow, the recruiter should
-    // be able to see which PR was selected and why via standaloneReviewMatch.
+  test('recruiter API exposes pending standalone match without fabricated PR data', async ({ request }) => {
     const res = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -672,7 +1033,6 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     const profile = await res.json() as Record<string, unknown>;
 
-    // standaloneReviewMatch is the actual API field for standalone code review context
     const standaloneReviewMatch = profile.standaloneReviewMatch as {
       interviewId?: string;
       interviewStatus?: string;
@@ -693,21 +1053,16 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     expect(standaloneReviewMatch).toBeDefined();
     expect(standaloneReviewMatch).not.toBeNull();
-    if (standaloneReviewMatch?.matchStatus === 'MATCHED') {
-      expect(standaloneReviewMatch.repoUrl).toBeTruthy();
-      expect(standaloneReviewMatch.prNumber).toBeGreaterThan(0);
-      // Evidence alignments must include source refs from both sides
-      expect(standaloneReviewMatch.evidence).toBeDefined();
-      expect(standaloneReviewMatch.evidence!.length).toBeGreaterThan(0);
-      const firstEvidence = standaloneReviewMatch.evidence![0];
-      expect(firstEvidence.candidateSourceRefs).toBeDefined();
-      expect(firstEvidence.challengeSourceRefs).toBeDefined();
-    }
+    expect(standaloneReviewMatch!.matchStatus).toBe('PENDING_INTAKE');
+    expect(standaloneReviewMatch!.interviewStatus).toBe('INVITED');
+    expect(standaloneReviewMatch!.repoUrl).toBeNull();
+    expect(standaloneReviewMatch!.prNumber).toBeNull();
+    expect(standaloneReviewMatch!.score).toBeNull();
+    expect(standaloneReviewMatch!.submitted).toBe(false);
+    expect(standaloneReviewMatch!.submission).toBeNull();
   });
 
-  test('match explanation includes source evidence, not naked scores', async ({ request }) => {
-    // Recruiter must be able to answer: which PR, why, what evidence.
-    // Naked aggregate scores without evidence trail are forbidden.
+  test('pending match explanation reports missing candidate evidence without naked scores', async ({ request }) => {
     const res = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
     });
@@ -723,22 +1078,135 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
       }>;
       gaps?: string[];
       summary?: string;
+      score?: number | null;
+      diagnostics?: {
+        recalledPacketIds?: unknown[];
+        excludedPackets?: unknown[];
+        evaluatedChallenges?: unknown[];
+      };
     } | null;
 
     expect(standaloneReviewMatch).toBeDefined();
     expect(standaloneReviewMatch).not.toBeNull();
-    if (standaloneReviewMatch) {
-      // Source-backed evidence trail is mandatory
-      expect(standaloneReviewMatch.evidence).toBeDefined();
-      expect(standaloneReviewMatch.gaps).toBeDefined();
-      expect(standaloneReviewMatch.summary).toBeTruthy();
-      // Each evidence entry carries candidate + challenge source refs
-      if (standaloneReviewMatch.evidence && standaloneReviewMatch.evidence.length > 0) {
-        for (const entry of standaloneReviewMatch.evidence) {
-          expect(entry.candidateSourceRefs).toBeDefined();
-          expect(entry.challengeSourceRefs).toBeDefined();
-        }
-      }
+    expect(standaloneReviewMatch!.summary).toBe(
+      'Waiting for candidate resume/profile evidence before matching to a PR.',
+    );
+    expect(standaloneReviewMatch!.evidence).toEqual([]);
+    expect(standaloneReviewMatch!.gaps).toContain('Candidate has not submitted source evidence yet.');
+    expect(standaloneReviewMatch!.score).toBeNull();
+    expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toEqual([]);
+    expect(standaloneReviewMatch!.diagnostics?.excludedPackets).toEqual([]);
+    expect(standaloneReviewMatch!.diagnostics?.evaluatedChallenges).toEqual([]);
+  });
+
+  test('CONTEXT tab renders submitted review with source-backed match evidence', async ({ browser, request }) => {
+    const reviewedCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Submitted Context Graph Candidate',
+      email: `context-submitted+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const session = await resolveToken(request, reviewedCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, session.sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, reviewedCandidate);
+
+    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: { order: 0 },
+    });
+    expect(challengeRes.status()).toBe(200);
+    const challenge = await challengeRes.json() as ChallengeResponse;
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+
+    const reviewSummary = `The ${fixture.conceptLabel} implementation is reviewable, but the retry path still needs an idempotency guard before acknowledging duplicate events.`;
+    const reviewComment = `Add an idempotency-key check around ${fixture.conceptLabel} retry publication before acknowledging the event.`;
+    await submitStandaloneCodeReview(request, session.sessionToken, {
+      summary: reviewSummary,
+      annotations: [{
+        file: 'src/retry-idempotency.ts',
+        line: 10,
+        severity: 'blocking',
+        comment: reviewComment,
+      }],
+    });
+
+    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
+    const page = await context.newPage();
+
+    await page.goto(`${APP_BASE}/candidates/${reviewedCandidate.id}`);
+    await page.getByRole('button', { name: 'CONTEXT' }).click();
+    await expect(page.getByTestId('living-context-graph')).toBeVisible({ timeout: 15000 });
+
+    const matchPanel = page.getByTestId('standalone-review-match-panel');
+    await expect(matchPanel).toContainText('Standalone CODE_REVIEW match');
+    await expect(matchPanel).toContainText('MATCHED');
+    await expect(matchPanel).toContainText(`${fixture.repoFullName} #${fixture.prNumber}`);
+    await expect(matchPanel).toContainText('Review source-backed retry idempotency');
+    await expect(matchPanel).toContainText('Review submitted');
+    const roleSources = page.getByTestId('standalone-review-role-sources');
+    await expect(roleSources).toContainText('Role sources');
+    await expect(roleSources).toContainText(fixture.roleSources[0]!.locator);
+    await expect(roleSources).toContainText(fixture.conceptKey);
+
+    const submission = page.getByTestId('standalone-review-submission');
+    await expect(submission).toContainText('Candidate review result');
+    await expect(submission).toContainText('Request Changes');
+    await expect(submission).toContainText('1 annotation');
+    await expect(submission).toContainText(reviewSummary);
+    await expect(submission).toContainText('src/retry-idempotency.ts · line 10 · blocking');
+    await expect(submission).toContainText(reviewComment);
+
+    const evidence = page.getByTestId('standalone-review-evidence');
+    await expect(evidence).toContainText('Candidate evidence');
+    await expect(evidence).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
+    await expect(evidence).toContainText('PR demand evidence');
+    await expect(evidence).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
+    await expect(evidence).toContainText(fixture.conceptKey);
+
+    const repoOverlay = page.getByTestId('repository-overlay-panel');
+    await expect(repoOverlay).toBeVisible();
+    await expect(repoOverlay).toContainText('Repository evidence overlay');
+    await expect(repoOverlay).toContainText(`${fixture.repoFullName} · PR #${fixture.prNumber}`);
+    for (const demandId of fixture.demandIds.slice(0, 2)) {
+      await expect(repoOverlay).toContainText(demandId);
     }
+    await expect(repoOverlay).toContainText('src/retry-idempotency.ts');
+    await expect(repoOverlay).toContainText('src/retry-publisher.ts');
+    await expect(repoOverlay).toContainText('src/retry-idempotency.test.ts');
+    await expect(repoOverlay).toContainText('Candidate source');
+    await expect(repoOverlay).toContainText('PR demand source');
+    await expect(repoOverlay).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
+    await expect(repoOverlay).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
+    await expect(repoOverlay).toContainText(`Validate ${fixture.conceptLabel} retry behavior with deterministic tests.`);
+    await expect(repoOverlay).toContainText(fixture.conceptKey);
+
+    const candidateSourceCard = repoOverlay
+      .getByTestId('review-source-card')
+      .filter({
+        hasText: `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+      })
+      .first();
+    await expect(candidateSourceCard).toHaveAttribute('data-source-ref-type', 'source_span');
+    await expect(candidateSourceCard).toHaveAttribute('data-source-ref-id', fixture.candidateSourceSpanIds[0]);
+    await expect(candidateSourceCard).toHaveAttribute('data-source-span-id', fixture.candidateSourceSpanIds[0]);
+
+    const repoSourceCard = repoOverlay
+      .getByTestId('review-source-card')
+      .filter({
+        hasText: `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+      })
+      .first();
+    await expect(repoSourceCard).toHaveAttribute('data-source-ref-type', 'repo_source_span');
+    await expect(repoSourceCard).toHaveAttribute('data-content-hash', /^sha256:/);
+    const repoSourceRefId = await repoSourceCard.getAttribute('data-source-ref-id');
+    expect(fixture.repoSourceSpanIds).toContain(repoSourceRefId);
+
+    const diagnostics = page.getByTestId('standalone-review-diagnostics');
+    await expect(diagnostics).toContainText('Recalled packets');
+    await expect(diagnostics).toContainText(fixture.packetId);
+    await expect(diagnostics).toContainText('Evaluated challenge evidence');
+    await expect(diagnostics).toContainText('Eligible');
+
+    await context.close();
   });
 });

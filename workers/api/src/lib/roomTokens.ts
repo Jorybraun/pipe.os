@@ -14,3 +14,13 @@ export async function hashRoomToken(token: string): Promise<string> {
   );
   return bytesToBase64Url(new Uint8Array(digest));
 }
+
+/**
+ * Generate a cryptographically random opaque room token (URL-safe base64, 32 bytes).
+ * The token is returned to the caller once and stored only as a SHA-256 hash.
+ */
+export function generateRoomToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64Url(bytes);
+}

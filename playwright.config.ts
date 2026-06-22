@@ -11,7 +11,20 @@ dotenv.config({ path: path.resolve(__dirname, ".env") });
 
 const appBase = process.env.APP_BASE || "http://localhost:5173";
 const apiBase = process.env.API_BASE || "http://localhost:8787";
-const isRemote = !appBase.includes("localhost");
+const videoRoomBase = process.env.VIDEO_ROOM_BASE || "http://localhost:5175";
+const isRemote = !appBase.includes("localhost") || !apiBase.includes("localhost") || !videoRoomBase.includes("localhost");
+
+function localPort(baseUrl: string, fallback: string): string {
+  try {
+    return new URL(baseUrl).port || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const appPort = localPort(appBase, "5173");
+const apiPort = localPort(apiBase, "8787");
+const videoRoomPort = localPort(videoRoomBase, "5175");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -60,14 +73,20 @@ export default defineConfig({
     : {
         webServer: [
           {
-            command: "cd workers/api && npx wrangler dev --port 8787",
-            url: `${apiBase}/health`,
+            command: `cd workers/api && npx wrangler dev --port ${apiPort}`,
+            url: `${apiBase}/api/health`,
             reuseExistingServer: true,
             timeout: 120000,
           },
           {
-            command: "npm run dev -- --port 5173",
+            command: `VITE_API_URL=${apiBase} VITE_API_BASE_URL=${apiBase} npm run dev -- --port ${appPort}`,
             url: appBase,
+            reuseExistingServer: true,
+            timeout: 60000,
+          },
+          {
+            command: `cd apps/video-room && VITE_API_BASE_URL=${apiBase} npm run dev -- --host 127.0.0.1 --port ${videoRoomPort}`,
+            url: videoRoomBase,
             reuseExistingServer: true,
             timeout: 60000,
           },

@@ -99,6 +99,33 @@ describe('useSchedulingConnection hook', () => {
     expect(result.current.connection?.accountEmail).toBe('new@example.com');
   });
 
+  it('6.2.2 getAuthUrl starts OAuth through the Worker API', async () => {
+    apiMocks.mockGet.mockResolvedValue({ connection: null });
+    apiMocks.mockPost.mockResolvedValue({
+      authUrl: 'https://auth.calendly.com/oauth/authorize?client_id=server-client',
+    });
+
+    const { result } = renderHook(() => useSchedulingConnection());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let authUrl = '';
+    await act(async () => {
+      authUrl = await result.current.getAuthUrl(
+        'CALENDLY',
+        'https://app.pipe.test/interviews',
+        'challenge-123',
+      );
+    });
+
+    expect(authUrl).toBe('https://auth.calendly.com/oauth/authorize?client_id=server-client');
+    expect(apiMocks.mockPost).toHaveBeenCalledWith('/api/v1/scheduling/connect', {
+      providerId: 'CALENDLY',
+      redirectUri: 'https://app.pipe.test/interviews',
+      codeChallenge: 'challenge-123',
+    });
+  });
+
   it('6.3.1 fetchEventTypes maps duration correctly', async () => {
     apiMocks.mockGet.mockImplementation(async (path: string) => {
       if (path === '/api/v1/scheduling/connection') {

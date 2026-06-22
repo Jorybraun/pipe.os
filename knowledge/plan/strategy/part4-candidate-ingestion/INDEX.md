@@ -1,11 +1,18 @@
 # Part 4 — Candidate Ingestion Pipeline: Plan Index
 
-**Source strategy:** `knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md`
+**Source strategy:** `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md`
 **Phase0 dedup source:** `docs/plans/phase0-subagent-execution-plan.md`
 **Total plan files:** 20 (18 full plans + 2 phase0 linked-only entries)
 **Total subtasks:** 63
 **Ambiguous / needs refinement:** 3 (flagged below)
 **Completed:** 3 plans (see Phase 1.5 and Phase 2 below)
+
+> 2026-06-19 correction: current intake is roleless talent-pool/person graph
+> evidence by default (ADR-052). Fixed `candidate_nodes`, `TechnicalDemonstration`,
+> `CulturalSignal`, coverage-bucket, and sub-element matching plans were archived
+> under `knowledge/plan/archive/superseded-fixed-node-decomposition-2026-06-19/`.
+> New work must persist source-backed assertions and signal evidence, not fixed
+> semantic node types or fabricated coverage.
 
 ---
 
@@ -28,17 +35,18 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 
 | File | Title | Estimate | Status |
 |---|---|---|---|
-| [`candidate-nodes-schema.md`](candidate-nodes-schema.md) | D1 migration: `candidate_nodes` + `candidate_coverage` tables | 1 week | PENDING |
+| candidate-nodes-schema.md | Archived fixed semantic node taxonomy | — | ARCHIVED |
 | [`living-graph-provenance-tagging.md`](living-graph-provenance-tagging.md) | Source type registry, `captured_at` enforcement | 0.5 weeks | PENDING |
 | [`living-graph-supersedes-schema.md`](living-graph-supersedes-schema.md) | Supersedes transaction, audit queries, profile-at-time | 0.5 weeks | PENDING |
 | [`candidate-profile-state-schema.md`](candidate-profile-state-schema.md) | `candidate_profile_state` table, re-engagement model | 0.5 weeks | PENDING |
-| [`candidate-decomposition-prompt.md`](candidate-decomposition-prompt.md) | Rewrite extraction to produce structured sub-element JSON | 1.5 weeks | PENDING |
-| [`candidate-sub-element-embedding.md`](candidate-sub-element-embedding.md) | Per-node embedding into CANDIDATE_INDEX with metadata | 1 week | PENDING |
-| [`candidate-backfill-decomposition.md`](candidate-backfill-decomposition.md) | Backfill existing candidates through decomposition pipeline | 1 week | PENDING |
-| [`candidate-matching-sub-elements.md`](candidate-matching-sub-elements.md) | Update situation fit + ANN to prefer sub-element nodes | 1.5 weeks | PENDING |
+| candidate-decomposition-prompt.md | Archived fixed extraction shape | — | ARCHIVED |
+| candidate-sub-element-embedding.md | Archived fixed semantic node projection | — | ARCHIVED |
+| candidate-backfill-decomposition.md | Archived fixed semantic node projection | — | ARCHIVED |
+| candidate-matching-sub-elements.md | Archived sub-element/vector matching path | — | ARCHIVED |
 | [`loose-match-evidence-density.md`](loose-match-evidence-density.md) | Evidence density multiplier, screener routing hints | 1 week | PENDING |
 
-**Phase 1 total:** ~8.5 weeks, 32 subtasks
+**Phase 1 total:** superseded for current scope. Use the living-context plan for
+roleless person graph ingestion and source-backed assertions.
 
 ---
 
@@ -74,7 +82,7 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 
 **Phase 2 note:** LinkedIn enrichment explicitly out of scope per strategy (ToS and ethical concerns). URL-based content enrichment (blogs, talks) is Phase 2+ but not planned here — strategy says "candidate-surfaced URLs" but doesn't specify implementation detail. Flag for future planning.
 
-**v2 upgrade (shipped 2026-05-01):** The GitHub enrichment was completely rewritten with pagination (300 repos), merged PR search (100 results), org memberships, language aggregation, and rich human-like narratives. Creates 4 node types (CulturalSignal, Project, Experience, Skill) instead of just Project. See `github-enrichment-worker.md` for details.
+**v2 upgrade historical note (shipped 2026-05-01):** The GitHub enrichment created legacy node types such as `CulturalSignal`, `Project`, `Experience`, and `Skill`. New enrichment must treat those as compatibility projections only and write source-backed assertions with provenance as the semantic record.
 
 ---
 
@@ -85,7 +93,7 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 | File | Title | Estimate | Status |
 |---|---|---|---|
 | [`profile-probe-bank.md`](profile-probe-bank.md) | `profile_probe_bank` table + 60+ curated probes | 2 weeks | NEEDS-REFINEMENT |
-| [`screener-coverage-computation.md`](screener-coverage-computation.md) | `computeCandidateCoverage` + gap identification | 1 week | PENDING |
+| screener-coverage-computation.md | Archived fixed coverage buckets | — | ARCHIVED |
 | [`adaptive-culture-interview-agent.md`](adaptive-culture-interview-agent.md) | Dynamic generative culture agent — zero static questions | 4 weeks | PENDING |
 | [`screener-mode-generalization.md`](screener-mode-generalization.md) | Generalize `cultureAgent.ts` to mode-aware screener | 3 weeks | PENDING |
 | [`screener-answer-decomposition.md`](screener-answer-decomposition.md) | Single-turn sub-element extraction from screener answers | 1.5 weeks | PENDING |
@@ -100,9 +108,9 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 
 | File | Title | Estimate | Status |
 |---|---|---|---|
-| [`code-review-graph-decomposition.md`](code-review-graph-decomposition.md) | Decompose code review score reports into TechnicalDemonstration nodes | 1.5 weeks | PENDING |
-| [`implementation-scorer.md`](implementation-scorer.md) | Sherlock-based `lib/implementationScorer.ts`, wire to `/rpc/score-submission` | 3 weeks | PENDING |
-| [`culture-interview-graph-decomposition.md`](culture-interview-graph-decomposition.md) | Map culture scoring output to CulturalSignal nodes | 1 week | PENDING |
+| code-review-graph-decomposition.md | Archived fixed TechnicalDemonstration nodes | — | ARCHIVED |
+| implementation-scorer.md | Archived until rewritten as source-backed assessment assertions | — | ARCHIVED |
+| culture-interview-graph-decomposition.md | Archived fixed CulturalSignal nodes | — | ARCHIVED |
 
 **Phase 4 total:** ~5.5 weeks, 12 subtasks
 
@@ -112,13 +120,15 @@ Items fully covered in `phase0-subagent-execution-plan.md`. Do not re-plan.
 
 | File | Title | Estimate | Status |
 |---|---|---|---|
-| [`living-graph-temporal-queries.md`](living-graph-temporal-queries.md) | Profile recency analysis, re-engagement triggers, trajectory queries | 1 week | PENDING |
+| living-graph-temporal-queries.md | Archived until rewritten against assertions and signal snapshots | — | ARCHIVED |
 
 ---
 
-## Phase 5 — Graph Migration (Neo4j)
+## Phase 5 — Rebuildable Projections
 
-Not planned here. Strategy Part 5 covers the Neo4j migration. All `candidate_nodes` sub-elements become `:CandidateNode` in Neo4j with type-specific sub-labels. This is separate planning.
+Neo4j-first migration is archived for the current scope. `candidate_nodes` are
+compatibility/projection records only; D1 source artifacts, spans, assertions,
+and signal evidence are authoritative.
 
 ---
 
@@ -126,19 +136,10 @@ Not planned here. Strategy Part 5 covers the Neo4j migration. All `candidate_nod
 
 Verified file-path overlaps below — only true non-overlapping plans are listed as parallel.
 
-**Phase 1 parallel batch 1 (schema-only, no shared TypeScript files):**
-- `candidate-nodes-schema.md` — owns `types.ts` and `candidateNodes.ts` creation
-- `candidate-profile-state-schema.md` — independent (`candidateProfileState.ts`, migration 0047)
-
-**Phase 1 batch 1 — must run AFTER `candidate-nodes-schema.md` lands:**
-- `living-graph-provenance-tagging.md` — edits `types.ts` and `candidateNodes.ts` (overlap with `candidate-nodes-schema.md`; not parallel-safe)
-- `living-graph-supersedes-schema.md` — also edits `candidateNodes.ts` (run serially after provenance-tagging)
-
-**Phase 1 batch 2 — must run AFTER batch 1 lands:**
-- `candidate-decomposition-prompt.md` — edits `types.ts` and `orchestrate.ts` (orchestrate.ts also edited by `candidate-profile-state-schema.md`, so run after that completes)
-
-**Phase 1 batch 3 (after extraction):**
-- `candidate-sub-element-embedding.md`
+Archived candidate-node sequencing is no longer valid. Current sequencing starts
+with roleless talent-pool intake, immutable artifacts, source spans, open
+assertions, signal evidence, and compatibility projections only after source
+evidence is persisted.
 
 **Phase 2 parallel:**
 - `github-enrichment-worker.md`
@@ -161,8 +162,8 @@ Verified file-path overlaps below — only true non-overlapping plans are listed
 ```
 0043_embedding_model_version          ← Phase 0 (done)
 0044_situation_fit_cache              ← Phase 0 (done)
-0045_candidate_nodes                  ← Phase 1
-0046_candidate_coverage               ← Phase 1
+0045_candidate_nodes                  ← archived fixed-node plan; do not implement as semantic truth
+0046_candidate_coverage               ← archived fixed-bucket plan; use open coverage/assertions
 0047_candidate_profile_state          ← Phase 1
 0048_candidate_decomposition_version  ← Phase 1
 0049_enrichment_jobs                  ← Phase 2

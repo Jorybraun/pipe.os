@@ -5,11 +5,13 @@
  * 1. Read the discovered_repos row
  * 2. Find the best recent merged PR (or use provided prNumber)
  * 3. Fetch the PR diff via existing fetchGitHubDiff utility
- * 4. Create a challenge_templates row with type=CODE_REVIEW
- * 5. Update discovered_repos status to CHALLENGE_READY
+ * 4. Persist the exact source-backed review challenge packet
+ * 5. Create a challenge_templates row only if the packet is production-ready
+ * 6. Update discovered_repos status to CHALLENGE_READY
  */
 
 import { fetchGitHubDiff } from '../fetchGitHubDiff';
+import type { ChallengePacket } from '../repoSemanticGraph/model';
 import type { DiscoveredRepoRow, SeniorityBand } from '../../types';
 
 export interface ConvertResult {
@@ -17,6 +19,10 @@ export interface ConvertResult {
   prNumber: number;
   prTitle: string;
   filesChanged: number;
+  packetId: string;
+  packetEligible: boolean;
+  packetQualityScore: number;
+  packetGateFailures: string[];
 }
 
 interface GitHubPRListItem {
@@ -54,7 +60,10 @@ export async function convertRepoToChallenge(
     if (!prNumber) {
       const bestPR = await findBestPR(repo.github_owner, repo.github_repo, githubToken);
       if (!bestPR) {
-        throw new Error('No suitable merged PRs found in this repo');
+        throw new Error(
+          'No suitable merged PRs found in this repo for a review challenge packet. '
+          + 'Automatic selection requires a merged PR with 3-50 changed files and 20-2000 changed lines.',
+        );
       }
       prNumber = bestPR.number;
       prTitle = bestPR.title;
@@ -71,6 +80,46 @@ export async function convertRepoToChallenge(
     if (!prTitle) {
       prTitle = diffResult.metadata.title;
     }
+
+    const qualifiedRepoId = await resolveQualifiedRepoId(db, repo);
+    if (qualifiedRepoId === null) {
+      throw new Error(`No qualified_repos row found for ${repo.github_owner}/${repo.github_repo}`);
+    }
+
+    const [
+      { normalizeGitHubPullRequest },
+      { buildChallengePacket },
+      { deriveRepoSemantics },
+      { persistReviewChallengeGraph },
+    ] = await Promise.all([
+      import('../repoSemanticGraph/githubNormalize'),
+      import('../repoSemanticGraph/challengePacket'),
+      import('../repoSemanticGraph/derive'),
+      import('../repoSemanticGraph/persistence'),
+    ]);
+
+    const normalizedPullRequest = await normalizeGitHubPullRequest({
+      repoUrl,
+      prNumber,
+      diffResult,
+      primaryLanguage: repo.primary_language,
+      defaultBranch: repo.default_branch,
+      observedAt: now,
+    });
+    const packet = await buildChallengePacket(normalizedPullRequest);
+    const derivedGraph = await deriveRepoSemantics({
+      pullRequest: normalizedPullRequest,
+      packet,
+      structuralFacts: normalizedPullRequest.structuralFacts ?? [],
+    });
+    await persistReviewChallengeGraph(db, qualifiedRepoId, normalizedPullRequest, packet, {
+      structuralFacts: normalizedPullRequest.structuralFacts ?? [],
+      codeEpisodes: derivedGraph.episodes,
+      facets: derivedGraph.facets,
+      semanticAssertions: derivedGraph.assertions,
+      repoSignals: derivedGraph.signals,
+    });
+    assertPacketProductionReady(packet);
 
     // Step 3: Create challenge template
     const config = JSON.stringify({
@@ -128,6 +177,10 @@ export async function convertRepoToChallenge(
       prNumber,
       prTitle,
       filesChanged: diffResult.diff.files.length,
+      packetId: packet.id,
+      packetEligible: packet.quality.eligible,
+      packetQualityScore: packet.quality.score,
+      packetGateFailures: packetGateFailures(packet),
     };
 
   } catch (err) {
@@ -139,9 +192,27 @@ export async function convertRepoToChallenge(
   }
 }
 
+export function packetGateFailures(packet: Pick<ChallengePacket, 'quality'>): string[] {
+  return packet.quality.gates
+    .filter((gate) => !gate.passed)
+    .map((gate) => `${gate.gate}: ${gate.reason}`);
+}
+
+export function assertPacketProductionReady(packet: Pick<ChallengePacket, 'id' | 'quality'>): void {
+  if (packet.quality.eligible) return;
+  const failures = packetGateFailures(packet);
+  throw new Error(
+    [
+      `Review challenge packet ${packet.id} is not production-ready.`,
+      failures.length > 0 ? `Failed gates: ${failures.join('; ')}` : 'No gate diagnostics were recorded.',
+    ].join(' '),
+  );
+}
+
 /**
  * Finds the best recent merged PR for code review challenge creation.
- * Criteria: merged, reasonable size (5-50 files), recent, has test changes.
+ * Criteria: merged and reviewable size from GitHub list metadata. Full
+ * provenance, tests, and packet quality are validated after fetching the PR.
  */
 async function findBestPR(
   owner: string,
@@ -169,15 +240,26 @@ async function findBestPR(
     .filter((pr) => pr.changed_files >= 3 && pr.changed_files <= 50)
     .filter((pr) => (pr.additions + pr.deletions) >= 20 && (pr.additions + pr.deletions) <= 2000);
 
-  if (candidates.length === 0) {
-    // Relax size constraint
-    const relaxed = prs.filter((pr) => pr.merged_at !== null && pr.changed_files >= 1);
-    return relaxed[0] ?? null;
-  }
+  if (candidates.length === 0) return null;
 
   // Prefer PRs in the 5-20 file range (good complexity for review)
   const ideal = candidates.filter((pr) => pr.changed_files >= 5 && pr.changed_files <= 20);
   return ideal[0] ?? candidates[0] ?? null;
+}
+
+async function resolveQualifiedRepoId(
+  db: D1Database,
+  repo: DiscoveredRepoRow,
+): Promise<number | null> {
+  const fullName = `${repo.github_owner}/${repo.github_repo}`;
+  const row = await db.prepare(
+    `SELECT id
+       FROM qualified_repos
+      WHERE github_url = ?1 OR full_name = ?2
+      ORDER BY id
+      LIMIT 1`,
+  ).bind(repo.github_url, fullName).first<{ id: number }>();
+  return row?.id ?? null;
 }
 
 function mapSeniorityToDifficulty(band: SeniorityBand | null): string {

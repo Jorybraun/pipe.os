@@ -60,6 +60,8 @@ export interface Env {
   SESSION_TOKEN_SECRET: string;
   /** When 'true', bypasses Clerk JWT verification in local dev. Never set in production. */
   DEV_AUTH_BYPASS?: string;
+  /** Deployment environment label from wrangler env blocks. Used for gated test-only routes. */
+  ENV?: string;
   /** User ID to use when DEV_AUTH_BYPASS is enabled. */
   DEV_BYPASS_USER_ID?: string;
   /**
@@ -129,6 +131,10 @@ export interface Env {
    * Defaults to 'https://pipe.build' in production.
    */
   APP_BASE_URL?: string;
+  /** Base URL for the standalone host/guest video room app. */
+  VIDEO_ROOM_APP_URL?: string;
+  /** Shared secret accepted only from the authenticated dev room proxy. */
+  DEV_PROXY_SECRET?: string;
   /** Twilio Account SID for phone screening. */
   TWILIO_ACCOUNT_SID?: string;
   /** Twilio Auth Token for webhook signature validation. */

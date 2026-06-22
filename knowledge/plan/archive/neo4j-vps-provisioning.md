@@ -3,7 +3,7 @@ See: workers/api/src/lib/neo4j/, infra/neo4j/, docs/decisions/current/ADR-043*.m
 
 # Neo4j: VPS Provisioning and Infrastructure Setup
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 309–318)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 309–318)
 **Phase:** 2 (after Phase 0 consumption cutover and Phase 1 candidate decomposition)
 **Status:** PENDING
 **Estimate:** 1 week (one-time setup ~8h, ongoing ~2h/month)

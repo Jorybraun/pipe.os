@@ -1,5 +1,6 @@
 import type {
   AcceptanceThresholds,
+  DeterminismComparison,
   EvaluationCorpus,
   EvaluationMetrics,
   EvaluationResult,
@@ -39,6 +40,8 @@ function dcg(scores: number[]): number {
 }
 
 function sourceRefsComplete(alignment: PersistedMatchAlignment): boolean {
+  const nonEmptyString = (value: string | undefined) =>
+    typeof value === 'string' && value.trim().length > 0;
   const complete = (references: PersistedMatchAlignment['candidateSourceRefs']) =>
     Array.isArray(references)
     && references.length > 0
@@ -46,6 +49,9 @@ function sourceRefsComplete(alignment: PersistedMatchAlignment): boolean {
       Boolean(reference.artifactId)
       && Boolean(reference.artifactVersion)
       && Boolean(reference.contentHash)
+      && nonEmptyString(reference.sourceRefType)
+      && nonEmptyString(reference.sourceRefId)
+      && nonEmptyString(reference.exactText)
       && Number.isInteger(reference.startOffset)
       && Number.isInteger(reference.endOffset)
       && reference.startOffset >= 0
@@ -160,6 +166,7 @@ export function computeMatchRunFingerprint(run: PersistedMatchRun): string {
       contextualSpecificity: result.contextualSpecificity,
       challengeQuality: result.challengeQuality,
       validationDeepeningValue: result.validationDeepeningValue,
+      alignedDemandCount: result.alignedDemandCount,
       stretchCount: result.stretchCount,
       stretchDemandWeightRatio: result.stretchDemandWeightRatio,
       provenanceComplete: result.provenanceComplete,
@@ -171,6 +178,7 @@ export function computeMatchRunFingerprint(run: PersistedMatchRun): string {
         pairScoreBreakdown: alignment.pairScoreBreakdown ?? null,
         weightedScore: alignment.weightedScore ?? null,
         stretch: alignment.stretch ?? null,
+        sharedConcepts: alignment.sharedConcepts,
         candidateSourceRefs: alignment.candidateSourceRefs,
         challengeSourceRefs: alignment.challengeSourceRefs,
       })),
@@ -190,11 +198,13 @@ export function computeMatchRunFingerprint(run: PersistedMatchRun): string {
 export function verifyByteIdenticalRerun(
   firstRun: PersistedMatchRun,
   secondRun: PersistedMatchRun,
-): { identical: boolean; fingerprint: string } {
+): { identical: boolean; fingerprint: string; comparisonFingerprint: string } {
   const firstFingerprint = computeMatchRunFingerprint(firstRun);
+  const comparisonFingerprint = computeMatchRunFingerprint(secondRun);
   return {
-    identical: firstFingerprint === computeMatchRunFingerprint(secondRun),
+    identical: firstFingerprint === comparisonFingerprint,
     fingerprint: firstFingerprint,
+    comparisonFingerprint,
   };
 }
 
@@ -301,15 +311,37 @@ export function evaluateMatchRuns(
   }
 
   const rerunFingerprints: Record<string, string> = {};
+  const determinismComparisons: DeterminismComparison[] = [];
   let byteIdenticalRerun = runs.size > 0 && runs.size === comparisons.size;
   for (const [key, run] of Array.from(runs.entries())) {
+    const pair = JSON.parse(key) as [string, string];
     const comparison = comparisons.get(key);
     if (!comparison) {
       byteIdenticalRerun = false;
+      const fingerprint = computeMatchRunFingerprint(run);
+      rerunFingerprints[key] = fingerprint;
+      determinismComparisons.push({
+        candidateId: pair[0],
+        roleId: pair[1],
+        matchRunId: run.matchRunId,
+        comparisonMatchRunId: null,
+        identical: false,
+        fingerprint,
+        comparisonFingerprint: null,
+      });
       continue;
     }
     const verification = verifyByteIdenticalRerun(run, comparison);
     rerunFingerprints[key] = verification.fingerprint;
+    determinismComparisons.push({
+      candidateId: pair[0],
+      roleId: pair[1],
+      matchRunId: run.matchRunId,
+      comparisonMatchRunId: comparison.matchRunId,
+      identical: verification.identical,
+      fingerprint: verification.fingerprint,
+      comparisonFingerprint: verification.comparisonFingerprint,
+    });
     if (!verification.identical) byteIdenticalRerun = false;
   }
 
@@ -335,6 +367,7 @@ export function evaluateMatchRuns(
     missingMatchRunCount,
     byteIdenticalRerun,
     rerunFingerprints,
+    determinismComparisons,
     totalEvaluations: labelResults.length,
     evaluatedPairCount,
     highlyRelevantInTop3,

@@ -1,9 +1,9 @@
 /**
  * writeRepoGraph.ts — ADR-045 Repo Ingestion Neo4j Write
  *
- * MERGEs a Repo and their RepoNode sub-elements into Neo4j with typed labels.
- * Sub-element types: :RepoNode:Feature, :RepoNode:TechnicalStack,
- * :RepoNode:ArchitecturalPattern, :RepoNode:PRSample
+ * MERGEs a Repo and its RepoNode sub-elements into Neo4j. Semantic node type is
+ * persisted as data on `node_type`; labels stay generic so unseen repo concepts
+ * are not blocked by a fixed taxonomy.
  *
  * Idempotent: running twice with the same data produces no duplicates.
  */
@@ -86,109 +86,7 @@ export async function writeRepoGraph(
 
   let totalResult: WriteRepoGraphResult = { nodesCreated: 0, nodesSet: 0, relationshipsCreated: 0 };
 
-  // Partition by type for typed-label writes
-  const features = nodeParams.filter((n) => n.node_type === 'Feature');
-  const technicalStacks = nodeParams.filter((n) => n.node_type === 'TechnicalStack');
-  const architecturalPatterns = nodeParams.filter((n) => n.node_type === 'ArchitecturalPattern');
-  const prSamples = nodeParams.filter((n) => n.node_type === 'PRSample');
-  const others = nodeParams.filter(
-    (n) =>
-      n.node_type !== 'Feature' &&
-      n.node_type !== 'TechnicalStack' &&
-      n.node_type !== 'ArchitecturalPattern' &&
-      n.node_type !== 'PRSample',
-  );
-
-  // Feature nodes with :RepoNode:Feature
-  if (features.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Repo {repo_id: $repo_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RepoNode:Feature {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.node_type = node.node_type,
-          n.source_reference = node.source_reference,
-          n.created_at = node.created_at
-      MERGE (r)-[:HAS]->(n)
-    `, {
-      repo_id: repoId,
-      nodes: features,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // TechnicalStack nodes with :RepoNode:TechnicalStack
-  if (technicalStacks.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Repo {repo_id: $repo_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RepoNode:TechnicalStack {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.node_type = node.node_type,
-          n.source_reference = node.source_reference,
-          n.created_at = node.created_at
-      MERGE (r)-[:HAS]->(n)
-    `, {
-      repo_id: repoId,
-      nodes: technicalStacks,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // ArchitecturalPattern nodes with :RepoNode:ArchitecturalPattern
-  if (architecturalPatterns.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Repo {repo_id: $repo_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RepoNode:ArchitecturalPattern {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.node_type = node.node_type,
-          n.source_reference = node.source_reference,
-          n.created_at = node.created_at
-      MERGE (r)-[:HAS]->(n)
-    `, {
-      repo_id: repoId,
-      nodes: architecturalPatterns,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // PRSample nodes with :RepoNode:PRSample
-  if (prSamples.length > 0) {
-    const result = await runWriteQuery(driver, `
-      MATCH (r:Repo {repo_id: $repo_id})
-      WITH r
-      UNWIND $nodes AS node
-      MERGE (n:RepoNode:PRSample {id: node.id})
-      SET n.narrative_text = node.narrative_text,
-          n.embedding = node.embedding,
-          n.node_type = node.node_type,
-          n.source_reference = node.source_reference,
-          n.created_at = node.created_at
-      MERGE (r)-[:HAS]->(n)
-    `, {
-      repo_id: repoId,
-      nodes: prSamples,
-    });
-    totalResult.nodesCreated += result.nodesCreated;
-    totalResult.nodesSet += result.nodesSet;
-    totalResult.relationshipsCreated += result.relationshipsCreated;
-  }
-
-  // All other node types with plain :RepoNode
-  if (others.length > 0) {
+  if (nodeParams.length > 0) {
     const result = await runWriteQuery(driver, `
       MATCH (r:Repo {repo_id: $repo_id})
       WITH r
@@ -202,7 +100,7 @@ export async function writeRepoGraph(
       MERGE (r)-[:HAS]->(n)
     `, {
       repo_id: repoId,
-      nodes: others,
+      nodes: nodeParams,
     });
     totalResult.nodesCreated += result.nodesCreated;
     totalResult.nodesSet += result.nodesSet;
@@ -210,15 +108,17 @@ export async function writeRepoGraph(
   }
 
   const writeMs = Date.now() - writeStart;
+  const nodeTypeCounts = nodeParams.reduce<Record<string, number>>((counts, node) => {
+    counts[node.node_type] = (counts[node.node_type] ?? 0) + 1;
+    return counts;
+  }, {});
   console.log(
     JSON.stringify({
       event: 'neo4j.repoWrite',
       repoId,
-      features: features.length,
-      technicalStacks: technicalStacks.length,
-      architecturalPatterns: architecturalPatterns.length,
-      prSamples: prSamples.length,
-      others: others.length,
+      nodeTypes: Object.fromEntries(Object.entries(nodeTypeCounts).sort(([left], [right]) =>
+        left.localeCompare(right)
+      )),
       nodesCreated: totalResult.nodesCreated,
       relationshipsCreated: totalResult.relationshipsCreated,
       durationMs: writeMs,

@@ -1,6 +1,6 @@
 # Screener Mode Generalization — Mode-Aware `cultureAgent.ts`
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 140–198)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 140–198)
 **Phase:** 3
 **Status:** PENDING
 **Estimate:** 3 weeks

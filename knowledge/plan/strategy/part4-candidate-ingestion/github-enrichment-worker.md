@@ -1,6 +1,6 @@
 # GitHub Enrichment Worker — Async Candidate Graph Enrichment
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 208–226)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 208–226)
 **Phase:** 2
 **Status:** DONE (2026-05-01)
 **Estimate:** 4 weeks (actual: ~2 weeks, v2 completed 2026-05-01)

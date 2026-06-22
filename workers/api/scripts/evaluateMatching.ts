@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import Database from 'better-sqlite3';
 
 import {
+  checkLatestProductionEvaluation,
+  generateEvaluationReadinessReport,
   generateHumanReadableReport,
   loadCorpus,
   runEvaluation,
@@ -44,6 +46,7 @@ export interface EvaluationCliOptions {
   reportPath?: string;
   persist: boolean;
   allowSynthetic: boolean;
+  checkLatestProductionPass: boolean;
 }
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -222,6 +225,7 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
     ...(valueFor(argv, '--report') ? { reportPath: valueFor(argv, '--report')! } : {}),
     persist: argv.includes('--persist'),
     allowSynthetic: argv.includes('--allow-synthetic'),
+    checkLatestProductionPass: argv.includes('--check-latest-production-pass'),
   };
 }
 
@@ -238,7 +242,10 @@ Options:
   --json <path>                 Write machine-readable result
   --report <path>               Write human-readable report
   --persist                     Persist the evaluation result in D1
-  --allow-synthetic             Disable the expert-only gate for fixture testing`;
+  --check-latest-production-pass
+                                Read-only rollout gate: require latest persisted
+                                result for --corpus-id to satisfy production gates
+  --allow-synthetic             Fixture testing only; cannot be combined with --persist`;
 }
 
 async function freezeCorpus(
@@ -288,6 +295,17 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
     process.stdout.write(`${evaluationHelp()}\n`);
     return 0;
   }
+  if (options.allowSynthetic && options.persist) {
+    throw new Error(
+      '--allow-synthetic cannot be combined with --persist; fixture evaluations must not be stored as acceptance evidence',
+    );
+  }
+  if (options.checkLatestProductionPass && options.allowSynthetic) {
+    throw new Error('--allow-synthetic cannot be used with --check-latest-production-pass');
+  }
+  if (options.checkLatestProductionPass && options.corpusFile) {
+    throw new Error('--corpus-file cannot be used with --check-latest-production-pass; freeze/evaluate first, then check the persisted result');
+  }
 
   let localDatabase: BetterSqliteDb | undefined;
   let db: D1Like;
@@ -299,6 +317,18 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
   }
 
   try {
+    if (options.checkLatestProductionPass) {
+      const readiness = await checkLatestProductionEvaluation(db as unknown as D1Database, {
+        corpusId: options.corpusId,
+      });
+      const json = `${JSON.stringify(readiness, null, 2)}\n`;
+      const report = `${generateEvaluationReadinessReport(readiness)}\n`;
+      if (options.jsonPath) writeFileSync(resolve(options.jsonPath), json);
+      if (options.reportPath) writeFileSync(resolve(options.reportPath), report);
+      if (!options.jsonPath) process.stdout.write(json);
+      if (!options.reportPath) process.stdout.write(report);
+      return readiness.ready ? 0 : 1;
+    }
     if (options.corpusFile) {
       await freezeCorpus(db, options.corpusId, options.corpusFile);
     }

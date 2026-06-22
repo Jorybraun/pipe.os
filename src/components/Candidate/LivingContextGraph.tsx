@@ -14,12 +14,17 @@ import type {
   LivingContextArtifact,
   LivingContextAssertion,
   LivingContextInteraction,
+  LivingContextReadModel,
   LivingContextSignal,
   LivingContextSourceRef,
+  StandaloneReviewExcludedPacket,
+  StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
+  StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { ContextRecordForest } from './ContextRecordTree';
 import './LivingContextGraph.css';
 
 function titleCase(value: string): string {
@@ -46,6 +51,10 @@ function scoreLabel(value: number | null): string {
   return value === null ? 'No interaction score' : `${Math.round(value * 100)}%`;
 }
 
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 function locatorLabel(source: LivingContextSourceRef): string {
   if (source.lineStart !== null && source.lineEnd !== null) {
     return source.lineStart === source.lineEnd
@@ -66,6 +75,17 @@ function includesQuery(values: Array<string | null | undefined>, query: string):
   return values.some((value) => value?.toLowerCase().includes(query));
 }
 
+function entityValueLabel(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '—';
+  }
+}
+
 function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
 }
@@ -75,14 +95,213 @@ function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
     ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
 }
 
+function reviewSourceStatus(sources: StandaloneReviewSourceRef[]): string {
+  return sources.length > 0
+    ? sources.map(reviewSourceLabel).join(', ')
+    : 'missing source evidence';
+}
+
 function reviewSourceSnippet(sources: StandaloneReviewSourceRef[]): string | null {
   return sources
     .map((source) => source.exactText?.trim())
     .find((text): text is string => Boolean(text)) ?? null;
 }
 
+function roleSourceLabel(source: StandaloneReviewRoleSource): string {
+  return source.locator || source.entityId;
+}
+
+function reviewSourceFileLabel(source: StandaloneReviewSourceRef): string {
+  if (!source.locator) return source.artifactId;
+  const lineLocator = source.locator.match(/^(.+?)(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)$/);
+  return lineLocator?.[1] ?? source.locator;
+}
+
+function reviewAnchorId(value: string, index: number): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `repo-demand-${index}-${slug || 'source'}`;
+}
+
+function uniqueReviewSourceLabels(sources: StandaloneReviewSourceRef[]): string[] {
+  return [...new Set(sources.map(reviewSourceFileLabel))];
+}
+
+function isMeetingEvidenceInteraction(
+  interaction: LivingContextInteraction,
+  artifacts: LivingContextArtifact[],
+): boolean {
+  const interactionType = interaction.interactionType.toLowerCase();
+  return interactionType.includes('meeting')
+    || artifacts.some((artifact) => artifact.artifactType.toLowerCase() === 'meeting_transcript');
+}
+
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
   return status.replace(/_/g, ' ');
+}
+
+function reviewExclusionReasonLabel(reason: StandaloneReviewExcludedPacket['reason']): string {
+  if (reason === 'DEMAND_WITHOUT_SOURCE_SPANS') return 'Demand lacks source spans';
+  if (reason === 'MISSING_DEMAND_SOURCE_SPANS') return 'Missing repo source spans';
+  if (reason === 'PACKET_NOT_PRODUCTION_READY') return 'Packet not production-ready';
+  if (reason === 'PACKET_PROVENANCE_INVALID') return 'Invalid packet provenance';
+  return 'Job-description guardrail';
+}
+
+function reviewExclusionDetail(packet: StandaloneReviewExcludedPacket): string {
+  const details = [
+    packet.repoId ? `repo ${packet.repoId}` : null,
+    packet.prNumber !== null ? `PR #${packet.prNumber}` : null,
+    packet.demandIds.length ? `demands ${packet.demandIds.join(', ')}` : null,
+    packet.missingSourceSpanIds.length ? `missing spans ${packet.missingSourceSpanIds.join(', ')}` : null,
+    packet.gateFailures.length ? `failed gates ${packet.gateFailures.join(', ')}` : null,
+    packet.provenanceFailures.length ? `provenance ${packet.provenanceFailures.slice(0, 2).join(', ')}` : null,
+    packet.qualityScore !== null ? `quality ${packet.qualityScore.toFixed(2)}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return details.join(' · ') || packet.id;
+}
+
+function reviewedChallengeDetail(challenge: StandaloneReviewEvaluatedChallenge): string {
+  const parts = [
+    `PR #${challenge.prNumber}`,
+    `${challenge.alignedDemandCount} aligned demand${challenge.alignedDemandCount === 1 ? '' : 's'}`,
+    `${challenge.stretchCount} stretch area${challenge.stretchCount === 1 ? '' : 's'}`,
+    challenge.provenanceComplete ? 'provenance complete' : 'provenance incomplete',
+  ];
+  if (challenge.rejectionReasons.length > 0) {
+    parts.push(challenge.rejectionReasons.slice(0, 2).join(', '));
+  }
+  return parts.join(' · ');
+}
+
+function ReviewSourceList({
+  label,
+  sources,
+}: {
+  label: string;
+  sources: StandaloneReviewSourceRef[];
+}): JSX.Element {
+  return (
+    <div className="living-context__repo-source-list">
+      <div className="living-context__eyebrow">{label}</div>
+      {sources.length > 0 ? (
+        sources.slice(0, 3).map((source, index) => (
+          <div
+            key={`${label}:${source.artifactId}:${source.startOffset}:${source.endOffset}:${index}`}
+            className="living-context__repo-source"
+            data-testid="review-source-card"
+            data-source-ref-type={source.sourceRefType}
+            data-source-ref-id={source.sourceRefId}
+            data-source-span-id={source.sourceSpanId}
+            data-content-hash={source.contentHash}
+          >
+            <div>
+              <strong>{reviewSourceLabel(source)}</strong>
+              <span>{source.artifactVersion}</span>
+            </div>
+            {source.exactText && <blockquote>{source.exactText}</blockquote>}
+          </div>
+        ))
+      ) : (
+        <div className="living-context__repo-source living-context__repo-source--missing">
+          missing source evidence
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepositoryOverlayPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord;
+}): JSX.Element | null {
+  if (match.evidence.length === 0) return null;
+
+  const repoLabel = match.repoName ?? match.repoUrl ?? 'Selected repository';
+  const prLabel = match.prNumber !== null ? `PR #${match.prNumber}` : 'Selected PR';
+  const demandAnchors = match.evidence.map((entry, index) => ({
+    entry,
+    anchorId: reviewAnchorId(entry.demandId, index),
+    sourceLabels: uniqueReviewSourceLabels(entry.challengeSourceRefs),
+  }));
+
+  return (
+    <section
+      className="living-context__repo-overlay"
+      aria-label="Repository evidence overlay"
+      data-testid="repository-overlay-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Repository evidence overlay</div>
+          <div className="living-context__eyebrow">
+            {repoLabel} · {prLabel}
+          </div>
+        </div>
+        <GitPullRequest size={14} color="var(--lc-source)" />
+      </div>
+
+      <div className="living-context__repo-overlay-layout">
+        <nav className="living-context__repo-nav" aria-label="Repository source spans">
+          {demandAnchors.map(({ entry, anchorId, sourceLabels }) => (
+            <a key={anchorId} href={`#${anchorId}`}>
+              <span>{sourceLabels.join(', ') || 'missing PR source'}</span>
+              <strong>{entry.demandId}</strong>
+            </a>
+          ))}
+        </nav>
+
+        <div className="living-context__repo-demands">
+          {demandAnchors.map(({ entry, anchorId, sourceLabels }) => (
+            <article
+              id={anchorId}
+              key={anchorId}
+              className="living-context__repo-demand"
+              data-testid="repository-overlay-demand"
+            >
+              <div className="living-context__repo-demand-head">
+                <div>
+                  <div className="living-context__repo-demand-title">{entry.demandId}</div>
+                  <div className="living-context__repo-demand-meta">
+                    <span>{Math.round(entry.pairScore * 100)}% alignment</span>
+                    {entry.purpose && <span>{entry.purpose}</span>}
+                    {sourceLabels.map((sourceLabel) => (
+                      <span key={`${anchorId}:${sourceLabel}`}>{sourceLabel}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="living-context__repo-atom">{entry.atomId}</div>
+              </div>
+
+              <div className="living-context__repo-source-grid">
+                <ReviewSourceList
+                  label="Candidate source"
+                  sources={entry.candidateSourceRefs}
+                />
+                <ReviewSourceList
+                  label="PR demand source"
+                  sources={entry.challengeSourceRefs}
+                />
+              </div>
+
+              {entry.sharedConcepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {entry.sharedConcepts.slice(0, 5).map((concept) => (
+                    <span key={`${anchorId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function StandaloneReviewMatchPanel({
@@ -92,8 +311,20 @@ function StandaloneReviewMatchPanel({
 }): JSX.Element | null {
   if (!match) return null;
   const primaryEvidence = match.evidence.slice(0, 3);
+  const excludedPackets = match.diagnostics.excludedPackets.slice(0, 4);
+  const evaluatedChallenges = match.diagnostics.evaluatedChallenges.slice(0, 4);
+  const recalledPacketIds = match.diagnostics.recalledPacketIds.slice(0, 6);
+  const selectedChallenge = evaluatedChallenges.find((challenge) =>
+    challenge.prNumber === match.prNumber
+      && (match.repoId === null || challenge.repoId === String(match.repoId)),
+  ) ?? evaluatedChallenges.find((challenge) => challenge.rank === 1) ?? null;
+  const selectedStretchCount = selectedChallenge?.stretchCount ?? null;
   return (
-    <section className="living-context__review-match" aria-label="Standalone code review match">
+    <section
+      className="living-context__review-match"
+      aria-label="Standalone code review match"
+      data-testid="standalone-review-match-panel"
+    >
       <div className="living-context__review-match-head">
         <div>
           <div className="living-context__section-title">Standalone CODE_REVIEW match</div>
@@ -119,12 +350,31 @@ function StandaloneReviewMatchPanel({
             </a>
           )}
           {match.score !== null && <span>{Math.round(match.score * 100)}% match score</span>}
+          {selectedStretchCount !== null && selectedStretchCount > 0 && (
+            <span>{selectedStretchCount} stretch area{selectedStretchCount === 1 ? '' : 's'}</span>
+          )}
           {match.submitted && <span>Review submitted</span>}
         </div>
       )}
 
+      {match.roleSources.length > 0 && (
+        <div className="living-context__role-sources" data-testid="standalone-review-role-sources">
+          <span>Role sources</span>
+          <div>
+            {match.roleSources.slice(0, 4).map((source) => (
+              <span key={`${source.entityId}:${source.locator}`} className="living-context__role-source">
+                {roleSourceLabel(source)}
+                {source.conceptKeys.length > 0 && (
+                  <small>{source.conceptKeys.slice(0, 3).join(', ')}</small>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {match.submission && (
-        <div className="living-context__review-submission">
+        <div className="living-context__review-submission" data-testid="standalone-review-submission">
           <div className="living-context__eyebrow">Candidate review result</div>
           <div className="living-context__review-submission-meta">
             {match.submission.verdict && <span>{titleCase(match.submission.verdict)}</span>}
@@ -152,7 +402,7 @@ function StandaloneReviewMatchPanel({
       )}
 
       {primaryEvidence.length > 0 && (
-        <div className="living-context__review-evidence">
+        <div className="living-context__review-evidence" data-testid="standalone-review-evidence">
           {primaryEvidence.map((entry) => {
             const candidateSnippet = reviewSourceSnippet(entry.candidateSourceRefs);
             const challengeSnippet = reviewSourceSnippet(entry.challengeSourceRefs);
@@ -166,8 +416,12 @@ function StandaloneReviewMatchPanel({
                     {entry.atomId} → {entry.demandId}
                   </div>
                   <div className="living-context__review-evidence-sources">
-                    <span>candidate: {entry.candidateSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
-                    <span>PR: {entry.challengeSourceRefs.map(reviewSourceLabel).join(', ') || 'source missing'}</span>
+                    <span className={entry.candidateSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                      candidate: {reviewSourceStatus(entry.candidateSourceRefs)}
+                    </span>
+                    <span className={entry.challengeSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                      PR: {reviewSourceStatus(entry.challengeSourceRefs)}
+                    </span>
                   </div>
                   {(candidateSnippet || challengeSnippet) && (
                     <div className="living-context__review-source-snippets">
@@ -201,6 +455,8 @@ function StandaloneReviewMatchPanel({
         </div>
       )}
 
+      <RepositoryOverlayPanel match={match} />
+
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
           <div className="living-context__eyebrow">Evidence gaps / guardrails</div>
@@ -209,6 +465,51 @@ function StandaloneReviewMatchPanel({
               <li key={gap}>{gap}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {(recalledPacketIds.length > 0 || excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
+        <div className="living-context__review-diagnostics" data-testid="standalone-review-diagnostics">
+          {recalledPacketIds.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Recalled packets</div>
+              <div className="living-context__packet-strip">
+                {recalledPacketIds.map((packetId) => (
+                  <span key={packetId}>{packetId}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {excludedPackets.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Excluded challenge packets</div>
+              <div className="living-context__diagnostic-list">
+                {excludedPackets.map((packet) => (
+                  <div key={`${packet.id}:${packet.reason}`} className="living-context__diagnostic-row">
+                    <span>{reviewExclusionReasonLabel(packet.reason)}</span>
+                    <strong>{packet.id}</strong>
+                    <p>{reviewExclusionDetail(packet)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {evaluatedChallenges.length > 0 && (
+            <div>
+              <div className="living-context__eyebrow">Evaluated challenge evidence</div>
+              <div className="living-context__diagnostic-list">
+                {evaluatedChallenges.map((challenge) => (
+                  <div key={challenge.challengeId} className="living-context__diagnostic-row">
+                    <span>{challenge.eligible ? 'Eligible' : 'Blocked'}</span>
+                    <strong>{challenge.challengeId}</strong>
+                    <p>{reviewedChallengeDetail(challenge)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -370,14 +671,163 @@ function ArtifactNode({
   );
 }
 
+function MeetingEvidencePanel({
+  livingContext,
+  onSelectSource,
+}: {
+  livingContext: LivingContextReadModel;
+  onSelectSource: (source: LivingContextSourceRef) => void;
+}): JSX.Element | null {
+  const branches = livingContext.interactions
+    .map((interaction) => {
+      const artifacts = livingContext.artifacts.filter(
+        (artifact) => artifact.interactionId === interaction.id,
+      );
+      const assertions = livingContext.assertions.filter(
+        (assertion) => assertion.interactionId === interaction.id,
+      );
+      const sourceSpanIds = new Set(
+        artifacts
+          .flatMap((artifact) => artifact.sourceSpans)
+          .map((source) => source.sourceSpanId),
+      );
+      const contextRecords = livingContext.contextRecords.filter(
+        (record) => record.interactionId === interaction.id
+          || record.sources.some((source) => (
+            typeof source.sourceSpanId === 'string'
+            && sourceSpanIds.has(source.sourceSpanId)
+          )),
+      );
+      const sourceSpans = artifacts.flatMap((artifact) => artifact.sourceSpans);
+      const signalLabels = livingContext.signals
+        .filter((signal) => signal.evidence.some((evidence) => evidence.interactionId === interaction.id))
+        .map((signal) => signal.label);
+
+      return {
+        interaction,
+        artifacts,
+        assertions,
+        contextRecords,
+        sourceSpans,
+        signalLabels,
+      };
+    })
+    .filter((branch) => isMeetingEvidenceInteraction(branch.interaction, branch.artifacts));
+
+  if (branches.length === 0) return null;
+
+  return (
+    <section
+      className="living-context__meeting-evidence"
+      aria-label="Meeting evidence"
+      data-testid="meeting-evidence-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Meeting evidence</div>
+          <div className="living-context__eyebrow">
+            Transcript-backed interaction branches
+          </div>
+        </div>
+        <div className="living-context__count">{branches.length}</div>
+      </div>
+
+      <div className="living-context__meeting-grid">
+        {branches.map((branch) => (
+          <article
+            key={branch.interaction.id}
+            className="living-context__meeting-card"
+            data-testid="meeting-evidence-card"
+          >
+            <div className="living-context__meeting-head">
+              <div>
+                <div className="living-context__meeting-title">
+                  {titleCase(branch.interaction.interactionType)}
+                </div>
+                <div className="living-context__meeting-meta">
+                  <span>{interactionDate(branch.interaction)}</span>
+                  {branch.interaction.externalReference && (
+                    <span>{branch.interaction.externalReference}</span>
+                  )}
+                </div>
+              </div>
+              <div className="living-context__meeting-counts">
+                <span>{countLabel(branch.artifacts.length, 'artifact')}</span>
+                <span>{countLabel(branch.sourceSpans.length, 'span')}</span>
+                <span>{countLabel(branch.assertions.length, 'assertion')}</span>
+              </div>
+            </div>
+
+            {branch.sourceSpans.length > 0 && (
+              <div className="living-context__meeting-sources">
+                {branch.sourceSpans.slice(0, 2).map((source) => (
+                  <div
+                    key={`${branch.interaction.id}:${source.sourceSpanId}`}
+                    className="living-context__meeting-source"
+                    data-testid="meeting-evidence-source"
+                  >
+                    <SourceButton source={source} onSelect={onSelectSource} />
+                    <blockquote>{source.exactText}</blockquote>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.contextRecords.length > 0 && (
+              <div className="living-context__meeting-records">
+                {branch.contextRecords.slice(0, 2).map((record) => (
+                  <div key={record.id} className="living-context__meeting-record">
+                    <span>{titleCase(record.recordType)}</span>
+                    <p>{record.narrative}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.assertions.length > 0 && (
+              <div className="living-context__meeting-assertions">
+                {branch.assertions.slice(0, 2).map((assertion) => (
+                  <div key={assertion.id}>
+                    <span>{assertion.predicate}</span>
+                    <p>{assertion.narrative}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {branch.signalLabels.length > 0 && (
+              <div className="living-context__concepts">
+                {branch.signalLabels.slice(0, 4).map((label) => (
+                  <span key={`${branch.interaction.id}:${label}`} className="living-context__concept">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function LivingContextGraph({
   candidateId,
+  livingContextEndpoint,
+  initialLivingContext,
   standaloneReviewMatch,
 }: {
   candidateId: string;
+  livingContextEndpoint?: string;
+  initialLivingContext?: LivingContextReadModel | null;
   standaloneReviewMatch?: StandaloneReviewMatchRecord | null;
 }): JSX.Element {
-  const { livingContext, isLoading, error, refetch } = useLivingContext(candidateId);
+  const livingContextSource = livingContextEndpoint
+    ? initialLivingContext === undefined
+      ? { endpoint: livingContextEndpoint }
+      : { endpoint: livingContextEndpoint, initialLivingContext }
+    : candidateId;
+  const { livingContext, isLoading, error, refetch } = useLivingContext(livingContextSource);
   const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<LivingContextSourceRef | null>(null);
   const [search, setSearch] = useState('');
@@ -457,6 +907,36 @@ export function LivingContextGraph({
     });
   }, [livingContext, normalizedSearch, selectedInteractionId]);
 
+  const visibleContextRecords = useMemo(() => {
+    if (!livingContext) return [];
+    return livingContext.contextRecords.filter((record) => {
+      if (selectedInteractionId !== 'all' && record.interactionId !== selectedInteractionId) {
+        return false;
+      }
+      return includesQuery([
+        record.predicate,
+        record.narrative,
+        record.recordType,
+        ...record.entities.flatMap((entity) => [
+          entity.entityType,
+          entity.relationship,
+          entityValueLabel(entity.value),
+        ]),
+        ...record.concepts.flatMap((concept) => [
+          concept.label,
+          concept.canonicalKey,
+          concept.namespace,
+          concept.relationship,
+        ]),
+        ...record.sources.flatMap((source) => [
+          source.exactText ?? null,
+          source.sourceRefType,
+          source.sourceRefId,
+        ]),
+      ], normalizedSearch);
+    });
+  }, [livingContext, normalizedSearch, selectedInteractionId]);
+
   const relationshipsByAssertion = useMemo(() => {
     const index = new Map<string, string[]>();
     for (const relationship of livingContext?.relationships ?? []) {
@@ -487,6 +967,7 @@ export function LivingContextGraph({
 
   const summaryMetrics = [
     ['Interactions', livingContext.summary.interactionCount],
+    ['Context records', livingContext.summary.contextRecordCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
     ['Assertions', livingContext.summary.assertionCount],
@@ -494,7 +975,7 @@ export function LivingContextGraph({
   ] as const;
 
   return (
-    <div className="living-context">
+    <div className="living-context" data-testid="living-context-graph">
       <div className="living-context__toolbar">
         <div className="living-context__search">
           <Search size={13} />
@@ -527,6 +1008,11 @@ export function LivingContextGraph({
           </div>
         ))}
       </div>
+
+      <MeetingEvidencePanel
+        livingContext={livingContext}
+        onSelectSource={setSelectedSource}
+      />
 
       <div className="living-context__workspace">
         <aside className="living-context__rail">
@@ -594,6 +1080,15 @@ export function LivingContextGraph({
           </div>
 
           <div className="living-context__section-head" style={{ marginTop: 20 }}>
+            <div className="living-context__section-title">Context records</div>
+            <div className="living-context__count">{visibleContextRecords.length}</div>
+          </div>
+          <ContextRecordForest
+            records={visibleContextRecords}
+            onSelectSource={setSelectedSource}
+          />
+
+          <div className="living-context__section-head" style={{ marginTop: 22 }}>
             <div className="living-context__section-title">Signals</div>
             <div className="living-context__count">{visibleSignals.length}</div>
           </div>

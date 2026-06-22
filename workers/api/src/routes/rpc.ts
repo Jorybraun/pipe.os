@@ -29,7 +29,10 @@ import { matchRepos } from '../lib/repoDiscovery/matchRepos';
 import {
   pickImplementationIssue,
   buildMatchRequest,
+  matchImplementationReposByRoleConcepts,
 } from '../lib/match/autoStageBuilder';
+import { upsertCandidateChallengeAssignment } from '../lib/candidateDiscovery/persist';
+import { hasSourceBackedReviewPacket, loadSourceBackedReviewDiff } from '../lib/review/sourceBackedReviewDiff';
 import { createNeo4jDriver, buildNeo4jConfig } from '../lib/neo4j/driver';
 import {
   loadRoleChallengeSemantics,
@@ -99,16 +102,38 @@ async function checkMatchingGate(
 
   // 1. Check if assignment already exists for this candidate + stage
   const existingAssignment = await db.prepare(
-    `SELECT id FROM candidate_challenge_assignment WHERE candidate_id = ?1 AND stage_id = ?2`
-  ).bind(candidateId, stageId).first<{ id: string }>();
+    `SELECT id, github_repo_url, github_pr_number
+       FROM candidate_challenge_assignment
+      WHERE candidate_id = ?1 AND stage_id = ?2`,
+  ).bind(candidateId, stageId).first<{
+    id: string;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  }>();
 
   if (existingAssignment) {
-    return { blocked: false };
+    if (nextChallengeType !== 'CODE_REVIEW') {
+      return { blocked: false };
+    }
+    if (
+      existingAssignment.github_repo_url
+      && existingAssignment.github_pr_number
+      && await hasSourceBackedReviewPacket(
+        db,
+        existingAssignment.github_repo_url,
+        existingAssignment.github_pr_number,
+      )
+    ) {
+      return { blocked: false };
+    }
+    console.warn(
+      `[checkMatchingGate] refreshing stale CODE_REVIEW assignment without source-backed graph context for candidate ${candidateId}`,
+    );
   }
 
   if (nextChallengeType === 'CODE_REVIEW') {
     const roleContext = await db.prepare(
-      `SELECT id, persona_json, rcd_json, non_negotiable_skills_json
+      `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
         WHERE pipeline_id = ?1
         ORDER BY updated_at DESC
@@ -117,6 +142,7 @@ async function checkMatchingGate(
       id: string;
       persona_json: string | null;
       rcd_json: string | null;
+      job_description_md: string | null;
       non_negotiable_skills_json: string | null;
     }>();
     if (!roleContext) {
@@ -145,6 +171,11 @@ async function checkMatchingGate(
         entityId: source.roleNodeId,
         locator: source.sourceSection ?? 'role_context',
         conceptKeys: source.conceptKeys,
+        sourceRefType: source.sourceRefType,
+        sourceRefId: source.sourceRefId,
+        sourceSpanId: source.sourceSpanId,
+        exactText: source.exactText,
+        contentHash: source.contentHash,
       })),
     });
     if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
@@ -158,86 +189,136 @@ async function checkMatchingGate(
       return waitingForMatch('Matched challenge repository is unavailable');
     }
 
-    await db.prepare(
-      `INSERT INTO candidate_challenge_assignment
-         (id, candidate_id, stage_id, challenge_id, repo_id, github_repo_url, github_pr_number, issue_number)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)`,
-    ).bind(
-      crypto.randomUUID(),
+    await upsertCandidateChallengeAssignment(db, {
+      id: crypto.randomUUID(),
       candidateId,
       stageId,
       challengeId,
-      match.repoId,
-      repo.github_url,
-      match.prNumber,
-    ).run();
+      repoId: match.repoId,
+      githubRepoUrl: repo.github_url,
+      githubPrNumber: match.prNumber,
+      issueNumber: null,
+    });
     return { blocked: false };
   }
 
-  // 2. No assignment — run on-demand matching
+  // CODE_REVIEW returns above through matchCandidateToReviewChallenge. From
+  // here down, repo recall is only for CODE_IMPLEMENTATION issue selection;
+  // Neo4j projections must not become candidate-to-PR authority.
+  if (nextChallengeType !== 'CODE_IMPLEMENTATION') {
+    return waitingForMatch(`Unsupported code challenge type ${nextChallengeType}`);
+  }
+
+  const roleContext = await db.prepare(
+    `SELECT id, persona_json, rcd_json, job_description_md, non_negotiable_skills_json
+       FROM role_contexts
+      WHERE pipeline_id = ?1
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(pipelineId).first<{
+    id: string;
+    persona_json: string | null;
+    rcd_json: string | null;
+    job_description_md: string | null;
+    non_negotiable_skills_json: string | null;
+  }>();
+  const roleSemantics = roleContext
+    ? await loadRoleChallengeSemantics(db, {
+      ...roleContext,
+      rcd_version: (() => {
+        if (!roleContext.rcd_json) return null;
+        try {
+          const parsed = JSON.parse(roleContext.rcd_json) as { rcd_version?: unknown };
+          return typeof parsed.rcd_version === 'string' ? parsed.rcd_version : null;
+        } catch {
+          return null;
+        }
+      })(),
+    })
+    : null;
+  const roleConcepts = roleSemantics?.relevantConcepts ?? [];
+  const requiredConcepts = roleSemantics?.requiredConcepts ?? [];
+
+  // 2. No assignment — use source-backed implementation issue context first.
   let repoId: number | null = null;
   let githubRepoUrl: string | null = null;
 
-  // Try Neo4j first if PRIMARY_MATCH_STORE is neo4j
-  const primaryStore = env.PRIMARY_MATCH_STORE ?? 'neo4j';
-  if (primaryStore === 'neo4j') {
-    let neo4jConfig = buildNeo4jConfig(env);
-    if (!neo4jConfig) {
-      neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
-    }
-
-    let driver;
+  if (roleConcepts.length > 0) {
     try {
-      driver = createNeo4jDriver(neo4jConfig);
-      // ADR-050: prefer grounded SIMILAR_TO edge traversal (multi-region
-      // structural overlap); fall back to cosine ranking when the candidate
-      // has no grounded edges yet.
-      const groundedResults = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
-      if (groundedResults.length > 0) {
-        const top = groundedResults[0]!;
-        repoId = top.repoId;
-        githubRepoUrl = `https://github.com/${top.fullName}`;
-      } else {
-        const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
-        if (neo4jResults.length > 0) {
-          const top = neo4jResults[0]!;
-          repoId = top.repo_id;
-          githubRepoUrl = `https://github.com/${top.full_name}`;
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[checkMatchingGate] Neo4j matching failed for candidate ${candidateId}:`, msg);
-    } finally {
-      if (driver) {
-        try {
-          await driver.close();
-        } catch {
-          // ignore close errors
-        }
-      }
-    }
-  }
-
-  // Fallback to D1 SQL matcher if Neo4j returned nothing or failed
-  if (!repoId) {
-    try {
-      const roleContext = await db.prepare(
-        `SELECT id, persona_json, rcd_json, non_negotiable_skills_json FROM role_contexts WHERE pipeline_id = ?1 LIMIT 1`
-      ).bind(pipelineId).first<{ id: string; persona_json: string | null; rcd_json: string | null; non_negotiable_skills_json: string | null }>();
-
-      if (roleContext) {
-        const matchRequest = buildMatchRequest(roleContext as any);
-        const d1Results = await matchRepos(db, matchRequest);
-      if (d1Results.length > 0) {
-        const top = d1Results[0]!;
+      const contextMatches = await matchImplementationReposByRoleConcepts(
+        db,
+        roleConcepts,
+        requiredConcepts,
+        5,
+      );
+      const top = contextMatches[0];
+      if (top) {
         repoId = top.id;
         githubRepoUrl = top.githubUrl;
       }
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[checkMatchingGate] D1 fallback matching failed for candidate ${candidateId}:`, msg);
+      console.error(`[checkMatchingGate] source-backed implementation matching failed for candidate ${candidateId}:`, msg);
+    }
+    if (!repoId) {
+      return waitingForMatch('No source-backed implementation repo matched role evidence');
+    }
+  } else {
+    // Compatibility path for legacy pipelines with no source-backed role context.
+    const primaryStore = env.PRIMARY_MATCH_STORE ?? 'neo4j';
+    if (primaryStore === 'neo4j') {
+      let neo4jConfig = buildNeo4jConfig(env);
+      if (!neo4jConfig) {
+        neo4jConfig = { uri: 'bolt://localhost:7687', user: 'neo4j', password: 'pipe-local-dev' };
+      }
+
+      let driver;
+      try {
+        driver = createNeo4jDriver(neo4jConfig);
+        // ADR-050: prefer grounded SIMILAR_TO edge traversal (multi-region
+        // structural overlap); fall back to cosine ranking when the candidate
+        // has no grounded edges yet.
+        const groundedResults = await matchReposByGroundedEdges(driver, candidateId, { topK: 5 });
+        if (groundedResults.length > 0) {
+          const top = groundedResults[0]!;
+          repoId = top.repoId;
+          githubRepoUrl = `https://github.com/${top.fullName}`;
+        } else {
+          const neo4jResults = await matchReposForCandidateNeo4j(driver, candidateId, { topK: 5 });
+          if (neo4jResults.length > 0) {
+            const top = neo4jResults[0]!;
+            repoId = top.repo_id;
+            githubRepoUrl = `https://github.com/${top.full_name}`;
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[checkMatchingGate] Neo4j matching failed for candidate ${candidateId}:`, msg);
+      } finally {
+        if (driver) {
+          try {
+            await driver.close();
+          } catch {
+            // ignore close errors
+          }
+        }
+      }
+    }
+
+    // Fallback to D1 SQL matcher if Neo4j returned nothing or failed.
+    if (!repoId && roleContext) {
+      try {
+        const matchRequest = buildMatchRequest(roleContext as any);
+        const d1Results = await matchRepos(db, matchRequest);
+        if (d1Results.length > 0) {
+          const top = d1Results[0]!;
+          repoId = top.id;
+          githubRepoUrl = top.githubUrl;
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[checkMatchingGate] D1 fallback matching failed for candidate ${candidateId}:`, msg);
+      }
     }
   }
 
@@ -249,13 +330,16 @@ async function checkMatchingGate(
   let prNumber: number | null = null;
   let issueNumber: number | null = null;
 
-  if (nextChallengeType === 'CODE_IMPLEMENTATION') {
-    const issueResult = await pickImplementationIssue(db, repoId);
-    if (!issueResult) {
-      return waitingForMatch('No eligible implementation issue found for matched repo');
-    }
-    issueNumber = issueResult.issueNumber;
+  const issueResult = await pickImplementationIssue(
+    db,
+    repoId,
+    undefined,
+    roleConcepts,
+  );
+  if (!issueResult) {
+    return waitingForMatch('No eligible implementation issue found for matched repo');
   }
+  issueNumber = issueResult.issueNumber;
 
   // 4. Write assignment
   const assignmentId = crypto.randomUUID();
@@ -349,7 +433,17 @@ async function matchStandaloneReview(
   interview: StandaloneReviewRow,
 ): Promise<{ repoUrl: string; prNumber: number } | null> {
   if (interview.github_repo_url && interview.github_pr_number) {
-    return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+    const isSourceBacked = await hasSourceBackedReviewPacket(
+      db,
+      interview.github_repo_url,
+      interview.github_pr_number,
+    );
+    if (isSourceBacked) {
+      return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+    }
+    console.warn(
+      `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+    );
   }
 
   const match = await matchCandidateToReviewChallenge(db, candidateId);
@@ -1005,17 +1099,15 @@ rpcAuth.post('/get-challenge', async (c) => {
 
     let cachedDiffJson: unknown = null;
     let githubPrTitle: string | null = null;
-    try {
-      const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
-      const result = await fetchGitHubDiff(match.repoUrl, match.prNumber, token);
-      if (result) {
-        cachedDiffJson = result.diff;
-        const meta = result.metadata as { title?: string } | undefined;
-        githubPrTitle = meta?.title ?? null;
-      }
-    } catch (err) {
-      console.error('[standaloneReview] diff fetch failed:', err instanceof Error ? err.message : String(err));
+    let githubPrDescription: string | null = null;
+    const sourceBackedDiff = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
+    if (sourceBackedDiff) {
+      cachedDiffJson = sourceBackedDiff.diff;
+      githubPrTitle = sourceBackedDiff.metadata.title;
+      githubPrDescription = sourceBackedDiff.metadata.description ?? null;
     }
+
+    if (!cachedDiffJson) return c.json(STANDALONE_WAITING_CHALLENGE);
 
     return c.json({
       id: `standalone-review-${standaloneReview.id}`,
@@ -1027,7 +1119,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       githubPrTitle,
       githubPrNumber: match.prNumber,
       githubRepoUrl: match.repoUrl,
-      githubPrDescription: null,
+      githubPrDescription,
       devContainerRepoUrl: null,
     });
   }
@@ -1081,6 +1173,9 @@ rpcAuth.post('/get-challenge', async (c) => {
       ch.cached_diff_json, ch.github_pr_title, ch.github_pr_number,
       ch.github_repo_url, ch.github_pr_description,
       ch.dev_container_repo_url,
+      cca.id as assignment_id,
+      cca.github_repo_url as assignment_repo_url,
+      cca.github_pr_number as assignment_pr_number,
       COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
       COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number,
       COALESCE(cca.issue_number, NULL) as effective_issue_number
@@ -1102,11 +1197,70 @@ rpcAuth.post('/get-challenge', async (c) => {
   const ch = rows[dbOrder] as Record<string, unknown>;
 
   // Use the LEFT JOIN result to skip matching when an assignment already exists
-  const hasAssignment = !!(ch.effective_repo_url as string | null);
+  let hasAssignment = !!(ch.assignment_id as string | null);
   if (!hasAssignment) {
     const gateResult = await checkMatchingGate(c.env.DB, candidateId, pipelineId as string, candidate.current_stage_id, ch.id as string, ch.type as string, c.env);
     if (gateResult.blocked && gateResult.syntheticChallenge) {
       return c.json(gateResult.syntheticChallenge);
+    }
+  } else if (
+    ch.type === 'CODE_REVIEW'
+    && typeof ch.assignment_repo_url === 'string'
+    && typeof ch.assignment_pr_number === 'number'
+    && !(await hasSourceBackedReviewPacket(
+      c.env.DB,
+      ch.assignment_repo_url,
+      ch.assignment_pr_number,
+    ))
+  ) {
+    const gateResult = await checkMatchingGate(
+      c.env.DB,
+      candidateId,
+      pipelineId as string,
+      candidate.current_stage_id,
+      ch.id as string,
+      ch.type as string,
+      c.env,
+    );
+    if (gateResult.blocked && gateResult.syntheticChallenge) {
+      return c.json(gateResult.syntheticChallenge);
+    }
+    const refreshed = await c.env.DB.prepare(
+      `SELECT github_repo_url, github_pr_number, issue_number
+         FROM candidate_challenge_assignment
+        WHERE candidate_id = ?1 AND stage_id = ?2`,
+    ).bind(candidateId, candidate.current_stage_id).first<{
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      issue_number: number | null;
+    }>();
+    if (!refreshed?.github_repo_url || typeof refreshed.github_pr_number !== 'number') {
+      return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
+    }
+    ch.effective_repo_url = refreshed.github_repo_url;
+    ch.effective_pr_number = refreshed.github_pr_number;
+    ch.effective_issue_number = refreshed.issue_number;
+  }
+
+  if ((ch.type as string) === 'CODE_REVIEW') {
+    const currentAssignment = await c.env.DB.prepare(
+      `SELECT id, github_repo_url, github_pr_number, issue_number
+         FROM candidate_challenge_assignment
+        WHERE candidate_id = ?1 AND stage_id = ?2`,
+    ).bind(candidateId, candidate.current_stage_id).first<{
+      id: string;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      issue_number: number | null;
+    }>();
+    if (currentAssignment) {
+      hasAssignment = true;
+      ch.assignment_id = currentAssignment.id;
+      ch.assignment_repo_url = currentAssignment.github_repo_url;
+      ch.assignment_pr_number = currentAssignment.github_pr_number;
+      ch.effective_repo_url = currentAssignment.github_repo_url;
+      ch.effective_pr_number = currentAssignment.github_pr_number;
+      ch.effective_issue_number = currentAssignment.issue_number;
     }
   }
 
@@ -1143,7 +1297,8 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Parse cached diff JSON if stored as string
   let cachedDiffJson: unknown = null;
-  if (ch.cached_diff_json) {
+  const assignmentBackedReview = (ch.type as string) === 'CODE_REVIEW' && hasAssignment;
+  if (!assignmentBackedReview && ch.cached_diff_json) {
     try {
       cachedDiffJson =
         typeof ch.cached_diff_json === 'string'
@@ -1158,7 +1313,18 @@ rpcAuth.post('/get-challenge', async (c) => {
   // Use the potentially overridden values from candidate_challenge_assignment
   const effectiveRepoUrl = ch.github_repo_url as string | null;
   const effectivePrNumber = ch.github_pr_number as number | null;
-  if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
+  if (assignmentBackedReview) {
+    const sourceBackedDiff = effectiveRepoUrl && effectivePrNumber
+      ? await loadSourceBackedReviewDiff(c.env.DB, effectiveRepoUrl, effectivePrNumber)
+      : null;
+    if (sourceBackedDiff) {
+      cachedDiffJson = sourceBackedDiff.diff;
+      ch.github_pr_title = sourceBackedDiff.metadata.title;
+      ch.github_pr_description = sourceBackedDiff.metadata.description ?? null;
+    } else {
+      return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
+    }
+  } else if (!cachedDiffJson && effectiveRepoUrl && effectivePrNumber) {
     try {
       const token = (c.env as Env & { GITHUB_TOKEN?: string }).GITHUB_TOKEN;
       const result = await fetchGitHubDiff(
@@ -1215,7 +1381,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     }
   }
 
-  // Fetch cached issue body for CODE_IMPLEMENTATION challenges
+  // Fetch source issue text for CODE_IMPLEMENTATION challenges.
   const effectiveIssueNumber = ch.effective_issue_number as number | null;
   if (
     (ch.type as string) === 'CODE_IMPLEMENTATION' &&
@@ -1225,13 +1391,18 @@ rpcAuth.post('/get-challenge', async (c) => {
     try {
       const issueRow = await c.env.DB
         .prepare(
-          `SELECT ri.body_cache_json
+          `SELECT ri.title, ri.body, ri.labels_json, ri.body_cache_json
            FROM repo_issues ri
            JOIN qualified_repos qr ON ri.repo_id = qr.id
            WHERE qr.github_url = ?1 AND ri.issue_number = ?2`,
         )
         .bind(effectiveRepoUrl, effectiveIssueNumber)
-        .first<{ body_cache_json: string | null }>();
+        .first<{
+          title: string;
+          body: string | null;
+          labels_json: string | null;
+          body_cache_json: string | null;
+        }>();
 
       if (issueRow?.body_cache_json) {
         try {
@@ -1248,6 +1419,22 @@ rpcAuth.post('/get-challenge', async (c) => {
         } catch {
           // malformed cache JSON — ignore
         }
+      }
+      if (issueRow && !response.issueBody) {
+        let labels: string[] = [];
+        try {
+          const parsed = issueRow.labels_json ? JSON.parse(issueRow.labels_json) : [];
+          labels = Array.isArray(parsed)
+            ? parsed.filter((label): label is string => typeof label === 'string')
+            : [];
+        } catch {
+          labels = [];
+        }
+        response.issueBody = {
+          title: issueRow.title,
+          body: issueRow.body,
+          labels,
+        };
       }
     } catch (err) {
       console.error('[rpc/get-challenge] Failed to load issue body cache:', err);
@@ -1296,6 +1483,16 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
     if (standaloneReview) {
+      const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
+      if (!match) {
+        return c.json({
+          error: {
+            code: 'WAITING_FOR_MATCH',
+            message: 'A source-backed review challenge has not been selected yet.',
+          },
+          challenge: STANDALONE_WAITING_CHALLENGE,
+        }, 409);
+      }
       const now = new Date().toISOString();
       const responseJson = typeof submission === 'string' ? submission : JSON.stringify(submission);
       await c.env.DB.prepare(

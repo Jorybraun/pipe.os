@@ -1,21 +1,33 @@
 # Strategy v2 — Master Plan Index
 
-Single entry point for every work item extracted from `knowledge/plan/pipe-strategy-v2-part{1..6}-*.md`. Plans are organized **by strategic phase** (0 → 6), not by source part. Each row links to a delegable plan file scoped to ≤3 files / ~1 week / a single concern.
+Single entry point for every work item extracted from `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part{1..6}-*.md`. Plans are organized **by strategic phase** (0 → 6), not by source part. Each row links to a delegable plan file scoped to ≤3 files / ~1 week / a single concern.
 
 **Generated:** 2026-04-25
-**Source strategy:** `knowledge/plan/pipe-strategy-v2-part1..6-*.md`
+**Source strategy:** `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part1..6-*.md`
 **Live Phase 0 execution:** [`docs/plans/phase0-subagent-execution-plan.md`](../phase0-subagent-execution-plan.md) — Subagents A–J. Treat that file as authoritative for in-flight Phase 0 work; this index covers the rest of the backlog.
+
+> 2026-06-19 semantic-taxonomy correction: pending work that proposed static
+> skill adjacency tables or ESCO-as-preferred vocabulary has been archived under
+> `../archive/superseded-semantic-taxonomy-2026-06-19/`. Current matching work
+> must follow ADR-043 and `../living-context-repo-matching-plan.md`: semantics
+> are persisted source-backed data, not code-owned skill maps or taxonomies.
+>
+> 2026-06-19 product correction: current roles are simple job-description
+> artifacts plus optional explicit notes (ADR-051), and talent-pool intake is
+> roleless by default (ADR-052). Do not require role-discovery orchestration,
+> synthesized RCDs, fixed semantic node types, fabricated defaults, or generic
+> fallback matches in current implementation.
 
 ---
 
 ## ⚠️ Read-before-execution warnings
 
-1. **Migration numbers are not pre-allocated.** Multiple plan files propose `0045_*`, `0046_*`, etc. The actual next number must be resolved at PR time by listing `workers/api/migrations/` (highest staged today is `0044_situation_fit_cache.sql`). Do not commit a migration without confirming the number is unused on `main` and not racing another open PR. **Known races (same-number collisions across plans):** `0045` (role-nodes / candidate-nodes / match-reports), `0046` (candidate-coverage / match-feedback-dimensions), `0047` (candidate-profile-state / skill-adjacency), and 0048–0052 across reliability + ingestion plans. See Open Question #11.
+1. **Migration numbers are not pre-allocated.** Multiple historical plan files propose `0045_*`, `0046_*`, etc. The actual next number must be resolved at PR time by listing `workers/api/migrations/`. Do not commit a migration without confirming the number is unused on `main` and not racing another open PR. Archived role-node, candidate-node, repo-node, and skill-adjacency migrations must not be implemented as current semantic truth.
 
 2. **Cross-part duplicates were reconciled to canonical homes.** When a topic appears in multiple parts the canonical plan lives in one part and the others are redirect stubs. Canonical assignments:
    - **Dealbreaker gate enforcement** → `part5-matching-migration/dealbreaker-gate-enforcement.md`
-   - **Skill adjacency table** → `part5-matching-migration/skill-adjacency-table.md`
-   - **CODE_IMPLEMENTATION scorer (Sherlock)** → `part4-candidate-ingestion/implementation-scorer.md`
+   - **Skill adjacency table** → archived by ADR-043/living-context alignment; do not implement as static semantic adjacency
+   - **CODE_IMPLEMENTATION scorer (Sherlock)** → archived until rewritten as source-backed assessment hyperedge/context records
    - **Issue body pre-fetch** → `part3-repo-ingestion/issue-body-prefetch.md`
 
 3. **Unresolved product/legal decisions block specific plans.** Listed in the Open Questions section below — do not start a `NEEDS-REFINEMENT` plan without resolving the named blocker.
@@ -27,12 +39,11 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 | Part | INDEX | Scope |
 |---|---|---|
 | 1 | [`part1-north-star/INDEX.md`](part1-north-star/INDEX.md) | Phase 0 hygiene + redirect stubs into Phase 1–6 canonical homes |
-| 2 | [`part2-role-discovery/INDEX.md`](part2-role-discovery/INDEX.md) | RCD cutover, role decomposition, UAR migration |
-| 3 | [`part3-repo-ingestion/INDEX.md`](part3-repo-ingestion/INDEX.md) | Repo crawl, confidence scoring, repo decomposition, PR narratives |
-| 4 | [`part4-candidate-ingestion/INDEX.md`](part4-candidate-ingestion/INDEX.md) | Candidate decomposition, GitHub enrichment, screener, assessment scoring |
-| 5 | [`part5-matching-migration/INDEX.md`](part5-matching-migration/INDEX.md) | Per-element matching, reliability/observability, Neo4j migration |
-| 5+ | [`part5-matching-migration/UNIFIED-NEO4J-MIGRATION.md`](part5-matching-migration/UNIFIED-NEO4J-MIGRATION.md) | **Neo4j-first ecosystem vision** — living graph, multi-dimensional matching, UX overhaul |
-| 6 | [`part6-market-research/INDEX.md`](part6-market-research/INDEX.md) | Calibration, ESCO, fairness/legal, learning-to-rank infra |
+| 2 | [`part2-role-discovery/INDEX.md`](part2-role-discovery/INDEX.md) | Historical role-discovery backlog; current roles are JD artifacts per ADR-051 |
+| 3 | [`part3-repo-ingestion/INDEX.md`](part3-repo-ingestion/INDEX.md) | Repo evidence capture that must be rewritten around source artifacts, hyperedge/context records, and challenge packets |
+| 4 | [`part4-candidate-ingestion/INDEX.md`](part4-candidate-ingestion/INDEX.md) | Historical candidate-node backlog; current intake is roleless person graph evidence per ADR-052 |
+| 5 | [`part5-matching-migration/INDEX.md`](part5-matching-migration/INDEX.md) | Reliability/observability plus archived matching-migration history; current matching is the living-context plan |
+| 6 | [`part6-market-research/INDEX.md`](part6-market-research/INDEX.md) | Calibration, fairness/legal, learning-to-rank infra; ESCO vocabulary work archived |
 
 ---
 
@@ -54,7 +65,6 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 | [confidence-threshold-auto-approval](part3-repo-ingestion/confidence-threshold-auto-approval.md) | 3 | PENDING | 1.5w |
 | [issue-body-prefetch](part3-repo-ingestion/issue-body-prefetch.md) | 3 | PENDING | 0.5w |
 | [dealbreaker-gate-enforcement](part5-matching-migration/dealbreaker-gate-enforcement.md) | 5 | PENDING | 0.5w |
-| [skill-adjacency-table](part5-matching-migration/skill-adjacency-table.md) | 5 | PENDING | 1w |
 | [reliability-retry-and-error-classification](part5-matching-migration/reliability-retry-and-error-classification.md) | 5 | PENDING | 0.5w |
 | [reliability-circuit-breakers](part5-matching-migration/reliability-circuit-breakers.md) | 5 | NEEDS-REFINEMENT | 1w |
 | [reliability-idempotency-and-partial-materialization](part5-matching-migration/reliability-idempotency-and-partial-materialization.md) | 5 | PENDING | 1w |
@@ -65,38 +75,42 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 
 ---
 
-## Phase 1 — Candidate Decomposition + Per-Element Matching Foundations
+## Phase 1 — Living Person Graph + Evidence-Backed Matching Foundations
 
 | Plan | Part | Status | Est. |
 |---|---|---|---|
-| [candidate-nodes-schema](part4-candidate-ingestion/candidate-nodes-schema.md) | 4 | PENDING | 1w |
+| [living-context-repo-matching-plan](../living-context-repo-matching-plan.md) | Active | CURRENT SOURCE OF TRUTH | — |
+| Roleless talent-pool intake | ADR-052 | CURRENT SOURCE OF TRUTH | — |
+| Simple JD role input | ADR-051 | CURRENT SOURCE OF TRUTH | — |
+| candidate-nodes-schema | 4 | ARCHIVED fixed semantic node taxonomy | — |
 | [living-graph-provenance-tagging](part4-candidate-ingestion/living-graph-provenance-tagging.md) | 4 | PENDING | 0.5w |
 | [living-graph-supersedes-schema](part4-candidate-ingestion/living-graph-supersedes-schema.md) | 4 | PENDING | 0.5w |
 | [candidate-profile-state-schema](part4-candidate-ingestion/candidate-profile-state-schema.md) | 4 | PENDING | 0.5w |
-| [candidate-decomposition-prompt](part4-candidate-ingestion/candidate-decomposition-prompt.md) | 4 | PENDING | 1.5w |
-| [candidate-sub-element-embedding](part4-candidate-ingestion/candidate-sub-element-embedding.md) | 4 | PENDING | 1w |
-| [candidate-backfill-decomposition](part4-candidate-ingestion/candidate-backfill-decomposition.md) | 4 | PENDING | 1w |
-| [candidate-matching-sub-elements](part4-candidate-ingestion/candidate-matching-sub-elements.md) | 4 | PENDING | 1.5w |
+| candidate-decomposition-prompt | 4 | ARCHIVED fixed semantic extraction shape | — |
+| candidate-sub-element-embedding | 4 | ARCHIVED fixed semantic node projection | — |
+| candidate-backfill-decomposition | 4 | ARCHIVED fixed semantic node projection | — |
+| candidate-matching-sub-elements | 4 | ARCHIVED fixed semantic node matching | — |
 | [loose-match-evidence-density](part4-candidate-ingestion/loose-match-evidence-density.md) | 4 | PENDING | 1w |
-| [per-element-matching-algorithm](part5-matching-migration/per-element-matching-algorithm.md) | 5 | PENDING | 2w |
+| per-element-matching-algorithm | 5 | SUPERSEDED by source-backed candidate-to-PR matching | — |
 | [match-reports-schema](part5-matching-migration/match-reports-schema.md) | 5 | PENDING | 1w |
-| [triangulation-summary-layer](part5-matching-migration/triangulation-summary-layer.md) | 5 | PENDING | 0.5w |
+| triangulation-summary-layer | 5 | SUPERSEDED by evidence-backed match explanations | — |
 | [codesignal-phased-calibration](part6-market-research/codesignal-phased-calibration.md) | 6 | PENDING | 1w |
-| [esco-skill-id-field](part6-market-research/esco-skill-id-field.md) | 6 | PENDING | 0.5w |
 | [kappa-calibration-study](part6-market-research/kappa-calibration-study.md) | 6 | PENDING | 1.5w |
 | [learning-to-rank-data-collection](part6-market-research/learning-to-rank-data-collection.md) | 6 | PENDING | 1w |
 
 ---
 
-## Phase 2 — Role/Repo Decomposition + Public Data Enrichment
+## Phase 2 — JD Role Assertions + Repo Source Evidence
 
 | Plan | Part | Status | Est. |
 |---|---|---|---|
-| [phase2-role-nodes-migration](part2-role-discovery/phase2-role-nodes-migration.md) | 2 | PENDING | 0.5w |
-| [phase2-rcd-decomposition](part2-role-discovery/phase2-rcd-decomposition.md) | 2 | PENDING | 2w |
-| [phase2-role-nodes-backfill](part2-role-discovery/phase2-role-nodes-backfill.md) | 2 | PENDING | 0.5w |
-| [repo-decomposition-schema](part3-repo-ingestion/repo-decomposition-schema.md) | 3 | PENDING | 2.5w |
-| [pr-narrative-enrichment](part3-repo-ingestion/pr-narrative-enrichment.md) | 3 | PENDING | 1w |
+| JD source artifact ingestion | ADR-051 | CURRENT SOURCE OF TRUTH | — |
+| Repo source artifact and PR challenge packet ingestion | Active plan | CURRENT SOURCE OF TRUTH | — |
+| phase2-role-nodes-migration | 2 | ARCHIVED fixed semantic node taxonomy | — |
+| phase2-rcd-decomposition | 2 | ARCHIVED role-discovery/RCD path | — |
+| phase2-role-nodes-backfill | 2 | ARCHIVED role-discovery/RCD path | — |
+| repo-decomposition-schema | 3 | ARCHIVED fixed repo node taxonomy | — |
+| pr-narrative-enrichment | 3 | ARCHIVED cosine/fallback PR selection | — |
 | [per-candidate-pr-override-ui](part3-repo-ingestion/per-candidate-pr-override-ui.md) | 3 | NEEDS-REFINEMENT | — |
 | [dispositional-weights-to-scorer](part3-repo-ingestion/dispositional-weights-to-scorer.md) | 3 | NEEDS-REFINEMENT | — |
 | [issue-gemma-narratives](part3-repo-ingestion/issue-gemma-narratives.md) | 3 | NEEDS-REFINEMENT | — |
@@ -114,16 +128,16 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 | Plan | Part | Status | Est. |
 |---|---|---|---|
 | [profile-probe-bank](part4-candidate-ingestion/profile-probe-bank.md) | 4 | NEEDS-REFINEMENT | 2w |
-| [screener-coverage-computation](part4-candidate-ingestion/screener-coverage-computation.md) | 4 | PENDING | 1w |
+| screener-coverage-computation | 4 | ARCHIVED fixed coverage buckets | — |
 | [screener-mode-generalization](part4-candidate-ingestion/screener-mode-generalization.md) | 4 | PENDING | 3w |
 | [screener-answer-decomposition](part4-candidate-ingestion/screener-answer-decomposition.md) | 4 | PENDING | 1.5w |
 | [screener-recruiter-ui](part4-candidate-ingestion/screener-recruiter-ui.md) | 4 | PENDING | 1w |
 | [uar-culture-plugin-reconciliation](part4-candidate-ingestion/uar-culture-plugin-reconciliation.md) | 4 | LINKED-ONLY (partial) | 1w |
-| [living-graph-temporal-queries](part4-candidate-ingestion/living-graph-temporal-queries.md) | 4 | PENDING | 1w |
+| living-graph-temporal-queries | 4 | ARCHIVED until rewritten against hyperedge/context records and snapshots | — |
 
 ---
 
-## Phase 4 — Assessment Graph Decomposition + UAR Migration
+## Phase 4 — Source-Backed Assessment Evidence + UAR Migration
 
 | Plan | Part | Status | Est. |
 |---|---|---|---|
@@ -131,27 +145,18 @@ Single entry point for every work item extracted from `knowledge/plan/pipe-strat
 | [phase4-uar-plugin-port](part2-role-discovery/phase4-uar-plugin-port.md) | 2 | PENDING | 2w |
 | [phase4-uar-synthesis-hook](part2-role-discovery/phase4-uar-synthesis-hook.md) | 2 | PENDING | 1w |
 | [phase4-uar-parity-and-cutover](part2-role-discovery/phase4-uar-parity-and-cutover.md) | 2 | PENDING | 2w |
-| [code-review-graph-decomposition](part4-candidate-ingestion/code-review-graph-decomposition.md) | 4 | PENDING | 1.5w |
-| [implementation-scorer](part4-candidate-ingestion/implementation-scorer.md) | 4 | PENDING | 3w |
-| [culture-interview-graph-decomposition](part4-candidate-ingestion/culture-interview-graph-decomposition.md) | 4 | PENDING | 1w |
+| code-review-graph-decomposition | 4 | ARCHIVED fixed TechnicalDemonstration nodes | — |
+| implementation-scorer | 4 | ARCHIVED until rewritten as source-backed assessment hyperedge/context records | — |
+| culture-interview-graph-decomposition | 4 | ARCHIVED fixed CulturalSignal nodes | — |
 
 ---
 
-## Phase 5 — Graph DB Migration (Neo4j)
+## Phase 5 — Rebuildable Projections
 
-Sequential within phase. Gated behind Phase 0/1 stability.
-
-**Note:** The old dual-write plans (`neo4j-candidate-dual-write.md`, `neo4j-role-dual-write.md`, `neo4j-repo-dual-write.md`) have been removed. They are superseded by the Neo4j-first migration in `neo4j-migration/MASTER-PLAN.md` and `UNIFIED-NEO4J-MIGRATION.md`.
-
-| Plan | Part | Status | Est. |
-|---|---|---|---|
-| [neo4j-vps-provisioning](part5-matching-migration/neo4j-vps-provisioning.md) | 5 | PENDING | 1w |
-| [neo4j-driver-and-binding](part5-matching-migration/neo4j-driver-and-binding.md) | 5 | PENDING | 0.5w |
-| [neo4j-schema-and-constraints](part5-matching-migration/neo4j-schema-and-constraints.md) | 5 | PENDING | 0.5w |
-| [neo4j-dual-write-ingestion](part5-matching-migration/neo4j-dual-write-ingestion.md) | 5 | **SUPERSEDED** | — |
-| [neo4j-validation-parity](part5-matching-migration/neo4j-validation-parity.md) | 5 | PENDING | 1w |
-| [neo4j-matching-cutover](part5-matching-migration/neo4j-matching-cutover.md) | 5 | PENDING | 3w |
-| [neo4j-retirement-plan](part5-matching-migration/neo4j-retirement-plan.md) | 5 | PENDING (deferred) | 0.5w |
+Neo4j-first migration is archived for the current scope. D1 stores the immutable
+proof layer and the source-backed hypergraph/context-record layer. The
+hypergraph is the semantic source of truth; Neo4j, vector indexes, graph/search
+views, matcher atoms, and summaries are rebuildable projections only.
 
 ---
 
@@ -168,8 +173,8 @@ These block specific `NEEDS-REFINEMENT` plans. Resolve before delegating the aff
 | # | Question | Affects | Decision needed from |
 |---|---|---|---|
 | 1 | **Dealbreaker auto-fail behavior:** strategy says "never auto-fail (legal defensibility)" but also "fail matches or flag assessments". Plan resolves by emitting `hitlRequiredReason` without auto-fail; multi-flag thresholds undefined. | `dealbreaker-gate-enforcement` | Product + legal |
-| 2 | **BARS scale:** Part 6 specs **1–5** (Sherlock); other parts reference **0–3**. Implementation scorer needs canonical scale before prompt design. | `implementation-scorer`, `phase0-scorer-bars-anchor-audit` | Founder / scoring lead |
-| 3 | **Vectorize vs substring matching mechanism:** vector signals depend on Phase 1 candidate decomposition; per-element matching algorithm is Phase 1 but `triangulateMatch` vector wiring is Phase 0 (Subagent G). Confirm Subagent G uses repo-level cosine only, not sub-element. | Subagent G + `per-element-matching-algorithm` | Architecture |
+| 2 | **Assessment scoring scale:** BARS/rubric work can be reused only after the scorer is rewritten to emit source-backed assessment hyperedge/context records, not fixed semantic nodes. | future assessment hypergraph scorer | Founder / scoring lead |
+| 3 | **Projection role in matching:** Vector/search projections may support recall, but source-backed hyperedge/context records and provenance are authoritative for scoring and explanation. | living-context matcher | Architecture |
 | 4 | **Pass 3 confidence threshold value:** plan proposes 0.75 — needs validation against actual Pass 3 score distribution. | `pass3-confidence-threshold-auto-approval` | Empirical (run on existing corpus) |
 | 5 | **Staging D1 binding fix scope:** restore wrangler binding only, or provision a separate staging D1 database? | `phase0-subagent-execution-plan.md` Subagent J | Founder |
 | 6 | **`opossum` Workers compatibility:** unverified — fallback to D1-state circuit breaker if it fails. | `reliability-circuit-breakers` | Spike before scoping |
@@ -178,7 +183,7 @@ These block specific `NEEDS-REFINEMENT` plans. Resolve before delegating the aff
 | 9 | **Candidate self-correction `source_type`:** new GDPR-distinct enum value vs reusing `recruiter_note`. | `candidate-profile-view` | Product + legal |
 | 10 | **GDPR DSAR table list:** plan starts from strategy-document references; live D1 schema audit required before implementation. | `gdpr-subject-rights` | Schema audit |
 | 11 | **Migration number allocation:** `0045`–`0052` are referenced by multiple plans (Part 2/3/4/5). No single canonical owner. First plan into PR claims the number; later plans must rebase. Decide whether to pre-allocate ranges (e.g. Part 4 owns 0045–0050, Part 5 owns 0051+) or keep first-come-first-served with mandatory rebase coordination in PR review. | All Phase 0–2 migrations | Founder + release coordinator |
-| 12 | **`CandidateNodeType` union completeness:** strategy enumerates `CommunicationStyle`, `CulturalSignal`, `TechnicalDemonstration`, `WorkingStyle`, `CareerArc`, `Motivation`, `Context` but the schema doc historically omitted `CommunicationStyle`. Now reconciled in `candidate-nodes-schema.md`. Confirm no other strategy types are missed before sealing the union. | `candidate-nodes-schema` | Spec review |
+| 12 | **Legacy candidate node compatibility:** old `CandidateNodeType` values are compatibility/projection metadata only. They must not become semantic truth or matcher requirements. | compatibility adapters | Architecture |
 
 ---
 

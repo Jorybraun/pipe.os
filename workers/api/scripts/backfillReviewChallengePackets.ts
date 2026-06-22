@@ -3,6 +3,7 @@
  * Backfill deterministic review challenge packets from vetted repo sample PRs.
  *
  * Usage:
+ *   npx tsx scripts/prepareReviewChallengeGraphLocalDb.ts --database-path /path/to/local-d1.sqlite
  *   npx tsx scripts/backfillReviewChallengePackets.ts --dry-run
  *   npx tsx scripts/backfillReviewChallengePackets.ts --batch-size 25
  *   npx tsx scripts/backfillReviewChallengePackets.ts --repo pipe-labs/orders
@@ -20,7 +21,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars') });
+dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars'), quiet: true });
 const apiRoot = resolve(scriptDir, '..');
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require('node:sqlite') as {
@@ -37,12 +38,16 @@ import {
   buildSourceArtifactVersion,
   buildSourceSpan,
   persistReviewChallengeGraph,
+  getLanguageSupport,
   sha256,
   type NormalizedPullRequestFile,
   type NormalizedPullRequestInput,
   type PullRequestFileStatus,
   type RepositoryRef,
+  type ChallengePacket,
+  type SourceArtifact,
   type SourceArtifactKind,
+  type SourceArtifactVersion,
   type SourceSpan,
   type StructuralFact,
 } from '../src/lib/repoSemanticGraph';
@@ -56,19 +61,32 @@ import {
 const PACKET_VERSION = 'repo-challenge-v1';
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 250;
+const REQUIRED_GRAPH_TABLES = [
+  'review_challenge_packets',
+  'context_records',
+  'context_record_source_refs',
+  'context_record_concepts',
+] as const;
+const REQUIRED_GRAPH_MIGRATIONS = [
+  '0082_living_context_graph.sql',
+  '0083_repo_semantic_graph_and_match_runs.sql',
+  '0095_context_records.sql',
+] as const;
 
-interface Options {
+export interface Options {
   target: 'local' | 'remote';
   databasePath?: string;
   dryRun: boolean;
   force: boolean;
+  preflightGithub: boolean;
+  json?: boolean;
   batchSize: number;
   repoId?: number;
   repo?: string;
   prNumber?: number;
 }
 
-interface QueryClient {
+export interface QueryClient {
   query<T = Record<string, unknown>>(
     sql: string,
     params?: Array<string | number | null>,
@@ -102,7 +120,7 @@ class LocalQueryClient implements QueryClient {
   }
 }
 
-interface SamplePullRequestRow {
+export interface SamplePullRequestRow {
   repo_id: number;
   full_name: string;
   github_url: string;
@@ -113,29 +131,37 @@ interface SamplePullRequestRow {
   merged_at: string;
 }
 
-interface PullRequestRefs {
+export interface PullRequestRefs {
   baseSha: string;
   baseRef: string;
   headSha: string;
   mergedAt: string | null;
 }
 
-interface NormalizedBuildResult {
+export interface NormalizedBuildResult {
   challengeInput: NormalizedPullRequestInput;
-  persistenceInput: NormalizedPullRequestInput;
   challengeStructuralFacts: StructuralFact[];
-  persistenceStructuralFacts: StructuralFact[];
+  structuralFacts: StructuralFact[];
+}
+
+interface ExtractionDiagnostic {
+  kind: 'full_source_fetch' | 'semantic_parser';
+  path: string;
+  language: string;
+  reason: string;
 }
 
 interface NormalizedChangedFileResult {
   challengeFile: NormalizedPullRequestFile;
-  persistenceFiles: NormalizedPullRequestFile[];
+  sourceArtifacts: SourceArtifact[];
+  sourceArtifactVersions: SourceArtifactVersion[];
   sourceSpans: SourceSpan[];
   structuralFacts: StructuralFact[];
   challengeStructuralFacts: StructuralFact[];
+  extractionDiagnostics: ExtractionDiagnostic[];
 }
 
-interface Stats {
+export interface Stats {
   selected: number;
   built: number;
   persisted: number;
@@ -147,11 +173,82 @@ interface Stats {
   errors: number;
 }
 
+export type BackfillOutcomeStatus =
+  | 'dry_run_ready'
+  | 'persisted'
+  | 'skipped_fetch'
+  | 'skipped_no_hunks'
+  | 'error';
+
+export interface BackfillRowOutcome {
+  repoId: number;
+  repoFullName: string;
+  repoUrl: string;
+  prNumber: number;
+  prUrl: string;
+  title: string | null;
+  status: BackfillOutcomeStatus;
+  packetId: string | null;
+  repoSnapshotId: string | null;
+  packetContentHash: string | null;
+  eligible: boolean | null;
+  qualityScore: number | null;
+  productionReady: boolean | null;
+  demandCount: number | null;
+  sourceSpanCount: number | null;
+  changedFileCount: number | null;
+  structuralFactCount: number | null;
+  contextRecordId: string | null;
+  repoSourceRefCount: number | null;
+  conceptLinkCount: number | null;
+  persistedContextReady: boolean | null;
+  error: string | null;
+}
+
+interface PersistedPacketCoverage {
+  productionReady: boolean | null;
+  contextRecordId: string | null;
+  repoSourceRefCount: number | null;
+  conceptLinkCount: number | null;
+  persistedContextReady: boolean | null;
+}
+
+export interface BackfillRunResult {
+  stats: Stats;
+  outcomes: BackfillRowOutcome[];
+}
+
+export interface BackfillCliReport {
+  status: 'completed' | 'failed';
+  mode: 'dry-run' | 'write';
+  target: 'local' | 'remote';
+  filters: {
+    repoId: number | null;
+    repo: string | null;
+    prNumber: number | null;
+    force: boolean;
+  };
+  batchSize: number;
+  stats: Stats;
+  outcomes: BackfillRowOutcome[];
+}
+
+export interface BackfillReviewChallengePacketsInput {
+  client: QueryClient;
+  db?: D1Database;
+  options: Options;
+  token?: string;
+  log?: Pick<Console, 'log' | 'warn' | 'error'>;
+  fetchDiff?: typeof fetchGitHubDiff;
+  fetchRefs?: typeof fetchPullRequestRefs;
+}
+
 function usage(): string {
   return [
     'Usage: npx tsx scripts/backfillReviewChallengePackets.ts [options]',
     '',
     'Options:',
+    '  --preflight-github   Check GitHub API connectivity and exit',
     '  --local               Read and write the local Wrangler D1 database (default)',
     '  --remote              Read and write Cloudflare D1',
     '  --database-path PATH  Override local SQLite discovery',
@@ -161,6 +258,7 @@ function usage(): string {
     '  --repo OWNER/NAME     Restrict to one qualified_repos.full_name',
     '  --pr N                Restrict to one pull request number',
     '  --force               Rebuild rows that already have a v1 packet',
+    '  --json                Print machine-readable JSON to stdout',
     '  --help, -h            Show this help',
   ].join('\n');
 }
@@ -186,6 +284,7 @@ function parseArgs(argv: string[]): Options {
     target: 'local',
     dryRun: false,
     force: false,
+    preflightGithub: false,
     batchSize: DEFAULT_BATCH_SIZE,
   };
 
@@ -193,6 +292,10 @@ function parseArgs(argv: string[]): Options {
     const arg = argv[index]!;
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--preflight-github') {
+      options.preflightGithub = true;
+    } else if (arg === '--json') {
+      options.json = true;
     } else if (arg === '--local') {
       options.target = 'local';
     } else if (arg === '--remote') {
@@ -247,6 +350,7 @@ async function selectSamplePullRequests(
   const clauses = [
     'rsp.swe_bench_eligible = 1',
     'qr.disqualified = 0',
+    "COALESCE(qr.test_framework, '') <> 'source-backed-fixture'",
   ];
   const params: Array<string | number | null> = packetTableExists ? [PACKET_VERSION] : [];
 
@@ -301,11 +405,24 @@ async function tableExists(db: QueryClient, tableName: string): Promise<boolean>
   return Number(rows[0]?.count ?? 0) > 0;
 }
 
+async function missingReviewChallengeGraphTables(db: QueryClient): Promise<string[]> {
+  const tableChecks = await Promise.all(
+    REQUIRED_GRAPH_TABLES.map(async (tableName) => ({
+      tableName,
+      present: await tableExists(db, tableName),
+    })),
+  );
+  return tableChecks
+    .filter((table) => !table.present)
+    .map((table) => table.tableName);
+}
+
 async function countExistingPackets(db: QueryClient, options: Options): Promise<number> {
   const clauses = [
     'rsp.swe_bench_eligible = 1',
     'qr.disqualified = 0',
     'rcp.packet_version = ?',
+    "COALESCE(qr.test_framework, '') <> 'source-backed-fixture'",
   ];
   const params: Array<string | number | null> = [PACKET_VERSION];
   if (options.repoId !== undefined) {
@@ -508,9 +625,11 @@ async function normalizeChangedFile(input: {
     symbols: [],
   };
   const sourceSpans = normalizedHunks.map((hunk) => hunk.sourceSpan);
-  const persistenceFiles: NormalizedPullRequestFile[] = [challengeFile];
+  const sourceArtifacts: SourceArtifact[] = [artifact];
+  const sourceArtifactVersions: SourceArtifactVersion[] = [artifactVersion];
   let structuralFacts: StructuralFact[] = [];
   let challengeStructuralFacts: StructuralFact[] = [];
+  const extractionDiagnostics: ExtractionDiagnostic[] = [];
 
   const sourcePath = file.status === 'renamed'
     ? file.filename
@@ -549,6 +668,8 @@ async function normalizeChangedFile(input: {
       });
       challengeFile.symbols = analysis.symbols;
       sourceSpans.push(...analysis.sourceSpans);
+      sourceArtifacts.push(sourceArtifact);
+      sourceArtifactVersions.push(sourceVersion);
       structuralFacts = analysis.structuralFacts;
 
       const side = file.status === 'removed' ? 'base' : 'head';
@@ -568,32 +689,35 @@ async function normalizeChangedFile(input: {
         lineNumbers: [...changedLines],
       });
     } catch (error) {
+      extractionDiagnostics.push({
+        kind: 'semantic_parser',
+        path: sourcePath,
+        language,
+        reason: error instanceof Error ? error.message : String(error),
+      });
       console.warn(
         `[challenge-backfill] structural parser failed for ${row.full_name}:${sourcePath}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
-
-    persistenceFiles.push({
+  } else if (getLanguageSupport(language).level === 'production' && artifact.kind !== 'documentation') {
+    extractionDiagnostics.push({
+      kind: 'full_source_fetch',
       path: sourcePath,
-      status: normalizeStatus(file.status),
       language,
-      additions: 0,
-      deletions: 0,
-      artifact: sourceArtifact,
-      artifactVersion: sourceVersion,
-      hunks: [],
-      symbols: challengeFile.symbols,
+      reason: `could not fetch ${sourceRef}:${sourcePath}`,
     });
   }
 
   return {
     challengeFile,
-    persistenceFiles,
+    sourceArtifacts,
+    sourceArtifactVersions,
     sourceSpans,
     structuralFacts,
     challengeStructuralFacts,
+    extractionDiagnostics,
   };
 }
 
@@ -605,7 +729,7 @@ function inferTestFramework(path: string): string | undefined {
   return undefined;
 }
 
-async function buildNormalizedInput(
+export async function buildNormalizedInput(
   row: SamplePullRequestRow,
   refs: PullRequestRefs,
   diffResult: NonNullable<Awaited<ReturnType<typeof fetchGitHubDiff>>>,
@@ -630,11 +754,11 @@ async function buildNormalizedInput(
     })
   ));
   const changedFiles = normalizedFiles.map((file) => file.challengeFile);
-  const persistenceFiles = normalizedFiles.flatMap((file) => file.persistenceFiles);
   const structuralFacts = normalizedFiles.flatMap((file) => file.structuralFacts);
   const challengeStructuralFacts = normalizedFiles.flatMap(
     (file) => file.challengeStructuralFacts,
   );
+  const extractionDiagnostics = normalizedFiles.flatMap((file) => file.extractionDiagnostics);
   const metadataContent = JSON.stringify({
     author: diffResult.metadata.author,
     baseSha: refs.baseSha,
@@ -675,20 +799,17 @@ async function buildNormalizedInput(
     displayLabel: `${row.full_name}#${row.pr_number} metadata`,
     prSide: 'metadata',
   });
-  const metadataFile: NormalizedPullRequestFile = {
-    path: `.pipe/pull-requests/${row.pr_number}.json`,
-    status: 'modified',
-    language: 'json',
-    additions: 0,
-    deletions: 0,
-    artifact: metadataArtifact,
-    artifactVersion: metadataVersion,
-    hunks: [],
-    symbols: [],
-  };
   const sourceSpans = [
     metadataSpan,
     ...normalizedFiles.flatMap((file) => file.sourceSpans),
+  ];
+  const sourceArtifacts = [
+    metadataArtifact,
+    ...normalizedFiles.flatMap((file) => file.sourceArtifacts),
+  ];
+  const sourceArtifactVersions = [
+    metadataVersion,
+    ...normalizedFiles.flatMap((file) => file.sourceArtifactVersions),
   ];
   const tests = changedFiles
     .filter((file) => file.artifact.kind === 'test')
@@ -700,7 +821,9 @@ async function buildNormalizedInput(
       relatedSymbolIds: [...new Set(file.hunks.flatMap((hunk) => hunk.changedSymbolIds))].sort(),
     }));
 
-  const challengeInput: NormalizedPullRequestInput = {
+  const challengeInput: NormalizedPullRequestInput & {
+    extractionDiagnostics?: ExtractionDiagnostic[];
+  } = {
     repoSnapshot: snapshot,
     number: row.pr_number,
     url: row.pr_url,
@@ -712,23 +835,22 @@ async function buildNormalizedInput(
     headSha: refs.headSha,
     mergedAt: refs.mergedAt ?? row.merged_at,
     metadataSourceSpanIds: [metadataSpan.id],
+    sourceArtifacts,
+    sourceArtifactVersions,
     sourceSpans,
     changedFiles,
     tests,
     structuralFacts: challengeStructuralFacts,
+    ...(extractionDiagnostics.length > 0 ? { extractionDiagnostics } : {}),
   };
   return {
     challengeInput,
-    persistenceInput: {
-      ...challengeInput,
-      changedFiles: [...persistenceFiles, metadataFile],
-    },
     challengeStructuralFacts,
-    persistenceStructuralFacts: structuralFacts,
+    structuralFacts,
   };
 }
 
-function d1DatabaseAdapter(client: QueryClient): D1Database {
+export function d1DatabaseAdapter(client: QueryClient): D1Database {
   return {
     prepare(sql: string) {
       let params: Array<string | number | null> = [];
@@ -783,27 +905,203 @@ function printSummary(stats: Stats, options: Options): void {
   console.log(`  errors:           ${stats.errors}`);
 }
 
-async function run(options: Options): Promise<void> {
-  let localDatabase: LocalSqliteDatabase | undefined;
-  const client: QueryClient = options.target === 'remote'
-    ? new D1Client(loadD1Config())
-    : (() => {
-        const path = discoverLocalDatabase(options.databasePath);
-        localDatabase = new DatabaseSync(path);
-        localDatabase.exec('PRAGMA foreign_keys = ON');
-        console.log(`[challenge-backfill] target=local database=${path}`);
-        return new LocalQueryClient(localDatabase);
-      })();
-  const db = d1DatabaseAdapter(client);
-  const token = process.env['GITHUB_TOKEN'];
+export function buildBackfillCliReport(result: BackfillRunResult, options: Options): BackfillCliReport {
+  return {
+    status: result.stats.errors > 0 ? 'failed' : 'completed',
+    mode: options.dryRun ? 'dry-run' : 'write',
+    target: options.target,
+    filters: {
+      repoId: options.repoId ?? null,
+      repo: options.repo ?? null,
+      prNumber: options.prNumber ?? null,
+      force: options.force,
+    },
+    batchSize: options.batchSize,
+    stats: result.stats,
+    outcomes: result.outcomes,
+  };
+}
+
+function buildBackfillRowOutcome(
+  row: SamplePullRequestRow,
+  status: BackfillOutcomeStatus,
+  values: Partial<Omit<BackfillRowOutcome,
+    | 'repoId'
+    | 'repoFullName'
+    | 'repoUrl'
+    | 'prNumber'
+    | 'prUrl'
+    | 'title'
+    | 'status'
+  >> = {},
+): BackfillRowOutcome {
+  return {
+    repoId: row.repo_id,
+    repoFullName: row.full_name,
+    repoUrl: row.github_url,
+    prNumber: row.pr_number,
+    prUrl: row.pr_url,
+    title: row.title,
+    status,
+    packetId: values.packetId ?? null,
+    repoSnapshotId: values.repoSnapshotId ?? null,
+    packetContentHash: values.packetContentHash ?? null,
+    eligible: values.eligible ?? null,
+    qualityScore: values.qualityScore ?? null,
+    productionReady: values.productionReady ?? null,
+    demandCount: values.demandCount ?? null,
+    sourceSpanCount: values.sourceSpanCount ?? null,
+    changedFileCount: values.changedFileCount ?? null,
+    structuralFactCount: values.structuralFactCount ?? null,
+    contextRecordId: values.contextRecordId ?? null,
+    repoSourceRefCount: values.repoSourceRefCount ?? null,
+    conceptLinkCount: values.conceptLinkCount ?? null,
+    persistedContextReady: values.persistedContextReady ?? null,
+    error: values.error ?? null,
+  };
+}
+
+async function loadPersistedPacketCoverage(
+  client: QueryClient,
+  packet: ChallengePacket,
+): Promise<PersistedPacketCoverage> {
+  const row = (await client.query<{
+    production_ready: number;
+    context_record_id: string | null;
+    repo_source_ref_count: number;
+    concept_link_count: number;
+  }>(
+    `SELECT
+       rcp.production_ready,
+       cr.id AS context_record_id,
+       COALESCE((
+         SELECT COUNT(*)
+           FROM context_record_source_refs
+          WHERE context_record_id = cr.id
+            AND source_ref_type = 'repo_source_span'
+       ), 0) AS repo_source_ref_count,
+       COALESCE((
+         SELECT COUNT(*)
+           FROM context_record_concepts
+          WHERE context_record_id = cr.id
+       ), 0) AS concept_link_count
+     FROM review_challenge_packets rcp
+     LEFT JOIN context_records cr
+       ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+      AND cr.scope_type = 'repo_snapshot'
+      AND cr.scope_id = rcp.repo_snapshot_id
+      AND cr.record_type = 'repo_challenge_packet'
+     WHERE rcp.id = ?`,
+    [packet.id],
+  ))[0];
+  if (!row) {
+    return {
+      productionReady: null,
+      contextRecordId: null,
+      repoSourceRefCount: null,
+      conceptLinkCount: null,
+      persistedContextReady: false,
+    };
+  }
+  const productionReady = Number(row.production_ready) !== 0;
+  const repoSourceRefCount = Number(row.repo_source_ref_count ?? 0);
+  const conceptLinkCount = Number(row.concept_link_count ?? 0);
+  return {
+    productionReady,
+    contextRecordId: row.context_record_id,
+    repoSourceRefCount,
+    conceptLinkCount,
+    persistedContextReady: productionReady
+      && row.context_record_id !== null
+      && repoSourceRefCount > 0
+      && conceptLinkCount > 0,
+  };
+}
+
+function errorCode(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || !('code' in value)) return null;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === 'string' && code.trim() ? code : null;
+}
+
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  const cause = (error as { cause?: unknown }).cause;
+  if (!(cause instanceof Error)) return error.message;
+  const code = errorCode(cause);
+  return `${error.message} (cause: ${cause.message}${code ? `; code=${code}` : ''})`;
+}
+
+type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+
+export interface GitHubConnectivityResult {
+  ok: boolean;
+  endpoint: string;
+  status: number | null;
+  message: string;
+  rateLimitRemaining: string | null;
+}
+
+export async function checkGitHubApiConnectivity(input: {
+  token?: string;
+  timeoutMs?: number;
+  fetchImpl?: FetchLike;
+} = {}): Promise<GitHubConnectivityResult> {
+  const endpoint = 'https://api.github.com/rate_limit';
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'pipe-api/1.0',
+  };
+  if (input.token) headers.Authorization = `Bearer ${input.token}`;
+  try {
+    const response = await (input.fetchImpl ?? fetch)(endpoint, {
+      headers,
+      signal: AbortSignal.timeout(input.timeoutMs ?? 10_000),
+    });
+    const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+    return {
+      ok: response.ok,
+      endpoint,
+      status: response.status,
+      message: response.ok
+        ? 'GitHub API reachable'
+        : `GitHub API returned ${response.status} ${response.statusText}`,
+      rateLimitRemaining,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      endpoint,
+      status: null,
+      message: formatError(error),
+      rateLimitRemaining: null,
+    };
+  }
+}
+
+export async function backfillReviewChallengePackets(
+  input: BackfillReviewChallengePacketsInput,
+): Promise<BackfillRunResult> {
+  const {
+    client,
+    options,
+    token,
+    log = console,
+    fetchDiff = fetchGitHubDiff,
+    fetchRefs = fetchPullRequestRefs,
+  } = input;
+  const db = input.db ?? d1DatabaseAdapter(client);
   const packetTableExists = await tableExists(client, 'review_challenge_packets');
-  if (!packetTableExists && !options.dryRun) {
-    throw new Error(
-      'review_challenge_packets does not exist; apply migration 0083_repo_semantic_graph_and_match_runs.sql before write mode',
-    );
+  if (!options.dryRun) {
+    const missingGraphTables = await missingReviewChallengeGraphTables(client);
+    if (missingGraphTables.length > 0) {
+      throw new Error(
+        `review challenge graph tables are missing: ${missingGraphTables.join(', ')}; apply migrations ${REQUIRED_GRAPH_MIGRATIONS.join(', ')} before write mode`,
+      );
+    }
   }
   if (!packetTableExists) {
-    console.warn(
+    log.warn(
       '[challenge-backfill] review_challenge_packets is absent; dry-run will build source packets without existing-packet checks',
     );
   }
@@ -824,36 +1122,41 @@ async function run(options: Options): Promise<void> {
     skippedNoHunks: 0,
     errors: 0,
   };
+  const outcomes: BackfillRowOutcome[] = [];
 
-  console.log(
+  log.log(
     `[challenge-backfill] selected ${rows.length} row(s), mode=${options.dryRun ? 'dry-run' : 'write'}, batch=${options.batchSize}`,
   );
 
-  try {
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index]!;
-      const label = `${row.full_name}#${row.pr_number}`;
-      try {
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index]!;
+    const label = `${row.full_name}#${row.pr_number}`;
+    try {
       const [diffResult, refs] = await Promise.all([
-        fetchGitHubDiff(row.github_url, row.pr_number, token),
-        fetchPullRequestRefs(row, token),
+        fetchDiff(row.github_url, row.pr_number, token),
+        fetchRefs(row, token),
       ]);
       if (!diffResult || !refs) {
         stats.skippedFetch++;
-        console.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
+        outcomes.push(buildBackfillRowOutcome(row, 'skipped_fetch', {
+          error: 'GitHub diff or pull request refs were unavailable',
+        }));
+        log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
         continue;
       }
       if (!diffResult.diff.files.some((file) => file.hunks.length > 0)) {
         stats.skippedNoHunks++;
-        console.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip no hunks ${label}`);
+        outcomes.push(buildBackfillRowOutcome(row, 'skipped_no_hunks', {
+          error: 'pull request diff contained no source hunks',
+        }));
+        log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip no hunks ${label}`);
         continue;
       }
 
       const {
         challengeInput,
-        persistenceInput,
         challengeStructuralFacts,
-        persistenceStructuralFacts,
+        structuralFacts,
       } = await buildNormalizedInput(row, refs, diffResult, token);
       const packet = await buildChallengePacket(challengeInput);
       const semantics = await deriveRepoSemantics({
@@ -866,38 +1169,121 @@ async function run(options: Options): Promise<void> {
 
       if (options.dryRun) {
         stats.dryRun++;
-        console.log(
+        outcomes.push(buildBackfillRowOutcome(row, 'dry_run_ready', {
+          packetId: packet.id,
+          repoSnapshotId: packet.repoSnapshotId,
+          packetContentHash: packet.contentHash,
+          eligible: packet.quality.eligible,
+          qualityScore: packet.quality.score,
+          demandCount: packet.demands.length,
+          sourceSpanCount: challengeInput.sourceSpans.length,
+          changedFileCount: challengeInput.changedFiles.length,
+          structuralFactCount: structuralFacts.length,
+        }));
+        log.log(
           `[challenge-backfill] [${index + 1}/${rows.length}] ready ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
         );
         continue;
       }
 
-      await persistReviewChallengeGraph(db, row.repo_id, persistenceInput, packet, {
-        structuralFacts: persistenceStructuralFacts,
+      await persistReviewChallengeGraph(db, row.repo_id, challengeInput, packet, {
+        structuralFacts,
         codeEpisodes: semantics.episodes,
         facets: semantics.facets,
         semanticAssertions: semantics.assertions,
         repoSignals: semantics.signals,
       });
+      const persistedCoverage = await loadPersistedPacketCoverage(client, packet);
       stats.persisted++;
-      console.log(
+      outcomes.push(buildBackfillRowOutcome(row, 'persisted', {
+        packetId: packet.id,
+        repoSnapshotId: packet.repoSnapshotId,
+        packetContentHash: packet.contentHash,
+        eligible: packet.quality.eligible,
+        qualityScore: packet.quality.score,
+        productionReady: persistedCoverage.productionReady,
+        demandCount: packet.demands.length,
+        sourceSpanCount: challengeInput.sourceSpans.length,
+        changedFileCount: challengeInput.changedFiles.length,
+        structuralFactCount: structuralFacts.length,
+        contextRecordId: persistedCoverage.contextRecordId,
+        repoSourceRefCount: persistedCoverage.repoSourceRefCount,
+        conceptLinkCount: persistedCoverage.conceptLinkCount,
+        persistedContextReady: persistedCoverage.persistedContextReady,
+      }));
+      log.log(
         `[challenge-backfill] [${index + 1}/${rows.length}] persisted ${label} eligible=${packet.quality.eligible} quality=${packet.quality.score}`,
       );
-      } catch (error) {
-        stats.errors++;
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
-      }
+    } catch (error) {
+      stats.errors++;
+      const message = formatError(error);
+      outcomes.push(buildBackfillRowOutcome(row, 'error', { error: message }));
+      log.error(`[challenge-backfill] [${index + 1}/${rows.length}] error ${label}: ${message}`);
     }
+  }
+
+  return { stats, outcomes };
+}
+
+async function run(options: Options): Promise<void> {
+  if (options.preflightGithub) {
+    const result = await checkGitHubApiConnectivity({
+      token: process.env['GITHUB_TOKEN'],
+    });
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
+    console.log(`[challenge-backfill] github preflight ${result.ok ? 'ok' : 'failed'} ${result.endpoint}`);
+    console.log(`  status:          ${result.status ?? 'unreachable'}`);
+    console.log(`  message:         ${result.message}`);
+    console.log(`  rate remaining:  ${result.rateLimitRemaining ?? 'unknown'}`);
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+
+  let localDatabase: LocalSqliteDatabase | undefined;
+  const progressLog: Pick<Console, 'log' | 'warn' | 'error'> = options.json
+    ? {
+        log: (...args: unknown[]) => console.error(...args),
+        warn: (...args: unknown[]) => console.error(...args),
+        error: (...args: unknown[]) => console.error(...args),
+      }
+    : console;
+  const client: QueryClient = options.target === 'remote'
+    ? new D1Client(loadD1Config())
+    : (() => {
+        const path = discoverLocalDatabase(options.databasePath);
+        localDatabase = new DatabaseSync(path);
+        localDatabase.exec('PRAGMA foreign_keys = ON');
+        progressLog.log(`[challenge-backfill] target=local database=${path}`);
+        return new LocalQueryClient(localDatabase);
+      })();
+  let result: BackfillRunResult;
+  try {
+    result = await backfillReviewChallengePackets({
+      client,
+      db: d1DatabaseAdapter(client),
+      options,
+      token: process.env['GITHUB_TOKEN'],
+      log: progressLog,
+    });
   } finally {
     localDatabase?.close();
   }
 
-  printSummary(stats, options);
-  if (stats.errors > 0) process.exitCode = 1;
+  if (options.json) {
+    console.log(JSON.stringify(buildBackfillCliReport(result, options), null, 2));
+  } else {
+    printSummary(result.stats, options);
+  }
+  if (result.stats.errors > 0) process.exitCode = 1;
 }
 
-run(parseArgs(process.argv.slice(2))).catch((error) => {
-  console.error(`[challenge-backfill] fatal: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  run(parseArgs(process.argv.slice(2))).catch((error) => {
+    console.error(`[challenge-backfill] fatal: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  });
+}

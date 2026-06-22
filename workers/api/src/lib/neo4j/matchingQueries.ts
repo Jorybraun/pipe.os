@@ -298,10 +298,11 @@ export async function matchReposForCandidateNeo4j(
     // Step 1: Get candidate's active nodes
     MATCH (c:Candidate {candidate_id: $candidate_id})-[:HAS]->(cn:CandidateNode)
     WHERE cn.superseded_at IS NULL
+      AND cn.embedding IS NOT NULL
 
     // Step 2: Match against repo sub-elements
     MATCH (r:Repo)-[:HAS]->(rn:RepoNode)
-    WHERE rn.node_type IN ['Feature', 'TechnicalStack', 'ArchitecturalPattern', 'PRSample']
+    WHERE rn.embedding IS NOT NULL
 
     // Step 3: Compute similarities
     WITH r, cn, rn, vector.similarity.cosine(cn.embedding, rn.embedding) AS sim
@@ -310,7 +311,7 @@ export async function matchReposForCandidateNeo4j(
     // Step 4: Aggregate per-repo
     WITH r, avg(sim) * log(1 + count(rn)) AS repo_score,
          collect({
-           node_type: labels(rn)[1],
+           node_type: rn.node_type,
            narrative: rn.narrative_text,
            similarity: sim
          })[0..3] AS evidence,

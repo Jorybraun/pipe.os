@@ -1,6 +1,6 @@
 # UAR Culture Plugin Reconciliation — Stub Fix and Migration Path
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 372–383)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 372–383)
 **Phase:** 3
 **Status:** LINKED-ONLY (partially — Subagent I covers the stub fix; the migration path is new)
 

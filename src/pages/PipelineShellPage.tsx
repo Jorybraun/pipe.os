@@ -115,7 +115,7 @@ export default function PipelineShellPage(): JSX.Element {
   }, [publishPipeline]);
 
   const handleUnpublish = useCallback(async (): Promise<void> => {
-    if (!window.confirm('Unpublish this pipeline? Candidates will no longer be able to access it.')) return;
+    if (!window.confirm('Unpublish this role? People will no longer be able to access its interview rounds.')) return;
     try {
       await unpublishPipeline();
     } catch (err) {
@@ -163,7 +163,7 @@ export default function PipelineShellPage(): JSX.Element {
               letterSpacing: '0.1em',
             }}
           >
-            ERROR_LOADING_PIPELINE
+            ERROR_LOADING_ROLE
           </div>
           <p
             style={{
@@ -199,7 +199,7 @@ export default function PipelineShellPage(): JSX.Element {
     return (
       <div style={{ padding: 60, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--pipe-text)', marginBottom: 20 }}>
-          Pipeline Not Found
+          Role Not Found
         </h2>
         <button
           onClick={() => navigate('/')}
@@ -214,7 +214,7 @@ export default function PipelineShellPage(): JSX.Element {
             letterSpacing: '0.1em',
           }}
         >
-          BACK_TO_ROLES
+          BACK TO ROLES
         </button>
       </div>
     );
@@ -262,7 +262,7 @@ export default function PipelineShellPage(): JSX.Element {
                 marginBottom: 8,
               }}
             >
-              AUTO_BUILD_WARNINGS
+              ROLE BUILD WARNINGS
             </div>
             <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
               {autoBuildWarnings.map((w) => (
@@ -325,7 +325,7 @@ export default function PipelineShellPage(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              PIPELINE_OVERVIEW
+              ROLE OVERVIEW
             </div>
             <div
               data-testid="pipeline-status-badge"
@@ -362,7 +362,7 @@ export default function PipelineShellPage(): JSX.Element {
         <div style={{ display: 'flex', gap: 12 }}>
           <button
             onClick={() => navigate(`/pipeline/${id}`)}
-            aria-label="Role description"
+            aria-label="Role overview"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -381,7 +381,7 @@ export default function PipelineShellPage(): JSX.Element {
           </button>
           <button
             onClick={() => navigate(`/pipeline/${id}/kanban`)}
-            aria-label="View kanban"
+            aria-label="View role board"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -397,7 +397,7 @@ export default function PipelineShellPage(): JSX.Element {
             }}
           >
             <LayoutGrid size={14} />
-            VIEW_KANBAN
+            VIEW BOARD
           </button>
           {isDraft && (
             <button
@@ -405,8 +405,8 @@ export default function PipelineShellPage(): JSX.Element {
               disabled={stages.length === 0}
               title={
                 stages.length === 0
-                  ? 'Add at least 1 stage before publishing'
-                  : 'Publish pipeline to start inviting candidates'
+                  ? 'Add at least 1 round before publishing'
+                  : 'Publish role to start inviting people'
               }
               style={{
                 display: 'flex',
@@ -434,7 +434,7 @@ export default function PipelineShellPage(): JSX.Element {
               }}
             >
               <Rocket size={14} />
-              PUBLISH_PIPELINE
+              PUBLISH ROLE
             </button>
           )}
           {isActivePipeline && (
@@ -475,7 +475,7 @@ export default function PipelineShellPage(): JSX.Element {
                 }}
               >
                 <Undo2 size={14} />
-                UNPUBLISH
+                UNPUBLISH ROLE
               </button>
               <button
                 onClick={() => setShowAddCandidate(true)}
@@ -494,7 +494,7 @@ export default function PipelineShellPage(): JSX.Element {
                 }}
               >
                 <Plus size={14} />
-                ADD_CANDIDATE
+                ADD PERSON
               </button>
             </>
           )}
@@ -596,7 +596,7 @@ export default function PipelineShellPage(): JSX.Element {
                   color: 'var(--pipe-text-dim)',
                   fontFamily: '"Space Mono", monospace',
                 }}>
-                  {candidateCount} candidates
+                  {candidateCount} people
                 </div>
               </div>
             </div>
@@ -638,7 +638,7 @@ export default function PipelineShellPage(): JSX.Element {
               color: '#4ade80',
               fontFamily: '"Space Mono", monospace',
             }}>
-              + Add Stage
+              ADD ROUND
             </div>
           </div>
         )}

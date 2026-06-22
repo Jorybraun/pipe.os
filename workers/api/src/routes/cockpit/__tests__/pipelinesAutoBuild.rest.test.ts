@@ -36,6 +36,11 @@ const bodySchema = z.object({
   role_context_id: z.string().min(1),
   pipeline_title: z.string().min(1).max(200).optional(),
   match_config: matchConfigSchema,
+  selected_stages: z
+    .array(z.enum(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'] as const))
+    .min(1)
+    .default(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'])
+    .transform((values) => [...new Set(values)] as Array<'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING'>),
 });
 
 describe('POST /api/v1/pipelines/auto-build — body schema', () => {
@@ -51,8 +56,10 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: null,
         non_negotiable_skills: ['react', 'typescript'],
       },
+      selected_stages: ['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'],
     });
     expect(result.success).toBe(true);
+    expect(result.success ? result.data.selected_stages : []).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
   });
 
   it('accepts a valid hybrid wizard output with mix ratio', () => {
@@ -66,8 +73,10 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: 0.6,
         non_negotiable_skills: [],
       },
+      selected_stages: ['CODE_REVIEW', 'LIVE_CODING'],
     });
     expect(result.success).toBe(true);
+    expect(result.success ? result.data.selected_stages : []).toEqual(['CODE_REVIEW', 'LIVE_CODING']);
   });
 
   it('rejects an empty role_context_id', () => {
@@ -81,6 +90,7 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: null,
         non_negotiable_skills: [],
       },
+      selected_stages: ['SCREENING'],
     });
     expect(result.success).toBe(false);
   });
@@ -96,6 +106,7 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: 1.5, // out of [0, 1]
         non_negotiable_skills: [],
       },
+      selected_stages: ['SCREENING'],
     });
     expect(result.success).toBe(false);
   });
@@ -111,6 +122,7 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: null,
         non_negotiable_skills: [],
       },
+      selected_stages: ['SCREENING'],
     });
     expect(result.success).toBe(false);
   });
@@ -130,6 +142,75 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
     if (result.success) {
       expect(result.data.match_config.non_negotiable_skills).toEqual([]);
     }
+  });
+
+  it('defaults selected_stages to all stages when omitted', () => {
+    const result = bodySchema.safeParse({
+      role_context_id: 'rc_123',
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'strict',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: [],
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
+    }
+  });
+
+  it('deduplicates selected_stages values', () => {
+    const result = bodySchema.safeParse({
+      role_context_id: 'rc_123',
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'strict',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: [],
+      },
+      selected_stages: ['SCREENING', 'CODE_REVIEW', 'SCREENING', 'LIVE_CODING'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
+    }
+  });
+
+  it('rejects an empty selected_stages array', () => {
+    const result = bodySchema.safeParse({
+      role_context_id: 'rc_123',
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'strict',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: [],
+      },
+      selected_stages: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects unknown selected_stages values', () => {
+    const result = bodySchema.safeParse({
+      role_context_id: 'rc_123',
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'strict',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: [],
+      },
+      selected_stages: ['SCREENING', 'NOT_A_STAGE'],
+    });
+    expect(result.success).toBe(false);
   });
 
   it('rejects pipeline_title longer than 200 chars', () => {

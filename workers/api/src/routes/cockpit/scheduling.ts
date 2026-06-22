@@ -8,6 +8,7 @@
  *   DELETE /api/v1/scheduling/connection      — disconnect provider
  *   GET    /api/v1/scheduling/event-types     — list provider event types
  *   GET    /api/v1/scheduling/interviews      — list scheduled interviews
+ *   GET    /api/v1/scheduling/interviews/:id  — scheduled interview detail
  *   POST   /api/v1/scheduling/interviews      — create scheduled interview
  *   PATCH  /api/v1/scheduling/interviews/:id  — update interview status
  *
@@ -20,6 +21,15 @@ import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
+import { ensureMeetingRoomLinks } from '../meetingRooms';
+import {
+  LivingContextStore,
+  deterministicEntityId,
+  ensureCandidateLivingContext,
+  ensureContactLivingContext,
+  loadCandidateLivingContext,
+  loadContactLivingContext,
+} from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -78,16 +88,46 @@ const callbackSchema = z.object({
 });
 
 const createInterviewSchema = z.object({
-  candidateId: z.string().min(1),
+  candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
   stageId: z.string().optional(),
-  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING']).optional(),
+  recipientName: z.string().trim().min(1).max(200).optional(),
+  recipientEmail: z.string().trim().email().optional(),
+  meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
+  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
+  scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
+}).superRefine((value, ctx) => {
+  const hasCandidate = Boolean(value.candidateId);
+  const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
+  if (!hasCandidate && !hasRecipient) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'candidateId or recipientName plus recipientEmail is required.',
+      path: ['recipientEmail'],
+    });
+  }
+  if (!hasCandidate && (value.pipelineId || value.stageId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'pipelineId and stageId require candidateId.',
+      path: ['candidateId'],
+    });
+  }
 });
 
+export const INTERVIEW_STATUS_VALUES = [
+  'INVITED',
+  'SCHEDULED',
+  'ACTIVE',
+  'COMPLETED',
+  'CANCELLED',
+  'NO_SHOW',
+] as const;
+
 const updateInterviewSchema = z.object({
-  status: z.enum(['INVITED', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']).optional(),
+  status: z.enum(INTERVIEW_STATUS_VALUES).optional(),
   scheduledAt: z.string().optional(),
   meetingUrl: z.string().optional(),
   recruiterNotes: z.string().optional(),
@@ -100,16 +140,472 @@ const inviteToCallSchema = z.object({
 
 // ─── Status transition validation ───────────────────────────────────────────
 
-const VALID_TRANSITIONS: Record<string, string[]> = {
+export const SCHEDULED_INTERVIEW_STATUS_TRANSITIONS: Record<string, string[]> = {
   INVITED: ['SCHEDULED', 'CANCELLED'],
-  SCHEDULED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  SCHEDULED: ['ACTIVE', 'COMPLETED', 'CANCELLED', 'NO_SHOW'],
+  ACTIVE: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
   COMPLETED: [],
   CANCELLED: ['INVITED'],
   NO_SHOW: ['SCHEDULED', 'CANCELLED'],
 };
 
-function canTransition(from: string, to: string): boolean {
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+export function canInterviewStatusTransition(from: string, to: string): boolean {
+  return SCHEDULED_INTERVIEW_STATUS_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+function buildInternalVideoUrl(_c: { env: Env }, interview: { id: string; stage_id: string | null; candidate_id: string | null; meeting_url: string | null }): string | null {
+  if (interview.meeting_url) return interview.meeting_url;
+  return null;
+}
+
+type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
+
+async function loadScheduledInterviewLivingContext(
+  db: D1Database,
+  ownerId: string,
+  interview: {
+    id: string;
+    candidate_id: string | null;
+    recipient_email: string | null;
+  },
+): Promise<InterviewLivingContext> {
+  if (interview.candidate_id) {
+    await ensureCandidateLivingContext(db, interview.candidate_id);
+    return loadCandidateLivingContext(db, interview.candidate_id);
+  }
+
+  const recipientEmail = interview.recipient_email?.trim().toLowerCase();
+  const recipientContact = recipientEmail
+    ? await db.prepare(
+      `SELECT id
+         FROM contacts
+        WHERE owner_id = ?1
+          AND lower(email) = ?2
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+    ).bind(ownerId, recipientEmail).first<{ id: string }>()
+    : null;
+  const meetingContact = recipientContact
+    ? null
+    : await db.prepare(
+      `SELECT c.id
+         FROM meetings m
+         JOIN meeting_participants mp ON mp.meeting_id = m.id
+         JOIN contacts c ON c.id = mp.contact_id
+        WHERE m.scheduled_interview_id = ?1
+          AND m.owner_id = ?2
+        ORDER BY mp.created_at DESC
+        LIMIT 1`,
+    ).bind(interview.id, ownerId).first<{ id: string }>();
+  const contactId = recipientContact?.id ?? meetingContact?.id ?? null;
+  if (!contactId) return null;
+
+  await ensureContactLivingContext(db, contactId);
+  return loadContactLivingContext(db, contactId);
+}
+
+async function ensureRecipientContact(
+  db: D1Database,
+  ownerId: string,
+  recipient: { name: string; email: string },
+): Promise<string> {
+  const email = recipient.email.trim().toLowerCase();
+  const name = recipient.name.trim();
+  const existing = await db.prepare(
+    `SELECT id
+       FROM contacts
+      WHERE owner_id = ?1
+        AND lower(email) = ?2
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(ownerId, email).first<{ id: string }>();
+  const now = new Date().toISOString();
+
+  if (existing) {
+    await db.prepare(
+      `UPDATE contacts
+          SET name = COALESCE(NULLIF(name, ''), ?1),
+              updated_at = ?2
+        WHERE id = ?3`,
+    ).bind(name, now, existing.id).run();
+    await ensureContactLivingContext(db, existing.id);
+    return existing.id;
+  }
+
+  const contactId = crypto.randomUUID();
+  await db.prepare(
+    `INSERT INTO contacts (
+       id, owner_id, email, name, type, created_at, updated_at
+     ) VALUES (?1, ?2, ?3, ?4, 'lead', ?5, ?5)`,
+  ).bind(contactId, ownerId, email, name, now).run();
+  await ensureContactLivingContext(db, contactId);
+  return contactId;
+}
+
+async function ensureScheduledInterviewRoomLinks(
+  db: D1Database,
+  ownerId: string,
+  env: Env,
+  interview: {
+    id: string;
+    scheduled_at: string | null;
+    candidate_name: string | null;
+    candidate_email: string | null;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    pipeline_title: string | null;
+    stage_title: string | null;
+    interview_type: string | null;
+  },
+  inviteEmail: string,
+): Promise<{ hostUrl: string; guestUrl: string; expiresAt: string; contactId: string; meetingId: string }> {
+  const email = inviteEmail.trim().toLowerCase();
+  const name = (
+    interview.candidate_name
+    ?? interview.recipient_name
+    ?? email.split('@')[0]
+    ?? 'Interview guest'
+  ).trim();
+  const contactId = await ensureRecipientContact(db, ownerId, { name, email });
+  const now = new Date().toISOString();
+
+  let meeting = await db.prepare(
+    `SELECT id
+       FROM meetings
+      WHERE scheduled_interview_id = ?1
+        AND owner_id = ?2
+      ORDER BY created_at DESC
+      LIMIT 1`,
+  ).bind(interview.id, ownerId).first<{ id: string }>();
+
+  if (!meeting) {
+    const meetingId = crypto.randomUUID();
+    const role = interview.pipeline_title ?? 'Talent Pool';
+    const stage = interview.stage_title ?? interview.interview_type ?? 'Interview';
+    await db.prepare(
+      `INSERT INTO meetings
+       (id, owner_id, title, description, status, scheduled_at, meeting_type,
+        scheduled_interview_id, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?7)`,
+    ).bind(
+      meetingId,
+      ownerId,
+      `${name} interview`,
+      `${role} · ${stage}`,
+      interview.scheduled_at,
+      interview.id,
+      now,
+    ).run();
+    meeting = { id: meetingId };
+  }
+
+  const participant = await db.prepare(
+    `SELECT mp.id
+       FROM meeting_participants mp
+      WHERE mp.meeting_id = ?1
+        AND mp.contact_id = ?2
+      LIMIT 1`,
+  ).bind(meeting.id, contactId).first<{ id: string }>();
+
+  if (!participant) {
+    await db.prepare(
+      `INSERT INTO meeting_participants (id, meeting_id, contact_id, role, created_at, updated_at)
+       VALUES (?1, ?2, ?3, 'ATTENDEE', ?4, ?4)`,
+    ).bind(crypto.randomUUID(), meeting.id, contactId, now).run();
+  }
+
+  const room = await ensureMeetingRoomLinks(
+    db,
+    meeting.id,
+    env.VIDEO_ROOM_APP_URL ?? 'http://localhost:5175',
+  );
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET meeting_url = ?1,
+            updated_at = ?2
+      WHERE id = ?3`,
+  ).bind(room.guestUrl, now, interview.id).run();
+
+  return {
+    hostUrl: room.hostUrl,
+    guestUrl: room.guestUrl,
+    expiresAt: room.expiresAt,
+    contactId,
+    meetingId: meeting.id,
+  };
+}
+
+function lineCount(value: string): number {
+  return Math.max(1, value.split('\n').length);
+}
+
+function contactFirstInterviewSourceText(input: {
+  recipientName: string;
+  recipientEmail: string;
+  meetingType: string;
+  interviewType: string;
+  scheduledAt: string | null;
+  schedulingProvider: string | null;
+  schedulingUrl: string | null;
+  createdAt: string;
+}): string {
+  return [
+    'Contact-first interview invite',
+    `Recipient name: ${input.recipientName}`,
+    `Recipient email: ${input.recipientEmail}`,
+    `Meeting type: ${input.meetingType}`,
+    `Interview type: ${input.interviewType}`,
+    `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
+    `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
+    `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistContactFirstInterviewInviteContext(
+  db: D1Database,
+  input: {
+    contactId: string;
+    ownerId: string;
+    interviewId: string;
+    recipientName: string;
+    recipientEmail: string;
+    meetingType: string;
+    interviewType: string;
+    scheduledAt: string | null;
+    schedulingProvider: string | null;
+    schedulingUrl: string | null;
+    createdAt: string;
+  },
+): Promise<void> {
+  const identity = await ensureContactLivingContext(db, input.contactId);
+  if (!identity) return;
+
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `scheduled-interview:${input.interviewId}:contact:${input.contactId}`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionType: input.meetingType === 'DIRECT_VIDEO_CALL'
+      ? 'direct_video_call'
+      : 'screening_interview',
+    externalReference: input.interviewId,
+    startedAt: input.scheduledAt,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingType: input.meetingType,
+      interviewType: input.interviewType,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'scheduled_interview_invite',
+    logicalKey: `${input.interviewId}:invite`,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      contactId: input.contactId,
+      ownerId: input.ownerId,
+    },
+  });
+  const sourceText = contactFirstInterviewSourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      source: 'contact_first_interview_create',
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'invite-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      source: 'contact_first_interview_create',
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'scheduled_interview_invite',
+    predicate: 'preserves contact-first interview invite',
+    narrative: `Contact-first interview invite for ${input.recipientName}.`,
+    qualifiers: {
+      scheduledInterviewId: input.interviewId,
+      contactId: input.contactId,
+      meetingType: input.meetingType,
+      interviewType: input.interviewType,
+    },
+    confidence: 1,
+    extractionVersion: 'scheduled-interview-create-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.interviewId,
+        relationship: 'source_event',
+      },
+      {
+        entityType: 'contact',
+        entityId: input.contactId,
+        relationship: 'participant',
+      },
+    ],
+  });
+}
+
+function inviteDeliverySourceText(input: {
+  recipientEmail: string;
+  subject: string;
+  meetingUrl: string;
+  customMessage: string | null;
+  emailSent: boolean;
+  providerMessageId: string | null;
+  createdAt: string;
+}): string {
+  return [
+    'Scheduled interview invite delivery',
+    `Recipient email: ${input.recipientEmail}`,
+    `Subject: ${input.subject}`,
+    `Meeting URL: ${input.meetingUrl}`,
+    `Custom message: ${input.customMessage ?? 'none'}`,
+    `Email sent: ${input.emailSent ? 'yes' : 'no'}`,
+    `Provider message id: ${input.providerMessageId ?? 'none'}`,
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistScheduledInterviewInviteDeliveryContext(
+  db: D1Database,
+  input: {
+    contactId: string;
+    ownerId: string;
+    interviewId: string;
+    meetingId: string;
+    recipientEmail: string;
+    subject: string;
+    meetingUrl: string;
+    customMessage: string | null;
+    emailSent: boolean;
+    providerMessageId: string | null;
+    createdAt: string;
+  },
+): Promise<void> {
+  const identity = await ensureContactLivingContext(db, input.contactId);
+  if (!identity) return;
+
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionType: 'scheduled_interview_invite_delivery',
+    externalReference: input.interviewId,
+    startedAt: input.createdAt,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      emailSent: input.emailSent,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}:artifact`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'scheduled_interview_invite_delivery',
+    logicalKey: `${input.interviewId}:invite-delivery:${input.createdAt}`,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      contactId: input.contactId,
+      ownerId: input.ownerId,
+      emailSent: input.emailSent,
+    },
+  });
+  const sourceText = inviteDeliverySourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.createdAt}:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      source: 'scheduled_interview_invite_delivery',
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'invite-delivery-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      source: 'scheduled_interview_invite_delivery',
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `scheduled-interview:${input.interviewId}:invite-delivery:${input.contactId}:${input.createdAt}:context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    recordType: 'scheduled_interview_invite_delivery',
+    predicate: 'preserves scheduled interview invite delivery',
+    narrative: `Scheduled interview invite delivery for ${input.recipientEmail}.`,
+    qualifiers: {
+      scheduledInterviewId: input.interviewId,
+      meetingId: input.meetingId,
+      contactId: input.contactId,
+      emailSent: input.emailSent,
+    },
+    confidence: 1,
+    extractionVersion: 'scheduled-interview-invite-delivery-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.interviewId,
+        relationship: 'source_event',
+      },
+      {
+        entityType: 'meeting',
+        entityId: input.meetingId,
+        relationship: 'delivery_link_target',
+      },
+      {
+        entityType: 'contact',
+        entityId: input.contactId,
+        relationship: 'recipient',
+      },
+    ],
+  });
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -554,10 +1050,13 @@ schedulingAuth.get('/interviews', async (c) => {
   const result = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
-              si.interview_type, si.status,
+              si.interview_type, si.meeting_type, si.status,
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
-              si.scheduling_url, si.recruiter_notes, si.sync_source,
-              si.last_synced_at, si.created_at, si.updated_at,
+              si.scheduling_url, si.external_event_id, si.recruiter_notes,
+              si.sync_source, si.last_synced_at, si.invite_link_sent_at,
+              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -571,18 +1070,28 @@ schedulingAuth.get('/interviews', async (c) => {
     .bind(userId)
     .all<{
       id: string;
-      candidate_id: string;
+      candidate_id: string | null;
       pipeline_id: string | null;
       stage_id: string | null;
       interview_type: string | null;
+      meeting_type: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
       scheduling_provider: string | null;
       scheduling_url: string | null;
+      external_event_id: string | null;
       recruiter_notes: string | null;
       sync_source: string | null;
       last_synced_at: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      completed_at: string | null;
       created_at: string;
       updated_at: string;
       candidate_name: string | null;
@@ -597,14 +1106,24 @@ schedulingAuth.get('/interviews', async (c) => {
     pipelineId: r.pipeline_id,
     stageId: r.stage_id,
     interviewType: r.interview_type,
+    meetingType: r.meeting_type,
     status: r.status,
     scheduledAt: r.scheduled_at,
-    meetingUrl: r.meeting_url,
+    meetingUrl: buildInternalVideoUrl(c, r),
     schedulingProvider: r.scheduling_provider,
     schedulingUrl: r.scheduling_url,
+    externalEventId: r.external_event_id,
     recruiterNotes: r.recruiter_notes,
     syncSource: r.sync_source,
     lastSyncedAt: r.last_synced_at,
+    inviteLinkSentAt: r.invite_link_sent_at,
+    emailSentAt: r.email_sent_at,
+    recipientName: r.recipient_name,
+    recipientEmail: r.recipient_email,
+    matchedRepoId: r.matched_repo_id,
+    githubRepoUrl: r.github_repo_url,
+    githubPrNumber: r.github_pr_number,
+    completedAt: r.completed_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     candidateName: r.candidate_name,
@@ -614,6 +1133,192 @@ schedulingAuth.get('/interviews', async (c) => {
   }));
 
   return c.json({ interviews });
+});
+
+// GET /interviews/:id — scheduled interview detail
+schedulingAuth.get('/interviews/:id', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id,
+              si.interview_type, si.meeting_type, si.status,
+              si.scheduled_at, si.meeting_url, si.scheduling_provider,
+              si.scheduling_url, si.external_event_id, si.recruiter_notes,
+              si.sync_source, si.last_synced_at, si.invite_link_sent_at,
+              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.submission_json, si.completed_at, si.created_at, si.updated_at,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+       WHERE si.id = ? AND si.owner_id = ?`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
+      meeting_type: string | null;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+      external_event_id: string | null;
+      recruiter_notes: string | null;
+      sync_source: string | null;
+      last_synced_at: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      submission_json: string | null;
+      completed_at: string | null;
+      created_at: string;
+      updated_at: string;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+    }>();
+
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const transcriptArtifact = await db
+    .prepare(
+      `SELECT id, scheduled_interview_id, status, transcript_json, error_message,
+              created_at, updated_at
+       FROM transcript_artifacts
+       WHERE scheduled_interview_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1`
+    )
+    .bind(id)
+    .first<{
+      id: string;
+      scheduled_interview_id: string;
+      status: string;
+      transcript_json: string | null;
+      error_message: string | null;
+      created_at: string;
+      updated_at: string;
+    }>();
+
+  const linkedMeeting = await db
+    .prepare(
+      `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
+              m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
+              m.meeting_type, m.transcript_status, m.transcript_summary,
+              m.recording_r2_key, m.created_at, m.updated_at,
+              mr.id AS room_id, mr.session_id, mr.status AS room_status
+       FROM meetings m
+       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       WHERE m.scheduled_interview_id = ? AND m.owner_id = ?
+       ORDER BY m.created_at DESC
+       LIMIT 1`
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      title: string;
+      description: string | null;
+      status: string;
+      scheduled_at: string | null;
+      started_at: string | null;
+      ended_at: string | null;
+      duration_secs: number | null;
+      meeting_url: string | null;
+      meeting_type: string;
+      transcript_status: string;
+      transcript_summary: string | null;
+      recording_r2_key: string | null;
+      created_at: string;
+      updated_at: string;
+      room_id: string | null;
+      session_id: string | null;
+      room_status: string | null;
+    }>();
+
+  const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
+
+  return c.json({
+    interview: {
+      id: interview.id,
+      candidateId: interview.candidate_id,
+      pipelineId: interview.pipeline_id,
+      stageId: interview.stage_id,
+      interviewType: interview.interview_type ?? 'VIDEO',
+      meetingType: interview.meeting_type,
+      status: interview.status,
+      scheduledAt: interview.scheduled_at,
+      meetingUrl: buildInternalVideoUrl(c, interview),
+      schedulingProvider: interview.scheduling_provider,
+      schedulingUrl: interview.scheduling_url,
+      externalEventId: interview.external_event_id,
+      recruiterNotes: interview.recruiter_notes,
+      syncSource: interview.sync_source,
+      lastSyncedAt: interview.last_synced_at,
+      inviteLinkSentAt: interview.invite_link_sent_at,
+      emailSentAt: interview.email_sent_at,
+      recipientName: interview.recipient_name,
+      recipientEmail: interview.recipient_email,
+      candidateName: interview.candidate_name,
+      candidateEmail: interview.candidate_email,
+      pipelineTitle: interview.pipeline_title,
+      stageTitle: interview.stage_title,
+      matchedRepoId: interview.matched_repo_id,
+      githubRepoUrl: interview.github_repo_url,
+      githubPrNumber: interview.github_pr_number,
+      submissionJson: interview.submission_json,
+      completedAt: interview.completed_at,
+      transcriptArtifact: transcriptArtifact ? {
+        id: transcriptArtifact.id,
+        interviewId: transcriptArtifact.scheduled_interview_id,
+        status: transcriptArtifact.status,
+        transcriptJson: transcriptArtifact.transcript_json,
+        errorMessage: transcriptArtifact.error_message,
+        createdAt: transcriptArtifact.created_at,
+        updatedAt: transcriptArtifact.updated_at,
+      } : null,
+      linkedMeeting: linkedMeeting ? {
+        id: linkedMeeting.id,
+        title: linkedMeeting.title,
+        description: linkedMeeting.description,
+        status: linkedMeeting.status,
+        scheduledAt: linkedMeeting.scheduled_at,
+        startedAt: linkedMeeting.started_at,
+        endedAt: linkedMeeting.ended_at,
+        durationSecs: linkedMeeting.duration_secs,
+        meetingUrl: linkedMeeting.meeting_url,
+        meetingType: linkedMeeting.meeting_type,
+        transcriptStatus: linkedMeeting.transcript_status,
+        transcriptSummary: linkedMeeting.transcript_summary,
+        recordingR2Key: linkedMeeting.recording_r2_key,
+        room: linkedMeeting.room_id ? {
+          id: linkedMeeting.room_id,
+          sessionId: linkedMeeting.session_id,
+          status: linkedMeeting.room_status,
+        } : null,
+        createdAt: linkedMeeting.created_at,
+        updatedAt: linkedMeeting.updated_at,
+      } : null,
+      livingContext,
+      createdAt: interview.created_at,
+      updatedAt: interview.updated_at,
+    },
+  });
 });
 
 // POST /interviews/sync — poll Calendly for recent events and update interviews
@@ -751,39 +1456,110 @@ schedulingAuth.post('/interviews', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  const { candidateId, pipelineId, stageId, schedulingProvider, schedulingUrl } = parsed.data;
+  const {
+    candidateId,
+    pipelineId,
+    stageId,
+    recipientName,
+    recipientEmail,
+    meetingType,
+    interviewType,
+    scheduledAt,
+    schedulingProvider,
+    schedulingUrl,
+  } = parsed.data;
 
-  // Ownership check
-  const pipeline = await db
-    .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
-    .bind(pipelineId, userId)
-    .first<{ id: string; title: string }>();
-  if (!pipeline) return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  let candidate: { id: string; pipeline_id: string | null } | null = null;
+  if (candidateId) {
+    candidate = await db
+      .prepare('SELECT id, pipeline_id FROM candidates WHERE id = ? AND owner_id = ?')
+      .bind(candidateId, userId)
+      .first<{ id: string; pipeline_id: string | null }>();
+    if (!candidate) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  }
+
+  if (stageId && !pipelineId) {
+    return apiError(c, 'VALIDATION_ERROR', 'stageId requires pipelineId.');
+  }
+
+  if (pipelineId) {
+    if (!candidate) {
+      return apiError(c, 'VALIDATION_ERROR', 'pipelineId requires candidateId.');
+    }
+    const pipeline = await db
+      .prepare('SELECT id, title FROM pipelines WHERE id = ? AND owner_id = ?')
+      .bind(pipelineId, userId)
+      .first<{ id: string; title: string }>();
+    if (!pipeline) return apiError(c, 'NOT_FOUND', 'Role not found.');
+
+    if (candidate.pipeline_id && candidate.pipeline_id !== pipelineId) {
+      return apiError(c, 'VALIDATION_ERROR', 'Person belongs to a different role.');
+    }
+
+    if (stageId) {
+      const stage = await db
+        .prepare('SELECT id FROM stages WHERE id = ? AND pipeline_id = ?')
+        .bind(stageId, pipelineId)
+        .first<{ id: string }>();
+      if (!stage) return apiError(c, 'NOT_FOUND', 'Round not found.');
+    }
+  }
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
+  const effectiveInterviewType = interviewType ?? 'VIDEO';
+  const contactId = !candidateId && recipientName && recipientEmail
+    ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
+    : null;
 
   await db
     .prepare(
       `INSERT INTO scheduled_interviews
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
-        scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
+        interview_type, meeting_type, scheduled_at, scheduling_provider,
+        scheduling_url, recipient_name, recipient_email, sync_source,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`
     )
     .bind(
-      id, candidateId, pipelineId, stageId, userId,
+      id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
+      effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
+      recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
       now, now,
     )
     .run();
 
+  if (contactId && recipientName && recipientEmail) {
+    await persistContactFirstInterviewInviteContext(db, {
+      contactId,
+      ownerId: userId,
+      interviewId: id,
+      recipientName,
+      recipientEmail: recipientEmail.trim().toLowerCase(),
+      meetingType: effectiveMeetingType,
+      interviewType: effectiveInterviewType,
+      scheduledAt: scheduledAt ?? null,
+      schedulingProvider: schedulingProvider ?? null,
+      schedulingUrl: schedulingUrl ?? null,
+      createdAt: now,
+    });
+  }
+
   return c.json({
     interview: {
       id,
-      candidateId,
-      pipelineId,
-      stageId,
+      candidateId: candidateId ?? null,
+      contactId,
+      pipelineId: pipelineId ?? null,
+      stageId: stageId ?? null,
+      recipientName: recipientName ?? null,
+      recipientEmail: recipientEmail?.trim().toLowerCase() ?? null,
+      meetingType: effectiveMeetingType,
       status: 'INVITED',
+      interviewType: effectiveInterviewType,
+      scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
     },
@@ -811,7 +1587,7 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  if (parsed.data.status && !canTransition(interview.status, parsed.data.status)) {
+  if (parsed.data.status && !canInterviewStatusTransition(interview.status, parsed.data.status)) {
     return apiError(c, 'VALIDATION_ERROR',
       `Cannot transition from ${interview.status} to ${parsed.data.status}`);
   }
@@ -860,10 +1636,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const { id } = c.req.param();
   const db = c.env.DB;
 
-  if (!c.env.RESEND_API_KEY) {
-    return apiError(c, 'SERVICE_UNAVAILABLE', 'Email service not configured.');
-  }
-
   const body = await c.req.json();
   const parsed = inviteToCallSchema.safeParse(body);
   if (!parsed.success) {
@@ -876,7 +1648,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const interview = await db
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
-              si.scheduled_at, si.meeting_url,
+              si.scheduled_at, si.meeting_url, si.recipient_name, si.recipient_email,
+              si.interview_type,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -889,12 +1662,15 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     .bind(id, userId)
     .first<{
       id: string;
-      candidate_id: string;
-      pipeline_id: string;
-      stage_id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      interview_type: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -903,10 +1679,14 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
 
-  // Build the meeting link — prefer existing meetingUrl, else generate app video link
-  const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-  const meetingUrl = interview.meeting_url
-    ?? `${baseUrl}/video/${interview.stage_id}--${interview.candidate_id}`;
+  const roomLinks = await ensureScheduledInterviewRoomLinks(
+    db,
+    userId,
+    c.env,
+    interview,
+    email,
+  );
+  const meetingUrl = roomLinks.guestUrl;
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
@@ -956,6 +1736,36 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const subject = scheduledTime
     ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
     : `Video call invitation — ${rawPipelineTitle}`;
+  const now = new Date().toISOString();
+
+  if (!c.env.RESEND_API_KEY) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, now, id)
+      .run();
+    await persistScheduledInterviewInviteDeliveryContext(db, {
+      contactId: roomLinks.contactId,
+      ownerId: userId,
+      interviewId: id,
+      meetingId: roomLinks.meetingId,
+      recipientEmail: email.trim().toLowerCase(),
+      subject,
+      meetingUrl,
+      customMessage: customMessage ?? null,
+      emailSent: false,
+      providerMessageId: null,
+      createdAt: now,
+    });
+    return c.json({
+      success: true,
+      emailSent: false,
+      meetingUrl,
+    });
+  }
 
   // Send the email via Resend with our custom video-call HTML
   const { Resend } = await import('resend');
@@ -974,7 +1784,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   }
 
   // Update the interview to track the invite
-  const now = new Date().toISOString();
   if (result) {
     await db
       .prepare(
@@ -986,13 +1795,19 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .run();
   }
 
-  // If the meeting URL wasn't previously set, store it
-  if (!interview.meeting_url) {
-    await db
-      .prepare('UPDATE scheduled_interviews SET meeting_url = ?, updated_at = ? WHERE id = ?')
-      .bind(meetingUrl, now, id)
-      .run();
-  }
+  await persistScheduledInterviewInviteDeliveryContext(db, {
+    contactId: roomLinks.contactId,
+    ownerId: userId,
+    interviewId: id,
+    meetingId: roomLinks.meetingId,
+    recipientEmail: email.trim().toLowerCase(),
+    subject,
+    meetingUrl,
+    customMessage: customMessage ?? null,
+    emailSent: Boolean(result),
+    providerMessageId: result?.id ?? null,
+    createdAt: now,
+  });
 
   if (!result) {
     return c.json({ success: false, emailSent: false, meetingUrl }, 502);
@@ -1105,7 +1920,7 @@ schedulingPublic.post('/webhook', async (c) => {
   }
 
   // Validate status transition
-  if (!canTransition(interview.status, normalized.status)) {
+  if (!canInterviewStatusTransition(interview.status, normalized.status)) {
     console.warn('[scheduling/webhook] Invalid transition', {
       from: interview.status,
       to: normalized.status,

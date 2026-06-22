@@ -36,6 +36,7 @@ export interface DecomposedExperience {
   /** 1-sentence synthesis of bullet points into business/technical impact */
   impact_summary?: string;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecomposedProject {
@@ -45,6 +46,7 @@ export interface DecomposedProject {
   skills_demonstrated: string[];
   confidence: number;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecomposedSkill {
@@ -56,6 +58,7 @@ export interface DecomposedSkill {
   /** Depth pattern: "primary across N roles" | "secondary at N roles" | "exposure only" */
   depth_pattern?: string;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecomposedEducation {
@@ -65,6 +68,7 @@ export interface DecomposedEducation {
   year?: string;
   confidence: number;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecomposedCredential {
@@ -73,6 +77,7 @@ export interface DecomposedCredential {
   year?: string;
   confidence: number;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecomposedCareerArc {
@@ -81,6 +86,7 @@ export interface DecomposedCareerArc {
   transitions: Array<{ from: string; to: string; at_company: string }>;
   confidence: number;
   semantic_terms?: OpenSemanticTermRecord[];
+  source_quote?: string;
 }
 
 export interface DecompositionResult {
@@ -134,7 +140,8 @@ Output schema:
       "domain": "string (optional) — inferred business domain: fintech, e-commerce, healthcare, enterprise-software, etc.",
       "company_stage": "string (optional) — inferred stage: seed, series-a, growth, enterprise, agency, etc.",
       "impact_summary": "string (optional) — 1 sentence synthesizing bullet points into business/technical impact",
-      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}],
+      "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this experience"
     }
   ],
   "projects": [
@@ -144,7 +151,8 @@ Output schema:
       "url": "string (optional)",
       "skills_demonstrated": ["skill1"],
       "confidence": number,
-      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "demonstrated"}]
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "demonstrated"}],
+      "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this project"
     }
   ],
   "skills": [
@@ -155,7 +163,8 @@ Output schema:
       "evidence_source": "string (optional — company or project name)",
       "confidence": number,
       "depth_pattern": "string (optional) — e.g. 'primary across 5 roles', 'secondary at 2 roles', 'exposure only'",
-      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}],
+      "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this skill"
     }
   ],
   "education": [
@@ -165,7 +174,8 @@ Output schema:
       "field": "string (optional)",
       "year": "string (optional)",
       "confidence": number,
-      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}],
+      "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this education entry"
     }
   ],
   "credentials": [
@@ -174,7 +184,8 @@ Output schema:
       "issuer": "string (optional)",
       "year": "string (optional)",
       "confidence": number,
-      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
+      "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}],
+      "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this credential"
     }
   ],
   "career_arc": {
@@ -182,7 +193,8 @@ Output schema:
     "growth_velocity": "fast | normal | slow",
     "transitions": [{"from": "string", "to": "string", "at_company": "string"}],
     "confidence": number,
-    "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}]
+    "semantic_terms": [{"surface": "exact source term", "canonical_key": "term:normalized-key", "evidence_level": "mentioned | used | explained | selected | implemented | demonstrated | validated"}],
+    "source_quote": "string (optional) — exact contiguous quote copied from RAW RESUME TEXT that supports this synthesis"
   },
   "domain_specialization": "string (optional) — synthesized primary domain across all experiences",
   "company_stage_pattern": ["string (optional) — inferred stages the candidate has been exposed to"],
@@ -195,6 +207,7 @@ Anti-hallucination rules:
 - Do not claim years of experience with a technology unless explicitly stated.
 - If parser skeleton and raw text conflict, trust the raw text and note the discrepancy.
 - Confidence must reflect certainty, not candidate quality.
+- source_quote must be an exact contiguous substring copied from RAW RESUME TEXT. Do not paraphrase source_quote.
 - team_size and scope are OPTIONAL — omit if not inferable from the text.
 - years_exposure is OPTIONAL — omit unless the resume explicitly states "5 years of TypeScript".
 - domain, company_stage, impact_summary are OPTIONAL — infer ONLY from strong contextual evidence (company name, industry keywords, explicit descriptions). If unclear, omit or use "unknown".

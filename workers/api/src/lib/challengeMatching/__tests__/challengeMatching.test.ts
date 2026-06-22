@@ -20,7 +20,11 @@ function source(id: string): SourceRef {
     contentHash: `sha256-${id}`,
     startOffset: 10,
     endOffset: 30,
+    sourceRefType: id.startsWith('challenge-') ? 'repo_source_span' : 'source_span',
+    sourceRefId: `source-ref-${id}`,
+    sourceSpanId: id.startsWith('challenge-') ? undefined : `source-ref-${id}`,
     locator: `${id}:1:10-30`,
+    exactText: `Exact source text for ${id}.`,
   };
 }
 
@@ -235,6 +239,34 @@ describe('compileCandidateMatchQuery', () => {
     expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
     expect(result.query.validationAtoms).toEqual([]);
     expect(result.query.recallOnlyAtoms).toHaveLength(1);
+  });
+
+  it('excludes source refs that cannot point to exact original evidence', () => {
+    const complete = source('candidate-valid');
+    const result = compile([
+      signal('missing-ref-type', {
+        sourceRefs: [{ ...complete, sourceRefType: undefined }],
+      }),
+      signal('missing-ref-id', {
+        sourceRefs: [{ ...complete, sourceRefId: undefined }],
+      }),
+      signal('missing-exact-text', {
+        sourceRefs: [{ ...complete, exactText: undefined }],
+      }),
+      signal('blank-exact-text', {
+        sourceRefs: [{ ...complete, exactText: '   ' }],
+      }),
+      signal('valid', { sourceRefs: [complete] }),
+    ]);
+
+    expect(result.status).toBe('READY');
+    expect(result.query.validationAtoms.map((atom) => atom.id)).toEqual(['valid']);
+    expect(result.excludedSignalIds).toEqual([
+      'blank-exact-text',
+      'missing-exact-text',
+      'missing-ref-id',
+      'missing-ref-type',
+    ]);
   });
 });
 
@@ -527,5 +559,102 @@ describe('ranking and explanations', () => {
     expect(explanation.evidence[0]!.candidateSourceRefs[0]!.contentHash).toMatch(/^sha256-candidate-/);
     expect(explanation.evidence[0]!.challengeSourceRefs[0]!.contentHash).toMatch(/^sha256-challenge-/);
     expect(explanation.evidence.every((entry) => entry.purpose === 'deepening')).toBe(true);
+    expect(explanation.selectedPr).toEqual({
+      challengeId: 'direct',
+      repoId: 'repo-direct',
+      prNumber: 10,
+      sourceVersion: 'commit-abc',
+    });
+    expect(explanation.candidateSpans).toHaveLength(2);
+    expect(explanation.repoSpans).toHaveLength(2);
+    expect(explanation.rejectedPackets).toEqual([]);
+    expect(explanation.missingEvidence).toEqual([]);
+    expect(explanation.stretchAreas).toEqual([]);
+  });
+
+  it('keeps an eligible source-backed match selected while explaining rejected packets, missing evidence, and stretch areas', () => {
+    const compiled = compile([
+      signal('one'),
+      signal('stretch', {
+        purpose: 'deepening',
+        concepts: ['technology:kafka'],
+        problems: [],
+        mechanisms: [],
+      }),
+    ]);
+    const packet = challenge('stretch-diagnostic', [
+      demand('one', 0.8),
+      demand('stretch', 0.2, {
+        concepts: ['technology:pulsar'],
+        problems: [],
+        mechanisms: [],
+        highWeightRoleRequirement: false,
+      }),
+      demand('unmatched', 0.2, {
+        concepts: ['term:unseen-packet-demand'],
+        problems: ['unknown-review-risk'],
+        mechanisms: [],
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+    const alignment = alignCandidateToChallenge({
+      query: compiled.query,
+      challenge: packet,
+      adjacency: [{ from: 'technology:kafka', to: 'technology:pulsar', dimension: 'technology' }],
+    });
+
+    const explanation = explainChallengeMatch(alignment, {
+      rejectedPackets: [{
+        id: 'packet-with-missing-span',
+        repoId: 'repo-7',
+        prNumber: 77,
+        reasons: ['MISSING_DEMAND_SOURCE_SPANS'],
+        demandIds: ['demand-x'],
+        missingSourceSpanIds: ['repo-span-x'],
+      }],
+      missingEvidence: [{
+        scope: 'repo',
+        reason: 'MISSING_DEMAND_SOURCE_SPANS',
+        challengeId: 'packet-with-missing-span',
+      }],
+    });
+
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(explanation.status).toBe('MATCHED');
+    expect(explanation.selectedPr).toEqual({
+      challengeId: 'stretch-diagnostic',
+      repoId: 'repo-stretch-diagnostic',
+      prNumber: 10,
+      sourceVersion: 'commit-abc',
+    });
+    expect(explanation.rejectedPackets).toEqual([
+      expect.objectContaining({
+        id: 'packet-with-missing-span',
+        reasons: ['MISSING_DEMAND_SOURCE_SPANS'],
+        missingSourceSpanIds: ['repo-span-x'],
+      }),
+    ]);
+    expect(explanation.unmatchedDemandIds).toEqual(['unmatched']);
+    expect(explanation.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SOURCE_BACKED_CANDIDATE_ALIGNMENT',
+        demandId: 'unmatched',
+      }),
+      expect.objectContaining({
+        scope: 'repo',
+        reason: 'MISSING_DEMAND_SOURCE_SPANS',
+      }),
+    ]));
+    expect(explanation.stretchAreas).toEqual([
+      expect.objectContaining({
+        atomId: 'stretch',
+        demandId: 'stretch',
+        atomConcept: 'technology:kafka',
+        demandConcept: 'technology:pulsar',
+        dimension: 'technology',
+      }),
+    ]);
   });
 });

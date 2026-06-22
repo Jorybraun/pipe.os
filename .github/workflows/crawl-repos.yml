@@ -116,6 +116,28 @@ jobs:
           [ "${{ github.event.inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
           npx tsx scripts/crawl-repos/index.ts $ARGS
 
+      - name: Review graph readiness report
+        if: always() && steps.passes.outputs.run_pass2 == 'true'
+        continue-on-error: true
+        working-directory: workers/api
+        env:
+          GITHUB_TOKEN:               ${{ secrets.CRAWLER_GITHUB_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID:      ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN:       ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID:  ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: |
+          npm run review-graph:remote-readiness -- --require-github > review-graph-readiness.json
+          cat review-graph-readiness.json
+
+      - name: Upload review graph readiness report
+        if: always() && steps.passes.outputs.run_pass2 == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-graph-readiness-${{ github.run_id }}
+          path: workers/api/review-graph-readiness.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4

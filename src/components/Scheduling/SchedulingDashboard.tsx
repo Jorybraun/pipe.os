@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react';
-import { Calendar, RefreshCw, UserPlus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Calendar, UserPlus } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
-import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
+import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
-import { InviteCandidateModal } from './InviteCandidateModal';
+import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
 import { ConnectionSetup } from './ConnectionSetup';
-import type { ScheduledInterview } from '../../lib/scheduling/types';
+import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider } from '../../lib/scheduling/types';
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
@@ -65,8 +66,17 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
  */
 export function SchedulingDashboard(): JSX.Element {
   const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
-  const { connection } = useSchedulingConnection();
+  const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setShowInviteModal(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   // Group interviews by timeline, then sort within each group by time
   const groupedInterviews = useMemo(() => {
@@ -123,10 +133,10 @@ export function SchedulingDashboard(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            INTERVIEW_SCHEDULE
+            INTERVIEWS
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
-            Schedule
+            Interviews
           </h1>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
@@ -149,31 +159,11 @@ export function SchedulingDashboard(): JSX.Element {
             }}
           >
             <UserPlus size={14} />
-            INVITE CANDIDATE
+            NEW INTERVIEW
           </button>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
             {interviews.length} total
           </span>
-          {connection?.lastSyncAt && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                fontSize: 10,
-                color: 'rgba(74,222,128,0.7)',
-                fontFamily: '"Space Mono", monospace',
-                letterSpacing: '0.05em',
-              }}
-              title={`Last webhook sync: ${new Date(connection.lastSyncAt).toLocaleString()}`}
-            >
-              <RefreshCw size={10} />
-              Last sync {new Date(connection.lastSyncAt).toLocaleString(undefined, {
-                dateStyle: 'short',
-                timeStyle: 'short',
-              })}
-            </span>
-          )}
         </div>
       </div>
 
@@ -192,7 +182,7 @@ export function SchedulingDashboard(): JSX.Element {
         >
           <Calendar size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
           <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13, lineHeight: 1.7 }}>
-            No interviews yet. Invite candidates to LIVE_VIDEO stages to get started.
+            No interviews yet. Create one for any person; role context can be added later.
           </p>
         </div>
       ) : (
@@ -214,10 +204,10 @@ export function SchedulingDashboard(): JSX.Element {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {ivs.map((iv) => {
-                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown';
+                  const candidateName = iv.candidateName ?? iv.candidateEmail ?? iv.recipientName ?? iv.candidateId?.slice(0, 8) ?? 'Unknown person';
                   const candidateEmail = iv.candidateEmail ?? iv.recipientEmail ?? null;
-                  const pipelineTitle = iv.pipelineTitle ?? iv.pipelineId ?? 'Talent Pool';
-                  const stageTitle = iv.stageTitle ?? iv.stageId ?? iv.interviewType ?? 'Interview';
+                  const pipelineTitle = iv.pipelineTitle ?? 'Talent Pool';
+                  const stageTitle = iv.stageTitle ?? iv.interviewType ?? 'Interview';
 
                   return (
                     <InterviewCard
@@ -238,13 +228,27 @@ export function SchedulingDashboard(): JSX.Element {
         </div>
       )}
 
-      {/* Invite candidate modal */}
-      {showInviteModal && (
-        <InviteCandidateModal
-          onClose={() => setShowInviteModal(false)}
-          onSuccess={() => void refetch()}
-        />
-      )}
+      {/* Contact-first interview invite */}
+      <InviteCreationModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onCreateInvite={async (data: {
+          recipientName: string;
+          recipientEmail: string;
+          meetingType: MeetingType;
+          interviewType: InterviewType;
+          scheduledAt?: string;
+          schedulingProvider?: SchedulingProvider;
+          schedulingUrl?: string;
+        }) => {
+          const result = await api.post<{ interview: { id: string } }>(
+            '/api/v1/scheduling/interviews',
+            data,
+          );
+          await refetch();
+          return { id: result.interview.id };
+        }}
+      />
     </div>
   );
 }

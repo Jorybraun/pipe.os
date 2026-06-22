@@ -19,7 +19,13 @@ import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileS
 import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
+  LivingContextStore,
 } from '../../lib/livingContext';
+import {
+  hasSourceBackedReviewPacket,
+  loadSourceBackedReviewPacketById,
+} from '../../lib/review/sourceBackedReviewDiff';
+import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -51,6 +57,70 @@ function sanitizeCandidateName(name: string): string {
   return name.replace(/[<>]/g, '').trim();
 }
 
+export function normalizeCandidateEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export const TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER =
+  'Current D1 schema has no TalentPoolMembership table; roleless intake records membership state in workspace_people.context_json until that table exists.';
+
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonObject(raw: string | null): JsonObject {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as JsonValue;
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringList(value: JsonValue | undefined): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+function uniqueStrings(...values: string[][]): string[] {
+  return [...new Set(values.flat())].sort();
+}
+
+export function buildRolelessTalentPoolContext(
+  existingContext: JsonObject,
+  candidateId: string,
+  joinedAt: string,
+): JsonObject {
+  const existingTalentPool = isJsonObject(existingContext.talentPool)
+    ? existingContext.talentPool
+    : {};
+  return {
+    ...existingContext,
+    source: 'roleless_candidate_intake',
+    sources: uniqueStrings(
+      stringList(existingContext.sources),
+      stringList(existingContext.source),
+      ['roleless_candidate_intake'],
+    ),
+    legacyCandidateIds: uniqueStrings(
+      stringList(existingContext.legacyCandidateIds),
+      [candidateId],
+    ),
+    talentPool: {
+      ...existingTalentPool,
+      status: 'active',
+      roleless: true,
+      candidateId,
+      joinedAt: typeof existingTalentPool.joinedAt === 'string' ? existingTalentPool.joinedAt : joinedAt,
+      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+    },
+  };
+}
+
 /** Maximum file size for CV uploads: 10 MB. */
 const MAX_RESUME_BYTES = 10 * 1024 * 1024;
 
@@ -72,8 +142,22 @@ interface StandaloneReviewSourceRef {
   contentHash: string;
   startOffset: number;
   endOffset: number;
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
   locator?: string;
   exactText?: string;
+}
+
+interface StandaloneReviewRoleSource {
+  entityId: string;
+  locator: string;
+  conceptKeys: string[];
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  exactText?: string;
+  contentHash?: string;
 }
 
 interface StandaloneReviewAlignment {
@@ -88,6 +172,7 @@ interface StandaloneReviewAlignment {
 
 interface StandaloneReviewRankedResult {
   rank: number | null;
+  recallRank: number | null;
   challengeId: string;
   repoId: string;
   prNumber: number;
@@ -98,6 +183,55 @@ interface StandaloneReviewRankedResult {
   eligible: boolean;
   alignments: StandaloneReviewAlignment[];
   rejectionReasons: string[];
+}
+
+interface StandaloneReviewPacketMetadata {
+  repoId: number | null;
+  repoName: string | null;
+  repoUrl: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  prTitle: string | null;
+}
+
+export type StandaloneReviewExclusionReason =
+  | 'DEMAND_WITHOUT_SOURCE_SPANS'
+  | 'MISSING_DEMAND_SOURCE_SPANS'
+  | 'ROLE_GUARDRAIL_FAILED'
+  | 'PACKET_NOT_PRODUCTION_READY'
+  | 'PACKET_PROVENANCE_INVALID'
+  | 'PACKET_CONTEXT_PROJECTION_INCOMPLETE';
+
+export interface StandaloneReviewExcludedPacket {
+  id: string;
+  repoId: string | null;
+  prNumber: number | null;
+  reason: StandaloneReviewExclusionReason;
+  demandIds: string[];
+  missingSourceSpanIds: string[];
+  gateFailures: string[];
+  provenanceFailures: string[];
+  contextProjectionFailures: string[];
+  qualityScore: number | null;
+}
+
+export interface StandaloneReviewEvaluatedChallenge {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  recallRank: number | null;
+  rank: number | null;
+  eligible: boolean;
+  rejectionReasons: string[];
+  provenanceComplete: boolean;
+  alignedDemandCount: number;
+  stretchCount: number;
+}
+
+export interface StandaloneReviewDiagnostics {
+  recalledPacketIds: string[];
+  excludedPackets: StandaloneReviewExcludedPacket[];
+  evaluatedChallenges: StandaloneReviewEvaluatedChallenge[];
 }
 
 export interface StandaloneReviewMatchSummary {
@@ -186,9 +320,58 @@ function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSource
     ) {
       return [];
     }
+    const sourceRefType = typeof item.sourceRefType === 'string' ? item.sourceRefType : undefined;
+    const sourceRefId = typeof item.sourceRefId === 'string' ? item.sourceRefId : undefined;
+    const sourceSpanId = typeof item.sourceSpanId === 'string' ? item.sourceSpanId : undefined;
     const locator = typeof item.locator === 'string' ? item.locator : undefined;
-    return [{ artifactId, artifactVersion, contentHash, startOffset, endOffset, locator }];
+    const exactText = typeof item.exactText === 'string' ? item.exactText : undefined;
+    return [{
+      artifactId,
+      artifactVersion,
+      contentHash,
+      startOffset,
+      endOffset,
+      sourceRefType,
+      sourceRefId,
+      sourceSpanId,
+      locator,
+      exactText,
+    }];
   });
+}
+
+function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): StandaloneReviewRoleSource[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.roleGuardrails)) return [];
+  const sourceReferences = parsed.roleGuardrails.sourceReferences;
+  if (!Array.isArray(sourceReferences)) return [];
+  const deduped = new Map<string, StandaloneReviewRoleSource>();
+  for (const source of sourceReferences) {
+    if (!isRecord(source)) continue;
+    const { entityId, locator } = source;
+    if (typeof entityId !== 'string' || typeof locator !== 'string') continue;
+    const roleSource: StandaloneReviewRoleSource = {
+      entityId,
+      locator,
+      conceptKeys: [...new Set(asStringArray(source.conceptKeys))].sort(),
+    };
+    if (typeof source.sourceRefType === 'string') roleSource.sourceRefType = source.sourceRefType;
+    if (typeof source.sourceRefId === 'string') roleSource.sourceRefId = source.sourceRefId;
+    if (typeof source.sourceSpanId === 'string') roleSource.sourceSpanId = source.sourceSpanId;
+    if (typeof source.exactText === 'string') roleSource.exactText = source.exactText;
+    if (typeof source.contentHash === 'string') roleSource.contentHash = source.contentHash;
+    deduped.set(JSON.stringify(roleSource), roleSource);
+  }
+  return [...deduped.values()].sort((left, right) =>
+    left.entityId.localeCompare(right.entityId)
+    || left.locator.localeCompare(right.locator)
+  );
 }
 
 function parseStandaloneReviewRankedResults(value: string | null): StandaloneReviewRankedResult[] {
@@ -223,6 +406,7 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       return [];
     }
     const rank = typeof item.rank === 'number' ? item.rank : null;
+    const recallRank = typeof item.recallRank === 'number' ? item.recallRank : null;
     const alignments = Array.isArray(item.alignments)
       ? item.alignments.flatMap((alignment) => {
           if (!isRecord(alignment)) return [];
@@ -249,6 +433,7 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       : [];
     return [{
       rank,
+      recallRank,
       challengeId,
       repoId,
       prNumber,
@@ -263,9 +448,149 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
   });
 }
 
+function parseStandaloneReviewPacketMetadata(
+  row: { repo_id: number | null; pr_number: number | null; packet_json: string | null } | null,
+): StandaloneReviewPacketMetadata | null {
+  if (!row) return null;
+  let parsed: unknown;
+  try {
+    parsed = row.packet_json ? JSON.parse(row.packet_json) : null;
+  } catch {
+    parsed = null;
+  }
+
+  const packet = isRecord(parsed) ? parsed : {};
+  const repository = isRecord(packet.repository) ? packet.repository : {};
+  const pullRequest = isRecord(packet.pullRequest) ? packet.pullRequest : {};
+  const repoOwner = asOptionalString(repository.owner);
+  const repoName = asOptionalString(repository.name);
+  const packetPrNumber = typeof pullRequest.number === 'number' ? pullRequest.number : null;
+
+  return {
+    repoId: typeof row.repo_id === 'number' ? row.repo_id : null,
+    repoName: repoOwner && repoName ? `${repoOwner}/${repoName}` : null,
+    repoUrl: asOptionalString(repository.canonicalUrl),
+    prNumber: typeof row.pr_number === 'number' ? row.pr_number : packetPrNumber,
+    prUrl: asOptionalString(pullRequest.url),
+    prTitle: asOptionalString(pullRequest.title),
+  };
+}
+
+function parseStandaloneReviewRecalledPacketIds(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    return asStringArray(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
+function parseStandaloneReviewExcludedPackets(value: string | null): StandaloneReviewExcludedPacket[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item) => {
+    if (!isRecord(item) || typeof item.id !== 'string' || typeof item.reason !== 'string') return [];
+    if (
+      item.reason !== 'DEMAND_WITHOUT_SOURCE_SPANS'
+      && item.reason !== 'MISSING_DEMAND_SOURCE_SPANS'
+      && item.reason !== 'ROLE_GUARDRAIL_FAILED'
+      && item.reason !== 'PACKET_NOT_PRODUCTION_READY'
+      && item.reason !== 'PACKET_PROVENANCE_INVALID'
+      && item.reason !== 'PACKET_CONTEXT_PROJECTION_INCOMPLETE'
+    ) {
+      return [];
+    }
+    return [{
+      id: item.id,
+      repoId: typeof item.repoId === 'string' ? item.repoId : null,
+      prNumber: typeof item.prNumber === 'number' ? item.prNumber : null,
+      reason: item.reason,
+      demandIds: asStringArray(item.demandIds),
+      missingSourceSpanIds: asStringArray(item.missingSourceSpanIds),
+      gateFailures: asStringArray(item.gateFailures),
+      provenanceFailures: asStringArray(item.provenanceFailures),
+      contextProjectionFailures: asStringArray(item.contextProjectionFailures),
+      qualityScore: typeof item.qualityScore === 'number' ? item.qualityScore : null,
+    }];
+  });
+}
+
+function buildStandaloneReviewEvaluatedChallenges(
+  rankedResults: StandaloneReviewRankedResult[],
+): StandaloneReviewEvaluatedChallenge[] {
+  return rankedResults.map((result) => ({
+    challengeId: result.challengeId,
+    repoId: result.repoId,
+    prNumber: result.prNumber,
+    recallRank: result.recallRank,
+    rank: result.eligible ? result.rank : null,
+    eligible: result.eligible,
+    rejectionReasons: result.rejectionReasons,
+    provenanceComplete: result.provenanceComplete,
+    alignedDemandCount: result.alignedDemandCount,
+    stretchCount: result.stretchCount,
+  }));
+}
+
+export function buildStandaloneReviewDiagnostics(
+  recalledPacketsJson: string | null,
+  excludedPacketsJson: string | null,
+  rankedResults: StandaloneReviewRankedResult[],
+): StandaloneReviewDiagnostics {
+  return {
+    recalledPacketIds: parseStandaloneReviewRecalledPacketIds(recalledPacketsJson),
+    excludedPackets: parseStandaloneReviewExcludedPackets(excludedPacketsJson),
+    evaluatedChallenges: buildStandaloneReviewEvaluatedChallenges(rankedResults),
+  };
+}
+
+function standaloneReviewExclusionGap(packet: StandaloneReviewExcludedPacket): string {
+  if (packet.reason === 'ROLE_GUARDRAIL_FAILED') {
+    return `${packet.id} did not satisfy the job-description guardrails.`;
+  }
+  if (packet.reason === 'PACKET_NOT_PRODUCTION_READY') {
+    const scoreSuffix = packet.qualityScore !== null
+      ? ` Quality score: ${packet.qualityScore.toFixed(2)}.`
+      : '';
+    const gateSuffix = packet.gateFailures.length
+      ? ` Failed gate${packet.gateFailures.length === 1 ? '' : 's'}: ${packet.gateFailures.join(', ')}.`
+      : '';
+    return `${packet.id} was excluded because its repo packet is not production-ready.${scoreSuffix}${gateSuffix}`;
+  }
+  if (packet.reason === 'PACKET_PROVENANCE_INVALID') {
+    const failureSuffix = packet.provenanceFailures.length
+      ? ` ${packet.provenanceFailures.slice(0, 3).join(' ')}`
+      : '';
+    return `${packet.id} was excluded because its repo packet provenance is invalid.${failureSuffix}`;
+  }
+  if (packet.reason === 'PACKET_CONTEXT_PROJECTION_INCOMPLETE') {
+    const failureSuffix = packet.contextProjectionFailures.length
+      ? ` ${packet.contextProjectionFailures.slice(0, 3).join(' ')}`
+      : '';
+    return `${packet.id} was excluded because its repo packet is missing source-backed graph context.${failureSuffix}`;
+  }
+  const demandSuffix = packet.demandIds.length
+    ? ` Demand${packet.demandIds.length === 1 ? '' : 's'}: ${packet.demandIds.join(', ')}.`
+    : '';
+  if (packet.reason === 'DEMAND_WITHOUT_SOURCE_SPANS') {
+    return `${packet.id} was excluded because one or more PR demands have no source span provenance.${demandSuffix}`;
+  }
+  const missingSuffix = packet.missingSourceSpanIds.length
+    ? ` Missing span${packet.missingSourceSpanIds.length === 1 ? '' : 's'}: ${packet.missingSourceSpanIds.join(', ')}.`
+    : '';
+  return `${packet.id} was excluded because PR demand provenance references missing repo source spans.${demandSuffix}${missingSuffix}`;
+}
+
 export function buildStandaloneReviewMatchSummary(
   status: StandaloneReviewMatchStatus,
   selectedResult: StandaloneReviewRankedResult | null,
+  diagnostics?: StandaloneReviewDiagnostics,
 ): StandaloneReviewMatchSummary {
   if (status === 'PENDING_INTAKE') {
     return {
@@ -282,11 +607,18 @@ export function buildStandaloneReviewMatchSummary(
     };
   }
   if (status === 'NO_ROLE_SAFE_CHALLENGE') {
+    const diagnosticGaps = diagnostics?.excludedPackets.map(standaloneReviewExclusionGap) ?? [];
     return {
       summary: 'Matcher found candidate evidence, but no reviewable PR passed guardrails.',
       evidence: selectedResult?.alignments ?? [],
-      gaps: selectedResult?.rejectionReasons.length
-        ? selectedResult.rejectionReasons
+      gaps: [
+        ...(selectedResult?.rejectionReasons ?? []),
+        ...diagnosticGaps,
+      ].length
+        ? [
+            ...(selectedResult?.rejectionReasons ?? []),
+            ...diagnosticGaps,
+          ]
         : ['No eligible challenge had complete provenance and non-generic alignment.'],
     };
   }
@@ -326,6 +658,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   let { name, email, currentStageId: requestedStageId, skipEmail, schedulingProvider, schedulingUrl } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
+    email = normalizeCandidateEmail(email);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === 'FORBIDDEN_PATTERN') {
@@ -540,9 +873,138 @@ const createStandaloneCandidateSchema = z.object({
   email: z.string().email('valid email required'),
   interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
   scheduledAt: z.string().optional(),
+  schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
+  schedulingUrl: z.string().optional(),
   message: z.string().max(2000).optional(),
   skipEmail: z.boolean().optional(),
 });
+
+async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function loadWorkspacePersonContext(
+  db: D1Database,
+  workspaceId: string,
+  personId: string,
+): Promise<JsonObject> {
+  const existing = await db.prepare(
+    `SELECT context_json
+       FROM workspace_people
+      WHERE workspace_id = ?1 AND person_id = ?2
+      LIMIT 1`,
+  ).bind(workspaceId, personId).first<{ context_json: string | null }>();
+  return parseJsonObject(existing?.context_json ?? null);
+}
+
+async function persistRolelessMessageArtifact(input: {
+  store: LivingContextStore;
+  workspacePersonId: string;
+  candidateId: string;
+  message: string;
+  now: string;
+}): Promise<void> {
+  const message = input.message;
+  if (!message.trim()) return;
+
+  const contentHash = await sha256Hex(message);
+  const baseKey = `candidate:${input.candidateId}:roleless-message:${contentHash}`;
+  const interaction = await input.store.upsertInteraction({
+    ingestionKey: baseKey,
+    workspacePersonId: input.workspacePersonId,
+    interactionType: 'message',
+    externalReference: input.candidateId,
+    startedAt: input.now,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  const artifact = await input.store.upsertArtifact({
+    ingestionKey: baseKey,
+    workspacePersonId: input.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'message',
+    logicalKey: 'roleless_candidate_intake_message',
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  const version = await input.store.createArtifactVersion({
+    ingestionKey: `${baseKey}:v1`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: message,
+    byteLength: new TextEncoder().encode(message).byteLength,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+  await input.store.createSourceSpan({
+    ingestionKey: `${baseKey}:span:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'full-message',
+    charStart: 0,
+    charEnd: message.length,
+    exactText: message,
+    exactTextHash: contentHash,
+    metadata: {
+      source: 'roleless_candidate_intake',
+      roleless: true,
+    },
+  });
+}
+
+export async function ensureRolelessTalentPoolIdentity(input: {
+  db: D1Database;
+  userId: string;
+  candidateId: string;
+  name: string;
+  email: string;
+  message?: string;
+  now: string;
+}): Promise<{ personId: string; workspacePersonId: string }> {
+  const { db, userId, candidateId, name, email, message, now } = input;
+  const store = new LivingContextStore(db);
+  const existingPerson = await db.prepare(
+    `SELECT id, ingestion_key
+       FROM people
+      WHERE primary_email = ?1
+      ORDER BY created_at
+      LIMIT 1`,
+  ).bind(email).first<{ id: string; ingestion_key: string }>();
+
+  const person = await store.upsertPerson({
+    ingestionKey: existingPerson?.ingestion_key ?? `email:${email}`,
+    displayName: name,
+    primaryEmail: email,
+    externalIds: { legacyCandidateId: candidateId },
+  });
+
+  const existingContext = await loadWorkspacePersonContext(db, userId, person.id);
+  const workspacePerson = await store.upsertWorkspacePerson({
+    ingestionKey: `workspace:${userId}:person:${person.id}`,
+    workspaceId: userId,
+    personId: person.id,
+    context: buildRolelessTalentPoolContext(existingContext, candidateId, now),
+  });
+
+  await persistRolelessMessageArtifact({
+    store,
+    workspacePersonId: workspacePerson.id,
+    candidateId,
+    message: message ?? '',
+    now,
+  });
+
+  return { personId: person.id, workspacePersonId: workspacePerson.id };
+}
 
 // POST / — create a standalone candidate (talent pool, no pipeline)
 candidateOps.post('/', async (c) => {
@@ -558,6 +1020,7 @@ candidateOps.post('/', async (c) => {
   let { name, email, interviewType, scheduledAt, message: customMessage, skipEmail } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
+    email = normalizeCandidateEmail(email);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg === 'FORBIDDEN_PATTERN') {
@@ -568,25 +1031,35 @@ candidateOps.post('/', async (c) => {
 
   // Duplicate-email guard scoped to owner (no pipeline scope)
   const existing = await db
-    .prepare('SELECT id FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
+    .prepare('SELECT id, invite_token, status FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
     .bind(userId, email)
-    .first<{ id: string }>();
-  if (existing) {
-    return apiError(c, 'CONFLICT', 'Candidate with this email already exists in your talent pool');
-  }
+    .first<{ id: string; invite_token: string; status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' }>();
 
-  const id = crypto.randomUUID();
-  const inviteToken = crypto.randomUUID();
+  const id = existing?.id ?? crypto.randomUUID();
+  const inviteToken = existing?.invite_token ?? crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {
-    await db
-      .prepare(
-        `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
-         VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`
-      )
-      .bind(id, userId, name, email, inviteToken, now, now)
-      .run();
+    if (existing) {
+      await db
+        .prepare(
+          `UPDATE candidates
+              SET name = COALESCE(NULLIF(?1, ''), name),
+                  email = ?2,
+                  updated_at = ?3
+            WHERE id = ?4`,
+        )
+        .bind(name, email, now, id)
+        .run();
+    } else {
+      await db
+        .prepare(
+          `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
+           VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`
+        )
+        .bind(id, userId, name, email, inviteToken, now, now)
+        .run();
+    }
 
     // Ensure ingestion tracking row exists
     await db
@@ -598,7 +1071,15 @@ candidateOps.post('/', async (c) => {
       .bind(id, now)
       .run();
 
-    await ensureCandidateLivingContext(db, id);
+    await ensureRolelessTalentPoolIdentity({
+      db,
+      userId,
+      candidateId: id,
+      name,
+      email,
+      message: customMessage,
+      now,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('UNIQUE constraint failed')) {
@@ -612,10 +1093,24 @@ candidateOps.post('/', async (c) => {
     const interviewId = crypto.randomUUID();
     await db
       .prepare(
-        `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, interview_type, status, scheduled_at, created_at, updated_at)
-         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?)`
+        `INSERT INTO scheduled_interviews (
+           id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+           status, scheduled_at, scheduling_provider, scheduling_url, sync_source,
+           created_at, updated_at
+         )
+         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?)`
       )
-      .bind(interviewId, id, userId, interviewType, scheduledAt ?? null, now, now)
+      .bind(
+        interviewId,
+        id,
+        userId,
+        interviewType,
+        scheduledAt ?? null,
+        parsed.data.schedulingProvider ?? null,
+        parsed.data.schedulingUrl ?? null,
+        now,
+        now,
+      )
       .run();
   }
 
@@ -646,11 +1141,13 @@ candidateOps.post('/', async (c) => {
       name,
       email,
       inviteToken,
-      status: 'INVITED',
+      status: existing?.status ?? 'INVITED',
       interviewType: interviewType ?? null,
       pipelineId: null,
+      intakeState: 'roleless_talent_pool',
+      membershipSchemaBlocker: TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
     },
-  }, 201);
+  }, existing ? 200 : 201);
 });
 
 // GET /:candidateId/living-context — source-backed person graph read model
@@ -804,19 +1301,54 @@ candidateOps.get('/:candidateId', async (c) => {
   // Fetch scheduled interviews for this candidate
   const interviewsResult = await db
     .prepare(
-      `SELECT id, stage_id, status, scheduled_at, meeting_url, scheduling_provider
+      `SELECT id, candidate_id, pipeline_id, stage_id, interview_type, meeting_type,
+              status, scheduled_at, meeting_url, scheduling_provider, scheduling_url,
+              matched_repo_id, github_repo_url, github_pr_number, completed_at,
+              created_at, updated_at
        FROM scheduled_interviews
-       WHERE candidate_id = ?`
+       WHERE candidate_id = ?
+       ORDER BY created_at DESC`
     )
     .bind(candidateId)
     .all<{
       id: string;
-      stage_id: string;
+      candidate_id: string;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
+      meeting_type: string | null;
       status: string;
       scheduled_at: string | null;
       meeting_url: string | null;
       scheduling_provider: string | null;
+      scheduling_url: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      completed_at: string | null;
+      created_at: string;
+      updated_at: string;
     }>();
+
+  const scheduledInterviews = (interviewsResult.results ?? []).map((interview) => ({
+    id: interview.id,
+    candidateId: interview.candidate_id,
+    pipelineId: interview.pipeline_id,
+    stageId: interview.stage_id,
+    interviewType: interview.interview_type ?? 'VIDEO',
+    meetingType: interview.meeting_type,
+    status: interview.status,
+    scheduledAt: interview.scheduled_at,
+    meetingUrl: interview.meeting_url,
+    schedulingProvider: interview.scheduling_provider,
+    schedulingUrl: interview.scheduling_url,
+    matchedRepoId: interview.matched_repo_id,
+    githubRepoUrl: interview.github_repo_url,
+    githubPrNumber: interview.github_pr_number,
+    completedAt: interview.completed_at,
+    createdAt: interview.created_at,
+    updatedAt: interview.updated_at,
+  }));
 
   const interviewsByStage = new Map(
     (interviewsResult.results ?? []).map((iv) => [iv.stage_id, iv])
@@ -1075,7 +1607,9 @@ candidateOps.get('/:candidateId', async (c) => {
     score: number | null;
     summary: string;
     evidence: StandaloneReviewAlignment[];
+    roleSources: StandaloneReviewRoleSource[];
     gaps: string[];
+    diagnostics: StandaloneReviewDiagnostics;
     submitted: boolean;
     submission: StandaloneReviewSubmissionSummary | null;
     completedAt: string | null;
@@ -1102,54 +1636,116 @@ candidateOps.get('/:candidateId', async (c) => {
     }>();
 
     if (standaloneInterview) {
+      const cachedInterviewIsSourceBacked = !!(
+        standaloneInterview.github_repo_url
+        && standaloneInterview.github_pr_number
+        && await hasSourceBackedReviewPacket(
+          db,
+          standaloneInterview.github_repo_url,
+          standaloneInterview.github_pr_number,
+        )
+      );
+      const cachedInterviewRepoId = cachedInterviewIsSourceBacked
+        ? standaloneInterview.matched_repo_id
+        : null;
+      const cachedInterviewRepoUrl = cachedInterviewIsSourceBacked
+        ? standaloneInterview.github_repo_url
+        : null;
+      const cachedInterviewPrNumber = cachedInterviewIsSourceBacked
+        ? standaloneInterview.github_pr_number
+        : null;
+
       const latestRun = await db.prepare(
-        `SELECT id, status, ranked_results_json, selected_packet_id
+        `SELECT id, status, recalled_packets_json, excluded_packets_json,
+                ranked_results_json, selected_packet_id, query_json
            FROM match_runs
           WHERE candidate_id = ?1
             AND role_snapshot_id = 'standalone-code-review-v1'
-          ORDER BY created_at DESC
+          ORDER BY
+            CASE
+              WHEN ?2 IS NOT NULL
+               AND ?3 IS NOT NULL
+               AND status = 'MATCHED'
+               AND selected_packet_id IN (
+                 SELECT id FROM review_challenge_packets
+                  WHERE repo_id = ?2 AND pr_number = ?3
+               )
+              THEN 0
+              ELSE 1
+            END,
+            created_at DESC,
+            id DESC
           LIMIT 1`,
-      ).bind(candidateId).first<{
+      ).bind(
+        candidateId,
+        cachedInterviewRepoId,
+        cachedInterviewPrNumber,
+      ).first<{
         id: string;
         status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
+        recalled_packets_json: string | null;
+        excluded_packets_json: string | null;
         ranked_results_json: string | null;
         selected_packet_id: string | null;
+        query_json: string | null;
       }>();
 
       const rankedResults = parseStandaloneReviewRankedResults(latestRun?.ranked_results_json ?? null);
+      const roleSources = parseStandaloneReviewRoleSourcesFromQuery(latestRun?.query_json ?? null);
+      const diagnostics = buildStandaloneReviewDiagnostics(
+        latestRun?.recalled_packets_json ?? null,
+        latestRun?.excluded_packets_json ?? null,
+        rankedResults,
+      );
       const selectedResult = rankedResults.find((result) =>
         result.challengeId === latestRun?.selected_packet_id
       ) ?? rankedResults.find((result) => result.rank === 1)
         ?? rankedResults.find((result) => result.eligible)
         ?? rankedResults[0]
         ?? null;
+      const selectedPacketId = latestRun?.selected_packet_id ?? selectedResult?.challengeId ?? null;
+      const selectedPacketMetadata = selectedPacketId
+        ? parseStandaloneReviewPacketMetadata(await loadSourceBackedReviewPacketById(db, selectedPacketId))
+        : null;
+      const selectedPacketContextMissing = !!(selectedPacketId && !selectedPacketMetadata);
+      const selectedResultForDisplay = selectedPacketContextMissing ? null : selectedResult;
       const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
         || latestRun?.status === 'NEEDS_MORE_EVIDENCE'
         || latestRun?.status === 'NO_ROLE_SAFE_CHALLENGE'
-        ? latestRun.status
+        ? selectedPacketContextMissing && latestRun.status === 'MATCHED'
+          ? 'NO_ROLE_SAFE_CHALLENGE'
+          : latestRun.status
         : 'PENDING_INTAKE';
-      const repoId = standaloneInterview.matched_repo_id
-        ?? (selectedResult ? Number(selectedResult.repoId) : null);
-      let repoName: string | null = null;
-      let repoUrl = standaloneInterview.github_repo_url;
+      const repoId = cachedInterviewRepoId
+        ?? selectedPacketMetadata?.repoId
+        ?? (selectedResultForDisplay ? Number(selectedResultForDisplay.repoId) : null);
+      let repoName: string | null = selectedPacketMetadata?.repoName ?? null;
+      let repoUrl = cachedInterviewRepoUrl ?? selectedPacketMetadata?.repoUrl ?? null;
       if (repoId !== null && Number.isFinite(repoId)) {
         const repoRow = await db.prepare(
           `SELECT full_name, github_url FROM qualified_repos WHERE id = ?1`,
         ).bind(repoId).first<{ full_name: string | null; github_url: string | null }>();
-        repoName = repoRow?.full_name ?? null;
+        repoName = repoRow?.full_name ?? repoName;
         repoUrl = repoUrl ?? repoRow?.github_url ?? null;
       }
-      const prNumber = standaloneInterview.github_pr_number ?? selectedResult?.prNumber ?? null;
-      let prTitle: string | null = null;
-      let prUrl: string | null = repoUrl && prNumber ? `${repoUrl}/pull/${prNumber}` : null;
+      const prNumber = cachedInterviewPrNumber
+        ?? selectedPacketMetadata?.prNumber
+        ?? selectedResultForDisplay?.prNumber
+        ?? null;
+      let prTitle: string | null = selectedPacketMetadata?.prTitle ?? null;
+      let prUrl: string | null = selectedPacketMetadata?.prUrl
+        ?? (repoUrl && prNumber ? `${repoUrl}/pull/${prNumber}` : null);
       if (repoId !== null && Number.isFinite(repoId) && prNumber !== null) {
         const prRow = await db.prepare(
           `SELECT title, pr_url FROM repo_sample_prs WHERE repo_id = ?1 AND pr_number = ?2`,
         ).bind(repoId, prNumber).first<{ title: string | null; pr_url: string | null }>();
-        prTitle = prRow?.title ?? null;
+        prTitle = prRow?.title ?? prTitle;
         prUrl = prRow?.pr_url ?? prUrl;
       }
-      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult);
+      const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResultForDisplay, diagnostics);
+      const graphContextGaps = selectedPacketContextMissing
+        ? [`Selected review packet ${selectedPacketId} is missing source-backed graph context.`]
+        : [];
       const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
@@ -1162,10 +1758,12 @@ candidateOps.get('/:candidateId', async (c) => {
         prNumber,
         prUrl,
         prTitle,
-        score: selectedResult?.score ?? null,
+        score: selectedResultForDisplay?.score ?? null,
         summary: summary.summary,
         evidence: summary.evidence,
-        gaps: summary.gaps,
+        roleSources,
+        gaps: [...graphContextGaps, ...summary.gaps],
+        diagnostics,
         submitted: standaloneInterview.submission_json !== null,
         submission,
         completedAt: standaloneInterview.completed_at,
@@ -1350,6 +1948,7 @@ candidateOps.get('/:candidateId', async (c) => {
     },
     stages: stagesWithChallenges,
     phoneCalls,
+    scheduledInterviews,
     ingestion,
     standaloneReviewMatch,
     profileSections,
@@ -1576,7 +2175,7 @@ candidateOps.patch('/:candidateId', async (c) => {
   }
   if (parsed.data.email !== undefined) {
     updates.push('email = ?');
-    values.push(parsed.data.email);
+    values.push(normalizeCandidateEmail(parsed.data.email));
   }
   if (parsed.data.resumeS3Key !== undefined) {
     updates.push('resume_s3_key = ?');

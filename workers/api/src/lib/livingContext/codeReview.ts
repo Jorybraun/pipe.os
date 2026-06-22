@@ -423,6 +423,7 @@ export async function ingestCodeReviewTranscriptToLivingContext(
   });
 
   let candidateSpanCount = 0;
+  const sourceSpanIds: string[] = [];
   for (const span of document.spans) {
     const persisted = await store.createSourceSpan({
       ingestionKey: `code-review:${input.sessionId}:transcript:${version.id}:${span.stableSegmentId}`,
@@ -437,6 +438,7 @@ export async function ingestCodeReviewTranscriptToLivingContext(
       exactText: span.exactText,
       metadata: span.metadata,
     });
+    sourceSpanIds.push(persisted.id);
     if (span.attributedToCandidate) {
       candidateSpanCount++;
       await db.prepare(
@@ -455,6 +457,49 @@ export async function ingestCodeReviewTranscriptToLivingContext(
         input.observedAt,
       ).run();
     }
+  }
+
+  if (sourceSpanIds.length > 0) {
+    await store.upsertContextRecord({
+      ingestionKey: `code-review:${input.sessionId}:transcript:${version.id}:context`,
+      workspacePersonId,
+      interactionId,
+      recordType: 'code_review_transcript',
+      predicate: 'preserves code review transcript',
+      narrative: `Code review transcript evidence for session ${input.sessionId}.`,
+      qualifiers: {
+        sessionId: input.sessionId,
+        challengeId: input.challengeId,
+        assessmentId: input.assessmentId,
+        status: input.status,
+        candidateSpanCount,
+        sourceSpanCount: sourceSpanIds.length,
+      },
+      confidence: null,
+      extractionVersion: 'code-review-ingestion-v1',
+      observedAt: input.observedAt,
+      sources: sourceSpanIds.map((sourceSpanId) => ({
+        sourceSpanId,
+        evidenceRole: 'transcript_segment',
+      })),
+      entities: [
+        {
+          entityType: 'code_review_session',
+          entityId: input.sessionId,
+          relationship: 'source_event',
+        },
+        {
+          entityType: 'review_challenge',
+          entityId: input.challengeId,
+          relationship: 'challenge',
+        },
+        {
+          entityType: 'assessment',
+          entityId: input.assessmentId,
+          relationship: 'assessment',
+        },
+      ],
+    });
   }
 
   await store.enqueueProjection({
@@ -514,7 +559,7 @@ export async function ingestCodeReviewScoreReportToLivingContext(
       candidateAttribution: false,
     },
   });
-  await store.createSourceSpan({
+  const span = await store.createSourceSpan({
     ingestionKey: `code-review:${input.sessionId}:score-report:${version.id}:full`,
     artifactVersionId: version.id,
     stableSegmentId: 'score-report-full',
@@ -532,6 +577,42 @@ export async function ingestCodeReviewScoreReportToLivingContext(
       producerId: input.producerId ?? null,
       candidateAttribution: false,
     },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `code-review:${input.sessionId}:score-report:${version.id}:context`,
+    workspacePersonId,
+    interactionId,
+    recordType: 'code_review_score_report',
+    predicate: 'preserves code review score report',
+    narrative: `Code review score report evidence for session ${input.sessionId}.`,
+    qualifiers: {
+      sessionId: input.sessionId,
+      challengeId: input.challengeId,
+      assessmentId: input.assessmentId,
+      producer: input.producer,
+      producerId: input.producerId ?? null,
+      candidateAttribution: false,
+    },
+    confidence: null,
+    extractionVersion: 'code-review-ingestion-v1',
+    observedAt: input.observedAt,
+    sources: [{
+      sourceSpanId: span.id,
+      evidenceRole: 'score_report',
+      exactText: input.scoreReportJson,
+    }],
+    entities: [
+      {
+        entityType: 'code_review_session',
+        entityId: input.sessionId,
+        relationship: 'source_event',
+      },
+      {
+        entityType: 'assessment',
+        entityId: input.assessmentId,
+        relationship: 'assessment',
+      },
+    ],
   });
   await store.enqueueProjection({
     ingestionKey: `code-review:${input.sessionId}:score-report:${version.id}:projection`,

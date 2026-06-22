@@ -114,12 +114,13 @@ export async function ingestPhoneCallToLivingContext(
       `SELECT id FROM artifact_versions
         WHERE artifact_id = ?1 AND content_hash = ?2`,
     ).bind(artifact.id, contentHash).first<{ id: string }>();
+    let recordingVersionId = existing?.id ?? null;
     if (!existing) {
       const latest = await db.prepare(
         `SELECT COALESCE(MAX(version_number), 0) AS version_number
            FROM artifact_versions WHERE artifact_id = ?1`,
       ).bind(artifact.id).first<{ version_number: number }>();
-      await store.createArtifactVersion({
+      const persisted = await store.createArtifactVersion({
         ingestionKey: `phone-call:${input.callId}:recording:${contentHash}`,
         artifactId: artifact.id,
         versionNumber: Number(latest?.version_number ?? 0) + 1,
@@ -131,6 +132,43 @@ export async function ingestPhoneCallToLivingContext(
           speakerAttribution: 'unresolved',
           channelMode: 'dual',
         },
+      });
+      recordingVersionId = persisted.id;
+    }
+    if (recordingVersionId) {
+      await store.upsertContextRecord({
+        ingestionKey: `phone-call:${input.callId}:recording:${recordingVersionId}:context`,
+        workspacePersonId,
+        interactionId,
+        recordType: 'phone_call_recording',
+        predicate: 'preserves phone call recording',
+        narrative: `Phone call recording evidence for call ${input.callId}.`,
+        qualifiers: {
+          callId: input.callId,
+          twilioCallSid: input.twilioCallSid ?? null,
+          recordingSid: input.recording.recordingSid ?? null,
+          durationSeconds: input.recording.durationSeconds ?? null,
+          speakerAttribution: 'unresolved',
+        },
+        confidence: null,
+        extractionVersion: 'phone-call-ingestion-v1',
+        observedAt: input.endedAt ?? input.startedAt ?? null,
+        sources: [{
+          sourceRefType: 'artifact_version',
+          sourceRefId: recordingVersionId,
+          evidenceRole: 'recording',
+          locator: { storageKey: input.recording.storageKey },
+          contentHash,
+          metadata: {
+            mediaType: input.recording.mediaType ?? 'audio/mpeg',
+            byteLength: input.recording.byteLength ?? null,
+          },
+        }],
+        entities: [{
+          entityType: 'phone_call',
+          entityId: input.callId,
+          relationship: 'source_event',
+        }],
       });
     }
     audioArtifacts = 1;
@@ -175,7 +213,7 @@ export async function ingestPhoneCallToLivingContext(
       });
       version = { id: persisted.id, version_number: versionNumber };
     }
-    await store.createSourceSpan({
+    const span = await store.createSourceSpan({
       ingestionKey: `phone-call:${input.callId}:transcript:${version.id}:full`,
       artifactVersionId: version.id,
       stableSegmentId: 'transcript-full',
@@ -190,6 +228,32 @@ export async function ingestPhoneCallToLivingContext(
         speakerAttribution: 'unresolved',
         channelMode: 'mixed-by-transcriber',
       },
+    });
+    await store.upsertContextRecord({
+      ingestionKey: `phone-call:${input.callId}:transcript:${version.id}:context`,
+      workspacePersonId,
+      interactionId,
+      recordType: 'phone_call_transcript',
+      predicate: 'preserves phone call transcript',
+      narrative: `Phone call transcript evidence for call ${input.callId}.`,
+      qualifiers: {
+        callId: input.callId,
+        provider: input.transcriptProvider ?? null,
+        speakerAttribution: 'unresolved',
+      },
+      confidence: null,
+      extractionVersion: 'phone-call-ingestion-v1',
+      observedAt: input.endedAt ?? input.startedAt ?? null,
+      sources: [{
+        sourceSpanId: span.id,
+        evidenceRole: 'transcript',
+        exactText: input.transcript,
+      }],
+      entities: [{
+        entityType: 'phone_call',
+        entityId: input.callId,
+        relationship: 'source_event',
+      }],
     });
     transcriptArtifacts = 1;
   }
@@ -244,7 +308,7 @@ export async function ingestPhoneRecruiterNote(
     },
   });
   if (input.note.length > 0) {
-    await store.createSourceSpan({
+    const span = await store.createSourceSpan({
       ingestionKey: `phone-call:${input.callId}:recruiter-note:${eventKey}:full`,
       artifactVersionId: version.id,
       stableSegmentId: 'note-full',
@@ -259,6 +323,39 @@ export async function ingestPhoneRecruiterNote(
         authorType: 'recruiter',
         authorId: input.recruiterActorId,
       },
+    });
+    await store.upsertContextRecord({
+      ingestionKey: `phone-call:${input.callId}:recruiter-note:${eventKey}:context`,
+      workspacePersonId,
+      interactionId,
+      recordType: 'recruiter_note',
+      predicate: 'preserves recruiter note',
+      narrative: `Recruiter note evidence for phone call ${input.callId}.`,
+      qualifiers: {
+        callId: input.callId,
+        authorType: 'recruiter',
+        authorId: input.recruiterActorId,
+      },
+      confidence: null,
+      extractionVersion: 'phone-call-ingestion-v1',
+      observedAt: input.observedAt,
+      sources: [{
+        sourceSpanId: span.id,
+        evidenceRole: 'note',
+        exactText: input.note,
+      }],
+      entities: [
+        {
+          entityType: 'phone_call',
+          entityId: input.callId,
+          relationship: 'source_event',
+        },
+        {
+          entityType: 'recruiter',
+          entityId: input.recruiterActorId,
+          relationship: 'author',
+        },
+      ],
     });
   }
   await store.enqueueProjection({

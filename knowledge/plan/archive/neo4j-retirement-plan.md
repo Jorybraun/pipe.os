@@ -3,7 +3,7 @@ See: workers/api/src/lib/neo4j/, infra/neo4j/, docs/decisions/current/ADR-043*.m
 
 # Neo4j: Vectorize and D1 Field Retirement
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 435–442)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 435–442)
 **Phase:** 3 (month 4+, after primary-read cutover is stable)
 **Status:** PENDING
 **Estimate:** 0.5 weeks (code) + monitoring period

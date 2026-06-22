@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { decomposeResumeToGraph } from '../resumeDecomposition';
 import type { ParsedCV } from '../../cvParser';
 import type { DecompositionResult } from '../candidateDecompositionPrompt';
+import { insertCandidateNode } from '../candidateNodes';
 
 vi.mock('../candidateNodes', () => ({
   insertCandidateNode: vi.fn(async (_db, node) => ({
@@ -24,6 +25,10 @@ vi.mock('../../skills/slugifySkills', () => ({
 const mockEnv = {
   AI: { run: vi.fn() },
 } as unknown as import('../../types').Env;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function mockDb(): import('../../types').D1Database {
   return {
@@ -51,6 +56,7 @@ const mockDecomposition: DecompositionResult = {
       narrative: 'Led backend migration to microservices.',
       skills_demonstrated: ['typescript', 'kafka'],
       confidence: 0.85,
+      source_quote: 'Led backend migration to microservices using Kafka.',
     },
   ],
   projects: [
@@ -114,7 +120,7 @@ describe('decomposeResumeToGraph', () => {
     const result = await decomposeResumeToGraph({
       db,
       candidateId: 'candidate-123',
-      resumeText: 'Jane Doe resume text...',
+      resumeText: 'Jane Doe\nLed backend migration to microservices using Kafka.',
       parsedCV,
       env: mockEnv,
       decompositionResult: mockDecomposition,
@@ -122,6 +128,17 @@ describe('decomposeResumeToGraph', () => {
 
     expect(result.nodesInserted).toBeGreaterThan(0);
     expect(result.decompositionVersion).toBe('adr041-v1');
+    expect(insertCandidateNode).toHaveBeenCalled();
+    const experienceCall = vi.mocked(insertCandidateNode).mock.calls.find((call) =>
+      call[1].node_type === 'Experience'
+    );
+    expect(experienceCall).toBeDefined();
+    expect(JSON.parse(String(experienceCall![1].extracted_properties_json))).toMatchObject({
+      source_quote: 'Led backend migration to microservices using Kafka.',
+      source_quote_validated: true,
+      source_quote_char_start: 'Jane Doe\n'.length,
+      source_quote_char_end: 'Jane Doe\nLed backend migration to microservices using Kafka.'.length,
+    });
   });
 
   it('falls back to parser-only nodes when decompositionResult is null', async () => {

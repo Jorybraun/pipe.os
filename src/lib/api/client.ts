@@ -2,7 +2,7 @@
  * API client for the Cloudflare Worker API.
  *
  * Thin fetch wrapper that:
- *   - Resolves the base URL from VITE_API_URL (default: http://localhost:8787)
+ *   - Resolves the base URL from VITE_API_URL (default: same-origin /api proxy)
  *   - Injects an Authorization: Bearer <token> header via a caller-supplied
  *     getToken function (keeps Clerk out of this module)
  *   - Parses structured error bodies from the Worker
@@ -19,7 +19,7 @@ import { ApiError, type ApiErrorBody } from './types';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = 'http://localhost:8787';
+const DEFAULT_BASE_URL = '';
 
 export interface ApiClientConfig {
   /**
@@ -28,7 +28,7 @@ export interface ApiClientConfig {
    * sent; the Worker will reject it with 401).
    */
   getToken: () => Promise<string | null> | string | null;
-  /** Override the base URL. Defaults to VITE_API_URL or http://localhost:8787. */
+  /** Override the base URL. Defaults to VITE_API_URL or same-origin. */
   baseUrl?: string;
 }
 

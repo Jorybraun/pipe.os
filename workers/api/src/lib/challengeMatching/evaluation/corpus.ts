@@ -1,6 +1,7 @@
 import type {
   CandidatePersonEvidence,
   EvaluationCorpus,
+  EvidenceReference,
   ExpertLabel,
   RelevanceGrade,
   RoleRequirements,
@@ -17,6 +18,16 @@ export class CorpusValidationError extends Error {
   }
 }
 
+export class ProductionCorpusValidationError extends Error {
+  readonly failures: string[];
+
+  constructor(failures: string[]) {
+    super(`Production corpus validation failed: ${failures.join('; ')}`);
+    this.name = 'ProductionCorpusValidationError';
+    this.failures = failures;
+  }
+}
+
 function pairKey(candidateId: string, roleId: string): string {
   return JSON.stringify([candidateId, roleId]);
 }
@@ -24,6 +35,34 @@ function pairKey(candidateId: string, roleId: string): string {
 function sameStringSet(left: string[], right: string[]): boolean {
   const normalize = (values: string[]) => Array.from(new Set(values)).sort();
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function sourceRefComplete(reference: EvidenceReference): boolean {
+  return nonEmptyString(reference.artifactId)
+    && nonEmptyString(reference.artifactVersion)
+    && nonEmptyString(reference.contentHash)
+    && nonEmptyString(reference.sourceRefType)
+    && nonEmptyString(reference.sourceRefId)
+    && nonEmptyString(reference.exactText)
+    && Number.isInteger(reference.startOffset)
+    && Number.isInteger(reference.endOffset)
+    && reference.startOffset >= 0
+    && reference.endOffset > reference.startOffset;
+}
+
+function roleSourceComplete(reference: RoleRequirements['sourceReferences'][number]): boolean {
+  return nonEmptyString(reference.entityId)
+    && nonEmptyString(reference.locator)
+    && Array.isArray(reference.conceptKeys)
+    && reference.conceptKeys.length > 0
+    && nonEmptyString(reference.sourceRefType)
+    && nonEmptyString(reference.sourceRefId)
+    && nonEmptyString(reference.exactText)
+    && nonEmptyString(reference.contentHash);
 }
 
 export function validateCorpus(corpus: EvaluationCorpus): void {
@@ -60,16 +99,8 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
       continue;
     }
     for (const reference of evidence.evidenceReferences) {
-      if (!reference.artifactId || !reference.artifactVersion || !reference.contentHash) {
-        failures.push(`evidence reference missing immutable source identity: ${evidence.evidenceId}`);
-      }
-      if (
-        !Number.isInteger(reference.startOffset)
-        || !Number.isInteger(reference.endOffset)
-        || reference.startOffset < 0
-        || reference.endOffset <= reference.startOffset
-      ) {
-        failures.push(`evidence reference offsets invalid: ${evidence.evidenceId}`);
+      if (!sourceRefComplete(reference)) {
+        failures.push(`evidence reference missing exact immutable source provenance: ${evidence.evidenceId}`);
       }
     }
   }
@@ -84,6 +115,12 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     }
     if (!Array.isArray(role.sourceReferences) || role.sourceReferences.length === 0) {
       failures.push(`role must contain persisted source references: ${role.roleId}`);
+      continue;
+    }
+    for (const reference of role.sourceReferences) {
+      if (!roleSourceComplete(reference)) {
+        failures.push(`role source reference missing exact immutable source provenance: ${role.roleId}`);
+      }
     }
   }
 
@@ -167,6 +204,46 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     failures.push('metadata.syntheticFixtureCount does not match labeling provenance');
   }
   if (failures.length > 0) throw new CorpusValidationError(failures);
+}
+
+export function productionCorpusFailures(corpus: EvaluationCorpus): string[] {
+  const failures: string[] = [];
+  if (corpus.expertLabels.length === 0) {
+    failures.push('production corpus requires at least one expert label');
+  }
+  const syntheticLabels = corpus.expertLabels.filter(
+    (label) => label.labeledBy === 'synthetic-fixture',
+  );
+  if (syntheticLabels.length > 0 || corpus.metadata.syntheticFixtureCount > 0) {
+    failures.push('production corpus cannot contain synthetic fixture labels');
+  }
+
+  for (const label of corpus.expertLabels) {
+    const provenance = label.labelProvenance;
+    if (!provenance) {
+      failures.push(`expert label is missing reviewer/source provenance: ${label.labelId}`);
+      continue;
+    }
+    if (
+      !provenance.reviewerId
+      || !provenance.reviewArtifactId
+      || !provenance.reviewArtifactVersion
+      || !provenance.contentHash
+      || !provenance.locator
+      || !provenance.rubricVersion
+    ) {
+      failures.push(`expert label provenance is incomplete: ${label.labelId}`);
+    }
+    if (!provenance.contentHash.startsWith('sha256:')) {
+      failures.push(`expert label provenance must include an immutable sha256 content hash: ${label.labelId}`);
+    }
+  }
+  return failures;
+}
+
+export function validateProductionCorpus(corpus: EvaluationCorpus): void {
+  const failures = productionCorpusFailures(corpus);
+  if (failures.length > 0) throw new ProductionCorpusValidationError(failures);
 }
 
 export function loadCorpus(json: string): EvaluationCorpus {

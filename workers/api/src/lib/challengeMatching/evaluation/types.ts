@@ -1,5 +1,6 @@
 import type {
   PairScore,
+  RoleSourceReference,
   SourceRef,
   StretchMatch,
 } from '../types';
@@ -55,11 +56,7 @@ export interface RoleRequirements {
   requiredConcepts?: string[];
   forbiddenConcepts?: string[];
   minimumSeniority?: 'junior' | 'mid' | 'senior' | 'staff' | 'principal';
-  sourceReferences: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  sourceReferences: RoleSourceReference[];
 }
 
 export interface ExpertLabel {
@@ -76,6 +73,15 @@ export interface ExpertLabel {
   labelVersion: string;
   labeledAt: string;
   labeledBy: string;
+  labelProvenance?: {
+    reviewerId: string;
+    reviewerRole?: string;
+    reviewArtifactId: string;
+    reviewArtifactVersion: string;
+    contentHash: string;
+    locator: string;
+    rubricVersion: string;
+  };
 }
 
 export interface EvaluationCorpus {
@@ -159,6 +165,16 @@ export interface LabelEvaluationResult {
   failureReason?: string;
 }
 
+export interface DeterminismComparison {
+  candidateId: string;
+  roleId: string;
+  matchRunId: string;
+  comparisonMatchRunId: string | null;
+  identical: boolean;
+  fingerprint: string;
+  comparisonFingerprint: string | null;
+}
+
 export interface EvaluationMetrics {
   corpusVersion: string;
   corpusId: string;
@@ -174,6 +190,7 @@ export interface EvaluationMetrics {
   missingMatchRunCount: number;
   byteIdenticalRerun: boolean;
   rerunFingerprints: Record<string, string>;
+  determinismComparisons: DeterminismComparison[];
   totalEvaluations: number;
   evaluatedPairCount: number;
   highlyRelevantInTop3: number;

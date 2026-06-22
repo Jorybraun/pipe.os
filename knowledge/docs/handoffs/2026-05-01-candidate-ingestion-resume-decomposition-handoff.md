@@ -23,7 +23,7 @@ After that, you will wire those nodes into matching, harden the screener, deepen
 
 ## 2. Read These Three Files First
 
-1. **[`knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md)** — The original strategy. Understand the "living graph" reframe and the 13 node types.
+1. **[`knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md)** — The original strategy. Understand the "living graph" reframe and the 13 node types.
 2. **[`workers/api/src/lib/candidateDiscovery/candidateNodes.ts`](/Users/hans/Code/PIPE/PIPE-OS/workers/api/src/lib/candidateDiscovery/candidateNodes.ts)** — How nodes are inserted, queried, and embedded. This is your core API.
 3. **[`workers/api/src/lib/candidateDiscovery/orchestrate.ts`](/Users/hans/Code/PIPE/PIPE-OS/workers/api/src/lib/candidateDiscovery/orchestrate.ts)** — The intake pipeline. You will add a new decomposition step after `persistCandidateProfile()`.
 
@@ -835,7 +835,7 @@ These are locked by ADR-041. Do not change them without discussion.
 ## 21. Questions?
 
 1. Read the full plan: [`/Users/hans/.kimi/plans/sif-tempest-starman.md`](/Users/hans/.kimi/plans/sif-tempest-starman.md)
-2. Read the original strategy: [`knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md)
+2. Read the original strategy: [`knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md`](/Users/hans/Code/PIPE/PIPE-OS/knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md)
 3. Check existing graph code: [`lib/candidateDiscovery/candidateNodes.ts`](/Users/hans/Code/PIPE/PIPE-OS/workers/api/src/lib/candidateDiscovery/candidateNodes.ts), [`lib/candidateDiscovery/decomposeCodeReview.ts`](/Users/hans/Code/PIPE/PIPE-OS/workers/api/src/lib/candidateDiscovery/decomposeCodeReview.ts)
 4. Ask the PM or architect before changing any locked decision in Section 14.
 

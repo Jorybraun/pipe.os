@@ -1,6 +1,6 @@
 # Candidate Profile View — Candidate-Facing Graph Display
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 347–349)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 347–349)
 **Phase:** 2
 **Status:** NEEDS-REFINEMENT
 **Estimate:** 2 weeks

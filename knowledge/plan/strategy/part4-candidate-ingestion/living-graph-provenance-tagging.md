@@ -1,6 +1,6 @@
 # Living Graph — Provenance Tagging and Source Registry
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 85–95)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 85–95)
 **Phase:** 1
 **Status:** PENDING
 **Estimate:** 0.5 weeks

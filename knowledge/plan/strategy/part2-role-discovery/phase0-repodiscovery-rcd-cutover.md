@@ -1,6 +1,6 @@
 # Phase 0 — repoDiscovery RCD Primary Cutover
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 62–69, 200–201)  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 62–69, 200–201)
 **Phase:** 0  
 **Status:** PENDING  
 **Estimate:** 0.5 weeks

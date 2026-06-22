@@ -7,8 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Contact Living Context Graph
+
+- Contact/people drawer context now renders the shared living-context graph from `/api/v1/contacts/:id/living-context` instead of incorrectly treating the contact ID as a candidate ID.
+- Empty contact living-context responses now preserve the shared read-model shape, including `contextRecordCount` and `contextRecords`.
+- Contact living-context identity now follows the stable legacy contact link before email lookup, so contact email edits update the same person/workspace graph instead of forking it.
+- Contact living-context reads now promote legacy contacts into the living graph before loading the read model, and the MVP browser smoke now asserts a same-email contact plus roleless candidate share one person/workspace graph while preserving exact intake source text.
+
+### Fixed — Challenge Matching Provenance Guardrails
+
+- Candidate-to-PR matching now rejects stale or hand-shaped `review_challenge_packets` with `PACKET_PROVENANCE_INVALID` before recall/ranking by recomputing packet IDs, packet content hashes, demand IDs, demand hashes, demand-family consistency, row PR consistency, and source-hash consistency.
+- Match explanations, cockpit candidate profiles, and the `LivingContextGraph` diagnostics now preserve and render invalid packet provenance failures so reviewers can see why a repo packet was excluded instead of receiving an opaque no-match result.
+- Match decision context records now persist the selected/considered review packet content hash, and living-context persistence rejects missing or mismatched `review_challenge_packet` source hashes.
+- Matcher regression coverage now uses packets persisted through `buildChallengePacket` + `persistReviewChallengeGraph` for valid selection paths, and keeps hand-shaped packet rows only as invalid legacy fixtures.
+- Candidate-to-PR matching now excludes otherwise valid packet rows until their `repo_challenge_packet` context record has repo source-span refs and concept links, keeping matcher eligibility aligned with the source-backed graph projection.
+- Cockpit candidate profiles now preserve graph-context projection failures from rejected review packets instead of collapsing them into a generic no-match gap.
+- Standalone code-review challenge loading now reconstructs candidate-facing diffs only from context-ready review packets with `repo_challenge_packet` records, repo source-span refs, and concept links.
+- Pipeline auto-build now selects CODE_REVIEW PRs only from context-ready review packets with `repo_challenge_packet` records, repo source-span refs, and concept links.
+- Pipeline auto-build now uses persisted role context concepts before legacy persona skill strings when selecting a source-backed CODE_REVIEW PR, preserving simple-JD/open-concept semantics in challenge selection.
+- Pipeline auto-build can now build CODE_REVIEW-only stations from source-backed role context concepts when legacy `mustHaveSkills` are absent, selecting repos through context-ready review packet overlap instead of fabricating skill constraints.
+- Pipeline CODE_REVIEW candidate assignments are now revalidated against context-ready review packets before reuse, and stale assignment rows are refreshed through deterministic matching instead of serving legacy repo/PR overrides.
+- Standalone CODE_REVIEW cached repo/PR matches are now revalidated against context-ready review packets before being reused, so stale scheduled-interview rows without source-backed graph context fall back to deterministic rematching.
+- Multi-turn CODE_REVIEW session init now shares the source-backed review packet diff loader and returns `WAITING_FOR_MATCH` without creating a session when an assignment-backed PR lacks context-ready graph provenance.
+- Recruiter candidate profiles now hydrate standalone CODE_REVIEW selected packet metadata only from context-ready review packets; legacy `MATCHED` rows without source-backed graph context render as explicit no-safe-challenge gaps instead of polished PR matches.
+- Assignment-backed CODE_REVIEW challenge serving now ignores stale challenge-level cached diffs and reconstructs candidate-facing diffs from context-ready review packet source spans, returning `WAITING_FOR_MATCH` if packet graph provenance is unavailable.
+- Multi-turn CODE_REVIEW implementer and explainer prompts now use the same assignment-aware source-backed PR context loader, preventing stale cached diffs from entering review transcripts or explanation exchanges.
+- Assignment-backed CODE_REVIEW scoring now reconstructs scorer diff context from context-ready review packet source spans and drops generic challenge planted-bug ground truth, preventing stale challenge fixtures from becoming living-context score evidence.
+- Recruiter transcript analysis now hides generic challenge ground truth/server config for assignment-backed CODE_REVIEW sessions and reports source-backed packet readiness plus PR metadata instead of stale challenge fixtures.
+- Assignment-backed CODE_REVIEW PR descriptions now come only from source-backed packet metadata across challenge serving, prompts, scoring, and transcript analysis, avoiding fallback to generic challenge text.
+- Standalone CODE_REVIEW challenge serving now fails closed when source-backed packet spans cannot reconstruct the diff, instead of live-fetching GitHub data outside the graph provenance gate.
+- Standalone CODE_REVIEW E2E fixture repos are no longer marked `swe_bench_eligible`, preventing the crawler-backed challenge packet backfill from treating synthetic local fixture repos as real GitHub PRs.
+
+### Fixed — Repo Graph Projection
+
+- `ingestReposToNeo4j` now treats Neo4j as a rebuildable projection from D1: local database discovery is configurable, and `--dry-run` no longer opens Neo4j, writes projection rows, or generates embeddings.
+- `ingestReposToNeo4j` no longer synthesizes metadata-only repo searchable profiles when Pass-3/source-backed profile evidence is missing; repos without `repo_searchable_profile` now fail closed and are skipped from the semantic projection.
+- `ingestReposToNeo4j` now projects PullRequest nodes only from production-ready review challenge packets that have `repo_challenge_packet` context records, repo source refs, and concept links, excluding fixture/disabled/incomplete packet rows instead of projecting raw sampled PR metadata.
+- Neo4j repo nodes now keep semantic type as `node_type` data instead of using a fixed label/whitelist taxonomy, and repo match queries consider all embedded repo nodes so previously unseen repo concepts survive projection and matching.
+- Neo4j PullRequest projection text now comes from source-backed review packet JSON demand/body content and discards crawler `repo_sample_prs.pr_narrative` embeddings, preventing generic PR summaries from becoming projected match/search evidence.
+- Legacy `backfillNeo4j --repos` now fails closed instead of projecting old `repo_nodes` compatibility rows; repo Neo4j projection must be rebuilt through `ingestReposToNeo4j` from D1 source-backed packet/context records.
+
+### Added — Review Graph Readiness Gate
+
+- Added `checkReviewChallengeGraphReadiness.ts` plus `review-graph:readiness` / `review-graph:rollout-gate` worker scripts to compose local graph migration prep, packet-context auditing, and optional GitHub API preflight into one rollout report.
+- The readiness gate fails closed with explicit next actions for missing graph tables, no backfilled packets, fixture-only packets, incomplete packet context projections, and GitHub API connectivity failures.
+- Remote review-graph readiness now emits remote-specific migration guidance when crawler data exists but graph/context tables are not yet applied, instead of pointing operators at the local D1 prep script.
+- `backfillReviewChallengePackets` write mode now refuses to fetch or persist until all review graph/context tables are present, with the full required migration list in the error.
+- `backfillReviewChallengePackets --json` now emits a machine-readable rollout report with mode, target, filters, batch size, deterministic stats, and row-level PR outcomes with packet IDs/content hashes when built plus persisted context-record/source-ref/concept-link coverage for write-mode packets, while keeping progress logs on stderr.
+- Added `checkReviewGraphBackfillReport.ts` and wired the manual Review Graph Rollout workflow to fail closed unless dry-run mode builds at least one eligible packet or write mode persists at least one context-ready packet.
+- Review graph backfill report gating now also requires extracted structural facts for ready dry-run and persisted packet outcomes, so repo rollout cannot pass with source spans/concepts but no code-structure decomposition.
+- Added a manual Review Graph Rollout workflow that can apply production D1 migrations, run a bounded dry-run or write-mode review packet backfill, run GitHub preflight, validate dispatch inputs, and upload before/after/final readiness plus backfill JSON artifacts.
+- The repo crawler workflow now uploads a non-blocking remote review-graph readiness report after pass 2 so ops can watch packet/context/source/concept coverage before converting it into a hard rollout gate.
+
+### Added — Matching Evaluation Readiness Report
+
+- CI now uploads a non-blocking matching evaluation readiness report when Cloudflare D1 credentials and `MATCHING_EVALUATION_CORPUS_ID` are configured, using the existing production expert-label gate rather than any synthetic corpus fallback.
+
+### Added — Match Explanation Visualization Proof
+
+- Match evidence node badges now accept open-ended semantic node types and render data-derived labels, so previously unseen node classifications remain visible instead of being constrained to a fixed frontend taxonomy.
+- Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
+- Added a `LivingContextGraph` regression for crawler/backfill-shaped CODE_REVIEW match explanations, proving accumulated resume and meeting evidence can render against repo source spans for previously unseen concepts in the repository overlay.
+- Candidate profile CODE_REVIEW match explanations now preserve `sourceRefType`, `sourceRefId`, and `sourceSpanId` in public source refs so recruiter surfaces and downstream audits can distinguish candidate spans from repo spans.
+- `LivingContextGraph` repository source cards now expose source ref type, source ref ID, source span ID, and content hash as stable DOM data attributes for browser/E2E provenance assertions.
+- Standalone CODE_REVIEW §MVP.8 now asserts the browser-rendered repository overlay retains candidate `source_span` IDs and repo `repo_source_span` IDs from the seeded source-backed match fixture.
+- Added a worker-level matcher proof that builds a production-ready repo challenge packet through `buildChallengePacket` + `persistReviewChallengeGraph`, then matches source-backed candidate evidence against the persisted packet and verifies candidate/repo source refs survive into the match explanation and context record.
+- Candidate-to-PR match explanations now expose role/JD provenance as `roleSources`, and matcher regressions verify the same role source refs persist into `match_runs.query_json` plus the `candidate_pr_match_decision` context record.
+- Candidate profile CODE_REVIEW match summaries now parse `roleSources` back out of persisted `match_runs.query_json`, and `LivingContextGraph` renders those role/JD source locators next to the selected PR evidence.
+- Standalone CODE_REVIEW E2E seeding can now create source-backed simple-JD role context records, run deterministic matching with those role semantics, and browser-verify the rendered CONTEXT graph shows role, candidate, and repo provenance together.
+- Added a repo-discovery conversion proof that mocked GitHub PR fetch data flows through `convertRepoToChallenge`, persists a production-ready packet, selects that packet via deterministic candidate matching, and records exact candidate/repo source refs plus an explicit unmatched-demand evidence gap.
+- Added a runner-level backfill proof that selects a crawled `repo_sample_prs` row, fetches PR refs/diff/source content through injected fetchers, persists the source-backed packet, and feeds deterministic candidate matching with exact candidate/repo source refs.
+- Extended the runner-level backfill/matching proof so a previously unseen concept survives as distinct resume and meeting evidence, accumulates into candidate query atoms, matches a repo source identifier, and remains visible in the selected source-backed match explanation.
+- Standalone CODE_REVIEW E2E fixture seeding now builds normalized PR evidence with source artifacts, versions, spans, symbols, structural facts, production challenge packets, and repo semantic projections, then persists through `persistReviewChallengeGraph` instead of hand-writing `review_challenge_packets`.
+- `LivingContextGraph` now renders explicit meeting evidence cards from transcript-backed interactions, including artifact/source-span counts, exact transcript snippets, context records, assertions, and accumulated signal labels.
+- `LivingContextGraph` meeting evidence now groups scoped context records by shared source spans, so meeting-level transcript hyperedges render inside the interaction branch even when the record itself is scoped to `meeting` rather than a rigid interaction edge.
+- `LivingContextGraph` now renders a repository evidence overlay for standalone CODE_REVIEW matches, grouping persisted PR demand source refs by demand/file locator and showing the aligned candidate source refs without adding semantic inference in the UI.
+- Added a candidate profile route regression proving `GET /api/v1/candidates/:id` assembles standalone CODE_REVIEW match explanations from persisted `match_runs`, scheduled interview, repo, and PR rows without dropping source refs, gaps, diagnostics, or review submission summaries.
+- `GET /api/v1/candidates/:id` now exposes `scheduledInterviews` as public camelCase profile data, including pipeline-free standalone CODE_REVIEW interviews, so E2E/recruiter surfaces can verify interview status without relying on private DB-shaped fields.
+
+### Added — Tree Projection UI Over Semantic Hypergraph
+
+- Added `ContextRecordTree` component (`src/components/Candidate/ContextRecordTree.tsx`) — renders source-backed hyperedge/context records as expandable tree nodes with entities, concepts, and source spans as children. Each source span is clickable and populates the existing source evidence inspector.
+- Added `ContextRecordForest` wrapper for rendering the full set of context records.
+- Wired context records into the `LivingContextGraph` canvas as a first-class section (above signals), filtered by selected interaction and search query.
+- Added `contextRecordCount` to the summary metrics row.
+- Added 8 Vitest tests covering collapsed/expanded states, entity/concept/source rendering, source selection callback, polarity indicators, and empty-record handling.
+- Context record trees now render non-span provenance refs such as `review_challenge_packet` as static source chips with source type, source ID, content hash, and exact text instead of pretending they are clickable transcript spans.
+
+### Fixed — Test Infrastructure Consolidation
+
+- Migrated 10 living-context and matching test files from `node:sqlite` + inline mock to shared `better-sqlite3` + `createMockD1` helper, eliminating ~650 lines of duplicate boilerplate.
+- Added CamelCase boundary splitting to `normalizeOpenTermSurface` so `TypeScript` → `term:type-script` and `SomeNewTechnology` → `term:some-new-technology` — previously unseen CamelCase concepts are no longer collapsed.
+- Updated `probeLibrarian` and `planner` tests to match the current 9-probe signal library (added `probe_9_codebase_organization`).
+- Fixed `unifiedAgentRuntime` integration tests: `role_discovery` plugin now requires an LLM provider; added a deterministic mock provider.
+- Updated `conceptRegistry` test expectation for CamelCase normalization.
+
+### Added — Living Context Graph Tracker
+
+- Added `docs/plans/living-context-graph-tracker.md` — canonical acceptance tracker, PR ledger, merge gates, and autonomous agent operating model for the living context graph goal.
+
 ### Changed — E2E Test Reliability
 
+- Worker health checks now respond at both `/health` and `/api/health`, and Playwright local `webServer` readiness uses `/api/health` so stale compatible local API servers no longer block focused E2E startup.
+- Playwright local `webServer` commands now derive the Worker and Vite ports from `API_BASE` / `APP_BASE`, so focused E2E runs can use alternate ports when stale local servers occupy `8787` or `5173`.
+- Standalone CODE_REVIEW §MVP.4 now requires thin-evidence candidates to receive `WAITING_FOR_MATCH` exactly, with no repo URL, PR number, or cached diff, proving fail-closed matching instead of accepting ambiguous fallback states.
+- Standalone CODE_REVIEW §MVP.6 now seeds source-backed candidate evidence plus an unseen-concept repo challenge packet through a guarded local/test route, then requires `/rpc/get-challenge` to return a real `CODE_REVIEW` with PR metadata, packet-derived diff, match diagnostics, and candidate/repo source refs.
+- Standalone packet-backed review challenges now render from persisted repo source spans before attempting a live GitHub fetch, so local E2E proves D1 source provenance without depending on network availability or fixture repos existing on GitHub.
+- Standalone CODE_REVIEW submissions now fail closed with `409 WAITING_FOR_MATCH` until a source-backed PR has been selected, and §MVP.7 now proves the full intake → match → CODE_REVIEW → submission → recruiter match-summary path.
+- Standalone CODE_REVIEW §MVP.8 now opens the recruiter CONTEXT tab after a submitted matched review and asserts the rendered living graph shows the selected PR, candidate review summary, annotation, candidate source snippet, PR demand source snippet, repository evidence overlay, recalled packet, and evaluated challenge diagnostics.
+- Living context read models now include shared meeting transcript artifacts and source spans through `artifact_interactions`, so a contact's meeting evidence remains visible after the same person later joins the roleless talent pool as a candidate.
+- Standalone CODE_REVIEW §MVP.7 now submits through the real `{ order, submission }` candidate RPC contract and verifies completion in the same deterministic flow instead of relying on parallel test ordering.
+- Alternate-port Playwright runs now inject `VITE_API_URL` and `VITE_API_BASE_URL` into the Vite dev server so browser UI assertions hit the same Worker/database as API setup requests.
+- Worker CORS now accepts local `localhost` / `127.0.0.1` dev origins on arbitrary ports, allowing focused Playwright runs to avoid stale default-port servers without browser fetch failures.
+- `LivingContextGraph` now exposes a stable `data-testid="living-context-graph"` root so E2E coverage can assert the real graph surface instead of fragile text selectors.
 - Centralized `API_BASE` / `APP_BASE` into `e2e/env.ts` (reads `process.env` with localhost fallbacks) so specs work against both local dev and deployed Cloudflare test env.
 - `playwright.config.ts` now skips local `webServer` startup when `IS_REMOTE` (running against deployed test env).
 - `.github/workflows/e2e-test.yml` now passes `E2E_EMAIL`, `E2E_PASSWORD`, and `CLERK_PUBLISHABLE_KEY` to the Playwright step.
@@ -17,6 +128,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Evaluation Harness
 
 - Migrated evaluation CLI test and `evaluateMatching.ts` script from experimental `node:sqlite` to `better-sqlite3`, fixing test failures on Node 20 (CI) and Node 22 without `--experimental-sqlite`.
+- Prevented `--allow-synthetic` fixture-mode evaluations from being persisted as acceptance evidence.
+- Hardened the shared `runEvaluation()` persistence path so direct callers cannot store results with the expert-label gate disabled or with synthetic/zero-expert corpora.
+- Added a read-only latest persisted evaluation readiness gate (`--check-latest-production-pass`) for staged rollout checks.
 - Added shared `mockD1` helper (`src/__tests__/helpers/mockD1.ts`) for D1-style `?N` parameter rewriting with better-sqlite3.
 - Added test: synthetic labels are rejected when `--allow-synthetic` is omitted (`requireExpertLabels` gate).
 - Added test: forbidden expert labels trigger guardrail violation detection.
@@ -24,6 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added — Video Meeting Brain Proof
 
+- Added a route-level meeting room proof that creates a meeting, mints a guest room token, uploads a host recording, drains transcript processing, then verifies the recorded guest transcript assertion, exact source span, open concept, and signal survive when the same email later joins as a roleless talent-pool candidate.
 - `meetingTranscript.test.ts`: Added focused proof test (`grows a person-centered living context graph from a meeting transcript`) verifying the complete person-graph growth chain: person/workspace_people identity, meeting interaction, immutable artifact version, exact source spans, semantic assertion with open predicate, persisted concept/signal, signal snapshot, projection outbox entry, idempotency, and corrected-transcript immutable versioning.
 - Fixed mock D1 adapter (`normalizeD1Params`): `node:sqlite` does not support D1-style `?1` numbered parameters with positional bindings — the adapter now rewrites `?N` to plain `?` and reorders bindings accordingly, unblocking all 5 previously broken async tests.
 
@@ -77,6 +192,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — Source-backed Candidate-to-PR Matching Proof
 
 - `workers/api/src/lib/repoSemanticGraph/challengePacket.ts`: PR challenge packet concept extraction now preserves source identifier components from paths, symbols, signatures, imports/calls, and test metadata in addition to full open terms. This keeps repository semantics source-backed while allowing terms such as `term:rest` to survive from identifiers like `ts-rest`.
+- PR challenge packet concept extraction now also preserves raw CamelCase identifier parts as open semantic terms, so identifiers like `CrystallineQuorumLedger` survive as phrase-level source-backed concepts instead of collapsing only into individual word tokens.
 - `workers/api/scripts/testLocalChallengeMatch.ts`: Added `--commit` for intentionally persisting a local match run; default behavior remains rollback-only for probes.
 - Local D1 proof run: after replaying the living-context backfill, candidate `4c1bee04-264e-4eea-afae-4b2d2dd894ba` matched `mui/base-ui#973` via persisted `match_runs.id = 2346db17-f7d5-415f-95a3-73da39f94751` with complete candidate and challenge source references.
 

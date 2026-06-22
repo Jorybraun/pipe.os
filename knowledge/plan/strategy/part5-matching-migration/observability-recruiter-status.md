@@ -1,6 +1,6 @@
 # Observability: Structured Recruiter-Facing Pipeline Status
 
-**Source:** knowledge/plan/pipe-strategy-v2-part5-matching-migration.md (lines 292–297)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part5-matching-migration.md (lines 292–297)
 **Phase:** 0 (listed as ACTIVE in master list)
 **Status:** PENDING
 **Estimate:** 1 week

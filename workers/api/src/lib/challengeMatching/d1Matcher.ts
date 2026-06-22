@@ -9,14 +9,32 @@ import type {
   CandidateSignal,
   ChallengePacket,
   EvidenceLevel,
+  MatchExplanation,
   QueryPurpose,
+  RoleSourceReference,
   SourceRef,
 } from './types';
-import type { ChallengePacket as RepoChallengePacket } from '../repoSemanticGraph';
+import {
+  hashObject,
+  stableId,
+  stableJson,
+  type ChallengePacket as RepoChallengePacket,
+} from '../repoSemanticGraph';
+import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
+import type {
+  ContextRecordConceptInput,
+  ContextRecordEntityInput,
+  ContextRecordInput,
+  ContextRecordSourceInput,
+  JsonObject,
+  JsonValue,
+} from '../livingContext/types';
 
 interface CandidateEvidenceRow {
-  assertion_id: string;
+  context_record_id: string | null;
+  assertion_id: string | null;
+  source_span_id: string;
   episode_id: string | null;
   narrative: string;
   confidence: number | null;
@@ -36,8 +54,16 @@ interface CandidateEvidenceRow {
 
 interface PacketRow {
   id: string;
+  repo_snapshot_id: string;
   repo_id: number;
+  pr_number: number | null;
+  production_ready: number;
+  quality_score: number | null;
+  source_hash: string | null;
   packet_json: string;
+  context_record_id: string | null;
+  repo_source_ref_count: number | null;
+  concept_link_count: number | null;
 }
 
 interface RepoSpanRow {
@@ -50,8 +76,78 @@ interface RepoSpanRow {
   path: string | null;
 }
 
+export interface ChallengePacketLoadExclusion {
+  id: string;
+  repoId: string;
+  prNumber: number | null;
+  packetContentHash?: string | null;
+  reason:
+    | 'DEMAND_WITHOUT_SOURCE_SPANS'
+    | 'MISSING_DEMAND_SOURCE_SPANS'
+    | 'PACKET_NOT_PRODUCTION_READY'
+    | 'PACKET_PROVENANCE_INVALID'
+    | 'PACKET_CONTEXT_PROJECTION_INCOMPLETE';
+  demandIds: string[];
+  missingSourceSpanIds: string[];
+  gateFailures?: string[];
+  provenanceFailures?: string[];
+  contextProjectionFailures?: string[];
+  contextRecordId?: string | null;
+  repoSourceRefCount?: number | null;
+  conceptLinkCount?: number | null;
+  qualityScore?: number | null;
+}
+
+export interface RoleGuardrailChallengeExclusion {
+  id: string;
+  reason: 'ROLE_GUARDRAIL_FAILED';
+  repoId?: string;
+  prNumber?: number | null;
+  packetContentHash?: string | null;
+}
+
+export type ChallengeMatchExclusion = ChallengePacketLoadExclusion | RoleGuardrailChallengeExclusion;
+
+export interface ChallengeMatchDiagnostics {
+  excludedPackets: ChallengeMatchExclusion[];
+  recalledPacketIds: string[];
+  evaluatedChallenges: Array<{
+    challengeId: string;
+    repoId: string;
+    prNumber: number;
+    packetContentHash?: string | null;
+    recallRank: number;
+    rank: number | null;
+    eligible: boolean;
+    rejectionReasons: string[];
+    provenanceComplete: boolean;
+    contextProjectionComplete: boolean;
+    contextRecordId?: string | null;
+    repoSourceRefCount?: number | null;
+    conceptLinkCount?: number | null;
+    alignedDemandCount: number;
+    stretchCount: number;
+  }>;
+}
+
+interface ChallengePacketLoadResult {
+  packets: ChallengePacket[];
+  exclusions: ChallengePacketLoadExclusion[];
+}
+
 const GENERIC_CORPUS_MIN_PACKETS = 3;
 const GENERIC_CORPUS_RATIO = 0.4;
+
+function conceptNamespace(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  return separator > 0 ? canonicalKey.slice(0, separator) : 'open';
+}
+
+function conceptLabel(canonicalKey: string): string {
+  const separator = canonicalKey.indexOf(':');
+  const raw = separator >= 0 ? canonicalKey.slice(separator + 1) : canonicalKey;
+  return raw.replace(/[-_]+/g, ' ').trim() || canonicalKey;
+}
 
 function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   if (row.concept_key) return [row.concept_key];
@@ -85,16 +181,26 @@ function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   }
 }
 
+function candidateEvidenceId(row: CandidateEvidenceRow): string {
+  return row.assertion_id ?? row.context_record_id ?? row.source_span_id;
+}
+
 function candidateSourceRef(row: CandidateEvidenceRow): SourceRef {
   const start = row.byte_start ?? row.char_start ?? 0;
   const end = row.byte_end ?? row.char_end ?? Math.max(1, row.exact_text.length);
+  const locator = row.context_record_id
+    ? `context_record:${row.context_record_id}`
+    : `assertion:${row.assertion_id}`;
   return {
     artifactId: row.artifact_version_id,
     artifactVersion: row.artifact_version_id,
     contentHash: row.content_hash,
     startOffset: start,
     endOffset: Math.max(start + 1, end),
-    locator: `assertion:${row.assertion_id}`,
+    sourceRefType: 'source_span',
+    sourceRefId: row.source_span_id,
+    sourceSpanId: row.source_span_id,
+    locator,
     exactText: row.exact_text,
   };
 }
@@ -104,7 +210,8 @@ async function loadCandidateSignals(
   candidateId: string,
 ): Promise<CandidateSignal[]> {
   const result = await db.prepare(
-    `SELECT sa.id AS assertion_id, sa.episode_id, sa.narrative, sa.confidence,
+    `SELECT NULL AS context_record_id, sa.id AS assertion_id, ss.id AS source_span_id,
+            sa.episode_id, sa.narrative, sa.confidence,
             sa.qualifiers_json,
             (SELECT evidence_level
                FROM signal_evidence selected_evidence
@@ -136,13 +243,55 @@ async function loadCandidateSignals(
       ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC, sa.id, c.canonical_key`,
   ).bind(candidateId).all<CandidateEvidenceRow>();
 
+  const contextResult = await db.prepare(
+    `SELECT cr.id AS context_record_id, cr.assertion_id, ss.id AS source_span_id,
+            cr.episode_id, cr.narrative, cr.confidence,
+            cr.qualifiers_json,
+            (SELECT evidence_level
+               FROM signal_evidence selected_evidence
+              WHERE cr.assertion_id IS NOT NULL
+                AND selected_evidence.assertion_id = cr.assertion_id
+                AND selected_evidence.concept_id = crc.concept_id
+              ORDER BY selected_evidence.strength DESC, selected_evidence.id
+              LIMIT 1) AS evidence_level,
+            (SELECT MAX(strength)
+               FROM signal_evidence strongest_evidence
+              WHERE cr.assertion_id IS NOT NULL
+                AND strongest_evidence.assertion_id = cr.assertion_id
+                AND strongest_evidence.concept_id = crc.concept_id) AS strength,
+            ss.artifact_version_id, av.content_hash,
+            ss.byte_start, ss.byte_end, ss.char_start, ss.char_end, ss.exact_text,
+            c.canonical_key AS concept_key, crc.weight AS concept_weight
+       FROM applications app
+       JOIN context_records cr ON cr.workspace_person_id = app.workspace_person_id
+       JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+       JOIN source_spans ss ON ss.id = crsr.source_span_id
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+       JOIN concepts c ON c.id = crc.concept_id
+      WHERE app.legacy_candidate_id = ?1
+      ORDER BY COALESCE(cr.observed_at, cr.created_at) DESC, cr.id, c.canonical_key`,
+  ).bind(candidateId).all<CandidateEvidenceRow>();
+
   const signals: CandidateSignal[] = [];
-  for (const row of result.results ?? []) {
+  const seen = new Set<string>();
+  for (const row of [...(result.results ?? []), ...(contextResult.results ?? [])]) {
     const concepts = conceptsFromRow(row);
+    const baseId = candidateEvidenceId(row);
     const purpose: QueryPurpose = 'validation';
+    const id = row.concept_key ? `${baseId}:${row.concept_key}` : baseId;
+    const sourceRef = candidateSourceRef(row);
+    const dedupeKey = [
+      id,
+      sourceRef.sourceSpanId ?? sourceRef.sourceRefId ?? sourceRef.locator ?? '',
+      row.evidence_level ?? '',
+      row.strength ?? '',
+    ].join('\u0000');
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const signal: CandidateSignal = {
-      id: row.concept_key ? `${row.assertion_id}:${row.concept_key}` : row.assertion_id,
-      episodeId: row.episode_id ?? row.assertion_id,
+      id,
+      episodeId: row.episode_id ?? baseId,
       narrative: row.narrative,
       purpose,
       evidenceLevel: row.evidence_level,
@@ -151,15 +300,9 @@ async function loadCandidateSignals(
         : null,
       confidence: row.confidence,
       concepts,
-      sourceRefs: [candidateSourceRef(row)],
+      sourceRefs: [sourceRef],
     };
-    if (
-      signal.evidenceLevel != null
-      && signal.evidenceStrength != null
-      && signal.confidence != null
-    ) {
-      signals.push(signal);
-    }
+    signals.push(signal);
   }
   return signals;
 }
@@ -173,58 +316,214 @@ function packetSourceRef(span: RepoSpanRow): SourceRef {
     contentHash: span.content_hash,
     startOffset: start,
     endOffset: Math.max(start + 1, end),
+    sourceRefType: 'repo_source_span',
+    sourceRefId: span.id,
     locator: span.path ? `${span.path}:${start}-${end}` : span.id,
     exactText: span.exact_text,
   };
 }
 
-async function loadChallengePackets(
-  db: D1Database,
+function packetDemandIds(packet: Partial<RepoChallengePacket> | null): string[] {
+  return Array.isArray(packet?.demands)
+    ? packet.demands
+      .map((demand) => demand?.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .sort()
+    : [];
+}
+
+function packetGateFailures(packet: Partial<RepoChallengePacket> | null): string[] {
+  return Array.isArray(packet?.quality?.gates)
+    ? packet.quality.gates
+      .filter((gate) => gate && gate.passed === false && typeof gate.gate === 'string')
+      .map((gate) => gate.gate)
+      .sort()
+    : [];
+}
+
+function packetPrNumber(row: PacketRow, packet: Partial<RepoChallengePacket> | null): number | null {
+  return row.pr_number ?? (
+    typeof packet?.pullRequest?.number === 'number' ? packet.pullRequest.number : null
+  );
+}
+
+function packetIdentity(packet: RepoChallengePacket): {
+  repoSnapshotId: string;
+  prNumber: number;
+  baseSha: string;
+  headSha: string;
+  policyVersion: 'repo-challenge-v1';
+} {
+  return {
+    repoSnapshotId: packet.repoSnapshotId,
+    prNumber: packet.pullRequest.number,
+    baseSha: packet.pullRequest.baseSha.toLowerCase(),
+    headSha: packet.pullRequest.headSha.toLowerCase(),
+    policyVersion: packet.policyVersion,
+  };
+}
+
+async function challengePacketIntegrityFailures(
+  row: PacketRow,
+  packet: RepoChallengePacket,
+): Promise<string[]> {
+  const failures: string[] = [];
+  const identity = packetIdentity(packet);
+  const expectedPacketId = await stableId('challenge_packet', identity);
+  const packetSpanIds = new Set(packet.sourceSpanIds);
+  const demandFamilies = packet.demands.map((demand) => demand.family).sort();
+  const content = {
+    ...identity,
+    repository: packet.repository,
+    pullRequest: {
+      number: packet.pullRequest.number,
+      url: packet.pullRequest.url,
+      title: packet.pullRequest.title,
+      body: packet.pullRequest.body,
+      author: packet.pullRequest.author,
+      baseSha: identity.baseSha,
+      headSha: identity.headSha,
+      mergedAt: packet.pullRequest.mergedAt,
+    },
+    languageSupport: packet.languageSupport,
+    changedFilePaths: packet.changedFilePaths,
+    changedSymbolIds: packet.changedSymbolIds,
+    sourceSpanIds: packet.sourceSpanIds,
+    testChanges: packet.testChanges,
+    issue: packet.issue,
+    demands: packet.demands,
+    demandFamilies: packet.demandFamilies,
+    quality: packet.quality,
+  };
+  const expectedPacketHash = await hashObject(content);
+
+  if (packet.id !== row.id) {
+    failures.push(`packet row id ${row.id} does not match packet JSON id ${packet.id}`);
+  }
+  if (row.pr_number !== null && row.pr_number !== packet.pullRequest.number) {
+    failures.push(`packet row PR ${row.pr_number} does not match packet PR ${packet.pullRequest.number}`);
+  }
+  if (packet.id !== expectedPacketId) {
+    failures.push(`packet id ${packet.id} does not match normalized identity ${expectedPacketId}`);
+  }
+  if (row.source_hash !== packet.contentHash) {
+    failures.push('packet source_hash does not match packet contentHash');
+  }
+  if (packet.contentHash !== expectedPacketHash) {
+    failures.push(`packet contentHash is stale; expected ${expectedPacketHash}`);
+  }
+  if (stableJson(packet.demandFamilies) !== stableJson(demandFamilies)) {
+    failures.push('packet demandFamilies do not match packet demands');
+  }
+
+  for (const demand of packet.demands) {
+    const demandSpansMissingFromPacket = demand.sourceSpanIds.filter((spanId) => !packetSpanIds.has(spanId));
+    if (demandSpansMissingFromPacket.length > 0) {
+      failures.push(`demand ${demand.id} references spans absent from packet: ${demandSpansMissingFromPacket.join(', ')}`);
+    }
+    const demandIdentity = {
+      repoSnapshotId: packet.repoSnapshotId,
+      prNumber: packet.pullRequest.number,
+      family: demand.family,
+      sourceSpanIds: demand.sourceSpanIds,
+    };
+    const expectedDemandId = await stableId('challenge_demand', demandIdentity);
+    const expectedDemandHash = await hashObject({
+      ...demandIdentity,
+      narrative: demand.narrative,
+      conceptKeys: demand.conceptKeys,
+      problems: demand.problems,
+      mechanisms: demand.mechanisms,
+      domains: demand.domains,
+      businessObjects: demand.businessObjects,
+      ownershipActions: demand.ownershipActions,
+      changedSymbolIds: demand.changedSymbolIds,
+    });
+    if (demand.id !== expectedDemandId) {
+      failures.push(`demand ${demand.id} does not match normalized identity ${expectedDemandId}`);
+    }
+    if (demand.contentHash !== expectedDemandHash) {
+      failures.push(`demand ${demand.id} contentHash is stale`);
+    }
+  }
+
+  return failures.sort();
+}
+
+export function materializeChallengePacketForMatching(
+  repoId: number,
+  packet: RepoChallengePacket,
+  spanById: Map<string, RepoSpanRow>,
   roleConcepts?: string[],
-): Promise<ChallengePacket[]> {
-  const rows = await db.prepare(
-    `SELECT id, repo_id, packet_json
-       FROM review_challenge_packets
-      WHERE production_ready = 1 AND quality_score >= 0.70
-      ORDER BY repo_id, pr_number`,
-  ).all<PacketRow>();
-  const packets: ChallengePacket[] = [];
+  packetContentHash?: string | null,
+  contextProjection?: {
+    contextRecordId: string;
+    repoSourceRefCount: number;
+    conceptLinkCount: number;
+  },
+): { packet: ChallengePacket } | { exclusion: ChallengePacketLoadExclusion } {
+  const demandsWithoutSpans = packet.demands
+    .filter((demand) => demand.sourceSpanIds.length === 0)
+    .map((demand) => demand.id)
+    .sort();
+  if (demandsWithoutSpans.length > 0) {
+    return {
+      exclusion: {
+        id: packet.id,
+        repoId: String(repoId),
+        prNumber: packet.pullRequest.number,
+        packetContentHash: packetContentHash ?? packet.contentHash,
+        reason: 'DEMAND_WITHOUT_SOURCE_SPANS',
+        demandIds: demandsWithoutSpans,
+        missingSourceSpanIds: [],
+      },
+    };
+  }
 
-  for (const row of rows.results ?? []) {
-    const packet = JSON.parse(row.packet_json) as RepoChallengePacket;
-    const spanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
-    if (spanIds.length === 0) continue;
-    const placeholders = spanIds.map(() => '?').join(',');
-    const spans = await db.prepare(
-      `SELECT id, artifact_version_id, content_hash, byte_start, byte_end, exact_text, path
-         FROM repo_source_spans WHERE id IN (${placeholders})`,
-    ).bind(...spanIds).all<RepoSpanRow>();
-    const spanById = new Map((spans.results ?? []).map((span) => [span.id, span]));
-    const roleConceptSet = roleConcepts ? new Set(roleConcepts) : null;
-    const roleDemands = roleConceptSet
-      ? packet.demands.filter((demand) => demand.conceptKeys.some((key) => roleConceptSet.has(key)))
-      : packet.demands;
-    const maxRoleWeight = roleDemands.length > 0
-      ? Math.max(...roleDemands.map((demand) => demand.weight))
-      : null;
+  const missingByDemand = packet.demands.flatMap((demand) =>
+    demand.sourceSpanIds
+      .filter((spanId) => !spanById.has(spanId))
+      .map((spanId) => ({ demandId: demand.id, spanId })),
+  );
+  if (missingByDemand.length > 0) {
+    return {
+      exclusion: {
+        id: packet.id,
+        repoId: String(repoId),
+        prNumber: packet.pullRequest.number,
+        packetContentHash: packetContentHash ?? packet.contentHash,
+        reason: 'MISSING_DEMAND_SOURCE_SPANS',
+        demandIds: [...new Set(missingByDemand.map((entry) => entry.demandId))].sort(),
+        missingSourceSpanIds: [...new Set(missingByDemand.map((entry) => entry.spanId))].sort(),
+      },
+    };
+  }
 
-    packets.push({
+  const roleConceptSet = roleConcepts ? new Set(roleConcepts) : null;
+  const roleDemands = roleConceptSet
+    ? packet.demands.filter((demand) => demand.conceptKeys.some((key) => roleConceptSet.has(key)))
+    : packet.demands;
+  const maxRoleWeight = roleDemands.length > 0
+    ? Math.max(...roleDemands.map((demand) => demand.weight))
+    : null;
+
+  return {
+    packet: {
       id: packet.id,
-      repoId: String(row.repo_id),
+      repoId: String(repoId),
       prNumber: packet.pullRequest.number,
       sourceVersion: packet.repoSnapshotId,
+      packetContentHash: packetContentHash ?? packet.contentHash,
+      contextRecordId: contextProjection?.contextRecordId,
+      repoSourceRefCount: contextProjection?.repoSourceRefCount,
+      conceptLinkCount: contextProjection?.conceptLinkCount,
       challengeReady: packet.quality.eligible,
       languages: [packet.languageSupport.normalizedLanguage],
       seniority: undefined,
       concepts: [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))],
       demands: packet.demands.map((demand) => {
         const concepts = demand.conceptKeys;
-        const demandSpans = demand.sourceSpanIds
-          .map((id) => spanById.get(id))
-          .filter((span): span is RepoSpanRow => Boolean(span));
-        const sourceRefs = demandSpans.length === demand.sourceSpanIds.length
-          ? demandSpans.map(packetSourceRef)
-          : [];
+        const sourceRefs = demand.sourceSpanIds.map((spanId) => packetSourceRef(spanById.get(spanId)!));
         return {
           id: demand.id,
           family: demand.family,
@@ -249,9 +548,177 @@ async function loadChallengePackets(
         deterministic: packet.quality.score,
         contextualSpecificity: packet.quality.metrics.demandDiversity,
       },
-    });
+    },
+  };
+}
+
+function packetContextProjectionFailures(row: PacketRow): string[] {
+  const failures: string[] = [];
+  const repoSourceRefCount = row.repo_source_ref_count ?? 0;
+  const conceptLinkCount = row.concept_link_count ?? 0;
+  if (!row.context_record_id) {
+    failures.push(`review challenge packet ${row.id} is missing its repo_challenge_packet context record`);
   }
-  return packets;
+  if (repoSourceRefCount <= 0) {
+    failures.push(`review challenge packet ${row.id} is missing repo_source_span context refs`);
+  }
+  if (conceptLinkCount <= 0) {
+    failures.push(`review challenge packet ${row.id} is missing context_record_concepts links`);
+  }
+  return failures.sort();
+}
+
+async function loadChallengePackets(
+  db: D1Database,
+  roleConcepts?: string[],
+): Promise<ChallengePacketLoadResult> {
+  const rows = await db.prepare(
+    `SELECT rcp.id,
+            rcp.repo_snapshot_id,
+            rcp.repo_id,
+            rcp.pr_number,
+            rcp.production_ready,
+            rcp.quality_score,
+            rcp.source_hash,
+            rcp.packet_json,
+            cr.id AS context_record_id,
+            (
+              SELECT COUNT(*)
+                FROM context_record_source_refs crsr
+               WHERE crsr.context_record_id = cr.id
+                 AND crsr.source_ref_type = 'repo_source_span'
+            ) AS repo_source_ref_count,
+            (
+              SELECT COUNT(*)
+                FROM context_record_concepts crc
+               WHERE crc.context_record_id = cr.id
+            ) AS concept_link_count
+       FROM review_challenge_packets rcp
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-challenge-packet-context:' || rcp.id
+        AND cr.scope_type = 'repo_snapshot'
+        AND cr.scope_id = rcp.repo_snapshot_id
+        AND cr.record_type = 'repo_challenge_packet'
+      ORDER BY rcp.repo_id, rcp.pr_number`,
+  ).all<PacketRow>();
+  const packets: ChallengePacket[] = [];
+  const exclusions: ChallengePacketLoadExclusion[] = [];
+
+  for (const row of rows.results ?? []) {
+    let packet: RepoChallengePacket | null = null;
+    try {
+      packet = JSON.parse(row.packet_json) as RepoChallengePacket;
+    } catch {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: row.pr_number,
+        packetContentHash: row.source_hash,
+        reason: 'PACKET_PROVENANCE_INVALID',
+        demandIds: [],
+        missingSourceSpanIds: [],
+        provenanceFailures: ['packet_json could not be parsed'],
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
+    if (row.production_ready !== 1 || (row.quality_score ?? 0) < 0.70) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
+        reason: 'PACKET_NOT_PRODUCTION_READY',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        gateFailures: packetGateFailures(packet),
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
+    let provenanceFailures: string[];
+    try {
+      provenanceFailures = await challengePacketIntegrityFailures(row, packet);
+    } catch (error) {
+      provenanceFailures = [
+        `packet_json does not match challenge packet schema: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+    if (provenanceFailures.length > 0) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
+        reason: 'PACKET_PROVENANCE_INVALID',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        provenanceFailures,
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
+    const contextProjectionFailures = packetContextProjectionFailures(row);
+    if (contextProjectionFailures.length > 0) {
+      exclusions.push({
+        id: row.id,
+        repoId: String(row.repo_id),
+        prNumber: packetPrNumber(row, packet),
+        packetContentHash: row.source_hash ?? packet.contentHash,
+        reason: 'PACKET_CONTEXT_PROJECTION_INCOMPLETE',
+        demandIds: packetDemandIds(packet),
+        missingSourceSpanIds: [],
+        contextProjectionFailures,
+        contextRecordId: row.context_record_id,
+        repoSourceRefCount: row.repo_source_ref_count ?? 0,
+        conceptLinkCount: row.concept_link_count ?? 0,
+        qualityScore: row.quality_score,
+      });
+      continue;
+    }
+
+    const spanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
+    if (spanIds.length === 0) {
+      const loaded = materializeChallengePacketForMatching(
+        row.repo_id,
+        packet,
+        new Map(),
+        roleConcepts,
+        row.source_hash ?? packet.contentHash,
+        {
+          contextRecordId: row.context_record_id!,
+          repoSourceRefCount: row.repo_source_ref_count ?? 0,
+          conceptLinkCount: row.concept_link_count ?? 0,
+        },
+      );
+      if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
+      continue;
+    }
+    const placeholders = spanIds.map(() => '?').join(',');
+    const spans = await db.prepare(
+      `SELECT id, artifact_version_id, content_hash, byte_start, byte_end, exact_text, path
+         FROM repo_source_spans WHERE id IN (${placeholders})`,
+    ).bind(...spanIds).all<RepoSpanRow>();
+    const spanById = new Map((spans.results ?? []).map((span) => [span.id, span]));
+    const loaded = materializeChallengePacketForMatching(
+      row.repo_id,
+      packet,
+      spanById,
+      roleConcepts,
+      row.source_hash ?? packet.contentHash,
+      {
+        contextRecordId: row.context_record_id!,
+        repoSourceRefCount: row.repo_source_ref_count ?? 0,
+        conceptLinkCount: row.concept_link_count ?? 0,
+      },
+    );
+    if ('exclusion' in loaded) exclusions.push(loaded.exclusion);
+    else packets.push(loaded.packet);
+  }
+  return { packets, exclusions };
 }
 
 export function deriveCorpusGenericConcepts(challenges: ChallengePacket[]): string[] {
@@ -277,7 +744,8 @@ export interface CandidateReviewChallengeMatch {
   matchRunId: string;
   repoId?: number;
   prNumber?: number;
-  explanation?: ReturnType<typeof explainChallengeMatch>;
+  explanation?: MatchExplanation;
+  diagnostics?: ChallengeMatchDiagnostics;
 }
 
 export interface CandidateReviewChallengeOptions {
@@ -288,11 +756,457 @@ export interface CandidateReviewChallengeOptions {
   forbiddenConcepts?: string[];
   roleConcepts?: string[];
   conceptResolverVersion?: string;
-  roleSourceReferences?: Array<{
-    entityId: string;
-    locator: string;
-    conceptKeys: string[];
-  }>;
+  roleSourceReferences?: RoleSourceReference[];
+}
+
+function sourceRefToContextSource(
+  ref: SourceRef,
+  evidenceRole: string,
+): ContextRecordSourceInput {
+  if (!ref.sourceRefType?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing sourceRefType`);
+  }
+  if (!ref.sourceRefId?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing sourceRefId`);
+  }
+  if (!ref.exactText?.trim()) {
+    throw new Error(`match alignment source ref for ${evidenceRole} is missing exactText`);
+  }
+  return {
+    sourceRefType: ref.sourceRefType,
+    sourceRefId: ref.sourceRefId,
+    sourceSpanId: ref.sourceRefType === 'source_span' ? ref.sourceSpanId ?? ref.sourceRefId : null,
+    evidenceRole,
+    locator: {
+      artifactId: ref.artifactId,
+      artifactVersion: ref.artifactVersion,
+      locator: ref.locator ?? null,
+      startOffset: ref.startOffset,
+      endOffset: ref.endOffset,
+    },
+    exactText: ref.exactText,
+    contentHash: ref.contentHash,
+  };
+}
+
+async function buildMatchContextConcepts(
+  store: LivingContextStore,
+  input: {
+    matchRunId: string;
+    query: ReturnType<typeof compileCandidateMatchQuery>['query'];
+    selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  },
+): Promise<ContextRecordConceptInput[]> {
+  if (!input.selected) return [];
+  const conceptKeys = new Set<string>();
+  for (const alignment of input.selected.alignments) {
+    const demandConcepts = new Set(alignment.demand.concepts);
+    for (const concept of alignment.atom.concepts) {
+      if (demandConcepts.has(concept)) conceptKeys.add(concept);
+    }
+  }
+
+  const concepts: ContextRecordConceptInput[] = [];
+  for (const canonicalKey of [...conceptKeys].map((key) => key.trim()).filter(Boolean).sort()) {
+    const concept = await store.upsertConcept({
+      ingestionKey: `match-open-concept:${canonicalKey}`,
+      canonicalKey,
+      namespace: conceptNamespace(canonicalKey),
+      label: conceptLabel(canonicalKey),
+      metadata: {
+        source: 'candidate_pr_match_decision',
+        matchRunId: input.matchRunId,
+        policyVersion: input.query.policyVersion,
+        selectedPacketId: input.selected.challenge.id,
+      },
+    });
+    concepts.push({
+      conceptId: concept.id,
+      relationship: 'concept',
+      weight: 1,
+    });
+  }
+  return concepts;
+}
+
+function buildMatchContextRecordInput(input: {
+  matchRunId: string;
+  candidateId: string;
+  applicationId: string | null;
+  roleContextId: string | null;
+  status: CandidateReviewChallengeMatch['status'];
+  query: ReturnType<typeof compileCandidateMatchQuery>['query'];
+  selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  evaluated: ReturnType<typeof alignCandidateToChallenge>[];
+  diagnostics: ChallengeMatchDiagnostics;
+  conceptResolverVersion: string | null;
+  roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
+  concepts: ContextRecordConceptInput[];
+}): ContextRecordInput {
+  const selectedPacketId = input.selected?.challenge.id ?? null;
+  const packetContentHashById = new Map<string, string>();
+  const rememberPacketContentHash = (packetId: string | null | undefined, hash: string | null | undefined) => {
+    if (packetId && hash) packetContentHashById.set(packetId, hash);
+  };
+  rememberPacketContentHash(selectedPacketId, input.selected?.challenge.packetContentHash);
+  for (const alignment of input.evaluated) {
+    rememberPacketContentHash(alignment.challenge.id, alignment.challenge.packetContentHash);
+  }
+  for (const packet of input.diagnostics.excludedPackets) {
+    rememberPacketContentHash(packet.id, packet.packetContentHash);
+  }
+  for (const challenge of input.diagnostics.evaluatedChallenges) {
+    rememberPacketContentHash(challenge.challengeId, challenge.packetContentHash);
+  }
+  const evidenceSources: ContextRecordSourceInput[] = [
+    {
+      sourceRefType: 'match_run',
+      sourceRefId: input.matchRunId,
+      evidenceRole: 'decision_record',
+      locator: {
+        candidateId: input.candidateId,
+        roleSnapshotId: input.query.roleSnapshotId,
+        status: input.status,
+      },
+      metadata: {
+        policyVersion: input.query.policyVersion,
+        modelVersion: input.conceptResolverVersion,
+      },
+    },
+  ];
+
+  const packetIds = new Set<string>();
+  if (selectedPacketId) packetIds.add(selectedPacketId);
+  for (const packetId of input.diagnostics.recalledPacketIds) packetIds.add(packetId);
+  for (const packet of input.diagnostics.excludedPackets) packetIds.add(packet.id);
+  for (const evaluated of input.diagnostics.evaluatedChallenges) packetIds.add(evaluated.challengeId);
+  for (const packetId of [...packetIds].sort()) {
+    evidenceSources.push({
+      sourceRefType: 'review_challenge_packet',
+      sourceRefId: packetId,
+      evidenceRole: packetId === selectedPacketId ? 'selected_packet' : 'considered_packet',
+      contentHash: packetContentHashById.get(packetId) ?? null,
+      locator: {
+        matchRunId: input.matchRunId,
+        selected: packetId === selectedPacketId,
+      },
+    });
+  }
+
+  for (const roleSource of input.roleSourceReferences) {
+    const typedSourceRefType = roleSource.sourceRefType?.trim();
+    const typedSourceRefId = roleSource.sourceRefId?.trim();
+    const hasTypedSourceRef = Boolean(typedSourceRefType && typedSourceRefId);
+    const sourceRefType = hasTypedSourceRef ? typedSourceRefType! : 'role_source';
+    const sourceRefId = hasTypedSourceRef ? typedSourceRefId! : roleSource.entityId;
+    evidenceSources.push({
+      sourceRefType,
+      sourceRefId,
+      sourceSpanId: sourceRefType === 'source_span'
+        ? roleSource.sourceSpanId ?? sourceRefId
+        : undefined,
+      evidenceRole: 'role_source',
+      exactText: roleSource.exactText,
+      contentHash: roleSource.contentHash,
+      locator: {
+        roleContextId: input.roleContextId,
+        locator: roleSource.locator,
+      },
+      metadata: {
+        roleSourceEntityId: roleSource.entityId,
+        conceptKeys: roleSource.conceptKeys,
+      },
+    });
+  }
+
+  for (const alignment of input.evaluated) {
+    for (const entry of alignment.alignments) {
+      for (const sourceRef of entry.atom.sourceRefs) {
+        const source = sourceRefToContextSource(sourceRef, alignment.challenge.id === selectedPacketId
+          ? 'selected_candidate_evidence'
+          : 'candidate_evidence');
+        evidenceSources.push(source);
+      }
+      for (const sourceRef of entry.demand.sourceRefs) {
+        const source = sourceRefToContextSource(sourceRef, alignment.challenge.id === selectedPacketId
+          ? 'selected_repo_evidence'
+          : 'repo_evidence');
+        evidenceSources.push(source);
+      }
+    }
+  }
+
+  const entities: ContextRecordEntityInput[] = [
+    {
+      entityType: 'match_run',
+      entityId: input.matchRunId,
+      relationship: 'decision_record',
+    },
+    {
+      entityType: 'candidate',
+      entityId: input.candidateId,
+      relationship: 'candidate',
+    },
+    {
+      entityType: 'role_snapshot',
+      entityId: input.query.roleSnapshotId,
+      relationship: 'role_context',
+    },
+    {
+      entityType: 'match_status',
+      relationship: 'outcome',
+      value: { status: input.status },
+    },
+  ];
+  if (input.applicationId) {
+    entities.push({
+      entityType: 'application',
+      entityId: input.applicationId,
+      relationship: 'application',
+    });
+  }
+  if (input.roleContextId) {
+    entities.push({
+      entityType: 'role_context',
+      entityId: input.roleContextId,
+      relationship: 'role_context',
+    });
+  }
+  if (input.selected) {
+    entities.push(
+      {
+        entityType: 'review_challenge_packet',
+        entityId: input.selected.challenge.id,
+        relationship: 'selected_packet',
+        metadata: {
+          repoId: input.selected.challenge.repoId,
+          prNumber: input.selected.challenge.prNumber,
+          score: input.selected.finalScore,
+        },
+      },
+      {
+        entityType: 'pull_request',
+        entityId: `${input.selected.challenge.repoId}#${input.selected.challenge.prNumber}`,
+        relationship: 'selected_pull_request',
+        metadata: {
+          repoId: input.selected.challenge.repoId,
+          prNumber: input.selected.challenge.prNumber,
+        },
+      },
+    );
+  }
+  for (const packet of input.diagnostics.excludedPackets) {
+    entities.push({
+      entityType: 'review_challenge_packet',
+      entityId: packet.id,
+      relationship: 'rejected_packet',
+      metadata: packet as unknown as JsonObject,
+    });
+  }
+  for (const challenge of input.diagnostics.evaluatedChallenges) {
+    entities.push({
+      entityType: 'review_challenge_packet',
+      entityId: challenge.challengeId,
+      relationship: challenge.challengeId === selectedPacketId ? 'selected_evaluation' : 'evaluated_packet',
+      metadata: {
+        repoId: challenge.repoId,
+        prNumber: challenge.prNumber,
+        recallRank: challenge.recallRank,
+        rank: challenge.rank,
+        eligible: challenge.eligible,
+        rejectionReasons: challenge.rejectionReasons,
+        provenanceComplete: challenge.provenanceComplete,
+        alignedDemandCount: challenge.alignedDemandCount,
+        stretchCount: challenge.stretchCount,
+      },
+    });
+  }
+
+  return {
+    ingestionKey: `match-run:${input.matchRunId}:context`,
+    scopeType: 'match_run',
+    scopeId: input.matchRunId,
+    recordType: 'candidate_pr_match_decision',
+    predicate: input.status === 'MATCHED'
+      ? 'selects review challenge'
+      : 'records match diagnostic',
+    narrative: input.status === 'MATCHED' && input.selected
+      ? `Matched candidate ${input.candidateId} to PR #${input.selected.challenge.prNumber} from repo ${input.selected.challenge.repoId}.`
+      : `Match run for candidate ${input.candidateId} returned ${input.status}.`,
+    qualifiers: {
+      status: input.status,
+      candidateSnapshotId: input.query.candidateSnapshotId,
+      roleSnapshotId: input.query.roleSnapshotId,
+      policyVersion: input.query.policyVersion,
+      modelVersion: input.conceptResolverVersion,
+      selectedPacketId,
+      recalledPacketIds: input.diagnostics.recalledPacketIds,
+      excludedPackets: input.diagnostics.excludedPackets as unknown as JsonValue,
+      evaluatedChallenges: input.diagnostics.evaluatedChallenges as unknown as JsonValue,
+      alignmentScores: input.evaluated.map((alignment) => ({
+        challengeId: alignment.challenge.id,
+        score: alignment.finalScore,
+        eligible: alignment.eligible,
+        alignedDemandCount: alignment.alignments.length,
+        stretchCount: alignment.stretchCount,
+      })) as unknown as JsonValue,
+    },
+    confidence: input.selected?.finalScore ?? null,
+    extractionVersion: input.query.policyVersion,
+    sources: evidenceSources,
+    entities,
+    concepts: input.concepts,
+  };
+}
+
+function rejectedPacketExplanations(
+  diagnostics: ChallengeMatchDiagnostics,
+): MatchExplanation['rejectedPackets'] {
+  const rejected = new Map<string, MatchExplanation['rejectedPackets'][number]>();
+  for (const packet of diagnostics.excludedPackets) {
+    rejected.set(packet.id, {
+      id: packet.id,
+      repoId: 'repoId' in packet ? packet.repoId : undefined,
+      prNumber: 'prNumber' in packet ? packet.prNumber : undefined,
+      reasons: [packet.reason],
+      demandIds: 'demandIds' in packet ? packet.demandIds : undefined,
+      missingSourceSpanIds: 'missingSourceSpanIds' in packet ? packet.missingSourceSpanIds : undefined,
+      gateFailures: 'gateFailures' in packet ? packet.gateFailures : undefined,
+      provenanceFailures: 'provenanceFailures' in packet ? packet.provenanceFailures : undefined,
+      contextProjectionFailures: 'contextProjectionFailures' in packet
+        ? packet.contextProjectionFailures
+        : undefined,
+      qualityScore: 'qualityScore' in packet ? packet.qualityScore : undefined,
+    });
+  }
+  for (const challenge of diagnostics.evaluatedChallenges) {
+    if (challenge.eligible) continue;
+    rejected.set(challenge.challengeId, {
+      id: challenge.challengeId,
+      repoId: challenge.repoId,
+      prNumber: challenge.prNumber,
+      reasons: challenge.rejectionReasons,
+    });
+  }
+  return [...rejected.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function normalizeRoleSourcesForExplanation(
+  sources: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>,
+): MatchExplanation['roleSources'] {
+  const deduped = new Map<string, MatchExplanation['roleSources'][number]>();
+  for (const source of sources) {
+    const normalized: MatchExplanation['roleSources'][number] = {
+      entityId: source.entityId,
+      locator: source.locator,
+      conceptKeys: [...new Set(source.conceptKeys)].sort(),
+    };
+    if (source.sourceRefType) normalized.sourceRefType = source.sourceRefType;
+    if (source.sourceRefId) normalized.sourceRefId = source.sourceRefId;
+    if (source.sourceSpanId) normalized.sourceSpanId = source.sourceSpanId;
+    if (source.exactText) normalized.exactText = source.exactText;
+    if (source.contentHash) normalized.contentHash = source.contentHash;
+    deduped.set(JSON.stringify(normalized), normalized);
+  }
+  return [...deduped.values()].sort((left, right) =>
+    left.entityId.localeCompare(right.entityId)
+    || left.locator.localeCompare(right.locator)
+  );
+}
+
+function diagnosticMissingEvidence(input: {
+  status: CandidateReviewChallengeMatch['status'];
+  compiledStatus: ReturnType<typeof compileCandidateMatchQuery>['status'];
+  excludedSignalIds: string[];
+  diagnostics: ChallengeMatchDiagnostics;
+}): MatchExplanation['missingEvidence'] {
+  const missing: MatchExplanation['missingEvidence'] = [];
+  if (input.compiledStatus === 'NEEDS_MORE_EVIDENCE') {
+    missing.push({
+      scope: 'candidate',
+      reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+    });
+  }
+  if (input.excludedSignalIds.length > 0) {
+    missing.push({
+      scope: 'candidate',
+      reason: 'CANDIDATE_SIGNALS_EXCLUDED_FOR_MISSING_OR_NULL_EVIDENCE',
+    });
+  }
+  for (const packet of input.diagnostics.excludedPackets) {
+    if ('missingSourceSpanIds' in packet && packet.missingSourceSpanIds.length > 0) {
+      missing.push({
+        scope: 'repo',
+        reason: packet.reason,
+        challengeId: packet.id,
+        sourceRefs: [],
+      });
+    }
+    if (
+      'reason' in packet
+      && (
+        packet.reason === 'PACKET_PROVENANCE_INVALID'
+        || packet.reason === 'PACKET_CONTEXT_PROJECTION_INCOMPLETE'
+      )
+    ) {
+      missing.push({
+        scope: 'repo',
+        reason: packet.reason,
+        challengeId: packet.id,
+        sourceRefs: [],
+      });
+    }
+  }
+  if (
+    input.status === 'NO_ROLE_SAFE_CHALLENGE'
+    && input.diagnostics.recalledPacketIds.length === 0
+    && input.diagnostics.excludedPackets.length === 0
+  ) {
+    missing.push({
+      scope: 'challenge',
+      reason: 'NO_SOURCE_BACKED_ROLE_SAFE_CHALLENGE_RECALLED',
+    });
+  }
+  return missing;
+}
+
+function buildRunExplanation(input: {
+  status: CandidateReviewChallengeMatch['status'];
+  matchRunId: string;
+  compiled: ReturnType<typeof compileCandidateMatchQuery>;
+  selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  diagnostics: ChallengeMatchDiagnostics;
+  roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
+}): MatchExplanation {
+  const rejectedPackets = rejectedPacketExplanations(input.diagnostics);
+  const missingEvidence = diagnosticMissingEvidence({
+    status: input.status,
+    compiledStatus: input.compiled.status,
+    excludedSignalIds: input.compiled.excludedSignalIds,
+    diagnostics: input.diagnostics,
+  });
+  const roleSources = normalizeRoleSourcesForExplanation(input.roleSourceReferences);
+  if (input.selected) {
+    return explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence, roleSources });
+  }
+  return {
+    status: input.status,
+    score: 0,
+    summary: input.status === 'NEEDS_MORE_EVIDENCE'
+      ? `Match run ${input.matchRunId} needs more source-backed candidate evidence.`
+      : `Match run ${input.matchRunId} found no role-safe source-backed review challenge.`,
+    evidence: [],
+    candidateSpans: [],
+    repoSpans: [],
+    roleSources,
+    rejectedPackets,
+    missingEvidence,
+    stretchAreas: [],
+    unmatchedDemandIds: [],
+    rejectionReasons: input.status === 'NEEDS_MORE_EVIDENCE'
+      ? ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE']
+      : ['NO_ROLE_SAFE_CHALLENGE'],
+  };
 }
 
 export async function matchCandidateToReviewChallenge(
@@ -300,10 +1214,11 @@ export async function matchCandidateToReviewChallenge(
   candidateId: string,
   options: CandidateReviewChallengeOptions = {},
 ): Promise<CandidateReviewChallengeMatch> {
-  const [signals, challenges] = await Promise.all([
+  const [signals, challengeLoad] = await Promise.all([
     loadCandidateSignals(db, candidateId),
     loadChallengePackets(db, options.roleConcepts),
   ]);
+  const { packets: challenges, exclusions: packetLoadExclusions } = challengeLoad;
   const genericConcepts = deriveCorpusGenericConcepts(challenges);
   const genericConceptSet = new Set(genericConcepts);
   const challengeSelectionConcepts = [...new Set(
@@ -345,6 +1260,44 @@ export async function matchCandidateToReviewChallenge(
   const status = compiled.status === 'NEEDS_MORE_EVIDENCE'
     ? 'NEEDS_MORE_EVIDENCE'
     : ranked.status;
+  const challengeById = new Map(challenges.map((challenge) => [challenge.id, challenge]));
+  const excludedPackets: ChallengeMatchExclusion[] = [
+    ...packetLoadExclusions,
+    ...recalled.excludedChallengeIds.map((id) => {
+      const challenge = challengeById.get(id);
+      return {
+        id,
+        reason: 'ROLE_GUARDRAIL_FAILED' as const,
+        repoId: challenge?.repoId,
+        prNumber: challenge?.prNumber ?? null,
+        packetContentHash: challenge?.packetContentHash,
+      };
+    }),
+  ];
+  const evaluatedChallenges = evaluated.map((alignment, index) => ({
+    challengeId: alignment.challenge.id,
+    repoId: alignment.challenge.repoId,
+    prNumber: alignment.challenge.prNumber,
+    packetContentHash: alignment.challenge.packetContentHash,
+    recallRank: index + 1,
+    rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
+    eligible: alignment.eligible,
+    rejectionReasons: alignment.rejectionReasons,
+    provenanceComplete: alignment.provenanceComplete,
+    contextProjectionComplete: Boolean(alignment.challenge.contextRecordId)
+      && (alignment.challenge.repoSourceRefCount ?? 0) > 0
+      && (alignment.challenge.conceptLinkCount ?? 0) > 0,
+    contextRecordId: alignment.challenge.contextRecordId ?? null,
+    repoSourceRefCount: alignment.challenge.repoSourceRefCount ?? null,
+    conceptLinkCount: alignment.challenge.conceptLinkCount ?? null,
+    alignedDemandCount: alignment.alignments.length,
+    stretchCount: alignment.stretchCount,
+  }));
+  const diagnostics: ChallengeMatchDiagnostics = {
+    excludedPackets,
+    recalledPacketIds: recalled.challenges.map((item) => item.challenge.id),
+    evaluatedChallenges,
+  };
   const matchRunId = crypto.randomUUID();
   const application = await db.prepare(
     `SELECT id FROM applications WHERE legacy_candidate_id = ?1`,
@@ -368,11 +1321,11 @@ export async function matchCandidateToReviewChallenge(
     options.conceptResolverVersion ?? null,
     status,
     JSON.stringify(compiled.query),
-    JSON.stringify(recalled.challenges.map((item) => item.challenge.id)),
-    JSON.stringify(recalled.excludedChallengeIds),
+    JSON.stringify(diagnostics.recalledPacketIds),
+    JSON.stringify(diagnostics.excludedPackets),
     JSON.stringify(evaluated.map((alignment, index) => ({
-      rank: eligibleRankByChallengeId.get(alignment.challenge.id) ?? null,
-      recallRank: index + 1,
+      rank: evaluatedChallenges[index]!.rank,
+      recallRank: evaluatedChallenges[index]!.recallRank,
       challengeId: alignment.challenge.id,
       repoId: alignment.challenge.repoId,
       prNumber: alignment.challenge.prNumber,
@@ -406,12 +1359,43 @@ export async function matchCandidateToReviewChallenge(
     selected?.challenge.id ?? null,
   ).run();
 
-  if (!selected) return { status, matchRunId };
+  const contextStore = new LivingContextStore(db);
+  const matchConcepts = await buildMatchContextConcepts(contextStore, {
+    matchRunId,
+    query: compiled.query,
+    selected,
+  });
+  await contextStore.upsertContextRecord(buildMatchContextRecordInput({
+    matchRunId,
+    candidateId,
+    applicationId: application?.id ?? null,
+    roleContextId: options.roleContextId ?? null,
+    status,
+    query: compiled.query,
+    selected,
+    evaluated,
+    diagnostics,
+    conceptResolverVersion: options.conceptResolverVersion ?? null,
+    roleSourceReferences: options.roleSourceReferences ?? [],
+    concepts: matchConcepts,
+  }));
+
+  const explanation = buildRunExplanation({
+    status,
+    matchRunId,
+    compiled,
+    selected,
+    diagnostics,
+    roleSourceReferences: options.roleSourceReferences ?? [],
+  });
+
+  if (!selected) return { status, matchRunId, explanation, diagnostics };
   return {
     status: 'MATCHED',
     matchRunId,
     repoId: Number(selected.challenge.repoId),
     prNumber: selected.challenge.prNumber,
-    explanation: explainChallengeMatch(selected),
+    explanation,
+    diagnostics,
   };
 }

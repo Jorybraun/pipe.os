@@ -15,6 +15,7 @@ import { authMiddleware } from '../../middleware/auth';
 import type { Env, Variables } from '../../types';
 import { scoreAndPropagate, type ScoreAndPropagateTranscript } from '../../lib/review/scoreAndPropagate';
 import { ingestCodeReviewScoreReportToLivingContext } from '../../lib/livingContext/codeReview';
+import { loadSourceBackedReviewDiff } from '../../lib/review/sourceBackedReviewDiff';
 
 const reviewSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 reviewSessions.use('*', authMiddleware);
@@ -107,12 +108,19 @@ reviewSessions.get('/:sessionId/transcript', async (c) => {
            rs.current_round, rs.max_rounds,
            ch.ground_truth, ch.server_config,
            ch.cached_diff_json, ch.instructions,
-           ch.github_pr_title, ch.github_pr_description
+           ch.github_pr_title, ch.github_pr_description,
+           ch.github_repo_url, ch.github_pr_number,
+           cca.id as assignment_id,
+           COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
+           COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number
     FROM review_sessions rs
     JOIN challenges ch ON ch.id = rs.challenge_id
     JOIN assessments a ON a.id = rs.assessment_id
     JOIN candidates cand ON cand.id = rs.candidate_id
     JOIN pipelines p ON p.id = cand.pipeline_id
+    LEFT JOIN candidate_challenge_assignment cca
+      ON cca.challenge_id = ch.id
+     AND cca.candidate_id = rs.candidate_id
     WHERE rs.id = ?1 AND p.owner_id = ?2
   `)
     .bind(sessionId, userId)
@@ -129,6 +137,11 @@ reviewSessions.get('/:sessionId/transcript', async (c) => {
       instructions: string | null;
       github_pr_title: string | null;
       github_pr_description: string | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      assignment_id: string | null;
+      effective_repo_url: string | null;
+      effective_pr_number: number | null;
     }>();
 
   if (!session) {
@@ -136,8 +149,20 @@ reviewSessions.get('/:sessionId/transcript', async (c) => {
   }
 
   const transcript = parseJsonColumn<unknown>(session.transcript);
-  const groundTruth = parseJsonColumn<unknown>(session.ground_truth);
-  const serverConfig = parseJsonColumn<unknown>(session.server_config);
+  const assignmentBacked = typeof session.assignment_id === 'string' && session.assignment_id.length > 0;
+  const repoUrl = session.effective_repo_url ?? session.github_repo_url ?? null;
+  const prNumber = session.effective_pr_number ?? session.github_pr_number ?? null;
+  const sourceBackedDiff = assignmentBacked && repoUrl && typeof prNumber === 'number'
+    ? await loadSourceBackedReviewDiff(c.env.DB, repoUrl, prNumber)
+    : null;
+  const groundTruth = assignmentBacked ? null : parseJsonColumn<unknown>(session.ground_truth);
+  const serverConfig = assignmentBacked ? null : parseJsonColumn<unknown>(session.server_config);
+  const prTitle = assignmentBacked
+    ? sourceBackedDiff?.metadata.title ?? null
+    : session.github_pr_title;
+  const prDescription = assignmentBacked
+    ? sourceBackedDiff?.metadata.description ?? null
+    : session.github_pr_description;
 
   return c.json({
     id: session.id,
@@ -148,9 +173,15 @@ reviewSessions.get('/:sessionId/transcript', async (c) => {
     transcript,
     groundTruth,
     serverConfig,
-    prTitle: session.github_pr_title,
-    prDescription: session.github_pr_description,
+    prTitle,
+    prDescription,
     instructions: session.instructions,
+    reviewProvenance: {
+      assignmentBacked,
+      sourceBackedReady: assignmentBacked ? sourceBackedDiff !== null : null,
+      repoUrl,
+      prNumber,
+    },
   });
 });
 

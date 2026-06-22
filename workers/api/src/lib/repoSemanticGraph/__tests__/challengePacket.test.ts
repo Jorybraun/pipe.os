@@ -194,6 +194,8 @@ async function makePullRequest(
     headSha: snapshot.commitSha,
     mergedAt: '2026-06-10T12:00:00.000Z',
     metadataSourceSpanIds: [metadata.span.id],
+    sourceArtifacts: [metadata.artifact],
+    sourceArtifactVersions: [metadata.version],
     sourceSpans,
     changedFiles: [api.file, worker.file, test.file],
     tests: [
@@ -243,6 +245,20 @@ describe('repository semantic graph challenge packets', () => {
     await expect(buildChallengePacket({ ...input, changedFiles })).rejects.toBeInstanceOf(
       ProvenanceValidationError,
     );
+  });
+
+  it('rejects malformed PR metadata artifact versions before packet creation', async () => {
+    const input = await makePullRequest();
+    const metadataVersion = input.sourceArtifactVersions?.[0];
+    expect(metadataVersion).toBeDefined();
+
+    await expect(buildChallengePacket({
+      ...input,
+      sourceArtifactVersions: [{
+        ...metadataVersion!,
+        content: `${metadataVersion!.content}\nmutated after hashing`,
+      }],
+    })).rejects.toBeInstanceOf(ProvenanceValidationError);
   });
 
   it('allows production packets only for TypeScript/JavaScript, Python, and Go', () => {
@@ -347,6 +363,36 @@ describe('repository semantic graph challenge packets', () => {
     expect(
       oversizedQuality.gates.find((gate) => gate.gate === 'reviewable_change_size'),
     ).toMatchObject({ passed: false });
+  });
+
+  it('marks production-language packets ineligible when source extraction diagnostics are present', async () => {
+    const input = await makePullRequest();
+    const packet = await buildChallengePacket({
+      ...input,
+      extractionDiagnostics: [
+        {
+          kind: 'semantic_parser',
+          path: 'src/workers/orderEvents.ts',
+          language: 'typescript',
+          reason: 'typescript compiler API failed before symbol extraction',
+        },
+      ],
+    } as NormalizedPullRequestInput & {
+      extractionDiagnostics: Array<{
+        kind: 'semantic_parser';
+        path: string;
+        language: string;
+        reason: string;
+      }>;
+    });
+
+    expect(packet.languageSupport.level).toBe('production');
+    expect(packet.quality.eligible).toBe(false);
+    expect(packet.quality.metrics.provenanceCoverage).toBe(0);
+    expect(packet.quality.gates.find((gate) => gate.gate === 'complete_provenance')).toMatchObject({
+      passed: false,
+      reason: expect.stringContaining('semantic_parser failed for src/workers/orderEvents.ts'),
+    });
   });
 
   it('builds structural-only packets but marks them ineligible for production use', async () => {

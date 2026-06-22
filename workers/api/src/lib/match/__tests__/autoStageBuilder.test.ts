@@ -3,6 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types';
 import {
   autoStageBuilder,
   buildMatchRequest,
+  pickReviewPr,
   resolveMustHaveSkills,
   type PipelineMatchConfig,
 } from '../autoStageBuilder';
@@ -77,6 +78,7 @@ interface PrFixture {
   pr_number: number;
   title: string;
   swe_bench_eligible: boolean;
+  conceptKeys?: string[];
 }
 
 interface IssueFixture {
@@ -84,6 +86,10 @@ interface IssueFixture {
   issue_id: number;
   issue_number: number;
   title: string;
+  body: string | null;
+  state_at_crawl: 'open' | 'closed';
+  contextReady?: boolean;
+  conceptKeys?: string[];
   has_merged_pr: boolean;
   difficulty_band: 'junior' | 'mid' | 'senior';
   disqualified: boolean;
@@ -95,6 +101,7 @@ interface DbState {
   repos: RepoFixture[];
   prs: PrFixture[];
   issues: IssueFixture[];
+  roleContextConcepts?: Array<{ canonicalKey: string; label: string }>;
 }
 
 interface StubDb {
@@ -122,13 +129,19 @@ function buildStubDb(state: DbState): StubDb {
               return (row ? { pr_number: row.pr_number, title: row.title } : null) as T | null;
             }
 
-            // pickImplementationIssue
-            if (normalized.startsWith('SELECT ri.issue_number, ri.title FROM repo_issues')) {
+            return null;
+          },
+
+          async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
+            if (normalized.startsWith('SELECT ri.id AS issue_id')) {
               const [repoId, band] = args as [number, string];
               const candidates = state.issues
                 .filter(
                   (i) =>
                     i.repo_id === repoId &&
+                    i.state_at_crawl === 'open' &&
+                    Boolean(i.body?.trim()) &&
+                    i.contextReady !== false &&
                     !i.has_merged_pr &&
                     !i.disqualified &&
                     i.difficulty_band === band,
@@ -137,16 +150,92 @@ function buildStubDb(state: DbState): StubDb {
                   (a, b) =>
                     b.implementability_score - a.implementability_score ||
                     b.clarity_score - a.clarity_score,
-                );
-              const row = candidates[0];
-              return (row ? { issue_number: row.issue_number, title: row.title } : null) as T | null;
+                )
+                .slice(0, 20)
+                .map((issue) => ({
+                  issue_id: issue.issue_id,
+                  issue_number: issue.issue_number,
+                  title: issue.title,
+                  implementability_score: issue.implementability_score,
+                  clarity_score: issue.clarity_score,
+                }));
+              return { results: candidates as T[], success: true, meta: {} };
             }
 
-            return null;
-          },
+            if (normalized.startsWith('SELECT crsr.source_ref_id AS issue_id')) {
+              const roleConcepts = (args as unknown[]).filter(
+                (arg): arg is string => typeof arg === 'string' && arg.startsWith('term:'),
+              );
+              const rows = state.issues.flatMap((issue) => {
+                const overlap = (issue.conceptKeys ?? [])
+                  .filter((concept) => roleConcepts.includes(concept)).length;
+                return overlap > 0
+                  ? [{ issue_id: String(issue.issue_id), overlap }]
+                  : [];
+              });
+              return { results: rows as T[], success: true, meta: {} };
+            }
 
-          async all<T = unknown>(): Promise<{ results: T[]; success: boolean; meta: Record<string, unknown> }> {
-            if (normalized.startsWith('SELECT pr_number, quality_score, packet_json FROM review_challenge_packets')) {
+            if (
+              normalized.startsWith('SELECT qr.id AS repo_id') &&
+              normalized.includes("cr.record_type = 'repo_implementation_issue'")
+            ) {
+              const roleConcepts = (args as unknown[]).filter(
+                (arg): arg is string => typeof arg === 'string' && arg.startsWith('term:'),
+              );
+              const rows = state.issues.flatMap((issue) => {
+                if (
+                  issue.contextReady === false ||
+                  issue.state_at_crawl !== 'open' ||
+                  !issue.body?.trim() ||
+                  issue.has_merged_pr ||
+                  issue.disqualified
+                ) {
+                  return [];
+                }
+                const repo = state.repos.find((candidate) => candidate.id === issue.repo_id);
+                if (!repo) return [];
+                return (issue.conceptKeys ?? [])
+                  .filter((concept) => roleConcepts.includes(concept))
+                  .map((concept) => ({
+                    repo_id: repo.id,
+                    full_name: repo.full_name,
+                    github_url: repo.github_url,
+                    description: repo.description,
+                    seniority_band: repo.seniority_band,
+                    detected_domain: repo.detected_domain,
+                    pr_quality_score: repo.pr_quality_score,
+                    stars: repo.stars,
+                    primary_language: repo.primary_language,
+                    issue_id: issue.issue_id,
+                    issue_number: issue.issue_number,
+                    issue_title: issue.title,
+                    implementability_score: issue.implementability_score,
+                    clarity_score: issue.clarity_score,
+                    canonical_key: concept,
+                  }));
+              });
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT id, rcd_version, source_section, narrative_text, extracted_properties_json FROM role_nodes')) {
+              return { results: [] as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT cr.id AS context_record_id')) {
+              const rows = (state.roleContextConcepts ?? []).map((concept, index) => ({
+                context_record_id: `role-context-record-${index + 1}`,
+                record_type: 'simple_job_description_context',
+                extraction_version: 'simple-jd-v1',
+                canonical_key: concept.canonicalKey,
+                label: concept.label,
+                source_ref_type: 'source_span',
+                source_ref_id: `role-source-span-${index + 1}`,
+              }));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT rcp.pr_number, rcp.quality_score, rcp.packet_json FROM review_challenge_packets')) {
               const [repoId] = args as [number];
               const repo = state.repos.find((candidate) => candidate.id === repoId);
               const rows = state.prs
@@ -156,11 +245,41 @@ function buildStubDb(state: DbState): StubDb {
                   quality_score: 0.9,
                   packet_json: JSON.stringify({
                     pullRequest: { number: pr.pr_number, title: pr.title },
-                    demands: (repo?.skills ?? []).map((skill) => ({
-                      conceptKeys: [`term:${skill}`],
+                    demands: (pr.conceptKeys ?? (repo?.skills ?? []).map((skill) => `term:${skill}`)).map((conceptKey) => ({
+                      conceptKeys: [conceptKey],
                     })),
                   }),
                 }));
+              return { results: rows as T[], success: true, meta: {} };
+            }
+
+            if (normalized.startsWith('SELECT qr.id AS repo_id')) {
+              const rows = state.prs.flatMap((pr) => {
+                if (!pr.swe_bench_eligible) return [];
+                const repo = state.repos.find((candidate) => candidate.id === pr.repo_id);
+                if (!repo) return [];
+                return [{
+                  repo_id: repo.id,
+                  full_name: repo.full_name,
+                  github_url: repo.github_url,
+                  description: repo.description,
+                  seniority_band: repo.seniority_band,
+                  detected_domain: repo.detected_domain,
+                  pr_quality_score: repo.pr_quality_score,
+                  stars: repo.stars,
+                  primary_language: repo.primary_language,
+                  pr_number: pr.pr_number,
+                  pr_url: `https://github.com/x/y/pull/${pr.pr_number}`,
+                  pr_title: pr.title,
+                  quality_score: 0.9,
+                  packet_json: JSON.stringify({
+                    pullRequest: { number: pr.pr_number, title: pr.title },
+                    demands: (pr.conceptKeys ?? repo.skills.map((skill) => `term:${skill}`)).map((conceptKey) => ({
+                      conceptKeys: [conceptKey],
+                    })),
+                  }),
+                }];
+              });
               return { results: rows as T[], success: true, meta: {} };
             }
 
@@ -360,11 +479,12 @@ describe('autoStageBuilder', () => {
         { repo_id: 101, pr_number: 17, title: 'old fix', swe_bench_eligible: true },
         { repo_id: 102, pr_number: 9, title: 'thing fix', swe_bench_eligible: true },
       ],
+      roleContextConcepts: [{ canonicalKey: 'term:typescript', label: 'typescript' }],
       issues: [
-        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
-        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
-        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
-        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 1, issue_number: 100, title: 'add caching', body: 'Cache expensive widget lookups.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.9, clarity_score: 0.8 },
+        { repo_id: 101, issue_id: 2, issue_number: 101, title: 'add metrics', body: 'Expose request metrics for widgets.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.7, clarity_score: 0.7 },
+        { repo_id: 101, issue_id: 3, issue_number: 102, title: 'merged already', body: 'Already solved in a merged PR.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: true, difficulty_band: 'mid', disqualified: false, implementability_score: 0.95, clarity_score: 0.95 },
+        { repo_id: 102, issue_id: 4, issue_number: 200, title: 'thing issue', body: 'Implement the thing endpoint.', state_at_crawl: 'open', conceptKeys: ['term:typescript'], has_merged_pr: false, difficulty_band: 'mid', disqualified: false, implementability_score: 0.8, clarity_score: 0.8 },
       ],
     };
   }
@@ -385,23 +505,20 @@ describe('autoStageBuilder', () => {
     expect(review!.repoId).toBe(101); // higher pr_quality_score wins
     expect(review!.githubPrNumber).toBe(17); // stable PR-number tie-break after equal evidence
     expect(impl!.issueNumber).toBe(100);
-    expect(stub.matchReposCalls).toBe(1);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('runs matchRepos twice when stage_linkage=per-stage', async () => {
+  it('uses source-backed implementation repo matching when stage_linkage=per-stage', async () => {
     const stub = buildStubDb(fixtureState());
     await autoStageBuilder({
       db: stub.db,
       roleContext: makeRoleContext(),
       matchConfig: baseConfig({ stage_linkage: 'per-stage' }),
     });
-    expect(stub.matchReposCalls).toBe(2);
+    expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('uses non_negotiable_skills (subset of mustHaveSkills) to filter repos', async () => {
-    // Non-negotiable = [typescript, react]; persona.must = [..., postgres]
-    // With stricter must=postgres, repo 102 would be filtered out.
-    // Without postgres in must list, both repos qualify.
+  it('builds implementation from source-backed concepts without legacy repo matching', async () => {
     const stub = buildStubDb(fixtureState());
     const result = await autoStageBuilder({
       db: stub.db,
@@ -409,21 +526,137 @@ describe('autoStageBuilder', () => {
         non_negotiable_skills_json: JSON.stringify(['typescript', 'react']),
       }),
       matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_IMPLEMENTATION'],
     });
     // Top-1 by pr_quality_score is still 101 (0.9 > 0.6).
     expect(result.stations[0]!.repoId).toBe(101);
-    expect(result.repoChoice.rationale).toContain('2 non-negotiable skill(s)');
+    expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
+    expect(stub.matchReposCalls).toBe(0);
   });
 
-  it('throws when no must-have skills can be resolved', async () => {
-    const stub = buildStubDb(fixtureState());
+  it('uses persisted role context concepts to select source-backed review PRs', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [{ canonicalKey: 'term:kafka', label: 'kafka' }];
+    state.prs = [
+      { repo_id: 101, pr_number: 42, title: 'persona-surface PR', swe_bench_eligible: true, conceptKeys: ['term:typescript'] },
+      { repo_id: 101, pr_number: 84, title: 'source-backed Kafka PR', swe_bench_eligible: true, conceptKeys: ['term:kafka'] },
+    ];
+    const stub = buildStubDb(state);
+
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext({
+        non_negotiable_skills_json: JSON.stringify(['kafka']),
+        job_description_md: 'We need kafka ownership.',
+      }),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.githubPrNumber).toBe(84);
+    expect(result.stations[0]!.prTitle).toBe('source-backed Kafka PR');
+  });
+
+  it('builds code review from source-backed role concepts without legacy must-have skills', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [{ canonicalKey: 'term:kafka', label: 'kafka' }];
+    state.prs = [
+      { repo_id: 101, pr_number: 84, title: 'source-backed Kafka PR', swe_bench_eligible: true, conceptKeys: ['term:kafka'] },
+    ];
+    const stub = buildStubDb(state);
+
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext({
+        persona_json: null,
+        non_negotiable_skills_json: null,
+        job_description_md: 'We need kafka ownership.',
+      }),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]).toMatchObject({
+      type: 'CODE_REVIEW',
+      repoId: 101,
+      githubPrNumber: 84,
+      prTitle: 'source-backed Kafka PR',
+    });
+    expect(result.perStationRepo.CODE_REVIEW).toMatchObject({
+      repoId: 101,
+      fullName: 'acme/widgets',
+    });
+    expect(stub.matchReposCalls).toBe(0);
+  });
+
+  it('throws when no source-backed review concepts can be resolved', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [];
+    const stub = buildStubDb(state);
     await expect(
       autoStageBuilder({
         db: stub.db,
         roleContext: makeRoleContext({ persona_json: null }),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no must-have skills/);
+    ).rejects.toThrow(/no source-backed role concepts resolvable for review station/);
+  });
+
+  it('throws when implementation has no must-have skills and no review repo to share', async () => {
+    const state = fixtureState();
+    state.roleContextConcepts = [];
+    const stub = buildStubDb(state);
+    await expect(
+      autoStageBuilder({
+        db: stub.db,
+        roleContext: makeRoleContext({ persona_json: null }),
+        matchConfig: baseConfig(),
+        requestedStationTypes: ['CODE_IMPLEMENTATION'],
+      }),
+    ).rejects.toThrow(/no must-have skills resolvable for implementation station/);
+  });
+
+  it('builds only code review when requested', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_REVIEW'],
+    });
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.type).toBe('CODE_REVIEW');
+    expect(result.perStationRepo.CODE_IMPLEMENTATION).toBeUndefined();
+    expect(stub.matchReposCalls).toBe(0);
+  });
+
+  it('builds only code implementation when requested', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: ['CODE_IMPLEMENTATION'],
+    });
+    expect(result.stations).toHaveLength(1);
+    expect(result.stations[0]!.type).toBe('CODE_IMPLEMENTATION');
+    expect(result.perStationRepo.CODE_REVIEW).toBeUndefined();
+    expect(stub.matchReposCalls).toBe(0);
+  });
+
+  it('defaults to both stations when requested station list is empty', async () => {
+    const stub = buildStubDb(fixtureState());
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+      requestedStationTypes: [],
+    });
+    expect(result.stations).toHaveLength(2);
+    expect(result.stations[0]!.type).toBe('CODE_REVIEW');
+    expect(result.stations[1]!.type).toBe('CODE_IMPLEMENTATION');
   });
 
   it('skips issues with has_merged_pr=1 and prefers highest implementability_score', async () => {
@@ -436,6 +669,39 @@ describe('autoStageBuilder', () => {
     expect(result.stations[1]!.issueNumber).toBe(100); // not 102 (merged), not 101 (lower score)
   });
 
+  it('skips implementation issues without captured source body or open crawl state', async () => {
+    const state = fixtureState();
+    state.issues = [
+      { ...state.issues[0]!, issue_number: 100, body: null, implementability_score: 0.99 },
+      { ...state.issues[1]!, issue_number: 101, state_at_crawl: 'closed', implementability_score: 0.98 },
+      { ...state.issues[1]!, issue_number: 103, title: 'source-backed issue', body: 'Implement from this source issue body.', state_at_crawl: 'open', implementability_score: 0.6 },
+    ];
+    const stub = buildStubDb(state);
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+    });
+
+    expect(result.stations[1]!.issueNumber).toBe(103);
+  });
+
+  it('skips implementation issues without context-ready source records', async () => {
+    const state = fixtureState();
+    state.issues = [
+      { ...state.issues[0]!, issue_number: 100, contextReady: false, implementability_score: 0.99 },
+      { ...state.issues[1]!, issue_number: 103, title: 'context-backed issue', body: 'Issue body with context record.', contextReady: true, implementability_score: 0.6 },
+    ];
+    const stub = buildStubDb(state);
+    const result = await autoStageBuilder({
+      db: stub.db,
+      roleContext: makeRoleContext(),
+      matchConfig: baseConfig(),
+    });
+
+    expect(result.stations[1]!.issueNumber).toBe(103);
+  });
+
   it('throws if no source-backed role-safe PR exists for the matched repo', async () => {
     const state = fixtureState();
     state.prs = state.prs.map((p) => ({ ...p, swe_bench_eligible: false }));
@@ -446,7 +712,7 @@ describe('autoStageBuilder', () => {
         roleContext: makeRoleContext(),
         matchConfig: baseConfig(),
       }),
-    ).rejects.toThrow(/no source-backed role-safe review challenge/);
+    ).rejects.toThrow(/no candidate repos matched source-backed role evidence/);
   });
 
   it('throws if no eligible implementation issue', async () => {
@@ -460,5 +726,32 @@ describe('autoStageBuilder', () => {
         matchConfig: baseConfig(),
       }),
     ).rejects.toThrow(/no eligible implementation issue/);
+  });
+});
+
+describe('pickReviewPr', () => {
+  it('only considers context-ready source-backed review packets', async () => {
+    const sqls: string[] = [];
+    const db = {
+      prepare(sql: string) {
+        sqls.push(sql);
+        return {
+          bind() {
+            return {
+              async all<T>() {
+                return { results: [] as T[], success: true, meta: {} };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await pickReviewPr(db, 101, ['term:typescript']);
+
+    expect(sqls[0]).toContain('JOIN context_records cr');
+    expect(sqls[0]).toContain("cr.record_type = 'repo_challenge_packet'");
+    expect(sqls[0]).toContain("crsr.source_ref_type = 'repo_source_span'");
+    expect(sqls[0]).toContain('FROM context_record_concepts crc');
   });
 });

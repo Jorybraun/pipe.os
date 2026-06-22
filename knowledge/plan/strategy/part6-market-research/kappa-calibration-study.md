@@ -1,6 +1,6 @@
 # Kappa Calibration Study — Cohen's κ + Leniency Metric
 
-**Source:** knowledge/plan/pipe-strategy-v2-part6-market-research.md (lines 125–176)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part6-market-research.md (lines 125–176)
 **Phase:** 1
 **Status:** PENDING
 **Estimate:** 1.5 weeks

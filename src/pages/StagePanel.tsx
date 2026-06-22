@@ -132,7 +132,7 @@ export default function StagePanel(): JSX.Element {
       await shell.refetch();
       navigate(`/pipeline/${shell.pipelineId}`);
     } catch (err) {
-      console.error('[StagePanel] Failed to delete stage:', err);
+      console.error('[StagePanel] Failed to delete round:', err);
       setIsDeleting(false);
       setConfirmDelete(false);
     }
@@ -149,7 +149,7 @@ export default function StagePanel(): JSX.Element {
       await refetch();
       await shell.refetch();
     } catch (err) {
-      console.error('[StagePanel] Failed to update stage title:', err);
+      console.error('[StagePanel] Failed to update round title:', err);
     }
   }, [stageId, localTitle, stage?.title, updateStage, refetch, shell]);
 
@@ -174,7 +174,7 @@ export default function StagePanel(): JSX.Element {
           letterSpacing: '0.1em',
         }}
       >
-        STAGE_NOT_FOUND.{' '}
+        ROUND_NOT_FOUND.{' '}
         <button
           onClick={() => navigate(`/pipeline/${shell.pipelineId}`)}
           style={{
@@ -269,7 +269,7 @@ export default function StagePanel(): JSX.Element {
             fontFamily: '"Space Mono", monospace',
           }}
         >
-          STAGE / {stage.id.substring(0, 8)}
+          ROUND / {stage.id.substring(0, 8)}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <input
@@ -277,7 +277,7 @@ export default function StagePanel(): JSX.Element {
             value={displayTitle}
             onChange={(e) => setLocalTitle(e.target.value)}
             onBlur={() => void handleTitleBlur()}
-            placeholder="Stage Title"
+            placeholder="Round Title"
             style={{
               background: 'transparent',
               border: 'none',
@@ -295,7 +295,7 @@ export default function StagePanel(): JSX.Element {
           {confirmDelete ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 10, color: '#f87171', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-                DELETE_STAGE?
+                DELETE_ROUND?
               </span>
               <button
                 onClick={() => void handleDelete()}
@@ -333,7 +333,7 @@ export default function StagePanel(): JSX.Element {
           ) : (
             <button
               onClick={() => setConfirmDelete(true)}
-              title="Delete stage"
+              title="Delete round"
               style={{
                 display: 'flex',
                 alignItems: 'center',

@@ -194,8 +194,7 @@ export async function materializeGroundedEdges(
     `MATCH (c:Candidate {candidate_id: $candidate_id})-[:HAS]->(cn:CandidateNode)
      WHERE cn.id IN $node_ids AND cn.embedding IS NOT NULL
      MATCH (r:Repo)-[:HAS]->(rn:RepoNode)
-     WHERE rn.node_type IN ['Feature', 'TechnicalStack', 'ArchitecturalPattern', 'PRSample']
-       AND rn.embedding IS NOT NULL
+     WHERE rn.embedding IS NOT NULL
      WITH cn, rn, vector.similarity.cosine(cn.embedding, rn.embedding) AS sim
      WHERE sim >= $min_similarity
      RETURN cn.id AS candidate_node_id,

@@ -29,7 +29,7 @@ import { phonePublic, phoneAuth } from './routes/screening/phone';
 import { cultureRecruiter } from './routes/screening/culture';
 // Assessment — code review, challenges, video interviews
 import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/video';
-import { meetingRooms } from './routes/meetingRooms';
+import { meetingRooms, meetingsAuth } from './routes/meetingRooms';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
@@ -42,6 +42,7 @@ import { waitlist } from './routes/waitlist';
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
+import { e2eSeed } from './routes/internal/e2eSeed';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -68,8 +69,12 @@ app.use(
         'https://www.pipe.dev',
         'https://pipe.build',
         'https://www.pipe.build',
+        'https://dev.hire-pipe.com',
+        'https://room-dev.hire-pipe.com',
+        'https://pipe-video-room-dev.pages.dev',
         // Cloudflare Pages preview URLs follow this pattern
         /https:\/\/.*\.pipe-os\.pages\.dev$/,
+        /https:\/\/.*\.pipe-video-room-dev\.pages\.dev$/,
         // Marketing site (deployed via Devin / static host)
         /https:\/\/.*\.devinapps\.com$/,
         // Local dev
@@ -77,6 +82,8 @@ app.use(
         'http://localhost:5175',
         'http://localhost:4173',
         'http://localhost:8080',
+        /^http:\/\/localhost:\d+$/,
+        /^http:\/\/127\.0\.0\.1:\d+$/,
       ];
 
       for (const pattern of allowed) {
@@ -92,6 +99,42 @@ app.use(
     maxAge: 86400,
   }),
 );
+
+// Dev deployments are reachable only through the authenticated room proxy.
+// The proxy injects X-Pipe-Dev-Proxy-Secret after HTTP Basic Auth succeeds.
+app.use('*', async (c, next) => {
+  if (c.env.ENV !== 'dev') return next();
+  if (c.req.method === 'OPTIONS') return next();
+
+  const { pathname } = new URL(c.req.url);
+  if (pathname === '/health' || pathname === '/api/health') return next();
+
+  if (!c.env.DEV_PROXY_SECRET) {
+    return c.json(
+      {
+        error: {
+          code: 'DEV_PROXY_NOT_CONFIGURED',
+          message: 'Dev proxy secret is not configured.',
+        },
+      },
+      503,
+    );
+  }
+
+  if (c.req.header('X-Pipe-Dev-Proxy-Secret') !== c.env.DEV_PROXY_SECRET) {
+    return c.json(
+      {
+        error: {
+          code: 'DEV_PROXY_REQUIRED',
+          message: 'Use the authenticated dev app URL.',
+        },
+      },
+      401,
+    );
+  }
+
+  return next();
+});
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.route('/api/v1/pipelines', pipelines);
@@ -154,6 +197,8 @@ app.route('/rpc/video', videoCandidate);
 app.route('/api/v1/video/public', videoPublic);
 // Standalone host/guest meeting room runtime (opaque token auth)
 app.route('/api/v1/meeting-rooms', meetingRooms);
+// Meeting management: create/list/invite (authenticated)
+app.route('/api/v1/meetings', meetingsAuth);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
@@ -185,10 +230,16 @@ app.route('/internal/calibrate', calibrate);
 // Internal: Neo4j health check (no auth — dev/ops smoke test)
 app.route('/api/v1/internal', neo4jHealth);
 
+// Internal: deterministic local/test fixture seeding for E2E only.
+app.route('/api/v1/internal/e2e', e2eSeed);
+
 // ─── Health check ─────────────────────────────────────────────────────────────
-app.get('/health', (c) =>
-  c.json({ status: 'ok', timestamp: new Date().toISOString() }),
-);
+function healthPayload(): { status: 'ok'; timestamp: string } {
+  return { status: 'ok', timestamp: new Date().toISOString() };
+}
+
+app.get('/health', (c) => c.json(healthPayload()));
+app.get('/api/health', (c) => c.json(healthPayload()));
 
 // ─── AI test endpoint (dev only) ─────────────────────────────────────────────
 app.post('/dev/test-ai', async (c) => {

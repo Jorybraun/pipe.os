@@ -28,6 +28,8 @@ import {
   GitPullRequest,
   Database,
   Cpu,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
 
@@ -99,6 +101,7 @@ interface SignalsRow {
 interface RepoResponse {
   repo: RepoDetail;
   signals: SignalsRow | null;
+  reviewChallengePackets: ReviewChallengePacketSummary[];
 }
 
 interface AnalyzeResponse {
@@ -138,6 +141,20 @@ interface SamplePR {
 
 interface PRsResponse {
   prs: SamplePR[];
+}
+
+interface ReviewChallengePacketSummary {
+  id: string;
+  repoSnapshotId: string;
+  prNumber: number;
+  packetVersion: string;
+  sourceHash: string;
+  language: string | null;
+  productionReady: boolean;
+  qualityScore: number;
+  demandFamilies: string[];
+  gateFailures: string[];
+  updatedAt: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -756,6 +773,91 @@ function PRListRow({ pr }: { pr: SamplePR }): JSX.Element {
   );
 }
 
+function PacketStatusPanel({ packets }: { packets: ReviewChallengePacketSummary[] }): JSX.Element {
+  const ready = packets.filter((packet) => packet.productionReady);
+  return (
+    <Section
+      title="SOURCE-BACKED REVIEW PACKETS"
+      right={
+        <span style={{ ...mono, fontSize: 9, color: ready.length > 0 ? '#4ade80' : 'var(--pipe-text-dim)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          {ready.length > 0 ? <ShieldCheck size={10} /> : <ShieldAlert size={10} />}
+          {ready.length}/{packets.length}
+        </span>
+      }
+    >
+      {packets.length === 0 ? (
+        <div style={{ ...mono, fontSize: 10, color: 'var(--pipe-text-dim)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldAlert size={12} /> No source-backed review packets have been persisted for this repo yet.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {packets.map((packet) => (
+            <div
+              key={packet.id}
+              style={{
+                border: `1px solid ${packet.productionReady ? 'rgba(74,222,128,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                background: packet.productionReady ? 'rgba(74,222,128,0.04)' : 'rgba(248,113,113,0.04)',
+                borderRadius: 6,
+                padding: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ ...mono, fontSize: 10, fontWeight: 800, color: packet.productionReady ? '#4ade80' : '#f87171', letterSpacing: '0.1em' }}>
+                  {packet.productionReady ? 'READY' : 'NOT READY'}
+                </span>
+                <span style={{ ...mono, fontSize: 10, color: 'var(--pipe-text)' }}>
+                  PR #{packet.prNumber}
+                </span>
+                <span style={{ ...mono, fontSize: 9, color: 'var(--pipe-text-dim)' }}>
+                  quality {Math.round(packet.qualityScore * 100)}%
+                </span>
+                <span style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', marginLeft: 'auto' }}>
+                  {packet.language ?? 'unknown'} · {packet.packetVersion}
+                </span>
+              </div>
+              <div style={{ ...mono, fontSize: 8, color: 'var(--pipe-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {packet.id} · {packet.sourceHash}
+              </div>
+              {packet.demandFamilies.length > 0 && (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {packet.demandFamilies.slice(0, 8).map((family) => (
+                    <span
+                      key={family}
+                      style={{
+                        ...mono,
+                        fontSize: 8,
+                        color: '#60a5fa',
+                        padding: '2px 6px',
+                        border: '1px solid rgba(96,165,250,0.2)',
+                        borderRadius: 3,
+                        background: 'rgba(96,165,250,0.05)',
+                      }}
+                    >
+                      {family}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {packet.gateFailures.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {packet.gateFailures.slice(0, 4).map((failure) => (
+                    <li key={failure} style={{ ...mono, fontSize: 9, color: '#fca5a5', lineHeight: 1.5 }}>
+                      {failure}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RepoDetailPage(): JSX.Element {
@@ -927,6 +1029,10 @@ export default function RepoDetailPage(): JSX.Element {
             </span>
           )}
         </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <PacketStatusPanel packets={detail.reviewChallengePackets ?? []} />
       </div>
 
       {/* Pass 3 panel */}

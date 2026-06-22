@@ -16,6 +16,7 @@ import { loadRcdForAssessment } from '../rcd';
 import type { ReviewRound } from '../implementerAgent';
 import type { ComprehensionExchange } from '../explainerAgent';
 import { ingestCodeReviewScoreReportToLivingContext } from '../livingContext/codeReview';
+import { loadSourceBackedReviewDiff } from './sourceBackedReviewDiff';
 
 export interface ScoreAndPropagateTranscript {
   rounds: ReviewRound[];
@@ -32,6 +33,28 @@ export interface ScoreAndPropagateInput {
   scope: string;
 }
 
+interface ReviewScoringRow {
+  ground_truth: string | null;
+  server_config: string | null;
+  github_pr_title: string | null;
+  github_pr_description: string | null;
+  instructions: string | null;
+  cached_diff_json: string | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  candidate_id: string;
+  created_at: string;
+  assignment_id: string | null;
+  effective_repo_url: string | null;
+  effective_pr_number: number | null;
+}
+
+class SourceBackedReviewScoringNotReadyError extends Error {
+  constructor() {
+    super('SOURCE_BACKED_REVIEW_NOT_READY');
+  }
+}
+
 function parseJsonColumn<T>(value: unknown): T | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') {
@@ -44,6 +67,56 @@ function parseJsonColumn<T>(value: unknown): T | null {
   return value as T;
 }
 
+async function resolveScoringContext(
+  db: D1Database,
+  row: ReviewScoringRow,
+): Promise<{
+  plantedBugs: PlantedBug[];
+  diff: string | null;
+  prTitle: string | null;
+  prDescription: string | null;
+}> {
+  const usesCandidateAssignment = typeof row.assignment_id === 'string' && row.assignment_id.length > 0;
+
+  if (usesCandidateAssignment) {
+    if (!row.effective_repo_url || typeof row.effective_pr_number !== 'number') {
+      throw new SourceBackedReviewScoringNotReadyError();
+    }
+
+    const sourceBackedDiff = await loadSourceBackedReviewDiff(
+      db,
+      row.effective_repo_url,
+      row.effective_pr_number,
+    );
+    if (!sourceBackedDiff) {
+      throw new SourceBackedReviewScoringNotReadyError();
+    }
+
+    return {
+      // Assignment-backed PRs are selected from repo packets, so generic challenge
+      // planted bugs would be stale evidence unless separately materialized from
+      // the same source-backed packet.
+      plantedBugs: [],
+      diff: JSON.stringify(sourceBackedDiff.diff),
+      prTitle: sourceBackedDiff.metadata.title ?? null,
+      prDescription: sourceBackedDiff.metadata.description ?? null,
+    };
+  }
+
+  const groundTruth = parseJsonColumn<PlantedBug[]>(row.ground_truth) ?? [];
+  const serverConfig = parseJsonColumn<Record<string, unknown>>(row.server_config);
+  const plantedBugs = Array.isArray(serverConfig?.plantedBugs)
+    ? (serverConfig.plantedBugs as PlantedBug[])
+    : groundTruth;
+
+  return {
+    plantedBugs,
+    diff: row.cached_diff_json,
+    prTitle: row.github_pr_title,
+    prDescription: row.github_pr_description,
+  };
+}
+
 export async function scoreAndPropagate(
   input: ScoreAndPropagateInput,
 ): Promise<void> {
@@ -51,29 +124,38 @@ export async function scoreAndPropagate(
 
   try {
     const ch = await env.DB.prepare(
-      `SELECT ground_truth, server_config, github_pr_title, github_pr_description, instructions, cached_diff_json
-       FROM challenges WHERE id = ?1`,
+      `SELECT ch.ground_truth,
+              ch.server_config,
+              ch.github_pr_title,
+              ch.github_pr_description,
+              ch.instructions,
+              ch.cached_diff_json,
+              ch.github_repo_url,
+              ch.github_pr_number,
+              rs.candidate_id,
+              rs.created_at,
+              cca.id as assignment_id,
+              COALESCE(cca.github_repo_url, ch.github_repo_url) as effective_repo_url,
+              COALESCE(cca.github_pr_number, ch.github_pr_number) as effective_pr_number
+         FROM challenges ch
+         JOIN review_sessions rs
+           ON rs.id = ?1
+          AND rs.challenge_id = ch.id
+         LEFT JOIN candidate_challenge_assignment cca
+           ON cca.challenge_id = ch.id
+          AND cca.candidate_id = rs.candidate_id
+        WHERE ch.id = ?2`,
     )
-      .bind(challengeId)
-      .first<{
-        ground_truth: string | null;
-        server_config: string | null;
-        github_pr_title: string | null;
-        github_pr_description: string | null;
-        instructions: string | null;
-        cached_diff_json: string | null;
-      }>();
+      .bind(sessionId, challengeId)
+      .first<ReviewScoringRow>();
 
     if (!ch) {
       console.error(`[${scope}] Challenge not found for scoring, sessionId: ${sessionId}`);
       return;
     }
 
-    const groundTruth = parseJsonColumn<PlantedBug[]>(ch.ground_truth) ?? [];
-    const serverConfig = parseJsonColumn<Record<string, unknown>>(ch.server_config);
-    const plantedBugs = Array.isArray(serverConfig?.plantedBugs)
-      ? (serverConfig.plantedBugs as PlantedBug[])
-      : groundTruth;
+    const scoringContext = await resolveScoringContext(env.DB, ch);
+    const usesCandidateAssignment = typeof ch.assignment_id === 'string' && ch.assignment_id.length > 0;
 
     await env.DB.prepare(
       `UPDATE review_sessions SET status = 'scoring', updated_at = ?1 WHERE id = ?2`,
@@ -92,10 +174,10 @@ export async function scoreAndPropagate(
       provider,
       ai: env.AI,
       transcript,
-      groundTruth: plantedBugs,
-      diff: ch.cached_diff_json,
-      prTitle: ch.github_pr_title,
-      prDescription: ch.github_pr_description,
+      groundTruth: scoringContext.plantedBugs,
+      diff: scoringContext.diff,
+      prTitle: scoringContext.prTitle,
+      prDescription: scoringContext.prDescription,
       instructions: ch.instructions,
       ...(dispositionalWeights ? { dispositionalWeights } : {}),
     });
@@ -105,7 +187,9 @@ export async function scoreAndPropagate(
     let comprehensionSupplement: Record<string, unknown> | undefined;
     if (transcript.explainer_exchanges && transcript.explainer_exchanges.length > 0) {
       try {
-        const gtRaw = parseJsonColumn<ComprehensionGroundTruth>(ch.ground_truth);
+        const gtRaw = usesCandidateAssignment
+          ? null
+          : parseJsonColumn<ComprehensionGroundTruth>(ch.ground_truth);
         const comprehensionGroundTruth: ComprehensionGroundTruth =
           gtRaw?.mode === 'comprehension'
             ? gtRaw
@@ -117,8 +201,8 @@ export async function scoreAndPropagate(
           ai: env.AI,
           transcript: { mode: 'comprehension', exchanges: transcript.explainer_exchanges },
           groundTruth: comprehensionGroundTruth,
-          prTitle: ch.github_pr_title,
-          prDescription: ch.github_pr_description,
+          prTitle: scoringContext.prTitle,
+          prDescription: scoringContext.prDescription,
           instructions: ch.instructions,
         });
         comprehensionSupplement = compReport as unknown as Record<string, unknown>;
@@ -134,26 +218,16 @@ export async function scoreAndPropagate(
     };
     const scoredAt = new Date().toISOString();
     const fullReportJson = JSON.stringify(fullReport);
-    const session = await env.DB.prepare(
-      `SELECT candidate_id, created_at
-         FROM review_sessions
-        WHERE id = ?1`,
-    )
-      .bind(sessionId)
-      .first<{ candidate_id: string; created_at: string }>();
-    if (!session) {
-      throw new Error(`Review session "${sessionId}" disappeared during scoring`);
-    }
 
     await ingestCodeReviewScoreReportToLivingContext(env.DB, {
       sessionId,
-      candidateId: session.candidate_id,
+      candidateId: ch.candidate_id,
       challengeId,
       assessmentId,
       scoreReportJson: fullReportJson,
       observedAt: scoredAt,
       producer: 'automated_scorer',
-      startedAt: session.created_at,
+      startedAt: ch.created_at,
     });
 
     await env.DB.prepare(

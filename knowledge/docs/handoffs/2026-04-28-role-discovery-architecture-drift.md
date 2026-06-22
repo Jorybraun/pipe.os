@@ -60,7 +60,7 @@ The frontend coordinates: holds state, calls reducer locally, calls generator wh
 
 1. **Sync the plans**
    - `docs/plans/strategy-v2/part2-role-discovery/INDEX.md` — ✅ Done in this session. UAR plans marked deprecated.
-   - `knowledge/plan/pipe-strategy-v2-part2-role-discovery.md` — Update to reference state machine, not UAR.
+   - `knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md` — Update to reference state machine, not UAR.
    - `knowledge/plan/role-discovery-state-machine.md` — Add this handoff to its "Migration Path" section.
 
 2. **Decide: cutover or revert**

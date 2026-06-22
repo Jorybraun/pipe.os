@@ -1,10 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runEvaluationCli } from '../../../../../scripts/evaluateMatching';
+import { createMockD1 } from '../../../../__tests__/helpers/mockD1';
+import { runEvaluation } from '../cli';
 
 const evaluationMigration = readFileSync(
   new URL('../../../../../migrations/0093_matching_evaluation.sql', import.meta.url),
@@ -15,11 +18,49 @@ const corpusFixture = new URL(
   import.meta.url,
 );
 
+function expertCorpusJson(): string {
+  const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as {
+    corpusId: string;
+    description: string;
+    expertLabels: Array<{ labelId: string; labeledBy: string }>;
+    metadata: { syntheticFixtureCount: number };
+  };
+  corpus.corpusId = 'expert-corpus-v1';
+  corpus.description = 'Test-only corpus with non-synthetic labels for persisted evaluation coverage';
+  corpus.expertLabels = corpus.expertLabels.map((label, index) => ({
+    ...label,
+    labelId: `expert-label-${index + 1}`,
+    labeledBy: 'expert-reviewer-1',
+    labelProvenance: {
+      reviewerId: 'expert-reviewer-1',
+      reviewerRole: 'senior-engineering-reviewer',
+      reviewArtifactId: `expert-review-artifact-${index + 1}`,
+      reviewArtifactVersion: `expert-review-version-${index + 1}`,
+      contentHash: `sha256:expert-review-${index + 1}`,
+      locator: `expert-review:${index + 1}`,
+      rubricVersion: 'candidate-pr-match-rubric-v1',
+    },
+  }));
+  corpus.metadata.syntheticFixtureCount = 0;
+  return JSON.stringify(corpus);
+}
+
+function writeExpertCorpusFixture(directory: string): string {
+  const corpusPath = join(directory, 'expert-corpus.json');
+  writeFileSync(corpusPath, expertCorpusJson());
+  return corpusPath;
+}
+
 function sourceRef(overrides?: Partial<Record<string, unknown>>) {
+  const artifactId = typeof overrides?.artifactId === 'string' ? overrides.artifactId : 'artifact-1';
   return {
-    artifactId: 'artifact-1',
+    artifactId,
     artifactVersion: 'version-1',
     contentHash: 'sha256:abc123',
+    sourceRefType: artifactId.startsWith('repo-') ? 'repo_source_span' : 'source_span',
+    sourceRefId: `${artifactId}-source-span`,
+    sourceSpanId: artifactId.startsWith('repo-') ? undefined : `${artifactId}-source-span`,
+    exactText: `Exact source text for ${artifactId}.`,
     startOffset: 0,
     endOffset: 10,
     ...overrides,
@@ -90,6 +131,117 @@ function seedMatchRuns(db: InstanceType<typeof Database>): void {
   insert.run('run-comparison', rankedResults(), 2);
 }
 
+function insertEvaluationCorpus(
+  db: InstanceType<typeof Database>,
+  corpusJson: string,
+): void {
+  const corpus = JSON.parse(corpusJson) as {
+    corpusId: string;
+    version: string;
+    createdAt: string;
+    expertLabels: Array<{ labeledBy: string }>;
+  };
+  const syntheticFixtureCount = corpus.expertLabels.filter(
+    (label) => label.labeledBy === 'synthetic-fixture',
+  ).length;
+  db.prepare(
+    `INSERT INTO evaluation_corpora (
+       corpus_id, schema_version, corpus_hash, corpus_json,
+       expert_label_count, synthetic_fixture_count, frozen_at, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+  ).run(
+    corpus.corpusId,
+    corpus.version,
+    createHash('sha256').update(corpusJson).digest('hex'),
+    corpusJson,
+    corpus.expertLabels.length - syntheticFixtureCount,
+    syntheticFixtureCount,
+    Math.floor(Date.parse(corpus.createdAt) / 1000),
+  );
+}
+
+function persistedResultFixture(overrides?: {
+  corpusId?: string;
+  passed?: boolean;
+  expertLabelCount?: number;
+  syntheticFixtureCount?: number;
+  requireExpertLabels?: boolean;
+}) {
+  const corpusId = overrides?.corpusId ?? 'expert-corpus-v1';
+  const metrics = {
+    corpusVersion: '1.0.0',
+    corpusId,
+    matchRunIds: ['run-primary'],
+    comparisonMatchRunIds: ['run-comparison'],
+    evaluatedAt: '2026-06-14T00:00:00Z',
+    recallAt50: 1,
+    precisionAt3: 1,
+    ndcgAt5: 1,
+    guardrailViolationCount: 0,
+    multiStretchViolationCount: 0,
+    missingProvenanceCount: 0,
+    missingMatchRunCount: 0,
+    byteIdenticalRerun: true,
+    rerunFingerprints: { 'candidate-1::role-1': 'fingerprint-1' },
+    determinismComparisons: [{
+      candidateId: 'candidate-1',
+      roleId: 'role-1',
+      matchRunId: 'run-primary',
+      comparisonMatchRunId: 'run-comparison',
+      identical: true,
+      fingerprint: 'fingerprint-1',
+      comparisonFingerprint: 'fingerprint-1',
+    }],
+    totalEvaluations: 1,
+    evaluatedPairCount: 1,
+    highlyRelevantInTop3: 1,
+    relevantInTop3: 0,
+    irrelevantInTop3: 0,
+    forbiddenInResults: 0,
+    syntheticFixtureCount: overrides?.syntheticFixtureCount ?? 0,
+    expertLabelCount: overrides?.expertLabelCount ?? 1,
+    labelResults: [],
+  };
+  return {
+    metrics,
+    thresholds: {
+      minRecallAt50: 0.95,
+      minPrecisionAt3: 0.8,
+      minNdcgAt5: 0.8,
+      maxGuardrailViolations: 0,
+      maxMultiStretchViolations: 0,
+      maxMissingProvenance: 0,
+      maxMissingMatchRuns: 0,
+      requireByteIdenticalRerun: true,
+      requireExpertLabels: overrides?.requireExpertLabels ?? true,
+    },
+    passed: overrides?.passed ?? true,
+    failures: [],
+    warnings: [],
+  };
+}
+
+function insertEvaluationResult(
+  db: InstanceType<typeof Database>,
+  result: ReturnType<typeof persistedResultFixture>,
+): void {
+  db.prepare(
+    `INSERT INTO evaluation_results (
+       id, corpus_id, match_run_ids_json, comparison_match_run_ids_json,
+       metrics_json, result_json, passed, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `evaluation-${result.metrics.corpusId}`,
+    result.metrics.corpusId,
+    JSON.stringify(result.metrics.matchRunIds),
+    JSON.stringify(result.metrics.comparisonMatchRunIds),
+    JSON.stringify(result.metrics),
+    JSON.stringify(result),
+    result.passed ? 1 : 0,
+    100,
+  );
+}
+
 describe('matching evaluation CLI', () => {
   let directory: string | undefined;
 
@@ -102,6 +254,7 @@ describe('matching evaluation CLI', () => {
     const databasePath = join(directory, 'evaluation.sqlite');
     const jsonPath = join(directory, 'result.json');
     const reportPath = join(directory, 'result.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
     const sqlite = new Database(databasePath);
     seedMatchRuns(sqlite);
     sqlite.close();
@@ -111,9 +264,9 @@ describe('matching evaluation CLI', () => {
       '--database-path',
       databasePath,
       '--corpus-id',
-      'sample-corpus-v1',
+      'expert-corpus-v1',
       '--corpus-file',
-      corpusFixture.pathname,
+      expertCorpusPath,
       '--match-run-id',
       'run-primary',
       '--comparison-run-id',
@@ -123,7 +276,6 @@ describe('matching evaluation CLI', () => {
       '--report',
       reportPath,
       '--persist',
-      '--allow-synthetic',
     ]);
 
     expect(exitCode).toBe(0);
@@ -147,9 +299,218 @@ describe('matching evaluation CLI', () => {
     ).get()).toEqual({ passed: 1 });
     expect(() => verification.prepare(
       `UPDATE evaluation_corpora SET schema_version = 'changed'
-        WHERE corpus_id = 'sample-corpus-v1'`,
+        WHERE corpus_id = 'expert-corpus-v1'`,
     ).run()).toThrow('evaluation corpora are frozen');
     verification.close();
+  });
+
+  it('refuses to persist fixture-mode synthetic evaluations', async () => {
+    await expect(runEvaluationCli([
+      '--local',
+      '--database-path',
+      '/tmp/unused-pipe-evaluation.sqlite',
+      '--corpus-id',
+      'sample-corpus-v1',
+      '--corpus-file',
+      corpusFixture.pathname,
+      '--persist',
+      '--allow-synthetic',
+    ])).rejects.toThrow(
+      '--allow-synthetic cannot be combined with --persist',
+    );
+  });
+
+  it('passes the latest persisted production readiness gate for expert evidence', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const evaluationJsonPath = join(directory, 'evaluation.json');
+    const evaluationReportPath = join(directory, 'evaluation.txt');
+    const expertCorpusPath = writeExpertCorpusFixture(directory);
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    sqlite.close();
+
+    expect(await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--corpus-file',
+      expertCorpusPath,
+      '--match-run-id',
+      'run-primary',
+      '--comparison-run-id',
+      'run-comparison',
+      '--json',
+      evaluationJsonPath,
+      '--report',
+      evaluationReportPath,
+      '--persist',
+    ])).toBe(0);
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await readFile(jsonPath, 'utf8'))).toMatchObject({
+      ready: true,
+      corpusId: 'expert-corpus-v1',
+      metrics: {
+        expertLabelCount: 1,
+        syntheticFixtureCount: 0,
+        byteIdenticalRerun: true,
+      },
+    });
+  });
+
+  it('fails the readiness gate for historically persisted synthetic results', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const reportPath = join(directory, 'readiness.txt');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+    insertEvaluationResult(sqlite, persistedResultFixture({
+      corpusId: 'sample-corpus-v1',
+      expertLabelCount: 0,
+      syntheticFixtureCount: 1,
+    }));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'sample-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+      '--report',
+      reportPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        'Production rollout requires at least one expert label',
+        'Production rollout requires zero synthetic fixture labels',
+      ]),
+    );
+  });
+
+  it('fails the readiness gate for expert-looking labels without reviewer source provenance', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    const corpus = JSON.parse(expertCorpusJson()) as {
+      expertLabels: Array<{ labelProvenance?: unknown }>;
+    };
+    corpus.expertLabels = corpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return rest;
+    });
+    insertEvaluationCorpus(sqlite, JSON.stringify(corpus));
+    insertEvaluationResult(sqlite, persistedResultFixture());
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.failures).toContain(
+      'expert label is missing reviewer/source provenance: expert-label-1',
+    );
+  });
+
+  it('refuses direct API persistence when expert-label gate is disabled', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, expertCorpusJson());
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'expert-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+      thresholds: { requireExpertLabels: false },
+    })).rejects.toThrow('Persisted evaluations must keep the expert-label gate enabled');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
+  });
+
+  it('refuses direct API persistence for synthetic corpora', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'sample-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+    })).rejects.toThrow('Persisted evaluations require a fully expert-labelled corpus');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
+  });
+
+  it('refuses direct API persistence for labels without reviewer source provenance', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    const corpus = JSON.parse(expertCorpusJson()) as {
+      expertLabels: Array<{ labelProvenance?: unknown }>;
+    };
+    corpus.expertLabels = corpus.expertLabels.map((label) => {
+      const { labelProvenance: _labelProvenance, ...rest } = label;
+      return rest;
+    });
+    insertEvaluationCorpus(sqlite, JSON.stringify(corpus));
+
+    await expect(runEvaluation(createMockD1(sqlite), {
+      corpusId: 'expert-corpus-v1',
+      matchRunIds: ['run-primary'],
+      comparisonMatchRunIds: ['run-comparison'],
+      persistResult: true,
+    })).rejects.toThrow('Production corpus validation failed');
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM evaluation_results').get())
+      .toEqual({ count: 0 });
+    sqlite.close();
   });
 
   it('rejects synthetic labels when --allow-synthetic is omitted', async () => {
@@ -212,6 +573,11 @@ describe('matching evaluation CLI', () => {
           entityId: 'role-1',
           locator: 'technical_context',
           conceptKeys: ['term:quantum-cryptography'],
+          sourceRefType: 'source_span',
+          sourceRefId: 'role-source-span-1',
+          sourceSpanId: 'role-source-span-1',
+          exactText: 'Role source for quantum cryptography.',
+          contentHash: 'sha256:role-source-1',
         }],
       }],
       expertLabels: [{
@@ -236,7 +602,6 @@ describe('matching evaluation CLI', () => {
     };
 
     const corpusPath = join(directory, 'forbidden-corpus.json');
-    const { writeFileSync } = await import('node:fs');
     writeFileSync(corpusPath, JSON.stringify(forbiddenCorpus));
 
     const sqlite = new Database(databasePath);

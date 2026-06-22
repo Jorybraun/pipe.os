@@ -17,6 +17,8 @@ import {
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
 } from 'lucide-react';
 import { createApiClient } from '../lib/api/client';
+import type { LivingContextReadModel } from '../lib/api/types';
+import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -75,8 +77,8 @@ const TYPE_COLORS: Record<ContactType, string> = {
 
 const TYPE_LABELS: Record<ContactType, string> = {
   lead:      'LEAD',
-  candidate: 'CANDIDATE',
-  customer:  'CUSTOMER',
+  candidate: 'PERSON',
+  customer:  'CLIENT',
   other:     'OTHER',
 };
 
@@ -139,12 +141,12 @@ export default function ContactsPage(): JSX.Element {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-              {activeTab === 'contacts' ? 'CONTACTS' : 'SOURCE'}
+              {activeTab === 'contacts' ? 'PEOPLE' : 'SOURCE'}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>
               {activeTab === 'contacts'
                 ? `${contacts.length} ${contacts.length === 1 ? 'person' : 'people'}`
-                : 'Find candidates'}
+                : 'Find people'}
             </div>
           </div>
 
@@ -168,7 +170,7 @@ export default function ContactsPage(): JSX.Element {
                   color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                 }}
               >
-                {t.toUpperCase()}
+                {t === 'contacts' ? 'PEOPLE' : 'SOURCE'}
               </button>
             ))}
           </div>
@@ -184,7 +186,7 @@ export default function ContactsPage(): JSX.Element {
                 borderRadius: 4, color: '#4ade80', cursor: 'pointer',
               }}
             >
-              <UserPlus size={13} /> ADD
+              <UserPlus size={13} /> ADD PERSON
             </button>
           )}
         </div>
@@ -232,11 +234,11 @@ export default function ContactsPage(): JSX.Element {
               {!isLoading && filtered.length === 0 && (
                 <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--pipe-text-dim)' }}>
                   <div style={{ fontSize: 11, marginBottom: 8 }}>
-                    {search ? 'NO_MATCHES_FOUND' : 'NO_CONTACTS_YET'}
+                    {search ? 'No matches found' : 'No people yet'}
                   </div>
                   {!search && (
                     <div style={{ fontSize: 9, opacity: 0.6 }}>
-                      Add someone by clicking ADD above
+                      Add a person or invite someone to an interview.
                     </div>
                   )}
                 </div>
@@ -424,6 +426,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'details' | 'context'>('details');
 
   // Reset form when contact changes
   useEffect(() => {
@@ -438,6 +441,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
       type: contact.type,
     });
     setError(null);
+    setActiveTab('details');
   }, [contact.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSave = async (): Promise<void> => {
@@ -474,18 +478,60 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   };
 
   return (
-    <ContactForm
-      title="CONTACT"
-      form={form}
-      onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
-      onSave={() => void handleSave()}
-      onClose={onClose}
-      onDelete={() => void handleDelete()}
-      isSaving={isSaving}
-      isDeleting={isDeleting}
-      error={error}
-      saveLabel="SAVE"
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Header with tabs */}
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid var(--pipe-border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['details', 'context'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                padding: '4px 10px',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                fontFamily: '"Space Mono", monospace',
+                border: '1px solid',
+                borderRadius: 3,
+                cursor: 'pointer',
+                borderColor: activeTab === tab ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
+                background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+                color: activeTab === tab ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
+              }}
+            >
+              {tab.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--pipe-text-dim)', cursor: 'pointer', padding: 4 }}>
+          <X size={14} />
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {activeTab === 'details' ? (
+          <ContactForm
+            title="CONTACT"
+            form={form}
+            onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
+            onSave={() => void handleSave()}
+            onClose={onClose}
+            onDelete={() => void handleDelete()}
+            isSaving={isSaving}
+            isDeleting={isDeleting}
+            error={error}
+            saveLabel="SAVE"
+          />
+        ) : (
+          <ContactLivingContext contactId={contact.id} api={api} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -568,7 +614,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
                 color: form.type === t ? TYPE_COLORS[t] : 'var(--pipe-text-dim)',
               }}
             >
-              {t.toUpperCase()}
+              {TYPE_LABELS[t]}
             </button>
           ))}
         </div>
@@ -831,7 +877,6 @@ function SourceSearchPanel({ api, onContact }: {
         <button onClick={() => void handleSearch()} disabled={isSearching} style={{ width: '100%', padding: '10px 0', fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.1)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 4, color: '#4ade80', cursor: isSearching ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
           {isSearching ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> SEARCHING...</> : <><Search size={12} /> SEARCH</>}
         </button>
-
         {searchError && <div style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 10, color: '#f87171' }}>{searchError}</div>}
       </div>
 
@@ -881,5 +926,40 @@ function SourceSearchPanel({ api, onContact }: {
         ))}
       </div>
     </div>
+  );
+}
+
+// ─── Contact Living Context ─────────────────────────────────────────────────────
+
+function ContactLivingContext({ contactId, api }: { contactId: string; api: ReturnType<typeof createApiClient> }): JSX.Element {
+  const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const endpoint = `/api/v1/contacts/${contactId}/living-context`;
+
+  useEffect(() => {
+    (async () => {
+      setIsLoading(true);
+      try {
+        const res = await api.get<LivingContextReadModel>(endpoint);
+        setLivingContext(res);
+      } catch {
+        setLivingContext(null);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, [api, endpoint]);
+
+  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>LOADING_CONTEXT</div>;
+  if (!livingContext || livingContext.summary.interactionCount === 0) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>NO_CONTEXT_YET</div>;
+  }
+
+  return (
+    <LivingContextGraph
+      candidateId={contactId}
+      livingContextEndpoint={endpoint}
+      initialLivingContext={livingContext}
+    />
   );
 }

@@ -1,6 +1,6 @@
 # Phase 4 — Port roleAgent to UAR Plugin generateTurn
 
-**Source:** knowledge/plan/pipe-strategy-v2-part2-role-discovery.md (lines 173–175, 221–222)  
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part2-role-discovery.md (lines 173–175, 221–222)
 **Phase:** 4  
 **Status:** PENDING  
 **Estimate:** 2 weeks

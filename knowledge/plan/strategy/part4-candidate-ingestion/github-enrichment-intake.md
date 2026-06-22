@@ -1,6 +1,6 @@
 # GitHub Enrichment — Intake Form Wiring
 
-**Source:** knowledge/plan/pipe-strategy-v2-part4-candidate-ingestion.md (lines 224–226, 344–346)
+**Source:** knowledge/plan/archive/superseded-strategy-v2-2026-06-19/pipe-strategy-v2-part4-candidate-ingestion.md (lines 224–226, 344–346)
 **Phase:** 2
 **Status:** DONE (2026-05-01)
 **Estimate:** 0.5 weeks (actual: 1 day)

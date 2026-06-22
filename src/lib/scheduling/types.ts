@@ -1,3 +1,5 @@
+import type { LivingContextReadModel } from '../api/types';
+
 export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
 export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
@@ -21,7 +23,7 @@ export interface TranscriptArtifact {
 export type SchedulingProvider = 'CALENDLY' | 'CAL_COM' | 'MANUAL';
 
 /** Sync source for status updates — manual (recruiter) or automated (webhook) */
-export type SyncSource = 'MANUAL' | 'WEBHOOK';
+export type SyncSource = 'MANUAL' | 'WEBHOOK' | 'POLL';
 
 /**
  * ScheduledInterview — local TypeScript interface.
@@ -58,8 +60,46 @@ export interface ScheduledInterview {
   candidateEmail?: string | null;
   pipelineTitle?: string | null;
   stageTitle?: string | null;
+  matchedRepoId?: number | null;
+  githubRepoUrl?: string | null;
+  githubPrNumber?: number | null;
+  submissionJson?: string | null;
+  completedAt?: string | null;
   // Transcript artifact
   transcriptArtifact?: TranscriptArtifact | null;
+}
+
+export interface LinkedMeetingSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  scheduledAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  durationSecs: number | null;
+  meetingUrl: string | null;
+  meetingType: string;
+  transcriptStatus: string;
+  transcriptSummary: string | null;
+  recordingR2Key: string | null;
+  room: {
+    id: string;
+    sessionId: string | null;
+    status: string | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduledInterviewDetail extends ScheduledInterview {
+  externalEventId?: string | null;
+  candidateName?: string | null;
+  candidateEmail?: string | null;
+  pipelineTitle?: string | null;
+  stageTitle?: string | null;
+  linkedMeeting: LinkedMeetingSummary | null;
+  livingContext?: LivingContextReadModel | null;
 }
 
 /**

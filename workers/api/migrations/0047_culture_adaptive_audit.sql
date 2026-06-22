@@ -6,8 +6,8 @@
 -- type enum with generative-mode events: question_generated, question_source_mode,
 -- answer_decomposed.
 --
--- Note: D1 runs each migration in a transaction and does not support
--- BEGIN TRANSACTION / COMMIT or PRAGMA foreign_keys in SQL.
+-- Note: D1 wraps each migration automatically, so this file avoids explicit
+-- transaction control statements and connection-level foreign-key toggles.
 
 -- 1. Add screener_mode column to culture_interview_sessions
 ALTER TABLE culture_interview_sessions ADD COLUMN screener_mode TEXT

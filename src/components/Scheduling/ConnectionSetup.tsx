@@ -4,6 +4,7 @@ import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 import type { SchedulingConnectionInfo } from '../../hooks/useSchedulingConnection';
 import { getAllPlugins } from '../../lib/scheduling/pluginRegistry';
 import type { SchedulingPlugin } from '../../lib/scheduling/pluginRegistry';
+import { getSchedulingOAuthRedirectUri } from '../../lib/scheduling/oauthRedirect';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +41,7 @@ export function ConnectionSetup(): JSX.Element {
     error: hookError,
     exchangeOAuth,
     disconnect,
+    getAuthUrl,
   } = useSchedulingConnection();
 
   const [flow, setFlow] = useState<FlowState>({ step: 'idle' });
@@ -48,7 +50,7 @@ export function ConnectionSetup(): JSX.Element {
   const plugins = getAllPlugins();
 
   // Build the redirect URI — use fixed path to ensure consistency
-  const redirectUri = `${window.location.origin}/schedule`;
+  const redirectUri = getSchedulingOAuthRedirectUri();
 
   // ---------------------------------------------------------------------------
   // Handle OAuth callback (code + state in URL)
@@ -113,20 +115,34 @@ export function ConnectionSetup(): JSX.Element {
     const state = btoa(JSON.stringify({ providerId: plugin.type, nonce }));
     sessionStorage.setItem('pipe_oauth_state_nonce', nonce);
 
-    // Generate PKCE pair (required by Calendly)
-    const verifierArray = crypto.getRandomValues(new Uint8Array(32));
-    const verifier = Array.from(verifierArray).map(b => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem('pipe_oauth_code_verifier', verifier);
+    Promise.resolve()
+      .then(async () => {
+        if (plugin.type !== 'CALENDLY') {
+          sessionStorage.removeItem('pipe_oauth_code_verifier');
+          return getAuthUrl(plugin.type, redirectUri);
+        }
 
-    // Compute S256 challenge asynchronously then redirect
-    void window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)).then(digest => {
-      const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-      const authUrl = plugin.getAuthUrl!(redirectUri, state, challenge);
-      setFlow({ step: 'waiting', provider: plugin.type });
-      window.location.href = authUrl;
-    });
-  }, [redirectUri]);
+        const verifierArray = crypto.getRandomValues(new Uint8Array(32));
+        const verifier = Array.from(verifierArray).map(b => b.toString(16).padStart(2, '0')).join('');
+        sessionStorage.setItem('pipe_oauth_code_verifier', verifier);
+        const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+        const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        return getAuthUrl(plugin.type, redirectUri, challenge);
+      })
+      .then((authUrl) => {
+        setFlow({ step: 'waiting', provider: plugin.type });
+        const url = new URL(authUrl);
+        url.searchParams.set('state', state);
+        window.location.href = url.toString();
+      })
+      .catch((err: unknown) => {
+        sessionStorage.removeItem('pipe_oauth_state_nonce');
+        sessionStorage.removeItem('pipe_oauth_code_verifier');
+        const msg = err instanceof Error ? err.message : 'Failed to start OAuth';
+        setFlow({ step: 'error', message: msg });
+      });
+  }, [getAuthUrl, redirectUri]);
 
   const handleDisconnect = useCallback(async (conn: SchedulingConnectionInfo): Promise<void> => {
     setIsDisconnecting(true);

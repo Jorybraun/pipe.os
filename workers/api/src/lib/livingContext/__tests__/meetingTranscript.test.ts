@@ -1,31 +1,23 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import {
   canonicalizeMeetingTranscript,
   ingestMeetingTranscriptToLivingContext,
   parseStoredMeetingTranscript,
 } from '../meetingTranscript';
+import { ensureCandidateLivingContext } from '../compatibility';
+import { loadCandidateLivingContext, loadContactLivingContext } from '../readModel';
 
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-  setReturnArrays(enabled: boolean): void;
-}
 
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordMigration = readFileSync(
+  new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
   'utf8',
 );
 const transcriptProjectionMigration = readFileSync(
@@ -33,85 +25,28 @@ const transcriptProjectionMigration = readFileSync(
   'utf8',
 );
 
-function normalizeD1Params(
-  query: string,
-  bindings: unknown[],
-): { sql: string; params: unknown[] } {
-  const indices: number[] = [];
-  const sql = query.replace(/\?(\d+)/g, (_match, digit: string) => {
-    indices.push(Number(digit));
-    return '?';
-  });
-  if (indices.length === 0) return { sql: query, params: bindings };
-  const params = indices.map((index) => bindings[index - 1]);
-  return { sql, params };
-}
 
-function createMockD1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const prepared = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return prepared;
-        },
-        async run() {
-          const { sql, params } = normalizeD1Params(query, bindings);
-          const result = sqlite.prepare(sql).run(...params);
-          return {
-            success: true,
-            meta: { changes: Number(result.changes) },
-            results: [],
-          };
-        },
-        async first<T>() {
-          const { sql, params } = normalizeD1Params(query, bindings);
-          return (sqlite.prepare(sql).get(...params) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          const { sql, params } = normalizeD1Params(query, bindings);
-          return {
-            success: true,
-            results: sqlite.prepare(sql).all(...params) as T[],
-            meta: {},
-          };
-        },
-        async raw<T>() {
-          const { sql, params } = normalizeD1Params(query, bindings);
-          const statement = sqlite.prepare(sql);
-          statement.setReturnArrays(true);
-          return statement.all(...params) as T[];
-        },
-      };
-      return prepared;
-    },
-    async batch(statements: D1PreparedStatement[]) {
-      return Promise.all(statements.map((statement) => statement.run()));
-    },
-    async exec(query: string) {
-      sqlite.exec(query);
-      return { count: 0, duration: 0 };
-    },
-    async dump() {
-      return new ArrayBuffer(0);
-    },
-  } as unknown as D1Database;
-}
 
-function count(sqlite: SqliteDatabase, table: string): number {
+function count(sqlite: BetterSqliteDb, table: string): number {
   return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
 }
 
 describe('meeting transcript living-context ingestion', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
   let db: D1Database;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
-      CREATE TABLE candidates (id TEXT PRIMARY KEY);
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
       CREATE TABLE contacts (
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL,
@@ -141,6 +76,7 @@ describe('meeting transcript living-context ingestion', () => {
       );
     `);
     sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.prepare(
       `INSERT INTO contacts (
@@ -288,8 +224,16 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'interactions')).toBe(1);
     expect(count(sqlite, 'artifact_interactions')).toBe(1);
     expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(2);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate FROM context_records`,
+    ).get()).toEqual({
+      record_type: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+    });
 
     const corrected = await ingestMeetingTranscriptToLivingContext(db, {
       meetingId: 'meeting-1',
@@ -301,6 +245,7 @@ describe('meeting transcript living-context ingestion', () => {
     expect(corrected.versionNumber).toBe(2);
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'source_spans')).toBe(3);
+    expect(count(sqlite, 'context_records')).toBe(2);
   });
 
   it('persists unseen source-backed concepts and rebuilds interaction and total scores', async () => {
@@ -353,8 +298,25 @@ describe('meeting transcript living-context ingestion', () => {
     expect(replay).toEqual(first);
     expect(count(sqlite, 'semantic_assertions')).toBe(1);
     expect(count(sqlite, 'assertion_source_spans')).toBe(2);
+    expect(count(sqlite, 'context_records')).toBe(2);
+    expect(count(sqlite, 'context_record_source_spans')).toBe(4);
+    expect(count(sqlite, 'context_record_concepts')).toBe(1);
     expect(count(sqlite, 'source_span_attributions')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(sqlite.prepare(
+      `SELECT record_type, predicate
+         FROM context_records
+        ORDER BY record_type`,
+    ).all()).toEqual([
+      {
+        record_type: 'meeting_transcript',
+        predicate: 'preserves meeting transcript',
+      },
+      {
+        record_type: 'meeting_transcript_assertion',
+        predicate: 'implemented a mechanism for',
+      },
+    ]);
     expect(sqlite.prepare(
       `SELECT canonical_key, label FROM concepts`,
     ).get()).toEqual({
@@ -366,6 +328,15 @@ describe('meeting transcript living-context ingestion', () => {
     ).get()).toEqual({
       relationship: 'mechanism used for order replay',
       weight: 0.87,
+    });
+    expect(sqlite.prepare(
+      `SELECT crc.relationship, crc.weight, c.canonical_key
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id`,
+    ).get()).toEqual({
+      relationship: 'mechanism used for order replay',
+      weight: 0.87,
+      canonical_key: 'term:temporal-shard-knitting',
     });
     expect(sqlite.prepare(
       `SELECT conversation_score, total_score, evidence_count, source_diversity
@@ -583,6 +554,151 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'workspace_people')).toBe(1);
   });
 
+  it('keeps meeting evidence on the same person graph when a contact later joins the talent pool', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Can you describe a system you owned?',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I implemented temporal shard knitting for order replay.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.96,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented a mechanism for',
+        narrative: 'Implemented temporal shard knitting for order replay.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'temporal shard knitting' },
+        confidence: 0.91,
+        concepts: [{
+          surface: 'Temporal shard knitting',
+          relationship: 'mechanism used for order replay',
+          weight: 0.87,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.9,
+        }],
+      }],
+      extractorVersion: 'open-meeting-test-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-joined-pool',
+      'workspace-1',
+      null,
+      'Ada Candidate',
+      'ADA@example.com',
+      'talent_pool',
+    );
+    const candidateIdentity = await ensureCandidateLivingContext(db, 'candidate-joined-pool');
+
+    const contactGraph = await loadContactLivingContext(db, 'contact-1');
+    const candidateGraph = await loadCandidateLivingContext(db, 'candidate-joined-pool');
+
+    expect(candidateIdentity).not.toBeNull();
+    expect(contactGraph).not.toBeNull();
+    expect(candidateGraph).not.toBeNull();
+    expect(candidateGraph?.person.personId).toBe(contactGraph?.person.personId);
+    expect(candidateGraph?.person.workspacePersonId).toBe(contactGraph?.person.workspacePersonId);
+    expect(candidateGraph?.person.applicationId).toBe(candidateIdentity?.applicationId);
+    expect(candidateGraph?.person.pipelineId).toBeNull();
+    expect(candidateGraph?.person.applicationStatus).toBe('talent_pool');
+    expect(candidateGraph?.person.roles.map((role) => role.roleType).sort()).toEqual([
+      'candidate',
+      'candidate',
+    ]);
+
+    expect(candidateGraph?.summary).toMatchObject({
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 2,
+      assertionCount: 1,
+      signalCount: 1,
+      sourceSpanCount: 2,
+    });
+    expect(candidateGraph?.interactions).toHaveLength(1);
+    expect(candidateGraph?.interactions[0]).toMatchObject({
+      interactionType: 'video_meeting',
+      externalReference: 'meeting-1',
+    });
+    expect(candidateGraph?.interactions[0]?.assertionIds).toHaveLength(1);
+    expect(candidateGraph?.interactions[0]?.signalKeys).toEqual(['term:temporal-shard-knitting']);
+
+    expect(candidateGraph?.assertions[0]).toMatchObject({
+      predicate: 'implemented a mechanism for',
+      narrative: 'Implemented temporal shard knitting for order replay.',
+    });
+    expect(candidateGraph?.assertions[0]?.sources.map((source) => source.exactText)).toEqual([
+      'I implemented temporal shard knitting for order replay.',
+    ]);
+    expect(candidateGraph?.signals[0]).toMatchObject({
+      signalKey: 'term:temporal-shard-knitting',
+      conversationScore: 0.9,
+      totalScore: 0.9,
+      evidenceCount: 1,
+      sourceDiversity: 1,
+    });
+    expect(candidateGraph?.signals[0]?.evidence[0]?.sources[0]?.exactText).toBe(
+      'I implemented temporal shard knitting for order replay.',
+    );
+    expect(candidateGraph?.contextRecords.map((record) => record.recordType).sort()).toEqual([
+      'meeting_transcript',
+      'meeting_transcript_assertion',
+    ]);
+    const assertionContext = candidateGraph?.contextRecords.find(
+      (record) => record.recordType === 'meeting_transcript_assertion',
+    );
+    expect(assertionContext?.concepts).toEqual([
+      expect.objectContaining({
+        canonicalKey: 'term:temporal-shard-knitting',
+        relationship: 'mechanism used for order replay',
+        weight: 0.87,
+      }),
+    ]);
+
+    expect(count(sqlite, 'people')).toBe(1);
+    expect(count(sqlite, 'workspace_people')).toBe(1);
+    expect(count(sqlite, 'applications')).toBe(1);
+    expect(count(sqlite, 'interactions')).toBe(1);
+    expect(count(sqlite, 'semantic_assertions')).toBe(1);
+    expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT external_ids_json FROM people WHERE id = ?`,
+    ).get(candidateIdentity?.personId)!.external_ids_json as string)).toEqual({
+      legacyCandidateId: 'candidate-joined-pool',
+      legacyContactId: 'contact-1',
+    });
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT context_json FROM workspace_people WHERE id = ?`,
+    ).get(candidateIdentity?.workspacePersonId)!.context_json as string)).toMatchObject({
+      contactId: 'contact-1',
+      source: 'legacy_candidate',
+      sources: ['legacy_candidate', 'legacy_contact'],
+    });
+  });
+
   it('removes stale derived meaning while preserving the immutable transcript', async () => {
     const base = {
       meetingId: 'meeting-1',
@@ -623,6 +739,7 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'source_spans')).toBe(1);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
     expect(count(sqlite, 'episodes')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
     expect(count(sqlite, 'signal_evidence')).toBe(0);
     expect(count(sqlite, 'signal_snapshots')).toBe(0);
     expect(count(sqlite, 'semantic_projection_runs')).toBe(1);

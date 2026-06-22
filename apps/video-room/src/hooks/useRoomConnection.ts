@@ -26,7 +26,7 @@ const FALLBACK_ICE: RTCIceServer[] = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-export function useRoomConnection(token: string, role: RoomRole): RoomConnection {
+export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -79,7 +79,10 @@ export function useRoomConnection(token: string, role: RoomRole): RoomConnection
       });
     };
     peer.ontrack = ({ streams }) => {
-      if (streams[0]) setRemoteStream(streams[0]);
+      if (streams[0]) {
+        setRemoteStream(streams[0]);
+        setPhase('connected');
+      }
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') setPhase('connected');
@@ -89,6 +92,8 @@ export function useRoomConnection(token: string, role: RoomRole): RoomConnection
   }, [send]);
 
   useEffect(() => {
+    if (!active) return undefined;
+
     const ws = new WebSocket(roomWebSocketUrl(token));
     wsRef.current = ws;
     ws.onmessage = (event) => {
@@ -130,8 +135,11 @@ export function useRoomConnection(token: string, role: RoomRole): RoomConnection
     ws.onclose = () => {
       if (phaseRef.current !== 'ended') setPhase('disconnected');
     };
-    return () => ws.close();
-  }, [drainIce, role, token]);
+    return () => {
+      ws.close();
+      if (wsRef.current === ws) wsRef.current = null;
+    };
+  }, [active, drainIce, role, token]);
 
   useEffect(() => () => {
     peerRef.current?.close();

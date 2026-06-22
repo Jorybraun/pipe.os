@@ -109,6 +109,60 @@ export interface SemanticAssertionInput extends IngestedEntityInput {
   observedAt?: string | null;
 }
 
+export interface ContextRecordEntityInput {
+  entityType: string;
+  entityId?: string | null;
+  relationship: string;
+  value?: JsonValue;
+  confidence?: number | null;
+  metadata?: JsonObject;
+}
+
+export interface ContextRecordConceptInput {
+  conceptId: string;
+  relationship: string;
+  weight?: number;
+}
+
+export interface ContextRecordSourceInput {
+  sourceSpanId?: string | null;
+  sourceRefType?: string | null;
+  sourceRefId?: string | null;
+  evidenceRole?: string;
+  locator?: JsonObject;
+  exactText?: string | null;
+  contentHash?: string | null;
+  metadata?: JsonObject;
+}
+
+/**
+ * V1 source-backed meaning unit. Immutable artifact versions and source spans
+ * remain the root truth; this record preserves extracted context that graph and
+ * search projections can delete and rebuild. Person-scoped records use
+ * workspacePersonId for compatibility; repo, role, and match records use
+ * scopeType/scopeId plus source refs.
+ */
+export interface ContextRecordInput extends IngestedEntityInput {
+  scopeType?: string | null;
+  scopeId?: string | null;
+  workspacePersonId?: string | null;
+  interactionId?: string | null;
+  applicationId?: string | null;
+  episodeId?: string | null;
+  assertionId?: string | null;
+  recordType: string;
+  predicate?: string | null;
+  narrative: string;
+  qualifiers?: JsonObject;
+  confidence?: number | null;
+  polarity?: number;
+  extractionVersion?: string | null;
+  observedAt?: string | null;
+  sources: ContextRecordSourceInput[];
+  entities?: ContextRecordEntityInput[];
+  concepts?: ContextRecordConceptInput[];
+}
+
 export interface ConceptInput extends IngestedEntityInput {
   canonicalKey: string;
   namespace: string;

@@ -337,7 +337,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
   // Step 7: Load role_repo_alignment for pipeline's role_context
   const roleContextRow = await db
     .prepare(
-      `SELECT id, rcd_version, rcd_json, non_negotiable_skills_json
+      `SELECT id, rcd_version, rcd_json, job_description_md, non_negotiable_skills_json
          FROM role_contexts
         WHERE pipeline_id = ?1
         ORDER BY updated_at DESC
@@ -348,6 +348,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
       id: string;
       rcd_version: string | null;
       rcd_json: string | null;
+      job_description_md: string | null;
       non_negotiable_skills_json: string | null;
     }>();
 
@@ -451,6 +452,7 @@ export async function runMatchAndAssign(input: MatchAndAssignInput): Promise<voi
     db,
     winnerRepoId,
     candidateSeniority,
+    roleSemantics?.relevantConcepts,
   );
   const catalogWinner = matchedRepos.find((repo) => repo.id === winnerRepoId);
 

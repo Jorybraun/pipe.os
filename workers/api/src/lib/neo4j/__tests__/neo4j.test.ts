@@ -361,7 +361,7 @@ describe('writeRepoGraph', () => {
   });
 
   it('MERGEs repo and sub-elements with embeddings', async () => {
-    const { _mockDriver } = getMocks();
+    const { _mockSessionRun } = getMocks();
     const result = await writeRepoGraph({
       repoId: 123,
       fullName: 'owner/repo',
@@ -369,7 +369,7 @@ describe('writeRepoGraph', () => {
       signalsVersion: 'v2.0.0',
       subElements: [
         {
-          node_type: 'Feature',
+          node_type: 'PreviouslyUnseenRepoSignal',
           slug: 'auth',
           narrative_text: 'OAuth2 authentication',
           source_reference: 'signals_v2',
@@ -385,6 +385,13 @@ describe('writeRepoGraph', () => {
 
     expect(result.nodesCreated).toBe(1);
     expect(result.relationshipsCreated).toBe(1);
+    expect(_mockSessionRun).toHaveBeenCalledTimes(2);
+    const [nodeCypher, nodeParams] = _mockSessionRun.mock.calls[1]!;
+    expect(nodeCypher).toContain('MERGE (n:RepoNode {id: node.id})');
+    expect(nodeCypher).not.toContain(':PreviouslyUnseenRepoSignal');
+    expect(nodeCypher).not.toContain(':Feature');
+    expect((nodeParams as { nodes: Array<{ node_type: string }> }).nodes[0]!.node_type)
+      .toBe('PreviouslyUnseenRepoSignal');
   });
 
   it('skips nodes without embeddings', async () => {
