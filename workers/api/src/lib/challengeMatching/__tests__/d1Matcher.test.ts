@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import {
   deriveCorpusGenericConcepts,
   matchCandidateToReviewChallenge,
@@ -8,21 +9,7 @@ import {
 import type { ChallengePacket } from '../types';
 import type { ChallengePacket as RepoChallengePacket } from '../../repoSemanticGraph';
 
-interface SqliteStatement {
-  run(...bindings: unknown[]): { changes: number | bigint };
-  get(...bindings: unknown[]): unknown;
-  all(...bindings: unknown[]): unknown[];
-}
 
-interface SqliteDatabase {
-  exec(sql: string): void;
-  prepare(sql: string): SqliteStatement;
-  close(): void;
-}
-
-const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as {
-  DatabaseSync: new (path: string) => SqliteDatabase;
-};
 const livingMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
   'utf8',
@@ -32,32 +19,9 @@ const matchingMigration = readFileSync(
   'utf8',
 );
 
-function d1(sqlite: SqliteDatabase): D1Database {
-  return {
-    prepare(query: string) {
-      let bindings: unknown[] = [];
-      const statement = {
-        bind(...values: unknown[]) {
-          bindings = values;
-          return statement;
-        },
-        async run() {
-          const result = sqlite.prepare(query).run(...bindings);
-          return { success: true, results: [], meta: { changes: Number(result.changes) } };
-        },
-        async first<T>() {
-          return (sqlite.prepare(query).get(...bindings) as T | undefined) ?? null;
-        },
-        async all<T>() {
-          return { success: true, results: sqlite.prepare(query).all(...bindings) as T[], meta: {} };
-        },
-      };
-      return statement;
-    },
-  } as unknown as D1Database;
-}
 
-function seedCandidateEvidence(sqlite: SqliteDatabase): void {
+
+function seedCandidateEvidence(sqlite: BetterSqliteDb): void {
   const now = '2026-06-14T08:00:00.000Z';
   sqlite.exec(`
     INSERT INTO people (
@@ -152,7 +116,7 @@ function seedCandidateEvidence(sqlite: SqliteDatabase): void {
   `);
 }
 
-function seedPacketWithMissingDemandSpans(sqlite: SqliteDatabase): void {
+function seedPacketWithMissingDemandSpans(sqlite: BetterSqliteDb): void {
   const packet: RepoChallengePacket = {
     schemaVersion: '1.0.0',
     policyVersion: 'repo-challenge-v1',
@@ -253,7 +217,7 @@ function seedPacketWithMissingDemandSpans(sqlite: SqliteDatabase): void {
   );
 }
 
-function seedIneligiblePacket(sqlite: SqliteDatabase): void {
+function seedIneligiblePacket(sqlite: BetterSqliteDb): void {
   const packet: RepoChallengePacket = {
     schemaVersion: '1.0.0',
     policyVersion: 'repo-challenge-v1',
@@ -372,10 +336,10 @@ function seedIneligiblePacket(sqlite: SqliteDatabase): void {
 }
 
 describe('matchCandidateToReviewChallenge', () => {
-  let sqlite: SqliteDatabase;
+  let sqlite: BetterSqliteDb;
 
   beforeEach(() => {
-    sqlite = new DatabaseSync(':memory:');
+    sqlite = new Database(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
       CREATE TABLE candidates (id TEXT PRIMARY KEY);
@@ -389,7 +353,7 @@ describe('matchCandidateToReviewChallenge', () => {
   afterEach(() => sqlite.close());
 
   it('records NEEDS_MORE_EVIDENCE instead of selecting a generic fallback PR', async () => {
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createMockD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
     expect(result.repoId).toBeUndefined();
@@ -405,7 +369,7 @@ describe('matchCandidateToReviewChallenge', () => {
     seedCandidateEvidence(sqlite);
     seedPacketWithMissingDemandSpans(sqlite);
 
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createMockD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(result.repoId).toBeUndefined();
@@ -429,7 +393,7 @@ describe('matchCandidateToReviewChallenge', () => {
     seedCandidateEvidence(sqlite);
     seedIneligiblePacket(sqlite);
 
-    const result = await matchCandidateToReviewChallenge(d1(sqlite), 'candidate-1');
+    const result = await matchCandidateToReviewChallenge(createMockD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(result.repoId).toBeUndefined();

@@ -42,6 +42,8 @@ import { waitlist } from './routes/waitlist';
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
+// Projection rebuild management (living context graph)
+import { projectionRebuild } from './routes/internal/projectionRebuild';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
@@ -184,6 +186,9 @@ app.route('/internal/calibrate', calibrate);
 
 // Internal: Neo4j health check (no auth — dev/ops smoke test)
 app.route('/api/v1/internal', neo4jHealth);
+
+// Internal: Projection rebuild (admin-token auth)
+app.route('/api/v1/internal', projectionRebuild);
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (c) =>
