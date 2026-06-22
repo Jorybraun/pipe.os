@@ -7,6 +7,8 @@ import {
   ingestMeetingTranscriptToLivingContext,
   parseStoredMeetingTranscript,
 } from '../meetingTranscript';
+import { ensureCandidateLivingContext } from '../compatibility';
+import { loadCandidateLivingContext, loadContactLivingContext } from '../readModel';
 
 
 
@@ -37,7 +39,14 @@ describe('meeting transcript living-context ingestion', () => {
     sqlite = new Database(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
-      CREATE TABLE candidates (id TEXT PRIMARY KEY);
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
       CREATE TABLE contacts (
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL,
@@ -533,6 +542,141 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'artifact_versions')).toBe(2);
     expect(count(sqlite, 'people')).toBe(1);
     expect(count(sqlite, 'workspace_people')).toBe(1);
+  });
+
+  it('keeps meeting evidence on the same person graph when a contact later joins the talent pool', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Can you describe a system you owned?',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I implemented temporal shard knitting for order replay.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.96,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented a mechanism for',
+        narrative: 'Implemented temporal shard knitting for order replay.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'temporal shard knitting' },
+        confidence: 0.91,
+        concepts: [{
+          surface: 'Temporal shard knitting',
+          relationship: 'mechanism used for order replay',
+          weight: 0.87,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.9,
+        }],
+      }],
+      extractorVersion: 'open-meeting-test-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-joined-pool',
+      'workspace-1',
+      null,
+      'Ada Candidate',
+      'ADA@example.com',
+      'talent_pool',
+    );
+    const candidateIdentity = await ensureCandidateLivingContext(db, 'candidate-joined-pool');
+
+    const contactGraph = await loadContactLivingContext(db, 'contact-1');
+    const candidateGraph = await loadCandidateLivingContext(db, 'candidate-joined-pool');
+
+    expect(candidateIdentity).not.toBeNull();
+    expect(contactGraph).not.toBeNull();
+    expect(candidateGraph).not.toBeNull();
+    expect(candidateGraph?.person.personId).toBe(contactGraph?.person.personId);
+    expect(candidateGraph?.person.workspacePersonId).toBe(contactGraph?.person.workspacePersonId);
+    expect(candidateGraph?.person.applicationId).toBe(candidateIdentity?.applicationId);
+    expect(candidateGraph?.person.pipelineId).toBeNull();
+    expect(candidateGraph?.person.applicationStatus).toBe('talent_pool');
+    expect(candidateGraph?.person.roles.map((role) => role.roleType).sort()).toEqual([
+      'candidate',
+      'candidate',
+    ]);
+
+    expect(candidateGraph?.summary).toMatchObject({
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 2,
+      assertionCount: 1,
+      signalCount: 1,
+      sourceSpanCount: 2,
+    });
+    expect(candidateGraph?.interactions).toHaveLength(1);
+    expect(candidateGraph?.interactions[0]).toMatchObject({
+      interactionType: 'video_meeting',
+      externalReference: 'meeting-1',
+    });
+    expect(candidateGraph?.interactions[0]?.assertionIds).toHaveLength(1);
+    expect(candidateGraph?.interactions[0]?.signalKeys).toEqual(['term:temporal-shard-knitting']);
+
+    expect(candidateGraph?.assertions[0]).toMatchObject({
+      predicate: 'implemented a mechanism for',
+      narrative: 'Implemented temporal shard knitting for order replay.',
+    });
+    expect(candidateGraph?.assertions[0]?.sources.map((source) => source.exactText)).toEqual([
+      'I implemented temporal shard knitting for order replay.',
+    ]);
+    expect(candidateGraph?.signals[0]).toMatchObject({
+      signalKey: 'term:temporal-shard-knitting',
+      conversationScore: 0.9,
+      totalScore: 0.9,
+      evidenceCount: 1,
+      sourceDiversity: 1,
+    });
+    expect(candidateGraph?.signals[0]?.evidence[0]?.sources[0]?.exactText).toBe(
+      'I implemented temporal shard knitting for order replay.',
+    );
+    expect(candidateGraph?.contextRecords.map((record) => record.recordType).sort()).toEqual([
+      'meeting_transcript',
+      'meeting_transcript_assertion',
+    ]);
+
+    expect(count(sqlite, 'people')).toBe(1);
+    expect(count(sqlite, 'workspace_people')).toBe(1);
+    expect(count(sqlite, 'applications')).toBe(1);
+    expect(count(sqlite, 'interactions')).toBe(1);
+    expect(count(sqlite, 'semantic_assertions')).toBe(1);
+    expect(count(sqlite, 'signal_evidence')).toBe(1);
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT external_ids_json FROM people WHERE id = ?`,
+    ).get(candidateIdentity?.personId)!.external_ids_json as string)).toEqual({
+      legacyCandidateId: 'candidate-joined-pool',
+      legacyContactId: 'contact-1',
+    });
+    expect(JSON.parse(sqlite.prepare(
+      `SELECT context_json FROM workspace_people WHERE id = ?`,
+    ).get(candidateIdentity?.workspacePersonId)!.context_json as string)).toMatchObject({
+      contactId: 'contact-1',
+      source: 'legacy_candidate',
+      sources: ['legacy_candidate', 'legacy_contact'],
+    });
   });
 
   it('removes stale derived meaning while preserving the immutable transcript', async () => {

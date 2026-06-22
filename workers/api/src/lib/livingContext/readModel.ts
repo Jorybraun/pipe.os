@@ -583,7 +583,20 @@ async function loadLivingContextByWorkspacePerson(
         LIMIT ?2`,
     ).bind(identity.workspace_person_id, INTERACTION_LIMIT).all<InteractionRow>(),
     db.prepare(
-      `SELECT a.id, a.interaction_id, a.artifact_type, a.logical_key,
+      `SELECT a.id,
+              COALESCE(
+                a.interaction_id,
+                (
+                  SELECT ai.interaction_id
+                    FROM artifact_interactions ai
+                    JOIN interactions i ON i.id = ai.interaction_id
+                   WHERE ai.artifact_id = a.id
+                     AND i.workspace_person_id = ?1
+                   ORDER BY ai.created_at, ai.interaction_id
+                   LIMIT 1
+                )
+              ) AS interaction_id,
+              a.artifact_type, a.logical_key,
               a.metadata_json, a.created_at, a.updated_at,
               av.id AS latest_version_id,
               av.version_number AS latest_version_number,
@@ -601,6 +614,13 @@ async function loadLivingContextByWorkspacePerson(
               LIMIT 1
            )
         WHERE a.workspace_person_id = ?1
+           OR EXISTS (
+             SELECT 1
+               FROM artifact_interactions ai
+               JOIN interactions i ON i.id = ai.interaction_id
+              WHERE ai.artifact_id = a.id
+                AND i.workspace_person_id = ?1
+           )
         ORDER BY a.created_at DESC, a.id
         LIMIT ?2`,
     ).bind(identity.workspace_person_id, ARTIFACT_LIMIT).all<ArtifactRow>(),
@@ -629,7 +649,16 @@ async function loadLivingContextByWorkspacePerson(
          FROM source_spans ss
          JOIN artifact_versions av ON av.id = ss.artifact_version_id
          JOIN artifacts a ON a.id = av.artifact_id
-        WHERE a.workspace_person_id = ?1
+        WHERE (
+            a.workspace_person_id = ?1
+            OR EXISTS (
+              SELECT 1
+                FROM artifact_interactions ai
+                JOIN interactions i ON i.id = ai.interaction_id
+               WHERE ai.artifact_id = a.id
+                 AND i.workspace_person_id = ?1
+            )
+          )
           AND av.version_number = (
             SELECT MAX(latest.version_number)
               FROM artifact_versions latest
@@ -707,8 +736,26 @@ async function loadLivingContextByWorkspacePerson(
               interaction_id, application_id, episode_id, assertion_id,
               record_type, predicate, narrative, qualifiers_json, confidence,
               polarity, extraction_version, observed_at
-         FROM context_records
-        WHERE workspace_person_id = ?1
+         FROM context_records cr
+        WHERE cr.workspace_person_id = ?1
+           OR EXISTS (
+             SELECT 1
+               FROM context_record_source_refs crsr
+               JOIN source_spans ss ON ss.id = crsr.source_span_id
+               JOIN artifact_versions av ON av.id = ss.artifact_version_id
+               JOIN artifacts a ON a.id = av.artifact_id
+              WHERE crsr.context_record_id = cr.id
+                AND (
+                  a.workspace_person_id = ?1
+                  OR EXISTS (
+                    SELECT 1
+                      FROM artifact_interactions ai
+                      JOIN interactions i ON i.id = ai.interaction_id
+                     WHERE ai.artifact_id = a.id
+                       AND i.workspace_person_id = ?1
+                  )
+                )
+           )
         ORDER BY COALESCE(observed_at, created_at) DESC, id
         LIMIT ?2`,
     ).bind(identity.workspace_person_id, CONTEXT_RECORD_LIMIT).all<ContextRecordRow>(),
@@ -745,6 +792,24 @@ async function loadLivingContextByWorkspacePerson(
          LEFT JOIN artifact_versions av ON av.id = ss.artifact_version_id
          LEFT JOIN artifacts a ON a.id = av.artifact_id
         WHERE cr.workspace_person_id = ?1
+           OR EXISTS (
+             SELECT 1
+               FROM context_record_source_refs scoped_crsr
+               JOIN source_spans scoped_ss ON scoped_ss.id = scoped_crsr.source_span_id
+               JOIN artifact_versions scoped_av ON scoped_av.id = scoped_ss.artifact_version_id
+               JOIN artifacts scoped_a ON scoped_a.id = scoped_av.artifact_id
+              WHERE scoped_crsr.context_record_id = cr.id
+                AND (
+                  scoped_a.workspace_person_id = ?1
+                  OR EXISTS (
+                    SELECT 1
+                      FROM artifact_interactions scoped_ai
+                      JOIN interactions scoped_i ON scoped_i.id = scoped_ai.interaction_id
+                     WHERE scoped_ai.artifact_id = scoped_a.id
+                       AND scoped_i.workspace_person_id = ?1
+                  )
+                )
+           )
         ORDER BY crsr.context_record_id, ss.char_start, ss.timestamp_start_ms, crsr.source_ref_type, crsr.source_ref_id
         LIMIT ?2`,
     ).bind(identity.workspace_person_id, SOURCE_SPAN_LIMIT).all<ContextRecordSourceRow>(),
@@ -755,6 +820,24 @@ async function loadLivingContextByWorkspacePerson(
          FROM context_record_entities cre
          JOIN context_records cr ON cr.id = cre.context_record_id
         WHERE cr.workspace_person_id = ?1
+           OR EXISTS (
+             SELECT 1
+               FROM context_record_source_refs crsr
+               JOIN source_spans ss ON ss.id = crsr.source_span_id
+               JOIN artifact_versions av ON av.id = ss.artifact_version_id
+               JOIN artifacts a ON a.id = av.artifact_id
+              WHERE crsr.context_record_id = cr.id
+                AND (
+                  a.workspace_person_id = ?1
+                  OR EXISTS (
+                    SELECT 1
+                      FROM artifact_interactions ai
+                      JOIN interactions i ON i.id = ai.interaction_id
+                     WHERE ai.artifact_id = a.id
+                       AND i.workspace_person_id = ?1
+                  )
+                )
+           )
         ORDER BY cre.context_record_id, cre.relationship, cre.entity_type, cre.entity_id`,
     ).bind(identity.workspace_person_id).all<ContextRecordEntityRow>(),
     db.prepare(
@@ -769,6 +852,24 @@ async function loadLivingContextByWorkspacePerson(
          JOIN context_records cr ON cr.id = crc.context_record_id
          JOIN concepts c ON c.id = crc.concept_id
         WHERE cr.workspace_person_id = ?1
+           OR EXISTS (
+             SELECT 1
+               FROM context_record_source_refs crsr
+               JOIN source_spans ss ON ss.id = crsr.source_span_id
+               JOIN artifact_versions av ON av.id = ss.artifact_version_id
+               JOIN artifacts a ON a.id = av.artifact_id
+              WHERE crsr.context_record_id = cr.id
+                AND (
+                  a.workspace_person_id = ?1
+                  OR EXISTS (
+                    SELECT 1
+                      FROM artifact_interactions ai
+                      JOIN interactions i ON i.id = ai.interaction_id
+                     WHERE ai.artifact_id = a.id
+                       AND i.workspace_person_id = ?1
+                  )
+                )
+           )
         ORDER BY crc.context_record_id, crc.weight DESC, c.label`,
     ).bind(identity.workspace_person_id).all<ContextRecordConceptRow>(),
     db.prepare(
