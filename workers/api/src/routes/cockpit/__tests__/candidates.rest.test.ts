@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
+import { Hono } from 'hono';
 import { afterEach, describe, it, expect } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import { LivingContextStore } from '../../../lib/livingContext/persistence';
@@ -18,7 +19,9 @@ import {
   normalizeCandidateEmail,
   parseStandaloneReviewSubmissionSummary,
   TALENT_POOL_MEMBERSHIP_SCHEMA_BLOCKER,
+  candidateOps,
 } from '../candidates';
+import type { Env } from '../../../types';
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
@@ -374,6 +377,272 @@ describe('Standalone CODE_REVIEW match summary', () => {
       provenanceComplete: true,
       alignedDemandCount: 4,
       stretchCount: 2,
+    }]);
+  });
+});
+
+function createStandaloneReviewProfileApp() {
+  const rankedResults = [{
+    rank: 1,
+    recallRank: 2,
+    challengeId: 'packet-source-backed',
+    repoId: '7',
+    prNumber: 42,
+    score: 0.82,
+    alignedDemandCount: 2,
+    stretchCount: 1,
+    stretchDemandWeightRatio: 0.12,
+    provenanceComplete: true,
+    eligible: true,
+    alignments: [{
+      atomId: 'candidate-atom-kafka',
+      demandId: 'repo-demand-retry',
+      purpose: 'validation',
+      pairScore: 0.91,
+      sharedConcepts: ['term:kafka-order-events'],
+      stretch: {
+        atomConcept: 'term:kafka-order-events',
+        demandConcept: 'term:distributed-order-retry',
+        dimension: 'mechanism',
+      },
+      candidateSourceRefs: [{
+        artifactId: 'resume-artifact',
+        artifactVersion: 'v1',
+        contentHash: 'candidate-hash',
+        startOffset: 14,
+        endOffset: 88,
+        locator: 'resume line 7',
+        exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+      }],
+      challengeSourceRefs: [{
+        artifactId: 'repo-artifact',
+        artifactVersion: 'commit-abc',
+        contentHash: 'repo-hash',
+        startOffset: 120,
+        endOffset: 210,
+        locator: 'src/orders/retry.ts:18',
+        exactText: 'Add idempotent retry handling around order event publication.',
+      }],
+    }],
+    rejectionReasons: ['Candidate evidence does not prove partition rebalancing ownership.'],
+  }];
+  const excludedPackets = [{
+    id: 'packet-missing-span',
+    repoId: '9',
+    prNumber: 88,
+    reason: 'MISSING_DEMAND_SOURCE_SPANS',
+    demandIds: ['demand-without-span'],
+    missingSourceSpanIds: ['repo-span-missing'],
+    gateFailures: [],
+    qualityScore: null,
+  }];
+
+  const db = {
+    prepare(sql: string) {
+      const normalized = sql.replace(/\s+/g, ' ');
+      return {
+        bind() {
+          return {
+            async first() {
+              if (normalized.includes('FROM candidates c')
+                && normalized.includes('SELECT c.id, c.name, c.email')) {
+                return {
+                  id: 'candidate-1',
+                  name: 'Ada Candidate',
+                  email: 'ada@example.com',
+                  status: 'INVITED',
+                  pipeline_id: null,
+                  current_stage_id: null,
+                  resume_s3_key: null,
+                  phone_number: null,
+                  invite_token: 'invite-1',
+                  skills: null,
+                  years_of_experience: null,
+                  current_role: null,
+                  education: null,
+                  created_at: '2026-06-22T00:00:00.000Z',
+                  updated_at: '2026-06-22T00:00:00.000Z',
+                };
+              }
+              if (normalized.includes('FROM role_contexts')) return null;
+              if (normalized.includes('FROM candidate_ingestion')) return null;
+              if (normalized.includes('FROM enrichment_jobs')) return null;
+              if (normalized.includes('FROM scheduled_interviews')
+                && normalized.includes("interview_type = 'CODE_REVIEW'")) {
+                return {
+                  id: 'interview-1',
+                  status: 'MATCHED',
+                  matched_repo_id: null,
+                  github_repo_url: null,
+                  github_pr_number: null,
+                  submission_json: JSON.stringify({
+                    verdict: 'request_changes',
+                    summary: 'Main risk is retry idempotency around duplicate order events.',
+                    annotations: [{
+                      file: 'src/orders/retry.ts',
+                      line: 18,
+                      severity: 'major',
+                      comment: 'This retry path can publish the same order event twice.',
+                    }],
+                  }),
+                  completed_at: '2026-06-22T01:00:00.000Z',
+                };
+              }
+              if (normalized.includes('FROM match_runs')) {
+                return {
+                  id: 'match-run-1',
+                  status: 'MATCHED',
+                  recalled_packets_json: JSON.stringify(['packet-source-backed', 'packet-missing-span']),
+                  excluded_packets_json: JSON.stringify(excludedPackets),
+                  ranked_results_json: JSON.stringify(rankedResults),
+                  selected_packet_id: 'packet-source-backed',
+                };
+              }
+              if (normalized.includes('FROM qualified_repos')) {
+                return {
+                  full_name: 'pipe/source-backed-orders',
+                  github_url: 'https://github.com/pipe/source-backed-orders',
+                };
+              }
+              if (normalized.includes('FROM repo_sample_prs')) {
+                return {
+                  title: 'Add Kafka-backed order retry handling',
+                  pr_url: 'https://github.com/pipe/source-backed-orders/pull/42',
+                };
+              }
+              return null;
+            },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
+          };
+        },
+      };
+    },
+  } as unknown as Env['DB'];
+
+  const app = new Hono<{ Bindings: Env }>();
+  app.use('*', async (c, next) => {
+    // @ts-expect-error route test overrides Worker bindings.
+    c.env = {
+      DB: db,
+      CLERK_SECRET_KEY: 'test',
+      DEV_AUTH_BYPASS: 'true',
+      DEV_BYPASS_USER_ID: 'test-user',
+    };
+    await next();
+  });
+  app.route('/', candidateOps);
+  return app;
+}
+
+describe('GET /:candidateId standalone CODE_REVIEW context', () => {
+  it('assembles recruiter-visible match explanation from persisted match run rows', async () => {
+    const response = await createStandaloneReviewProfileApp().request('/candidate-1');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      standaloneReviewMatch: {
+        matchStatus: string;
+        repoName: string | null;
+        repoUrl: string | null;
+        prNumber: number | null;
+        prUrl: string | null;
+        prTitle: string | null;
+        score: number | null;
+        summary: string;
+        evidence: Array<{
+          atomId: string;
+          demandId: string;
+          sharedConcepts: string[];
+          candidateSourceRefs: Array<{ locator?: string; exactText?: string }>;
+          challengeSourceRefs: Array<{ locator?: string; exactText?: string }>;
+        }>;
+        gaps: string[];
+        diagnostics: {
+          recalledPacketIds: string[];
+          excludedPackets: Array<{
+            id: string;
+            reason: string;
+            missingSourceSpanIds: string[];
+          }>;
+          evaluatedChallenges: Array<{
+            challengeId: string;
+            eligible: boolean;
+            stretchCount: number;
+            provenanceComplete: boolean;
+          }>;
+        };
+        submitted: boolean;
+        submission: {
+          verdict: string | null;
+          summary: string | null;
+          annotationCount: number;
+        } | null;
+      };
+    };
+
+    expect(body.standaloneReviewMatch).toMatchObject({
+      matchStatus: 'MATCHED',
+      repoName: 'pipe/source-backed-orders',
+      repoUrl: 'https://github.com/pipe/source-backed-orders',
+      prNumber: 42,
+      prUrl: 'https://github.com/pipe/source-backed-orders/pull/42',
+      prTitle: 'Add Kafka-backed order retry handling',
+      score: 0.82,
+      summary: 'Matched 2 source-backed demands (1 stretch).',
+      submitted: true,
+      submission: {
+        verdict: 'request_changes',
+        summary: 'Main risk is retry idempotency around duplicate order events.',
+        annotationCount: 1,
+      },
+    });
+    expect(body.standaloneReviewMatch.evidence).toHaveLength(1);
+    expect(body.standaloneReviewMatch.evidence[0]).toMatchObject({
+      atomId: 'candidate-atom-kafka',
+      demandId: 'repo-demand-retry',
+      sharedConcepts: ['term:kafka-order-events'],
+      candidateSourceRefs: [{
+        locator: 'resume line 7',
+        exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+      }],
+      challengeSourceRefs: [{
+        locator: 'src/orders/retry.ts:18',
+        exactText: 'Add idempotent retry handling around order event publication.',
+      }],
+    });
+    expect(body.standaloneReviewMatch.gaps).toEqual([
+      'Candidate evidence does not prove partition rebalancing ownership.',
+    ]);
+    expect(body.standaloneReviewMatch.diagnostics.recalledPacketIds).toEqual([
+      'packet-source-backed',
+      'packet-missing-span',
+    ]);
+    expect(body.standaloneReviewMatch.diagnostics.excludedPackets).toEqual([{
+      id: 'packet-missing-span',
+      repoId: '9',
+      prNumber: 88,
+      reason: 'MISSING_DEMAND_SOURCE_SPANS',
+      demandIds: ['demand-without-span'],
+      missingSourceSpanIds: ['repo-span-missing'],
+      gateFailures: [],
+      qualityScore: null,
+    }]);
+    expect(body.standaloneReviewMatch.diagnostics.evaluatedChallenges).toEqual([{
+      challengeId: 'packet-source-backed',
+      repoId: '7',
+      prNumber: 42,
+      recallRank: 2,
+      rank: 1,
+      eligible: true,
+      rejectionReasons: ['Candidate evidence does not prove partition rebalancing ownership.'],
+      provenanceComplete: true,
+      alignedDemandCount: 2,
+      stretchCount: 1,
     }]);
   });
 });

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — Match Explanation Visualization Proof
 
 - Added a focused `LivingContextGraph` component regression proving standalone CODE_REVIEW match explanations render candidate source snippets, PR demand snippets, evidence gaps, recalled packets, excluded packets, and stretch diagnostics in recruiter-visible context.
+- Added a candidate profile route regression proving `GET /api/v1/candidates/:id` assembles standalone CODE_REVIEW match explanations from persisted `match_runs`, scheduled interview, repo, and PR rows without dropping source refs, gaps, diagnostics, or review submission summaries.
 
 ### Added — Tree Projection UI Over Semantic Hypergraph
 
