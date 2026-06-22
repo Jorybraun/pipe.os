@@ -170,6 +170,15 @@ interface StandaloneReviewRankedResult {
   rejectionReasons: string[];
 }
 
+interface StandaloneReviewPacketMetadata {
+  repoId: number | null;
+  repoName: string | null;
+  repoUrl: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  prTitle: string | null;
+}
+
 export type StandaloneReviewExclusionReason =
   | 'DEMAND_WITHOUT_SOURCE_SPANS'
   | 'MISSING_DEMAND_SOURCE_SPANS'
@@ -386,6 +395,34 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
       rejectionReasons: asStringArray(item.rejectionReasons),
     }];
   });
+}
+
+function parseStandaloneReviewPacketMetadata(
+  row: { repo_id: number | null; pr_number: number | null; packet_json: string | null } | null,
+): StandaloneReviewPacketMetadata | null {
+  if (!row) return null;
+  let parsed: unknown;
+  try {
+    parsed = row.packet_json ? JSON.parse(row.packet_json) : null;
+  } catch {
+    parsed = null;
+  }
+
+  const packet = isRecord(parsed) ? parsed : {};
+  const repository = isRecord(packet.repository) ? packet.repository : {};
+  const pullRequest = isRecord(packet.pullRequest) ? packet.pullRequest : {};
+  const repoOwner = asOptionalString(repository.owner);
+  const repoName = asOptionalString(repository.name);
+  const packetPrNumber = typeof pullRequest.number === 'number' ? pullRequest.number : null;
+
+  return {
+    repoId: typeof row.repo_id === 'number' ? row.repo_id : null,
+    repoName: repoOwner && repoName ? `${repoOwner}/${repoName}` : null,
+    repoUrl: asOptionalString(repository.canonicalUrl),
+    prNumber: typeof row.pr_number === 'number' ? row.pr_number : packetPrNumber,
+    prUrl: asOptionalString(pullRequest.url),
+    prTitle: asOptionalString(pullRequest.title),
+  };
 }
 
 function parseStandaloneReviewRecalledPacketIds(value: string | null): string[] {
@@ -1585,30 +1622,48 @@ candidateOps.get('/:candidateId', async (c) => {
         ?? rankedResults.find((result) => result.eligible)
         ?? rankedResults[0]
         ?? null;
+      const selectedPacketId = latestRun?.selected_packet_id ?? selectedResult?.challengeId ?? null;
+      const selectedPacketMetadata = selectedPacketId
+        ? parseStandaloneReviewPacketMetadata(await db.prepare(
+          `SELECT repo_id, pr_number, packet_json
+             FROM review_challenge_packets
+            WHERE id = ?1
+            LIMIT 1`,
+        ).bind(selectedPacketId).first<{
+          repo_id: number | null;
+          pr_number: number | null;
+          packet_json: string | null;
+        }>())
+        : null;
       const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
         || latestRun?.status === 'NEEDS_MORE_EVIDENCE'
         || latestRun?.status === 'NO_ROLE_SAFE_CHALLENGE'
         ? latestRun.status
         : 'PENDING_INTAKE';
       const repoId = standaloneInterview.matched_repo_id
+        ?? selectedPacketMetadata?.repoId
         ?? (selectedResult ? Number(selectedResult.repoId) : null);
-      let repoName: string | null = null;
-      let repoUrl = standaloneInterview.github_repo_url;
+      let repoName: string | null = selectedPacketMetadata?.repoName ?? null;
+      let repoUrl = standaloneInterview.github_repo_url ?? selectedPacketMetadata?.repoUrl ?? null;
       if (repoId !== null && Number.isFinite(repoId)) {
         const repoRow = await db.prepare(
           `SELECT full_name, github_url FROM qualified_repos WHERE id = ?1`,
         ).bind(repoId).first<{ full_name: string | null; github_url: string | null }>();
-        repoName = repoRow?.full_name ?? null;
+        repoName = repoRow?.full_name ?? repoName;
         repoUrl = repoUrl ?? repoRow?.github_url ?? null;
       }
-      const prNumber = standaloneInterview.github_pr_number ?? selectedResult?.prNumber ?? null;
-      let prTitle: string | null = null;
-      let prUrl: string | null = repoUrl && prNumber ? `${repoUrl}/pull/${prNumber}` : null;
+      const prNumber = standaloneInterview.github_pr_number
+        ?? selectedPacketMetadata?.prNumber
+        ?? selectedResult?.prNumber
+        ?? null;
+      let prTitle: string | null = selectedPacketMetadata?.prTitle ?? null;
+      let prUrl: string | null = selectedPacketMetadata?.prUrl
+        ?? (repoUrl && prNumber ? `${repoUrl}/pull/${prNumber}` : null);
       if (repoId !== null && Number.isFinite(repoId) && prNumber !== null) {
         const prRow = await db.prepare(
           `SELECT title, pr_url FROM repo_sample_prs WHERE repo_id = ?1 AND pr_number = ?2`,
         ).bind(repoId, prNumber).first<{ title: string | null; pr_url: string | null }>();
-        prTitle = prRow?.title ?? null;
+        prTitle = prRow?.title ?? prTitle;
         prUrl = prRow?.pr_url ?? prUrl;
       }
       const summary = buildStandaloneReviewMatchSummary(matchStatus, selectedResult, diagnostics);

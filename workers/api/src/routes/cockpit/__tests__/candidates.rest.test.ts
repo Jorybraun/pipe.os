@@ -383,7 +383,31 @@ describe('Standalone CODE_REVIEW match summary', () => {
   });
 });
 
-function createStandaloneReviewProfileApp() {
+function createStandaloneReviewProfileApp(options: {
+  repoSamplePr?: { title: string | null; pr_url: string | null } | null;
+  challengePacket?: Record<string, unknown> | null;
+} = {}) {
+  const repoSamplePr = options.repoSamplePr === undefined
+    ? {
+        title: 'Add Kafka-backed order retry handling',
+        pr_url: 'https://github.com/pipe/source-backed-orders/pull/42',
+      }
+    : options.repoSamplePr;
+  const challengePacket = options.challengePacket === undefined
+    ? {
+        repository: {
+          provider: 'github',
+          owner: 'pipe',
+          name: 'source-backed-orders',
+          canonicalUrl: 'https://github.com/pipe/source-backed-orders',
+        },
+        pullRequest: {
+          number: 42,
+          url: 'https://github.com/pipe/source-backed-orders/pull/42',
+          title: 'Backfilled packet PR title',
+        },
+      }
+    : options.challengePacket;
   const rankedResults = [{
     rank: 1,
     recallRank: 2,
@@ -506,6 +530,14 @@ function createStandaloneReviewProfileApp() {
                   selected_packet_id: 'packet-source-backed',
                 };
               }
+              if (normalized.includes('FROM review_challenge_packets')
+                && normalized.includes('packet_json')) {
+                return {
+                  repo_id: 7,
+                  pr_number: 42,
+                  packet_json: challengePacket ? JSON.stringify(challengePacket) : null,
+                };
+              }
               if (normalized.includes('FROM qualified_repos')) {
                 return {
                   full_name: 'pipe/source-backed-orders',
@@ -513,10 +545,7 @@ function createStandaloneReviewProfileApp() {
                 };
               }
               if (normalized.includes('FROM repo_sample_prs')) {
-                return {
-                  title: 'Add Kafka-backed order retry handling',
-                  pr_url: 'https://github.com/pipe/source-backed-orders/pull/42',
-                };
+                return repoSamplePr;
               }
               return null;
             },
@@ -709,6 +738,57 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       alignedDemandCount: 2,
       stretchCount: 1,
     }]);
+  });
+
+  it('falls back to selected challenge packet metadata when no sample PR row exists', async () => {
+    const response = await createStandaloneReviewProfileApp({
+      repoSamplePr: null,
+      challengePacket: {
+        repository: {
+          provider: 'github',
+          owner: 'pipe',
+          name: 'source-backed-orders',
+          canonicalUrl: 'https://github.com/pipe/source-backed-orders',
+        },
+        pullRequest: {
+          number: 42,
+          url: 'https://github.com/pipe/source-backed-orders/pull/42',
+          title: 'Backfilled packet PR title',
+        },
+      },
+    }).request('/candidate-1');
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      standaloneReviewMatch: {
+        repoName: string | null;
+        repoUrl: string | null;
+        prNumber: number | null;
+        prUrl: string | null;
+        prTitle: string | null;
+        evidence: Array<{
+          candidateSourceRefs: Array<{ sourceRefId?: string; exactText?: string }>;
+          challengeSourceRefs: Array<{ sourceRefType?: string; sourceRefId?: string; exactText?: string }>;
+        }>;
+      };
+    };
+
+    expect(body.standaloneReviewMatch).toMatchObject({
+      repoName: 'pipe/source-backed-orders',
+      repoUrl: 'https://github.com/pipe/source-backed-orders',
+      prNumber: 42,
+      prUrl: 'https://github.com/pipe/source-backed-orders/pull/42',
+      prTitle: 'Backfilled packet PR title',
+    });
+    expect(body.standaloneReviewMatch.evidence[0].candidateSourceRefs[0]).toMatchObject({
+      sourceRefId: 'candidate-span-kafka',
+      exactText: 'Built Kafka order event retries for an ecommerce checkout platform.',
+    });
+    expect(body.standaloneReviewMatch.evidence[0].challengeSourceRefs[0]).toMatchObject({
+      sourceRefType: 'repo_source_span',
+      sourceRefId: 'repo-span-retry',
+      exactText: 'Add idempotent retry handling around order event publication.',
+    });
   });
 });
 
