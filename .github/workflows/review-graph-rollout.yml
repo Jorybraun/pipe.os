@@ -118,7 +118,10 @@ jobs:
           if [ -n "$REVIEW_GRAPH_PR" ]; then
             args+=(--pr "$REVIEW_GRAPH_PR")
           fi
-          npx tsx scripts/backfillReviewChallengePackets.ts "${args[@]}" | tee review-graph-backfill.log
+          npx tsx scripts/backfillReviewChallengePackets.ts "${args[@]}" --json \
+            > review-graph-backfill.json \
+            2> >(tee review-graph-backfill.log >&2)
+          cat review-graph-backfill.json
 
       - name: Final review graph readiness
         if: always()
@@ -140,6 +143,7 @@ jobs:
             workers/api/review-graph-readiness-before.json
             workers/api/review-graph-readiness-after-migrations.json
             workers/api/review-graph-readiness-final.json
+            workers/api/review-graph-backfill.json
             workers/api/review-graph-backfill.log
           if-no-files-found: ignore
           retention-days: 14

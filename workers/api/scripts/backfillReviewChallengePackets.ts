@@ -78,6 +78,7 @@ export interface Options {
   dryRun: boolean;
   force: boolean;
   preflightGithub: boolean;
+  json?: boolean;
   batchSize: number;
   repoId?: number;
   repo?: string;
@@ -171,6 +172,20 @@ export interface Stats {
   errors: number;
 }
 
+export interface BackfillCliReport {
+  status: 'completed' | 'failed';
+  mode: 'dry-run' | 'write';
+  target: 'local' | 'remote';
+  filters: {
+    repoId: number | null;
+    repo: string | null;
+    prNumber: number | null;
+    force: boolean;
+  };
+  batchSize: number;
+  stats: Stats;
+}
+
 export interface BackfillReviewChallengePacketsInput {
   client: QueryClient;
   db?: D1Database;
@@ -196,6 +211,7 @@ function usage(): string {
     '  --repo OWNER/NAME     Restrict to one qualified_repos.full_name',
     '  --pr N                Restrict to one pull request number',
     '  --force               Rebuild rows that already have a v1 packet',
+    '  --json                Print machine-readable JSON to stdout',
     '  --help, -h            Show this help',
   ].join('\n');
 }
@@ -231,6 +247,8 @@ function parseArgs(argv: string[]): Options {
       options.dryRun = true;
     } else if (arg === '--preflight-github') {
       options.preflightGithub = true;
+    } else if (arg === '--json') {
+      options.json = true;
     } else if (arg === '--local') {
       options.target = 'local';
     } else if (arg === '--remote') {
@@ -840,6 +858,22 @@ function printSummary(stats: Stats, options: Options): void {
   console.log(`  errors:           ${stats.errors}`);
 }
 
+export function buildBackfillCliReport(stats: Stats, options: Options): BackfillCliReport {
+  return {
+    status: stats.errors > 0 ? 'failed' : 'completed',
+    mode: options.dryRun ? 'dry-run' : 'write',
+    target: options.target,
+    filters: {
+      repoId: options.repoId ?? null,
+      repo: options.repo ?? null,
+      prNumber: options.prNumber ?? null,
+      force: options.force,
+    },
+    batchSize: options.batchSize,
+    stats,
+  };
+}
+
 function errorCode(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || !('code' in value)) return null;
   const code = (value as { code?: unknown }).code;
@@ -1015,6 +1049,11 @@ async function run(options: Options): Promise<void> {
     const result = await checkGitHubApiConnectivity({
       token: process.env['GITHUB_TOKEN'],
     });
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+      return;
+    }
     console.log(`[challenge-backfill] github preflight ${result.ok ? 'ok' : 'failed'} ${result.endpoint}`);
     console.log(`  status:          ${result.status ?? 'unreachable'}`);
     console.log(`  message:         ${result.message}`);
@@ -1024,13 +1063,20 @@ async function run(options: Options): Promise<void> {
   }
 
   let localDatabase: LocalSqliteDatabase | undefined;
+  const progressLog: Pick<Console, 'log' | 'warn' | 'error'> = options.json
+    ? {
+        log: (...args: unknown[]) => console.error(...args),
+        warn: (...args: unknown[]) => console.error(...args),
+        error: (...args: unknown[]) => console.error(...args),
+      }
+    : console;
   const client: QueryClient = options.target === 'remote'
     ? new D1Client(loadD1Config())
     : (() => {
         const path = discoverLocalDatabase(options.databasePath);
         localDatabase = new DatabaseSync(path);
         localDatabase.exec('PRAGMA foreign_keys = ON');
-        console.log(`[challenge-backfill] target=local database=${path}`);
+        progressLog.log(`[challenge-backfill] target=local database=${path}`);
         return new LocalQueryClient(localDatabase);
       })();
   let stats: Stats;
@@ -1040,12 +1086,17 @@ async function run(options: Options): Promise<void> {
       db: d1DatabaseAdapter(client),
       options,
       token: process.env['GITHUB_TOKEN'],
+      log: progressLog,
     });
   } finally {
     localDatabase?.close();
   }
 
-  printSummary(stats, options);
+  if (options.json) {
+    console.log(JSON.stringify(buildBackfillCliReport(stats, options), null, 2));
+  } else {
+    printSummary(stats, options);
+  }
   if (stats.errors > 0) process.exitCode = 1;
 }
 

@@ -7,6 +7,7 @@ import type { GitHubDiffResult } from '../src/lib/fetchGitHubDiff';
 import type { ChallengePacket as RepoChallengePacket } from '../src/lib/repoSemanticGraph';
 import {
   backfillReviewChallengePackets,
+  buildBackfillCliReport,
   checkGitHubApiConnectivity,
   type Options,
   type PullRequestRefs,
@@ -725,6 +726,55 @@ describe('backfillReviewChallengePackets', () => {
         || ref.exact_text?.includes('retry order event')
       ),
     )).toBe(true);
+  });
+
+  it('builds a structured rollout report from backfill stats and filters', () => {
+    const options: Options = {
+      target: 'remote',
+      dryRun: true,
+      force: true,
+      preflightGithub: false,
+      json: true,
+      batchSize: 3,
+      repo: 'mui/base-ui',
+      prNumber: 973,
+    };
+
+    const report = buildBackfillCliReport({
+      selected: 3,
+      built: 2,
+      persisted: 0,
+      dryRun: 2,
+      ineligible: 1,
+      skippedExisting: 4,
+      skippedFetch: 1,
+      skippedNoHunks: 0,
+      errors: 0,
+    }, options);
+
+    expect(report).toEqual({
+      status: 'completed',
+      mode: 'dry-run',
+      target: 'remote',
+      filters: {
+        repoId: null,
+        repo: 'mui/base-ui',
+        prNumber: 973,
+        force: true,
+      },
+      batchSize: 3,
+      stats: {
+        selected: 3,
+        built: 2,
+        persisted: 0,
+        dryRun: 2,
+        ineligible: 1,
+        skippedExisting: 4,
+        skippedFetch: 1,
+        skippedNoHunks: 0,
+        errors: 0,
+      },
+    });
   });
 
   it('reports GitHub API preflight success with rate-limit visibility', async () => {
