@@ -265,6 +265,32 @@ async function requireContextSourceRef(
     }
     return;
   }
+  if (source.sourceRefType === 'repo_issue') {
+    const row = await db.prepare(
+      'SELECT id, body FROM repo_issues WHERE id = ?1',
+    ).bind(source.sourceRefId).first<{
+      id: number;
+      body: string | null;
+    }>();
+    if (!row) throw new Error(`repo issue ${source.sourceRefId} does not exist`);
+    const body = row.body?.trim() ?? '';
+    if (!body) {
+      throw new Error(`repo issue ${source.sourceRefId} body is required`);
+    }
+    if (source.exactText === null) {
+      throw new Error(`repo issue ${source.sourceRefId} exactText is required`);
+    }
+    if (source.exactText !== body) {
+      throw new Error(`repo issue ${source.sourceRefId} exactText does not match`);
+    }
+    if (source.contentHash === null) {
+      throw new Error(`repo issue ${source.sourceRefId} contentHash is required`);
+    }
+    if (source.contentHash !== await sha256(body)) {
+      throw new Error(`repo issue ${source.sourceRefId} contentHash does not match`);
+    }
+    return;
+  }
   if (source.sourceRefType === 'match_run') {
     await requireRow(
       db,

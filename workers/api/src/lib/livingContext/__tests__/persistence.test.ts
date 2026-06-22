@@ -17,6 +17,12 @@ const contextRecordMigrationSql = readFileSync(
 );
 const NOW = '2026-06-11T12:00:00.000Z';
 
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 
 
 describe('LivingContextStore', () => {
@@ -623,6 +629,95 @@ describe('LivingContextStore', () => {
     expect(sqlite.prepare('SELECT count(*) AS count FROM context_record_entities').get()).toEqual({
       count: 2,
     });
+  });
+
+  it('validates repo issue source refs against captured issue body text', async () => {
+    sqlite.exec(`
+      CREATE TABLE repo_issues (
+        id INTEGER PRIMARY KEY,
+        body TEXT
+      );
+    `);
+    const issueBody = 'Original GitHub issue body describing the implementation work.';
+    const contentHash = await sha256Hex(issueBody);
+    sqlite.prepare('INSERT INTO repo_issues (id, body) VALUES (?, ?)').run(501, issueBody);
+    sqlite.prepare('INSERT INTO repo_issues (id, body) VALUES (?, ?)').run(502, null);
+
+    const record = await store.upsertContextRecord({
+      ingestionKey: 'context-record:repo-issue:501',
+      scopeType: 'repo_snapshot',
+      scopeId: 'repo-snapshot-issue',
+      recordType: 'repo_implementation_issue',
+      predicate: 'defines implementation challenge',
+      narrative: 'Issue 501 defines a source-backed implementation challenge.',
+      sources: [{
+        sourceRefType: 'repo_issue',
+        sourceRefId: '501',
+        evidenceRole: 'source',
+        locator: { repoId: 10, issueNumber: 501 },
+        exactText: issueBody,
+        contentHash,
+      }],
+      entities: [{
+        entityType: 'repo_issue',
+        entityId: '501',
+        relationship: 'issue',
+        value: { issueNumber: 501 },
+      }],
+    });
+
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text, content_hash
+         FROM context_record_source_refs
+        WHERE context_record_id = ?`,
+    ).get(record.id)).toEqual({
+      source_ref_type: 'repo_issue',
+      source_ref_id: '501',
+      exact_text: issueBody,
+      content_hash: contentHash,
+    });
+
+    await expect(store.upsertContextRecord({
+      ingestionKey: 'context-record:repo-issue:mismatch',
+      scopeType: 'repo_snapshot',
+      scopeId: 'repo-snapshot-issue',
+      recordType: 'repo_implementation_issue',
+      narrative: 'Issue source evidence must match the captured issue body.',
+      sources: [{
+        sourceRefType: 'repo_issue',
+        sourceRefId: '501',
+        exactText: 'Edited issue body',
+        contentHash,
+      }],
+    })).rejects.toThrow('repo issue 501 exactText does not match');
+
+    await expect(store.upsertContextRecord({
+      ingestionKey: 'context-record:repo-issue:wrong-hash',
+      scopeType: 'repo_snapshot',
+      scopeId: 'repo-snapshot-issue',
+      recordType: 'repo_implementation_issue',
+      narrative: 'Issue source hash must match the captured issue body.',
+      sources: [{
+        sourceRefType: 'repo_issue',
+        sourceRefId: '501',
+        exactText: issueBody,
+        contentHash: 'sha256:not-the-body',
+      }],
+    })).rejects.toThrow('repo issue 501 contentHash does not match');
+
+    await expect(store.upsertContextRecord({
+      ingestionKey: 'context-record:repo-issue:no-body',
+      scopeType: 'repo_snapshot',
+      scopeId: 'repo-snapshot-issue',
+      recordType: 'repo_implementation_issue',
+      narrative: 'Issue source body is required.',
+      sources: [{
+        sourceRefType: 'repo_issue',
+        sourceRefId: '502',
+        exactText: '',
+        contentHash: await sha256Hex(''),
+      }],
+    })).rejects.toThrow('repo issue 502 body is required');
   });
 
   it('rejects repo source refs with mismatched immutable text or hash', async () => {
