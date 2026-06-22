@@ -979,6 +979,13 @@
   cursor: pointer;
 }
 
+.living-context__source-button--static {
+  cursor: default;
+  border-color: rgba(167, 139, 250, 0.24);
+  background: rgba(167, 139, 250, 0.05);
+  color: var(--lc-structural);
+}
+
 .living-context__source-button span {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -3,6 +3,7 @@ import { ChevronRight, Quote } from 'lucide-react';
 import type {
   LivingContextRecord,
   LivingContextRecordEntity,
+  LivingContextRecordSourceRef,
   LivingContextSourceRef,
 } from '../../lib/api/types';
 
@@ -43,6 +44,46 @@ function locatorLabel(source: LivingContextSourceRef): string {
   return source.stableSegmentId ?? 'source';
 }
 
+function isSourceSpanRef(source: LivingContextRecordSourceRef): source is LivingContextSourceRef {
+  return typeof source.sourceSpanId === 'string';
+}
+
+function genericLocatorLabel(locator: Record<string, unknown>): string | null {
+  const path = typeof locator.path === 'string'
+    ? locator.path
+    : typeof locator.file === 'string'
+      ? locator.file
+      : null;
+  const lineStart = typeof locator.lineStart === 'number'
+    ? locator.lineStart
+    : typeof locator.line_start === 'number'
+      ? locator.line_start
+      : null;
+  const lineEnd = typeof locator.lineEnd === 'number'
+    ? locator.lineEnd
+    : typeof locator.line_end === 'number'
+      ? locator.line_end
+      : null;
+
+  if (path && lineStart !== null && lineEnd !== null) {
+    return lineStart === lineEnd ? `${path}:${lineStart}` : `${path}:${lineStart}-${lineEnd}`;
+  }
+  if (path) return path;
+  const id = typeof locator.id === 'string' ? locator.id : null;
+  return id;
+}
+
+function recordSourceLabel(source: LivingContextRecordSourceRef): string {
+  if (isSourceSpanRef(source)) {
+    return `${titleCase(source.artifactType)} ${locatorLabel(source)}`;
+  }
+  return `${titleCase(source.sourceRefType)} ${genericLocatorLabel(source.locator) ?? source.sourceRefId}`;
+}
+
+function recordSourceSnippet(source: LivingContextRecordSourceRef): string | null {
+  return source.exactText?.trim() || null;
+}
+
 function valueLabel(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -58,10 +99,6 @@ function entityLabel(entity: LivingContextRecordEntity): string {
   return valueLabel(entity.value)
     ?? entity.entityId
     ?? entity.entityType;
-}
-
-function sourceButtonLabel(source: LivingContextSourceRef): string {
-  return `${titleCase(source.artifactType)} ${locatorLabel(source)}`;
 }
 
 export function ContextRecordTree({
@@ -138,22 +175,47 @@ export function ContextRecordTree({
             <section>
               <div className="living-context__context-record-heading">Source evidence</div>
               <div className="living-context__source-links">
-                {record.sources.map((source) => (
-                  <button
-                    key={`${record.id}:source:${source.sourceSpanId}:${source.evidenceRole ?? ''}`}
-                    type="button"
-                    className="living-context__source-button"
-                    onClick={() => onSelectSource(source)}
-                    title={source.exactText}
-                  >
-                    <Quote size={10} />
-                    <span>{sourceButtonLabel(source)}</span>
-                  </button>
-                ))}
+                {record.sources.map((source) => {
+                  const key = `${record.id}:source:${source.sourceRefType ?? 'source_span'}:${source.sourceRefId ?? source.sourceSpanId}:${source.evidenceRole ?? ''}`;
+                  const label = recordSourceLabel(source);
+                  const snippet = recordSourceSnippet(source);
+                  if (isSourceSpanRef(source)) {
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="living-context__source-button"
+                        onClick={() => onSelectSource(source)}
+                        title={snippet ?? source.exactText}
+                        data-testid="context-record-source-ref"
+                        data-source-ref-type={source.sourceRefType ?? 'source_span'}
+                        data-source-ref-id={source.sourceRefId ?? source.sourceSpanId}
+                        data-source-span-id={source.sourceSpanId}
+                      >
+                        <Quote size={10} />
+                        <span>{label}</span>
+                      </button>
+                    );
+                  }
+                  return (
+                    <span
+                      key={key}
+                      className="living-context__source-button living-context__source-button--static"
+                      title={snippet ?? source.sourceRefId}
+                      data-testid="context-record-source-ref"
+                      data-source-ref-type={source.sourceRefType}
+                      data-source-ref-id={source.sourceRefId}
+                      data-content-hash={source.contentHash ?? undefined}
+                    >
+                      <Quote size={10} />
+                      <span>{label}</span>
+                    </span>
+                  );
+                })}
               </div>
-              {record.sources[0]?.exactText && (
+              {recordSourceSnippet(record.sources[0]!) && (
                 <div className="living-context__context-record-source-snippet">
-                  {record.sources[0].exactText}
+                  {recordSourceSnippet(record.sources[0]!)}
                 </div>
               )}
             </section>

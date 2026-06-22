@@ -898,7 +898,11 @@ export function LivingContextGraph({
           concept.namespace,
           concept.relationship,
         ]),
-        ...record.sources.map((source) => source.exactText),
+        ...record.sources.flatMap((source) => [
+          source.exactText ?? null,
+          source.sourceRefType,
+          source.sourceRefId,
+        ]),
       ], normalizedSearch);
     });
   }, [livingContext, normalizedSearch, selectedInteractionId]);

@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wired context records into the `LivingContextGraph` canvas as a first-class section (above signals), filtered by selected interaction and search query.
 - Added `contextRecordCount` to the summary metrics row.
 - Added 8 Vitest tests covering collapsed/expanded states, entity/concept/source rendering, source selection callback, polarity indicators, and empty-record handling.
+- Context record trees now render non-span provenance refs such as `review_challenge_packet` as static source chips with source type, source ID, content hash, and exact text instead of pretending they are clickable transcript spans.
 
 ### Fixed — Test Infrastructure Consolidation
 

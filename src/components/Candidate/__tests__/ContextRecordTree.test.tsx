@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ContextRecordTree } from '../ContextRecordTree';
-import type { LivingContextRecord, LivingContextSourceRef } from '../../../lib/api/types';
+import type {
+  LivingContextGenericSourceRef,
+  LivingContextRecord,
+  LivingContextSourceRef,
+} from '../../../lib/api/types';
 
 function makeSource(overrides: Partial<LivingContextSourceRef> = {}): LivingContextSourceRef {
   return {
@@ -25,6 +29,22 @@ function makeSource(overrides: Partial<LivingContextSourceRef> = {}): LivingCont
     timestampStartMs: null,
     timestampEndMs: null,
     evidenceRole: 'primary',
+    metadata: {},
+    ...overrides,
+  };
+}
+
+function makeGenericSource(
+  overrides: Partial<LivingContextGenericSourceRef> = {},
+): LivingContextGenericSourceRef {
+  return {
+    sourceRefType: 'review_challenge_packet',
+    sourceRefId: 'packet-1',
+    sourceSpanId: null,
+    evidenceRole: 'selected_packet',
+    locator: { id: 'packet-1' },
+    exactText: 'Selected packet source hash sha256:packet-source.',
+    contentHash: 'sha256:packet-source',
     metadata: {},
     ...overrides,
   };
@@ -149,6 +169,29 @@ describe('ContextRecordTree', () => {
     expect(onSelectSource).toHaveBeenCalledTimes(1);
     const selectedSource = onSelectSource.mock.calls[0]?.[0] as LivingContextSourceRef | undefined;
     expect(selectedSource?.sourceSpanId).toBe('span-1');
+  });
+
+  it('renders generic provenance refs without treating them as clickable source spans', async () => {
+    const user = userEvent.setup();
+    const onSelectSource = vi.fn();
+    const record = makeRecord({
+      sources: [makeGenericSource()],
+    });
+    render(<ContextRecordTree record={record} onSelectSource={onSelectSource} />);
+
+    const toggle = screen.getByRole('button', { name: /expand context record/i });
+    await user.click(toggle);
+
+    expect(screen.getByText('Review Challenge Packet packet-1')).toBeInTheDocument();
+    expect(screen.getByText('Selected packet source hash sha256:packet-source.')).toBeInTheDocument();
+    const provenanceChip = screen.getByTestId('context-record-source-ref');
+    expect(provenanceChip).toHaveAttribute('data-source-ref-type', 'review_challenge_packet');
+    expect(provenanceChip).toHaveAttribute('data-source-ref-id', 'packet-1');
+    expect(provenanceChip).toHaveAttribute('data-content-hash', 'sha256:packet-source');
+    expect(screen.queryByRole('button', { name: /review challenge packet/i })).not.toBeInTheDocument();
+
+    await user.click(provenanceChip);
+    expect(onSelectSource).not.toHaveBeenCalled();
   });
 
   it('collapses back when toggle is clicked again', async () => {

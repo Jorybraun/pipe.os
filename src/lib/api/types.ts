@@ -990,6 +990,8 @@ export interface CandidateProfileResponse {
 // ─── Living Context Graph ───────────────────────────────────────────────────
 
 export interface LivingContextSourceRef {
+  sourceRefType?: 'source_span';
+  sourceRefId?: string;
   sourceSpanId: string;
   evidenceRole: string | null;
   artifactId: string;
@@ -1011,6 +1013,21 @@ export interface LivingContextSourceRef {
   timestampEndMs: number | null;
   metadata: Record<string, unknown>;
 }
+
+export interface LivingContextGenericSourceRef {
+  sourceRefType: string;
+  sourceRefId: string;
+  sourceSpanId: null;
+  evidenceRole: string | null;
+  locator: Record<string, unknown>;
+  exactText: string | null;
+  contentHash: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export type LivingContextRecordSourceRef =
+  | LivingContextSourceRef
+  | LivingContextGenericSourceRef;
 
 export interface LivingContextArtifact {
   id: string;
@@ -1090,7 +1107,7 @@ export interface LivingContextRecord {
   observedAt: string | null;
   entities: LivingContextRecordEntity[];
   concepts: LivingContextRecordConcept[];
-  sources: LivingContextSourceRef[];
+  sources: LivingContextRecordSourceRef[];
 }
 
 export interface LivingContextSignalEvidence {
