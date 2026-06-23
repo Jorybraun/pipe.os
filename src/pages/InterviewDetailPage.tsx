@@ -496,8 +496,8 @@ export default function InterviewDetailPage(): JSX.Element {
           <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
           <div style={ROOM_LINK_TEXT}>
             {guestRoomUrl
-              ? 'Guest link is ready. Send it, copy it, or open the host room.'
-              : 'No guest link yet. Send an invite, copy the guest link, or open the host room to prepare it.'}
+              ? 'Guest and host join the same meeting with different secure links.'
+              : 'Send an invite or open the host room to create the guest link.'}
           </div>
           {roomLinks?.expiresAt && (
             <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
@@ -549,7 +549,7 @@ export default function InterviewDetailPage(): JSX.Element {
       </section>
 
       <main style={EVIDENCE_GRID}>
-        <Section title="Recording and transcript" icon={<FileText size={15} />}>
+        <Section title="Call record" icon={<FileText size={15} />}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
               ? <CheckCircle size={14} color="#4ade80" />
@@ -562,7 +562,7 @@ export default function InterviewDetailPage(): JSX.Element {
             <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
           )}
           {interview.linkedMeeting?.recordingR2Key && (
-            <div style={SMALL_NOTE}>Recording stored. Transcript and context are rebuilt from the meeting source.</div>
+            <div style={SMALL_NOTE}>Recording stored. Transcript and person context rebuild from this call.</div>
           )}
           {transcriptContextText && (
             <div style={SMALL_NOTE}>{transcriptContextText}</div>
@@ -610,25 +610,25 @@ export default function InterviewDetailPage(): JSX.Element {
           )}
         </Section>
 
-        <Section title="Source-backed context" icon={<Network size={15} />}>
+        <Section title="Person context" icon={<Network size={15} />}>
           {hasLivingContextEvidence && contextSummary ? (
             <>
               <div style={CONTEXT_METRICS}>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.interactionCount}</span>
-                  <span style={CONTEXT_METRIC_LABEL}>interactions</span>
+                  <span style={CONTEXT_METRIC_LABEL}>moments</span>
                 </div>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.contextRecordCount}</span>
-                  <span style={CONTEXT_METRIC_LABEL}>context records</span>
+                  <span style={CONTEXT_METRIC_LABEL}>learned context</span>
                 </div>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.sourceSpanCount}</span>
-                  <span style={CONTEXT_METRIC_LABEL}>source spans</span>
+                  <span style={CONTEXT_METRIC_LABEL}>source text</span>
                 </div>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.assertionCount}</span>
-                  <span style={CONTEXT_METRIC_LABEL}>evidence claims</span>
+                  <span style={CONTEXT_METRIC_LABEL}>claims</span>
                 </div>
               </div>
               {contextRecords.length > 0 ? (
@@ -647,12 +647,12 @@ export default function InterviewDetailPage(): JSX.Element {
                   })}
                 </div>
               ) : (
-                <div style={EMPTY_TEXT}>No context records have been extracted yet.</div>
+                <div style={EMPTY_TEXT}>No person context has been extracted yet.</div>
               )}
             </>
           ) : (
             <div style={EMPTY_TEXT}>
-              Context records will appear only after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.
+              Person context will appear after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.
             </div>
           )}
         </Section>
