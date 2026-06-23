@@ -375,13 +375,14 @@ export default function InterviewDetailPage(): JSX.Element {
       || contextSummary.signalCount > 0
     ),
   );
-  const hasTranscriptEvidence = Boolean(
-    transcriptEntries.length > 0
-    || interview.linkedMeeting?.transcriptSummary
-    || transcriptError
-    || ['READY', 'COMPLETED', 'PROCESSING', 'FAILED'].includes(transcriptStatus),
-  );
   const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
+  const transcriptEmptyText = transcriptStatus === 'PROCESSING'
+    ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
+    : transcriptStatus === 'FAILED'
+      ? 'Transcript failed. The original recording/error stays attached for review.'
+      : guestRoomUrl
+        ? 'Transcript will appear here after the host and guest complete a recorded call.'
+        : 'Send an invite or open the host room to start collecting call evidence.';
 
   return (
     <div style={PAGE}>
@@ -472,97 +473,68 @@ export default function InterviewDetailPage(): JSX.Element {
         </div>
       </section>
 
-      {(hasCodeReviewEvidence || hasTranscriptEvidence || hasLivingContextEvidence) && (
-        <main style={EVIDENCE_GRID}>
-          {hasCodeReviewEvidence && (
-            <Section title="Code review" icon={<GitPullRequest size={15} />}>
-              <div style={EVIDENCE_LIST}>
-                {interview.githubRepoUrl && (
-                  <div style={EVIDENCE_ROW}>
-                    <span style={FIELD_LABEL}>Repository</span>
-                    <a href={interview.githubRepoUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
-                      {interview.githubRepoUrl}
-                    </a>
-                  </div>
-                )}
-                {interview.githubPrNumber && (
-                  <div style={EVIDENCE_ROW}>
-                    <span style={FIELD_LABEL}>PR</span>
-                    <span style={FIELD_VALUE}>#{interview.githubPrNumber}</span>
-                  </div>
-                )}
-                {interview.matchedRepoId && (
-                  <div style={EVIDENCE_ROW}>
-                    <span style={FIELD_LABEL}>Repo id</span>
-                    <span style={FIELD_VALUE}>{interview.matchedRepoId}</span>
-                  </div>
-                )}
-              </div>
-            </Section>
+      <main style={EVIDENCE_GRID}>
+        <Section title="Recording and transcript" icon={<FileText size={15} />}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
+              ? <CheckCircle size={14} color="#4ade80" />
+              : transcriptStatus === 'FAILED'
+                ? <AlertCircle size={14} color="#f87171" />
+                : <Clock size={14} color="var(--pipe-text-dim)" />}
+            <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatus}</span>
+          </div>
+          {interview.linkedMeeting?.transcriptSummary && (
+            <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
           )}
-
-          {hasTranscriptEvidence && (
-            <Section title="Transcript" icon={<FileText size={15} />}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: transcriptEntries.length > 0 ? 14 : 0 }}>
-                {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
-                  ? <CheckCircle size={14} color="#4ade80" />
-                  : transcriptStatus === 'FAILED'
-                    ? <AlertCircle size={14} color="#f87171" />
-                    : <Clock size={14} color="var(--pipe-text-dim)" />}
-                <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatus}</span>
-              </div>
-              {interview.linkedMeeting?.transcriptSummary && (
-                <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
-              )}
-              {interview.linkedMeeting?.recordingR2Key && (
-                <div style={SMALL_NOTE}>Recording stored. Transcript and context are rebuilt from the meeting source.</div>
-              )}
-              {transcriptTopics.length > 0 && (
-                <div style={ANALYSIS_GROUP}>
-                  <div style={FIELD_LABEL}>Topics</div>
-                  <div style={TAG_ROW}>
-                    {transcriptTopics.map((topic) => <span key={topic} style={TAG}>{topic}</span>)}
-                  </div>
-                </div>
-              )}
-              {transcriptDecisions.length > 0 && (
-                <div style={ANALYSIS_GROUP}>
-                  <div style={FIELD_LABEL}>Decisions</div>
-                  <div style={TAG_ROW}>
-                    {transcriptDecisions.map((decision) => <span key={decision} style={TAG}>{decision}</span>)}
-                  </div>
-                </div>
-              )}
-              {transcriptError && (
-                <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
-                  {transcriptError}
-                </div>
-              )}
-              {transcriptEntries.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {transcriptEntries.map((entry, index) => {
-                    const timeLabel = transcriptTimeLabel(entry);
-                    return (
-                      <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
-                        <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
-                          {timeLabel && (
-                            <div style={TRANSCRIPT_TIME}>{timeLabel}</div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={EMPTY_TEXT}>Transcript is being prepared.</div>
-              )}
-            </Section>
+          {interview.linkedMeeting?.recordingR2Key && (
+            <div style={SMALL_NOTE}>Recording stored. Transcript and context are rebuilt from the meeting source.</div>
           )}
+          {transcriptTopics.length > 0 && (
+            <div style={ANALYSIS_GROUP}>
+              <div style={FIELD_LABEL}>Topics</div>
+              <div style={TAG_ROW}>
+                {transcriptTopics.map((topic) => <span key={topic} style={TAG}>{topic}</span>)}
+              </div>
+            </div>
+          )}
+          {transcriptDecisions.length > 0 && (
+            <div style={ANALYSIS_GROUP}>
+              <div style={FIELD_LABEL}>Decisions</div>
+              <div style={TAG_ROW}>
+                {transcriptDecisions.map((decision) => <span key={decision} style={TAG}>{decision}</span>)}
+              </div>
+            </div>
+          )}
+          {transcriptError && (
+            <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
+              {transcriptError}
+            </div>
+          )}
+          {transcriptEntries.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {transcriptEntries.map((entry, index) => {
+                const timeLabel = transcriptTimeLabel(entry);
+                return (
+                  <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
+                    <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
+                      {timeLabel && (
+                        <div style={TRANSCRIPT_TIME}>{timeLabel}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={EMPTY_TEXT}>{transcriptEmptyText}</div>
+          )}
+        </Section>
 
-          {hasLivingContextEvidence && contextSummary && (
-            <Section title="Context captured" icon={<Network size={15} />}>
+        <Section title="Source-backed context" icon={<Network size={15} />}>
+          {hasLivingContextEvidence && contextSummary ? (
+            <>
               <div style={CONTEXT_METRICS}>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.interactionCount}</span>
@@ -593,10 +565,41 @@ export default function InterviewDetailPage(): JSX.Element {
               ) : (
                 <div style={EMPTY_TEXT}>No context records have been extracted yet.</div>
               )}
-            </Section>
+            </>
+          ) : (
+            <div style={EMPTY_TEXT}>
+              Context records will appear only after PIPE has exact source evidence from the invite, transcript, assessment, or code-review material.
+            </div>
           )}
-        </main>
-      )}
+        </Section>
+
+        {hasCodeReviewEvidence && (
+          <Section title="Code-review evidence" icon={<GitPullRequest size={15} />}>
+            <div style={EVIDENCE_LIST}>
+              {interview.githubRepoUrl && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Repository</span>
+                  <a href={interview.githubRepoUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                    {interview.githubRepoUrl}
+                  </a>
+                </div>
+              )}
+              {interview.githubPrNumber && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>PR</span>
+                  <span style={FIELD_VALUE}>#{interview.githubPrNumber}</span>
+                </div>
+              )}
+              {interview.matchedRepoId && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Repo id</span>
+                  <span style={FIELD_VALUE}>{interview.matchedRepoId}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+      </main>
 
     </div>
   );
