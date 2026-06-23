@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Branded the standalone video room experience with PIPE logo/loading states and refreshed room chrome while preserving recording, lobby, and call controls.
 - Improved living-context graph theme contrast and context-record wrapping so source-backed evidence remains readable across light and dark app surfaces.
 - Video room signaling now auto-starts host negotiation when a guest joins, prefers TURN relay when TURN credentials are available, and revokes stale host room links when preparing a fresh host URL.
+- Host hangup now records the meeting end event before uploading the recording, so transcription and living-context ingestion receive a stable call end timestamp.
 
 ### Fixed — Contact Living Context Graph
 

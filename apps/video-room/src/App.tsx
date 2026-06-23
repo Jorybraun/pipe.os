@@ -170,13 +170,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (metadata.role === 'HOST') {
       let failed = false;
       try {
+        await postRoomEvent(token, 'ENDED');
+      } catch {
+        failed = true;
+      }
+      try {
         await stopAndUploadRecording();
       } catch {
         failed = true;
-      } finally {
-        await postRoomEvent(token, 'ENDED').catch(() => {
-          failed = true;
-        });
       }
       if (failed) {
         setRecordingState('failed');
