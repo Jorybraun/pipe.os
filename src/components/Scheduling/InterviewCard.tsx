@@ -80,6 +80,13 @@ export function InterviewCard({
   const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
     ? `${pipelineTitle}${stageTitle ? ` · ${stageTitle}` : ''}`
     : null;
+  const hasInviteDelivery = Boolean(
+    interview.inviteLinkSentAt
+    ?? interview.emailSentAt
+    ?? interview.meetingUrl,
+  );
+  const displayStatusLabel =
+    interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
 
   return (
     <>
@@ -139,7 +146,7 @@ export function InterviewCard({
 
         {/* Status badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <InterviewStatusBadge status={interview.status ?? 'INVITED'} />
+          <InterviewStatusBadge status={interview.status ?? 'INVITED'} label={displayStatusLabel} />
         </div>
 
         {/* Right: INVITE + JOIN button + overflow menu */}
@@ -168,7 +175,7 @@ export function InterviewCard({
             }}
           >
             <Mail size={12} />
-            INVITE
+            {hasInviteDelivery ? 'RESEND' : 'SEND'}
           </button>
           <button
             disabled={!joinable}

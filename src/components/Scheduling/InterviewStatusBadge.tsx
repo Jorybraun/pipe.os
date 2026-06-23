@@ -11,9 +11,10 @@ const STATUS_STYLES: Record<InterviewStatus, { label: string; color: string; bg:
 
 interface InterviewStatusBadgeProps {
   status: InterviewStatus;
+  label?: string | undefined;
 }
 
-export function InterviewStatusBadge({ status }: InterviewStatusBadgeProps): JSX.Element {
+export function InterviewStatusBadge({ status, label }: InterviewStatusBadgeProps): JSX.Element {
   const style = STATUS_STYLES[status];
 
   return (
@@ -31,7 +32,7 @@ export function InterviewStatusBadge({ status }: InterviewStatusBadgeProps): JSX
         border: `1px solid ${style.color}30`,
       }}
     >
-      {style.label.toUpperCase()}
+      {(label ?? style.label).toUpperCase()}
     </span>
   );
 }

@@ -28,6 +28,7 @@ import {
 const FONT = '"Space Mono", monospace';
 
 const STATUS_COLORS: Record<string, string> = {
+  READY: '#9ca3af',
   INVITED: '#fbbf24',
   SCHEDULED: '#60a5fa',
   ACTIVE: '#34d399',
@@ -417,6 +418,9 @@ export default function InterviewDetailPage(): JSX.Element {
       ? `/candidates/${interview.candidateId}`
       : null;
   const hasInviteDelivery = Boolean(interview.inviteLinkSentAt ?? interview.emailSentAt);
+  const displayStatus = interview.status === 'INVITED' && !hasInviteDelivery
+    ? 'READY'
+    : interview.status;
   const contextSummary = interview.livingContext?.summary ?? null;
   const contextRecords = interview.livingContext?.contextRecords ?? [];
   const hasLivingContextEvidence = Boolean(
@@ -453,7 +457,7 @@ export default function InterviewDetailPage(): JSX.Element {
               {roleTitle} · {stageTitle}
             </div>
           </div>
-          <StatusBadge status={interview.status} />
+          <StatusBadge status={displayStatus} />
         </div>
 
         <div style={ACTION_ROW}>
@@ -476,7 +480,7 @@ export default function InterviewDetailPage(): JSX.Element {
           <div style={ROOM_LINK_TEXT}>
             {guestRoomUrl
               ? 'Guest link is ready. Send it, copy it, or open the host room.'
-              : 'Send an invite to create the guest room link.'}
+              : 'No guest link yet. Send an invite, copy the guest link, or open the host room to prepare it.'}
           </div>
           {roomLinks?.expiresAt && (
             <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
