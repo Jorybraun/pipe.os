@@ -7,9 +7,6 @@ import {
   MoreHorizontal,
   Activity,
   Users,
-  Target,
-  Trophy,
-  Check,
   Trash2,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
@@ -23,12 +20,7 @@ interface RoleCardProps {
   location: string;
   status: RoleStatus;
   candidates: number;
-  avgScore?: number | null;
-  stagesConfigured: number;
-  totalStages: number;
   createdAt: string;
-  isSelected?: boolean;
-  onSelect?: (selected: boolean) => void;
   onClick?: () => void;
   onDelete?: () => void;
   style?: React.CSSProperties;
@@ -42,12 +34,7 @@ export function RoleCard({
   location,
   status,
   candidates,
-  avgScore,
-  stagesConfigured,
-  totalStages,
   createdAt,
-  isSelected = false,
-  onSelect,
   onClick,
   onDelete,
   style = {},
@@ -94,7 +81,6 @@ export function RoleCard({
   }, [menuOpen]);
 
   const statusStyle = getStatusStyle(status);
-  const isComplete = stagesConfigured === totalStages;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -113,38 +99,6 @@ export function RoleCard({
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
-          {/* Multi-select Checkbox */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect?.(!isSelected);
-            }}
-            style={{
-              width: 48,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: isSelected ? "var(--pipe-accent-surface)" : "transparent",
-              borderRight: "1px solid var(--pipe-border-light)",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-            }}
-          >
-            <div style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              border: `2px solid ${isSelected ? "var(--pipe-accent-border)" : "var(--pipe-border)"}`,
-              background: isSelected ? "var(--pipe-accent-surface)" : "transparent",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.15s ease",
-            }}>
-              {isSelected && <Check size={14} color="var(--pipe-accent)" strokeWidth={3} />}
-            </div>
-          </div>
-
           {/* Status Indicator Bar */}
           <div
             style={{
@@ -249,57 +203,7 @@ export function RoleCard({
                       letterSpacing: "0.1em",
                     }}
                   >
-                    CANDIDATES
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Trophy size={14} color="var(--pipe-text-dim)" />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: avgScore ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-                      fontFamily: "Space Mono",
-                    }}
-                  >
-                    {avgScore ? String(avgScore).padStart(2, "0") : "—"}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 7,
-                      color: "var(--pipe-text-dim)",
-                      letterSpacing: "0.1em",
-                    }}
-                  >
-                    AVG SCORE
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Target size={14} color="var(--pipe-text-dim)" />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: isComplete ? "#10b981" : "var(--pipe-text)",
-                      fontFamily: "Space Mono",
-                    }}
-                  >
-                    {stagesConfigured}/{totalStages}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 7,
-                      color: "var(--pipe-text-dim)",
-                      letterSpacing: "0.1em",
-                    }}
-                  >
-                    STAGES
+                    PEOPLE
                   </div>
                 </div>
               </div>
@@ -342,7 +246,7 @@ export function RoleCard({
             }}
           >
             <button
-              aria-label="Pipeline actions"
+              aria-label="Role context actions"
               style={{
                 background: menuOpen ? "var(--pipe-surface-hover)" : "transparent",
                 border: "none",

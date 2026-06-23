@@ -147,7 +147,7 @@ export function SidebarNav({
       <NavButton
         activeSection={activeSection}
         section="roles"
-        title="Roles"
+        title="Role context"
         icon={<Briefcase size={20} />}
         onClick={onRolesClick}
       />

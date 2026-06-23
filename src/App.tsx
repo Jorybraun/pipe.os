@@ -126,7 +126,7 @@ const SubHeader = () => {
               {questionId && currentStage
                 ? "BACK TO ROUND"
                 : stageId
-                  ? "BACK TO ROLE"
+                  ? "BACK TO CONTEXT"
                   : "BACK"}
             </button>
 
@@ -147,7 +147,7 @@ const SubHeader = () => {
                   marginBottom: 6,
                 }}
               >
-                {isPersonContext ? "PERSON" : stageId ? "ROUND" : "ROLE"}
+                {isPersonContext ? "PERSON" : stageId ? "ROUND" : "CONTEXT"}
               </div>
               <div
                 style={{
