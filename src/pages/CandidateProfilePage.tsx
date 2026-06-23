@@ -1521,10 +1521,10 @@ export default function CandidateProfilePage(): JSX.Element {
                 </div>
               </div>
             </div>
-            {candidate.contactId && (
+            {(candidate.contactId ?? candidate.personId) && (
               <button
                 type="button"
-                onClick={() => navigate(`/people/${candidate.contactId}`)}
+                onClick={() => navigate(`/people/${candidate.contactId ?? candidate.personId}`)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',

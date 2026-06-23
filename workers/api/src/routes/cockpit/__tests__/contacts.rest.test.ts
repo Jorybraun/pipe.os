@@ -121,4 +121,46 @@ describe('GET /:id/living-context', () => {
       sources: ['legacy_contact'],
     });
   });
+
+  it('loads a person profile and graph by canonical person id', async () => {
+    const app = createApp();
+    const contactGraphResponse = await app.request('/contact-1/living-context');
+    expect(contactGraphResponse.status).toBe(200);
+    const contactGraph = await contactGraphResponse.json() as {
+      person: { personId: string; primaryEmail: string | null } | null;
+    };
+    const personId = contactGraph.person?.personId;
+    expect(personId).toBeTruthy();
+
+    const profileResponse = await app.request(`/${personId}`);
+    expect(profileResponse.status).toBe(200);
+    const profileBody = await profileResponse.json() as {
+      contact: {
+        id: string;
+        email: string;
+        name: string | null;
+        company: string | null;
+        role: string | null;
+        type: string;
+      };
+    };
+    expect(profileBody.contact).toMatchObject({
+      id: personId,
+      email: 'ada@example.com',
+      name: 'Ada Contact',
+      company: 'PIPE Labs',
+      role: 'Systems Lead',
+      type: 'person',
+    });
+
+    const graphResponse = await app.request(`/${personId}/living-context`);
+    expect(graphResponse.status).toBe(200);
+    const graphBody = await graphResponse.json() as {
+      person: { personId: string; primaryEmail: string | null } | null;
+    };
+    expect(graphBody.person).toMatchObject({
+      personId,
+      primaryEmail: 'ada@example.com',
+    });
+  });
 });
