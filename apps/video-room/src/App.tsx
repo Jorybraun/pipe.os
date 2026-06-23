@@ -20,13 +20,23 @@ import type { IceServerProvider, RoomMetadata } from './types';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
-    <img
+    <svg
       className={className}
-      src="/pipe-room-mark.svg"
-      alt=""
+      viewBox="0 0 1000 1000"
+      fill="none"
       aria-hidden="true"
-      draggable={false}
-    />
+      focusable="false"
+    >
+      <path
+        d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
+        stroke="currentColor"
+        strokeWidth="192"
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+      />
+      <rect x="615" y="450" width="250" height="100" fill="currentColor" />
+      <rect x="135" y="450" width="250" height="100" fill="currentColor" />
+    </svg>
   );
 }
 
@@ -34,7 +44,7 @@ function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
     <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
       <PipeMark className="brand-logo" />
-      <span className="brand-word" data-text="PIPE">PIPE</span>
+      <span className="brand-word">PIPE</span>
       <span className="brand-chip">Room</span>
     </div>
   );

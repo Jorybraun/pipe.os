@@ -124,6 +124,7 @@ button:focus-visible {
   display: block;
   width: min(52vw, 680px);
   height: auto;
+  color: var(--pipe-blue-hot);
   pointer-events: none;
   user-select: none;
   opacity: .12;
@@ -188,7 +189,7 @@ button:focus-visible {
   height: 54px;
   flex: 0 0 auto;
   display: block;
-  object-fit: contain;
+  color: var(--ink-strong);
   filter: drop-shadow(0 0 20px rgba(170, 210, 255, .48)) drop-shadow(0 2px 8px rgba(0, 0, 0, .62));
 }
 
@@ -209,25 +210,6 @@ button:focus-visible {
   font-weight: 800;
   letter-spacing: .02em;
   line-height: .92;
-}
-
-.brand-word::before,
-.brand-word::after {
-  content: attr(data-text);
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  mix-blend-mode: screen;
-}
-
-.brand-word::before {
-  color: rgba(127, 199, 255, .26);
-  transform: translate(-1px, 0);
-}
-
-.brand-word::after {
-  color: rgba(244, 248, 255, .18);
-  transform: translate(1px, 0);
 }
 
 .brand.compact .brand-word {
@@ -423,7 +405,7 @@ button:focus-visible {
   width: 20px;
   height: 20px;
   display: block;
-  object-fit: contain;
+  color: var(--ink-strong);
   opacity: .9;
   filter: drop-shadow(0 0 12px rgba(170, 210, 255, .38));
 }
@@ -478,6 +460,7 @@ button:focus-visible {
 .device-placeholder-logo {
   width: 74px;
   height: 74px;
+  color: var(--pipe-blue-hot);
   opacity: .34;
   filter: drop-shadow(0 0 20px rgba(170, 210, 255, .34));
 }
@@ -902,7 +885,7 @@ button:focus-visible {
   width: 56px;
   height: 56px;
   display: block;
-  object-fit: contain;
+  color: var(--ink-strong);
   filter: drop-shadow(0 0 18px rgba(170, 210, 255, .50)) drop-shadow(0 2px 8px rgba(0, 0, 0, .55));
 }
 
