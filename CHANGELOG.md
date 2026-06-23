@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api-dev` now includes the Cloudflare `DEV_CONTAINER` Durable Object and container image binding, allowing dev-container code-review interviews to launch against the deployed dev API instead of silently missing the runtime binding.
 - Deployed PIPE app hosts now default candidate dev-container sessions to the Cloudflare `/rpc` backend and resolve dev-container API calls through the same-origin app proxy, avoiding stale AppSync/localhost routing in `app-dev`.
 - The authenticated `app-dev` proxy now preserves candidate `Bearer` session tokens when the dev auth cookie is present, allowing `/rpc` candidate routes such as dev-container launch/status to authenticate through the app domain.
+- Dev-container sessions now start the code-server container before marking a session `READY`, and the dev preview image prepares `/workspace` then runs code-server as root so Cloudflare Containers beta can boot the IDE reliably.
+- Dev-container iframe access now converts the one-time exchange token into a scoped proxy cookie, so code-server redirects and assets continue loading inside `app-dev` without leaking the candidate session token.
 
 ### Fixed — Contact Living Context Graph
 

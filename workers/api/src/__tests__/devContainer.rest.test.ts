@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { rpcAuth } from '../routes/rpc';
+import { rpcAuth, rpcPublic } from '../routes/rpc';
 import { signJwt } from '../lib/jwt';
 import { DevContainerDO } from '../durable-objects/DevContainerDO';
 import type { Env } from '../types';
@@ -1194,5 +1194,63 @@ describe('ALL /rpc/dev-container/:sessionId/proxy/* (Step 9)', () => {
     expect(forwarded.path).toBe('/vscode');
     // Upgrade header passed through
     expect(forwarded.headers['upgrade']).toBe('websocket');
+  });
+
+  it('sets a scoped proxy cookie so iframe redirects work after the exchange token is consumed', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'UPDATE dev_container_exchange_tokens',
+          value: {
+            session_id: 'sess_1',
+            candidate_id: 'cand_1',
+          },
+        },
+        {
+          match: 'FROM dev_container_sessions',
+          value: readySessionRow(),
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+    env.DEV_CONTAINER = fakeProxyNamespace() as unknown as FakeDevContainerNamespace;
+    const proxyNs = env.DEV_CONTAINER as unknown as FakeProxyNamespace;
+    proxyNs.__setResponse(
+      () =>
+        new Response('redirect', {
+          status: 302,
+          headers: { Location: './?folder=/workspace' },
+        }),
+    );
+
+    const first = await rpcPublic.request(
+      '/dev-container-proxy/sess_1/?exchangeToken=exchange_1',
+      { method: 'GET' },
+      env,
+    );
+
+    expect(first.status).toBe(302);
+    expect(first.headers.get('Location')).toBe('./?folder=/workspace');
+    const setCookie = first.headers.get('Set-Cookie');
+    expect(setCookie).toContain('pipe_dev_container_proxy=');
+    expect(setCookie).toContain('Path=/rpc/dev-container-proxy/sess_1');
+    expect(proxyNs.__proxyCalls).toHaveLength(1);
+    expect(proxyNs.__proxyCalls[0]?.search).toBe('');
+
+    proxyNs.__setResponse(() => new Response('code-server html', { status: 200 }));
+    const cookie = setCookie?.split(';')[0] ?? '';
+    const redirected = await rpcPublic.request(
+      '/dev-container-proxy/sess_1/?folder=/workspace',
+      {
+        method: 'GET',
+        headers: { Cookie: cookie },
+      },
+      env,
+    );
+
+    expect(redirected.status).toBe(200);
+    expect(await redirected.text()).toBe('code-server html');
+    expect(proxyNs.__proxyCalls).toHaveLength(2);
+    expect(proxyNs.__proxyCalls[1]?.search).toBe('?folder=%2Fworkspace');
   });
 });

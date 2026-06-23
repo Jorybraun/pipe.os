@@ -34,10 +34,12 @@ export interface ScheduleCall<T = unknown> {
 
 export class Container<Env = unknown> extends DurableObject<Env> {
   defaultPort?: number;
+  requiredPorts?: number[];
   sleepAfter?: string | number;
   instanceType?: InstanceType;
 
   __schedules: ScheduleCall[] = [];
+  __startCalls: unknown[] = [];
   __stopCalls: Array<number | string> = [];
   __destroyCalls = 0;
 
@@ -65,6 +67,10 @@ export class Container<Env = unknown> extends DurableObject<Env> {
 
   async stop(signal: number | string = 15): Promise<void> {
     this.__stopCalls.push(signal);
+  }
+
+  async startAndWaitForPorts(...args: unknown[]): Promise<void> {
+    this.__startCalls.push(args);
   }
 
   async destroy(): Promise<void> {

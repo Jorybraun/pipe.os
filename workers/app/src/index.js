@@ -1,5 +1,6 @@
 const DEV_AUTH_COOKIE = 'pipe_app_dev_auth';
 const DEV_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const DEV_CONTAINER_PROXY_COOKIE = 'pipe_dev_container_proxy';
 const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
 
 function timingSafeEqual(a, b) {
@@ -36,6 +37,19 @@ function cookieValue(request, name) {
     if (rawKey === name) return rawValue.join('=');
   }
   return null;
+}
+
+function filterCookieHeader(header, allowedNames) {
+  if (!header) return null;
+  const allowed = new Set(allowedNames);
+  const kept = header
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => {
+      const [name] = part.split('=');
+      return allowed.has(name);
+    });
+  return kept.length > 0 ? kept.join('; ') : null;
 }
 
 function hasValidBasicAuth(request, env) {
@@ -150,7 +164,14 @@ function proxyApi(request, env, authState) {
   if (!(authState === 'cookie' && authorization?.startsWith('Bearer '))) {
     headers.delete('Authorization');
   }
-  headers.delete('Cookie');
+  const proxyCookie = url.pathname.startsWith('/rpc/dev-container-proxy/')
+    ? filterCookieHeader(headers.get('Cookie'), [DEV_CONTAINER_PROXY_COOKIE])
+    : null;
+  if (proxyCookie) {
+    headers.set('Cookie', proxyCookie);
+  } else {
+    headers.delete('Cookie');
+  }
   headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));

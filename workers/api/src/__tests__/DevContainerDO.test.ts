@@ -16,6 +16,7 @@ import type { Env } from '../types';
 // this intersection whenever we need to read them.
 interface SpyFields {
   __schedules: Array<{ when: Date | number; callback: string; payload: unknown }>;
+  __startCalls: unknown[];
   __destroyCalls: number;
   __stopCalls: Array<number | string>;
 }
@@ -144,6 +145,77 @@ async function init(
 // ─── /__init scheduling ─────────────────────────────────────────────────────
 
 describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () => {
+  it('starts the code-server port before marking the session READY', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    const res = await init(instance, {
+      sessionId: 'sess_start',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      repoGitUrl: 'https://github.com/example/repo.git',
+      challengeBranch: 'challenge/fix',
+    });
+
+    expect(res.status).toBe(200);
+    expect(instance.__startCalls).toHaveLength(1);
+
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        ports: number[];
+        startOptions: { envVars: Record<string, string> };
+      },
+    ];
+    expect(startArg.ports).toEqual([8080]);
+    expect(startArg.startOptions.envVars).toMatchObject({
+      SESSION_ID: 'sess_start',
+      REPO_GIT_URL: 'https://github.com/example/repo.git',
+      CHALLENGE_BRANCH: 'challenge/fix',
+    });
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const ready = updates.find((c) => c.params[0] === 'READY');
+    expect(ready?.params[2]).toEqual(expect.any(String));
+    expect(ready?.params[5]).toBe('sess_start');
+  });
+
+  it('marks the session ERROR when the container cannot start', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+
+    instance.startAndWaitForPorts = async (...args: unknown[]) => {
+      instance.__startCalls.push(args);
+      throw new Error('port 8080 never opened');
+    };
+
+    const res = await init(instance, {
+      sessionId: 'sess_start_fail',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: 'CONTAINER_START_FAILED',
+        message: 'port 8080 never opened',
+      },
+    });
+    expect(instance.__schedules).toHaveLength(0);
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('ERROR');
+    expect(last.params[4]).toBe('port 8080 never opened');
+    expect(last.params[5]).toBe('sess_start_fail');
+  });
+
   it('schedules an onWarn callback at expiresAt − WARN_BEFORE_SECONDS by default', async () => {
     const db = fakeD1();
     const env = buildEnv(db);
