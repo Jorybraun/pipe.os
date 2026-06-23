@@ -367,6 +367,26 @@ button:focus-visible {
   opacity: .46;
 }
 
+.device-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 2px 12px;
+  color: var(--ink-mute);
+  font: 800 9px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.device-brand-logo {
+  width: 20px;
+  height: 20px;
+  display: block;
+  object-fit: contain;
+  opacity: .9;
+  filter: drop-shadow(0 0 12px rgba(170, 210, 255, .38));
+}
+
 .preview-shell {
   position: relative;
   aspect-ratio: 16 / 10;
@@ -479,8 +499,34 @@ button:focus-visible {
 }
 
 .primary:disabled {
-  opacity: .34;
+  border-color: rgba(214, 232, 255, .28);
+  background: rgba(127, 199, 255, .08);
+  color: var(--ink-dim);
+  opacity: 1;
   cursor: not-allowed;
+  box-shadow: none;
+}
+
+.primary.is-action-needed {
+  border-color: rgba(255, 213, 218, .70);
+  background: linear-gradient(180deg, #fff7f8 0%, #ffdce2 100%);
+  color: #320810;
+  box-shadow: 0 18px 46px rgba(255, 113, 130, .18), inset 0 1px 0 rgba(255, 255, 255, .82);
+}
+
+.primary.is-action-needed:hover {
+  border-color: rgba(255, 213, 218, .58);
+  background: transparent;
+  color: #ffd5da;
+  box-shadow: 0 20px 54px rgba(255, 113, 130, .16);
+}
+
+.join-hint {
+  min-height: 18px;
+  margin: 10px 2px 0;
+  color: var(--ink-mute);
+  font: 600 11px/1.45 Inter, system-ui, sans-serif;
+  text-align: center;
 }
 
 .call-stage {

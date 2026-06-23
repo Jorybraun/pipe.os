@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Camera,
   CameraOff,
   Circle,
+  Loader2,
   Mic,
   MicOff,
   PhoneOff,
@@ -80,7 +81,7 @@ function DevicePlaceholder({
         variant={state === 'error' ? 'error' : 'default'}
         icon={state === 'error' ? <CameraOff size={18} /> : undefined}
       />
-      <span>{state === 'checking' ? 'Preparing camera' : 'Camera access needed'}</span>
+      <span>{state === 'checking' ? 'Preparing camera and microphone' : 'Camera and microphone access needed'}</span>
     </div>
   );
 }
@@ -128,19 +129,46 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const autoAcceptingRef = useRef(false);
   const endingRef = useRef(false);
+  const deviceRequestRef = useRef(0);
+
+  const requestDevices = useCallback(async (): Promise<void> => {
+    const requestId = deviceRequestRef.current + 1;
+    deviceRequestRef.current = requestId;
+    setDeviceState('checking');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (deviceRequestRef.current !== requestId) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      setPreview(stream);
+      setDeviceState('ready');
+    } catch {
+      if (deviceRequestRef.current === requestId) {
+        setDeviceState('error');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const requestId = deviceRequestRef.current + 1;
+    deviceRequestRef.current = requestId;
+    setDeviceState('checking');
     void navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then((stream) => {
-        if (cancelled) {
+        if (cancelled || deviceRequestRef.current !== requestId) {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
         setPreview(stream);
         setDeviceState('ready');
       })
-      .catch(() => setDeviceState('error'));
+      .catch(() => {
+        if (!cancelled && deviceRequestRef.current === requestId) {
+          setDeviceState('error');
+        }
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -238,6 +266,24 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const inLobby = room.localStream === null;
   if (inLobby) {
+    const isDeviceChecking = deviceState === 'checking';
+    const hasDeviceError = deviceState === 'error';
+    const joinButtonLabel = hasDeviceError
+      ? 'Allow camera and microphone'
+      : isDeviceChecking
+        ? 'Preparing devices'
+        : 'Enter room';
+    const joinButtonHint = hasDeviceError
+      ? 'Enable camera and microphone access in your browser, then try again.'
+      : isDeviceChecking
+        ? 'PIPE is preparing your camera and microphone preview.'
+        : 'You will enter the private room with camera and microphone ready.';
+    const joinButtonIcon = hasDeviceError
+      ? <CameraOff size={17} />
+      : isDeviceChecking
+        ? <Loader2 size={17} className="spin" />
+        : <Video size={17} />;
+
     return (
       <main className="lobby">
         <section className="lobby-copy">
@@ -252,6 +298,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           </div>
         </section>
         <section className="device-panel" data-testid="device-check">
+          <div className="device-brand">
+            <PipeMark className="device-brand-logo" />
+            <span>PIPE room prejoin</span>
+          </div>
           <div className="preview-shell">
             {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
             {!preview && <DevicePlaceholder state={deviceState} />}
@@ -261,14 +311,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             <span><ShieldCheck size={13} /> Private room</span>
           </div>
           <button
-            className="primary"
-            onClick={joinLobby}
-            disabled={deviceState !== 'ready'}
+            className={`primary${hasDeviceError ? ' is-action-needed' : ''}`}
+            onClick={hasDeviceError ? () => void requestDevices() : joinLobby}
+            disabled={isDeviceChecking}
             data-testid="join-room"
           >
-            <Video size={17} />
-            Enter room
+            {joinButtonIcon}
+            {joinButtonLabel}
           </button>
+          <p className="join-hint">{joinButtonHint}</p>
         </section>
       </main>
     );
