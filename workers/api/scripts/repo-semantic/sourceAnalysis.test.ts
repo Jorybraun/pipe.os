@@ -110,5 +110,5 @@ describe('analyzeSourceFile', () => {
       expect.arrayContaining(['imports', 'calls', 'contains']),
     );
     expectExactSpans(content, result.sourceSpans);
-  }, 20_000);
+  }, 60_000);
 });

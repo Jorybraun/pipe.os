@@ -1,10 +1,8 @@
 /**
  * PipelineInsightsPanel — index route under /pipeline/:id.
  *
- * Shows the role profile (when the pipeline was created via AI Discovery)
- * plus simple pipeline insights. When the pipeline is a DRAFT with no stages
- * this panel also renders the empty-state quickstart (template, AI interview,
- * single stage).
+ * Shows the source context and interview state for the current plan. When the
+ * plan is a DRAFT with no interviews, this panel renders a small quickstart.
  *
  * All data is read from the parent shell's outlet context — no fetches.
  */
@@ -238,8 +236,7 @@ function PersonaView({ persona }: { persona: CandidatePersona }): JSX.Element {
 }
 
 /**
- * Pill-style toggle button used inside the combined card's header meta slot
- * to switch between ROLE_PROFILE and PIPELINE_INSIGHTS.
+ * Pill-style toggle button used inside the combined card's header meta slot.
  */
 function CombinedTabButton({
   label,
@@ -360,11 +357,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
       data-testid="insights-panel"
       style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      {/* Empty-state quickstart — DRAFT with no stages */}
+      {/* Empty-state quickstart — DRAFT with no interviews */}
       {isDraft && isEmpty && (
         <SectionCard
           variant="solid"
-          label="EMPTY_ROLE"
+          label="INTERVIEW_PLAN"
           icon={<Plus size={16} color="var(--pipe-text-dim)" />}
           meta="START HERE"
         >
@@ -378,7 +375,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
               marginBottom: 8,
             }}
           >
-            Add the first interview round
+            Add the first interview
           </div>
           <div
             style={{
@@ -390,10 +387,45 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            Rounds keep sequencing when a role has more than one interview step.
-            Start with one round, then add challenges or scheduling as needed.
+            Start with a single interview. Code review, screening, and live panel
+            are all interview formats; the person context grows from what happens.
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => {
+                  setIsCreatingStage(true);
+                  void (async () => {
+                    try {
+                      const created = await createStage(pipelineId, 'Interview');
+                      await refetch();
+                      navigate(`/pipeline/${pipelineId}/stage/${created.id}?adder=1`);
+                    } catch (err) {
+                      console.error('[PipelineInsightsPanel] Failed to create interview:', err);
+                    } finally {
+                      setIsCreatingStage(false);
+                    }
+                  })();
+                }}
+                disabled={isCreatingStage}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '12px 18px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.15em',
+                  fontFamily: '"Space Mono", monospace',
+                  background: 'var(--pipe-accent-surface)',
+                  border: '1px solid var(--pipe-accent-border)',
+                  borderRadius: 6,
+                  color: 'var(--pipe-accent)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} />
+                {isCreatingStage ? 'CREATING...' : 'ADD INTERVIEW'}
+              </button>
               <button
                 onClick={() => setShowTemplateModal(true)}
                 style={{
@@ -413,63 +445,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 }}
               >
                 <FileText size={14} />
-                USE_TEMPLATE
-              </button>
-              <button
-                onClick={() => navigate('/roles/new')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 18px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: 'var(--pipe-accent-surface)',
-                  border: '1px solid var(--pipe-accent-border)',
-                  borderRadius: 6,
-                  color: 'var(--pipe-accent)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Sparkles size={14} />
-                NEW ROLE
-              </button>
-              <button
-                onClick={() => {
-                  setIsCreatingStage(true);
-                  void (async () => {
-                    try {
-                      const created = await createStage(pipelineId, 'New Round');
-                      await refetch();
-                      navigate(`/pipeline/${pipelineId}/stage/${created.id}?adder=1`);
-                    } catch (err) {
-                      console.error('[PipelineInsightsPanel] Failed to create round:', err);
-                    } finally {
-                      setIsCreatingStage(false);
-                    }
-                  })();
-                }}
-                disabled={isCreatingStage}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 18px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: 'var(--pipe-surface)',
-                  border: '1px solid var(--pipe-border)',
-                  borderRadius: 6,
-                  color: 'var(--pipe-text-dim)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Plus size={14} />
-                {isCreatingStage ? 'CREATING...' : 'ADD ROUND'}
+                USE TEMPLATE
               </button>
             </div>
         </SectionCard>
@@ -485,14 +461,14 @@ export default function PipelineInsightsPanel(): JSX.Element {
           variant="solid"
           label={
             effectiveTab === 'persona'
-              ? 'CANDIDATE_PERSONA'
+              ? 'PERSON_CONTEXT'
               : effectiveTab === 'job_description'
-                ? 'JOB_DESCRIPTION'
+                ? 'SOURCE_BRIEF'
                 : effectiveTab === 'profile'
-                  ? 'ROLE_PROFILE'
+                  ? 'SOURCE_CONTEXT'
                   : effectiveTab === 'insights'
-                    ? 'PIPELINE_INSIGHTS'
-                    : 'CANDIDATES'
+                    ? 'INTERVIEW_STATE'
+                    : 'PEOPLE'
           }
           icon={
             effectiveTab === 'persona' ? (
@@ -519,21 +495,21 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 )}
                 {hasJobDescription && (
                   <CombinedTabButton
-                    label="JD"
+                    label="BRIEF"
                     isActive={effectiveTab === 'job_description'}
                     onClick={() => setActiveTab('job_description')}
                   />
                 )}
                 {hasProfile && (
                   <CombinedTabButton
-                    label="PROFILE"
+                    label="SOURCE"
                     isActive={effectiveTab === 'profile'}
                     onClick={() => setActiveTab('profile')}
                   />
                 )}
                 {hasInsights && (
                   <CombinedTabButton
-                    label="INSIGHTS"
+                    label="STATE"
                     isActive={effectiveTab === 'insights'}
                     onClick={() => setActiveTab('insights')}
                   />
@@ -551,9 +527,9 @@ export default function PipelineInsightsPanel(): JSX.Element {
             ) : effectiveTab === 'job_description' ? (
               'MARKDOWN'
             ) : effectiveTab === 'insights' ? (
-              `${stages.length} ROUND${stages.length === 1 ? '' : 'S'}`
+              `${stages.length} INTERVIEW${stages.length === 1 ? '' : 'S'}`
             ) : (
-              `${candidates.length} CANDIDATE${candidates.length === 1 ? '' : 'S'}`
+              `${candidates.length} PERSON${candidates.length === 1 ? '' : 'S'}`
             )
           }
         >
@@ -718,11 +694,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
               marginBottom: 24,
             }}
           >
-            <Metric label="CANDIDATES" value={metrics.total} />
-            <Metric label="IN_PROGRESS" value={metrics.inProgress} />
-            <Metric label="COMPLETED" value={metrics.completed} />
+            <Metric label="PEOPLE" value={metrics.total} />
+            <Metric label="ACTIVE" value={metrics.inProgress} />
+            <Metric label="DONE" value={metrics.completed} />
             <Metric
-              label="AVG_SCORE"
+              label="AVG SCORE"
               value={metrics.avgScore !== null ? `${metrics.avgScore}` : '—'}
             />
           </div>
@@ -743,7 +719,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              PER ROUND
+              PER INTERVIEW
             </div>
             {stages.map((stage, index) => {
               const stageCandidates = candidates.filter(
@@ -967,11 +943,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
         </SectionCard>
       )}
 
-      {/* Fallback when no role context and pipeline is empty (draft path) */}
+      {/* Fallback when no source context and the plan is active. */}
       {!hasProfile && !hasInsights && !isDraft && (
         <SectionCard
           variant="solid"
-          label="Role context"
+          label="SOURCE_CONTEXT"
           icon={<Target size={16} color="var(--pipe-text-dim)" />}
         >
           <div
@@ -982,7 +958,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            This role does not have source-backed role context yet. Paste a job
+            This plan does not have source-backed context yet. Paste a job
             description or attach interview evidence before using match decisions.
           </div>
         </SectionCard>

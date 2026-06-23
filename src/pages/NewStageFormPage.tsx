@@ -5,11 +5,11 @@
  * thing you see — large cards with icons and descriptions. Picking a type
  * auto-fills the name (editable) and creates the stage.
  *
- * Stage types:
- *   - CODE_REVIEW  → Multi-turn PR review with AI implementer
- *   - CULTURAL     → AI-conducted behavioral interview (STAR format)
- *   - OPEN_SOURCE  → Live issue implementation in dev container
- *   - SCREENING    → Initial candidate evaluation (phone/video/online)
+ * Interview formats:
+ *   - CODE_REVIEW  → Video interview around a real PR
+ *   - CULTURAL     → AI-conducted behavioral interview
+ *   - OPEN_SOURCE  → Dev-container implementation challenge
+ *   - SCREENING    → Initial phone/video/online screen
  */
 
 import { useState } from 'react';
@@ -40,46 +40,46 @@ interface StageTypeOption {
 const STAGE_OPTIONS: StageTypeOption[] = [
   {
     key: 'CODE_REVIEW',
-    label: 'Code Review',
-    description: 'Multi-turn PR review with AI agent',
+    label: 'Code Review Interview',
+    description: 'Video interview around a real PR',
     detail:
-      'Candidate reviews a real GitHub PR with planted bugs. An AI implementer responds with pushback, clarification, or fixes. Scored on communication, technical depth, and review practice.',
+      'The person joins a call, reviews a real GitHub PR, and explains trade-offs. The transcript and review evidence become source-backed context.',
     icon: GitPullRequest,
     color: '#60a5fa',
   },
   {
     key: 'CULTURAL',
-    label: 'Cultural Fit',
-    description: 'AI behavioral interview (STAR format)',
+    label: 'Behavioral Interview',
+    description: 'Structured conversation',
     detail:
-      'An AI agent conducts a structured behavioral interview. Questions drawn from a curated bank across 5 competency dimensions. Scores against BARS rubrics and compares to your team benchmark.',
+      'A structured behavioral interview. Answers, follow-ups, and evidence are preserved as context for the person.',
     icon: Brain,
     color: 'var(--pipe-accent)',
   },
   {
     key: 'SCREENING',
     label: 'Screening',
-    description: 'Initial candidate evaluation',
+    description: 'Initial phone, video, or async screen',
     detail:
-      'Phone screen, video call, or async online questions. Lightweight first filter before deeper assessment stages.',
+      'A lightweight first conversation. Can be a video call, phone call, or async questions.',
     icon: Phone,
     color: '#fbbf24',
   },
   {
     key: 'OPEN_SOURCE',
-    label: 'Open Source',
-    description: 'Live issue implementation in dev container',
+    label: 'Sandbox Challenge',
+    description: 'Dev-container implementation task',
     detail:
-      'Candidate fixes a real open-source issue in a dev container. Uses AI copilot. All interactions logged.',
+      'The person works on a matched repo task in a dev container. Code, transcript, and tool activity stay tied to source evidence.',
     icon: ListChecks,
     color: '#4ade80',
   },
   {
     key: 'LIVE_PANEL',
-    label: 'Live Panel',
-    description: 'Live video interview with human interviewers',
+    label: 'Video Interview',
+    description: 'Live browser call',
     detail:
-      'Scheduled video interview with real humans. Recorded and transcribed. Can attach to any stage or as final stage.',
+      'A scheduled video interview with host and guest links. Recorded and transcribed when the room connects.',
     icon: Video,
     color: '#f472b6',
   },

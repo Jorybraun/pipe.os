@@ -2,13 +2,13 @@
  * PipelineShellPage — the outer shell for /pipeline/:id.
  *
  * Layout:
- *   [Header row: PIPELINE_OVERVIEW / title / actions]
- *   [StageStepper]
- *   [LiquidMetalCard container → <Outlet />]
+ *   [Header row: INTERVIEW_PLAN / title / actions]
+ *   [Interview timeline]
+ *   [Route outlet]
  *
  * The Outlet renders either:
- *   - PipelineInsightsPanel (index route) — role profile + insights
- *   - StagePanel (nested /stage/:stageId route) — challenges/candidates/configure
+ *   - PipelineInsightsPanel (index route) — context + interview state
+ *   - StagePanel (nested /stage/:stageId route) — interview setup + people
  *
  * All pipeline data (pipeline, stages, candidates, roleContext) is fetched once
  * here via useOverviewData and passed down through React Router's outlet
@@ -95,7 +95,7 @@ export default function PipelineShellPage(): JSX.Element {
   }, [publishPipeline]);
 
   const handleUnpublish = useCallback(async (): Promise<void> => {
-    if (!window.confirm('Unpublish this role? People will no longer be able to access its interview rounds.')) return;
+    if (!window.confirm('Pause this interview plan? People will no longer be able to access its interview links.')) return;
     try {
       await unpublishPipeline();
     } catch (err) {
@@ -143,7 +143,7 @@ export default function PipelineShellPage(): JSX.Element {
               letterSpacing: '0.1em',
             }}
           >
-            ERROR_LOADING_ROLE
+            ERROR_LOADING_CONTEXT
           </div>
           <p
             style={{
@@ -179,7 +179,7 @@ export default function PipelineShellPage(): JSX.Element {
     return (
       <div style={{ padding: 60, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--pipe-text)', marginBottom: 20 }}>
-          Role Not Found
+          Interview Plan Not Found
         </h2>
         <button
           onClick={() => navigate('/')}
@@ -194,7 +194,7 @@ export default function PipelineShellPage(): JSX.Element {
             letterSpacing: '0.1em',
           }}
         >
-          BACK TO ROLES
+          BACK TO CONTEXTS
         </button>
       </div>
     );
@@ -243,7 +243,7 @@ export default function PipelineShellPage(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              ROLE OVERVIEW
+              INTERVIEW PLAN
             </div>
             <div
               data-testid="pipeline-status-badge"
@@ -280,7 +280,7 @@ export default function PipelineShellPage(): JSX.Element {
         <div style={{ display: 'flex', gap: 12 }}>
           <button
             onClick={() => navigate(`/pipeline/${id}`)}
-            aria-label="Role overview"
+            aria-label="Interview plan overview"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -295,11 +295,11 @@ export default function PipelineShellPage(): JSX.Element {
               cursor: 'pointer',
             }}
           >
-            HOME
+            OVERVIEW
           </button>
           <button
             onClick={() => navigate(`/pipeline/${id}/kanban`)}
-            aria-label="View role board"
+            aria-label="View people board"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -315,7 +315,7 @@ export default function PipelineShellPage(): JSX.Element {
             }}
           >
             <LayoutGrid size={14} />
-            VIEW BOARD
+            PEOPLE BOARD
           </button>
           {isDraft && (
             <button
@@ -323,8 +323,8 @@ export default function PipelineShellPage(): JSX.Element {
               disabled={stages.length === 0}
               title={
                 stages.length === 0
-                  ? 'Add at least 1 round before publishing'
-                  : 'Publish role to start inviting people'
+                  ? 'Add at least 1 interview before activating'
+                  : 'Activate this plan so people can be invited'
               }
               style={{
                 display: 'flex',
@@ -352,7 +352,7 @@ export default function PipelineShellPage(): JSX.Element {
               }}
             >
               <Rocket size={14} />
-              PUBLISH ROLE
+              ACTIVATE PLAN
             </button>
           )}
           {isActivePipeline && (
@@ -393,7 +393,7 @@ export default function PipelineShellPage(): JSX.Element {
                 }}
               >
                 <Undo2 size={14} />
-                UNPUBLISH ROLE
+                PAUSE PLAN
               </button>
               <button
                 onClick={() => setShowAddCandidate(true)}
@@ -448,7 +448,7 @@ export default function PipelineShellPage(): JSX.Element {
         <Outlet context={outletContext} />
       </div>
 
-      {/* Right panel - vertical stage timeline */}
+      {/* Right panel - vertical interview timeline */}
       <div style={{ 
         gridColumn: '2',
         paddingLeft: 24,
@@ -556,7 +556,7 @@ export default function PipelineShellPage(): JSX.Element {
               color: '#4ade80',
               fontFamily: '"Space Mono", monospace',
             }}>
-              ADD ROUND
+              ADD INTERVIEW
             </div>
           </div>
         )}
