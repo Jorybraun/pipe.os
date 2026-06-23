@@ -113,7 +113,7 @@ describe('ContextRecordTree', () => {
     const record = makeRecord();
     render(<ContextRecordTree record={record} onSelectSource={vi.fn()} />);
 
-    expect(screen.getByText('demonstrated')).toBeInTheDocument();
+    expect(screen.getByText('Demonstrated')).toHaveAttribute('title', 'demonstrated');
     expect(
       screen.getByText('Candidate built a distributed cache using Redis cluster sharding.'),
     ).toBeInTheDocument();
@@ -211,7 +211,7 @@ describe('ContextRecordTree', () => {
     const record = makeRecord({ entities: [], concepts: [], sources: [] });
     render(<ContextRecordTree record={record} onSelectSource={vi.fn()} />);
 
-    expect(screen.getByText('demonstrated')).toBeInTheDocument();
+    expect(screen.getByText('Demonstrated')).toBeInTheDocument();
   });
 
   it('shows observed date when available', () => {

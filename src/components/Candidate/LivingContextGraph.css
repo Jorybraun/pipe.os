@@ -1,24 +1,33 @@
 .living-context {
-  --pipe-text: #f8fafc;
-  --pipe-text-muted: rgba(226, 232, 240, 0.78);
-  --pipe-text-dim: rgba(203, 213, 225, 0.58);
-  --pipe-border: rgba(148, 163, 184, 0.22);
-  --pipe-border-light: rgba(148, 163, 184, 0.14);
-  --pipe-surface-solid: rgba(5, 12, 22, 0.96);
-  --pipe-surface: rgba(8, 17, 31, 0.78);
-  --pipe-surface-hover: rgba(15, 23, 42, 0.92);
-  --pipe-shadow: rgba(0, 0, 0, 0.42);
-  --lc-source: #38bdf8;
-  --lc-assertion: #f59e0b;
-  --lc-signal: #34d399;
-  --lc-structural: #a78bfa;
-  --lc-panel: var(--pipe-surface-solid);
-  --lc-panel-soft: var(--pipe-surface);
-  --lc-panel-hover: var(--pipe-surface-hover);
+  --lc-source: #0284c7;
+  --lc-assertion: #b45309;
+  --lc-signal: #059669;
+  --lc-structural: #7c3aed;
+  --lc-panel: var(--pipe-surface-solid, #ffffff);
+  --lc-panel-soft: rgba(15, 23, 42, 0.035);
+  --lc-panel-hover: var(--pipe-surface-hover, rgba(15, 23, 42, 0.07));
+  --lc-card: rgba(15, 23, 42, 0.035);
+  --lc-card-strong: rgba(15, 23, 42, 0.07);
+  --lc-card-border: rgba(15, 23, 42, 0.09);
   container-name: living-context;
   container-type: inline-size;
   color: var(--pipe-text);
   min-width: 0;
+}
+
+html[data-theme="dark"] .living-context,
+html[data-theme="anatomy-dark"] .living-context,
+html[data-theme="pipe-blue"] .living-context {
+  --lc-source: #38bdf8;
+  --lc-assertion: #f59e0b;
+  --lc-signal: #34d399;
+  --lc-structural: #a78bfa;
+  --lc-panel: var(--pipe-surface-solid, rgba(5, 12, 22, 0.96));
+  --lc-panel-soft: var(--pipe-surface, rgba(8, 17, 31, 0.78));
+  --lc-panel-hover: var(--pipe-surface-hover, rgba(15, 23, 42, 0.92));
+  --lc-card: rgba(255, 255, 255, 0.035);
+  --lc-card-strong: rgba(255, 255, 255, 0.08);
+  --lc-card-border: rgba(255, 255, 255, 0.08);
 }
 
 .living-context__toolbar {
@@ -111,9 +120,9 @@
 .living-context__meeting-card {
   min-width: 0;
   padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--lc-card-border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.14);
+  background: var(--lc-card);
 }
 
 .living-context__meeting-head {
@@ -161,9 +170,9 @@
 .living-context__meeting-assertions div {
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--lc-card-border);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--lc-card);
 }
 
 .living-context__meeting-source blockquote {
@@ -216,7 +225,7 @@
   padding: 16px;
   border: 1px solid rgba(56, 189, 248, 0.32);
   border-radius: 8px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(14, 18, 25, 0.9));
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.10), var(--lc-panel));
 }
 
 .living-context__review-match-head {
@@ -359,9 +368,9 @@
 
 .living-context__review-submission-annotations div {
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--lc-card-border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--lc-card);
 }
 
 .living-context__review-submission-annotations span {
@@ -389,9 +398,9 @@
   grid-template-columns: 52px 1fr;
   gap: 10px;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--lc-card-border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--lc-card);
 }
 
 .living-context__review-evidence-score {
@@ -490,9 +499,9 @@
   display: block;
   min-width: 0;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--lc-card-border);
   border-radius: 5px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--lc-card);
   color: inherit;
   text-decoration: none;
 }
@@ -527,9 +536,9 @@
 .living-context__repo-demand {
   min-width: 0;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--lc-card-border);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.14);
+  background: var(--lc-card);
 }
 
 .living-context__repo-demand-head {
@@ -578,9 +587,9 @@
 .living-context__repo-source {
   margin-top: 7px;
   padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--lc-card-border);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--lc-card);
 }
 
 .living-context__repo-source--missing {
@@ -912,6 +921,17 @@
   transform: rotate(90deg);
 }
 
+.living-context__context-record-title {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--lc-assertion);
+  font: 10px "Space Mono", monospace;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
 .living-context__context-record-type,
 .living-context__context-record-meta {
   padding: 2px 5px;
@@ -949,6 +969,7 @@
   border: 1px solid var(--pipe-border-light);
   border-radius: 4px;
   color: var(--pipe-text-muted);
+  background: var(--lc-card);
   font-size: 10px;
 }
 
@@ -1243,7 +1264,7 @@
 .context-tree__node {
   border: 1px solid var(--pipe-border);
   border-radius: 5px;
-  background: rgba(0, 0, 0, 0.12);
+  background: var(--lc-card);
   overflow: hidden;
 }
 

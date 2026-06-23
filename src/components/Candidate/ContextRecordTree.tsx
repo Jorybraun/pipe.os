@@ -13,6 +13,10 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function displayLabel(value: string): string {
+  return titleCase(value.toLowerCase());
+}
+
 function formatDate(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
@@ -112,6 +116,7 @@ export function ContextRecordTree({
   const dateLabel = formatDate(record.observedAt);
   const recordConfidence = confidenceLabel(record.confidence);
   const polarityLabel = record.polarity < 0 ? 'negative' : record.polarity > 0 ? 'positive' : 'neutral';
+  const predicateLabel = record.predicate ?? record.recordType;
 
   return (
     <article className="living-context__context-record">
@@ -126,8 +131,10 @@ export function ContextRecordTree({
           size={13}
           className={expanded ? 'living-context__context-record-chevron--open' : undefined}
         />
-        <span className="living-context__predicate">{record.predicate ?? record.recordType}</span>
-        <span className="living-context__context-record-type">{titleCase(record.recordType)}</span>
+        <span className="living-context__context-record-title" title={predicateLabel}>
+          {displayLabel(predicateLabel)}
+        </span>
+        <span className="living-context__context-record-type">{displayLabel(record.recordType)}</span>
         {recordConfidence && <span className="living-context__context-record-meta">{recordConfidence}</span>}
         {dateLabel && <span className="living-context__context-record-meta">{dateLabel}</span>}
         {record.polarity <= 0 && <span className="living-context__context-record-meta">{polarityLabel}</span>}
