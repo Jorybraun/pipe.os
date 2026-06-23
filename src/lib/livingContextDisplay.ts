@@ -17,14 +17,33 @@ export function firstReadableSentence(value: string): string {
 }
 
 export function isMachineSemanticKey(value: string): boolean {
-  return /^[A-Z0-9_:-]+$/.test(value) || value.includes('_') || value.length > 80;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const letters = trimmed.replace(/[^A-Za-z]/g, '');
+  const hasLetters = letters.length > 0;
+  const isAllCapsPhrase = hasLetters && letters === letters.toUpperCase() && letters.length > 8;
+  return /^[A-Z0-9_:-]+$/.test(trimmed)
+    || trimmed.includes('_')
+    || trimmed.length > 80
+    || isAllCapsPhrase;
 }
 
 export function contextRecordTitle(record: LivingContextRecord): string {
   const predicate = record.predicate ?? record.recordType;
+  const narrativeTitle = firstReadableSentence(record.narrative);
   return isMachineSemanticKey(predicate)
-    ? firstReadableSentence(record.narrative) || displaySemanticLabel(record.recordType)
+    ? !isMachineSemanticKey(narrativeTitle) && narrativeTitle
+      ? narrativeTitle
+      : displaySemanticLabel(predicate)
     : displaySemanticLabel(predicate);
+}
+
+export function contextRecordNarrative(record: LivingContextRecord): string {
+  const narrative = record.narrative.trim();
+  if (!narrative) return '';
+  return isMachineSemanticKey(narrative)
+    ? displaySemanticLabel(narrative)
+    : narrative;
 }
 
 export function contextRecordTypeLabel(record: LivingContextRecord): string {

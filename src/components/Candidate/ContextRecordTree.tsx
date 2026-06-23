@@ -7,6 +7,7 @@ import type {
   LivingContextSourceRef,
 } from '../../lib/api/types';
 import {
+  contextRecordNarrative,
   contextRecordTitle,
   contextRecordTypeLabel,
   titleCaseSemanticLabel,
@@ -113,6 +114,8 @@ export function ContextRecordTree({
   const polarityLabel = record.polarity < 0 ? 'negative' : record.polarity > 0 ? 'positive' : 'neutral';
   const predicateLabel = record.predicate ?? record.recordType;
   const title = contextRecordTitle(record);
+  const narrative = contextRecordNarrative(record);
+  const showNarrative = narrative.length > 0 && narrative !== title;
 
   return (
     <article className="living-context__context-record">
@@ -140,7 +143,7 @@ export function ContextRecordTree({
         </span>
       </button>
 
-      <div className="living-context__narrative">{record.narrative}</div>
+      {showNarrative && <div className="living-context__narrative">{narrative}</div>}
 
       {expanded && (
         <div className="living-context__context-record-body">

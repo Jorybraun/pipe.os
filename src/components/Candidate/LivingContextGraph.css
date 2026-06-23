@@ -951,7 +951,8 @@ html[data-theme="pipe-blue"] .living-context {
   line-height: 1.45;
   letter-spacing: 0;
   text-wrap: pretty;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .living-context__context-record-badges {
@@ -963,12 +964,15 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-type,
 .living-context__context-record-meta {
+  max-width: 100%;
   padding: 2px 5px;
   border: 1px solid var(--pipe-border);
   border-radius: 3px;
   color: var(--pipe-text-dim);
   font: 8px "Space Mono", monospace;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .living-context__context-record-body {
@@ -1279,6 +1283,68 @@ html[data-theme="pipe-blue"] .living-context {
 
   .living-context__signal-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@container living-context (max-width: 460px) {
+  .living-context__toolbar {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .living-context__search {
+    min-width: 0;
+  }
+
+  .living-context__search input {
+    height: 34px;
+    font-size: 9px;
+  }
+
+  .living-context__refresh {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+  }
+
+  .living-context__summary {
+    margin-bottom: 14px;
+  }
+
+  .living-context__metric {
+    padding: 10px 12px;
+  }
+
+  .living-context__rail,
+  .living-context__canvas,
+  .living-context__inspector {
+    padding: 14px 18px;
+  }
+
+  .living-context__context-record {
+    padding: 11px;
+  }
+
+  .living-context__context-record-toggle {
+    gap: 6px;
+  }
+
+  .living-context__context-record-title {
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  .living-context__context-record-badges {
+    gap: 4px;
+  }
+
+  .living-context__context-record-type,
+  .living-context__context-record-meta {
+    font-size: 7px;
+  }
+
+  .living-context__narrative {
+    font-size: 11px;
   }
 }
 
