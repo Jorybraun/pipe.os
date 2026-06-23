@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a canonical `/people/:personId` profile surface with relationship timeline, source-backed context records, evidence artifacts, and living-context graph visualization; `/person/:personId` now redirects to the shared people profile.
 - Branded the standalone video room experience with PIPE logo/loading states and refreshed room chrome while preserving recording, lobby, and call controls.
 - Simplified demo-facing interview plan language across the sidebar, plan list, and new-plan flow so role context is clearly optional and roleless interviews remain first-class.
-- Person and role plan surfaces now use higher-contrast living-context/readability treatments for source-backed context records across light and dark themes.
+- Person and role plan surfaces now use higher-contrast living-context/readability treatments for source-backed context records across light and dark themes, including narrow-drawer chip wrapping for long concept/source labels.
 - Improved living-context graph theme contrast and context-record wrapping so source-backed evidence remains readable across light and dark app surfaces.
 - Video room signaling now auto-starts host negotiation when a guest joins, prefers TURN relay when TURN credentials are available, and revokes stale host room links when preparing a fresh host URL.
 - Host hangup now records the meeting end event before uploading the recording, so transcription and living-context ingestion receive a stable call end timestamp.

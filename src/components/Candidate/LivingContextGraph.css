@@ -1111,8 +1111,10 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__concept,
 .living-context__relation {
-  flex: 0 1 auto;
-  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 10rem;
+  min-width: min(10rem, 100%);
   max-width: 100%;
   padding: 3px 6px;
   overflow-wrap: break-word;
@@ -1121,12 +1123,13 @@ html[data-theme="pipe-blue"] .living-context {
   border-radius: 3px;
   color: var(--lc-record-muted);
   font: 8px "Space Mono", monospace;
+  line-height: 1.45;
 }
 
 .living-context__source-button {
   display: inline-flex;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 1 1 12rem;
+  min-width: min(12rem, 100%);
   max-width: 100%;
   align-items: center;
   gap: 5px;
@@ -1136,6 +1139,8 @@ html[data-theme="pipe-blue"] .living-context {
   background: rgba(56, 189, 248, 0.05);
   color: var(--lc-source);
   font: 8px "Space Mono", monospace;
+  line-height: 1.45;
+  text-align: left;
   cursor: pointer;
 }
 
@@ -1150,6 +1155,10 @@ html[data-theme="pipe-blue"] .living-context {
   min-width: 0;
   overflow-wrap: break-word;
   word-break: normal;
+}
+
+.living-context__source-button svg {
+  flex: 0 0 auto;
 }
 
 .living-context__artifacts {
@@ -1773,6 +1782,29 @@ html[data-theme="pipe-blue"] .living-context {
 
   .living-context__source-button {
     width: 100%;
+    flex-basis: 100%;
     justify-content: flex-start;
+  }
+
+  .living-context__concept,
+  .living-context__relation {
+    flex-basis: 100%;
+    min-width: 100%;
+  }
+}
+
+@container living-context (max-width: 560px) {
+  .living-context__concepts,
+  .living-context__source-links,
+  .living-context__relations {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .living-context__concept,
+  .living-context__relation,
+  .living-context__source-button {
+    width: 100%;
+    min-width: 0;
   }
 }
