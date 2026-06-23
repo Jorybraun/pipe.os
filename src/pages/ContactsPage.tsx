@@ -1,17 +1,17 @@
 /**
- * ContactsPage — unified address book for leads, candidates, customers.
+ * People page — one relationship graph for leads, candidates, customers, and clients.
  *
- * Route: /contacts
+ * Route: /people
  *
  * Features:
- *   - List all contacts with search + type filter
- *   - Add a contact by email (name auto-populated if you know it)
- *   - Click a contact to open a detail/edit drawer
- *   - Delete a contact
+ *   - List people with search + relationship tags
+ *   - Add a person by email
+ *   - Click a person to open their living profile
  */
 
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@clerk/react';
+import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Search, X, ChevronRight, Loader,
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
@@ -22,7 +22,10 @@ import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ContactType = 'lead' | 'candidate' | 'customer' | 'other';
+type ContactType = 'lead' | 'candidate' | 'customer' | 'person' | 'other';
+type EditableContactType = 'lead' | 'candidate' | 'customer' | 'other';
+
+const EDITABLE_RELATIONSHIP_TYPES: EditableContactType[] = ['lead', 'candidate', 'customer', 'other'];
 
 interface PdlPerson {
   poolId: string;
@@ -72,21 +75,32 @@ const TYPE_COLORS: Record<ContactType, string> = {
   lead:      '#fbbf24',
   candidate: '#60a5fa',
   customer:  '#4ade80',
+  person:    '#a78bfa',
   other:     '#9ca3af',
 };
 
 const TYPE_LABELS: Record<ContactType, string> = {
   lead:      'LEAD',
-  candidate: 'PERSON',
+  candidate: 'CANDIDATE',
   customer:  'CLIENT',
-  other:     'OTHER',
+  person:    'PERSON',
+  other:     'PERSON',
 };
+
+function typeColor(type: ContactType | string): string {
+  return TYPE_COLORS[type as ContactType] ?? TYPE_COLORS.person;
+}
+
+function typeLabel(type: ContactType | string): string {
+  return TYPE_LABELS[type as ContactType] ?? TYPE_LABELS.person;
+}
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ContactsPage(): JSX.Element {
   const { getToken } = useAuth();
   const api = createApiClient({ getToken });
+  const navigate = useNavigate();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -141,7 +155,7 @@ export default function ContactsPage(): JSX.Element {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 9, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', marginBottom: 4 }}>
-              {activeTab === 'contacts' ? 'PEOPLE' : 'SOURCE'}
+              {activeTab === 'contacts' ? 'PEOPLE' : 'FIND'}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>
               {activeTab === 'contacts'
@@ -165,12 +179,12 @@ export default function ContactsPage(): JSX.Element {
                   border: '1px solid',
                   borderRadius: 3,
                   cursor: 'pointer',
-                  borderColor: activeTab === t ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
-                  background: activeTab === t ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  borderColor: activeTab === t ? 'var(--pipe-accent-border)' : 'var(--pipe-border)',
+                  background: activeTab === t ? 'var(--pipe-accent-surface)' : 'transparent',
                   color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                 }}
               >
-                {t === 'contacts' ? 'PEOPLE' : 'SOURCE'}
+                {t === 'contacts' ? 'PEOPLE' : 'FIND'}
               </button>
             ))}
           </div>
@@ -208,7 +222,7 @@ export default function ContactsPage(): JSX.Element {
                     width: '100%', padding: '8px 8px 8px 30px',
                     fontSize: 9, fontFamily: '"Space Mono", monospace',
                     letterSpacing: '0.08em',
-                    background: 'rgba(255,255,255,0.03)',
+                    background: 'var(--pipe-surface)',
                     border: '1px solid var(--pipe-border)',
                     borderRadius: 4, color: 'var(--pipe-text)', outline: 'none',
                   }}
@@ -224,7 +238,7 @@ export default function ContactsPage(): JSX.Element {
               </div>
             </div>
 
-            {/* Contact list */}
+            {/* People list */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {isLoading && (
                 <div style={{ padding: 40, display: 'flex', justifyContent: 'center', color: 'var(--pipe-text-dim)' }}>
@@ -248,7 +262,7 @@ export default function ContactsPage(): JSX.Element {
                   key={contact.id}
                   contact={contact}
                   isSelected={selected?.id === contact.id}
-                  onClick={() => { setSelected(contact); setShowAdd(false); }}
+                  onClick={() => { navigate(`/people/${contact.id}`); }}
                 />
               ))}
             </div>
@@ -296,7 +310,7 @@ export default function ContactsPage(): JSX.Element {
   );
 }
 
-// ─── Contact Row ─────────────────────────────────────────────────────────────
+// ─── Person Row ──────────────────────────────────────────────────────────────
 
 function ContactRow({ contact, isSelected, onClick }: {
   contact: Contact;
@@ -306,6 +320,8 @@ function ContactRow({ contact, isSelected, onClick }: {
   const initials = contact.name
     ? contact.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2)
     : (contact.email[0] ?? '?').toUpperCase();
+  const relationshipColor = typeColor(contact.type);
+  const relationshipLabel = typeLabel(contact.type);
 
   return (
     <div
@@ -314,20 +330,20 @@ function ContactRow({ contact, isSelected, onClick }: {
         padding: '12px 24px',
         borderBottom: '1px solid var(--pipe-border)',
         cursor: 'pointer',
-        background: isSelected ? 'rgba(255,255,255,0.04)' : 'transparent',
+        background: isSelected ? 'var(--pipe-surface-hover)' : 'transparent',
         display: 'flex', alignItems: 'center', gap: 12,
         transition: 'background 0.15s',
       }}
-      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.02)'; }}
+      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'var(--pipe-surface)'; }}
       onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
     >
       {/* Avatar */}
       <div style={{
         width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-        background: `${TYPE_COLORS[contact.type as ContactType]}18`,
-        border: `1px solid ${TYPE_COLORS[contact.type as ContactType]}40`,
+        background: `${relationshipColor}18`,
+        border: `1px solid ${relationshipColor}40`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 12, fontWeight: 700, color: TYPE_COLORS[contact.type as ContactType],
+        fontSize: 12, fontWeight: 700, color: relationshipColor,
       }}>
         {initials}
       </div>
@@ -340,11 +356,11 @@ function ContactRow({ contact, isSelected, onClick }: {
           <span style={{
             fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
             padding: '2px 5px', borderRadius: 2,
-            background: `${TYPE_COLORS[contact.type as ContactType]}18`,
-            color: TYPE_COLORS[contact.type as ContactType],
+            background: `${relationshipColor}18`,
+            color: relationshipColor,
             flexShrink: 0,
           }}>
-            {TYPE_LABELS[contact.type as ContactType]}
+            {relationshipLabel}
           </span>
         </div>
         <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -357,14 +373,14 @@ function ContactRow({ contact, isSelected, onClick }: {
   );
 }
 
-// ─── Add Contact Panel ────────────────────────────────────────────────────────
+// ─── Add Person Panel ─────────────────────────────────────────────────────────
 
 function AddContactPanel({ onSaved, onClose, api }: {
   onSaved: (c: Contact) => void;
   onClose: () => void;
   api: ReturnType<typeof createApiClient>;
 }): JSX.Element {
-  const [form, setForm] = useState({ email: '', name: '', company: '', role: '', phone: '', linkedin: '', notes: '', type: 'lead' as ContactType });
+  const [form, setForm] = useState({ email: '', name: '', company: '', role: '', phone: '', linkedin: '', notes: '', type: 'lead' as EditableContactType });
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -392,7 +408,7 @@ function AddContactPanel({ onSaved, onClose, api }: {
 
   return (
     <ContactForm
-      title="ADD_CONTACT"
+      title="ADD PERSON"
       form={form}
       onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
       onSave={() => void handleSave()}
@@ -404,7 +420,7 @@ function AddContactPanel({ onSaved, onClose, api }: {
   );
 }
 
-// ─── Contact Detail Panel ─────────────────────────────────────────────────────
+// ─── Person Detail Panel ──────────────────────────────────────────────────────
 
 function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   contact: Contact;
@@ -421,7 +437,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
     phone: contact.phone ?? '',
     linkedin: contact.linkedin ?? '',
     notes: contact.notes ?? '',
-    type: contact.type,
+    type: contact.type === 'person' ? 'other' : contact.type,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -438,7 +454,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
       phone: contact.phone ?? '',
       linkedin: contact.linkedin ?? '',
       notes: contact.notes ?? '',
-      type: contact.type,
+      type: contact.type === 'person' ? 'other' : contact.type,
     });
     setError(null);
     setActiveTab('details');
@@ -498,8 +514,8 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
                 border: '1px solid',
                 borderRadius: 3,
                 cursor: 'pointer',
-                borderColor: activeTab === tab ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
-                background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+                borderColor: activeTab === tab ? 'var(--pipe-accent-border)' : 'var(--pipe-border)',
+                background: activeTab === tab ? 'var(--pipe-accent-surface)' : 'transparent',
                 color: activeTab === tab ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
               }}
             >
@@ -513,10 +529,14 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{
+        flex: 1,
+        overflow: activeTab === 'details' ? 'hidden' : 'auto',
+        padding: activeTab === 'context' ? 16 : 0,
+      }}>
         {activeTab === 'details' ? (
           <ContactForm
-            title="CONTACT"
+            title="PERSON"
             form={form}
             onChange={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
             onSave={() => void handleSave()}
@@ -539,7 +559,7 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
 
 function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSaving, isDeleting, error, saveLabel }: {
   title: string;
-  form: { email: string; name: string; company: string; role: string; phone: string; linkedin: string; notes: string; type: ContactType };
+  form: { email: string; name: string; company: string; role: string; phone: string; linkedin: string; notes: string; type: EditableContactType };
   onChange: (key: string, value: string) => void;
   onSave: () => void;
   onClose: () => void;
@@ -563,7 +583,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
           style={{
             flex: 1, padding: '8px 10px', fontSize: 11,
             fontFamily: '"Space Mono", monospace',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--pipe-surface)',
             border: '1px solid var(--pipe-border)', borderRadius: 4,
             color: 'var(--pipe-text)', outline: 'none', resize: 'vertical',
           }}
@@ -576,7 +596,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
           style={{
             flex: 1, padding: '8px 10px', fontSize: 11,
             fontFamily: '"Space Mono", monospace',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--pipe-surface)',
             border: '1px solid var(--pipe-border)', borderRadius: 4,
             color: 'var(--pipe-text)', outline: 'none',
           }}
@@ -600,23 +620,28 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
 
       {/* Fields */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {/* Type selector */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-          {(['lead', 'candidate', 'customer', 'other'] as ContactType[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => onChange('type', t)}
-              style={{
-                padding: '4px 10px', fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
-                fontFamily: '"Space Mono", monospace', border: '1px solid', borderRadius: 3, cursor: 'pointer',
-                borderColor: form.type === t ? TYPE_COLORS[t] : 'var(--pipe-border)',
-                background: form.type === t ? `${TYPE_COLORS[t]}18` : 'transparent',
-                color: form.type === t ? TYPE_COLORS[t] : 'var(--pipe-text-dim)',
-              }}
-            >
-              {TYPE_LABELS[t]}
-            </button>
-          ))}
+        {/* Relationship selector */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+          <div style={{ fontSize: 8, color: 'var(--pipe-text-dim)', letterSpacing: '0.12em', fontWeight: 700 }}>
+            RELATIONSHIP
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {EDITABLE_RELATIONSHIP_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => onChange('type', t)}
+                style={{
+                  padding: '4px 10px', fontSize: 8, fontWeight: 700, letterSpacing: '0.1em',
+                  fontFamily: '"Space Mono", monospace', border: '1px solid', borderRadius: 3, cursor: 'pointer',
+                  borderColor: form.type === t ? typeColor(t) : 'var(--pipe-border)',
+                  background: form.type === t ? `${typeColor(t)}18` : 'transparent',
+                  color: form.type === t ? typeColor(t) : 'var(--pipe-text-dim)',
+                }}
+              >
+                {typeLabel(t)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {field(<Mail size={13} />, 'email', 'email@example.com')}
@@ -803,7 +828,7 @@ function SourceSearchPanel({ api, onContact }: {
             style={{
               width: '100%', padding: '10px 12px', fontSize: 12,
               fontFamily: '"Space Mono", monospace',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--pipe-surface)',
               border: '1px solid var(--pipe-border)', borderRadius: 4,
               color: 'var(--pipe-text)', outline: 'none',
             }}
@@ -909,7 +934,7 @@ function SourceSearchPanel({ api, onContact }: {
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               {person.status !== 'contacted' && (
                 <>
-                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
+                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
                     {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
                   </button>
                   <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>
@@ -950,9 +975,9 @@ function ContactLivingContext({ contactId, api }: { contactId: string; api: Retu
     })();
   }, [api, endpoint]);
 
-  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>LOADING_CONTEXT</div>;
+  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>Loading context...</div>;
   if (!livingContext || livingContext.summary.interactionCount === 0) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>NO_CONTEXT_YET</div>;
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>No context captured yet.</div>;
   }
 
   return (

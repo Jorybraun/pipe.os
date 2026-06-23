@@ -6,12 +6,12 @@ import type {
   LivingContextRecordSourceRef,
   LivingContextSourceRef,
 } from '../../lib/api/types';
-
-function titleCase(value: string): string {
-  return value
-    .replace(/[_:-]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
+import {
+  contextRecordNarrative,
+  contextRecordTitle,
+  contextRecordTypeLabel,
+  titleCaseSemanticLabel,
+} from '../../lib/livingContextDisplay';
 
 function formatDate(value: string | null): string | null {
   if (!value) return null;
@@ -75,9 +75,9 @@ function genericLocatorLabel(locator: Record<string, unknown>): string | null {
 
 function recordSourceLabel(source: LivingContextRecordSourceRef): string {
   if (isSourceSpanRef(source)) {
-    return `${titleCase(source.artifactType)} ${locatorLabel(source)}`;
+    return `${titleCaseSemanticLabel(source.artifactType)} ${locatorLabel(source)}`;
   }
-  return `${titleCase(source.sourceRefType)} ${genericLocatorLabel(source.locator) ?? source.sourceRefId}`;
+  return `${titleCaseSemanticLabel(source.sourceRefType)} ${genericLocatorLabel(source.locator) ?? source.sourceRefId}`;
 }
 
 function recordSourceSnippet(source: LivingContextRecordSourceRef): string | null {
@@ -112,6 +112,10 @@ export function ContextRecordTree({
   const dateLabel = formatDate(record.observedAt);
   const recordConfidence = confidenceLabel(record.confidence);
   const polarityLabel = record.polarity < 0 ? 'negative' : record.polarity > 0 ? 'positive' : 'neutral';
+  const predicateLabel = record.predicate ?? record.recordType;
+  const title = contextRecordTitle(record);
+  const narrative = contextRecordNarrative(record);
+  const showNarrative = narrative.length > 0 && narrative !== title;
 
   return (
     <article className="living-context__context-record">
@@ -126,14 +130,20 @@ export function ContextRecordTree({
           size={13}
           className={expanded ? 'living-context__context-record-chevron--open' : undefined}
         />
-        <span className="living-context__predicate">{record.predicate ?? record.recordType}</span>
-        <span className="living-context__context-record-type">{titleCase(record.recordType)}</span>
-        {recordConfidence && <span className="living-context__context-record-meta">{recordConfidence}</span>}
-        {dateLabel && <span className="living-context__context-record-meta">{dateLabel}</span>}
-        {record.polarity <= 0 && <span className="living-context__context-record-meta">{polarityLabel}</span>}
+        <span className="living-context__context-record-head">
+          <span className="living-context__context-record-title" title={predicateLabel}>
+            {title}
+          </span>
+          <span className="living-context__context-record-badges">
+            <span className="living-context__context-record-type">{contextRecordTypeLabel(record)}</span>
+            {recordConfidence && <span className="living-context__context-record-meta">{recordConfidence}</span>}
+            {dateLabel && <span className="living-context__context-record-meta">{dateLabel}</span>}
+            {record.polarity <= 0 && <span className="living-context__context-record-meta">{polarityLabel}</span>}
+          </span>
+        </span>
       </button>
 
-      <div className="living-context__narrative">{record.narrative}</div>
+      {showNarrative && <div className="living-context__narrative">{narrative}</div>}
 
       {expanded && (
         <div className="living-context__context-record-body">
@@ -234,7 +244,7 @@ export function ContextRecordForest({
   onSelectSource: (source: LivingContextSourceRef) => void;
 }): JSX.Element {
   if (records.length === 0) {
-    return <div className="living-context__empty">NO_CONTEXT_RECORDS</div>;
+    return <div className="living-context__empty">No source-backed context records yet.</div>;
   }
 
   return (

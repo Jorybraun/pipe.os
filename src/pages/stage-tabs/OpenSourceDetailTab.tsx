@@ -389,7 +389,7 @@ export default function OpenSourceDetailTab(): JSX.Element {
               </div>
             </div>
           ) : (
-            /* Placeholder — candidate-matched repository */
+            /* Placeholder — source-backed candidate match */
             <div
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 14,
@@ -400,12 +400,12 @@ export default function OpenSourceDetailTab(): JSX.Element {
               <Target size={18} color="#4ade80" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, marginBottom: 4 }}>
-                  Candidate-Matched Repository
+                  Source-backed candidate match
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5 }}>
-                  Each candidate receives a repository and issue best matched
-                  to their profile by the AI ingestion pipeline. Requires
-                  candidate resume ingestion to complete.
+                  PIPE selects a repository and issue only when person evidence
+                  and repository context support it. If evidence is missing,
+                  the match reports the gap instead of assigning generic work.
                 </div>
               </div>
             </div>
@@ -433,7 +433,7 @@ export default function OpenSourceDetailTab(): JSX.Element {
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Target size={12} /> USE MATCHED REPO
+                  <Target size={12} /> USE EVIDENCE MATCH
                 </span>
               </button>
               <button
@@ -453,7 +453,7 @@ export default function OpenSourceDetailTab(): JSX.Element {
                   <Target size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> MATCHED REPO
                 </div>
                 <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: mono, lineHeight: 1.5 }}>
-                  AI selects the best repository and issue for each candidate based on their resume, skills, and experience.
+                  PIPE uses source-backed person evidence and approved repository context. No generic repo fallback.
                 </div>
               </div>
               <div style={{ textAlign: 'left', padding: '10px 12px', background: 'var(--pipe-surface)', borderRadius: 6, border: '1px solid var(--pipe-border)' }}>

@@ -7,8 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Dev Demo Room and Person Context
+
+- Added a canonical `/people/:personId` profile surface with relationship timeline, source-backed context records, evidence artifacts, and living-context graph visualization; `/person/:personId` now redirects to the shared people profile.
+- Branded the standalone video room experience with PIPE logo/loading states and refreshed room chrome while preserving recording, lobby, and call controls.
+- Added `npm run smoke:scheduling-invite-dev` to prove the deployed app-dev invite path creates a roleless interview, sends through Cloudflare Email Sending, returns one canonical guest room link, and persists source-backed invite context.
+- Simplified demo-facing interview plan language across the sidebar, plan list, and new-plan flow so role context is clearly optional and roleless interviews remain first-class.
+- Person and role plan surfaces now use higher-contrast living-context/readability treatments for source-backed context records across light and dark themes, including narrow-drawer chip wrapping for long concept/source labels.
+- Improved living-context graph theme contrast and context-record wrapping so source-backed evidence remains readable across light and dark app surfaces.
+- Video room signaling now auto-starts host negotiation when a guest joins, prefers TURN relay when TURN credentials are available, and revokes stale host room links when preparing a fresh host URL.
+- Host hangup now records the meeting end event before uploading the recording, so transcription and living-context ingestion receive a stable call end timestamp.
+- `api-dev` now includes the Cloudflare `DEV_CONTAINER` Durable Object and container image binding, allowing dev-container code-review interviews to launch against the deployed dev API instead of silently missing the runtime binding.
+- Deployed PIPE app hosts now default candidate dev-container sessions to the Cloudflare `/rpc` backend and resolve dev-container API calls through the same-origin app proxy, avoiding stale AppSync/localhost routing in `app-dev`.
+- The authenticated `app-dev` proxy now preserves candidate `Bearer` session tokens when the dev auth cookie is present, allowing `/rpc` candidate routes such as dev-container launch/status to authenticate through the app domain.
+- Dev-container sessions now start the code-server container before marking a session `READY`, and the dev preview image prepares `/workspace` then runs code-server as root so Cloudflare Containers beta can boot the IDE reliably.
+- Dev-container iframe access now converts the one-time exchange token into a scoped proxy cookie, so code-server redirects and assets continue loading inside `app-dev` without leaking the candidate session token.
+
 ### Fixed — Contact Living Context Graph
 
+- Interview detail transcript refresh now runs as a background update, not a full-page loading reset, and only polls while a recording/transcript is actively processing.
+- The shared API client hook now keeps a stable client instance while still reading the latest Clerk token, avoiding render/effect churn on detail pages that poll.
 - Contact/people drawer context now renders the shared living-context graph from `/api/v1/contacts/:id/living-context` instead of incorrectly treating the contact ID as a candidate ID.
 - Empty contact living-context responses now preserve the shared read-model shape, including `contextRecordCount` and `contextRecords`.
 - Contact living-context identity now follows the stable legacy contact link before email lookup, so contact email edits update the same person/workspace graph instead of forking it.

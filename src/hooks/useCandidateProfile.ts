@@ -16,6 +16,7 @@ import type {
   CandidateEnrichmentRecord,
   ProfileSection,
   CultureInterviewSession,
+  ScheduledInterviewSummary,
   StandaloneReviewMatchRecord,
 } from '../lib/api/types';
 import { ApiError } from '../lib/api/types';
@@ -28,6 +29,7 @@ export interface UseCandidateProfileResult {
   standaloneReviewMatch: StandaloneReviewMatchRecord | null;
   profileSections: ProfileSection[];
   cultureInterviewSessions: CultureInterviewSession[];
+  scheduledInterviews: ScheduledInterviewSummary[];
   isLoading: boolean;
   error: Error | null;
   refetch: () => Promise<void>;
@@ -53,6 +55,7 @@ export function useCandidateProfile(
   const [standaloneReviewMatch, setStandaloneReviewMatch] = useState<StandaloneReviewMatchRecord | null>(null);
   const [profileSections, setProfileSections] = useState<ProfileSection[]>([]);
   const [cultureInterviewSessions, setCultureInterviewSessions] = useState<CultureInterviewSession[]>([]);
+  const [scheduledInterviews, setScheduledInterviews] = useState<ScheduledInterviewSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -75,6 +78,7 @@ export function useCandidateProfile(
       setStandaloneReviewMatch(data.standaloneReviewMatch ?? null);
       setProfileSections(data.profileSections ?? []);
       setCultureInterviewSessions(data.cultureInterviewSessions ?? []);
+      setScheduledInterviews(data.scheduledInterviews ?? []);
     } catch (err) {
       if (err instanceof ApiError) {
         console.error('[useCandidateProfile] API error:', err.code, err.message);
@@ -156,6 +160,7 @@ export function useCandidateProfile(
     standaloneReviewMatch,
     profileSections,
     cultureInterviewSessions,
+    scheduledInterviews,
     isLoading,
     error,
     refetch: fetchProfile,

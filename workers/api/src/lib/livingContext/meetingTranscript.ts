@@ -50,6 +50,7 @@ export interface MeetingTranscriptAssertionInput {
 export interface MeetingTranscriptIngestionInput {
   meetingId: string;
   ownerId: string;
+  scheduledInterviewId?: string | null;
   transcript?: string;
   segments?: MeetingTranscriptSegmentInput[];
   summary?: string | null;
@@ -533,6 +534,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       metadata: {
         ownerId: input.ownerId,
         participantRole: participant.role,
+        scheduledInterviewId: input.scheduledInterviewId ?? null,
       },
     });
     identities.set(participant.contact_id, {
@@ -547,6 +549,7 @@ export async function ingestMeetingTranscriptToLivingContext(
     logicalKey: input.meetingId,
     metadata: {
       meetingId: input.meetingId,
+      scheduledInterviewId: input.scheduledInterviewId ?? null,
       recordingKey: input.recordingKey ?? null,
       provider: input.provider ?? null,
     },
@@ -583,6 +586,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       byteLength: new TextEncoder().encode(canonical.contentText).byteLength,
       metadata: {
         meetingId: input.meetingId,
+        scheduledInterviewId: input.scheduledInterviewId ?? null,
         provider: input.provider ?? null,
         segmentCount: canonical.segments.length,
       },
@@ -655,6 +659,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       narrative: `Meeting transcript source evidence for meeting ${input.meetingId}.`,
       qualifiers: {
         meetingId: input.meetingId,
+        scheduledInterviewId: input.scheduledInterviewId ?? null,
         ownerId: input.ownerId,
         provider: input.provider ?? null,
         recordingKey: input.recordingKey ?? null,
@@ -668,11 +673,20 @@ export async function ingestMeetingTranscriptToLivingContext(
         evidenceRole: 'transcript_segment',
         exactText: segment.text,
       })),
-      entities: [{
-        entityType: 'meeting',
-        entityId: input.meetingId,
-        relationship: 'source_event',
-      }],
+      entities: [
+        {
+          entityType: 'meeting',
+          entityId: input.meetingId,
+          relationship: 'source_event',
+        },
+        ...(input.scheduledInterviewId
+          ? [{
+              entityType: 'scheduled_interview',
+              entityId: input.scheduledInterviewId,
+              relationship: 'interview_context',
+            }]
+          : []),
+      ],
     });
   }
 
@@ -758,6 +772,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         metadata: {
           artifactVersionId: version.id,
           semanticProjectionRunId: semanticRunId,
+          scheduledInterviewId: input.scheduledInterviewId ?? null,
         },
       });
       await linkProjectionEntity(db, semanticRunId, 'episode', episode.id, now);
@@ -776,6 +791,7 @@ export async function ingestMeetingTranscriptToLivingContext(
           artifactVersionId: version.id,
           subjectSegmentId: extracted.subjectSegmentId,
           semanticProjectionRunId: semanticRunId,
+          scheduledInterviewId: input.scheduledInterviewId ?? null,
         },
         confidence: boundedScore(extracted.confidence),
         polarity: boundedPolarity(extracted.polarity),
@@ -845,6 +861,13 @@ export async function ingestMeetingTranscriptToLivingContext(
             entityId: input.meetingId,
             relationship: 'source_event',
           },
+          ...(input.scheduledInterviewId
+            ? [{
+                entityType: 'scheduled_interview',
+                entityId: input.scheduledInterviewId,
+                relationship: 'interview_context',
+              }]
+            : []),
           ...(extracted.objectValue === undefined
             ? []
             : [{

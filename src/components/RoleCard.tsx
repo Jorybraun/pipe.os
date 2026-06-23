@@ -1,16 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Building,
-  MapPin,
   Calendar,
   ChevronRight,
   MoreHorizontal,
   Activity,
   Users,
-  Target,
-  Trophy,
-  Check,
   Trash2,
+  ClipboardList,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
@@ -19,16 +15,11 @@ export type RoleStatus = "active" | "draft" | "closed";
 interface RoleCardProps {
   id: string;
   title: string;
-  department: string;
-  location: string;
+  interviewSummary: string;
+  contextSummary: string;
   status: RoleStatus;
   candidates: number;
-  avgScore?: number | null;
-  stagesConfigured: number;
-  totalStages: number;
   createdAt: string;
-  isSelected?: boolean;
-  onSelect?: (selected: boolean) => void;
   onClick?: () => void;
   onDelete?: () => void;
   style?: React.CSSProperties;
@@ -38,16 +29,11 @@ interface RoleCardProps {
 export function RoleCard({
   id: _id,
   title,
-  department,
-  location,
+  interviewSummary,
+  contextSummary,
   status,
   candidates,
-  avgScore,
-  stagesConfigured,
-  totalStages,
   createdAt,
-  isSelected = false,
-  onSelect,
   onClick,
   onDelete,
   style = {},
@@ -94,7 +80,6 @@ export function RoleCard({
   }, [menuOpen]);
 
   const statusStyle = getStatusStyle(status);
-  const isComplete = stagesConfigured === totalStages;
 
   const formattedDate = new Date(createdAt)
     .toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -103,7 +88,7 @@ export function RoleCard({
   return (
     <div style={{ marginBottom: 12, ...style }} className={className}>
       <LiquidMetalCard
-        variant="chrome"
+        variant="solid"
         {...(onClick ? { onClick } : {})}
         style={{
           padding: 0,
@@ -113,38 +98,6 @@ export function RoleCard({
         }}
       >
         <div style={{ display: "flex", alignItems: "stretch" }}>
-          {/* Multi-select Checkbox */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect?.(!isSelected);
-            }}
-            style={{
-              width: 48,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: isSelected ? "rgba(255, 255, 255, 0.06)" : "transparent",
-              borderRight: "1px solid var(--pipe-border-light)",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-            }}
-          >
-            <div style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              border: `2px solid ${isSelected ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-border)"}`,
-              background: isSelected ? "rgba(255, 255, 255, 0.40)" : "transparent",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "all 0.15s ease",
-            }}>
-              {isSelected && <Check size={14} color="#fff" strokeWidth={3} />}
-            </div>
-          </div>
-
           {/* Status Indicator Bar */}
           <div
             style={{
@@ -201,7 +154,7 @@ export function RoleCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Building size={12} color="var(--pipe-text-dim)" />
+                  <ClipboardList size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -209,11 +162,11 @@ export function RoleCard({
                       fontFamily: "Space Mono",
                     }}
                   >
-                    {department.toUpperCase()}
+                    {interviewSummary.toUpperCase()}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <MapPin size={12} color="var(--pipe-text-dim)" />
+                  <Activity size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -221,7 +174,7 @@ export function RoleCard({
                       fontFamily: "Space Mono",
                     }}
                   >
-                    {location.toUpperCase()}
+                    {contextSummary.toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -249,57 +202,7 @@ export function RoleCard({
                       letterSpacing: "0.1em",
                     }}
                   >
-                    CANDIDATES
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Trophy size={14} color="var(--pipe-text-dim)" />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: avgScore ? "var(--pipe-text, #fff)" : "var(--pipe-text-dim)",
-                      fontFamily: "Space Mono",
-                    }}
-                  >
-                    {avgScore ? String(avgScore).padStart(2, "0") : "—"}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 7,
-                      color: "var(--pipe-text-dim)",
-                      letterSpacing: "0.1em",
-                    }}
-                  >
-                    AVG SCORE
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Target size={14} color="var(--pipe-text-dim)" />
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: isComplete ? "#10b981" : "var(--pipe-text)",
-                      fontFamily: "Space Mono",
-                    }}
-                  >
-                    {stagesConfigured}/{totalStages}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 7,
-                      color: "var(--pipe-text-dim)",
-                      letterSpacing: "0.1em",
-                    }}
-                  >
-                    STAGES
+                    PEOPLE
                   </div>
                 </div>
               </div>
@@ -342,7 +245,7 @@ export function RoleCard({
             }}
           >
             <button
-              aria-label="Pipeline actions"
+              aria-label="Role context actions"
               style={{
                 background: menuOpen ? "var(--pipe-surface-hover)" : "transparent",
                 border: "none",
@@ -368,7 +271,7 @@ export function RoleCard({
                   right: 0,
                   zIndex: 50,
                   minWidth: 160,
-                  background: "var(--pipe-bg)",
+                  background: "var(--pipe-surface-solid)",
                   border: "1px solid var(--pipe-border)",
                   borderRadius: 8,
                   boxShadow: "0 8px 32px var(--pipe-shadow)",

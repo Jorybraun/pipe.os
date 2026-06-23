@@ -20,12 +20,13 @@ export function Layout({
   isAgentOpen = false,
 }: ProfileLayoutProps) {
   const { theme } = useTheme();
-  const isDark = theme.mode === 'dark';
-  const overlayColor = theme.mode === 'anatomy'
+  const isDark = theme.mode === 'dark' || theme.mode === 'anatomy-dark' || theme.mode === 'pipe-blue';
+  const fallbackOverlayColor = theme.mode === 'anatomy'
     ? `rgba(243,234,213,${theme.background.overlay})`
     : isDark
     ? `rgba(12,12,14,${theme.background.overlay})`
     : `rgba(245,245,247,${theme.background.overlay})`;
+  const chromeBackground = `var(--pipe-overlay, ${fallbackOverlayColor})`;
   const { setPortalNode, isPortalOpen } = useSidebarPortal();
 
   // The aside is open if either the agentPanel has content OR a portal is active
@@ -35,7 +36,7 @@ export function Layout({
     <div
       style={{
         minHeight: "100vh",
-        background: overlayColor,
+        background: "var(--pipe-bg, #0c0c0e)",
         fontFamily: '"Space Mono", monospace',
         color: "var(--pipe-text, #fff)",
         position: "relative",
@@ -49,7 +50,7 @@ export function Layout({
         left: 0,
         right: 0,
         zIndex: 20,
-        background: overlayColor,
+        background: chromeBackground,
         backdropFilter: "blur(12px)",
         borderBottom: "1px solid var(--pipe-border-light, rgba(255,255,255,0.04))",
       }}>
@@ -91,7 +92,7 @@ export function Layout({
               left: "80px",
               top: 100,
               height: "calc(100vh - 120px)",
-              background: overlayColor,
+              background: chromeBackground,
               backdropFilter: "blur(12px)",
               borderRight: "1px solid var(--pipe-border, rgba(255,255,255,0.06))",
               boxShadow: `4px 0 24px var(--pipe-shadow, rgba(0,0,0,0.3))`,

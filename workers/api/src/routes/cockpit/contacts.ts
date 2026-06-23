@@ -12,7 +12,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { ensureContactLivingContext, loadContactLivingContext } from '../../lib/livingContext';
+import {
+  ensureContactLivingContext,
+  loadContactLivingContext,
+  loadWorkspacePersonLivingContext,
+} from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
 // ─── Validation ──────────────────────────────────────────────────────────────
@@ -63,6 +67,86 @@ interface ContactRow {
   type:       string;
   created_at: string;
   updated_at: string;
+}
+
+interface WorkspacePersonRow {
+  person_id: string;
+  owner_id: string;
+  email: string;
+  name: string | null;
+  phone: string | null;
+  relationship_summary: string | null;
+  context_json: string | null;
+  role: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function parseContext(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringFromContext(context: Record<string, unknown>, key: string): string | null {
+  const value = context[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function workspacePersonToContact(row: WorkspacePersonRow): ContactRow {
+  const context = parseContext(row.context_json);
+  return {
+    id: row.person_id,
+    owner_id: row.owner_id,
+    email: row.email,
+    name: row.name,
+    company: stringFromContext(context, 'company'),
+    role: row.role ?? stringFromContext(context, 'role'),
+    phone: row.phone,
+    linkedin: null,
+    notes: row.relationship_summary,
+    type: 'person',
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function loadWorkspacePersonAsContact(
+  db: D1Database,
+  ownerId: string,
+  personId: string,
+): Promise<ContactRow | null> {
+  const row = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.workspace_id AS owner_id,
+            p.primary_email AS email,
+            p.display_name AS name,
+            p.primary_phone AS phone,
+            wp.relationship_summary,
+            wp.context_json,
+            (
+              SELECT pr.label
+                FROM person_roles pr
+               WHERE pr.workspace_person_id = wp.id
+               ORDER BY pr.created_at DESC
+               LIMIT 1
+            ) AS role,
+            wp.created_at,
+            wp.updated_at
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+      WHERE wp.workspace_id = ?1
+        AND p.id = ?2
+      LIMIT 1`,
+  ).bind(ownerId, personId).first<WorkspacePersonRow>();
+
+  return row ? workspacePersonToContact(row) : null;
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -147,8 +231,11 @@ contacts.get('/:id', async (c) => {
     .bind(id, userId)
     .first<ContactRow>();
 
-  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
-  return c.json({ contact });
+  if (contact) return c.json({ contact });
+
+  const personContact = await loadWorkspacePersonAsContact(db, userId, id);
+  if (!personContact) return apiError(c, 'NOT_FOUND', 'Person not found.');
+  return c.json({ contact: personContact });
 });
 
 // GET /:id/living-context — contact living context graph
@@ -162,7 +249,11 @@ contacts.get('/:id/living-context', async (c) => {
     .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
     .bind(id, userId)
     .first<{ id: string }>();
-  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+  if (!contact) {
+    const livingContext = await loadWorkspacePersonLivingContext(db, userId, id);
+    if (!livingContext) return apiError(c, 'NOT_FOUND', 'Person not found.');
+    return c.json(livingContext);
+  }
 
   await ensureContactLivingContext(db, id);
   const livingContext = await loadContactLivingContext(db, id);

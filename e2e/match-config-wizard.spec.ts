@@ -268,7 +268,7 @@ test.describe("Match-config chip on StageStepper", () => {
     await expect(page.locator('[data-testid="match-config-chip"]')).toHaveCount(0);
   });
 
-  test("surfaces auto-build WARN guardrails as a dismissible banner", async ({ page }) => {
+  test("does not surface auto-build WARN guardrails on the role page", async ({ page }) => {
     await page.route(
       `${API_BASE}/api/v1/pipelines/${seed.pipelineId}/overview`,
       async (route) => {
@@ -316,15 +316,8 @@ test.describe("Match-config chip on StageStepper", () => {
       { id: seed.pipelineId },
     );
 
-    const banner = page.locator('[data-testid="auto-build-warnings-banner"]');
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText("AUTO_BUILD_WARNINGS");
-    await expect(banner).toContainText("W-NO-NON-NEGOTIABLE-SKILLS");
-
-    // Dismiss and confirm it's gone.
-    await page.locator('[data-testid="auto-build-warnings-dismiss"]').click();
-    await expect(
-      page.locator('[data-testid="auto-build-warnings-banner"]'),
-    ).toHaveCount(0);
+    await expect(page.locator('[data-testid="auto-build-warnings-banner"]')).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("ROLE BUILD WARNINGS");
+    await expect(page.locator("body")).not.toContainText("W-NO-NON-NEGOTIABLE-SKILLS");
   });
 });

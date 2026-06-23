@@ -44,7 +44,7 @@ export type PipelineLevel =
 
 export interface CreatePipelineRequest {
   title: string;
-  level: PipelineLevel;
+  level?: PipelineLevel | null;
   stack?: string[];
   description?: string;
   /** Defaults to 'DRAFT' on the server when omitted. */
@@ -52,13 +52,15 @@ export interface CreatePipelineRequest {
   /** Defaults to 'BLANK' on the server when omitted. */
   creationMode?: 'BLANK' | 'PRESET';
   presetId?: string;
+  /** Defaults to true on the server. Set false for roleless interview plans. */
+  createDefaultStages?: boolean;
 }
 
 export interface CreatePipelineResponse {
   pipeline: {
     id: string;
     title: string;
-    level: string;
+    level: string | null;
     status: string;
     stageCount: number;
     createdAt: string;
@@ -278,6 +280,11 @@ export interface CreateCandidateResponse {
     inviteToken: string;
     status: string;
     currentStageId: string | null;
+    scheduledInterview?: {
+      id: string;
+      status: string;
+      meetingUrl: string | null;
+    } | null;
   };
 }
 
@@ -679,6 +686,10 @@ export interface ProfileStage {
 
 export interface CandidateProfileRecord {
   id: string;
+  personId?: string | null;
+  workspacePersonId?: string | null;
+  applicationId?: string | null;
+  contactId?: string | null;
   name: string | null;
   email: string | null;
   phoneNumber: string | null;
@@ -1189,7 +1200,7 @@ export interface LivingContextReadModel {
       activeFrom: string | null;
       activeTo: string | null;
     }>;
-  };
+  } | null;
   summary: {
     interactionCount: number;
     artifactCount: number;

@@ -11,6 +11,16 @@ import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
 
+interface InviteResponse {
+  success: boolean;
+  emailSent: boolean;
+  meetingUrl: string;
+  schedulingUrl?: string | null;
+  deliveredUrl?: string | null;
+  provider?: string;
+  emailError?: string;
+}
+
 function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
   if (!scheduledAt) return 'UNSCHEDULED';
 
@@ -146,9 +156,9 @@ export function SchedulingDashboard(): JSX.Element {
               alignItems: 'center',
               gap: 8,
               padding: '10px 18px',
-              background: '#ffffff',
-              color: '#0c0c0e',
-              border: 'none',
+              background: 'var(--pipe-text)',
+              color: 'var(--pipe-bg)',
+              border: '1px solid var(--pipe-accent-border)',
               borderRadius: 6,
               fontFamily: '"Space Mono", monospace',
               fontSize: 11,
@@ -236,13 +246,31 @@ export function SchedulingDashboard(): JSX.Element {
           scheduledAt?: string;
           schedulingProvider?: SchedulingProvider;
           schedulingUrl?: string;
+          githubRepoUrl?: string | null;
+          githubPrNumber?: number | null;
         }) => {
           const result = await api.post<{ interview: { id: string } }>(
             '/api/v1/scheduling/interviews',
             data,
           );
+          let inviteResult: InviteResponse | null = null;
+          let inviteError: string | undefined;
+          try {
+            inviteResult = await api.post<InviteResponse>(
+              `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
+              { email: data.recipientEmail },
+            );
+          } catch (err) {
+            inviteError = err instanceof Error ? err.message : 'Invite email could not be sent.';
+          }
           await refetch();
-          return { id: result.interview.id };
+          return {
+            id: result.interview.id,
+            meetingUrl: inviteResult?.deliveredUrl ?? inviteResult?.schedulingUrl ?? inviteResult?.meetingUrl ?? data.schedulingUrl ?? null,
+            emailSent: inviteResult?.emailSent ?? false,
+            provider: inviteResult?.provider,
+            emailError: inviteResult?.emailError ?? inviteError,
+          };
         }}
       />
     </div>

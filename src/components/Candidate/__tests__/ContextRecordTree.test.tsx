@@ -113,7 +113,7 @@ describe('ContextRecordTree', () => {
     const record = makeRecord();
     render(<ContextRecordTree record={record} onSelectSource={vi.fn()} />);
 
-    expect(screen.getByText('demonstrated')).toBeInTheDocument();
+    expect(screen.getByText('Demonstrated')).toHaveAttribute('title', 'demonstrated');
     expect(
       screen.getByText('Candidate built a distributed cache using Redis cluster sharding.'),
     ).toBeInTheDocument();
@@ -211,7 +211,19 @@ describe('ContextRecordTree', () => {
     const record = makeRecord({ entities: [], concepts: [], sources: [] });
     render(<ContextRecordTree record={record} onSelectSource={vi.fn()} />);
 
-    expect(screen.getByText('demonstrated')).toBeInTheDocument();
+    expect(screen.getByText('Demonstrated')).toBeInTheDocument();
+  });
+
+  it('renders machine semantic keys as readable labels', () => {
+    const record = makeRecord({
+      recordType: 'scheduled_interview_invite_delivery',
+      predicate: 'PRESERVES_CONTACT_FIRST_INTERVIEW_INVITE',
+      narrative: 'PRESERVES CONTACT FIRST INTERVIEW INVITE',
+    });
+    render(<ContextRecordTree record={record} onSelectSource={vi.fn()} />);
+
+    expect(screen.getByText('Preserves Contact First Interview Invite')).toBeInTheDocument();
+    expect(screen.queryByText('PRESERVES CONTACT FIRST INTERVIEW INVITE')).not.toBeInTheDocument();
   });
 
   it('shows observed date when available', () => {

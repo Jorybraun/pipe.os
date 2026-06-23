@@ -24,7 +24,7 @@ export interface SubTitleProps {
 export function SubTitle({ children }: SubTitleProps): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ width: 6, height: 6, background: 'rgba(255,255,255,0.4)' }} />
+      <div style={{ width: 6, height: 6, background: 'var(--pipe-accent-border)' }} />
       <span
         style={{
           fontSize: 9,

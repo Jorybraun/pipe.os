@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Video } from 'lucide-react';
-import type { InterviewType, ScheduledInterview } from '../../lib/scheduling/types';
+import { INTERVIEW_TYPE_LABELS, type ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
@@ -29,13 +29,6 @@ interface InterviewCardProps {
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
-
-const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
-  VIDEO: 'Video interview',
-  CODE_REVIEW: 'Automated code review',
-  TECHNICAL: 'Code sandbox challenge',
-  SCREENING: 'Screening',
-};
 
 function isJoinable(interview: ScheduledInterview): boolean {
   // Allow host to join for both INVITED and SCHEDULED statuses
@@ -66,7 +59,7 @@ export function InterviewCard({
   const scheduled = interview.scheduledAt ? new Date(interview.scheduledAt).getTime() : null;
 
   // Determine dot color
-  let dotColor = 'rgba(255,255,255,0.3)'; // Default: dim for past/unscheduled
+  let dotColor = 'var(--pipe-text-dim)'; // Default: dim for past/unscheduled
   if (scheduled && scheduled > now) {
     const minutesUntil = (scheduled - now) / 1000 / 60;
     if (minutesUntil <= 15) {
@@ -87,6 +80,13 @@ export function InterviewCard({
   const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
     ? `${pipelineTitle}${stageTitle ? ` · ${stageTitle}` : ''}`
     : null;
+  const hasInviteDelivery = Boolean(
+    interview.inviteLinkSentAt
+    ?? interview.emailSentAt
+    ?? interview.meetingUrl,
+  );
+  const displayStatusLabel =
+    interview.status === 'INVITED' && !hasInviteDelivery ? 'Ready' : undefined;
 
   return (
     <>
@@ -138,7 +138,7 @@ export function InterviewCard({
             {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
           </div>
           {candidateEmail && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {candidateEmail}
             </div>
           )}
@@ -146,7 +146,7 @@ export function InterviewCard({
 
         {/* Status badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <InterviewStatusBadge status={interview.status ?? 'INVITED'} />
+          <InterviewStatusBadge status={interview.status ?? 'INVITED'} label={displayStatusLabel} />
         </div>
 
         {/* Right: INVITE + JOIN button + overflow menu */}
@@ -175,7 +175,7 @@ export function InterviewCard({
             }}
           >
             <Mail size={12} />
-            INVITE
+            {hasInviteDelivery ? 'RESEND' : 'SEND'}
           </button>
           <button
             disabled={!joinable}
@@ -189,9 +189,9 @@ export function InterviewCard({
               alignItems: 'center',
               gap: 6,
               padding: '8px 16px',
-              background: joinable ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${joinable ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.08)'}`,
-              color: joinable ? '#60a5fa' : 'rgba(255,255,255,0.2)',
+              background: joinable ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+              border: `1px solid ${joinable ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+              color: joinable ? '#60a5fa' : 'var(--pipe-text-dim)',
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',

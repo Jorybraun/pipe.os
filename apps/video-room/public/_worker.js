@@ -101,6 +101,42 @@ async function withDevAuthCookie(response, authState, env) {
   return next;
 }
 
+function isHtmlNavigation(request) {
+  if (request.method !== 'GET') return false;
+  const accept = request.headers.get('Accept') ?? '';
+  return accept.includes('text/html');
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+async function devAuthEntryPage(request, env) {
+  const cookie = await devAuthCookieValue(env);
+  if (!cookie) return null;
+
+  const url = new URL(request.url);
+  url.username = '';
+  url.password = '';
+  const cleanUrl = url.toString();
+
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Opening PIPE Room</title><script>location.replace(${JSON.stringify(cleanUrl)});</script></head><body><a href="${escapeHtml(cleanUrl)}">Open PIPE Room</a></body></html>`,
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=UTF-8',
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${DEV_AUTH_COOKIE}=${cookie}; Path=/; Max-Age=${DEV_AUTH_COOKIE_MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+      },
+    },
+  );
+}
+
 function proxyApi(request, env) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
@@ -124,14 +160,37 @@ function proxyApi(request, env) {
 
 async function serveStatic(request, env) {
   const response = await env.ASSETS.fetch(request);
-  if (response.status !== 404 || request.method !== 'GET') return response;
+  if (response.status !== 404 || request.method !== 'GET') return withCleanBase(response, request);
 
   const accept = request.headers.get('Accept') ?? '';
   if (!accept.includes('text/html')) return response;
 
   const url = new URL(request.url);
   url.pathname = '/index.html';
-  return env.ASSETS.fetch(new Request(url.toString(), request));
+  return withCleanBase(await env.ASSETS.fetch(new Request(url.toString(), request)), request);
+}
+
+async function withCleanBase(response, request) {
+  if (response.status !== 200) return response;
+  const contentType = response.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('text/html')) return response;
+
+  const url = new URL(request.url);
+  url.username = '';
+  url.password = '';
+  const baseHref = `${url.protocol}//${url.host}/`;
+  const html = await response.text();
+  const withBase = html.includes('<base ')
+    ? html
+    : html.replace(/<head>/i, `<head><base href="${escapeHtml(baseHref)}">`);
+  const headers = new Headers(response.headers);
+  headers.delete('Content-Length');
+  headers.set('Cache-Control', 'no-store');
+  return new Response(withBase, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export default {
@@ -140,6 +199,11 @@ export default {
     if (authState === 'none') return unauthorized();
 
     const { pathname } = new URL(request.url);
+    if (authState === 'basic' && isHtmlNavigation(request) && !pathname.startsWith('/api/')) {
+      const entryPage = await devAuthEntryPage(request, env);
+      if (entryPage) return entryPage;
+    }
+
     if (pathname.startsWith('/api/')) {
       return withDevAuthCookie(await proxyApi(request, env), authState, env);
     }

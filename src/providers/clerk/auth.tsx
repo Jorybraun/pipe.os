@@ -45,11 +45,15 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }): JSX.
   const [fadingOut, setFadingOut] = useState(false);
 
   useEffect(() => {
-    if (!isLoaded || fadingOut) return;
+    if (!isLoaded) return;
     setFadingOut(true);
+  }, [isLoaded]);
+
+  useEffect(() => {
+    if (!fadingOut) return;
     const timer = setTimeout(() => setShowSplash(false), 600);
     return () => clearTimeout(timer);
-  }, [isLoaded, fadingOut]);
+  }, [fadingOut]);
 
   return (
     <>

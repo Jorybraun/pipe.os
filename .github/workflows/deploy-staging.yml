@@ -1,4 +1,4 @@
-name: Deploy Staging
+name: Deploy Dev Demo
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Staging
+    name: Deploy Dev Demo
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,23 +29,33 @@ jobs:
         working-directory: workers/api
         run: npm ci
 
+      - name: Install dependencies (video room)
+        working-directory: apps/video-room
+        run: npm install --no-audit --no-fund
+
       - name: Build frontend
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npm run build
 
-      - name: Deploy Worker (staging)
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: workers/api
-          command: deploy --env staging
+      - name: Build video room
+        working-directory: apps/video-room
+        run: npm run build
 
-      # TODO: create Pages project `pipe-app-staging` in Cloudflare dashboard first
-      # - name: Deploy Pages (preview)
-      #   uses: cloudflare/pages-action@v1
-      #   with:
-      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      #     projectName: pipe-app-staging
-      #     directory: dist
-      #     gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy API (dev)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./workers/api/node_modules/.bin/wrangler deploy --config workers/api/wrangler.jsonc --env dev
+
+      - name: Deploy app shell (dev)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./workers/api/node_modules/.bin/wrangler deploy --config workers/app/wrangler.jsonc
+
+      - name: Deploy video room (dev)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: ./workers/api/node_modules/.bin/wrangler deploy --config apps/video-room/wrangler.jsonc

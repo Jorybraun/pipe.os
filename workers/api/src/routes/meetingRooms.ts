@@ -10,6 +10,17 @@ import {
 import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
 import { getTurnIceServers } from '../lib/turnCredentials';
 import { sendTransactionalEmail } from '../lib/transactionalEmail';
+import {
+  computeEffectiveTtl,
+  MIN_TTL_SECONDS,
+} from '../lib/devContainerTtl';
+import {
+  getLatestSessionForRoom,
+  getSessionByIdForRoom,
+  insertRoomSession,
+  markStopped,
+  type DevContainerSessionRow,
+} from '../lib/devContainerSessions';
 import type {
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
@@ -33,6 +44,7 @@ interface ResolvedRoom {
   started_at: string | null;
   ended_at: string | null;
   guest_contact_id: string | null;
+  scheduled_interview_id: string | null;
 }
 
 interface MeetingAnalysis {
@@ -48,9 +60,48 @@ interface MeetingAnalysis {
   semanticAssertions: MeetingTranscriptAssertionInput[];
 }
 
+interface ResolvedMeetingRecording {
+  room: ResolvedRoom;
+  recordingKey: string | null;
+}
+
+const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
+const MEETING_ANALYSIS_TIMEOUT_MS = 30_000;
+const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
+const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
+const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
+const WORKSPACE_INTERVIEW_TYPES = new Set(['CODE_REVIEW', 'TECHNICAL']);
+const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
+const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
+
 const roomEventSchema = z.object({
-  event: z.enum(['JOINED', 'LEFT', 'STARTED', 'ENDED']),
+  event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
 });
+
+interface RoomWorkspaceInterview {
+  interview_type: string | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  matched_repo_id: number | null;
+}
+
+interface RoomWorkspacePayload {
+  enabled: boolean;
+  repoUrl: string | null;
+  githubPrNumber: number | null;
+  matchedRepoId: number | null;
+  session: {
+    sessionId: string;
+    status: string;
+    ttlSeconds: number;
+    ttlSource: string;
+    expiresAt: string;
+    warnedAt: string | null;
+    expiringSoon: boolean;
+    proxyPath: string | null;
+    errorMessage: string | null;
+  } | null;
+}
 
 const evidenceLevelSchema = z.enum([
   'mentioned',
@@ -170,6 +221,79 @@ function parseAnalysis(
   };
 }
 
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function workspaceProxyPath(token: string, sessionId: string): string {
+  return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
+}
+
+function serializeWorkspaceSession(
+  token: string,
+  session: DevContainerSessionRow | null,
+): RoomWorkspacePayload['session'] {
+  if (!session) return null;
+  return {
+    sessionId: session.session_id,
+    status: session.status,
+    ttlSeconds: session.ttl_seconds,
+    ttlSource: session.ttl_source,
+    expiresAt: session.expires_at,
+    warnedAt: session.warned_at,
+    expiringSoon: session.warned_at !== null,
+    proxyPath: WORKSPACE_PROXY_ALLOWED_STATUS.has(session.status)
+      ? workspaceProxyPath(token, session.session_id)
+      : null,
+    errorMessage: session.error_message,
+  };
+}
+
+async function loadRoomWorkspaceInterview(
+  db: D1Database,
+  room: ResolvedRoom,
+): Promise<RoomWorkspaceInterview | null> {
+  if (!room.scheduled_interview_id) return null;
+  const interview = await db.prepare(
+    `SELECT si.interview_type,
+            si.github_repo_url,
+            si.github_pr_number,
+            si.matched_repo_id
+       FROM scheduled_interviews si
+      WHERE si.id = ?`,
+  ).bind(room.scheduled_interview_id).first<RoomWorkspaceInterview>().catch(() => null);
+  if (!interview || interview.github_repo_url || !interview.matched_repo_id) return interview;
+
+  const repo = await db.prepare(
+    `SELECT github_url FROM qualified_repos WHERE id = ?`,
+  ).bind(interview.matched_repo_id).first<{ github_url: string }>().catch(() => null);
+  return {
+    ...interview,
+    github_repo_url: repo?.github_url ?? null,
+  };
+}
+
+async function buildRoomWorkspacePayload(
+  db: D1Database,
+  token: string,
+  room: ResolvedRoom,
+): Promise<RoomWorkspacePayload> {
+  const interview = await loadRoomWorkspaceInterview(db, room);
+  const enabled = Boolean(
+    interview?.interview_type && WORKSPACE_INTERVIEW_TYPES.has(interview.interview_type),
+  );
+  const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
+  return {
+    enabled,
+    repoUrl: interview?.github_repo_url ?? null,
+    githubPrNumber: interview?.github_pr_number ?? null,
+    matchedRepoId: interview?.matched_repo_id ?? null,
+    session: serializeWorkspaceSession(token, session),
+  };
+}
+
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {
   const tokenHash = await hashRoomToken(token);
   const now = new Date().toISOString();
@@ -178,7 +302,7 @@ async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom 
             mr.status AS room_status, mrt.role,
             m.owner_id, m.title, m.description, m.scheduled_at,
             m.meeting_type, m.status AS meeting_status,
-            m.started_at, m.ended_at,
+            m.started_at, m.ended_at, m.scheduled_interview_id,
             (
               SELECT mp.contact_id
                 FROM meeting_room_tokens guest_token
@@ -197,6 +321,65 @@ async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom 
        AND mrt.revoked_at IS NULL
        AND mrt.expires_at > ?`,
   ).bind(tokenHash, now).first<ResolvedRoom>();
+}
+
+async function resolveMeetingRecording(
+  db: D1Database,
+  meetingId: string,
+  ownerId: string,
+): Promise<ResolvedMeetingRecording | null> {
+  const row = await db.prepare(
+    `SELECT COALESCE(mr.id, '') AS room_id,
+            m.id AS meeting_id,
+            COALESCE(mr.session_id, '') AS session_id,
+            COALESCE(mr.status, m.status) AS room_status,
+            'HOST' AS role,
+            m.owner_id, m.title, m.description, m.scheduled_at,
+            m.meeting_type, m.status AS meeting_status,
+            m.started_at, m.ended_at, m.scheduled_interview_id,
+            m.recording_r2_key,
+            (
+              SELECT mp.contact_id
+                FROM meeting_participants mp
+               WHERE mp.meeting_id = m.id
+               ORDER BY mp.created_at DESC
+               LIMIT 1
+            ) AS guest_contact_id
+       FROM meetings m
+       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+      WHERE m.id = ?1
+        AND m.owner_id = ?2`,
+  ).bind(meetingId, ownerId).first<ResolvedRoom & { recording_r2_key: string | null }>();
+
+  if (!row) return null;
+  const { recording_r2_key, ...room } = row;
+  return { room, recordingKey: recording_r2_key };
+}
+
+function transcriptionAudioKeyFor(recordingKey: string): string | null {
+  return recordingKey.endsWith('/recording.webm')
+    ? recordingKey.replace(/\/recording\.webm$/, '/transcription-audio.webm')
+    : null;
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
 }
 
 async function analyzeMeeting(
@@ -259,11 +442,12 @@ Rules:
 async function processRecording(
   env: Env,
   room: ResolvedRoom,
+  transcriptionSourceKey: string,
   recordingKey: string,
 ): Promise<void> {
   try {
-    const object = await env.STORAGE.get(recordingKey);
-    if (!object) throw new Error('Recording was not found after upload.');
+    const object = await env.STORAGE.get(transcriptionSourceKey);
+    if (!object) throw new Error('Transcription source was not found after upload.');
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
     const structured = env.DEEPGRAM_API_KEY
@@ -273,7 +457,12 @@ async function processRecording(
           contentType,
         )
       : null;
-    let provider = structured ? 'deepgram-multichannel' : 'workers-ai-whisper';
+    const hasAttributedGuestAudio = Boolean(structured && room.guest_contact_id);
+    const provider = structured
+      ? hasAttributedGuestAudio
+        ? 'deepgram-multichannel'
+        : 'deepgram-multichannel-summary-only'
+      : 'workers-ai-whisper-summary-only';
     let segments: MeetingTranscriptSegmentInput[];
     let transcript: string;
     if (structured) {
@@ -297,7 +486,11 @@ async function processRecording(
       }));
       transcript = structured.transcript;
     } else {
-      const whisperTranscript = await transcribeAudioWhisper(env.AI, audioBuffer);
+      const whisperTranscript = await withTimeout(
+        transcribeAudioWhisper(env.AI, audioBuffer),
+        WHISPER_TRANSCRIPTION_TIMEOUT_MS,
+        'Workers AI transcription',
+      );
       if (!whisperTranscript) throw new Error('Transcription returned no text.');
       transcript = whisperTranscript;
       segments = [{
@@ -307,7 +500,21 @@ async function processRecording(
       }];
     }
 
-    const analysis = await analyzeMeeting(env.AI, transcript, segments);
+    const analysis = await withTimeout(
+      analyzeMeeting(env.AI, transcript, segments),
+      MEETING_ANALYSIS_TIMEOUT_MS,
+      'Meeting transcript analysis',
+    );
+    const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
+    const analysisForStorage = {
+      ...analysis,
+      personContextMode,
+      personContextReason: hasAttributedGuestAudio
+        ? null
+        : structured
+          ? 'guest_contact_id_missing'
+          : 'mixed_audio_without_speaker_attribution',
+    };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
       stable_segment_id: segment.stableSegmentId,
       speaker: segment.speakerLabel ?? null,
@@ -333,7 +540,7 @@ async function processRecording(
     ).bind(
       transcriptJson,
       analysis.summary,
-      JSON.stringify(analysis),
+      JSON.stringify(analysisForStorage),
       recordingKey,
       now,
       room.meeting_id,
@@ -341,10 +548,11 @@ async function processRecording(
     await ingestMeetingTranscriptToLivingContext(env.DB, {
       meetingId: room.meeting_id,
       ownerId: room.owner_id,
+      scheduledInterviewId: room.scheduled_interview_id,
       transcript,
       segments,
       summary: analysis.summary,
-      semanticAssertions: analysis.semanticAssertions,
+      semanticAssertions: hasAttributedGuestAudio ? analysis.semanticAssertions : [],
       extractorVersion: 'meeting-transcript-open-v1',
       startedAt: room.started_at,
       endedAt: room.ended_at,
@@ -364,8 +572,24 @@ async function processRecording(
 
 export const meetingRooms = new Hono<{ Bindings: Env }>();
 
+interface UploadedBlobPart {
+  size: number;
+  type?: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+}
+
+function isUploadedBlobPart(value: unknown): value is UploadedBlobPart {
+  if (!value || typeof value !== 'object') return false;
+  const part = value as Partial<UploadedBlobPart>;
+  return (
+    typeof part.size === 'number'
+    && typeof part.arrayBuffer === 'function'
+  );
+}
+
 meetingRooms.get('/:token', async (c) => {
-  const room = await resolveRoom(c.env.DB, c.req.param('token'));
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
 
   const participants = await c.env.DB.prepare(
@@ -375,6 +599,7 @@ meetingRooms.get('/:token', async (c) => {
      WHERE mp.meeting_id = ?
      ORDER BY mp.role, c.name`,
   ).bind(room.meeting_id).all<{ name: string; role: string }>();
+  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
 
   return c.json({
     room: {
@@ -388,6 +613,7 @@ meetingRooms.get('/:token', async (c) => {
       scheduledAt: room.scheduled_at,
       meetingType: room.meeting_type,
       participants: participants.results,
+      workspace,
     },
   });
 });
@@ -397,7 +623,183 @@ meetingRooms.get('/:token/turn-credentials', async (c) => {
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
 
   const result = await getTurnIceServers(c.env, '[meetingRooms]');
+  c.header('Cache-Control', 'no-store');
   return c.json(result);
+});
+
+meetingRooms.get('/:token/workspace', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
+});
+
+meetingRooms.post('/:token/workspace/launch', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  if (room.role !== 'HOST') {
+    return apiError(c, 'FORBIDDEN', 'Only the host can launch the workspace.');
+  }
+
+  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
+  if (!workspace.enabled) {
+    return apiError(c, 'VALIDATION_ERROR', 'This interview type does not use a live workspace.');
+  }
+  if (!workspace.repoUrl) {
+    return apiError(c, 'VALIDATION_ERROR', 'Choose a repository before launching the workspace.');
+  }
+
+  const existingSession = await getLatestSessionForRoom(c.env.DB, room.room_id);
+  if (existingSession && !WORKSPACE_TERMINAL_STATUSES.has(existingSession.status)) {
+    return c.json({
+      workspace: {
+        ...workspace,
+        session: serializeWorkspaceSession(token, existingSession),
+      },
+    }, 200);
+  }
+
+  const globalDefault = parsePositiveIntEnv(
+    c.env.DEV_CONTAINER_DEFAULT_TTL_SECONDS,
+    DEFAULT_DEV_CONTAINER_TTL_SECONDS,
+  );
+  const hardCap = parsePositiveIntEnv(
+    c.env.DEV_CONTAINER_MAX_TTL_SECONDS,
+    DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS,
+  );
+
+  let effective;
+  try {
+    effective = computeEffectiveTtl({
+      globalDefault,
+      challengeTtl: null,
+      override: null,
+      hardCap,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Invalid TTL configuration.';
+    const isUserError = message.includes(`>= ${MIN_TTL_SECONDS}s`);
+    return c.json({
+      error: {
+        code: isUserError ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR',
+        message,
+      },
+    }, isUserError ? 400 : 500);
+  }
+
+  const sessionId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
+  await insertRoomSession(c.env.DB, {
+    id: crypto.randomUUID(),
+    sessionId,
+    meetingId: room.meeting_id,
+    meetingRoomId: room.room_id,
+    ownerId: room.owner_id,
+    instanceType: DEFAULT_DEV_CONTAINER_INSTANCE_TYPE,
+    ttlSeconds: effective.ttlSeconds,
+    ttlSource: effective.source,
+    expiresAt,
+    repoGitUrl: workspace.repoUrl,
+    challengeBranch: null,
+  });
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  c.executionCtx.waitUntil(
+    doStub.fetch('https://do.internal/__init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        expiresAt,
+        ttlSeconds: effective.ttlSeconds,
+        repoGitUrl: workspace.repoUrl,
+        challengeBranch: null,
+      }),
+    }).catch((err: unknown) => {
+      console.error('[meetingRooms.workspace.launch] DO init failed:', err);
+    }),
+  );
+
+  const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  return c.json({
+    workspace: {
+      ...workspace,
+      session: serializeWorkspaceSession(token, session),
+    },
+  }, 201);
+});
+
+meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  if (room.role !== 'HOST') {
+    return apiError(c, 'FORBIDDEN', 'Only the host can stop the workspace.');
+  }
+
+  const sessionId = c.req.param('sessionId');
+  const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
+
+  if (!WORKSPACE_TERMINAL_STATUSES.has(session.status)) {
+    await markStopped(c.env.DB, sessionId, new Date().toISOString());
+    const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+    const doStub = c.env.DEV_CONTAINER.get(doId);
+    c.executionCtx.waitUntil(
+      doStub.fetch('https://do.internal/__destroy', { method: 'POST' }).catch((err: unknown) => {
+        console.error('[meetingRooms.workspace.destroy] DO destroy failed:', err);
+      }),
+    );
+  }
+
+  return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
+});
+
+meetingRooms.all('/:token/workspace/proxy/:sessionId/*', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const sessionId = c.req.param('sessionId');
+  const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
+
+  if (!WORKSPACE_PROXY_ALLOWED_STATUS.has(session.status)) {
+    const code =
+      session.status === 'LAUNCHING'
+        ? 'NOT_READY'
+        : session.status === 'ERROR'
+          ? 'CONTAINER_ERROR'
+          : 'SESSION_ENDED';
+    return c.json({
+      error: {
+        code,
+        message: `Workspace session is ${session.status}.`,
+      },
+    }, session.status === 'LAUNCHING' ? 425 : 410);
+  }
+
+  const incoming = new URL(c.req.url);
+  const marker = `/workspace/proxy/${sessionId}`;
+  const markerIdx = incoming.pathname.indexOf(marker);
+  const innerPath =
+    markerIdx >= 0 ? incoming.pathname.slice(markerIdx + marker.length) || '/' : '/';
+  const innerUrl = new URL(`https://do.internal${innerPath}${incoming.search}`);
+  const forwarded = new Request(innerUrl.toString(), c.req.raw);
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  try {
+    return await doStub.fetch(forwarded);
+  } catch (err) {
+    console.error('[meetingRooms.workspace.proxy] upstream failed:', err);
+    return c.json({
+      error: { code: 'BAD_GATEWAY', message: 'Workspace proxy failed.' },
+    }, 502);
+  }
 });
 
 meetingRooms.get('/:token/ws', async (c) => {
@@ -415,7 +817,7 @@ meetingRooms.get('/:token/ws', async (c) => {
     body: JSON.stringify({
       meetingId: room.meeting_id,
       hostId: room.owner_id,
-      resetEnded: room.room_status === 'WAITING',
+      resetEnded: room.room_status !== 'ENDED',
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {
@@ -432,19 +834,48 @@ meetingRooms.post('/:token/events', async (c) => {
   const now = new Date().toISOString();
   const event = parsed.data.event;
   if (event === 'STARTED' && room.role === 'HOST') {
-    await c.env.DB.batch([
+    const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `UPDATE meeting_rooms SET status = 'ACTIVE', updated_at = ? WHERE id = ?`,
       ).bind(now, room.room_id),
       c.env.DB.prepare(
         `UPDATE meetings
          SET status = 'IN_PROGRESS', started_at = COALESCE(started_at, ?),
-             transcript_status = 'RECORDING', updated_at = ?
+             updated_at = ?
+         WHERE id = ?`,
+      ).bind(now, now, room.meeting_id),
+    ];
+    if (room.scheduled_interview_id) {
+      statements.push(
+        c.env.DB.prepare(
+          `UPDATE scheduled_interviews
+           SET status = CASE
+                 WHEN status IN ('CANCELLED', 'NO_SHOW', 'COMPLETED') THEN status
+                 ELSE 'ACTIVE'
+               END,
+               updated_at = ?
+           WHERE id = ?`,
+        ).bind(now, room.scheduled_interview_id),
+      );
+    }
+    await c.env.DB.batch(statements);
+  } else if (event === 'RECORDING_STARTED' && room.role === 'HOST') {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE meeting_rooms SET status = 'ACTIVE', updated_at = ? WHERE id = ?`,
+      ).bind(now, room.room_id),
+      c.env.DB.prepare(
+        `UPDATE meetings
+         SET status = 'IN_PROGRESS',
+             started_at = COALESCE(started_at, ?),
+             transcript_status = 'RECORDING',
+             transcript_error = NULL,
+             updated_at = ?
          WHERE id = ?`,
       ).bind(now, now, room.meeting_id),
     ]);
   } else if (event === 'ENDED' && room.role === 'HOST') {
-    await c.env.DB.batch([
+    const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `UPDATE meeting_rooms SET status = 'ENDED', updated_at = ? WHERE id = ?`,
       ).bind(now, room.room_id),
@@ -455,10 +886,26 @@ meetingRooms.post('/:token/events', async (c) => {
                WHEN started_at IS NULL THEN NULL
                ELSE CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
              END,
+             transcript_status = CASE
+               WHEN transcript_status = 'RECORDING' AND recording_r2_key IS NULL THEN 'NONE'
+               ELSE transcript_status
+             END,
              updated_at = ?
          WHERE id = ?`,
       ).bind(now, now, now, room.meeting_id),
-    ]);
+    ];
+    if (room.scheduled_interview_id) {
+      statements.push(
+        c.env.DB.prepare(
+          `UPDATE scheduled_interviews
+           SET status = 'COMPLETED',
+               completed_at = COALESCE(completed_at, ?),
+               updated_at = ?
+           WHERE id = ?`,
+        ).bind(now, now, room.scheduled_interview_id),
+      );
+    }
+    await c.env.DB.batch(statements);
   }
 
   return c.json({ accepted: true });
@@ -473,15 +920,55 @@ meetingRooms.post('/:token/recording', async (c) => {
   if (contentLength > 100 * 1024 * 1024) {
     return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
   }
-  const bytes = await c.req.arrayBuffer();
-  if (bytes.byteLength === 0) return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  const requestContentType = c.req.header('Content-Type') ?? 'audio/webm';
+  let bytes: ArrayBuffer;
+  let contentType: string;
+  let transcriptionBytes: ArrayBuffer | null = null;
+  let transcriptionContentType: string | null = null;
 
-  const contentType = c.req.header('Content-Type') ?? 'audio/webm';
+  if (requestContentType.toLowerCase().includes('multipart/form-data')) {
+    const form = await c.req.formData();
+    const recording = form.get('recording');
+    if (!isUploadedBlobPart(recording)) {
+      return apiError(c, 'VALIDATION_ERROR', 'Recording upload is missing the recording file.');
+    }
+    bytes = await recording.arrayBuffer();
+    contentType = recording.type || 'video/webm';
+
+    const transcriptionAudio = form.get('transcriptionAudio');
+    if (isUploadedBlobPart(transcriptionAudio) && transcriptionAudio.size > 0) {
+      transcriptionBytes = await transcriptionAudio.arrayBuffer();
+      transcriptionContentType = transcriptionAudio.type || 'audio/webm';
+    }
+  } else {
+    bytes = await c.req.arrayBuffer();
+    contentType = requestContentType;
+  }
+
+  if (bytes.byteLength === 0) return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  if (bytes.byteLength + (transcriptionBytes?.byteLength ?? 0) > 100 * 1024 * 1024) {
+    return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
+  }
+
   const recordingKey = `meetings/${room.owner_id}/${room.meeting_id}/recording.webm`;
   await c.env.STORAGE.put(recordingKey, bytes, {
     httpMetadata: { contentType },
     customMetadata: { meetingId: room.meeting_id, roomId: room.room_id },
   });
+
+  let transcriptionSourceKey = recordingKey;
+  if (transcriptionBytes) {
+    transcriptionSourceKey = `meetings/${room.owner_id}/${room.meeting_id}/transcription-audio.webm`;
+    await c.env.STORAGE.put(transcriptionSourceKey, transcriptionBytes, {
+      httpMetadata: { contentType: transcriptionContentType ?? 'audio/webm' },
+      customMetadata: {
+        meetingId: room.meeting_id,
+        roomId: room.room_id,
+        derivedFrom: recordingKey,
+      },
+    });
+  }
+
   await c.env.DB.prepare(
     `UPDATE meetings
      SET transcript_status = 'PROCESSING', recording_r2_key = ?,
@@ -489,7 +976,7 @@ meetingRooms.post('/:token/recording', async (c) => {
      WHERE id = ?`,
   ).bind(recordingKey, new Date().toISOString(), room.meeting_id).run();
 
-  c.executionCtx.waitUntil(processRecording(c.env, room, recordingKey));
+  c.executionCtx.waitUntil(processRecording(c.env, room, transcriptionSourceKey, recordingKey));
   return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
 
@@ -589,19 +1076,33 @@ export async function ensureMeetingRoomLinks(
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
   let room = await db.prepare(
-    'SELECT id, session_id FROM meeting_rooms WHERE meeting_id = ?',
-  ).bind(meetingId).first<{ id: string; session_id: string }>();
+    'SELECT id, session_id, status FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(meetingId).first<{ id: string; session_id: string; status: string }>();
 
   if (!room) {
     room = {
       id: crypto.randomUUID(),
       session_id: crypto.randomUUID(),
+      status: 'WAITING',
     };
     await db.prepare(
       `INSERT INTO meeting_rooms (id, meeting_id, session_id, status, created_at, updated_at)
        VALUES (?, ?, ?, 'WAITING', ?, ?)`,
     ).bind(room.id, meetingId, room.session_id, now, now).run();
+  } else if (room.status === 'ENDED') {
+    await db.prepare(
+      `UPDATE meeting_rooms
+       SET status = 'WAITING', updated_at = ?
+       WHERE id = ?`,
+    ).bind(now, room.id).run();
+    room = { ...room, status: 'WAITING' };
   }
+
+  await db.prepare(
+    `UPDATE meeting_room_tokens
+     SET revoked_at = ?
+     WHERE room_id = ? AND role = 'HOST' AND revoked_at IS NULL`,
+  ).bind(now, room.id).run();
 
   const hostToken = generateRoomToken();
   const hostHash = await hashRoomToken(hostToken);
@@ -927,6 +1428,45 @@ meetingsAuth.post('/:id/room', async (c) => {
   );
 
   return c.json({ room });
+});
+
+// POST /:id/transcript/retry — reprocess an already-saved recording.
+meetingsAuth.post('/:id/transcript/retry', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const resolved = await resolveMeetingRecording(c.env.DB, id, userId);
+  if (!resolved) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+  if (!resolved.recordingKey) {
+    return apiError(c, 'VALIDATION_ERROR', 'No saved recording is available to transcribe.');
+  }
+
+  const recordingHead = await c.env.STORAGE.head(resolved.recordingKey).catch(() => null);
+  if (!recordingHead) {
+    return apiError(c, 'NOT_FOUND', 'Saved recording was not found in storage.');
+  }
+
+  let transcriptionSourceKey = resolved.recordingKey;
+  const transcriptionKey = transcriptionAudioKeyFor(resolved.recordingKey);
+  if (transcriptionKey) {
+    const transcriptionHead = await c.env.STORAGE.head(transcriptionKey).catch(() => null);
+    if (transcriptionHead) transcriptionSourceKey = transcriptionKey;
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE meetings
+        SET transcript_status = 'PROCESSING',
+            transcript_error = NULL,
+            updated_at = ?
+      WHERE id = ?`,
+  ).bind(new Date().toISOString(), id).run();
+
+  c.executionCtx.waitUntil(processRecording(
+    c.env,
+    resolved.room,
+    transcriptionSourceKey,
+    resolved.recordingKey,
+  ));
+  return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
 
 // POST /:id/invite — mint a guest token and send via Resend with the join link

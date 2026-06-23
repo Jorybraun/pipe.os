@@ -18,12 +18,13 @@ import { checkGuardrails, type MatchConfigInput } from '../../lib/match/guardrai
 import { getScreenerStage } from '../../lib/screener';
 import type { Env, Variables, RoleContextRow } from '../../types';
 
-type SelectedStage = 'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING';
+type SelectedStageInput = 'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE' | 'LIVE_CODING';
+type SelectedStage = 'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE';
 
 const DEFAULT_SELECTED_STAGES: SelectedStage[] = [
   'SCREENING',
   'CODE_REVIEW',
-  'LIVE_CODING',
+  'OPEN_SOURCE',
 ];
 
 const autoBuild = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -40,10 +41,13 @@ const matchConfigSchema = z.object({
 });
 
 const selectedStagesSchema = z
-  .array(z.enum(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'] as const))
+  .array(z.enum(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE', 'LIVE_CODING'] as const))
   .min(1)
-  .default(DEFAULT_SELECTED_STAGES)
-  .transform((values) => [...new Set(values)] as SelectedStage[]);
+  .default(DEFAULT_SELECTED_STAGES as SelectedStageInput[])
+  .transform((values) => {
+    const normalized = values.map((value) => (value === 'LIVE_CODING' ? 'OPEN_SOURCE' : value));
+    return [...new Set(normalized)] as SelectedStage[];
+  });
 
 const bodySchema = z.object({
   role_context_id: z.string().min(1),
@@ -127,10 +131,10 @@ autoBuild.post('/auto-build', async (c) => {
   const selectedStages = input.selected_stages;
   const includeScreening = selectedStages.includes('SCREENING');
   const includeCodeReview = selectedStages.includes('CODE_REVIEW');
-  const includeLiveCoding = selectedStages.includes('LIVE_CODING');
+  const includeImplementation = selectedStages.includes('OPEN_SOURCE');
   const requestedStationTypes: Array<'CODE_REVIEW' | 'CODE_IMPLEMENTATION'> = [];
   if (includeCodeReview) requestedStationTypes.push('CODE_REVIEW');
-  if (includeLiveCoding) requestedStationTypes.push('CODE_IMPLEMENTATION');
+  if (includeImplementation) requestedStationTypes.push('CODE_IMPLEMENTATION');
 
   let plan: Awaited<ReturnType<typeof autoStageBuilder>> | null = null;
   if (shouldMatchNow) {
@@ -261,7 +265,7 @@ autoBuild.post('/auto-build', async (c) => {
     sortCursor += 1;
   };
 
-  const addLiveCodingStage = (): void => {
+  const addImplementationStage = (): void => {
     stageRecords.push(
       plannedImplementation
         ? {
@@ -298,8 +302,8 @@ autoBuild.post('/auto-build', async (c) => {
   if (includeCodeReview) {
     addCodeReviewStage();
   }
-  if (includeLiveCoding) {
-    addLiveCodingStage();
+  if (includeImplementation) {
+    addImplementationStage();
   }
 
   if (includeScreening) {

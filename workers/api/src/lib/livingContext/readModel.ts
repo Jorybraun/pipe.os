@@ -539,6 +539,32 @@ export async function loadContactLivingContext(
   return loadLivingContextByWorkspacePerson(db, identity);
 }
 
+export async function loadWorkspacePersonLivingContext(
+  db: D1Database,
+  workspaceId: string,
+  personId: string,
+): Promise<LivingContextReadModel | null> {
+  const identity = await db.prepare(
+    `SELECT p.id AS person_id,
+            wp.id AS workspace_person_id,
+            NULL AS application_id,
+            p.display_name,
+            p.primary_email,
+            p.primary_phone,
+            wp.relationship_summary,
+            NULL AS application_status,
+            NULL AS pipeline_id
+       FROM workspace_people wp
+       JOIN people p ON p.id = wp.person_id
+      WHERE wp.workspace_id = ?1
+        AND p.id = ?2
+      LIMIT 1`,
+  ).bind(workspaceId, personId).first<IdentityRow>();
+  if (!identity) return null;
+
+  return loadLivingContextByWorkspacePerson(db, identity);
+}
+
 async function loadLivingContextByWorkspacePerson(
   db: D1Database,
   identity: IdentityRow,

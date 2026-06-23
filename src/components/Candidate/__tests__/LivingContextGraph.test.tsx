@@ -603,7 +603,7 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(panel).getAllByText('meeting-1').length).toBeGreaterThan(0);
     expect(within(panel).getByText('1 artifact')).toBeInTheDocument();
     expect(within(panel).getByText('1 span')).toBeInTheDocument();
-    expect(within(panel).getByText('1 assertion')).toBeInTheDocument();
+    expect(within(panel).getByText('1 claim')).toBeInTheDocument();
 
     expect(within(panel).getByText('I implemented temporal shard knitting for order replay.')).toBeInTheDocument();
     expect(within(panel).getByText('Meeting transcript source evidence for meeting meeting-1.')).toBeInTheDocument();

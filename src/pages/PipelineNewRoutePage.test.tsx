@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn(),
 }));
 
-vi.mock('@clerk/react', () => ({
-  useAuth: () => ({ getToken: mocks.getToken }),
+vi.mock('../providers', () => ({
+  useAuth: () => ({ getSessionToken: mocks.getToken }),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -55,22 +55,25 @@ describe('PipelineNewRoutePage', () => {
     );
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText('Senior Frontend Engineer'), 'Frontend Engineer');
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Frontend Engineer',
+    );
     await user.type(screen.getByPlaceholderText('Acme Corp'), 'Acme');
     await user.type(screen.getByPlaceholderText('Remote / NYC / Berlin'), 'Remote');
     await user.type(
-      screen.getByPlaceholderText('Paste role expectations, constraints, and technical requirements.'),
+      screen.getByPlaceholderText(/Paste role expectations, meeting context, or technical requirements/i),
       'Build React interfaces and review frontend architecture decisions.',
     );
 
-    await user.click(screen.getByRole('button', { name: /live coding/i }));
-    await user.click(screen.getByRole('button', { name: /create role/i }));
+    await user.click(screen.getByRole('button', { name: /code-review interview/i }));
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      '/api/v1/role-contexts/simple-job-description',
+      expect.stringContaining('/api/v1/role-contexts/simple-job-description'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -91,7 +94,7 @@ describe('PipelineNewRoutePage', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/pipelines/auto-build',
+      expect.stringContaining('/api/v1/pipelines/auto-build'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -118,6 +121,119 @@ describe('PipelineNewRoutePage', () => {
       expect(mocks.navigate).toHaveBeenCalledWith('/pipeline/pipeline-1', {
         state: { autoBuildWarnings: warnings },
       });
+    });
+  });
+
+  it('creates a roleless interview plan with exact selected interviews', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        pipeline: {
+          id: 'pipeline-roleless-1',
+          title: 'Coffee Chat',
+          level: null,
+          status: 'DRAFT',
+          stageCount: 0,
+          createdAt: '2026-06-23T00:00:00.000Z',
+        },
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-video-1',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+
+    render(
+      <MemoryRouter>
+        <PipelineNewRoutePage />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Coffee Chat',
+    );
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/api/v1/pipelines'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      title: 'Coffee Chat',
+      status: 'DRAFT',
+      creationMode: 'BLANK',
+      createDefaultStages: false,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('/api/v1/pipelines/pipeline-roleless-1/stages'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({
+      title: 'Video interview',
+      stageType: 'SCREENING',
+      isScheduled: true,
+    });
+
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith('/pipeline/pipeline-roleless-1');
+    });
+  });
+
+  it('uses the backend stage enum for implementation challenges', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        pipeline: {
+          id: 'pipeline-roleless-2',
+          title: 'Implementation Trial',
+          level: null,
+          status: 'DRAFT',
+          stageCount: 0,
+          createdAt: '2026-06-23T00:00:00.000Z',
+        },
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-video-2',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-open-source-1',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+
+    render(
+      <MemoryRouter>
+        <PipelineNewRoutePage />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Implementation Trial',
+    );
+    await user.click(screen.getByRole('button', { name: /implementation challenge/i }));
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+      title: 'Implementation challenge',
+      stageType: 'OPEN_SOURCE',
+      isScheduled: true,
     });
   });
 });

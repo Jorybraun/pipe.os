@@ -73,38 +73,62 @@ function createFakeStorage(): R2Bucket {
         body: new Blob([object.body]).stream(),
       };
     },
+    async head(key: string) {
+      const object = objects.get(key);
+      if (!object) return null;
+      return {
+        key,
+        version: '',
+        size: object.body.byteLength,
+        etag: '',
+        uploaded: new Date(),
+        checksums: {},
+        httpMetadata: object.httpMetadata,
+        customMetadata: object.customMetadata,
+        range: undefined,
+        storageClass: 'Standard',
+        writeHttpMetadata: () => {},
+      };
+    },
   } as unknown as R2Bucket;
 }
 
 function createFakeAi(): Ai {
   return {
-    run: vi.fn(async () => ({
-      response: JSON.stringify({
-        summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
-        decisions: [],
-        actionItems: [],
-        topics: ['lattice replay buffers'],
-        followUps: [],
-        semanticAssertions: [{
-          sourceSegmentIds: ['utterance-0002'],
-          subjectSegmentId: 'utterance-0002',
-          predicate: 'implemented a source-described recovery mechanism',
-          narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
-          objectType: 'source-described mechanism',
-          objectValue: { surface: 'lattice replay buffers' },
-          qualifiers: {},
-          confidence: 0.92,
-          polarity: 1,
-          concepts: [{
-            surface: 'lattice replay buffers',
-            relationship: 'mechanism implemented for ecommerce order recovery',
-            weight: 0.9,
-            evidenceLevel: 'implemented',
-            strength: 0.88,
+    run: vi.fn(async (model: unknown) => {
+      if (String(model).includes('whisper')) {
+        return {
+          text: 'Mixed audio transcript: I implemented lattice replay buffers for ecommerce order recovery.',
+        };
+      }
+      return {
+        response: JSON.stringify({
+          summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
+          decisions: [],
+          actionItems: [],
+          topics: ['lattice replay buffers'],
+          followUps: [],
+          semanticAssertions: [{
+            sourceSegmentIds: ['utterance-0002'],
+            subjectSegmentId: 'utterance-0002',
+            predicate: 'implemented a source-described recovery mechanism',
+            narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
+            objectType: 'source-described mechanism',
+            objectValue: { surface: 'lattice replay buffers' },
+            qualifiers: {},
+            confidence: 0.92,
+            polarity: 1,
+            concepts: [{
+              surface: 'lattice replay buffers',
+              relationship: 'mechanism implemented for ecommerce order recovery',
+              weight: 0.9,
+              evidenceLevel: 'implemented',
+              strength: 0.88,
+            }],
           }],
-        }],
-      }),
-    })),
+        }),
+      };
+    }),
   } as unknown as Ai;
 }
 
@@ -166,7 +190,10 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       updated_at TEXT NOT NULL
     );
     CREATE TABLE scheduled_interviews (
-      id TEXT PRIMARY KEY
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'INVITED',
+      completed_at TEXT,
+      updated_at TEXT
     );
   `);
   sqlite.exec(contactsMigration);
@@ -247,6 +274,7 @@ describe('meeting room recording living-context route', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     sqlite.close();
   });
@@ -299,19 +327,11 @@ describe('meeting room recording living-context route', () => {
       app.request(`/meeting/${firstHostToken}`, {}, env, ctx),
       app.request(`/meeting/${secondHostToken}`, {}, env, ctx),
     ]);
-    expect(firstHostRes.status).toBe(200);
+    expect(firstHostRes.status).toBe(404);
     expect(secondHostRes.status).toBe(200);
-    const firstHost = await firstHostRes.json() as {
-      room: { id: string; sessionId: string; role: string };
-    };
     const secondHost = await secondHostRes.json() as {
       room: { id: string; sessionId: string; role: string };
     };
-    expect(firstHost.room).toEqual(expect.objectContaining({
-      id: first.room.id,
-      sessionId: first.room.sessionId,
-      role: 'HOST',
-    }));
     expect(secondHost.room).toEqual(expect.objectContaining({
       id: first.room.id,
       sessionId: first.room.sessionId,
@@ -328,8 +348,103 @@ describe('meeting room recording living-context route', () => {
     ).all();
     expect(tokenCounts).toEqual([
       { role: 'GUEST', count: 1, active: 1 },
-      { role: 'HOST', count: 3, active: 3 },
+      { role: 'HOST', count: 3, active: 1 },
     ]);
+
+    const endedRes = await app.request(`/meeting/${secondHostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT status FROM meeting_rooms WHERE id = ?',
+    ).get(first.room.id)).toEqual({ status: 'ENDED' });
+
+    const reopenedRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(reopenedRes.status).toBe(200);
+    const reopened = await reopenedRes.json() as {
+      room: { id: string; sessionId: string; hostUrl: string; guestUrl: string };
+    };
+    expect(reopened.room.id).toBe(first.room.id);
+    expect(reopened.room.sessionId).toBe(first.room.sessionId);
+    expect(reopened.room.guestUrl).toBe(first.room.guestUrl);
+    expect(reopened.room.hostUrl).not.toBe(second.room.hostUrl);
+    expect(sqlite.prepare(
+      'SELECT status FROM meeting_rooms WHERE id = ?',
+    ).get(first.room.id)).toEqual({ status: 'WAITING' });
+  });
+
+  it('clears recording status when a room ends before recording upload arrives', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Disconnected Guest',
+        recipientEmail: 'disconnected@example.com',
+        title: 'Disconnected interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const prepared = await roomRes.json() as {
+      room: { hostUrl: string };
+    };
+    const hostToken = new URL(prepared.room.hostUrl).pathname.split('/').pop()!;
+
+    const startedRes = await app.request(`/meeting/${hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    expect(startedRes.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT status, transcript_status, recording_r2_key FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({
+      status: 'IN_PROGRESS',
+      transcript_status: 'NONE',
+      recording_r2_key: null,
+    });
+
+    const recordingStartedRes = await app.request(`/meeting/${hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+    expect(recordingStartedRes.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT status, transcript_status, recording_r2_key FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({
+      status: 'IN_PROGRESS',
+      transcript_status: 'RECORDING',
+      recording_r2_key: null,
+    });
+
+    const endedRes = await app.request(`/meeting/${hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    expect(sqlite.prepare(
+      'SELECT status, transcript_status, recording_r2_key FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({
+      status: 'COMPLETED',
+      transcript_status: 'NONE',
+      recording_r2_key: null,
+    });
   });
 
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
@@ -380,8 +495,13 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
     const personEmail = 'meeting-graph-person@example.com';
+    const scheduledInterviewId = 'scheduled-interview-graph-1';
     const rolelessMessage =
       'Roleless follow-up: the same person can discuss lattice replay buffers and join the talent pool.';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (id, status, updated_at)
+       VALUES (?, 'INVITED', ?)`,
+    ).run(scheduledInterviewId, new Date().toISOString());
 
     const createMeetingRes = await app.request('/meetings', {
       method: 'POST',
@@ -391,6 +511,7 @@ describe('meeting room recording living-context route', () => {
         recipientEmail: personEmail,
         title: 'Living graph technical discussion',
         meetingType: 'INTERVIEW',
+        scheduledInterviewId,
       }),
     }, env, ctx);
     expect(createMeetingRes.status).toBe(201);
@@ -412,6 +533,18 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: 'STARTED' }),
     }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    expect(sqlite.prepare(
+      'SELECT status, completed_at FROM scheduled_interviews WHERE id = ?',
+    ).get(scheduledInterviewId)).toEqual({
+      status: 'ACTIVE',
+      completed_at: null,
+    });
 
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
@@ -452,6 +585,11 @@ describe('meeting room recording living-context route', () => {
     expect(endedState.started_at).toEqual(expect.any(String));
     expect(endedState.ended_at).toEqual(expect.any(String));
     expect(endedState.duration_secs).not.toBeNull();
+    const interviewState = sqlite.prepare(
+      'SELECT status, completed_at FROM scheduled_interviews WHERE id = ?',
+    ).get(scheduledInterviewId) as { status: string; completed_at: string | null };
+    expect(interviewState.status).toBe('COMPLETED');
+    expect(interviewState.completed_at).toEqual(expect.any(String));
 
     expect(sqlite.prepare(
       `SELECT transcript_status, transcript_summary FROM meetings WHERE id = ?`,
@@ -490,6 +628,12 @@ describe('meeting room recording living-context route', () => {
       totalScore: 0.88,
       evidenceCount: 1,
     });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_entities
+        WHERE entity_type = 'scheduled_interview'
+          AND entity_id = ?`,
+    ).get(scheduledInterviewId)).toEqual({ count: 2 });
 
     const candidateRes = await app.request('/candidates', {
       method: 'POST',
@@ -568,5 +712,255 @@ describe('meeting room recording living-context route', () => {
     ).toBe(true);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+  });
+
+  it('retries transcript processing from an existing saved room recording', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const personEmail = 'retry-transcript@example.com';
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Retry Transcript Person',
+        recipientEmail: personEmail,
+        title: 'Retry transcript interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: personEmail }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+
+    const recordingKey = `meetings/owner-1/${created.meeting.id}/recording.webm`;
+    const transcriptionKey = `meetings/owner-1/${created.meeting.id}/transcription-audio.webm`;
+    await env.STORAGE.put(recordingKey, new Uint8Array([7, 7, 7]), {
+      httpMetadata: { contentType: 'video/webm' },
+    });
+    await env.STORAGE.put(transcriptionKey, new Uint8Array([1, 2, 3]), {
+      httpMetadata: { contentType: 'audio/webm' },
+    });
+    sqlite.prepare(
+      `UPDATE meetings
+          SET status = 'COMPLETED',
+              transcript_status = 'PROCESSING',
+              recording_r2_key = ?,
+              updated_at = ?
+        WHERE id = ?`,
+    ).run(recordingKey, new Date().toISOString(), created.meeting.id);
+
+    const retryRes = await app.request(`/meetings/${created.meeting.id}/transcript/retry`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(retryRes.status).toBe(202);
+    await waitUntilAll();
+
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_summary, transcript_error, recording_r2_key
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_summary: string | null;
+      transcript_error: string | null;
+      recording_r2_key: string | null;
+    };
+    expect(meetingRow).toEqual({
+      transcript_status: 'READY',
+      transcript_summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
+      transcript_error: null,
+      recording_r2_key: recordingKey,
+    });
+
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE record_type IN ('meeting_transcript', 'meeting_transcript_assertion')`,
+    ).get()).toEqual({ count: 2 });
+
+    const contactGraphRes = await app.request(
+      `/contacts/${created.meeting.contactId}/living-context`,
+      {},
+      env,
+      ctx,
+    );
+    expect(contactGraphRes.status).toBe(200);
+    const contactGraph = await contactGraphRes.json() as GraphBody;
+    expect(contactGraph.artifacts.flatMap((artifact) => artifact.sourceSpans)).toContainEqual(
+      expect.objectContaining({
+        exactText: 'I implemented lattice replay buffers for ecommerce order recovery.',
+      }),
+    );
+    expect(contactGraph.contextRecords).toContainEqual(expect.objectContaining({
+      recordType: 'meeting_transcript_assertion',
+      predicate: 'implemented a source-described recovery mechanism',
+    }));
+  });
+
+  it('keeps mixed Whisper fallback transcripts summary-only without person semantic signals', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    delete (env as { DEEPGRAM_API_KEY?: string }).DEEPGRAM_API_KEY;
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Mixed Audio Person',
+        recipientEmail: 'mixed-audio@example.com',
+        title: 'Mixed audio fallback call',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([9, 9, 9])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_analysis_json, recording_r2_key
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_analysis_json: string;
+      recording_r2_key: string;
+    };
+    expect(meetingRow.transcript_status).toBe('READY');
+    expect(meetingRow.recording_r2_key).toBe(
+      `meetings/owner-1/${created.meeting.id}/recording.webm`,
+    );
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const contactGraphRes = await app.request(
+      `/contacts/${created.meeting.contactId}/living-context`,
+      {},
+      env,
+      ctx,
+    );
+    expect(contactGraphRes.status).toBe(200);
+    const contactGraph = await contactGraphRes.json() as GraphBody;
+    expect(contactGraph.summary).toMatchObject({
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 1,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 1,
+    });
+    expect(contactGraph.assertions).toEqual([]);
+    expect(contactGraph.signals).toEqual([]);
+    expect(contactGraph.contextRecords).toContainEqual(expect.objectContaining({
+      recordType: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+    }));
+  });
+
+  it('marks transcript processing failed when Whisper transcription times out', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    delete (env as { DEEPGRAM_API_KEY?: string }).DEEPGRAM_API_KEY;
+    env.AI = {
+      run: vi.fn(() => new Promise(() => undefined)),
+    } as unknown as Ai;
+    vi.useFakeTimers();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Timeout Person',
+        recipientEmail: 'timeout@example.com',
+        title: 'Timeout interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string };
+      hostToken: string;
+    };
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'audio/webm',
+        'Content-Length': '3',
+      },
+      body: new Uint8Array([1, 2, 3]),
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+
+    const processing = waitUntilAll();
+    await vi.advanceTimersByTimeAsync(30_001);
+    await processing;
+
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_error, recording_r2_key
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_error: string | null;
+      recording_r2_key: string | null;
+    };
+    expect(meetingRow.transcript_status).toBe('FAILED');
+    expect(meetingRow.transcript_error).toContain('Workers AI transcription timed out');
+    expect(meetingRow.recording_r2_key).toBe(
+      `meetings/owner-1/${created.meeting.id}/recording.webm`,
+    );
   });
 });

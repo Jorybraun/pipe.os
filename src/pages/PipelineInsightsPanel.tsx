@@ -1,10 +1,8 @@
 /**
  * PipelineInsightsPanel — index route under /pipeline/:id.
  *
- * Shows the role profile (when the pipeline was created via AI Discovery)
- * plus simple pipeline insights. When the pipeline is a DRAFT with no stages
- * this panel also renders the empty-state quickstart (template, AI interview,
- * single stage).
+ * Shows the source context and interview state for the current plan. When the
+ * plan is a DRAFT with no interviews, this panel renders a small quickstart.
  *
  * All data is read from the parent shell's outlet context — no fetches.
  */
@@ -25,7 +23,7 @@ import { SectionCard } from '../components';
 import { PipelineTemplateModal } from '../components/PipelineTemplateModal';
 import { useStageMutations } from '../hooks/useStageMutations';
 import type { PipelineShellContext } from './PipelineShellPage';
-import type { OverviewRoleContext, CandidatePersona } from '../lib/api/types';
+import type { CandidatePersona } from '../lib/api/types';
 
 /**
  * The Six Domains model used by the Role Discovery interview. Order here is
@@ -64,19 +62,6 @@ function formatKsValue(value: unknown): string {
       .join(' • ');
   }
   return String(value);
-}
-
-/** Total number of filled domain keys — used as a completeness badge. */
-function countFilledSignals(roleContext: OverviewRoleContext): number {
-  let n = 0;
-  for (const { key } of SIX_DOMAINS) {
-    const domain = roleContext.knowledgeState[key];
-    if (!domain) continue;
-    for (const v of Object.values(domain)) {
-      if (v !== null && v !== undefined && formatKsValue(v) !== '') n++;
-    }
-  }
-  return n;
 }
 
 function Metric({
@@ -251,8 +236,7 @@ function PersonaView({ persona }: { persona: CandidatePersona }): JSX.Element {
 }
 
 /**
- * Pill-style toggle button used inside the combined card's header meta slot
- * to switch between ROLE_PROFILE and PIPELINE_INSIGHTS.
+ * Pill-style toggle button used inside the combined card's header meta slot.
  */
 function CombinedTabButton({
   label,
@@ -373,79 +357,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
       data-testid="insights-panel"
       style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      {/* Role profile summary — always visible when role context exists */}
-      {roleContext && (
-        <div
-          style={{
-            padding: '20px 24px',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(96,165,250,0.04) 100%)',
-            border: '1px solid var(--pipe-border)',
-            borderRadius: 10,
-            display: 'flex',
-            gap: 32,
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-          }}
-        >
-          {/* Key metadata */}
-          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
-            {([
-              ['COMPANY', roleContext.baseline.companyName],
-              ['LOCATION', roleContext.baseline.location],
-              ['DEPARTMENT', roleContext.baseline.department],
-            ] as [string, string | undefined][]).filter(([, v]) => !!v).map(([label, value]) => (
-              <div key={label}>
-                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
-              </div>
-            ))}
-
-            {/* Must-have skill chips */}
-            {roleContext.persona && roleContext.persona.mustHaveSkills.length > 0 && (
-              <div>
-                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>MUST-HAVE SKILLS</div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {roleContext.persona.mustHaveSkills.slice(0, 6).map((skill) => (
-                    <span
-                      key={skill}
-                      style={{
-                        fontSize: 9,
-                        padding: '3px 8px',
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        color: 'var(--pipe-text-muted)',
-                        fontFamily: '"Space Mono", monospace',
-                        borderRadius: 3,
-                      }}
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                  {roleContext.persona.mustHaveSkills.length > 6 && (
-                    <span style={{ fontSize: 9, padding: '3px 8px', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-                      +{roleContext.persona.mustHaveSkills.length - 6} more
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Profile depth signal */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>PROFILE DEPTH</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', lineHeight: 1 }}>
-              {countFilledSignals(roleContext)}
-            </div>
-            <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>SIGNALS</div>
-          </div>
-        </div>
-      )}
-
-      {/* Empty-state quickstart — DRAFT with no stages */}
+      {/* Empty-state quickstart — DRAFT with no interviews */}
       {isDraft && isEmpty && (
         <SectionCard
-          label="EMPTY_ROLE"
+          variant="solid"
+          label="INTERVIEW_PLAN"
           icon={<Plus size={16} color="var(--pipe-text-dim)" />}
           meta="START HERE"
         >
@@ -459,7 +375,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
               marginBottom: 8,
             }}
           >
-            Add the first interview round
+            Add the first interview
           </div>
           <div
             style={{
@@ -471,10 +387,45 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            Rounds keep sequencing when a role has more than one interview step.
-            Start with one round, then add challenges or scheduling as needed.
+            Start with a single interview. Code review, screening, and live panel
+            are all interview formats; the person context grows from what happens.
           </div>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => {
+                  setIsCreatingStage(true);
+                  void (async () => {
+                    try {
+                      const created = await createStage(pipelineId, 'Interview');
+                      await refetch();
+                      navigate(`/pipeline/${pipelineId}/stage/${created.id}?adder=1`);
+                    } catch (err) {
+                      console.error('[PipelineInsightsPanel] Failed to create interview:', err);
+                    } finally {
+                      setIsCreatingStage(false);
+                    }
+                  })();
+                }}
+                disabled={isCreatingStage}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '12px 18px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.15em',
+                  fontFamily: '"Space Mono", monospace',
+                  background: 'var(--pipe-accent-surface)',
+                  border: '1px solid var(--pipe-accent-border)',
+                  borderRadius: 6,
+                  color: 'var(--pipe-accent)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Plus size={14} />
+                {isCreatingStage ? 'CREATING...' : 'ADD INTERVIEW'}
+              </button>
               <button
                 onClick={() => setShowTemplateModal(true)}
                 style={{
@@ -494,63 +445,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 }}
               >
                 <FileText size={14} />
-                USE_TEMPLATE
-              </button>
-              <button
-                onClick={() => navigate('/roles/new')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 18px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: 'var(--pipe-accent-surface)',
-                  border: '1px solid var(--pipe-accent-border)',
-                  borderRadius: 6,
-                  color: 'var(--pipe-accent)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Sparkles size={14} />
-                NEW ROLE
-              </button>
-              <button
-                onClick={() => {
-                  setIsCreatingStage(true);
-                  void (async () => {
-                    try {
-                      const created = await createStage(pipelineId, 'New Round');
-                      await refetch();
-                      navigate(`/pipeline/${pipelineId}/stage/${created.id}?adder=1`);
-                    } catch (err) {
-                      console.error('[PipelineInsightsPanel] Failed to create round:', err);
-                    } finally {
-                      setIsCreatingStage(false);
-                    }
-                  })();
-                }}
-                disabled={isCreatingStage}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 18px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.15em',
-                  fontFamily: '"Space Mono", monospace',
-                  background: 'var(--pipe-surface)',
-                  border: '1px solid var(--pipe-border)',
-                  borderRadius: 6,
-                  color: 'var(--pipe-text-dim)',
-                  cursor: 'pointer',
-                }}
-              >
-                <Plus size={14} />
-                {isCreatingStage ? 'CREATING...' : 'ADD ROUND'}
+                USE TEMPLATE
               </button>
             </div>
         </SectionCard>
@@ -563,16 +458,17 @@ export default function PipelineInsightsPanel(): JSX.Element {
         hasInsights ||
         hasCandidates) && (
         <SectionCard
+          variant="solid"
           label={
             effectiveTab === 'persona'
-              ? 'CANDIDATE_PERSONA'
+              ? 'PERSON_CONTEXT'
               : effectiveTab === 'job_description'
-                ? 'JOB_DESCRIPTION'
+                ? 'SOURCE_BRIEF'
                 : effectiveTab === 'profile'
-                  ? 'ROLE_PROFILE'
+                  ? 'SOURCE_CONTEXT'
                   : effectiveTab === 'insights'
-                    ? 'PIPELINE_INSIGHTS'
-                    : 'CANDIDATES'
+                    ? 'INTERVIEW_STATE'
+                    : 'PEOPLE'
           }
           icon={
             effectiveTab === 'persona' ? (
@@ -599,21 +495,21 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 )}
                 {hasJobDescription && (
                   <CombinedTabButton
-                    label="JD"
+                    label="BRIEF"
                     isActive={effectiveTab === 'job_description'}
                     onClick={() => setActiveTab('job_description')}
                   />
                 )}
                 {hasProfile && (
                   <CombinedTabButton
-                    label="PROFILE"
+                    label="SOURCE"
                     isActive={effectiveTab === 'profile'}
                     onClick={() => setActiveTab('profile')}
                   />
                 )}
                 {hasInsights && (
                   <CombinedTabButton
-                    label="INSIGHTS"
+                    label="STATE"
                     isActive={effectiveTab === 'insights'}
                     onClick={() => setActiveTab('insights')}
                   />
@@ -630,12 +526,10 @@ export default function PipelineInsightsPanel(): JSX.Element {
               roleContext.persona.seniority.toUpperCase()
             ) : effectiveTab === 'job_description' ? (
               'MARKDOWN'
-            ) : effectiveTab === 'profile' && roleContext ? (
-              `${roleContext.questionsAsked} QUESTIONS · ${countFilledSignals(roleContext)} SIGNALS`
             ) : effectiveTab === 'insights' ? (
-              `${stages.length} ROUND${stages.length === 1 ? '' : 'S'}`
+              `${stages.length} INTERVIEW${stages.length === 1 ? '' : 'S'}`
             ) : (
-              `${candidates.length} CANDIDATE${candidates.length === 1 ? '' : 'S'}`
+              `${candidates.length} PERSON${candidates.length === 1 ? '' : 'S'}`
             )
           }
         >
@@ -800,11 +694,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
               marginBottom: 24,
             }}
           >
-            <Metric label="CANDIDATES" value={metrics.total} />
-            <Metric label="IN_PROGRESS" value={metrics.inProgress} />
-            <Metric label="COMPLETED" value={metrics.completed} />
+            <Metric label="PEOPLE" value={metrics.total} />
+            <Metric label="ACTIVE" value={metrics.inProgress} />
+            <Metric label="DONE" value={metrics.completed} />
             <Metric
-              label="AVG_SCORE"
+              label="AVG SCORE"
               value={metrics.avgScore !== null ? `${metrics.avgScore}` : '—'}
             />
           </div>
@@ -825,7 +719,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              PER ROUND
+              PER INTERVIEW
             </div>
             {stages.map((stage, index) => {
               const stageCandidates = candidates.filter(
@@ -931,7 +825,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                   c.status === 'COMPLETED'
                     ? '#4ade80'
                     : c.status === 'IN_PROGRESS'
-                      ? 'rgba(255, 255, 255, 0.40)'
+                      ? 'var(--pipe-accent)'
                       : 'var(--pipe-text-dim)';
                 return (
                   <button
@@ -1011,7 +905,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {(stage?.title ?? 'NO_STAGE').toUpperCase()}
+                      {(stage?.title ?? 'No round').toUpperCase()}
                     </div>
                     <div
                       style={{
@@ -1049,10 +943,11 @@ export default function PipelineInsightsPanel(): JSX.Element {
         </SectionCard>
       )}
 
-      {/* Fallback when no role context and pipeline is empty (draft path) */}
+      {/* Fallback when no source context and the plan is active. */}
       {!hasProfile && !hasInsights && !isDraft && (
         <SectionCard
-          label="NO_ROLE_PROFILE"
+          variant="solid"
+          label="SOURCE_CONTEXT"
           icon={<Target size={16} color="var(--pipe-text-dim)" />}
         >
           <div
@@ -1063,7 +958,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            This role does not have source-backed role context yet. Paste a job
+            This plan does not have source-backed context yet. Paste a job
             description or attach interview evidence before using match decisions.
           </div>
         </SectionCard>

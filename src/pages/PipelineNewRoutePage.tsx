@@ -1,11 +1,12 @@
 import { type CSSProperties, type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@clerk/react';
 import { CheckCircle2, Loader2, Play } from 'lucide-react';
 import { createApiClient } from '../lib/api/client';
+import type { CreatePipelineResponse } from '../lib/api/types';
+import { useAuth } from '../providers';
 
 type StageChoice = {
-  value: 'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING';
+  value: 'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE';
   label: string;
   description: string;
 };
@@ -13,18 +14,18 @@ type StageChoice = {
 const STAGE_CHOICES: StageChoice[] = [
   {
     value: 'SCREENING',
-    label: 'Screener',
-    description: 'Source-backed role intake, baseline checks, and participant instructions.',
+    label: 'Video interview',
+    description: 'Schedule a recorded call, capture the transcript, and grow the person context.',
   },
   {
     value: 'CODE_REVIEW',
-    label: 'Code Review',
-    description: 'Ask each person to review implementation context and explain findings.',
+    label: 'Code-review interview',
+    description: 'Use the video interview around a real PR review and source-backed findings.',
   },
   {
-    value: 'LIVE_CODING',
-    label: 'Live Coding',
-    description: 'Give the person a live implementation challenge.',
+    value: 'OPEN_SOURCE',
+    label: 'Implementation challenge',
+    description: 'Match the person to a repo-backed task when you need hands-on evidence.',
   },
 ];
 
@@ -43,20 +44,12 @@ interface SimpleRoleContextResponse {
   };
 }
 
-const LIGHT_BLUE = '#60a5fa';
-const LIGHT_BLUE_BG = 'rgba(96, 165, 250, 0.2)';
-const LIGHT_BLUE_BG_INACTIVE = 'rgba(96, 165, 250, 0.05)';
-const LIGHT_BLUE_BORDER = 'rgba(96, 165, 250, 0.75)';
-const LIGHT_BLUE_BORDER_INACTIVE = 'rgba(96, 165, 250, 0.25)';
-const LIGHT_BLUE_TEXT = '#dbeafe';
-const LIGHT_BLUE_DISABLED_BG = 'rgba(96, 165, 250, 0.22)';
-const LIGHT_BLUE_DISABLED_TEXT = 'rgba(248, 251, 255, 0.55)';
 const MIN_DESCRIPTION_LENGTH = 20;
 
 export default function PipelineNewRoutePage(): JSX.Element {
   const navigate = useNavigate();
-  const { getToken } = useAuth();
-  const api = createApiClient({ getToken });
+  const auth = useAuth();
+  const api = createApiClient({ getToken: auth.getSessionToken });
 
   const [roleTitle, setRoleTitle] = useState('');
   const [company, setCompany] = useState('');
@@ -64,8 +57,6 @@ export default function PipelineNewRoutePage(): JSX.Element {
   const [roleDescription, setRoleDescription] = useState('');
   const [selectedStages, setSelectedStages] = useState<Array<StageChoice['value']>>([
     'SCREENING',
-    'CODE_REVIEW',
-    'LIVE_CODING',
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,9 +73,12 @@ export default function PipelineNewRoutePage(): JSX.Element {
   const companyValue = company.trim();
   const locationValue = location.trim();
   const roleDescriptionValue = roleDescription.trim();
+  const hasRoleContext = roleDescriptionValue.length >= MIN_DESCRIPTION_LENGTH;
+  const hasPartialRoleContext =
+    roleDescriptionValue.length > 0 && roleDescriptionValue.length < MIN_DESCRIPTION_LENGTH;
   const canSubmit =
     roleTitleValue.length > 0 &&
-    roleDescriptionValue.length >= MIN_DESCRIPTION_LENGTH &&
+    !hasPartialRoleContext &&
     selectedStages.length > 0 &&
     !isSubmitting;
 
@@ -94,25 +88,47 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
     if (!canSubmit) {
       if (roleTitleValue.length === 0) {
-        setError('Role title is required.');
-      } else if (roleDescriptionValue.length < MIN_DESCRIPTION_LENGTH) {
-        setError(`Role description must be at least ${MIN_DESCRIPTION_LENGTH} characters.`);
+        setError('Plan title is required.');
+      } else if (hasPartialRoleContext) {
+        setError(`Optional context must be blank or at least ${MIN_DESCRIPTION_LENGTH} characters.`);
       } else if (selectedStages.length === 0) {
-        setError('Select at least one round.');
+        setError('Select at least one interview type.');
       }
       return;
     }
 
     setIsSubmitting(true);
 
-    const jobDescriptionMd = [
-      `## Role Title\n${roleTitleValue}`,
-      ...(companyValue ? [`## Company\n${companyValue}`] : []),
-      ...(locationValue ? [`## Location\n${locationValue}`] : []),
-      `## Role Scope\n${roleDescriptionValue}`,
-    ].join('\n\n');
-
     try {
+      if (!hasRoleContext) {
+        const created = await api.post<CreatePipelineResponse>('/api/v1/pipelines', {
+          title: roleTitleValue,
+          description: undefined,
+          status: 'DRAFT',
+          creationMode: 'BLANK',
+          createDefaultStages: false,
+        });
+
+        for (const stageValue of selectedStages) {
+          const stage = STAGE_CHOICES.find((choice) => choice.value === stageValue);
+          await api.post(`/api/v1/pipelines/${created.pipeline.id}/stages`, {
+            title: stage?.label ?? 'Interview',
+            stageType: stageValue,
+            isScheduled: true,
+          });
+        }
+
+        navigate(`/pipeline/${created.pipeline.id}`);
+        return;
+      }
+
+      const jobDescriptionMd = [
+        `## Role Title\n${roleTitleValue}`,
+        ...(companyValue ? [`## Company\n${companyValue}`] : []),
+        ...(locationValue ? [`## Location\n${locationValue}`] : []),
+        `## Role Scope\n${roleDescriptionValue}`,
+      ].join('\n\n');
+
       const roleContext = await api.post<SimpleRoleContextResponse>('/api/v1/role-contexts/simple-job-description', {
         jobDescriptionMd,
         title: roleTitleValue,
@@ -149,18 +165,16 @@ export default function PipelineNewRoutePage(): JSX.Element {
     <form
       onSubmit={handleSubmit}
       style={{
-        minHeight: 0,
-        height: 'calc(100dvh - 124px)',
-        maxHeight: 'calc(100dvh - 124px)',
-        padding: '16px 20px',
+        minHeight: 'calc(100dvh - 124px)',
+        padding: '24px 24px 40px',
         background: 'transparent',
-        color: 'rgba(244, 246, 250, 0.95)',
-        overflow: 'hidden',
+        color: 'var(--pipe-text)',
         boxSizing: 'border-box',
         margin: '0',
         width: '100%',
         display: 'flex',
         justifyContent: 'flex-start',
+        overflowY: 'auto',
       }}
     >
       <div
@@ -168,39 +182,38 @@ export default function PipelineNewRoutePage(): JSX.Element {
           maxWidth: 920,
           margin: '0',
           width: '100%',
-          height: '100%',
-          overflow: 'hidden',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
+          border: '1px solid var(--pipe-border-light)',
           borderRadius: 14,
           padding: 22,
-          background: 'transparent',
+          background: 'var(--pipe-surface-solid)',
+          boxShadow: '0 24px 80px var(--pipe-shadow)',
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-        }}
+        } as CSSProperties}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
             <div
               style={{
                 fontSize: 10,
-                letterSpacing: '0.22em',
-                color: 'rgba(244, 246, 250, 0.55)',
+                letterSpacing: 0,
+                color: 'var(--pipe-text-dim)',
                 marginBottom: 6,
                 fontFamily: '"Space Mono", monospace',
               }}
             >
               PIPE OS
             </div>
-            <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>
-              New Role
+            <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: 0, color: 'var(--pipe-text)' }}>
+              New Interview Plan
             </h1>
-            <p style={{ margin: '10px 0 0', fontSize: 13, color: 'rgba(244, 246, 250, 0.62)' }}>
-              Paste a source-backed job description, then pick the interview rounds to run.
+            <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--pipe-text-muted)' }}>
+              Start with the interview. Add a role, job description, or technical context only when it helps.
             </p>
           </div>
-          <div style={{ opacity: canSubmit ? 1 : 0.5 }}>
+          <div>
             <button
               type="submit"
               disabled={!canSubmit}
@@ -208,20 +221,20 @@ export default function PipelineNewRoutePage(): JSX.Element {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 10,
-                border: canSubmit ? `1px solid ${LIGHT_BLUE}` : `1px solid ${LIGHT_BLUE_BORDER}`,
-                background: canSubmit ? LIGHT_BLUE : LIGHT_BLUE_DISABLED_BG,
-                color: canSubmit ? '#f8fbff' : LIGHT_BLUE_DISABLED_TEXT,
+                border: canSubmit ? '1px solid var(--pipe-accent-border)' : '1px solid var(--pipe-border)',
+                background: canSubmit ? 'var(--pipe-text)' : 'var(--pipe-surface)',
+                color: canSubmit ? 'var(--pipe-bg)' : 'var(--pipe-text-dim)',
                 padding: '11px 18px',
                 fontSize: 10,
                 fontWeight: 800,
-                letterSpacing: '0.15em',
+                letterSpacing: 0,
                 fontFamily: '"Space Mono", monospace',
                 borderRadius: 8,
                 cursor: canSubmit ? 'pointer' : 'default',
               }}
             >
               {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-              CREATE ROLE
+              CREATE PLAN
             </button>
           </div>
         </div>
@@ -232,26 +245,25 @@ export default function PipelineNewRoutePage(): JSX.Element {
             display: 'grid',
             gridTemplateColumns: 'minmax(0, 1.1fr) minmax(280px, 1fr)',
             gap: 22,
-            flex: '0 0 auto',
           }}
         >
           <div style={{ display: 'grid', gap: 14 }}>
             <label style={{ display: 'grid', gap: 8 }}>
-              <span style={{ fontSize: 10, letterSpacing: '0.18em', color: 'rgba(244, 246, 250, 0.55)' }}>
-                ROLE_TITLE
+              <span style={fieldLabelStyle}>
+                PLAN TITLE
               </span>
               <input
                 value={roleTitle}
                 onChange={(e) => setRoleTitle(e.target.value)}
-                placeholder="Senior Frontend Engineer"
+                placeholder="Frontend interview / Coffee chat / Senior Frontend Engineer"
                 required
                 style={inputStyle}
               />
             </label>
 
             <label style={{ display: 'grid', gap: 8 }}>
-              <span style={{ fontSize: 10, letterSpacing: '0.18em', color: 'rgba(244, 246, 250, 0.55)' }}>
-                COMPANY
+              <span style={fieldLabelStyle}>
+                COMPANY / CLIENT
               </span>
               <input
                 value={company}
@@ -262,7 +274,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
             </label>
 
             <label style={{ display: 'grid', gap: 8 }}>
-              <span style={{ fontSize: 10, letterSpacing: '0.18em', color: 'rgba(244, 246, 250, 0.55)' }}>
+              <span style={fieldLabelStyle}>
                 LOCATION
               </span>
               <input
@@ -275,8 +287,8 @@ export default function PipelineNewRoutePage(): JSX.Element {
           </div>
 
           <div>
-            <div style={{ fontSize: 10, letterSpacing: '0.18em', color: 'rgba(244, 246, 250, 0.55)', marginBottom: 8 }}>
-              ROUNDS
+            <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>
+              INTERVIEW TYPES
             </div>
             <div style={{ display: 'grid', gap: 12 }}>
               {STAGE_CHOICES.map((stage) => (
@@ -287,10 +299,12 @@ export default function PipelineNewRoutePage(): JSX.Element {
                   style={{
                     textAlign: 'left',
                     border: selectedStages.includes(stage.value)
-                      ? `1px solid ${LIGHT_BLUE_BORDER}`
-                      : `1px solid ${LIGHT_BLUE_BORDER_INACTIVE}`,
-                    background: selectedStages.includes(stage.value) ? LIGHT_BLUE_BG : LIGHT_BLUE_BG_INACTIVE,
-                    color: LIGHT_BLUE_TEXT,
+                      ? '1px solid var(--pipe-accent-border)'
+                      : '1px solid var(--pipe-border)',
+                    background: selectedStages.includes(stage.value)
+                      ? 'var(--pipe-accent-surface)'
+                      : 'var(--pipe-surface-solid)',
+                    color: 'var(--pipe-text)',
                     padding: 14,
                     borderRadius: 10,
                     cursor: 'pointer',
@@ -298,9 +312,9 @@ export default function PipelineNewRoutePage(): JSX.Element {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                     <span style={{ fontWeight: 700, fontSize: 12 }}>{stage.label}</span>
-                    {selectedStages.includes(stage.value) && <CheckCircle2 size={14} color={LIGHT_BLUE_TEXT} />}
+                    {selectedStages.includes(stage.value) && <CheckCircle2 size={14} color="var(--pipe-accent)" />}
                   </div>
-                  <p style={{ margin: '8px 0 0', color: 'rgba(244, 246, 250, 0.72)', fontSize: 11, lineHeight: 1.4 }}>
+                  <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 11, lineHeight: 1.4 }}>
                     {stage.description}
                   </p>
                 </button>
@@ -309,29 +323,33 @@ export default function PipelineNewRoutePage(): JSX.Element {
           </div>
         </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0, flex: '1 1 auto' }}>
-          <span style={{ fontSize: 10, letterSpacing: '0.18em', color: 'rgba(244, 246, 250, 0.55)' }}>
-            ROLE_DESCRIPTION (source-backed)
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
+          <span style={fieldLabelStyle}>
+            OPTIONAL ROLE OR CONTEXT
           </span>
           <textarea
             value={roleDescription}
             onChange={(e) => setRoleDescription(e.target.value)}
             rows={10}
-            placeholder="Paste role expectations, constraints, and technical requirements."
-            required
-            minLength={MIN_DESCRIPTION_LENGTH}
+            placeholder="Paste role expectations, meeting context, or technical requirements if you have them. Leave this blank to create a simple interview plan first."
             style={{
               ...inputStyle,
               width: '100%',
-              minHeight: 0,
-              flex: '1 1 auto',
+              minHeight: 220,
               resize: 'none',
               lineHeight: 1.5,
               padding: 14,
             }}
           />
-          <span style={{ fontSize: 10, color: roleDescription.trim().length >= 20 ? '#f4f6fa' : '#fca5a5' }}>
-            {roleDescriptionValue.length} / {MIN_DESCRIPTION_LENGTH} chars
+          <span
+            style={{
+              fontSize: 10,
+              color: hasPartialRoleContext ? '#dc2626' : 'var(--pipe-text-dim)',
+            }}
+          >
+            {roleDescriptionValue.length === 0
+              ? 'No role context yet'
+              : `${roleDescriptionValue.length} / ${MIN_DESCRIPTION_LENGTH} chars`}
           </span>
         </label>
 
@@ -341,7 +359,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
               marginTop: 16,
               border: '1px solid rgba(252,165,165,0.35)',
               background: 'rgba(252,165,165,0.1)',
-              color: '#fecaca',
+              color: '#f87171',
               padding: 12,
               borderRadius: 8,
               fontSize: 12,
@@ -357,11 +375,17 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
 const inputStyle: CSSProperties = {
   width: '100%',
-  border: '1px solid rgba(255, 255, 255, 0.16)',
-  background: 'transparent',
-  color: 'rgba(244, 246, 250, 0.95)',
+  border: '1px solid var(--pipe-border)',
+  background: 'var(--pipe-surface-solid)',
+  color: 'var(--pipe-text)',
   borderRadius: 8,
   padding: '11px 12px',
   fontFamily: '"Space Mono", monospace',
   fontSize: 12,
+};
+
+const fieldLabelStyle: CSSProperties = {
+  fontSize: 10,
+  letterSpacing: 0,
+  color: 'var(--pipe-text-dim)',
 };

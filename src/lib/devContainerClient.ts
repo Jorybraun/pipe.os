@@ -66,8 +66,37 @@ interface ApiErrorBody {
   error?: { code?: string; message?: string };
 }
 
+interface RuntimeLocation {
+  hostname: string;
+  origin: string;
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+export function resolveDevContainerApiBase(
+  envBaseUrl: string | undefined = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL,
+  runtimeLocation: RuntimeLocation | undefined =
+    typeof window !== 'undefined'
+      ? { hostname: window.location.hostname, origin: window.location.origin }
+      : undefined,
+): string {
+  if (envBaseUrl?.trim()) return normalizeBaseUrl(envBaseUrl.trim());
+
+  if (
+    runtimeLocation &&
+    runtimeLocation.hostname !== 'localhost' &&
+    runtimeLocation.hostname !== '127.0.0.1'
+  ) {
+    return runtimeLocation.origin;
+  }
+
+  return 'http://localhost:8787';
+}
+
 function apiBase(): string {
-  return import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+  return resolveDevContainerApiBase();
 }
 
 async function parseError(res: Response): Promise<DevContainerApiError> {

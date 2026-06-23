@@ -2,22 +2,22 @@
  * PipelineShellPage — the outer shell for /pipeline/:id.
  *
  * Layout:
- *   [Header row: PIPELINE_OVERVIEW / title / actions]
- *   [StageStepper]
- *   [LiquidMetalCard container → <Outlet />]
+ *   [Header row: INTERVIEW_PLAN / title / actions]
+ *   [Interview timeline]
+ *   [Route outlet]
  *
  * The Outlet renders either:
- *   - PipelineInsightsPanel (index route) — role profile + insights
- *   - StagePanel (nested /stage/:stageId route) — challenges/candidates/configure
+ *   - PipelineInsightsPanel (index route) — context + interview state
+ *   - StagePanel (nested /stage/:stageId route) — interview setup + people
  *
  * All pipeline data (pipeline, stages, candidates, roleContext) is fetched once
  * here via useOverviewData and passed down through React Router's outlet
  * context so nested routes never re-fetch.
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { useParams, useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { Rocket, Plus, LayoutGrid, AlertTriangle, X, Pencil, Undo2 } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { useParams, useNavigate, Outlet } from 'react-router-dom';
+import { Rocket, Plus, LayoutGrid, Pencil, Undo2 } from 'lucide-react';
 import { LiquidMetalCard } from '../components';
 // LiquidMetalCard is used for the error card only. The shell no longer wraps
 // the outlet in a container card — nested SectionCards provide their own
@@ -64,16 +64,117 @@ function PipelineShellSkeleton(): JSX.Element {
   );
 }
 
-interface AutoBuildWarning {
-  code: string;
-  severity: 'warn';
-  message: string;
+function InterviewStrip({
+  pipelineId,
+  stages,
+  candidates,
+  isDraft,
+  onAddInterview,
+}: {
+  pipelineId: string;
+  stages: OverviewStage[];
+  candidates: OverviewCandidate[];
+  isDraft: boolean;
+  onAddInterview: () => void;
+}): JSX.Element | null {
+  const navigate = useNavigate();
+  if (stages.length === 0 && !isDraft) return null;
+
+  return (
+    <nav
+      aria-label="Interviews"
+      style={{
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        marginTop: 18,
+      }}
+    >
+      {stages.map((stage) => {
+        const peopleCount = candidates.filter((candidate) => candidate.currentStageId === stage.id).length;
+        return (
+          <button
+            key={stage.id}
+            type="button"
+            onClick={() => navigate(`/pipeline/${pipelineId}/stage/${stage.id}`)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              minHeight: 40,
+              maxWidth: 280,
+              padding: '9px 12px',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 8,
+              background: 'var(--pipe-surface-solid)',
+              color: 'var(--pipe-text)',
+              cursor: 'pointer',
+              fontFamily: '"Space Mono", monospace',
+              textAlign: 'left',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: 'var(--pipe-accent)',
+                boxShadow: '0 0 0 3px var(--pipe-accent-surface)',
+                flex: '0 0 auto',
+              }}
+            />
+            <span style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: 11,
+                  fontWeight: 800,
+                }}
+              >
+                {stage.title || 'Interview'}
+              </span>
+              <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9 }}>
+                {peopleCount} {peopleCount === 1 ? 'person' : 'people'}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+      {isDraft && (
+        <button
+          type="button"
+          onClick={onAddInterview}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            minHeight: 40,
+            padding: '9px 12px',
+            border: '1px solid rgba(74, 222, 128, 0.35)',
+            borderRadius: 8,
+            background: 'rgba(74, 222, 128, 0.08)',
+            color: '#4ade80',
+            cursor: 'pointer',
+            fontFamily: '"Space Mono", monospace',
+            fontSize: 10,
+            fontWeight: 800,
+          }}
+        >
+          <Plus size={13} />
+          ADD INTERVIEW
+        </button>
+      )}
+    </nav>
+  );
 }
 
 export default function PipelineShellPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const {
     pipeline,
@@ -93,19 +194,6 @@ export default function PipelineShellPage(): JSX.Element {
   const [showNewStage, setShowNewStage] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
-  // Warnings arriving via navigate state from the auto-build wizard. Captured
-  // once on mount so the banner persists even after route state is cleared.
-  const [autoBuildWarnings, setAutoBuildWarnings] = useState<AutoBuildWarning[]>([]);
-
-  useEffect(() => {
-    const state = location.state as { autoBuildWarnings?: AutoBuildWarning[] } | null;
-    if (state?.autoBuildWarnings && state.autoBuildWarnings.length > 0) {
-      setAutoBuildWarnings(state.autoBuildWarnings);
-      // Clear the route state so a refresh doesn't replay the banner.
-      window.history.replaceState({}, '');
-    }
-  }, [location.state]);
-
   const handlePublish = useCallback(async (): Promise<void> => {
     try {
       await publishPipeline();
@@ -115,7 +203,7 @@ export default function PipelineShellPage(): JSX.Element {
   }, [publishPipeline]);
 
   const handleUnpublish = useCallback(async (): Promise<void> => {
-    if (!window.confirm('Unpublish this role? People will no longer be able to access its interview rounds.')) return;
+    if (!window.confirm('Pause this interview plan? People will no longer be able to access its interview links.')) return;
     try {
       await unpublishPipeline();
     } catch (err) {
@@ -163,7 +251,7 @@ export default function PipelineShellPage(): JSX.Element {
               letterSpacing: '0.1em',
             }}
           >
-            ERROR_LOADING_ROLE
+            ERROR_LOADING_CONTEXT
           </div>
           <p
             style={{
@@ -199,7 +287,7 @@ export default function PipelineShellPage(): JSX.Element {
     return (
       <div style={{ padding: 60, textAlign: 'center' }}>
         <h2 style={{ color: 'var(--pipe-text)', marginBottom: 20 }}>
-          Role Not Found
+          Interview Plan Not Found
         </h2>
         <button
           onClick={() => navigate('/')}
@@ -214,7 +302,7 @@ export default function PipelineShellPage(): JSX.Element {
             letterSpacing: '0.1em',
           }}
         >
-          BACK TO ROLES
+          BACK TO CONTEXTS
         </button>
       </div>
     );
@@ -234,71 +322,9 @@ export default function PipelineShellPage(): JSX.Element {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 32, padding: '0 0 80px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24, padding: '0 0 80px' }}>
       {/* Header - spans both columns */}
       <div style={{ gridColumn: '1 / -1' }}>
-      {autoBuildWarnings.length > 0 && (
-        <div
-          data-testid="auto-build-warnings-banner"
-          style={{
-            display: 'flex',
-            gap: 12,
-            padding: '14px 16px',
-            marginBottom: 20,
-            background: 'rgba(251, 191, 36, 0.08)',
-            border: '1px solid rgba(251, 191, 36, 0.3)',
-            borderRadius: 6,
-            alignItems: 'flex-start',
-          }}
-        >
-          <AlertTriangle size={16} color="#fbbf24" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                color: '#fbbf24',
-                fontFamily: '"Space Mono", monospace',
-                marginBottom: 8,
-              }}
-            >
-              ROLE BUILD WARNINGS
-            </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {autoBuildWarnings.map((w) => (
-                <li
-                  key={w.code}
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--pipe-text)',
-                    lineHeight: 1.5,
-                    fontFamily: '"Space Mono", monospace',
-                  }}
-                >
-                  <span style={{ color: 'var(--pipe-text-dim)' }}>[{w.code}]</span> {w.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <button
-            onClick={() => setAutoBuildWarnings([])}
-            aria-label="Dismiss warnings"
-            data-testid="auto-build-warnings-dismiss"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
-              padding: 4,
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
       {/* Header row */}
       <div
         style={{
@@ -325,7 +351,7 @@ export default function PipelineShellPage(): JSX.Element {
                 fontFamily: '"Space Mono", monospace',
               }}
             >
-              ROLE OVERVIEW
+              INTERVIEW PLAN
             </div>
             <div
               data-testid="pipeline-status-badge"
@@ -359,10 +385,10 @@ export default function PipelineShellPage(): JSX.Element {
           </h1>
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button
             onClick={() => navigate(`/pipeline/${id}`)}
-            aria-label="Role overview"
+            aria-label="Interview plan overview"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -377,11 +403,11 @@ export default function PipelineShellPage(): JSX.Element {
               cursor: 'pointer',
             }}
           >
-            HOME
+            OVERVIEW
           </button>
           <button
             onClick={() => navigate(`/pipeline/${id}/kanban`)}
-            aria-label="View role board"
+            aria-label="View people board"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -397,7 +423,7 @@ export default function PipelineShellPage(): JSX.Element {
             }}
           >
             <LayoutGrid size={14} />
-            VIEW BOARD
+            PEOPLE BOARD
           </button>
           {isDraft && (
             <button
@@ -405,8 +431,8 @@ export default function PipelineShellPage(): JSX.Element {
               disabled={stages.length === 0}
               title={
                 stages.length === 0
-                  ? 'Add at least 1 round before publishing'
-                  : 'Publish role to start inviting people'
+                  ? 'Add at least 1 interview before activating'
+                  : 'Activate this plan so people can be invited'
               }
               style={{
                 display: 'flex',
@@ -434,7 +460,7 @@ export default function PipelineShellPage(): JSX.Element {
               }}
             >
               <Rocket size={14} />
-              PUBLISH ROLE
+              ACTIVATE PLAN
             </button>
           )}
           {isActivePipeline && (
@@ -475,7 +501,7 @@ export default function PipelineShellPage(): JSX.Element {
                 }}
               >
                 <Undo2 size={14} />
-                UNPUBLISH ROLE
+                PAUSE PLAN
               </button>
               <button
                 onClick={() => setShowAddCandidate(true)}
@@ -521,6 +547,13 @@ export default function PipelineShellPage(): JSX.Element {
           )}
         </div>
       </div>
+      <InterviewStrip
+        pipelineId={id}
+        stages={stages}
+        candidates={candidates}
+        isDraft={isDraft}
+        onAddInterview={() => setShowNewStage(true)}
+      />
       </div>
 
       {/* Main content area */}
@@ -528,120 +561,6 @@ export default function PipelineShellPage(): JSX.Element {
         {/* Outlet — nested routes render their own SectionCards so the shell
             doesn't need an outer container. */}
         <Outlet context={outletContext} />
-      </div>
-
-      {/* Right panel - vertical stage timeline */}
-      <div style={{ 
-        gridColumn: '2',
-        paddingLeft: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-        position: 'relative',
-      }}>
-        {/* Timeline line */}
-        <div style={{
-          position: 'absolute',
-          left: 6,
-          top: 8,
-          bottom: 8,
-          width: 1,
-          background: 'var(--pipe-border)',
-        }} />
-        
-        {stages.map((stage) => {
-          const candidateCount = candidates.filter(c => c.currentStageId === stage.id).length;
-          return (
-            <div
-              key={stage.id}
-              onClick={() => navigate(`/pipeline/${id}/stage/${stage.id}`)}
-              style={{
-                display: 'flex',
-                gap: 16,
-                padding: '12px 0',
-                cursor: 'pointer',
-                position: 'relative',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = '0.7';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '1';
-              }}
-            >
-              {/* Timeline dot */}
-              <div style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                background: 'var(--pipe-accent)',
-                border: '2px solid var(--pipe-bg)',
-                zIndex: 1,
-                flexShrink: 0,
-              }} />
-              
-              {/* Stage info */}
-              <div>
-                <div style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--pipe-text)',
-                  fontFamily: '"Space Mono", monospace',
-                  marginBottom: 2,
-                }}>
-                  {stage.title}
-                </div>
-                <div style={{
-                  fontSize: 9,
-                  color: 'var(--pipe-text-dim)',
-                  fontFamily: '"Space Mono", monospace',
-                }}>
-                  {candidateCount} people
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        
-        {isDraft && (
-          <div
-            onClick={() => setShowNewStage(true)}
-            style={{
-              display: 'flex',
-              gap: 16,
-              padding: '12px 0',
-              cursor: 'pointer',
-              position: 'relative',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.7';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1';
-            }}
-          >
-            {/* Timeline dot */}
-            <div style={{
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              background: '#4ade80',
-              border: '2px solid var(--pipe-bg)',
-              zIndex: 1,
-              flexShrink: 0,
-            }} />
-            
-            {/* Add stage text */}
-            <div style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#4ade80',
-              fontFamily: '"Space Mono", monospace',
-            }}>
-              ADD ROUND
-            </div>
-          </div>
-        )}
       </div>
 
       {showAddCandidate && id && (

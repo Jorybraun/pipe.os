@@ -171,7 +171,7 @@ describe('GET /interviews/:id detail', () => {
     sqlite = null;
   });
 
-  function mountSchedulingApp(): Hono<{ Bindings: Env; Variables: Variables }> {
+  function mountSchedulingApp(envOverrides: Partial<Env> = {}): Hono<{ Bindings: Env; Variables: Variables }> {
     if (!sqlite) throw new Error('sqlite fixture not initialized');
     const app = new Hono<{ Bindings: Env; Variables: Variables }>();
     app.use('*', async (c, next) => {
@@ -181,6 +181,7 @@ describe('GET /interviews/:id detail', () => {
         DEV_AUTH_BYPASS: 'true',
         DEV_BYPASS_USER_ID: 'owner-1',
         APP_BASE_URL: 'http://localhost:5173',
+        ...envOverrides,
       } as unknown as Env;
       await next();
     });
@@ -276,6 +277,9 @@ describe('GET /interviews/:id detail', () => {
         meeting_type TEXT NOT NULL,
         transcript_status TEXT DEFAULT 'NONE',
         transcript_summary TEXT,
+        transcript_json TEXT,
+        transcript_analysis_json TEXT,
+        transcript_error TEXT,
         recording_r2_key TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -383,13 +387,17 @@ describe('GET /interviews/:id detail', () => {
       INSERT INTO meetings (
         id, owner_id, scheduled_interview_id, title, description, status,
         scheduled_at, started_at, ended_at, duration_secs, meeting_url,
-        meeting_type, transcript_status, transcript_summary, recording_r2_key,
+        meeting_type, transcript_status, transcript_summary, transcript_json,
+        transcript_analysis_json, transcript_error, recording_r2_key,
         created_at, updated_at
       ) VALUES (
         'meeting-1', 'owner-1', 'interview-1', 'Ada technical screen', NULL,
         'ACTIVE', '2026-06-22T18:00:00.000Z', '2026-06-22T18:00:30.000Z',
         NULL, NULL, 'http://localhost:5173/rooms/meeting-1',
         'SCREENING_INTERVIEW', 'COMPLETED', 'Discussed retry and Kafka evidence.',
+        '[{"stable_segment_id":"segment-host-1","speaker":"host","role":"host","text":"Tell me about the retry system.","timestamp_start_ms":1000,"timestamp_end_ms":3000,"confidence":0.98},{"stable_segment_id":"segment-guest-1","speaker":"guest","role":"guest","text":"I built idempotent Kafka consumers.","timestamp_start_ms":4000,"timestamp_end_ms":7000,"confidence":0.96}]',
+        '{"summary":"Discussed retry and Kafka evidence.","topics":["Kafka idempotency"],"decisions":["Advance to repo review"],"followUps":[],"semanticAssertions":[]}',
+        NULL,
         'meetings/owner-1/meeting-1/recording.webm',
         '2026-06-22T17:30:00.000Z', '2026-06-22T18:35:00.000Z'
       )
@@ -579,6 +587,10 @@ describe('GET /interviews/:id detail', () => {
           title: string;
           transcriptStatus: string;
           transcriptSummary: string | null;
+          transcriptJson: string | null;
+          transcriptAnalysisJson: string | null;
+          transcriptError: string | null;
+          recordingR2Key: string | null;
           room: { id: string; status: string | null } | null;
         } | null;
         livingContext: {
@@ -620,10 +632,28 @@ describe('GET /interviews/:id detail', () => {
       title: 'Ada technical screen',
       transcriptStatus: 'COMPLETED',
       transcriptSummary: 'Discussed retry and Kafka evidence.',
+      transcriptError: null,
+      recordingR2Key: 'meetings/owner-1/meeting-1/recording.webm',
       room: {
         id: 'room-1',
         status: 'ACTIVE',
       },
+    });
+    expect(JSON.parse(body.interview.linkedMeeting!.transcriptJson!)).toMatchObject([
+      {
+        role: 'host',
+        text: 'Tell me about the retry system.',
+        timestamp_start_ms: 1000,
+      },
+      {
+        role: 'guest',
+        text: 'I built idempotent Kafka consumers.',
+        timestamp_start_ms: 4000,
+      },
+    ]);
+    expect(JSON.parse(body.interview.linkedMeeting!.transcriptAnalysisJson!)).toMatchObject({
+      topics: ['Kafka idempotency'],
+      decisions: ['Advance to repo review'],
     });
     expect(body.interview.livingContext?.summary).toMatchObject({
       contextRecordCount: 1,
@@ -882,12 +912,27 @@ describe('GET /interviews/:id detail', () => {
       success: boolean;
       emailSent: boolean;
       meetingUrl: string;
+      room: {
+        id: string;
+        sessionId: string;
+        hostUrl: string;
+        guestUrl: string;
+        expiresAt: string;
+      };
     };
     expect(inviteBody).toMatchObject({
       success: true,
       emailSent: false,
     });
     expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.room).toMatchObject({
+      id: expect.any(String),
+      sessionId: expect.any(String),
+      hostUrl: expect.stringMatching(/^http:\/\/localhost:5175\/room\/.+/),
+      guestUrl: inviteBody.meetingUrl,
+      expiresAt: expect.any(String),
+    });
+    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
 
     const scheduledRow = sqlite!.prepare(
       `SELECT interview_type, meeting_url, invite_link_sent_at, email_sent_at
@@ -961,7 +1006,8 @@ describe('GET /interviews/:id detail', () => {
     expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: barbara@example.com',
       expect.stringMatching(/^Subject: Video call invitation — Interview \(.+\)$/),
-      `Meeting URL: ${inviteBody.meetingUrl}`,
+      `Delivered URL: ${inviteBody.meetingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
       'Custom message: Please join prepared code review discussion.',
       'Email sent: no',
       'Provider message id: none',
@@ -983,6 +1029,211 @@ describe('GET /interviews/:id detail', () => {
         WHERE p.primary_email = ?`,
     ).get('barbara@example.com')).toEqual({ count: 0 });
     expect(sqlite!.prepare('SELECT COUNT(*) AS count FROM applications').get()).toEqual({ count: 0 });
+  });
+
+  it('sends scheduled interview invites through the Cloudflare email binding when configured', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+      text?: string;
+    }> = [];
+    const app = mountSchedulingApp({
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          return { messageId: 'cf-message-1' };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+    } as Partial<Env>);
+
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Margaret Hamilton',
+        recipientEmail: 'margaret@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string };
+    };
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'margaret@example.com' }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      provider: string;
+      meetingUrl: string;
+      deliveredUrl: string;
+      room: { hostUrl: string; guestUrl: string };
+    };
+
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: true,
+      provider: 'cloudflare',
+    });
+    expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
+    expect(inviteBody.deliveredUrl).toBe(inviteBody.meetingUrl);
+    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      to: 'margaret@example.com',
+      from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
+      subject: 'Video call invitation — Interview',
+    });
+    expect(sentMessages[0]?.html).toContain(inviteBody.meetingUrl);
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, invite_link_sent_at, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      invite_link_sent_at: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduledRow.meeting_url).toBe(inviteBody.meetingUrl);
+    expect(scheduledRow.invite_link_sent_at).toEqual(expect.any(String));
+    expect(scheduledRow.email_sent_at).toEqual(expect.any(String));
+
+    const deliverySource = sqlite!.prepare(
+      `SELECT ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+          AND cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get('margaret@example.com') as { exact_text: string } | undefined;
+    expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Recipient email: margaret@example.com',
+      `Delivered URL: ${inviteBody.meetingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
+      'Email sent: yes',
+      'Provider message id: cf-message-1',
+    ]));
+  });
+
+  it('sends Calendly scheduling URL while still preparing the room link', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+    }> = [];
+    const app = mountSchedulingApp({
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          return { messageId: 'cf-calendly-message-1' };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+    } as Partial<Env>);
+
+    const schedulingUrl = 'https://calendly.com/pipe/code-review';
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string };
+    };
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'grace@example.com' }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      provider: string;
+      meetingUrl: string;
+      schedulingUrl: string;
+      deliveredUrl: string;
+      room: { hostUrl: string; guestUrl: string };
+    };
+
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: true,
+      provider: 'cloudflare',
+      schedulingUrl,
+      deliveredUrl: schedulingUrl,
+    });
+    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
+    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      to: 'grace@example.com',
+      from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
+      subject: 'Schedule interview — Interview',
+    });
+    expect(sentMessages[0]?.html).toContain(schedulingUrl);
+    expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, scheduling_provider, scheduling_url
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+    };
+    expect(scheduledRow).toMatchObject({
+      meeting_url: inviteBody.meetingUrl,
+      scheduling_provider: 'CALENDLY',
+      scheduling_url: schedulingUrl,
+    });
+
+    const deliverySource = sqlite!.prepare(
+      `SELECT ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+          AND cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get('grace@example.com') as { exact_text: string } | undefined;
+    expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Recipient email: grace@example.com',
+      'Subject: Schedule interview — Interview',
+      `Delivered URL: ${schedulingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
+      'Email sent: yes',
+      'Provider message id: cf-calendly-message-1',
+    ]));
   });
 });
 

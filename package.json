@@ -15,6 +15,10 @@
     "test:e2e:ci": "playwright test --workers=1 --reporter=list",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
+    "smoke:video-room-dev": "node scripts/smoke-video-room-dev.mjs",
+    "smoke:scheduling-invite-dev": "node scripts/smoke-scheduling-invite-dev.mjs",
+    "smoke:code-review-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
+    "turn:usage": "node scripts/check-cloudflare-turn-usage.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test": "vitest run"

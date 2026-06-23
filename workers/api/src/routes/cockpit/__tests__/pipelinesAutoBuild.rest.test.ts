@@ -37,10 +37,13 @@ const bodySchema = z.object({
   pipeline_title: z.string().min(1).max(200).optional(),
   match_config: matchConfigSchema,
   selected_stages: z
-    .array(z.enum(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'] as const))
+    .array(z.enum(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE', 'LIVE_CODING'] as const))
     .min(1)
-    .default(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'])
-    .transform((values) => [...new Set(values)] as Array<'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING'>),
+    .default(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE'])
+    .transform((values) => {
+      const normalized = values.map((value) => (value === 'LIVE_CODING' ? 'OPEN_SOURCE' : value));
+      return [...new Set(normalized)] as Array<'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE'>;
+    }),
 });
 
 describe('POST /api/v1/pipelines/auto-build — body schema', () => {
@@ -56,10 +59,10 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: null,
         non_negotiable_skills: ['react', 'typescript'],
       },
-      selected_stages: ['SCREENING', 'CODE_REVIEW', 'LIVE_CODING'],
+      selected_stages: ['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE'],
     });
     expect(result.success).toBe(true);
-    expect(result.success ? result.data.selected_stages : []).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
+    expect(result.success ? result.data.selected_stages : []).toEqual(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE']);
   });
 
   it('accepts a valid hybrid wizard output with mix ratio', () => {
@@ -73,10 +76,27 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: 0.6,
         non_negotiable_skills: [],
       },
+      selected_stages: ['CODE_REVIEW', 'OPEN_SOURCE'],
+    });
+    expect(result.success).toBe(true);
+    expect(result.success ? result.data.selected_stages : []).toEqual(['CODE_REVIEW', 'OPEN_SOURCE']);
+  });
+
+  it('accepts legacy LIVE_CODING as an alias for OPEN_SOURCE', () => {
+    const result = bodySchema.safeParse({
+      role_context_id: 'rc_123',
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'moderate',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: [],
+      },
       selected_stages: ['CODE_REVIEW', 'LIVE_CODING'],
     });
     expect(result.success).toBe(true);
-    expect(result.success ? result.data.selected_stages : []).toEqual(['CODE_REVIEW', 'LIVE_CODING']);
+    expect(result.success ? result.data.selected_stages : []).toEqual(['CODE_REVIEW', 'OPEN_SOURCE']);
   });
 
   it('rejects an empty role_context_id', () => {
@@ -158,7 +178,7 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
+      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE']);
     }
   });
 
@@ -173,11 +193,11 @@ describe('POST /api/v1/pipelines/auto-build — body schema', () => {
         hybrid_mix_ratio: null,
         non_negotiable_skills: [],
       },
-      selected_stages: ['SCREENING', 'CODE_REVIEW', 'SCREENING', 'LIVE_CODING'],
+      selected_stages: ['SCREENING', 'CODE_REVIEW', 'SCREENING', 'OPEN_SOURCE'],
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'LIVE_CODING']);
+      expect(result.data.selected_stages).toEqual(['SCREENING', 'CODE_REVIEW', 'OPEN_SOURCE']);
     }
   });
 

@@ -16,9 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN mkdir -p /workspace && chown -R coder:coder /workspace
 
-# Switch back to the unprivileged coder user
-USER coder
+# Cloudflare Containers currently exits this image during startup when the
+# Dockerfile switches to the unprivileged coder user. Keep the dev preview
+# container on root so code-server boots consistently in the beta runtime.
+USER root
 
 EXPOSE 8080
 

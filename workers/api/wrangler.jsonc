@@ -140,12 +140,22 @@
 			"durable_objects": {
 				"bindings": [
 					{ "name": "VIDEO_ROOM", "class_name": "VideoRoom" },
+					{ "name": "DEV_CONTAINER", "class_name": "DevContainerDO" },
 					{ "name": "VOICE_SESSION", "class_name": "VoiceSessionDO" }
 				]
 			},
+			"containers": [
+				{
+					"class_name": "DevContainerDO",
+					"image": "../../infra/containers/code-server/Dockerfile",
+					"max_instances": 50,
+					"instance_type": "standard-1"
+				}
+			],
 			"migrations": [
 				{ "tag": "dev-v1", "new_classes": ["VideoRoom"] },
-				{ "tag": "dev-v2", "new_classes": ["VoiceSessionDO"] }
+				{ "tag": "dev-v2", "new_classes": ["VoiceSessionDO"] },
+				{ "tag": "dev-v3", "new_sqlite_classes": ["DevContainerDO"] }
 			]
 		},
 		"staging": {

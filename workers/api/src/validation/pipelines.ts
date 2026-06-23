@@ -52,6 +52,9 @@ export const createPipelineSchema = z.object({
   /** Optional preset ID to expand into stages + challenges. */
   presetId: z.string().optional(),
 
+  /** Whether to create the default screener stage. Defaults to true for compatibility. */
+  createDefaultStages: z.boolean().optional().default(true),
+
   /** Optional template pack ID to expand into stages + challenges (ADR-034). */
   templatePackId: z.string().optional(),
 

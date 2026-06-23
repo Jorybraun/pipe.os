@@ -76,6 +76,12 @@ export function AppBackground(): JSX.Element {
       />
     )
     : <PipeLiquidMetal speed={speed} scale={bg.scale} />;
+  const shaderOpacity = bg.shader === 'liquid-metal'
+    ? Math.min(bg.opacity, 0.12)
+    : bg.opacity;
+  const shaderTransform = bg.shader === 'liquid-metal'
+    ? 'scale(0.52)'
+    : undefined;
 
   return (
     <>
@@ -91,7 +97,10 @@ export function AppBackground(): JSX.Element {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: bg.opacity,
+              opacity: shaderOpacity,
+              transform: shaderTransform,
+              transformOrigin: 'center',
+              filter: bg.shader === 'liquid-metal' ? 'saturate(0.72) contrast(0.78)' : undefined,
             }}
           >
             {shader}

@@ -103,6 +103,10 @@ devContainerSessions.get('/dev-container-sessions/:sessionId', async (c) => {
       return apiError(c, 'NOT_FOUND', 'Dev container session not found.');
     }
 
+    if (!session.pipeline_id) {
+      return apiError(c, 'NOT_FOUND', 'Dev container session not found.');
+    }
+
     // Verify the session's pipeline belongs to the authenticated recruiter.
     const owned = await verifyPipelineOwnership(db, session.pipeline_id, userId);
     if (!owned) {

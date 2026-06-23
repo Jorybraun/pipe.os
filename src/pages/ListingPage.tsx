@@ -3,11 +3,9 @@ import { useNavigate } from "react-router-dom";
 import {
   Search,
   Plus,
-  Check,
   Activity,
   Briefcase,
   Users,
-  Trash2,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -51,7 +49,7 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Roles overview with server-side pagination, filtering, and search.
+ * ListingPage - Interview plan overview with server-side pagination, filtering, and search.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
@@ -69,7 +67,6 @@ export default function ListingPage(): JSX.Element {
   } = usePipelines();
   const { deletePipeline } = usePipelineDelete();
   const [searchInput, setSearchInput] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const pipelines = useMemo(
     () => rawPipelines.map(toPipelineWithStats),
@@ -102,53 +99,15 @@ export default function ListingPage(): JSX.Element {
   };
 
   const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
-    if (!window.confirm(`Delete role "${title}"? This action cannot be undone.`)) {
+    if (!window.confirm(`Delete interview plan "${title}"? This action cannot be undone.`)) {
       return;
     }
 
     try {
       await deletePipeline(id);
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
       await refetch();
     } catch (err) {
       console.error("[ListingPage] Error deleting role:", err);
-    }
-  };
-
-  const handleBulkDelete = async (): Promise<void> => {
-    const count = selectedIds.size;
-    if (count === 0) return;
-
-    if (!window.confirm(`Delete ${count} selected role${count > 1 ? 's' : ''}? This cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      await Promise.all(Array.from(selectedIds).map(id => deletePipeline(id)));
-      setSelectedIds(new Set());
-      await refetch();
-    } catch (err) {
-      console.error("[ListingPage] Bulk delete error:", err);
-      alert("Failed to delete some roles.");
-    }
-  };
-
-  const toggleSelect = (id: string, isSelected: boolean) => {
-    const next = new Set(selectedIds);
-    if (isSelected) next.add(id);
-    else next.delete(id);
-    setSelectedIds(next);
-  };
-
-  const toggleAll = () => {
-    if (selectedIds.size === pipelines.length && pipelines.length > 0) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(pipelines.map(p => p.id)));
     }
   };
 
@@ -171,15 +130,18 @@ export default function ListingPage(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            ROLES
+            INTERVIEW PLANS
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
-            Active Roles
+            Interview plans
           </h1>
+          <p style={{ margin: '8px 0 0', maxWidth: 560, color: 'var(--pipe-text-dim)', fontSize: 13, lineHeight: 1.5 }}>
+            Create a simple interview, then add a role or job description only when it helps.
+          </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {total} roles total
+            {total} plans
           </span>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
@@ -188,7 +150,7 @@ export default function ListingPage(): JSX.Element {
              </div>
              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 <Users size={12} />
-                {stats.totalCandidates} CANDIDATES
+                {stats.totalCandidates} PEOPLE LINKED
              </div>
           </div>
         </div>
@@ -208,48 +170,10 @@ export default function ListingPage(): JSX.Element {
             borderRadius: 8
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-              <div 
-                onClick={toggleAll}
-                style={{
-                  padding: '4px 8px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  borderRadius: 4,
-                  background: 'var(--pipe-surface)',
-                  border: '1px solid var(--pipe-border-light)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--pipe-surface-hover)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'var(--pipe-surface)'}
-              >
-                <div style={{
-                  width: 14,
-                  height: 14,
-                  borderRadius: 3,
-                  border: `1.5px solid ${selectedIds.size > 0 ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-text-dim)"}`,
-                  background: selectedIds.size === pipelines.length && pipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  {selectedIds.size > 0 && selectedIds.size < pipelines.length && (
-                    <div style={{ width: 6, height: 1.5, background: 'rgba(255, 255, 255, 0.40)' }} />
-                  )}
-                  {selectedIds.size === pipelines.length && pipelines.length > 0 && (
-                    <Check size={10} color="#fff" strokeWidth={4} />
-                  )}
-                </div>
-                <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
-                  {selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Select all'}
-                </span>
-              </div>
-              <div style={{ width: 1, height: 16, background: 'var(--pipe-surface)' }} />
               <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
-                placeholder="Search roles..."
+                placeholder="Search interview plans..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 style={{
@@ -264,31 +188,6 @@ export default function ListingPage(): JSX.Element {
                 }}
               />
             </div>
-            {selectedIds.size > 0 && (
-              <button 
-                onClick={handleBulkDelete}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  background: 'rgba(255, 80, 80, 0.1)',
-                  border: '1px solid rgba(255, 80, 80, 0.2)',
-                  color: '#ff5050',
-                  padding: '4px 12px',
-                  borderRadius: 4,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontFamily: '"Space Mono", monospace',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.2)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 80, 80, 0.1)'}
-              >
-                <Trash2 size={14} />
-                DELETE SELECTED ({selectedIds.size})
-              </button>
-            )}
             <div style={{ width: 1, height: 20, background: 'var(--pipe-surface-hover)' }} />
             <button 
               onClick={() => navigate("/roles/new")}
@@ -296,9 +195,9 @@ export default function ListingPage(): JSX.Element {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                color: 'var(--pipe-accent)',
+                background: 'var(--pipe-accent-surface)',
+                border: '1px solid var(--pipe-accent-border)',
+                color: 'var(--pipe-text)',
                 padding: '4px 12px',
                 borderRadius: 4,
                 fontSize: 10,
@@ -308,7 +207,7 @@ export default function ListingPage(): JSX.Element {
               }}
             >
               <Plus size={14} />
-              NEW ROLE
+              NEW PLAN
             </button>
           </div>
 
@@ -325,7 +224,7 @@ export default function ListingPage(): JSX.Element {
             }}>
               <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
               <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
-                No roles yet
+                No interview plans yet
               </p>
             </div>
           ) : (
@@ -335,20 +234,15 @@ export default function ListingPage(): JSX.Element {
                   key={p.id}
                   id={p.id}
                   title={p.title}
-                  department={p.level || "Engineering"}
-                  location="Remote"
+                  interviewSummary={p.stageCount === 1 ? "1 interview" : `${p.stageCount} interviews`}
+                  contextSummary={p.level ? p.level : "role optional"}
                   status={
                     p.status === "ARCHIVED"
                       ? "closed"
                       : (p.status?.toLowerCase() as "active" | "draft" | "closed")
                   }
                   candidates={p.candidateCount}
-                  avgScore={p.avgScore}
-                  stagesConfigured={p.stageCount}
-                  totalStages={p.stageCount ?? 0}
                   createdAt={p.createdAt ?? new Date().toISOString()}
-                  isSelected={selectedIds.has(p.id)}
-                  onSelect={(sel) => toggleSelect(p.id, sel)}
                   onClick={() => handleRoleClick(p.id)}
                   onDelete={() => handleDeletePipeline(p.id, p.title)}
                 />
@@ -387,8 +281,8 @@ export default function ListingPage(): JSX.Element {
                     width: 28,
                     height: 28,
                     borderRadius: 4,
-                    background: canGoPrev ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    border: `1px solid ${canGoPrev ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    background: canGoPrev ? 'var(--pipe-surface-hover)' : 'transparent',
+                    border: `1px solid ${canGoPrev ? 'var(--pipe-border)' : 'var(--pipe-border-light)'}`,
                     color: canGoPrev ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                     cursor: canGoPrev ? 'pointer' : 'not-allowed',
                     opacity: canGoPrev ? 1 : 0.4,
@@ -417,8 +311,8 @@ export default function ListingPage(): JSX.Element {
                     width: 28,
                     height: 28,
                     borderRadius: 4,
-                    background: canGoNext ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    border: `1px solid ${canGoNext ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    background: canGoNext ? 'var(--pipe-surface-hover)' : 'transparent',
+                    border: `1px solid ${canGoNext ? 'var(--pipe-border)' : 'var(--pipe-border-light)'}`,
                     color: canGoNext ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                     cursor: canGoNext ? 'pointer' : 'not-allowed',
                     opacity: canGoNext ? 1 : 0.4,

@@ -679,6 +679,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
+  let scheduledInterview: { id: string; status: string; meetingUrl: string | null } | null = null;
 
   // Use requested stage or fall back to first stage
   let stageId = requestedStageId ?? null;
@@ -729,6 +730,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
           )
           .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
           .run();
+        scheduledInterview = { id: interviewId, status: 'INVITED', meetingUrl: null };
       }
     }
   } catch (err) {
@@ -739,8 +741,10 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     throw err;
   }
 
-  // Fire-and-forget invitation email via Resend
-  if (c.env.RESEND_API_KEY && !skipEmail) {
+  // Fire-and-forget assessment email for non-scheduled stages. Scheduled
+  // interviews use /scheduling/interviews/:id/invite so room links, email
+  // delivery, and living-context evidence stay on one canonical path.
+  if (c.env.RESEND_API_KEY && !skipEmail && !scheduledInterview) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
     const assessUrl = `${baseUrl}/assess/${inviteToken}`;
 
@@ -857,6 +861,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       inviteToken,
       status: 'INVITED',
       currentStageId: stageId,
+      scheduledInterview,
     },
   }, 201);
 });
@@ -1924,9 +1929,36 @@ candidateOps.get('/:candidateId', async (c) => {
     } as any, matchData, calendar);
   }
 
+  let identity: { personId: string; workspacePersonId: string; applicationId: string } | null = null;
+  try {
+    identity = await ensureCandidateLivingContext(db, candidateId);
+  } catch (err) {
+    console.warn('[candidates] Candidate/person identity bridge unavailable:', err);
+  }
+  let contactId: string | null = null;
+  if (candidate.email) {
+    try {
+      const contact = await db.prepare(
+        `SELECT id
+           FROM contacts
+          WHERE owner_id = ?1
+            AND lower(email) = ?2
+          ORDER BY created_at ASC
+          LIMIT 1`,
+      ).bind(userId, candidate.email.toLowerCase()).first<{ id: string }>();
+      contactId = contact?.id ?? null;
+    } catch {
+      contactId = null;
+    }
+  }
+
   return c.json({
     candidate: {
       id: candidate.id,
+      personId: identity?.personId ?? null,
+      workspacePersonId: identity?.workspacePersonId ?? null,
+      applicationId: identity?.applicationId ?? null,
+      contactId,
       name: candidate.name,
       email: candidate.email,
       phoneNumber: candidate.phone_number,

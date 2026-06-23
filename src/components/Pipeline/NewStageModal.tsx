@@ -1,8 +1,8 @@
 /**
- * NewStageModal — modal overlay for creating a new stage.
+ * NewStageModal — modal overlay for creating a new interview step.
  *
  * Visual type picker → name input → create. Opens over the current page
- * without navigating away. Triggered by the stepper's ADD_STAGE button.
+ * without navigating away. Triggered by the plan's add-interview action.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -33,46 +33,46 @@ interface StageTypeOption {
 const STAGE_OPTIONS: StageTypeOption[] = [
   {
     key: 'CODE_REVIEW',
-    label: 'Code Review',
-    description: 'Multi-turn PR review with AI agent',
+    label: 'Code Review Interview',
+    description: 'Video interview around a real PR',
     detail:
-      'Candidate reviews a real GitHub PR with planted bugs. An AI implementer responds with pushback, clarification, or fixes.',
+      'The person joins a call, reviews a real GitHub PR, and explains trade-offs. Transcript and review evidence become source-backed context.',
     icon: GitPullRequest,
     color: '#60a5fa',
   },
   {
     key: 'CULTURAL',
-    label: 'Cultural Fit',
-    description: 'AI behavioral interview (STAR format)',
+    label: 'Behavioral Interview',
+    description: 'Structured conversation',
     detail:
-      'AI agent conducts a structured behavioral interview across 5 competency dimensions. Scored against BARS rubrics.',
+      'A structured behavioral interview. Answers, follow-ups, and evidence are preserved as person context.',
     icon: Brain,
     color: 'var(--pipe-accent)',
   },
   {
     key: 'SCREENING',
     label: 'Screening',
-    description: 'Initial candidate evaluation',
+    description: 'Initial phone, video, or async screen',
     detail:
-      'Phone screen, video call, or async online questions. Lightweight first filter before deeper stages.',
+      'A lightweight first conversation. Can be a video call, phone call, or async questions.',
     icon: Phone,
     color: '#fbbf24',
   },
   {
     key: 'OPEN_SOURCE',
-    label: 'Open Source',
-    description: 'Live issue implementation in dev container',
+    label: 'Sandbox Challenge',
+    description: 'Dev-container implementation task',
     detail:
-      'Candidate fixes a real open-source issue in a dev container. Uses AI copilot. All interactions logged.',
+      'The person works on a matched repo task in a dev container. Code, transcript, and tool activity stay tied to source evidence.',
     icon: ListChecks,
     color: '#4ade80',
   },
   {
     key: 'LIVE_PANEL',
-    label: 'Live Panel',
-    description: 'Live video interview with human interviewers',
+    label: 'Video Interview',
+    description: 'Live browser call',
     detail:
-      'Scheduled video interview with real humans. Recorded and transcribed. Can attach to any stage or as final stage.',
+      'A scheduled video interview with host and guest links. Recorded and transcribed when the room connects.',
     icon: Video,
     color: '#f472b6',
   },

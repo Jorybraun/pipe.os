@@ -1131,21 +1131,81 @@ interface PRSummary {
   draft: boolean;
   createdAt: string;
   updatedAt: string;
+  mergedAt?: string | null;
   htmlUrl: string;
   labels: string[];
   baseBranch: string;
   featureBranch: string;
 }
 
-function isValidGitHubUrl(url: string): boolean {
-  return url.startsWith('https://github.com/') && url.split('/').filter(Boolean).length >= 4;
+function normalizeGitHubRepoUrl(input: string): string | null {
+  const trimmed = input.trim().replace(/\.git$/, '');
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) {
+    return `https://github.com/${trimmed}`;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname !== 'github.com') return null;
+    const [owner, repo] = url.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
+    if (!owner || !repo) return null;
+    return `https://github.com/${owner}/${repo}`;
+  } catch {
+    return null;
+  }
 }
 
-const DEFAULT_REPOS = [
-  'https://github.com/el-pipe-o/interview-monorepo',
-  'https://github.com/el-pipe-o/slopify',
-];
+function isValidGitHubUrl(url: string): boolean {
+  return normalizeGitHubRepoUrl(url) !== null;
+}
+
 const SAVED_REPOS_KEY = 'pipe_saved_repos';
+
+interface RepoCatalogResponse {
+  repos: Array<{
+    id: number;
+    github_url?: string | null;
+    full_name?: string | null;
+    admin_status?: string | null;
+    challenge_suitability_verdict?: string | null;
+  }>;
+}
+
+interface RepoLookupResponse {
+  repo: RepoCatalogResponse['repos'][number] | null;
+}
+
+interface RepoCatalogItem {
+  id: number;
+  url: string;
+}
+
+function mapRepoCatalogItems(repos: RepoCatalogResponse['repos']): RepoCatalogItem[] {
+  const deduped = new Map<string, RepoCatalogItem>();
+  repos
+    .map((repo) => ({
+      id: repo.id,
+      url: normalizeGitHubRepoUrl(repo.github_url ?? repo.full_name ?? '') ?? '',
+    }))
+    .filter((repo): repo is RepoCatalogItem => Number.isFinite(repo.id) && isValidGitHubUrl(repo.url))
+    .forEach((repo) => {
+      if (!deduped.has(repo.url)) deduped.set(repo.url, repo);
+    });
+  return [...deduped.values()];
+}
+
+interface StoredPRSummary {
+  pr_number: number;
+  pr_url: string;
+  title: string | null;
+  merged_at: string;
+  changed_file_count: number;
+  modifies_tests: number;
+  swe_bench_eligible: number;
+  additions: number | null;
+  deletions: number | null;
+  resolves_issue_number: number | null;
+}
 
 function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   stageId: string;
@@ -1159,21 +1219,22 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   const [repoUrl, setRepoUrl] = useState('');
   const [prs, setPrs] = useState<PRSummary[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [newRepoUrl, setNewRepoUrl] = useState('');
+  const [catalogRepos, setCatalogRepos] = useState<RepoCatalogItem[]>([]);
 
   const [savedRepos, setSavedRepos] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(SAVED_REPOS_KEY);
       const parsed = raw ? (JSON.parse(raw) as string[]) : [];
-      const merged = [...DEFAULT_REPOS];
-      for (const r of parsed) {
-        if (!merged.includes(r)) merged.push(r);
-      }
-      return merged;
+      return parsed
+        .map(normalizeGitHubRepoUrl)
+        .filter((repoUrl): repoUrl is string => Boolean(repoUrl));
     } catch {
-      return [...DEFAULT_REPOS];
+      return [];
     }
   });
 
@@ -1181,33 +1242,138 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
     try { localStorage.setItem(SAVED_REPOS_KEY, JSON.stringify(savedRepos)); } catch { /* */ }
   }, [savedRepos]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingCatalog(true);
+    const api = createApiClient({ getToken });
+    void (async () => {
+      const approved = await api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=approved&pass=3&suitability=suitable&limit=12');
+      let repos = mapRepoCatalogItems(approved.repos);
+      if (repos.length === 0) {
+        const crawler = await api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=all&pass=2&suitability=suitable&limit=24');
+        repos = mapRepoCatalogItems(crawler.repos);
+      }
+      return repos;
+    })()
+      .then((repos) => {
+        if (cancelled) return;
+        setCatalogRepos(repos);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogRepos([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCatalog(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  const repoOptions = useMemo(
+    () => [...new Set([...catalogRepos.map((repo) => repo.url), ...savedRepos])],
+    [catalogRepos, savedRepos],
+  );
+
+  const catalogRepoByUrl = useMemo(() => {
+    const byUrl = new Map<string, RepoCatalogItem>();
+    catalogRepos.forEach((repo) => byUrl.set(repo.url, repo));
+    return byUrl;
+  }, [catalogRepos]);
+
+  const fetchStoredPRs = useCallback(async (
+    api: ReturnType<typeof createApiClient>,
+    url: string,
+  ): Promise<PRSummary[]> => {
+    let repo = catalogRepoByUrl.get(url);
+    if (!repo) {
+      const lookup = await api.get<RepoLookupResponse>(
+        `/api/v1/admin/repos/lookup?repoUrl=${encodeURIComponent(url)}&minPass=2&suitability=suitable`,
+      );
+      const lookupUrl = lookup.repo
+        ? normalizeGitHubRepoUrl(lookup.repo.github_url ?? lookup.repo.full_name ?? '')
+        : null;
+      if (lookup.repo && lookupUrl) {
+        repo = { id: lookup.repo.id, url: lookupUrl };
+      }
+    }
+    if (!repo) return [];
+
+    const result = await api.get<{ prs: StoredPRSummary[] }>(`/api/v1/admin/repos/${repo.id}/prs`);
+    return result.prs
+      .filter((pr) => typeof pr.pr_url === 'string' && pr.pr_url.length > 0)
+      .map((pr) => ({
+        number: pr.pr_number,
+        title: pr.title?.trim() || `Pull request #${pr.pr_number}`,
+        description: [
+          pr.changed_file_count ? `${pr.changed_file_count} files changed.` : null,
+          pr.modifies_tests ? 'Touches test files.' : null,
+          pr.swe_bench_eligible ? 'Marked SWE-bench eligible by crawler.' : null,
+        ].filter(Boolean).join(' '),
+        author: '',
+        avatar: '',
+        state: 'merged',
+        draft: false,
+        createdAt: pr.merged_at,
+        updatedAt: pr.merged_at,
+        mergedAt: pr.merged_at,
+        htmlUrl: pr.pr_url,
+        labels: [],
+        baseBranch: '',
+        featureBranch: '',
+      }));
+  }, [catalogRepoByUrl]);
+
   const fetchPRs = useCallback(async (url: string): Promise<void> => {
-    if (!isValidGitHubUrl(url)) return;
-    setRepoUrl(url);
+    const normalizedUrl = normalizeGitHubRepoUrl(url);
+    if (!normalizedUrl) return;
+    setRepoUrl(normalizedUrl);
     setIsFetching(true);
     setError(null);
+    setSourceNotice(null);
     setPrs([]);
+    const api = createApiClient({ getToken });
     try {
-      const api = createApiClient({ getToken });
-      const result = await api.get<{
-        success: boolean;
-        error?: string;
-        data?: { prs: PRSummary[] };
-      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=open`);
-      if (!result.success) {
-        setError(result.error ?? 'Failed to fetch pull requests.');
-        return;
+      let liveFetchError: string | null = null;
+      try {
+        const result = await api.get<{
+          success: boolean;
+          error?: string;
+          data?: { prs: PRSummary[] };
+        }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(normalizedUrl)}&state=closed&merged=true`);
+        if (!result.success) {
+          liveFetchError = result.error ?? 'Failed to fetch pull requests from GitHub.';
+        } else {
+          const fetched = result.data?.prs ?? [];
+          if (fetched.length > 0) {
+            setPrs(fetched);
+            return;
+          }
+          liveFetchError = 'No merged pull requests found from live GitHub.';
+        }
+      } catch (err) {
+        console.error('[CodeReviewPicker] Failed to list PRs:', err);
+        liveFetchError = err instanceof Error ? err.message : 'Failed to fetch pull requests from GitHub.';
       }
-      const fetched = result.data?.prs ?? [];
-      setPrs(fetched);
-      if (fetched.length === 0) setError('No open pull requests found.');
-    } catch (err) {
-      console.error('[CodeReviewPicker] Failed to list PRs:', err);
-      setError('Failed to fetch pull requests.');
+
+      try {
+        const storedPrs = await fetchStoredPRs(api, normalizedUrl);
+        if (storedPrs.length > 0) {
+          setPrs(storedPrs);
+          setSourceNotice(liveFetchError
+            ? `Showing crawler-vetted PRs because live GitHub is unavailable: ${liveFetchError}`
+            : 'Showing crawler-vetted PRs from stored repository evidence.');
+          return;
+        }
+      } catch (err) {
+        console.error('[CodeReviewPicker] Failed to load stored PRs:', err);
+      }
+
+      setError(liveFetchError ?? 'No source-backed pull requests found for this repository.');
     } finally {
       setIsFetching(false);
     }
-  }, [getToken]);
+  }, [fetchStoredPRs, getToken]);
 
   const handleAddPR = async (pr: PRSummary): Promise<void> => {
     try {
@@ -1239,12 +1405,14 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   };
 
   const handleAddRepo = (): void => {
-    const trimmed = newRepoUrl.trim();
-    if (!isValidGitHubUrl(trimmed) || savedRepos.includes(trimmed)) return;
-    setSavedRepos((prev) => [...prev, trimmed]);
+    const normalizedUrl = normalizeGitHubRepoUrl(newRepoUrl);
+    if (!normalizedUrl) return;
+    if (!savedRepos.includes(normalizedUrl) && !catalogRepoByUrl.has(normalizedUrl)) {
+      setSavedRepos((prev) => [...prev, normalizedUrl]);
+    }
     setNewRepoUrl('');
     setShowAddRepo(false);
-    void fetchPRs(trimmed);
+    void fetchPRs(normalizedUrl);
   };
 
   return (
@@ -1271,9 +1439,38 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
       <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <label style={labelStyle}>SELECT_REPOSITORY</label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {savedRepos.map((repo) => {
+          {isLoadingCatalog && repoOptions.length === 0 && (
+            <div style={{
+              padding: '8px 10px',
+              fontSize: 8,
+              fontFamily: '"Space Mono", monospace',
+              color: 'var(--pipe-text-dim)',
+              letterSpacing: '0.08em',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              opacity: 0.7,
+            }}>
+              LOADING_APPROVED_REPOS...
+            </div>
+          )}
+          {!isLoadingCatalog && repoOptions.length === 0 && (
+            <div style={{
+              padding: '10px 12px',
+              fontSize: 9,
+              lineHeight: 1.5,
+              fontFamily: '"Space Mono", monospace',
+              color: 'var(--pipe-text-dim)',
+              border: '1px dashed var(--pipe-border)',
+              borderRadius: 4,
+              opacity: 0.8,
+            }}>
+              No approved repo sources yet. Add a GitHub repo with merged PRs.
+            </div>
+          )}
+          {repoOptions.map((repo) => {
             const shortName = repo.replace('https://github.com/', '');
             const isActive = repoUrl === repo;
+            const isSaved = savedRepos.includes(repo);
             return (
               <div key={repo} style={{ display: 'flex', gap: 4 }}>
                 <button
@@ -1299,9 +1496,17 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                 >
                   {shortName}
                 </button>
-                {!DEFAULT_REPOS.includes(repo) && (
+                {isSaved && (
                   <button
-                    onClick={() => setSavedRepos((prev) => prev.filter((r) => r !== repo))}
+                    onClick={() => {
+                      setSavedRepos((prev) => prev.filter((r) => r !== repo));
+                      if (repoUrl === repo && !catalogRepoByUrl.has(repo)) {
+                        setRepoUrl('');
+                        setPrs([]);
+                        setError(null);
+                        setSourceNotice(null);
+                      }
+                    }}
                     style={{
                       background: 'none',
                       border: '1px solid var(--pipe-border)',
@@ -1328,7 +1533,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
               value={newRepoUrl}
               onChange={(e) => setNewRepoUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddRepo(); if (e.key === 'Escape') setShowAddRepo(false); }}
-              placeholder="https://github.com/owner/repo"
+              placeholder="https://github.com/owner/repo or owner/repo"
               style={{
                 flex: 1,
                 padding: '8px 10px',
@@ -1397,7 +1602,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           }}>
             <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
             <span style={{ fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-              FETCHING_PRS...
+              FETCHING_MERGED_PRS...
             </span>
           </div>
         ) : error ? (
@@ -1429,6 +1634,21 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {sourceNotice && (
+              <div style={{
+                padding: '8px 10px',
+                border: '1px solid rgba(96,165,250,0.22)',
+                borderRadius: 4,
+                background: 'rgba(96,165,250,0.08)',
+                color: '#60a5fa',
+                fontSize: 8,
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: '0.04em',
+                lineHeight: 1.45,
+              }}>
+                {sourceNotice}
+              </div>
+            )}
             {prs.map((pr) => (
               <button
                 key={pr.number}
@@ -1463,6 +1683,18 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                         DRAFT
                       </span>
                     )}
+                    {pr.state === 'merged' && (
+                      <span style={{
+                        fontSize: 7,
+                        padding: '1px 4px',
+                        background: 'rgba(74,222,128,0.08)',
+                        border: '1px solid rgba(74,222,128,0.2)',
+                        borderRadius: 2,
+                        color: '#4ade80',
+                      }}>
+                        MERGED
+                      </span>
+                    )}
                   </div>
                   <div style={{
                     fontSize: 10,
@@ -1480,7 +1712,11 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                     marginTop: 3,
                     opacity: 0.6,
                   }}>
-                    {pr.author} · {pr.featureBranch} → {pr.baseBranch}
+                    {pr.author || (pr.featureBranch && pr.baseBranch)
+                      ? [pr.author, pr.featureBranch && pr.baseBranch ? `${pr.featureBranch} -> ${pr.baseBranch}` : null]
+                        .filter(Boolean)
+                        .join(' · ')
+                      : 'Source-backed crawler record'}
                   </div>
                 </div>
               </button>
@@ -1498,7 +1734,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
         letterSpacing: '0.1em',
         textAlign: 'center',
       }}>
-        {prs.length} PRS — {existingCount} ADDED
+        {prs.length} MERGED PRS — {existingCount} ADDED
       </div>
     </>
   );

@@ -329,7 +329,7 @@ function StandaloneReviewMatchPanel({
     >
       <div className="living-context__review-match-head">
         <div>
-          <div className="living-context__section-title">Standalone CODE_REVIEW match</div>
+          <div className="living-context__section-title">Code review match</div>
           <div className="living-context__review-match-title">
             {match.repoName ?? match.repoUrl ?? 'No PR selected yet'}
             {match.prNumber !== null ? ` #${match.prNumber}` : ''}
@@ -756,7 +756,7 @@ function MeetingEvidencePanel({
               <div className="living-context__meeting-counts">
                 <span>{countLabel(branch.artifacts.length, 'artifact')}</span>
                 <span>{countLabel(branch.sourceSpans.length, 'span')}</span>
-                <span>{countLabel(branch.assertions.length, 'assertion')}</span>
+                <span>{countLabel(branch.assertions.length, 'claim')}</span>
               </div>
             </div>
 
@@ -957,7 +957,7 @@ export function LivingContextGraph({
   }, [livingContext]);
 
   if (isLoading && !livingContext) {
-    return <div className="living-context__loading">LOADING_CONTEXT_GRAPH</div>;
+    return <div className="living-context__loading">Loading source-backed context...</div>;
   }
   if (error || !livingContext) {
     return (
@@ -972,7 +972,7 @@ export function LivingContextGraph({
     ['Context records', livingContext.summary.contextRecordCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
-    ['Assertions', livingContext.summary.assertionCount],
+    ['Evidence claims', livingContext.summary.assertionCount],
     ['Signals', livingContext.summary.signalCount],
   ] as const;
 
@@ -984,7 +984,7 @@ export function LivingContextGraph({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="SEARCH EVIDENCE, CONCEPTS, ASSERTIONS..."
+            placeholder="Search evidence, concepts, and source text..."
             aria-label="Search living context"
           />
         </div>
@@ -1023,10 +1023,10 @@ export function LivingContextGraph({
               <UserRound size={14} color="var(--lc-structural)" />
               <div style={{ minWidth: 0 }}>
                 <div className="living-context__person-name">
-                  {livingContext.person.displayName ?? livingContext.person.primaryEmail ?? 'Person'}
+                  {livingContext.person?.displayName ?? livingContext.person?.primaryEmail ?? 'Person'}
                 </div>
                 <div className="living-context__person-meta">
-                  {livingContext.person.roles.map((role) => role.roleType).join(' · ') || 'person'}
+                  {livingContext.person?.roles.map((role) => role.roleType).join(' · ') || 'person'}
                 </div>
               </div>
             </div>
@@ -1044,7 +1044,7 @@ export function LivingContextGraph({
             >
               <div className="living-context__interaction-title">All context</div>
               <div className="living-context__interaction-meta">
-                <span>{livingContext.summary.assertionCount} assertions</span>
+                <span>{livingContext.summary.assertionCount} claims</span>
                 <span>{livingContext.summary.signalCount} signals</span>
               </div>
             </button>
@@ -1060,7 +1060,7 @@ export function LivingContextGraph({
                 </div>
                 <div className="living-context__interaction-meta">
                   <span>{interactionDate(interaction)}</span>
-                  <span>{interaction.assertionIds.length} assertions</span>
+                  <span>{interaction.assertionIds.length} claims</span>
                   <span>{interaction.signalKeys.length} signals</span>
                 </div>
               </button>
@@ -1090,56 +1090,58 @@ export function LivingContextGraph({
             onSelectSource={setSelectedSource}
           />
 
-          <div className="living-context__section-head" style={{ marginTop: 22 }}>
-            <div className="living-context__section-title">Signals</div>
-            <div className="living-context__count">{visibleSignals.length}</div>
-          </div>
-          {visibleSignals.length > 0 ? (
-            <div className="living-context__signal-grid">
-              {visibleSignals.map((signal) => (
-                <SignalNode
-                  key={signal.signalKey}
-                  signal={signal}
+          {visibleSignals.length > 0 && (
+            <>
+              <div className="living-context__section-head" style={{ marginTop: 22 }}>
+                <div className="living-context__section-title">Signals</div>
+                <div className="living-context__count">{visibleSignals.length}</div>
+              </div>
+              <div className="living-context__signal-grid">
+                {visibleSignals.map((signal) => (
+                  <SignalNode
+                    key={signal.signalKey}
+                    signal={signal}
+                    onSelectSource={setSelectedSource}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {visibleAssertions.length > 0 && (
+            <>
+              <div className="living-context__section-head" style={{ marginTop: 22 }}>
+                <div className="living-context__section-title">Evidence claims</div>
+                <div className="living-context__count">{visibleAssertions.length}</div>
+              </div>
+              <div className="living-context__assertions">
+                {visibleAssertions.map((assertion) => (
+                  <AssertionNode
+                    key={assertion.id}
+                    assertion={assertion}
+                    relatedPredicates={relationshipsByAssertion.get(assertion.id) ?? []}
+                    onSelectSource={setSelectedSource}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {visibleArtifacts.length > 0 && (
+            <div className="living-context__artifacts">
+              <div className="living-context__section-head">
+                <div className="living-context__section-title">Source artifacts</div>
+                <div className="living-context__count">{visibleArtifacts.length}</div>
+              </div>
+              {visibleArtifacts.map((artifact) => (
+                <ArtifactNode
+                  key={artifact.id}
+                  artifact={artifact}
                   onSelectSource={setSelectedSource}
                 />
               ))}
             </div>
-          ) : (
-            <div className="living-context__empty">NO_SIGNAL_EVIDENCE</div>
           )}
-
-          <div className="living-context__section-head" style={{ marginTop: 22 }}>
-            <div className="living-context__section-title">Assertions</div>
-            <div className="living-context__count">{visibleAssertions.length}</div>
-          </div>
-          {visibleAssertions.length > 0 ? (
-            <div className="living-context__assertions">
-              {visibleAssertions.map((assertion) => (
-                <AssertionNode
-                  key={assertion.id}
-                  assertion={assertion}
-                  relatedPredicates={relationshipsByAssertion.get(assertion.id) ?? []}
-                  onSelectSource={setSelectedSource}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="living-context__empty">NO_SOURCE_BACKED_ASSERTIONS</div>
-          )}
-
-          <div className="living-context__artifacts">
-            <div className="living-context__section-head">
-              <div className="living-context__section-title">Source artifacts</div>
-              <div className="living-context__count">{visibleArtifacts.length}</div>
-            </div>
-            {visibleArtifacts.map((artifact) => (
-              <ArtifactNode
-                key={artifact.id}
-                artifact={artifact}
-                onSelectSource={setSelectedSource}
-              />
-            ))}
-          </div>
         </main>
 
         <aside className="living-context__inspector">
@@ -1171,7 +1173,7 @@ export function LivingContextGraph({
               </dl>
             </>
           ) : (
-            <div className="living-context__empty">NO_SOURCE_SELECTED</div>
+            <div className="living-context__empty">Select source evidence to inspect the original text.</div>
           )}
           {selectedInteraction && (
             <div style={{ marginTop: 24 }}>
@@ -1186,7 +1188,7 @@ export function LivingContextGraph({
                 <dd>{selectedInteraction.externalReference ?? '—'}</dd>
                 <dt>Artifacts</dt>
                 <dd>{selectedInteraction.artifactIds.length}</dd>
-                <dt>Assertions</dt>
+                <dt>Evidence claims</dt>
                 <dd>{selectedInteraction.assertionIds.length}</dd>
                 <dt>Signals</dt>
                 <dd>{selectedInteraction.signalKeys.length}</dd>

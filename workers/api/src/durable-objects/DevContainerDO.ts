@@ -15,7 +15,7 @@
 
 import { Container } from '@cloudflare/containers';
 import type { Env } from '../types';
-import { markExpired, markStatus, markWarned } from '../lib/devContainerSessions';
+import { markError, markExpired, markStatus, markWarned } from '../lib/devContainerSessions';
 
 const DEFAULT_WARN_BEFORE_SECONDS = 60;
 
@@ -39,6 +39,7 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
 export class DevContainerDO extends Container<Env> {
   // Bind container to port 8080 — the port code-server listens on.
   defaultPort = 8080;
+  requiredPorts = [8080];
 
   // Sleep the DO after 10 minutes of inactivity so we don't pay for idle.
   sleepAfter = '10m';
@@ -87,8 +88,30 @@ export class DevContainerDO extends Container<Env> {
     // re-hydrates this from storage after hibernation.
     this.envVars = buildEnvVars(payload);
 
-    // Pre-container-proxy (Step 7): flip the D1 row straight to READY so the
-    // candidate can exit the LAUNCHING state. Step 9 adds proxy passthrough.
+    try {
+      await this.startAndWaitForPorts({
+        ports: this.requiredPorts,
+        startOptions: {
+          envVars: this.envVars,
+        },
+        cancellationOptions: {
+          instanceGetTimeoutMS: 15_000,
+          portReadyTimeoutMS: 45_000,
+          waitInterval: 500,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[DevContainerDO.handleInit] start failed:', err);
+      await markError(this.env.DB, payload.sessionId, message);
+      return new Response(
+        JSON.stringify({ error: { code: 'CONTAINER_START_FAILED', message } }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+
+    // Only mark the session READY after the code-server port is actually
+    // listening. The iframe proxy depends on this being an honest state.
     const startedAt = new Date().toISOString();
     await markStatus(this.env.DB, payload.sessionId, 'READY', {
       startedAt,

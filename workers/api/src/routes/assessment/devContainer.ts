@@ -29,6 +29,7 @@ import {
   mintExchangeToken,
   consumeExchangeToken,
 } from '../../lib/devContainerSessions';
+import { signJwt, verifyJwt } from '../../lib/jwt';
 
 // ─── Defaults (used when the wrangler vars are not set) ─────────────────────
 
@@ -350,6 +351,39 @@ devContainer.post('/:sessionId/exchange-token', async (c) => {
 // so code-server sees the path it expects (root = `/`, assets = `/static/…`).
 
 const PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
+const PROXY_COOKIE_NAME = 'pipe_dev_container_proxy';
+const PROXY_COOKIE_MAX_AGE_SECONDS = 3600;
+
+function readCookie(cookieHeader: string | undefined, name: string): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=');
+    if (rawKey === name) return rawValue.join('=') || null;
+  }
+  return null;
+}
+
+function buildProxyCookie(sessionId: string, token: string): string {
+  return [
+    `${PROXY_COOKIE_NAME}=${token}`,
+    `Path=/rpc/dev-container-proxy/${encodeURIComponent(sessionId)}`,
+    `Max-Age=${PROXY_COOKIE_MAX_AGE_SECONDS}`,
+    'HttpOnly',
+    'Secure',
+    'SameSite=Lax',
+  ].join('; ');
+}
+
+function withProxyCookie(response: Response, sessionId: string, token: string | null): Response {
+  if (!token) return response;
+  const headers = new Headers(response.headers);
+  headers.append('Set-Cookie', buildProxyCookie(sessionId, token));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 devContainer.all('/:sessionId/proxy/*', async (c) => {
   const candidateId = c.get('candidateId');
@@ -418,33 +452,58 @@ devContainerProxyPublic.all('/:sessionId/*', async (c) => {
   const sessionId = c.req.param('sessionId');
   const url = new URL(c.req.url);
   const exchangeToken = url.searchParams.get('exchangeToken');
+  let candidateId: string | null = null;
+  let proxyCookieToken: string | null = null;
 
-  if (!exchangeToken) {
-    return c.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Missing exchangeToken.' } },
-      401,
-    );
-  }
+  if (exchangeToken) {
+    // Consume the exchange token — single-use, validates ownership for the
+    // first iframe request. We then set a scoped proxy cookie so code-server
+    // redirects and asset requests do not need to keep the query token.
+    const consumed = await consumeExchangeToken(c.env.DB, exchangeToken);
+    if (!consumed) {
+      return c.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Invalid or expired exchange token.' } },
+        401,
+      );
+    }
 
-  // Consume the exchange token — single-use, validates ownership
-  const consumed = await consumeExchangeToken(c.env.DB, exchangeToken);
-  if (!consumed) {
-    return c.json(
-      { error: { code: 'UNAUTHORIZED', message: 'Invalid or expired exchange token.' } },
-      401,
-    );
-  }
+    // Verify the token was issued for this session.
+    if (consumed.sessionId !== sessionId) {
+      return c.json(
+        { error: { code: 'FORBIDDEN', message: 'Token not valid for this session.' } },
+        403,
+      );
+    }
 
-  // Verify the token was issued for this session
-  if (consumed.sessionId !== sessionId) {
-    return c.json(
-      { error: { code: 'FORBIDDEN', message: 'Token not valid for this session.' } },
-      403,
+    const secret = c.env.SESSION_TOKEN_SECRET;
+    if (!secret) {
+      return c.json(
+        { error: { code: 'INTERNAL_ERROR', message: 'Auth not configured.' } },
+        500,
+      );
+    }
+
+    candidateId = consumed.candidateId;
+    proxyCookieToken = await signJwt(
+      { sub: consumed.candidateId, pid: sessionId },
+      secret,
+      PROXY_COOKIE_MAX_AGE_SECONDS,
     );
+  } else {
+    const secret = c.env.SESSION_TOKEN_SECRET;
+    const cookieToken = readCookie(c.req.header('Cookie'), PROXY_COOKIE_NAME);
+    const payload = secret && cookieToken ? await verifyJwt(cookieToken, secret) : null;
+    if (!payload || payload.pid !== sessionId) {
+      return c.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Missing or invalid proxy session.' } },
+        401,
+      );
+    }
+    candidateId = payload.sub;
   }
 
   // Look up the session to check status (we already validated ownership via token)
-  const row = await getSessionByIdForCandidate(c.env.DB, sessionId, consumed.candidateId);
+  const row = await getSessionByIdForCandidate(c.env.DB, sessionId, candidateId);
   if (!row) {
     return c.json(
       { error: { code: 'NOT_FOUND', message: 'Session not found.' } },
@@ -482,7 +541,8 @@ devContainerProxyPublic.all('/:sessionId/*', async (c) => {
   const doStub = c.env.DEV_CONTAINER.get(doId);
 
   try {
-    return await doStub.fetch(forwarded);
+    const response = await doStub.fetch(forwarded);
+    return withProxyCookie(response, sessionId, proxyCookieToken);
   } catch (err) {
     console.error('[devContainerProxyPublic] upstream failed:', err);
     return c.json(

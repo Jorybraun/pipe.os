@@ -1,5 +1,6 @@
 const DEV_AUTH_COOKIE = 'pipe_app_dev_auth';
 const DEV_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const DEV_CONTAINER_PROXY_COOKIE = 'pipe_dev_container_proxy';
 const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
 
 function timingSafeEqual(a, b) {
@@ -36,6 +37,19 @@ function cookieValue(request, name) {
     if (rawKey === name) return rawValue.join('=');
   }
   return null;
+}
+
+function filterCookieHeader(header, allowedNames) {
+  if (!header) return null;
+  const allowed = new Set(allowedNames);
+  const kept = header
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => {
+      const [name] = part.split('=');
+      return allowed.has(name);
+    });
+  return kept.length > 0 ? kept.join('; ') : null;
 }
 
 function hasValidBasicAuth(request, env) {
@@ -102,7 +116,43 @@ async function withDevAuthCookie(response, authState, env) {
   return next;
 }
 
-function proxyApi(request, env) {
+function isHtmlNavigation(request) {
+  if (request.method !== 'GET') return false;
+  const accept = request.headers.get('Accept') ?? '';
+  return accept.includes('text/html');
+}
+
+function escapeHtml(value) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+async function devAuthEntryPage(request, env) {
+  const cookie = await devAuthCookieValue(env);
+  if (!cookie) return null;
+
+  const url = new URL(request.url);
+  url.username = '';
+  url.password = '';
+  const cleanUrl = url.toString();
+
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Opening PIPE</title><script>location.replace(${JSON.stringify(cleanUrl)});</script></head><body><a href="${escapeHtml(cleanUrl)}">Open PIPE</a></body></html>`,
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=UTF-8',
+        'Cache-Control': 'no-store',
+        'Set-Cookie': `${DEV_AUTH_COOKIE}=${cookie}; Path=/; Max-Age=${DEV_AUTH_COOKIE_MAX_AGE_SECONDS}; HttpOnly; Secure; SameSite=Lax`,
+      },
+    },
+  );
+}
+
+function proxyApi(request, env, authState) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
 
@@ -110,8 +160,18 @@ function proxyApi(request, env) {
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
-  headers.delete('Authorization');
-  headers.delete('Cookie');
+  const authorization = headers.get('Authorization');
+  if (!(authState === 'cookie' && authorization?.startsWith('Bearer '))) {
+    headers.delete('Authorization');
+  }
+  const proxyCookie = url.pathname.startsWith('/rpc/dev-container-proxy/')
+    ? filterCookieHeader(headers.get('Cookie'), [DEV_CONTAINER_PROXY_COOKIE])
+    : null;
+  if (proxyCookie) {
+    headers.set('Cookie', proxyCookie);
+  } else {
+    headers.delete('Cookie');
+  }
   headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
@@ -128,14 +188,37 @@ function proxyApi(request, env) {
 
 async function serveStatic(request, env) {
   const response = await env.ASSETS.fetch(request);
-  if (response.status !== 404 || request.method !== 'GET') return response;
+  if (response.status !== 404 || request.method !== 'GET') return withCleanBase(response, request);
 
   const accept = request.headers.get('Accept') ?? '';
   if (!accept.includes('text/html')) return response;
 
   const url = new URL(request.url);
   url.pathname = '/index.html';
-  return env.ASSETS.fetch(new Request(url.toString(), request));
+  return withCleanBase(await env.ASSETS.fetch(new Request(url.toString(), request)), request);
+}
+
+async function withCleanBase(response, request) {
+  if (response.status !== 200) return response;
+  const contentType = response.headers.get('Content-Type') ?? '';
+  if (!contentType.includes('text/html')) return response;
+
+  const url = new URL(request.url);
+  url.username = '';
+  url.password = '';
+  const baseHref = `${url.protocol}//${url.host}/`;
+  const html = await response.text();
+  const withBase = html.includes('<base ')
+    ? html
+    : html.replace(/<head>/i, `<head><base href="${escapeHtml(baseHref)}">`);
+  const headers = new Headers(response.headers);
+  headers.delete('Content-Length');
+  headers.set('Cache-Control', 'no-store');
+  return new Response(withBase, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 export default {
@@ -144,9 +227,19 @@ export default {
     if (authState === 'none') return unauthorized();
 
     const { pathname } = new URL(request.url);
+    if (
+      authState === 'basic' &&
+      isHtmlNavigation(request) &&
+      !pathname.startsWith('/api/') &&
+      !pathname.startsWith('/rpc/')
+    ) {
+      const entryPage = await devAuthEntryPage(request, env);
+      if (entryPage) return entryPage;
+    }
+
     const response =
       pathname.startsWith('/api/') || pathname.startsWith('/rpc/')
-        ? await proxyApi(request, env)
+        ? await proxyApi(request, env, authState)
         : await serveStatic(request, env);
 
     return withDevAuthCookie(response, authState, env);

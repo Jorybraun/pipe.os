@@ -176,13 +176,23 @@ export interface UseDevContainerSessionReturn {
   reset: () => void;
 }
 
-const USE_CLOUDFLARE = import.meta.env.VITE_USE_CLOUDFLARE_DEV_CONTAINERS === 'true';
-
-export function useDevContainerSession(): UseDevContainerSessionReturn {
-  const cloudflare = useDevContainerSessionCloudflare();
-  const appsync = useDevContainerSessionAppSync();
-  return USE_CLOUDFLARE ? cloudflare : appsync;
+export function shouldUseCloudflareDevContainers(
+  flag: string | undefined = import.meta.env.VITE_USE_CLOUDFLARE_DEV_CONTAINERS,
+  hostname: string | undefined = typeof window !== 'undefined' ? window.location.hostname : undefined,
+): boolean {
+  if (flag === 'true') return true;
+  if (flag === 'false') return false;
+  return hostname === 'app-dev.hire-pipe.com' || hostname === 'app.hire-pipe.com';
 }
+
+const USE_CLOUDFLARE = shouldUseCloudflareDevContainers();
+
+// Select exactly one backend for this bundle/session. Calling both hooks would
+// still initialize the inactive backend and can crash deployed Cloudflare flows
+// when the legacy AppSync provider is not configured.
+export const useDevContainerSession: () => UseDevContainerSessionReturn = USE_CLOUDFLARE
+  ? useDevContainerSessionCloudflare
+  : useDevContainerSessionAppSync;
 
 // ─── Cloudflare implementation (ADR-037) ────────────────────────────────────
 

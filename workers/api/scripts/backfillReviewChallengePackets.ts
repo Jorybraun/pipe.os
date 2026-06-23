@@ -24,9 +24,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(scriptDir, '..', '.dev.vars'), quiet: true });
 const apiRoot = resolve(scriptDir, '..');
 const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string) => LocalSqliteDatabase;
-};
+const DatabaseSync = require('better-sqlite3') as new (path: string) => LocalSqliteDatabase;
 
 import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 import { fetchGitHubDiff, type DiffFile } from '../src/lib/fetchGitHubDiff';

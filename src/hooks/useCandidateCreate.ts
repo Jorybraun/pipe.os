@@ -18,6 +18,16 @@ export interface CandidateCreateInput {
   skipEmail?: boolean;
 }
 
+export interface CandidateCreateResult {
+  id: string;
+  inviteToken: string;
+  scheduledInterview?: {
+    id: string;
+    status: string;
+    meetingUrl: string | null;
+  } | null;
+}
+
 interface UseCandidateCreateState {
   isSubmitting: boolean;
   error: Error | null;
@@ -26,7 +36,7 @@ interface UseCandidateCreateState {
 }
 
 interface UseCandidateCreateReturn extends UseCandidateCreateState {
-  create: (input: CandidateCreateInput) => Promise<{ id: string; inviteToken: string } | null>;
+  create: (input: CandidateCreateInput) => Promise<CandidateCreateResult | null>;
   reset: () => void;
 }
 
@@ -44,7 +54,7 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
   });
 
   const create = useCallback(
-    async (input: CandidateCreateInput): Promise<{ id: string; inviteToken: string } | null> => {
+    async (input: CandidateCreateInput): Promise<CandidateCreateResult | null> => {
       setState({ isSubmitting: true, error: null, createdId: null, inviteToken: null });
 
       try {
@@ -63,7 +73,11 @@ export function useCandidateCreate(): UseCandidateCreateReturn {
         const token = data.candidate.inviteToken;
         console.log('[useCandidateCreate] Candidate created:', candidateId);
         setState({ isSubmitting: false, error: null, createdId: candidateId, inviteToken: token });
-        return { id: candidateId, inviteToken: token };
+        return {
+          id: candidateId,
+          inviteToken: token,
+          scheduledInterview: data.candidate.scheduledInterview ?? null,
+        };
       } catch (err) {
         const error =
           err instanceof Error ? err : new Error('An unexpected error occurred');

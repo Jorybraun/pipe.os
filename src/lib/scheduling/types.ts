@@ -5,9 +5,11 @@ export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' |
 export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
 
 export interface TranscriptEntry {
-  role: 'recruiter' | 'candidate' | 'model' | 'user';
+  role: string;
   text: string;
   timestamp?: string | null;
+  timestampStartMs?: number | null;
+  timestampEndMs?: number | null;
 }
 
 export interface TranscriptArtifact {
@@ -31,11 +33,19 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK' | 'POLL';
  */
 export type InterviewType = 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW';
 
+export const INTERVIEW_TYPE_LABELS = {
+  VIDEO: 'Video interview',
+  CODE_REVIEW: 'Code-review interview',
+  TECHNICAL: 'Implementation challenge',
+  SCREENING: 'Video interview',
+} satisfies Record<InterviewType, string>;
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   candidateId?: string | null;
+  contactId?: string | null;
   pipelineId?: string | null;
   stageId?: string | null;
   interviewType?: InterviewType | null;
@@ -82,6 +92,9 @@ export interface LinkedMeetingSummary {
   meetingType: string;
   transcriptStatus: string;
   transcriptSummary: string | null;
+  transcriptJson?: string | null;
+  transcriptAnalysisJson?: string | null;
+  transcriptError?: string | null;
   recordingR2Key: string | null;
   room: {
     id: string;

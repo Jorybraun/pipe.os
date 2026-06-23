@@ -60,9 +60,19 @@ export interface GitHubDiffResult {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-export function extractRepoPath(url: string): string | null {
+export function extractRepoPath(input: string): string | null {
+  const normalized = input.trim().replace(/\.git$/, '');
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+    return normalized;
+  }
+
+  const sshMatch = normalized.match(/^git@github\.com:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)$/);
+  if (sshMatch?.[1]) {
+    return sshMatch[1];
+  }
+
   try {
-    const u = new URL(url);
+    const u = new URL(normalized);
     if (u.hostname !== 'github.com') return null;
     const parts = u.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
     if (parts.length < 2 || !parts[0] || !parts[1]) return null;

@@ -34,6 +34,7 @@ const ChallengeEditorPage = lazy(() => import("./pages/ChallengeEditorPage"));
 const CandidateAssessmentPage = lazy(() => import("./pages/CandidateAssessmentPage"));
 const CultureInterviewPage = lazy(() => import("./pages/CultureInterviewPage"));
 const VideoJoinPage = lazy(() => import("./pages/VideoJoinPage"));
+const PersonProfilePage = lazy(() => import("./pages/PersonProfilePage"));
 const ContactsPage = lazy(() =>
   import("./pages/ContactsPage").then((module) => ({
     default: module.default as ComponentType<{ view?: "people" | "clients" }>,
@@ -66,7 +67,7 @@ const SubHeader = () => {
   const location = useLocation();
   const auth = useAuth();
 
-  const isCandidateContext = location.pathname.startsWith("/candidates/");
+  const isPersonContext = location.pathname.startsWith("/candidates/") || location.pathname.startsWith("/people/");
 
   const headerData = { title: "PIPE_OS", count: 0 };
 
@@ -85,7 +86,7 @@ const SubHeader = () => {
         justifyContent: "space-between",
         marginBottom: 0,
         padding: 20,
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        borderBottom: "1px solid var(--pipe-border-light)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
@@ -97,7 +98,7 @@ const SubHeader = () => {
           <>
             <button
               onClick={() => {
-                if (isCandidateContext) {
+                if (isPersonContext) {
                   navigate(-1);
                 } else if (questionId && stageId) {
                   navigate(`/pipeline/${id}/stage/${stageId}`);
@@ -123,9 +124,9 @@ const SubHeader = () => {
             >
               <ArrowLeft size={12} />{" "}
               {questionId && currentStage
-                ? "BACK TO ROUND"
+                ? "BACK TO INTERVIEW"
                 : stageId
-                  ? "BACK TO ROLE"
+                  ? "BACK TO CONTEXT"
                   : "BACK"}
             </button>
 
@@ -146,7 +147,7 @@ const SubHeader = () => {
                   marginBottom: 6,
                 }}
               >
-                {isCandidateContext ? "PERSON" : stageId ? "ROUND" : "ROLE"}
+                {isPersonContext ? "PERSON" : stageId ? "INTERVIEW" : "CONTEXT"}
               </div>
               <div
                 style={{
@@ -207,6 +208,11 @@ const SubHeader = () => {
     </div>
   );
 };
+
+function NavigateToPeopleProfile(): JSX.Element {
+  const { personId } = useParams<{ personId: string }>();
+  return <Navigate to={personId ? `/people/${personId}` : '/people'} replace />;
+}
 
 /**
  * AppLayout - Wrapper component that provides consistent Layout to child routes
@@ -434,7 +440,7 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
-            <ThemeProvider>
+            <ThemeProvider forceMode="pipe-blue">
             <ClerkAuthGate>
               <ClerkAuthWrapper>
                 <RecruiterThemeSync />
@@ -487,6 +493,8 @@ function App(): JSX.Element {
                     />
                     <Route path="/outreach" element={<OutreachPage />} />
                     <Route path="/people" element={<ContactsPage />} />
+                    <Route path="/people/:personId" element={<PersonProfilePage />} />
+                    <Route path="/person/:personId" element={<NavigateToPeopleProfile />} />
                     <Route path="/clients" element={<Navigate to="/people" replace />} />
                     <Route path="/contacts" element={<Navigate to="/people" replace />} />
                     {FEATURE_FLAGS.FEATURE_FLAG_DEV_CONTAINER_ROUTE && (

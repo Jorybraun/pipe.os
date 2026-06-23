@@ -23,11 +23,12 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 
 type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
+type SignalStatus = SessionStatus | 'LEFT';
 
 interface SignalMessage {
   type: 'OFFER' | 'ANSWER' | 'ICE_CANDIDATE' | 'HANGUP' | 'STATUS_UPDATE';
   role?: VideoRole;
-  status?: SessionStatus;
+  status?: SignalStatus;
   payload?: unknown;
 }
 
@@ -44,24 +45,18 @@ export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
   private metadata: VideoRoomMetadata = {};
-  private transcriptCallbackUrl?: string;
-  private internalSecret?: string;
 
   constructor(state: DurableObjectState) {
     this.state = state;
 
     // Restore status from storage on cold start
     void state.blockConcurrencyWhile(async () => {
-      const stored = await state.storage.get<SessionStatus>('status');
-      if (stored) this.sessionStatus = stored;
+      const stored = await state.storage.get<unknown>('status');
+      if (this.isSessionStatus(stored)) this.sessionStatus = stored;
       const meta = await state.storage.get<VideoRoomMetadata>('metadata');
       if (meta) this.metadata = meta;
       const offer = await state.storage.get<string>('lastOffer');
       if (offer) this._lastOffer = offer;
-      const callbackUrl = await state.storage.get<string>('transcriptCallbackUrl');
-      if (callbackUrl) this.transcriptCallbackUrl = callbackUrl;
-      const secret = await state.storage.get<string>('internalSecret');
-      if (secret) this.internalSecret = secret;
     });
   }
 
@@ -95,6 +90,13 @@ export class VideoRoom {
     return 'HOST';
   }
 
+  private isSessionStatus(status: unknown): status is SessionStatus {
+    return status === 'WAITING'
+      || status === 'CALLING'
+      || status === 'ACTIVE'
+      || status === 'ENDED';
+  }
+
   /** Get all active WebSockets */
   private getAllWebSockets(): WebSocket[] {
     return this.state.getWebSockets();
@@ -124,6 +126,31 @@ export class VideoRoom {
     }
   }
 
+  private async persistSessionStatus(status: SessionStatus, endedByHost = false): Promise<void> {
+    this.sessionStatus = status;
+    await this.state.storage.put('status', this.sessionStatus);
+    if (endedByHost) {
+      await this.state.storage.put('endedByHost', true);
+    } else if (status !== 'ENDED') {
+      await this.state.storage.delete('endedByHost');
+    }
+  }
+
+  private async endSession(senderRole: VideoRole): Promise<void> {
+    const alreadyEnded = this.sessionStatus === 'ENDED';
+    this._lastOffer = null;
+    await this.state.storage.delete('lastOffer');
+    await this.persistSessionStatus('ENDED', true);
+    this.broadcast(JSON.stringify({
+      type: 'STATUS_UPDATE',
+      status: this.sessionStatus,
+      role: senderRole,
+    }));
+    if (!alreadyEnded) {
+      void this.state.storage.setAlarm(Date.now() + 5000);
+    }
+  }
+
   // ── HTTP handler ────────────────────────────────────────────────────────
 
   async fetch(request: Request): Promise<Response> {
@@ -138,8 +165,6 @@ export class VideoRoom {
         scheduledInterviewId?: string;
         meetingId?: string;
         hostId?: string;
-        transcriptCallbackUrl?: string;
-        internalSecret?: string;
       };
       this.metadata = {
         stageId: body.stageId,
@@ -149,14 +174,10 @@ export class VideoRoom {
         meetingId: body.meetingId,
         hostId: body.hostId,
       };
-      this.transcriptCallbackUrl = body.transcriptCallbackUrl;
-      this.internalSecret = body.internalSecret;
       this.sessionStatus = 'WAITING';
       this._lastOffer = null;
       await this.state.storage.put('metadata', this.metadata);
-      await this.state.storage.put('status', this.sessionStatus);
-      await this.state.storage.put('transcriptCallbackUrl', this.transcriptCallbackUrl);
-      await this.state.storage.put('internalSecret', this.internalSecret);
+      await this.persistSessionStatus(this.sessionStatus);
       await this.state.storage.delete('lastOffer');
 
       return new Response(JSON.stringify({ status: 'WAITING' }), {
@@ -175,10 +196,14 @@ export class VideoRoom {
         this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
         await this.state.storage.put('metadata', this.metadata);
       }
-      const storedStatus = await this.state.storage.get<SessionStatus>('status');
-      if (!storedStatus || (storedStatus === 'ENDED' && body.resetEnded)) {
+      const storedStatus = await this.state.storage.get<unknown>('status');
+      const endedByHost = await this.state.storage.get<boolean>('endedByHost');
+      if (
+        !this.isSessionStatus(storedStatus)
+        || (storedStatus === 'ENDED' && body.resetEnded && !endedByHost)
+      ) {
         this.sessionStatus = 'WAITING';
-        await this.state.storage.put('status', this.sessionStatus);
+        await this.persistSessionStatus(this.sessionStatus);
         this._lastOffer = null;
         await this.state.storage.delete('lastOffer');
       } else {
@@ -275,6 +300,24 @@ export class VideoRoom {
 
     // Handle status updates
     if (message.type === 'STATUS_UPDATE' && message.status) {
+      if (message.status === 'LEFT') {
+        this.broadcastExcept(ws, JSON.stringify({
+          type: 'PEER_DISCONNECTED',
+          role: senderRole,
+          code: 1000,
+        }));
+        return;
+      }
+
+      if (!this.isSessionStatus(message.status)) {
+        ws.send(JSON.stringify({
+          type: 'STATUS_UPDATE_REJECTED',
+          status: message.status,
+          reason: 'INVALID_STATUS',
+        }));
+        return;
+      }
+
       if (message.status === 'ENDED' && !this.isHostRole(senderRole)) {
         ws.send(JSON.stringify({
           type: 'STATUS_UPDATE_REJECTED',
@@ -284,8 +327,33 @@ export class VideoRoom {
         return;
       }
 
-      this.sessionStatus = message.status;
-      await this.state.storage.put('status', this.sessionStatus);
+      if (message.status === 'ENDED') {
+        await this.endSession(senderRole);
+        return;
+      }
+
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'STATUS_UPDATE_REJECTED',
+          status: message.status,
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+
+      if (
+        !this.isHostRole(senderRole)
+        && (message.status === 'WAITING' || message.status === 'CALLING')
+      ) {
+        ws.send(JSON.stringify({
+          type: 'STATUS_UPDATE_REJECTED',
+          status: message.status,
+          reason: 'ONLY_HOST_CAN_SET_STATUS',
+        }));
+        return;
+      }
+
+      await this.persistSessionStatus(message.status);
 
       // Broadcast to all peers
       this.broadcast(JSON.stringify({
@@ -293,15 +361,6 @@ export class VideoRoom {
         status: this.sessionStatus,
         role: senderRole,
       }));
-
-      // If ENDED, clear offer, schedule cleanup, and trigger transcript callback
-      if (this.sessionStatus === 'ENDED') {
-        this._lastOffer = null;
-        await this.state.storage.delete('lastOffer');
-        void this.state.storage.setAlarm(Date.now() + 5000);
-        // Trigger transcript artifact creation/update
-        void this.triggerTranscriptCallback();
-      }
       return;
     }
 
@@ -314,6 +373,19 @@ export class VideoRoom {
       return;
     }
 
+    if (message.type === 'HANGUP') {
+      await this.endSession(senderRole);
+    }
+
+    if (this.sessionStatus === 'ENDED' && message.type !== 'HANGUP') {
+      ws.send(JSON.stringify({
+        type: 'SIGNAL_REJECTED',
+        signalType: message.type,
+        reason: 'ROOM_ENDED',
+      }));
+      return;
+    }
+
     // Store OFFER for replay to late-joining candidates
     if (message.type === 'OFFER' && this.isHostRole(senderRole)) {
       this._lastOffer = JSON.stringify({
@@ -322,6 +394,9 @@ export class VideoRoom {
         payload: message.payload,
       });
       await this.state.storage.put('lastOffer', this._lastOffer);
+      if (this.sessionStatus !== 'ENDED') {
+        await this.persistSessionStatus('CALLING');
+      }
     }
 
     // Route signaling messages to the remote peer
@@ -341,19 +416,14 @@ export class VideoRoom {
     }
   }
 
-  async webSocketClose(ws: WebSocket, code: number, _reason: string): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     const role = this.getRoleFromWs(ws);
+    const replacedByReconnect = code === 1000 && reason === 'Replaced by new connection';
 
-    // Clear stale OFFER if recruiter disconnects
-    if (role && this.isHostRole(role)) {
-      this._lastOffer = null;
-      this.sessionStatus = 'WAITING';
-      await this.state.storage.delete('lastOffer');
-      await this.state.storage.put('status', this.sessionStatus);
-    }
-
-    // Notify remaining peers
-    if (role) {
+    // Socket closes include refreshes, hibernation resumes, mobile network
+    // handoffs, and our own stale-socket replacement. They must not clear the
+    // room status or the replayable offer.
+    if (role && !replacedByReconnect) {
       this.broadcastExcept(ws, JSON.stringify({
         type: 'PEER_DISCONNECTED',
         role,
@@ -361,14 +431,9 @@ export class VideoRoom {
       }));
     }
 
-    // If all peers are gone and session was active, mark as ended
-    // Note: the closing ws is still in getWebSockets() at this point,
-    // so check for <= 1 (only the closing one left)
-    const remaining = this.getAllWebSockets().filter(w => w !== ws);
-    if (remaining.length === 0 && this.sessionStatus !== 'ENDED') {
-      this.sessionStatus = 'ENDED';
-      await this.state.storage.put('status', this.sessionStatus);
-    }
+    // A browser refresh, mobile sleep, network handoff, or temporary tab close
+    // must not permanently end the room. Only an explicit HOST/RECRUITER
+    // hangup or STATUS_UPDATE:ENDED transition ends the session.
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
@@ -380,35 +445,4 @@ export class VideoRoom {
     await this.state.storage.deleteAll();
   }
 
-  // ── Transcript callback ───────────────────────────────────────────────────
-
-  private async triggerTranscriptCallback(): Promise<void> {
-    if (!this.transcriptCallbackUrl || !this.internalSecret || !this.metadata.scheduledInterviewId) {
-      return;  // No callback configured or no interview association
-    }
-
-    try {
-      // For now, send a placeholder transcript since we don't have actual video transcription
-      // This sets up the infrastructure for when real transcription is added
-      const placeholderTranscript = [
-        { role: 'model' as const, text: 'Video call ended. Transcription not yet implemented.', timestamp: new Date().toISOString() },
-      ];
-
-      await fetch(this.transcriptCallbackUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Internal-Secret': this.internalSecret,
-        },
-        body: JSON.stringify({
-          scheduledInterviewId: this.metadata.scheduledInterviewId,
-          transcript: placeholderTranscript,
-          status: 'COMPLETED',
-        }),
-      });
-    } catch (error) {
-      console.error('[VideoRoom] Transcript callback failed:', error);
-      // Optionally retry or mark as failed - for now just log
-    }
-  }
 }
