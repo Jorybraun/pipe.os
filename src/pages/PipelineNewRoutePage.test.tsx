@@ -63,7 +63,7 @@ describe('PipelineNewRoutePage', () => {
       'Build React interfaces and review frontend architecture decisions.',
     );
 
-    await user.click(screen.getByRole('button', { name: /live coding/i }));
+    await user.click(screen.getByRole('button', { name: /code review interview/i }));
     await user.click(screen.getByRole('button', { name: /create role/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

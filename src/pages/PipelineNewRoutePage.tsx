@@ -13,18 +13,18 @@ type StageChoice = {
 const STAGE_CHOICES: StageChoice[] = [
   {
     value: 'SCREENING',
-    label: 'Screener',
-    description: 'Source-backed role intake, baseline checks, and participant instructions.',
+    label: 'Video Interview',
+    description: 'Schedule a recorded call, capture the transcript, and grow the person context.',
   },
   {
     value: 'CODE_REVIEW',
-    label: 'Code Review',
-    description: 'Ask each person to review implementation context and explain findings.',
+    label: 'Code Review Interview',
+    description: 'Use the video interview around a real PR review and source-backed findings.',
   },
   {
     value: 'LIVE_CODING',
-    label: 'Live Coding',
-    description: 'Give the person a live implementation challenge.',
+    label: 'Implementation Challenge',
+    description: 'Match the person to a repo-backed task when you need hands-on evidence.',
   },
 ];
 
@@ -56,8 +56,6 @@ export default function PipelineNewRoutePage(): JSX.Element {
   const [roleDescription, setRoleDescription] = useState('');
   const [selectedStages, setSelectedStages] = useState<Array<StageChoice['value']>>([
     'SCREENING',
-    'CODE_REVIEW',
-    'LIVE_CODING',
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,16 +153,6 @@ export default function PipelineNewRoutePage(): JSX.Element {
     >
       <div
         style={{
-          '--pipe-text': '#f8fafc',
-          '--pipe-text-muted': 'rgba(226, 232, 240, 0.76)',
-          '--pipe-text-dim': 'rgba(203, 213, 225, 0.58)',
-          '--pipe-bg': '#050b14',
-          '--pipe-border': 'rgba(148, 163, 184, 0.22)',
-          '--pipe-border-light': 'rgba(148, 163, 184, 0.14)',
-          '--pipe-surface-solid': 'rgba(5, 12, 22, 0.96)',
-          '--pipe-surface': 'rgba(8, 17, 31, 0.76)',
-          '--pipe-surface-hover': 'rgba(15, 23, 42, 0.96)',
-          '--pipe-shadow': 'rgba(0, 0, 0, 0.42)',
           maxWidth: 920,
           margin: '0',
           width: '100%',
@@ -196,7 +184,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
               New Role
             </h1>
             <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--pipe-text-muted)' }}>
-              Paste a source-backed job description, then pick the interview rounds to run.
+              Paste a job description, then pick the interview type to run.
             </p>
           </div>
           <div>
@@ -274,7 +262,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
           <div>
             <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>
-              ROUNDS
+              INTERVIEW TYPES
             </div>
             <div style={{ display: 'grid', gap: 12 }}>
               {STAGE_CHOICES.map((stage) => (
@@ -311,7 +299,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
           <span style={fieldLabelStyle}>
-            ROLE_DESCRIPTION (source-backed)
+            JOB DESCRIPTION
           </span>
           <textarea
             value={roleDescription}
