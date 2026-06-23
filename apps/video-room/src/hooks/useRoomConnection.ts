@@ -21,6 +21,7 @@ interface RoomConnection {
   hangUp: () => void;
   toggleCamera: () => void;
   toggleMic: () => void;
+  retryConnection: () => void;
 }
 
 const FALLBACK_ICE: RTCIceServer[] = [
@@ -65,6 +66,11 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const startCallRef = useRef<RoomConnection['startCall'] | null>(null);
   const autoStartTimerRef = useRef<number | null>(null);
   phaseRef.current = phase;
+
+  const setConnectionPhase = useCallback((nextPhase: RoomPhase): void => {
+    phaseRef.current = nextPhase;
+    setPhase(nextPhase);
+  }, []);
 
   useEffect(() => {
     remoteRef.current = remoteStream;
@@ -119,10 +125,9 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     remoteReadyRef.current = false;
     setRemoteStream(null);
     if (nextPhase) {
-      phaseRef.current = nextPhase;
-      setPhase(nextPhase);
+      setConnectionPhase(nextPhase);
     }
-  }, [clearPeerDisconnectTimer]);
+  }, [clearPeerDisconnectTimer, setConnectionPhase]);
 
   const scheduleHostRenegotiation = useCallback((): void => {
     if (role !== 'HOST' || phaseRef.current === 'ended') return;
@@ -143,21 +148,19 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     options: { retryHost?: boolean } = {},
   ): void => {
     if (phaseRef.current === 'ended') return;
-    phaseRef.current = 'peer_disconnected';
-    setPhase('peer_disconnected');
+    setConnectionPhase('peer_disconnected');
     if (peerDisconnectTimerRef.current !== null) return;
     peerDisconnectTimerRef.current = window.setTimeout(() => {
       peerDisconnectTimerRef.current = null;
       if (peerRef.current !== peer || phaseRef.current === 'ended') return;
       if (peer.connectionState === 'connected') {
-        phaseRef.current = 'connected';
-        setPhase('connected');
+        setConnectionPhase('connected');
         return;
       }
       closePeer('peer_disconnected');
       if (options.retryHost) scheduleHostRenegotiation();
     }, delayMs);
-  }, [closePeer, scheduleHostRenegotiation]);
+  }, [closePeer, scheduleHostRenegotiation, setConnectionPhase]);
 
   const createPeer = useCallback((iceServers: RTCIceServer[]): RTCPeerConnection => {
     closePeer();
@@ -180,14 +183,14 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       if (streams[0]) {
         clearPeerDisconnectTimer();
         setRemoteStream(streams[0]);
-        setPhase('connected');
+        setConnectionPhase('connected');
       }
     };
     peer.onconnectionstatechange = () => {
       if (peerRef.current !== peer) return;
       if (peer.connectionState === 'connected') {
         clearPeerDisconnectTimer();
-        setPhase('connected');
+        setConnectionPhase('connected');
       } else if (peer.connectionState === 'disconnected') {
         schedulePeerClose(peer, PEER_DISCONNECT_GRACE_MS, { retryHost: true });
       } else if (peer.connectionState === 'failed') {
@@ -200,7 +203,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       if (peerRef.current !== peer) return;
       if (peer.iceConnectionState === 'connected' || peer.iceConnectionState === 'completed') {
         clearPeerDisconnectTimer();
-        setPhase('connected');
+        setConnectionPhase('connected');
       } else if (peer.iceConnectionState === 'disconnected') {
         schedulePeerClose(peer, PEER_DISCONNECT_GRACE_MS, { retryHost: true });
       } else if (peer.iceConnectionState === 'failed') {
@@ -210,7 +213,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       }
     };
     return peer;
-  }, [clearPeerDisconnectTimer, closePeer, schedulePeerClose, send]);
+  }, [clearPeerDisconnectTimer, closePeer, schedulePeerClose, send, setConnectionPhase]);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -231,7 +234,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
-        if (phaseRef.current === 'disconnected') setPhase('waiting');
+        if (phaseRef.current === 'disconnected') setConnectionPhase('waiting');
       };
       ws.onmessage = (event) => {
         let message: {
@@ -248,15 +251,14 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
         }
         if (message.type === 'STATUS_UPDATE') {
           if (message.status === 'ENDED') {
-            phaseRef.current = 'ended';
-            setPhase('ended');
+            setConnectionPhase('ended');
           } else if ((message.peers ?? 0) > 1 && !remoteRef.current && phaseRef.current !== 'connected') {
-            setPhase('peer_connected');
+            setConnectionPhase('peer_connected');
           } else if (
             phaseRef.current === 'disconnected' ||
             phaseRef.current === 'error'
           ) {
-            setPhase('waiting');
+            setConnectionPhase('waiting');
           }
         } else if (message.type === 'PEER_CONNECTED') {
           const peer = peerRef.current;
@@ -264,10 +266,10 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
             closePeer('peer_connected');
           } else if (remoteRef.current || peer?.connectionState === 'connected') {
             clearPeerDisconnectTimer();
-            setPhase('connected');
+            setConnectionPhase('connected');
           } else if (phaseRef.current !== 'connected') {
             clearPeerDisconnectTimer();
-            setPhase('peer_connected');
+            setConnectionPhase('peer_connected');
           }
         } else if (message.type === 'PEER_DISCONNECTED') {
           const peer = peerRef.current;
@@ -279,7 +281,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
         } else if (message.type === 'OFFER' && message.role !== role) {
           offerRef.current = message.payload as SdpPayload;
           setIceProvider(offerRef.current.iceProvider ?? 'unknown');
-          setPhase('offer_received');
+          setConnectionPhase('offer_received');
         } else if (message.type === 'ANSWER' && message.role !== role && peerRef.current) {
           void peerRef.current
             .setRemoteDescription(new RTCSessionDescription(message.payload as SdpPayload))
@@ -309,11 +311,10 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
         if (disposed || phaseRef.current === 'ended') return;
         reconnectAttemptRef.current += 1;
         const delayMs = Math.min(500 * 2 ** Math.min(reconnectAttemptRef.current - 1, 4), 5000);
-        setPhase((current) => {
-          if (current === 'connected') return 'peer_disconnected';
-          if (current === 'ended') return current;
-          return 'disconnected';
-        });
+        const nextPhase = phaseRef.current === 'connected'
+          ? 'peer_disconnected'
+          : 'disconnected';
+        setConnectionPhase(nextPhase);
         reconnectTimerRef.current = window.setTimeout(connect, delayMs);
       };
     };
@@ -325,7 +326,16 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [active, clearPeerDisconnectTimer, closePeer, drainIce, role, schedulePeerClose, token]);
+  }, [
+    active,
+    clearPeerDisconnectTimer,
+    closePeer,
+    drainIce,
+    role,
+    schedulePeerClose,
+    setConnectionPhase,
+    token,
+  ]);
 
   useEffect(() => () => {
     if (peerDisconnectTimerRef.current !== null) {
@@ -357,8 +367,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     if (role !== 'HOST') return;
     if (startingCallRef.current) return;
     startingCallRef.current = true;
-    phaseRef.current = 'connecting';
-    setPhase('connecting');
+    setConnectionPhase('connecting');
     try {
       const config = await getIceServerConfig(token).catch(() => ({
         iceServers: FALLBACK_ICE,
@@ -380,13 +389,13 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     } finally {
       startingCallRef.current = false;
     }
-  }, [closePeer, createPeer, role, send, sendStatus, token]);
+  }, [closePeer, createPeer, role, send, sendStatus, setConnectionPhase, token]);
   startCallRef.current = startCall;
 
   const acceptCall = useCallback(async (): Promise<void> => {
     const offer = offerRef.current;
     if (role !== 'GUEST' || !offer) return;
-    setPhase('connecting');
+    setConnectionPhase('connecting');
     setIceProvider(offer.iceProvider ?? 'unknown');
     const peer = createPeer(offer.iceServers ?? FALLBACK_ICE);
     await peer.setRemoteDescription(new RTCSessionDescription(offer));
@@ -396,10 +405,33 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     await peer.setLocalDescription(answer);
     send('ANSWER', { type: answer.type, sdp: answer.sdp });
     sendStatus('ACTIVE');
-  }, [createPeer, drainIce, role, send, sendStatus]);
+  }, [createPeer, drainIce, role, send, sendStatus, setConnectionPhase]);
+
+  const retryConnection = useCallback((): void => {
+    if (phaseRef.current === 'ended') return;
+    clearPeerRenegotiateTimer();
+    clearPeerDisconnectTimer();
+    if (role === 'HOST') {
+      closePeer('connecting');
+      void startCallRef.current?.();
+      return;
+    }
+    if (offerRef.current) {
+      closePeer('offer_received');
+      void acceptCall();
+      return;
+    }
+    closePeer('waiting');
+  }, [
+    acceptCall,
+    clearPeerDisconnectTimer,
+    clearPeerRenegotiateTimer,
+    closePeer,
+    role,
+  ]);
 
   const hangUp = useCallback((): void => {
-    phaseRef.current = 'ended';
+    setConnectionPhase('ended');
     if (autoStartTimerRef.current !== null) {
       window.clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = null;
@@ -412,7 +444,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       sendStatus('LEFT');
     }
     closePeer('ended');
-  }, [clearPeerRenegotiateTimer, closePeer, role, send, sendStatus]);
+  }, [clearPeerRenegotiateTimer, closePeer, role, send, sendStatus, setConnectionPhase]);
 
   const toggleCamera = useCallback((): void => {
     localRef.current?.getVideoTracks().forEach((track) => {
@@ -468,5 +500,6 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     hangUp,
     toggleCamera,
     toggleMic,
+    retryConnection,
   };
 }

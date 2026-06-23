@@ -8,6 +8,7 @@ import {
   Mic,
   MicOff,
   PhoneOff,
+  RefreshCcw,
   ShieldCheck,
   Users,
   Video,
@@ -330,7 +331,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   );
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
   const isConnecting = room.phase === 'connecting';
+  const isOpening = room.phase === 'disconnected';
+  const isRecovering = room.phase === 'peer_disconnected';
   const isRoomError = room.phase === 'error';
+  const canRetry = room.phase === 'peer_disconnected' || room.phase === 'error';
   const recordingLabel = {
     idle: 'Ready',
     recording: 'Recording',
@@ -353,6 +357,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <h2>
             {isRoomError
               ? 'Connection interrupted'
+              : isRecovering
+              ? 'Reconnecting...'
+              : isOpening
+              ? 'Opening room...'
               : isConnecting
               ? 'Connecting...'
               : metadata.role === 'HOST'
@@ -361,10 +369,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           </h2>
           <p>
             {isRoomError
-              ? 'Refresh the room link when you are ready to try again.'
+              ? 'The room kept your call open. Retry the connection when you are ready.'
+              : isRecovering
+              ? 'The room is trying to recover the connection without ending the call.'
+              : isOpening
+              ? 'Connecting to the private room.'
               : 'The room stays ready while the other participant joins.'}
           </p>
-          {canStart && (
+          {canRetry && (
+            <button className="primary" onClick={room.retryConnection} data-testid="retry-connection">
+              <RefreshCcw size={17} /> Retry connection
+            </button>
+          )}
+          {!canRetry && canStart && (
             <button className="primary" onClick={() => void room.startCall()} data-testid="start-call">
               <Video size={17} /> Start call
             </button>
@@ -374,6 +391,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               <Video size={17} /> Join call
             </button>
           )}
+        </div>
+      )}
+
+      {room.remoteStream && isRecovering && (
+        <div className="recovery-banner" data-testid="recovery-banner">
+          <span>
+            <RefreshCcw size={14} />
+            Connection recovering
+          </span>
+          <button onClick={room.retryConnection}>Retry</button>
         </div>
       )}
 
