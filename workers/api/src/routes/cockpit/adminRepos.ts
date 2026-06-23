@@ -27,6 +27,7 @@
  * Pass filter (pass= query param):
  *   '1' → pass=1 only
  *   '2' → pass=2 only
+ *   '3' → pass=3 only
  *   omit → all passes
  */
 
@@ -95,7 +96,7 @@ interface SamplePRRow {
 
 adminRepos.get('/repos', async (c) => {
   const statusParam = c.req.query('status') ?? 'pending';
-  const passParam   = c.req.query('pass');   // '1' | '2' | undefined
+  const passParam   = c.req.query('pass');   // '1' | '2' | '3' | undefined
   const suitabilityParam = c.req.query('suitability'); // 'suitable' | 'hold' | 'reject' | 'any' | undefined
   const page  = Math.max(1, Number(c.req.query('page')  ?? '1'));
   const limit = Math.min(500, Math.max(1, Number(c.req.query('limit') ?? '50')));
@@ -117,10 +118,11 @@ adminRepos.get('/repos', async (c) => {
     }
   }
 
-  if (passParam === '1') {
-    conditions.push('qr.pass = 1');
-  } else if (passParam === '2') {
-    conditions.push('qr.pass = 2');
+  if (passParam && ['1', '2', '3'].includes(passParam)) {
+    conditions.push('qr.pass = ?');
+    baseParams.push(Number(passParam));
+  } else if (passParam) {
+    return c.json({ repos: [], total: 0, page, limit });
   }
 
   if (suitabilityParam && ['suitable', 'hold', 'reject'].includes(suitabilityParam)) {

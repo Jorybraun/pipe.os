@@ -1146,11 +1146,30 @@ const SAVED_REPOS_KEY = 'pipe_saved_repos';
 
 interface RepoCatalogResponse {
   repos: Array<{
+    id: number;
     github_url?: string | null;
     full_name?: string | null;
     admin_status?: string | null;
     challenge_suitability_verdict?: string | null;
   }>;
+}
+
+interface RepoCatalogItem {
+  id: number;
+  url: string;
+}
+
+interface StoredPRSummary {
+  pr_number: number;
+  pr_url: string;
+  title: string | null;
+  merged_at: string;
+  changed_file_count: number;
+  modifies_tests: number;
+  swe_bench_eligible: number;
+  additions: number | null;
+  deletions: number | null;
+  resolves_issue_number: number | null;
 }
 
 function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
@@ -1167,9 +1186,10 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   const [isFetching, setIsFetching] = useState(false);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [newRepoUrl, setNewRepoUrl] = useState('');
-  const [catalogRepos, setCatalogRepos] = useState<string[]>([]);
+  const [catalogRepos, setCatalogRepos] = useState<RepoCatalogItem[]>([]);
 
   const [savedRepos, setSavedRepos] = useState<string[]>(() => {
     try {
@@ -1192,10 +1212,17 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
     void api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=approved&pass=3&suitability=suitable&limit=12')
       .then((result) => {
         if (cancelled) return;
-        const urls = result.repos
-          .map((repo) => repo.github_url ?? null)
-          .filter((url): url is string => typeof url === 'string' && isValidGitHubUrl(url));
-        setCatalogRepos([...new Set(urls)]);
+        const repos = result.repos
+          .map((repo) => ({
+            id: repo.id,
+            url: repo.github_url ?? '',
+          }))
+          .filter((repo): repo is RepoCatalogItem => Number.isFinite(repo.id) && isValidGitHubUrl(repo.url));
+        const deduped = new Map<string, RepoCatalogItem>();
+        repos.forEach((repo) => {
+          if (!deduped.has(repo.url)) deduped.set(repo.url, repo);
+        });
+        setCatalogRepos([...deduped.values()]);
       })
       .catch(() => {
         if (!cancelled) setCatalogRepos([]);
@@ -1209,37 +1236,97 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   }, [getToken]);
 
   const repoOptions = useMemo(
-    () => [...new Set([...catalogRepos, ...savedRepos])],
+    () => [...new Set([...catalogRepos.map((repo) => repo.url), ...savedRepos])],
     [catalogRepos, savedRepos],
   );
+
+  const catalogRepoByUrl = useMemo(() => {
+    const byUrl = new Map<string, RepoCatalogItem>();
+    catalogRepos.forEach((repo) => byUrl.set(repo.url, repo));
+    return byUrl;
+  }, [catalogRepos]);
+
+  const fetchStoredPRs = useCallback(async (
+    api: ReturnType<typeof createApiClient>,
+    url: string,
+  ): Promise<PRSummary[]> => {
+    const repo = catalogRepoByUrl.get(url);
+    if (!repo) return [];
+
+    const result = await api.get<{ prs: StoredPRSummary[] }>(`/api/v1/admin/repos/${repo.id}/prs`);
+    return result.prs
+      .filter((pr) => typeof pr.pr_url === 'string' && pr.pr_url.length > 0)
+      .map((pr) => ({
+        number: pr.pr_number,
+        title: pr.title?.trim() || `Pull request #${pr.pr_number}`,
+        description: [
+          pr.changed_file_count ? `${pr.changed_file_count} files changed.` : null,
+          pr.modifies_tests ? 'Touches test files.' : null,
+          pr.swe_bench_eligible ? 'Marked SWE-bench eligible by crawler.' : null,
+        ].filter(Boolean).join(' '),
+        author: '',
+        avatar: '',
+        state: 'merged',
+        draft: false,
+        createdAt: pr.merged_at,
+        updatedAt: pr.merged_at,
+        mergedAt: pr.merged_at,
+        htmlUrl: pr.pr_url,
+        labels: [],
+        baseBranch: '',
+        featureBranch: '',
+      }));
+  }, [catalogRepoByUrl]);
 
   const fetchPRs = useCallback(async (url: string): Promise<void> => {
     if (!isValidGitHubUrl(url)) return;
     setRepoUrl(url);
     setIsFetching(true);
     setError(null);
+    setSourceNotice(null);
     setPrs([]);
+    const api = createApiClient({ getToken });
     try {
-      const api = createApiClient({ getToken });
-      const result = await api.get<{
-        success: boolean;
-        error?: string;
-        data?: { prs: PRSummary[] };
-      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=closed&merged=true`);
-      if (!result.success) {
-        setError(result.error ?? 'Failed to fetch pull requests.');
-        return;
+      let liveFetchError: string | null = null;
+      try {
+        const result = await api.get<{
+          success: boolean;
+          error?: string;
+          data?: { prs: PRSummary[] };
+        }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=closed&merged=true`);
+        if (!result.success) {
+          liveFetchError = result.error ?? 'Failed to fetch pull requests from GitHub.';
+        } else {
+          const fetched = result.data?.prs ?? [];
+          if (fetched.length > 0) {
+            setPrs(fetched);
+            return;
+          }
+          liveFetchError = 'No merged pull requests found from live GitHub.';
+        }
+      } catch (err) {
+        console.error('[CodeReviewPicker] Failed to list PRs:', err);
+        liveFetchError = err instanceof Error ? err.message : 'Failed to fetch pull requests from GitHub.';
       }
-      const fetched = result.data?.prs ?? [];
-      setPrs(fetched);
-      if (fetched.length === 0) setError('No merged pull requests found.');
-    } catch (err) {
-      console.error('[CodeReviewPicker] Failed to list PRs:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch pull requests.');
+
+      try {
+        const storedPrs = await fetchStoredPRs(api, url.trim());
+        if (storedPrs.length > 0) {
+          setPrs(storedPrs);
+          setSourceNotice(liveFetchError
+            ? `Showing crawler-vetted PRs because live GitHub is unavailable: ${liveFetchError}`
+            : 'Showing crawler-vetted PRs from the approved repo bank.');
+          return;
+        }
+      } catch (err) {
+        console.error('[CodeReviewPicker] Failed to load stored PRs:', err);
+      }
+
+      setError(liveFetchError ?? 'No source-backed pull requests found for this repository.');
     } finally {
       setIsFetching(false);
     }
-  }, [getToken]);
+  }, [fetchStoredPRs, getToken]);
 
   const handleAddPR = async (pr: PRSummary): Promise<void> => {
     try {
@@ -1273,7 +1360,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   const handleAddRepo = (): void => {
     const trimmed = newRepoUrl.trim();
     if (!isValidGitHubUrl(trimmed)) return;
-    if (!savedRepos.includes(trimmed) && !catalogRepos.includes(trimmed)) {
+    if (!savedRepos.includes(trimmed) && !catalogRepoByUrl.has(trimmed)) {
       setSavedRepos((prev) => [...prev, trimmed]);
     }
     setNewRepoUrl('');
@@ -1366,10 +1453,11 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                   <button
                     onClick={() => {
                       setSavedRepos((prev) => prev.filter((r) => r !== repo));
-                      if (repoUrl === repo && !catalogRepos.includes(repo)) {
+                      if (repoUrl === repo && !catalogRepoByUrl.has(repo)) {
                         setRepoUrl('');
                         setPrs([]);
                         setError(null);
+                        setSourceNotice(null);
                       }
                     }}
                     style={{
@@ -1499,6 +1587,21 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {sourceNotice && (
+              <div style={{
+                padding: '8px 10px',
+                border: '1px solid rgba(96,165,250,0.22)',
+                borderRadius: 4,
+                background: 'rgba(96,165,250,0.08)',
+                color: '#60a5fa',
+                fontSize: 8,
+                fontFamily: '"Space Mono", monospace',
+                letterSpacing: '0.04em',
+                lineHeight: 1.45,
+              }}>
+                {sourceNotice}
+              </div>
+            )}
             {prs.map((pr) => (
               <button
                 key={pr.number}
@@ -1562,7 +1665,11 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                     marginTop: 3,
                     opacity: 0.6,
                   }}>
-                    {pr.author} · {pr.featureBranch} → {pr.baseBranch}
+                    {pr.author || (pr.featureBranch && pr.baseBranch)
+                      ? [pr.author, pr.featureBranch && pr.baseBranch ? `${pr.featureBranch} -> ${pr.baseBranch}` : null]
+                        .filter(Boolean)
+                        .join(' · ')
+                      : 'Source-backed crawler record'}
                   </div>
                 </div>
               </button>
