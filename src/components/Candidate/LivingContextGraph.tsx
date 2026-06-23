@@ -329,7 +329,7 @@ function StandaloneReviewMatchPanel({
     >
       <div className="living-context__review-match-head">
         <div>
-          <div className="living-context__section-title">Standalone CODE_REVIEW match</div>
+          <div className="living-context__section-title">Code review match</div>
           <div className="living-context__review-match-title">
             {match.repoName ?? match.repoUrl ?? 'No PR selected yet'}
             {match.prNumber !== null ? ` #${match.prNumber}` : ''}
@@ -756,7 +756,7 @@ function MeetingEvidencePanel({
               <div className="living-context__meeting-counts">
                 <span>{countLabel(branch.artifacts.length, 'artifact')}</span>
                 <span>{countLabel(branch.sourceSpans.length, 'span')}</span>
-                <span>{countLabel(branch.assertions.length, 'assertion')}</span>
+                <span>{countLabel(branch.assertions.length, 'claim')}</span>
               </div>
             </div>
 
@@ -972,7 +972,7 @@ export function LivingContextGraph({
     ['Context records', livingContext.summary.contextRecordCount],
     ['Artifacts', livingContext.summary.artifactCount],
     ['Source spans', livingContext.summary.sourceSpanCount],
-    ['Assertions', livingContext.summary.assertionCount],
+    ['Evidence claims', livingContext.summary.assertionCount],
     ['Signals', livingContext.summary.signalCount],
   ] as const;
 
@@ -1109,7 +1109,7 @@ export function LivingContextGraph({
           )}
 
           <div className="living-context__section-head" style={{ marginTop: 22 }}>
-            <div className="living-context__section-title">Assertions</div>
+            <div className="living-context__section-title">Evidence claims</div>
             <div className="living-context__count">{visibleAssertions.length}</div>
           </div>
           {visibleAssertions.length > 0 ? (
@@ -1124,7 +1124,7 @@ export function LivingContextGraph({
               ))}
             </div>
           ) : (
-            <div className="living-context__empty">No source-backed assertions yet.</div>
+            <div className="living-context__empty">No source-backed evidence claims yet.</div>
           )}
 
           <div className="living-context__artifacts">
@@ -1186,7 +1186,7 @@ export function LivingContextGraph({
                 <dd>{selectedInteraction.externalReference ?? '—'}</dd>
                 <dt>Artifacts</dt>
                 <dd>{selectedInteraction.artifactIds.length}</dd>
-                <dt>Assertions</dt>
+                <dt>Evidence claims</dt>
                 <dd>{selectedInteraction.assertionIds.length}</dd>
                 <dt>Signals</dt>
                 <dd>{selectedInteraction.signalKeys.length}</dd>

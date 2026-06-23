@@ -515,7 +515,11 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
+      <div style={{
+        flex: 1,
+        overflow: activeTab === 'details' ? 'hidden' : 'auto',
+        padding: activeTab === 'context' ? 16 : 0,
+      }}>
         {activeTab === 'details' ? (
           <ContactForm
             title="CONTACT"

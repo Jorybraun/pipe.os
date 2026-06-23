@@ -3,12 +3,20 @@
   --lc-assertion: #b45309;
   --lc-signal: #059669;
   --lc-structural: #7c3aed;
-  --lc-panel: var(--pipe-surface-solid, #ffffff);
-  --lc-panel-soft: var(--pipe-surface, rgba(15, 23, 42, 0.035));
-  --lc-panel-hover: var(--pipe-surface-hover, rgba(15, 23, 42, 0.07));
-  --lc-card: var(--pipe-surface, rgba(15, 23, 42, 0.035));
-  --lc-card-strong: var(--pipe-surface-hover, rgba(15, 23, 42, 0.07));
-  --lc-card-border: var(--pipe-border, rgba(15, 23, 42, 0.09));
+  --pipe-text: #111827;
+  --pipe-text-muted: #475569;
+  --pipe-text-dim: #64748b;
+  --pipe-border: rgba(15, 23, 42, 0.12);
+  --pipe-border-light: rgba(15, 23, 42, 0.08);
+  --pipe-surface: rgba(15, 23, 42, 0.035);
+  --pipe-surface-hover: rgba(15, 23, 42, 0.07);
+  --pipe-surface-solid: #ffffff;
+  --lc-panel: #ffffff;
+  --lc-panel-soft: rgba(248, 250, 252, 0.92);
+  --lc-panel-hover: rgba(226, 232, 240, 0.72);
+  --lc-card: rgba(15, 23, 42, 0.035);
+  --lc-card-strong: rgba(15, 23, 42, 0.07);
+  --lc-card-border: rgba(15, 23, 42, 0.09);
   container-name: living-context;
   container-type: inline-size;
   color: var(--pipe-text);
@@ -22,9 +30,17 @@ html[data-theme="pipe-blue"] .living-context {
   --lc-assertion: #f59e0b;
   --lc-signal: #34d399;
   --lc-structural: #a78bfa;
-  --lc-panel: var(--pipe-surface-solid, rgba(5, 12, 22, 0.96));
-  --lc-panel-soft: var(--pipe-surface, rgba(8, 17, 31, 0.78));
-  --lc-panel-hover: var(--pipe-surface-hover, rgba(15, 23, 42, 0.92));
+  --pipe-text: #f8fafc;
+  --pipe-text-muted: rgba(226, 232, 240, 0.78);
+  --pipe-text-dim: rgba(148, 163, 184, 0.72);
+  --pipe-border: rgba(148, 163, 184, 0.18);
+  --pipe-border-light: rgba(148, 163, 184, 0.11);
+  --pipe-surface: rgba(8, 17, 31, 0.78);
+  --pipe-surface-hover: rgba(15, 23, 42, 0.92);
+  --pipe-surface-solid: rgba(5, 12, 22, 0.96);
+  --lc-panel: rgba(5, 12, 22, 0.96);
+  --lc-panel-soft: rgba(8, 17, 31, 0.78);
+  --lc-panel-hover: rgba(15, 23, 42, 0.92);
   --lc-card: rgba(255, 255, 255, 0.035);
   --lc-card-strong: rgba(255, 255, 255, 0.08);
   --lc-card-border: rgba(255, 255, 255, 0.08);
@@ -1511,4 +1527,53 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--pipe-text);
   line-height: 1.5;
   border-radius: 0 3px 3px 0;
+}
+
+@container living-context (max-width: 760px) {
+  .living-context__toolbar {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .living-context__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .living-context__workspace {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .living-context__rail,
+  .living-context__canvas {
+    border-right: 0;
+    border-bottom: 1px solid var(--pipe-border);
+  }
+
+  .living-context__rail,
+  .living-context__canvas,
+  .living-context__inspector {
+    padding: 14px;
+  }
+
+  .living-context__signal-grid,
+  .living-context__repo-source-grid,
+  .living-context__repo-overlay-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .living-context__meeting-head,
+  .living-context__repo-demand-head,
+  .living-context__review-match-head {
+    flex-direction: column;
+  }
+
+  .living-context__meeting-counts {
+    justify-content: flex-start;
+    max-width: none;
+  }
+
+  .living-context__locator {
+    grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
+  }
 }

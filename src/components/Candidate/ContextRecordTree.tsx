@@ -17,6 +17,23 @@ function displayLabel(value: string): string {
   return titleCase(value.toLowerCase());
 }
 
+function firstReadableSentence(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(.+?[.!?])(?:\s+|$)/);
+  return (match?.[1] ?? trimmed).slice(0, 140);
+}
+
+function isMachineKey(value: string): boolean {
+  return /^[A-Z0-9_:-]+$/.test(value) || value.includes('_') || value.length > 80;
+}
+
+function recordTitle(record: LivingContextRecord): string {
+  const predicate = record.predicate ?? record.recordType;
+  return isMachineKey(predicate)
+    ? firstReadableSentence(record.narrative) || displayLabel(record.recordType)
+    : displayLabel(predicate);
+}
+
 function formatDate(value: string | null): string | null {
   if (!value) return null;
   const date = new Date(value);
@@ -117,6 +134,7 @@ export function ContextRecordTree({
   const recordConfidence = confidenceLabel(record.confidence);
   const polarityLabel = record.polarity < 0 ? 'negative' : record.polarity > 0 ? 'positive' : 'neutral';
   const predicateLabel = record.predicate ?? record.recordType;
+  const title = recordTitle(record);
 
   return (
     <article className="living-context__context-record">
@@ -133,7 +151,7 @@ export function ContextRecordTree({
         />
         <span className="living-context__context-record-head">
           <span className="living-context__context-record-title" title={predicateLabel}>
-            {displayLabel(predicateLabel)}
+            {title}
           </span>
           <span className="living-context__context-record-badges">
             <span className="living-context__context-record-type">{displayLabel(record.recordType)}</span>
