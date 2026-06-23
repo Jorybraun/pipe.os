@@ -360,66 +360,6 @@ export default function PipelineInsightsPanel(): JSX.Element {
       data-testid="insights-panel"
       style={{ display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      {/* Role profile summary — always visible when role context exists */}
-      {roleContext && (
-        <div
-          style={{
-            padding: '20px 24px',
-            background: 'var(--pipe-surface-solid)',
-            border: '1px solid var(--pipe-border-light)',
-            borderRadius: 10,
-            display: 'flex',
-            gap: 32,
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-          }}
-        >
-          {/* Key metadata */}
-          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
-            {([
-              ['COMPANY', roleContext.baseline.companyName],
-              ['LOCATION', roleContext.baseline.location],
-              ['DEPARTMENT', roleContext.baseline.department],
-            ] as [string, string | undefined][]).filter(([, v]) => !!v).map(([label, value]) => (
-              <div key={label}>
-                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 12, color: 'var(--pipe-text-muted)', fontFamily: '"Space Mono", monospace' }}>{value}</div>
-              </div>
-            ))}
-
-            {/* Must-have skill chips */}
-            {roleContext.persona && roleContext.persona.mustHaveSkills.length > 0 && (
-              <div>
-                <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>MUST-HAVE SKILLS</div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {roleContext.persona.mustHaveSkills.slice(0, 6).map((skill) => (
-                    <span
-                      key={skill}
-                      style={{
-                        fontSize: 9,
-                        padding: '3px 8px',
-                        background: 'var(--pipe-surface)',
-                        border: '1px solid var(--pipe-border-light)',
-                        color: 'var(--pipe-text-muted)',
-                        fontFamily: '"Space Mono", monospace',
-                        borderRadius: 3,
-                      }}
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                  {roleContext.persona.mustHaveSkills.length > 6 && (
-                    <span style={{ fontSize: 9, padding: '3px 8px', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-                      +{roleContext.persona.mustHaveSkills.length - 6} more
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Empty-state quickstart — DRAFT with no stages */}
       {isDraft && isEmpty && (
         <SectionCard
