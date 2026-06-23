@@ -58,6 +58,19 @@ function metadataSummary(metadata: Record<string, unknown>): string | null {
   return null;
 }
 
+function evidenceSummaryText(livingContext: LivingContextReadModel | null): string {
+  const summary = livingContext?.summary;
+  if (!summary || summary.interactionCount === 0) {
+    return 'This profile is ready for evidence. Invites, calls, transcripts, notes, resumes, and assessments will grow the graph without fabricating meaning.';
+  }
+  const parts = [
+    `${summary.interactionCount} ${summary.interactionCount === 1 ? 'interaction' : 'interactions'}`,
+    `${summary.contextRecordCount} learned ${summary.contextRecordCount === 1 ? 'context record' : 'context records'}`,
+    `${summary.sourceSpanCount} exact source ${summary.sourceSpanCount === 1 ? 'span' : 'spans'}`,
+  ];
+  return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
+}
+
 function Metric({ label, value }: { label: string; value: number }): JSX.Element {
   return (
     <div style={{
@@ -181,7 +194,7 @@ export default function PersonProfilePage(): JSX.Element {
 
       <section style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(280px, 0.78fr) minmax(0, 1.22fr)',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
         gap: 24,
         alignItems: 'stretch',
         marginTop: 18,
@@ -222,6 +235,18 @@ export default function PersonProfilePage(): JSX.Element {
               ?? contact.notes
               ?? 'No relationship summary has been earned from evidence yet.'}
           </p>
+          <div style={{
+            marginTop: 18,
+            padding: 12,
+            border: '1px solid var(--pipe-border-light)',
+            borderRadius: 8,
+            background: 'var(--pipe-surface)',
+            color: 'var(--pipe-text-muted)',
+            fontSize: 12,
+            lineHeight: 1.55,
+          }}>
+            {evidenceSummaryText(livingContext)}
+          </div>
         </div>
 
         <div style={{
@@ -246,15 +271,15 @@ export default function PersonProfilePage(): JSX.Element {
         gap: 10,
         marginTop: 18,
       }}>
-        <Metric label="Conversations" value={livingContext?.summary.interactionCount ?? 0} />
-        <Metric label="Evidence records" value={livingContext?.summary.contextRecordCount ?? 0} />
+        <Metric label="Interactions" value={livingContext?.summary.interactionCount ?? 0} />
+        <Metric label="Learned context" value={livingContext?.summary.contextRecordCount ?? 0} />
         <Metric label="Original spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
-        <Metric label="Source files" value={livingContext?.summary.artifactCount ?? 0} />
+        <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
       </section>
 
       <section style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
         gap: 18,
         marginTop: 18,
       }}>
@@ -283,7 +308,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Performance Evidence" icon={<Signal size={15} />}>
+        <Panel title="Performance Signals" icon={<Signal size={15} />}>
           {sourceBackedSignals.length === 0 ? (
             <EmptyPanel>No source-backed performance evidence yet.</EmptyPanel>
           ) : sourceBackedSignals.map((signal) => (
@@ -303,7 +328,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Relationship Context" icon={<Network size={15} />}>
+        <Panel title="Learned Context" icon={<Network size={15} />}>
           {recentRecords.length === 0 ? (
             <EmptyPanel>No context records yet.</EmptyPanel>
           ) : recentRecords.map((record) => (
@@ -326,7 +351,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Original Source Material" icon={<FileText size={15} />}>
+        <Panel title="Original Sources" icon={<FileText size={15} />}>
           {evidenceArtifacts.length === 0 ? (
             <EmptyPanel>No source artifacts have been attached yet.</EmptyPanel>
           ) : evidenceArtifacts.map((artifact) => (
@@ -423,6 +448,7 @@ const backButtonStyle = {
 
 const listItemStyle = {
   border: '1px solid var(--pipe-border-light)',
+  borderRadius: 8,
   background: 'var(--pipe-surface)',
   padding: 12,
 } satisfies CSSProperties;

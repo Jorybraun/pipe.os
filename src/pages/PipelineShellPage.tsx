@@ -64,6 +64,114 @@ function PipelineShellSkeleton(): JSX.Element {
   );
 }
 
+function InterviewStrip({
+  pipelineId,
+  stages,
+  candidates,
+  isDraft,
+  onAddInterview,
+}: {
+  pipelineId: string;
+  stages: OverviewStage[];
+  candidates: OverviewCandidate[];
+  isDraft: boolean;
+  onAddInterview: () => void;
+}): JSX.Element | null {
+  const navigate = useNavigate();
+  if (stages.length === 0 && !isDraft) return null;
+
+  return (
+    <nav
+      aria-label="Interviews"
+      style={{
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        marginTop: 18,
+      }}
+    >
+      {stages.map((stage) => {
+        const peopleCount = candidates.filter((candidate) => candidate.currentStageId === stage.id).length;
+        return (
+          <button
+            key={stage.id}
+            type="button"
+            onClick={() => navigate(`/pipeline/${pipelineId}/stage/${stage.id}`)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 10,
+              minHeight: 40,
+              maxWidth: 280,
+              padding: '9px 12px',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 8,
+              background: 'var(--pipe-surface-solid)',
+              color: 'var(--pipe-text)',
+              cursor: 'pointer',
+              fontFamily: '"Space Mono", monospace',
+              textAlign: 'left',
+            }}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background: 'var(--pipe-accent)',
+                boxShadow: '0 0 0 3px var(--pipe-accent-surface)',
+                flex: '0 0 auto',
+              }}
+            />
+            <span style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: 11,
+                  fontWeight: 800,
+                }}
+              >
+                {stage.title || 'Interview'}
+              </span>
+              <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9 }}>
+                {peopleCount} {peopleCount === 1 ? 'person' : 'people'}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+      {isDraft && (
+        <button
+          type="button"
+          onClick={onAddInterview}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            minHeight: 40,
+            padding: '9px 12px',
+            border: '1px solid rgba(74, 222, 128, 0.35)',
+            borderRadius: 8,
+            background: 'rgba(74, 222, 128, 0.08)',
+            color: '#4ade80',
+            cursor: 'pointer',
+            fontFamily: '"Space Mono", monospace',
+            fontSize: 10,
+            fontWeight: 800,
+          }}
+        >
+          <Plus size={13} />
+          ADD INTERVIEW
+        </button>
+      )}
+    </nav>
+  );
+}
+
 export default function PipelineShellPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -214,7 +322,7 @@ export default function PipelineShellPage(): JSX.Element {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 32, padding: '0 0 80px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 24, padding: '0 0 80px' }}>
       {/* Header - spans both columns */}
       <div style={{ gridColumn: '1 / -1' }}>
       {/* Header row */}
@@ -277,7 +385,7 @@ export default function PipelineShellPage(): JSX.Element {
           </h1>
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button
             onClick={() => navigate(`/pipeline/${id}`)}
             aria-label="Interview plan overview"
@@ -439,6 +547,13 @@ export default function PipelineShellPage(): JSX.Element {
           )}
         </div>
       </div>
+      <InterviewStrip
+        pipelineId={id}
+        stages={stages}
+        candidates={candidates}
+        isDraft={isDraft}
+        onAddInterview={() => setShowNewStage(true)}
+      />
       </div>
 
       {/* Main content area */}
@@ -446,120 +561,6 @@ export default function PipelineShellPage(): JSX.Element {
         {/* Outlet — nested routes render their own SectionCards so the shell
             doesn't need an outer container. */}
         <Outlet context={outletContext} />
-      </div>
-
-      {/* Right panel - vertical interview timeline */}
-      <div style={{ 
-        gridColumn: '2',
-        paddingLeft: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-        position: 'relative',
-      }}>
-        {/* Timeline line */}
-        <div style={{
-          position: 'absolute',
-          left: 6,
-          top: 8,
-          bottom: 8,
-          width: 1,
-          background: 'var(--pipe-border)',
-        }} />
-        
-        {stages.map((stage) => {
-          const candidateCount = candidates.filter(c => c.currentStageId === stage.id).length;
-          return (
-            <div
-              key={stage.id}
-              onClick={() => navigate(`/pipeline/${id}/stage/${stage.id}`)}
-              style={{
-                display: 'flex',
-                gap: 16,
-                padding: '12px 0',
-                cursor: 'pointer',
-                position: 'relative',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = '0.7';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '1';
-              }}
-            >
-              {/* Timeline dot */}
-              <div style={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                background: 'var(--pipe-accent)',
-                border: '2px solid var(--pipe-bg)',
-                zIndex: 1,
-                flexShrink: 0,
-              }} />
-              
-              {/* Stage info */}
-              <div>
-                <div style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: 'var(--pipe-text)',
-                  fontFamily: '"Space Mono", monospace',
-                  marginBottom: 2,
-                }}>
-                  {stage.title}
-                </div>
-                <div style={{
-                  fontSize: 9,
-                  color: 'var(--pipe-text-dim)',
-                  fontFamily: '"Space Mono", monospace',
-                }}>
-                  {candidateCount} people
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        
-        {isDraft && (
-          <div
-            onClick={() => setShowNewStage(true)}
-            style={{
-              display: 'flex',
-              gap: 16,
-              padding: '12px 0',
-              cursor: 'pointer',
-              position: 'relative',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.7';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1';
-            }}
-          >
-            {/* Timeline dot */}
-            <div style={{
-              width: 12,
-              height: 12,
-              borderRadius: '50%',
-              background: '#4ade80',
-              border: '2px solid var(--pipe-bg)',
-              zIndex: 1,
-              flexShrink: 0,
-            }} />
-            
-            {/* Add stage text */}
-            <div style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#4ade80',
-              fontFamily: '"Space Mono", monospace',
-            }}>
-              ADD INTERVIEW
-            </div>
-          </div>
-        )}
       </div>
 
       {showAddCandidate && id && (

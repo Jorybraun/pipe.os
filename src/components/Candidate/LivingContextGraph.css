@@ -746,7 +746,7 @@ html[data-theme="pipe-blue"] .living-context {
 }
 
 .living-context__section-title {
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   font: 9px "Space Mono", monospace;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -764,7 +764,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 14px;
   border: 1px solid rgba(167, 139, 250, 0.42);
   border-radius: 6px;
-  background: rgba(167, 139, 250, 0.07);
+  background: var(--lc-card);
 }
 
 .living-context__person::after {
@@ -831,7 +831,7 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__interaction-title {
   overflow-wrap: anywhere;
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   font-size: 10px;
   font-weight: 700;
 }
@@ -927,9 +927,10 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__context-record {
   min-width: 0;
   padding: 13px 14px;
-  border: 1px solid rgba(129, 140, 248, 0.22);
+  border: 1px solid var(--lc-card-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--lc-panel) 82%, var(--lc-structural) 18%);
+  background: var(--lc-card);
+  box-shadow: 0 12px 32px var(--pipe-shadow);
 }
 
 .living-context__context-record-toggle {
@@ -941,7 +942,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--lc-record-muted);
+  color: var(--lc-record-text);
   text-align: left;
   cursor: pointer;
 }
@@ -1038,7 +1039,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 6px 7px;
   border: 1px solid var(--pipe-border-light);
   border-radius: 4px;
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   background: var(--lc-card);
   font-size: 10px;
 }
@@ -1054,7 +1055,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 8px 9px;
   border-left: 2px solid var(--lc-source);
   background: rgba(56, 189, 248, 0.04);
-  color: var(--lc-record-muted);
+  color: var(--lc-record-text);
   font-size: 11px;
   line-height: 1.55;
   overflow-wrap: break-word;
@@ -1094,7 +1095,7 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__narrative {
   margin-top: 7px;
   overflow-wrap: break-word;
-  color: var(--pipe-text);
+  color: var(--lc-record-text);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -1118,7 +1119,7 @@ html[data-theme="pipe-blue"] .living-context {
   word-break: normal;
   border: 1px solid var(--pipe-border);
   border-radius: 3px;
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   font: 8px "Space Mono", monospace;
 }
 
@@ -1406,7 +1407,7 @@ html[data-theme="pipe-blue"] .living-context {
 .context-tree__node {
   border: 1px solid var(--pipe-border);
   border-radius: 5px;
-  background: var(--lc-card);
+  background: var(--lc-panel);
   overflow: hidden;
 }
 
