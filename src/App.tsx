@@ -440,7 +440,7 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
-            <ThemeProvider>
+            <ThemeProvider forceMode="dark">
             <ClerkAuthGate>
               <ClerkAuthWrapper>
                 <RecruiterThemeSync />

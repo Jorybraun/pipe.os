@@ -689,6 +689,7 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__workspace {
   display: grid;
   grid-template-columns: minmax(190px, 0.72fr) minmax(360px, 1.6fr) minmax(250px, 0.95fr);
+  min-width: 0;
   min-height: 620px;
   border: 1px solid var(--pipe-border);
   border-radius: 8px;
@@ -919,6 +920,11 @@ html[data-theme="pipe-blue"] .living-context {
   cursor: pointer;
 }
 
+.living-context__context-record-toggle > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
 .living-context__context-record-chevron--open {
   transform: rotate(90deg);
 }
@@ -926,6 +932,7 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__context-record-head {
   display: grid;
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   gap: 6px;
 }
@@ -939,7 +946,7 @@ html[data-theme="pipe-blue"] .living-context {
   line-height: 1.5;
   letter-spacing: 0;
   text-wrap: pretty;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 
@@ -953,13 +960,14 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-type,
 .living-context__context-record-meta {
+  max-width: 100%;
   padding: 2px 5px;
   border: 1px solid var(--pipe-border);
   border-radius: 3px;
   color: var(--pipe-text-dim);
   font: 8px "Space Mono", monospace;
   line-height: 1.35;
-  overflow-wrap: normal;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 
@@ -1673,5 +1681,65 @@ html[data-theme="pipe-blue"] .living-context {
 
   .living-context__locator {
     grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
+  }
+}
+
+@container living-context (max-width: 520px) {
+  .living-context__toolbar {
+    align-items: stretch;
+  }
+
+  .living-context__summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .living-context__workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .living-context__rail,
+  .living-context__canvas,
+  .living-context__inspector {
+    min-width: 0;
+    padding: 14px;
+    border-right: 0;
+  }
+
+  .living-context__rail,
+  .living-context__canvas {
+    border-bottom: 1px solid var(--pipe-border);
+  }
+
+  .living-context__inspector {
+    position: static;
+  }
+
+  .living-context__context-record-toggle {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .living-context__context-record-title {
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
+  .living-context__context-record-badges {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .living-context__context-record-type,
+  .living-context__context-record-meta {
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .living-context__source-button {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

@@ -1,16 +1,16 @@
 /**
  * DevContainerSandboxPage
  *
- * Isolated prototype route for testing the AWS Fargate + code-server lifecycle.
+ * Isolated route for testing the dev-container + code-server lifecycle.
  * Route: /sandbox/dev-container (protected, inside AppLayout)
  *
  * Purpose:
- *   1. Prove that ECS.RunTask spin-up works end-to-end.
- *   2. Confirm the ALB routes traffic to the correct container.
+ *   1. Prove that session spin-up works end-to-end.
+ *   2. Confirm the Worker proxy routes traffic to the correct container.
  *   3. Validate automatic teardown on Destroy / timeout.
  *
- * Once the lifecycle is stable, the logic will be extracted into
- * <SystemEnvironmentShell> and integrated into CandidateAssessmentPage.
+ * Candidate CODE_IMPLEMENTATION challenges use the same hook through
+ * DevContainerPanel when they carry a devContainerRepoUrl.
  */
 
 import { useDevContainerSession } from '../hooks/useDevContainerSession';
@@ -22,10 +22,10 @@ import { useData } from '../providers';
 
 const STATUS_LABELS: Record<ContainerSessionState, string> = {
   IDLE: 'IDLE — No environment running',
-  LAUNCHING: 'LAUNCHING — Calling ECS.RunTask…',
-  BOOTING: 'BOOTING — Waiting for real-time status update…',
+  LAUNCHING: 'LAUNCHING — Creating dev environment…',
+  BOOTING: 'BOOTING — Waiting for code-server…',
   READY: 'READY — code-server is live',
-  DESTROYING: 'DESTROYING — Stopping Fargate task…',
+  DESTROYING: 'DESTROYING — Stopping dev environment…',
   ERROR: 'ERROR',
 };
 
@@ -193,7 +193,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
             marginBottom: 8,
           }}
         >
-          AWS FARGATE PROTOTYPE
+          DEV CONTAINER ENVIRONMENT
         </h1>
         <p
           style={{
@@ -204,10 +204,8 @@ export default function DevContainerSandboxPage(): JSX.Element {
             maxWidth: 600,
           }}
         >
-          Isolated lifecycle test for the Fargate + code-server pipeline. Launch
-          a container, verify the iframe renders, then destroy it. Once stable,
-          this will be extracted into{' '}
-          <code style={{ color: 'var(--pipe-accent)' }}>SystemEnvironmentShell</code>.
+          Isolated lifecycle test for the Cloudflare dev-container + code-server path.
+          Launch an environment, verify the iframe renders, then destroy it.
         </p>
       </div>
 
@@ -456,7 +454,7 @@ export default function DevContainerSandboxPage(): JSX.Element {
               alignItems: 'center',
             }}
           >
-            <span>CONTAINER LOGS (CloudWatch)</span>
+            <span>CONTAINER LOGS</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -518,14 +516,13 @@ export default function DevContainerSandboxPage(): JSX.Element {
             lineHeight: 1.8,
           }}
         >
-          <div>• Launch → ECS.RunTask (Fargate, 1 vCPU / 2 GB RAM)</div>
-          <div>• Status → ECS Task State Change → EventBridge → ecsStatusBridge Lambda → AppSync subscription (real-time, &lt;2 s)</div>
-          <div>• Fallback → ECS poll every 5 s (catches missed events after page refresh or AppSync multi-auth delivery gap)</div>
-          <div>• Ready → ALB routes /session/:id → container port 8080</div>
-          <div>• Destroy → ECS.StopTask + automatic 60-min session timeout</div>
-          <div>• Cost → ~$0.05 per 60-min interview session</div>
+          <div>• Launch → Worker route creates a Durable Object backed container session</div>
+          <div>• Status → candidate client polls the Worker every 5 s</div>
+          <div>• Ready → Worker proxy serves code-server from the session container</div>
+          <div>• Destroy → Worker stops the session and clears iframe access</div>
+          <div>• TTL → per-challenge or global timeout destroys stale sessions automatically</div>
           <div style={{ marginTop: 8, color: 'var(--pipe-accent)' }}>
-            ADR-016 — docs/decisions/historical/ADR-016-dev-container-architecture.md
+            ADR-037 — Cloudflare dev-container candidate environment
           </div>
         </div>
       </div>
