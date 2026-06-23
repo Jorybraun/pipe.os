@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Host hangup now records the meeting end event before uploading the recording, so transcription and living-context ingestion receive a stable call end timestamp.
 - `api-dev` now includes the Cloudflare `DEV_CONTAINER` Durable Object and container image binding, allowing dev-container code-review interviews to launch against the deployed dev API instead of silently missing the runtime binding.
 - Deployed PIPE app hosts now default candidate dev-container sessions to the Cloudflare `/rpc` backend and resolve dev-container API calls through the same-origin app proxy, avoiding stale AppSync/localhost routing in `app-dev`.
+- The authenticated `app-dev` proxy now preserves candidate `Bearer` session tokens when the dev auth cookie is present, allowing `/rpc` candidate routes such as dev-container launch/status to authenticate through the app domain.
 
 ### Fixed — Contact Living Context Graph
 

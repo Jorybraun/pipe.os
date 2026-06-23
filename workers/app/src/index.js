@@ -138,7 +138,7 @@ async function devAuthEntryPage(request, env) {
   );
 }
 
-function proxyApi(request, env) {
+function proxyApi(request, env, authState) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
 
@@ -146,7 +146,10 @@ function proxyApi(request, env) {
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
-  headers.delete('Authorization');
+  const authorization = headers.get('Authorization');
+  if (!(authState === 'cookie' && authorization?.startsWith('Bearer '))) {
+    headers.delete('Authorization');
+  }
   headers.delete('Cookie');
   headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
@@ -215,7 +218,7 @@ export default {
 
     const response =
       pathname.startsWith('/api/') || pathname.startsWith('/rpc/')
-        ? await proxyApi(request, env)
+        ? await proxyApi(request, env, authState)
         : await serveStatic(request, env);
 
     return withDevAuthCookie(response, authState, env);
