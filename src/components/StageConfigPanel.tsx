@@ -1142,11 +1142,16 @@ function isValidGitHubUrl(url: string): boolean {
   return url.startsWith('https://github.com/') && url.split('/').filter(Boolean).length >= 4;
 }
 
-const DEFAULT_REPOS = [
-  'https://github.com/el-pipe-o/interview-monorepo',
-  'https://github.com/el-pipe-o/slopify',
-];
 const SAVED_REPOS_KEY = 'pipe_saved_repos';
+
+interface RepoCatalogResponse {
+  repos: Array<{
+    github_url?: string | null;
+    full_name?: string | null;
+    admin_status?: string | null;
+    challenge_suitability_verdict?: string | null;
+  }>;
+}
 
 function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   stageId: string;
@@ -1160,27 +1165,53 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   const [repoUrl, setRepoUrl] = useState('');
   const [prs, setPrs] = useState<PRSummary[]>([]);
   const [isFetching, setIsFetching] = useState(false);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddRepo, setShowAddRepo] = useState(false);
   const [newRepoUrl, setNewRepoUrl] = useState('');
+  const [catalogRepos, setCatalogRepos] = useState<string[]>([]);
 
   const [savedRepos, setSavedRepos] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(SAVED_REPOS_KEY);
       const parsed = raw ? (JSON.parse(raw) as string[]) : [];
-      const merged = [...DEFAULT_REPOS];
-      for (const r of parsed) {
-        if (!merged.includes(r)) merged.push(r);
-      }
-      return merged;
+      return parsed.filter(isValidGitHubUrl);
     } catch {
-      return [...DEFAULT_REPOS];
+      return [];
     }
   });
 
   useEffect(() => {
     try { localStorage.setItem(SAVED_REPOS_KEY, JSON.stringify(savedRepos)); } catch { /* */ }
   }, [savedRepos]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingCatalog(true);
+    const api = createApiClient({ getToken });
+    void api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=approved&pass=3&suitability=suitable&limit=12')
+      .then((result) => {
+        if (cancelled) return;
+        const urls = result.repos
+          .map((repo) => repo.github_url ?? null)
+          .filter((url): url is string => typeof url === 'string' && isValidGitHubUrl(url));
+        setCatalogRepos([...new Set(urls)]);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogRepos([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingCatalog(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  const repoOptions = useMemo(
+    () => [...new Set([...catalogRepos, ...savedRepos])],
+    [catalogRepos, savedRepos],
+  );
 
   const fetchPRs = useCallback(async (url: string): Promise<void> => {
     if (!isValidGitHubUrl(url)) return;
@@ -1204,7 +1235,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
       if (fetched.length === 0) setError('No merged pull requests found.');
     } catch (err) {
       console.error('[CodeReviewPicker] Failed to list PRs:', err);
-      setError('Failed to fetch pull requests.');
+      setError(err instanceof Error ? err.message : 'Failed to fetch pull requests.');
     } finally {
       setIsFetching(false);
     }
@@ -1241,8 +1272,10 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
 
   const handleAddRepo = (): void => {
     const trimmed = newRepoUrl.trim();
-    if (!isValidGitHubUrl(trimmed) || savedRepos.includes(trimmed)) return;
-    setSavedRepos((prev) => [...prev, trimmed]);
+    if (!isValidGitHubUrl(trimmed)) return;
+    if (!savedRepos.includes(trimmed) && !catalogRepos.includes(trimmed)) {
+      setSavedRepos((prev) => [...prev, trimmed]);
+    }
     setNewRepoUrl('');
     setShowAddRepo(false);
     void fetchPRs(trimmed);
@@ -1272,9 +1305,38 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
       <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <label style={labelStyle}>SELECT_REPOSITORY</label>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {savedRepos.map((repo) => {
+          {isLoadingCatalog && repoOptions.length === 0 && (
+            <div style={{
+              padding: '8px 10px',
+              fontSize: 8,
+              fontFamily: '"Space Mono", monospace',
+              color: 'var(--pipe-text-dim)',
+              letterSpacing: '0.08em',
+              border: '1px solid var(--pipe-border)',
+              borderRadius: 4,
+              opacity: 0.7,
+            }}>
+              LOADING_APPROVED_REPOS...
+            </div>
+          )}
+          {!isLoadingCatalog && repoOptions.length === 0 && (
+            <div style={{
+              padding: '10px 12px',
+              fontSize: 9,
+              lineHeight: 1.5,
+              fontFamily: '"Space Mono", monospace',
+              color: 'var(--pipe-text-dim)',
+              border: '1px dashed var(--pipe-border)',
+              borderRadius: 4,
+              opacity: 0.8,
+            }}>
+              No approved repo sources yet. Add a GitHub repo with merged PRs.
+            </div>
+          )}
+          {repoOptions.map((repo) => {
             const shortName = repo.replace('https://github.com/', '');
             const isActive = repoUrl === repo;
+            const isSaved = savedRepos.includes(repo);
             return (
               <div key={repo} style={{ display: 'flex', gap: 4 }}>
                 <button
@@ -1300,9 +1362,16 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                 >
                   {shortName}
                 </button>
-                {!DEFAULT_REPOS.includes(repo) && (
+                {isSaved && (
                   <button
-                    onClick={() => setSavedRepos((prev) => prev.filter((r) => r !== repo))}
+                    onClick={() => {
+                      setSavedRepos((prev) => prev.filter((r) => r !== repo));
+                      if (repoUrl === repo && !catalogRepos.includes(repo)) {
+                        setRepoUrl('');
+                        setPrs([]);
+                        setError(null);
+                      }
+                    }}
                     style={{
                       background: 'none',
                       border: '1px solid var(--pipe-border)',

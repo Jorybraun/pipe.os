@@ -109,4 +109,27 @@ describe('GET /pulls', () => {
       },
     });
   });
+
+  it('returns a structured error when a repository cannot be accessed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      message: 'Not Found',
+    }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    })));
+
+    const response = await createApp().request(
+      '/pulls?repoUrl=https%3A%2F%2Fgithub.com%2Facme%2Fprivate-widgets&state=closed&merged=true',
+      {},
+      env,
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'Repository not found or not accessible.',
+      },
+    });
+  });
 });

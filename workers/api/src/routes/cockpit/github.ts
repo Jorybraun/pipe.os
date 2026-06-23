@@ -91,18 +91,28 @@ github.get('/pulls', async (c) => {
   if (res.status === 429) {
     const retryAfter = res.headers.get('Retry-After') ?? '60';
     return c.json(
-      { success: false, error: `GitHub rate limit exceeded. Try again in ${retryAfter} seconds.` },
+      {
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: `GitHub rate limit exceeded. Try again in ${retryAfter} seconds.`,
+        },
+      },
       429,
     );
   }
 
   if (res.status === 404) {
-    return c.json({ success: false, error: 'Repository not found or not accessible.' }, 404);
+    return apiError(c, 'NOT_FOUND', 'Repository not found or not accessible.');
   }
 
   if (!res.ok) {
     return c.json(
-      { success: false, error: `GitHub API error: ${res.status} ${res.statusText}` },
+      {
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: `GitHub API error: ${res.status} ${res.statusText}`,
+        },
+      },
       502,
     );
   }
