@@ -15,6 +15,7 @@
     "test:e2e:ci": "playwright test --workers=1 --reporter=list",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
+    "smoke:video-room-dev": "node scripts/smoke-video-room-dev.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test": "vitest run"
