@@ -20,7 +20,7 @@ export function Layout({
   isAgentOpen = false,
 }: ProfileLayoutProps) {
   const { theme } = useTheme();
-  const isDark = theme.mode === 'dark';
+  const isDark = theme.mode === 'dark' || theme.mode === 'anatomy-dark' || theme.mode === 'pipe-blue';
   const overlayColor = theme.mode === 'anatomy'
     ? `rgba(243,234,213,${theme.background.overlay})`
     : isDark

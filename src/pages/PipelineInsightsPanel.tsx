@@ -25,7 +25,7 @@ import { SectionCard } from '../components';
 import { PipelineTemplateModal } from '../components/PipelineTemplateModal';
 import { useStageMutations } from '../hooks/useStageMutations';
 import type { PipelineShellContext } from './PipelineShellPage';
-import type { OverviewRoleContext, CandidatePersona } from '../lib/api/types';
+import type { CandidatePersona } from '../lib/api/types';
 
 /**
  * The Six Domains model used by the Role Discovery interview. Order here is
@@ -64,19 +64,6 @@ function formatKsValue(value: unknown): string {
       .join(' • ');
   }
   return String(value);
-}
-
-/** Total number of filled domain keys — used as a completeness badge. */
-function countFilledSignals(roleContext: OverviewRoleContext): number {
-  let n = 0;
-  for (const { key } of SIX_DOMAINS) {
-    const domain = roleContext.knowledgeState[key];
-    if (!domain) continue;
-    for (const v of Object.values(domain)) {
-      if (v !== null && v !== undefined && formatKsValue(v) !== '') n++;
-    }
-  }
-  return n;
 }
 
 function Metric({
@@ -378,8 +365,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
         <div
           style={{
             padding: '20px 24px',
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(96,165,250,0.04) 100%)',
-            border: '1px solid var(--pipe-border)',
+            background: 'var(--pipe-surface-solid)',
+            border: '1px solid var(--pipe-border-light)',
             borderRadius: 10,
             display: 'flex',
             gap: 32,
@@ -411,8 +398,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
                       style={{
                         fontSize: 9,
                         padding: '3px 8px',
-                        background: 'rgba(255,255,255,0.05)',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        background: 'var(--pipe-surface)',
+                        border: '1px solid var(--pipe-border-light)',
                         color: 'var(--pipe-text-muted)',
                         fontFamily: '"Space Mono", monospace',
                         borderRadius: 3,
@@ -430,21 +417,13 @@ export default function PipelineInsightsPanel(): JSX.Element {
               </div>
             )}
           </div>
-
-          {/* Profile depth signal */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ fontSize: 8, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>PROFILE DEPTH</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace', lineHeight: 1 }}>
-              {countFilledSignals(roleContext)}
-            </div>
-            <div style={{ fontSize: 8, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>SIGNALS</div>
-          </div>
         </div>
       )}
 
       {/* Empty-state quickstart — DRAFT with no stages */}
       {isDraft && isEmpty && (
         <SectionCard
+          variant="solid"
           label="EMPTY_ROLE"
           icon={<Plus size={16} color="var(--pipe-text-dim)" />}
           meta="START HERE"
@@ -563,6 +542,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
         hasInsights ||
         hasCandidates) && (
         <SectionCard
+          variant="solid"
           label={
             effectiveTab === 'persona'
               ? 'CANDIDATE_PERSONA'
@@ -630,8 +610,6 @@ export default function PipelineInsightsPanel(): JSX.Element {
               roleContext.persona.seniority.toUpperCase()
             ) : effectiveTab === 'job_description' ? (
               'MARKDOWN'
-            ) : effectiveTab === 'profile' && roleContext ? (
-              `${roleContext.questionsAsked} QUESTIONS · ${countFilledSignals(roleContext)} SIGNALS`
             ) : effectiveTab === 'insights' ? (
               `${stages.length} ROUND${stages.length === 1 ? '' : 'S'}`
             ) : (
@@ -931,7 +909,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                   c.status === 'COMPLETED'
                     ? '#4ade80'
                     : c.status === 'IN_PROGRESS'
-                      ? 'rgba(255, 255, 255, 0.40)'
+                      ? 'var(--pipe-accent)'
                       : 'var(--pipe-text-dim)';
                 return (
                   <button
@@ -1052,6 +1030,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
       {/* Fallback when no role context and pipeline is empty (draft path) */}
       {!hasProfile && !hasInsights && !isDraft && (
         <SectionCard
+          variant="solid"
           label="NO_ROLE_PROFILE"
           icon={<Target size={16} color="var(--pipe-text-dim)" />}
         >

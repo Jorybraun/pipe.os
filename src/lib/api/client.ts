@@ -21,6 +21,24 @@ import { ApiError, type ApiErrorBody } from './types';
 
 const DEFAULT_BASE_URL = '';
 
+function resolveApiUrl(baseUrl: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  if (baseUrl) {
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${normalizedBase}${normalizedPath}`;
+  }
+
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return new URL(path, window.location.origin).toString();
+  }
+
+  return path;
+}
+
 export interface ApiClientConfig {
   /**
    * Function that resolves the current session JWT.
@@ -108,7 +126,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   async function get<T>(path: string): Promise<T> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -120,7 +138,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   async function post<T>(path: string, body: unknown): Promise<T> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,7 +157,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
    */
   async function* postStream<T>(path: string, body: unknown): AsyncGenerator<StreamEvent<T>> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -215,7 +233,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   async function patch<T>(path: string, body: unknown): Promise<T> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -228,7 +246,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   async function put<T>(path: string, body: unknown): Promise<T> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -241,7 +259,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
   async function del(path: string): Promise<void> {
     const headers = await authHeader();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(resolveApiUrl(baseUrl, path), {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',

@@ -228,17 +228,17 @@ export default function ListingPage(): JSX.Element {
                   width: 14,
                   height: 14,
                   borderRadius: 3,
-                  border: `1.5px solid ${selectedIds.size > 0 ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-text-dim)"}`,
-                  background: selectedIds.size === pipelines.length && pipelines.length > 0 ? "rgba(255, 255, 255, 0.40)" : "transparent",
+                  border: `1.5px solid ${selectedIds.size > 0 ? "var(--pipe-accent-border)" : "var(--pipe-text-dim)"}`,
+                  background: selectedIds.size === pipelines.length && pipelines.length > 0 ? "var(--pipe-accent-surface)" : "transparent",
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
                   {selectedIds.size > 0 && selectedIds.size < pipelines.length && (
-                    <div style={{ width: 6, height: 1.5, background: 'rgba(255, 255, 255, 0.40)' }} />
+                    <div style={{ width: 6, height: 1.5, background: 'var(--pipe-accent)' }} />
                   )}
                   {selectedIds.size === pipelines.length && pipelines.length > 0 && (
-                    <Check size={10} color="#fff" strokeWidth={4} />
+                    <Check size={10} color="var(--pipe-accent)" strokeWidth={4} />
                   )}
                 </div>
                 <span style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: 'Space Mono' }}>
@@ -296,9 +296,9 @@ export default function ListingPage(): JSX.Element {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                color: 'var(--pipe-accent)',
+                background: 'var(--pipe-accent-surface)',
+                border: '1px solid var(--pipe-accent-border)',
+                color: 'var(--pipe-text)',
                 padding: '4px 12px',
                 borderRadius: 4,
                 fontSize: 10,
@@ -387,8 +387,8 @@ export default function ListingPage(): JSX.Element {
                     width: 28,
                     height: 28,
                     borderRadius: 4,
-                    background: canGoPrev ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    border: `1px solid ${canGoPrev ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    background: canGoPrev ? 'var(--pipe-surface-hover)' : 'transparent',
+                    border: `1px solid ${canGoPrev ? 'var(--pipe-border)' : 'var(--pipe-border-light)'}`,
                     color: canGoPrev ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                     cursor: canGoPrev ? 'pointer' : 'not-allowed',
                     opacity: canGoPrev ? 1 : 0.4,
@@ -417,8 +417,8 @@ export default function ListingPage(): JSX.Element {
                     width: 28,
                     height: 28,
                     borderRadius: 4,
-                    background: canGoNext ? 'rgba(255,255,255,0.06)' : 'transparent',
-                    border: `1px solid ${canGoNext ? 'rgba(255,255,255,0.1)' : 'var(--pipe-border-light)'}`,
+                    background: canGoNext ? 'var(--pipe-surface-hover)' : 'transparent',
+                    border: `1px solid ${canGoNext ? 'var(--pipe-border)' : 'var(--pipe-border-light)'}`,
                     color: canGoNext ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                     cursor: canGoNext ? 'pointer' : 'not-allowed',
                     opacity: canGoNext ? 1 : 0.4,

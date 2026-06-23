@@ -9,8 +9,8 @@ const mocks = vi.hoisted(() => ({
   getToken: vi.fn(),
 }));
 
-vi.mock('@clerk/react', () => ({
-  useAuth: () => ({ getToken: mocks.getToken }),
+vi.mock('../providers', () => ({
+  useAuth: () => ({ getSessionToken: mocks.getToken }),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -70,7 +70,7 @@ describe('PipelineNewRoutePage', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      '/api/v1/role-contexts/simple-job-description',
+      expect.stringContaining('/api/v1/role-contexts/simple-job-description'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -91,7 +91,7 @@ describe('PipelineNewRoutePage', () => {
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/pipelines/auto-build',
+      expect.stringContaining('/api/v1/pipelines/auto-build'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({

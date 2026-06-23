@@ -103,7 +103,7 @@ export function RoleCard({
   return (
     <div style={{ marginBottom: 12, ...style }} className={className}>
       <LiquidMetalCard
-        variant="chrome"
+        variant="solid"
         {...(onClick ? { onClick } : {})}
         style={{
           padding: 0,
@@ -124,7 +124,7 @@ export function RoleCard({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: isSelected ? "rgba(255, 255, 255, 0.06)" : "transparent",
+              background: isSelected ? "var(--pipe-accent-surface)" : "transparent",
               borderRight: "1px solid var(--pipe-border-light)",
               cursor: "pointer",
               transition: "all 0.2s ease",
@@ -134,14 +134,14 @@ export function RoleCard({
               width: 18,
               height: 18,
               borderRadius: 4,
-              border: `2px solid ${isSelected ? "rgba(255, 255, 255, 0.40)" : "var(--pipe-border)"}`,
-              background: isSelected ? "rgba(255, 255, 255, 0.40)" : "transparent",
+              border: `2px solid ${isSelected ? "var(--pipe-accent-border)" : "var(--pipe-border)"}`,
+              background: isSelected ? "var(--pipe-accent-surface)" : "transparent",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               transition: "all 0.15s ease",
             }}>
-              {isSelected && <Check size={14} color="#fff" strokeWidth={3} />}
+              {isSelected && <Check size={14} color="var(--pipe-accent)" strokeWidth={3} />}
             </div>
           </div>
 
@@ -368,7 +368,7 @@ export function RoleCard({
                   right: 0,
                   zIndex: 50,
                   minWidth: 160,
-                  background: "var(--pipe-bg)",
+                  background: "var(--pipe-surface-solid)",
                   border: "1px solid var(--pipe-border)",
                   borderRadius: 8,
                   boxShadow: "0 8px 32px var(--pipe-shadow)",
