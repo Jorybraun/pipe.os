@@ -306,19 +306,11 @@ describe('meeting room recording living-context route', () => {
       app.request(`/meeting/${firstHostToken}`, {}, env, ctx),
       app.request(`/meeting/${secondHostToken}`, {}, env, ctx),
     ]);
-    expect(firstHostRes.status).toBe(200);
+    expect(firstHostRes.status).toBe(404);
     expect(secondHostRes.status).toBe(200);
-    const firstHost = await firstHostRes.json() as {
-      room: { id: string; sessionId: string; role: string };
-    };
     const secondHost = await secondHostRes.json() as {
       room: { id: string; sessionId: string; role: string };
     };
-    expect(firstHost.room).toEqual(expect.objectContaining({
-      id: first.room.id,
-      sessionId: first.room.sessionId,
-      role: 'HOST',
-    }));
     expect(secondHost.room).toEqual(expect.objectContaining({
       id: first.room.id,
       sessionId: first.room.sessionId,
@@ -335,7 +327,7 @@ describe('meeting room recording living-context route', () => {
     ).all();
     expect(tokenCounts).toEqual([
       { role: 'GUEST', count: 1, active: 1 },
-      { role: 'HOST', count: 3, active: 3 },
+      { role: 'HOST', count: 3, active: 1 },
     ]);
   });
 

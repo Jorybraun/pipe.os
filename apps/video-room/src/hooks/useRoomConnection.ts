@@ -29,6 +29,20 @@ const FALLBACK_ICE: RTCIceServer[] = [
 const PEER_DISCONNECT_GRACE_MS = 8000;
 const PEER_FAILED_GRACE_MS = 2500;
 
+function hasTurnIceServer(iceServers: RTCIceServer[]): boolean {
+  return iceServers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((url) => url.startsWith('turn:') || url.startsWith('turns:'));
+  });
+}
+
+function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
+  return {
+    iceServers,
+    iceTransportPolicy: hasTurnIceServer(iceServers) ? 'relay' : 'all',
+  };
+}
+
 export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
@@ -46,6 +60,8 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const peerDisconnectTimerRef = useRef<number | null>(null);
+  const startingCallRef = useRef(false);
+  const autoStartTimerRef = useRef<number | null>(null);
   phaseRef.current = phase;
 
   useEffect(() => {
@@ -119,7 +135,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     closePeer();
     pendingIceRef.current = [];
     remoteReadyRef.current = false;
-    const peer = new RTCPeerConnection({ iceServers });
+    const peer = new RTCPeerConnection(createPeerConfiguration(iceServers));
     peerRef.current = peer;
     localRef.current?.getTracks().forEach((track) => {
       peer.addTrack(track, localRef.current!);
@@ -274,6 +290,10 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       window.clearTimeout(peerDisconnectTimerRef.current);
       peerDisconnectTimerRef.current = null;
     }
+    if (autoStartTimerRef.current !== null) {
+      window.clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
     const peer = peerRef.current;
     if (peer) {
       peer.onicecandidate = null;
@@ -291,14 +311,23 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
   const startCall = useCallback(async (): Promise<void> => {
     if (role !== 'HOST') return;
+    if (startingCallRef.current) return;
+    startingCallRef.current = true;
+    phaseRef.current = 'connecting';
     setPhase('connecting');
-    const iceServers = await getIceServers(token).catch(() => FALLBACK_ICE);
-    const peer = createPeer(iceServers);
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    send('OFFER', { type: offer.type, sdp: offer.sdp, iceServers });
-    sendStatus('CALLING');
-  }, [createPeer, role, send, sendStatus, token]);
+    try {
+      const iceServers = await getIceServers(token).catch(() => FALLBACK_ICE);
+      const peer = createPeer(iceServers);
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      send('OFFER', { type: offer.type, sdp: offer.sdp, iceServers });
+      sendStatus('CALLING');
+    } catch {
+      closePeer('error');
+    } finally {
+      startingCallRef.current = false;
+    }
+  }, [closePeer, createPeer, role, send, sendStatus, token]);
 
   const acceptCall = useCallback(async (): Promise<void> => {
     const offer = offerRef.current;
@@ -316,6 +345,10 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
   const hangUp = useCallback((): void => {
     phaseRef.current = 'ended';
+    if (autoStartTimerRef.current !== null) {
+      window.clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
     if (role === 'HOST') {
       send('HANGUP', {});
       sendStatus('ENDED');
@@ -338,6 +371,33 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     });
     setMicEnabled((value) => !value);
   }, []);
+
+  useEffect(() => {
+    if (
+      !active ||
+      role !== 'HOST' ||
+      !localStream ||
+      phase !== 'peer_connected' ||
+      startingCallRef.current ||
+      autoStartTimerRef.current !== null
+    ) {
+      return undefined;
+    }
+
+    autoStartTimerRef.current = window.setTimeout(() => {
+      autoStartTimerRef.current = null;
+      if (phaseRef.current === 'peer_connected' && localRef.current) {
+        void startCall();
+      }
+    }, 350);
+
+    return () => {
+      if (autoStartTimerRef.current !== null) {
+        window.clearTimeout(autoStartTimerRef.current);
+        autoStartTimerRef.current = null;
+      }
+    };
+  }, [active, localStream, phase, role, startCall]);
 
   return {
     phase,
