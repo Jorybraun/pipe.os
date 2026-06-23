@@ -3,10 +3,10 @@
  *
  * Nested under PipelineShellPage. Renders:
  *   - Editable stage title
- *   - Three routed tabs: Challenges (index) / Candidates / Configure
+ *   - Routed tabs for interview setup and people
  *   - <Outlet /> for the active tab
  *
- * The old right-side panel (email templates, time limit) is gone. Stage
+ * The old right-side panel (email templates, time limit) is gone. Interview
  * configuration has moved from the floating ?config=<stageId> side panel into
  * the Configure tab.
  *
@@ -174,7 +174,7 @@ export default function StagePanel(): JSX.Element {
           letterSpacing: '0.1em',
         }}
       >
-        ROUND_NOT_FOUND.{' '}
+        INTERVIEW_NOT_FOUND.{' '}
         <button
           onClick={() => navigate(`/pipeline/${shell.pipelineId}`)}
           style={{
@@ -215,30 +215,30 @@ export default function StagePanel(): JSX.Element {
   // ── Tab config per variant ─────────────────────────────────────────────
   interface TabDef { key: string; path: string; label: string; icon: JSX.Element; count?: number }
 
-  const gateTab: TabDef = { key: 'gate', path: '/gate', label: 'GATE', icon: <GitMerge size={12} /> };
+  const gateTab: TabDef = { key: 'gate', path: '/gate', label: 'RULES', icon: <GitMerge size={12} /> };
 
   const tabConfigs: Record<typeof stageVariant, TabDef[]> = {
     'cultural': [
       { key: 'details', path: '', label: 'DETAILS', icon: <Brain size={12} /> },
       { key: 'benchmark', path: '/benchmark', label: 'BENCHMARK', icon: <Target size={12} /> },
       gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
+      { key: 'candidates', path: '/candidates', label: 'PEOPLE', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'code-review': [
       { key: 'details', path: '', label: 'DETAILS', icon: <GitPullRequest size={12} /> },
       gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
+      { key: 'candidates', path: '/candidates', label: 'PEOPLE', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'screening': [
       { key: 'details', path: '', label: 'DETAILS', icon: <ListChecks size={12} /> },
       gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
+      { key: 'candidates', path: '/candidates', label: 'PEOPLE', icon: <Users size={12} />, count: stageCandidates.length },
     ],
     'generic': [
-      { key: 'challenges', path: '', label: 'CHALLENGES', icon: <ListChecks size={12} />, count: challengeCount },
+      { key: 'challenges', path: '', label: 'SETUP', icon: <ListChecks size={12} />, count: challengeCount },
       gateTab,
-      { key: 'candidates', path: '/candidates', label: 'CANDIDATES', icon: <Users size={12} />, count: stageCandidates.length },
-      { key: 'configure', path: '/configure', label: 'CONFIGURE', icon: <Settings size={12} /> },
+      { key: 'candidates', path: '/candidates', label: 'PEOPLE', icon: <Users size={12} />, count: stageCandidates.length },
+      { key: 'configure', path: '/configure', label: 'ADVANCED', icon: <Settings size={12} /> },
     ],
   };
 
@@ -269,7 +269,7 @@ export default function StagePanel(): JSX.Element {
             fontFamily: '"Space Mono", monospace',
           }}
         >
-          ROUND / {stage.id.substring(0, 8)}
+          INTERVIEW / {stage.id.substring(0, 8)}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <input
@@ -277,7 +277,7 @@ export default function StagePanel(): JSX.Element {
             value={displayTitle}
             onChange={(e) => setLocalTitle(e.target.value)}
             onBlur={() => void handleTitleBlur()}
-            placeholder="Round Title"
+            placeholder="Interview title"
             style={{
               background: 'transparent',
               border: 'none',
@@ -295,7 +295,7 @@ export default function StagePanel(): JSX.Element {
           {confirmDelete ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 10, color: '#f87171', fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-                DELETE_ROUND?
+                DELETE_INTERVIEW?
               </span>
               <button
                 onClick={() => void handleDelete()}
@@ -333,7 +333,7 @@ export default function StagePanel(): JSX.Element {
           ) : (
             <button
               onClick={() => setConfirmDelete(true)}
-              title="Delete round"
+              title="Delete interview"
               style={{
                 display: 'flex',
                 alignItems: 'center',

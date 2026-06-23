@@ -49,7 +49,7 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Roles overview with server-side pagination, filtering, and search.
+ * ListingPage - Optional source context overview with server-side pagination, filtering, and search.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
@@ -99,7 +99,7 @@ export default function ListingPage(): JSX.Element {
   };
 
   const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
-    if (!window.confirm(`Delete role "${title}"? This action cannot be undone.`)) {
+    if (!window.confirm(`Delete context "${title}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -130,10 +130,10 @@ export default function ListingPage(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            ROLE CONTEXTS
+            SOURCE CONTEXT
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
-            Optional role context
+            Optional source context
           </h1>
           <p style={{ margin: '8px 0 0', maxWidth: 560, color: 'var(--pipe-text-dim)', fontSize: 13, lineHeight: 1.5 }}>
             Add a job description when it helps. People can still interview and build context without one.
@@ -150,7 +150,7 @@ export default function ListingPage(): JSX.Element {
              </div>
              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
                 <Users size={12} />
-                {stats.totalCandidates} CANDIDATES
+                {stats.totalCandidates} PEOPLE LINKED
              </div>
           </div>
         </div>
@@ -173,7 +173,7 @@ export default function ListingPage(): JSX.Element {
               <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
-                placeholder="Search role contexts..."
+                placeholder="Search source context..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 style={{
@@ -207,7 +207,7 @@ export default function ListingPage(): JSX.Element {
               }}
             >
               <Plus size={14} />
-              NEW CONTEXT
+              ADD CONTEXT
             </button>
           </div>
 
@@ -224,7 +224,7 @@ export default function ListingPage(): JSX.Element {
             }}>
               <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
               <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
-                No role context yet
+                No source context yet
               </p>
             </div>
           ) : (

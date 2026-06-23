@@ -1,9 +1,9 @@
 /**
  * CandidatesTab — /pipeline/:id/stage/:stageId/candidates.
  *
- * Lists candidates currently in this stage, split into COMPLETED (submitted)
- * and PENDING (invited/in-progress) groups. Uses the shell's candidates data
- * so no extra fetch.
+ * Lists people currently attached to this interview. The data still comes from
+ * candidate records, but the product surface treats candidates as people with
+ * interview state.
  */
 
 import { useState, useMemo } from 'react';
@@ -183,7 +183,7 @@ function CandidateRow({
             opacity: 0.5,
             transition: 'opacity 0.2s',
           }}
-          title="Remove candidate"
+          title="Remove person"
         >
           <Trash2 size={12} />
         </button>
@@ -217,7 +217,7 @@ export default function CandidatesTab(): JSX.Element {
   const handleRemove = async (candidate: OverviewCandidate): Promise<void> => {
     if (
       !window.confirm(
-        `Remove ${candidate.name ?? candidate.email ?? 'this candidate'}?`,
+        `Remove ${candidate.name ?? candidate.email ?? 'this person'}?`,
       )
     )
       return;
@@ -228,7 +228,7 @@ export default function CandidatesTab(): JSX.Element {
   return (
     <div data-testid="stage-tab-content-candidates">
       <SectionCard
-        label="CANDIDATES"
+        label="PEOPLE"
         icon={<Users size={16} color="var(--pipe-text-dim)" />}
         meta={
           <button
@@ -250,7 +250,7 @@ export default function CandidatesTab(): JSX.Element {
             }}
           >
             <Plus size={11} />
-            ADD_CANDIDATE
+            ADD PERSON
           </button>
         }
       >
@@ -276,7 +276,7 @@ export default function CandidatesTab(): JSX.Element {
                 letterSpacing: '0.05em',
               }}
             >
-              No candidates in this stage yet.
+              No people attached to this interview yet.
             </div>
           </div>
         ) : (

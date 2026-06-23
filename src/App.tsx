@@ -124,7 +124,7 @@ const SubHeader = () => {
             >
               <ArrowLeft size={12} />{" "}
               {questionId && currentStage
-                ? "BACK TO ROUND"
+                ? "BACK TO INTERVIEW"
                 : stageId
                   ? "BACK TO CONTEXT"
                   : "BACK"}
@@ -147,7 +147,7 @@ const SubHeader = () => {
                   marginBottom: 6,
                 }}
               >
-                {isPersonContext ? "PERSON" : stageId ? "ROUND" : "CONTEXT"}
+                {isPersonContext ? "PERSON" : stageId ? "INTERVIEW" : "CONTEXT"}
               </div>
               <div
                 style={{
