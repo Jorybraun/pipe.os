@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getIceServers, roomWebSocketUrl } from '../lib/api';
+import { getIceServerConfig, roomWebSocketUrl } from '../lib/api';
 import type {
+  IceServerProvider,
   IceCandidatePayload,
   RoomPhase,
   RoomRole,
@@ -11,6 +12,7 @@ interface RoomConnection {
   phase: RoomPhase;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  iceProvider: IceServerProvider;
   cameraEnabled: boolean;
   micEnabled: boolean;
   setLocalStream: (stream: MediaStream) => void;
@@ -44,6 +46,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [iceProvider, setIceProvider] = useState<IceServerProvider>('unknown');
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -275,6 +278,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
           }
         } else if (message.type === 'OFFER' && message.role !== role) {
           offerRef.current = message.payload as SdpPayload;
+          setIceProvider(offerRef.current.iceProvider ?? 'unknown');
           setPhase('offer_received');
         } else if (message.type === 'ANSWER' && message.role !== role && peerRef.current) {
           void peerRef.current
@@ -356,11 +360,20 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     phaseRef.current = 'connecting';
     setPhase('connecting');
     try {
-      const iceServers = await getIceServers(token).catch(() => FALLBACK_ICE);
-      const peer = createPeer(iceServers);
+      const config = await getIceServerConfig(token).catch(() => ({
+        iceServers: FALLBACK_ICE,
+        provider: 'fallback' as const,
+      }));
+      setIceProvider(config.provider);
+      const peer = createPeer(config.iceServers);
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      send('OFFER', { type: offer.type, sdp: offer.sdp, iceServers });
+      send('OFFER', {
+        type: offer.type,
+        sdp: offer.sdp,
+        iceServers: config.iceServers,
+        iceProvider: config.provider,
+      });
       sendStatus('CALLING');
     } catch {
       closePeer('error');
@@ -374,6 +387,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     const offer = offerRef.current;
     if (role !== 'GUEST' || !offer) return;
     setPhase('connecting');
+    setIceProvider(offer.iceProvider ?? 'unknown');
     const peer = createPeer(offer.iceServers ?? FALLBACK_ICE);
     await peer.setRemoteDescription(new RTCSessionDescription(offer));
     remoteReadyRef.current = true;
@@ -445,6 +459,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     phase,
     localStream,
     remoteStream,
+    iceProvider,
     cameraEnabled,
     micEnabled,
     setLocalStream,

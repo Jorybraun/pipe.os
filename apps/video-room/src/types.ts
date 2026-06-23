@@ -1,4 +1,5 @@
 export type RoomRole = 'HOST' | 'GUEST';
+export type IceServerProvider = 'cloudflare' | 'metered' | 'fallback' | 'unknown';
 export type RoomPhase =
   | 'disconnected'
   | 'waiting'
@@ -27,6 +28,7 @@ export interface SdpPayload {
   type: RTCSdpType;
   sdp?: string;
   iceServers?: RTCIceServer[];
+  iceProvider?: IceServerProvider;
 }
 
 export interface IceCandidatePayload {

@@ -1,4 +1,4 @@
-import type { RoomMetadata } from '../types';
+import type { IceServerProvider, RoomMetadata } from '../types';
 
 const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8787'
@@ -44,12 +44,21 @@ export async function uploadRecording(token: string, recording: Blob): Promise<v
   await parseResponse<{ accepted: boolean }>(response);
 }
 
-export async function getIceServers(token: string): Promise<RTCIceServer[]> {
+export async function getIceServerConfig(token: string): Promise<{
+  iceServers: RTCIceServer[];
+  provider: IceServerProvider;
+}> {
   const response = await fetch(
     apiUrl(`/api/v1/meeting-rooms/${token}/turn-credentials`),
   );
-  const body = await parseResponse<{ iceServers: RTCIceServer[] }>(response);
-  return body.iceServers;
+  const body = await parseResponse<{
+    iceServers: RTCIceServer[];
+    provider?: IceServerProvider;
+  }>(response);
+  return {
+    iceServers: body.iceServers,
+    provider: body.provider ?? 'unknown',
+  };
 }
 
 export function roomWebSocketUrl(token: string): string {

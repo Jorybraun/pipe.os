@@ -14,7 +14,7 @@ import {
 import { loadRoom, postRoomEvent, uploadRecording } from './lib/api';
 import { createCompositeRecording, preferredRecordingOptions } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
-import type { RoomMetadata } from './types';
+import type { IceServerProvider, RoomMetadata } from './types';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -83,6 +83,20 @@ function DevicePlaceholder({
       <span>{state === 'checking' ? 'Preparing camera' : 'Camera access needed'}</span>
     </div>
   );
+}
+
+function relayLabel(provider: IceServerProvider): string {
+  switch (provider) {
+    case 'cloudflare':
+      return 'Relay Cloudflare';
+    case 'metered':
+      return 'Relay Metered';
+    case 'fallback':
+      return 'STUN fallback';
+    case 'unknown':
+    default:
+      return 'Network pending';
+  }
 }
 
 function StreamVideo({
@@ -317,9 +331,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <BrandMark compact />
           <strong>{metadata.title}</strong>
         </div>
-        <div className={`recording is-${recordingState}`} data-testid="recording-state">
-          <Circle size={9} fill="currentColor" />
-          {recordingLabel}
+        <div className="call-badges">
+          <div className={`network is-${room.iceProvider}`} data-testid="network-provider">
+            {relayLabel(room.iceProvider)}
+          </div>
+          <div className={`recording is-${recordingState}`} data-testid="recording-state">
+            <Circle size={9} fill="currentColor" />
+            {recordingLabel}
+          </div>
         </div>
       </header>
 

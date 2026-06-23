@@ -546,7 +546,9 @@ button:focus-visible {
 }
 
 .call-header > div:first-child,
-.recording {
+.call-badges,
+.recording,
+.network {
   pointer-events: auto;
 }
 
@@ -570,7 +572,17 @@ button:focus-visible {
   text-shadow: 0 2px 16px rgba(0, 0, 0, .72);
 }
 
-.recording {
+.call-badges {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recording,
+.network {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -584,6 +596,24 @@ button:focus-visible {
   letter-spacing: .12em;
   text-transform: uppercase;
   backdrop-filter: blur(14px);
+}
+
+.network {
+  color: var(--ink-dim);
+}
+
+.network.is-cloudflare {
+  border-color: var(--rule-hot);
+  color: var(--ember-hot);
+}
+
+.network.is-metered {
+  color: #9de8d8;
+}
+
+.network.is-fallback {
+  border-color: rgba(255, 213, 130, .38);
+  color: #ffe5ad;
 }
 
 .recording.is-recording {
@@ -1011,6 +1041,10 @@ button:focus-visible {
   .recording {
     padding: 7px 9px;
     font-size: 8px;
+  }
+
+  .network {
+    display: none;
   }
 
   .local-tile {
