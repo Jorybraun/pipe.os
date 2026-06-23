@@ -16,9 +16,7 @@ interface NodeSqliteDatabase {
 }
 
 const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string) => NodeSqliteDatabase;
-};
+const DatabaseSync = require('better-sqlite3') as new (path: string) => NodeSqliteDatabase;
 
 const conceptRegistryMigration = readFileSync(
   new URL('../../../../migrations/0094_concept_registry.sql', import.meta.url),

@@ -52,9 +52,7 @@ interface NodeSqliteDatabase {
 }
 
 const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: new (path: string) => NodeSqliteDatabase;
-};
+const DatabaseSync = require('better-sqlite3') as new (path: string) => NodeSqliteDatabase;
 
 const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
