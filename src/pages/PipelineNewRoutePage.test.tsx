@@ -55,11 +55,14 @@ describe('PipelineNewRoutePage', () => {
     );
 
     const user = userEvent.setup();
-    await user.type(screen.getByPlaceholderText('Senior Frontend Engineer'), 'Frontend Engineer');
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Frontend Engineer',
+    );
     await user.type(screen.getByPlaceholderText('Acme Corp'), 'Acme');
     await user.type(screen.getByPlaceholderText('Remote / NYC / Berlin'), 'Remote');
     await user.type(
-      screen.getByPlaceholderText(/Paste role expectations, constraints, and technical requirements/i),
+      screen.getByPlaceholderText(/Paste role expectations, meeting context, or technical requirements/i),
       'Build React interfaces and review frontend architecture decisions.',
     );
 
@@ -118,6 +121,77 @@ describe('PipelineNewRoutePage', () => {
       expect(mocks.navigate).toHaveBeenCalledWith('/pipeline/pipeline-1', {
         state: { autoBuildWarnings: warnings },
       });
+    });
+  });
+
+  it('creates a roleless interview plan with exact selected interviews', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        pipeline: {
+          id: 'pipeline-roleless-1',
+          title: 'Coffee Chat',
+          level: null,
+          status: 'DRAFT',
+          stageCount: 0,
+          createdAt: '2026-06-23T00:00:00.000Z',
+        },
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-video-1',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+
+    render(
+      <MemoryRouter>
+        <PipelineNewRoutePage />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Coffee Chat',
+    );
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('/api/v1/pipelines'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+      title: 'Coffee Chat',
+      status: 'DRAFT',
+      creationMode: 'BLANK',
+      createDefaultStages: false,
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('/api/v1/pipelines/pipeline-roleless-1/stages'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-token',
+          'Content-Type': 'application/json',
+        }),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({
+      title: 'Video interview',
+      stageType: 'SCREENING',
+      isScheduled: true,
+    });
+
+    await waitFor(() => {
+      expect(mocks.navigate).toHaveBeenCalledWith('/pipeline/pipeline-roleless-1');
     });
   });
 });

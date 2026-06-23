@@ -159,7 +159,9 @@ pipelines.post('/', async (c) => {
     ),
   );
 
-  // Build stage list: automatic screener first, then preset stages shifted down by 1.
+  // Build stage list: automatic screener first by default, then preset stages shifted
+  // down by 1. Roleless interview plans can opt out and add exact interviews via
+  // POST /api/v1/pipelines/:pipelineId/stages.
   const screener = getScreenerStage();
   const presetStages = preset?.stages ?? [];
   // Shift existing preset stages down by 1 to make room for the screener at sortOrder 0.
@@ -167,7 +169,8 @@ pipelines.post('/', async (c) => {
     ...s,
     sortOrder: s.sortOrder + 1,
   }));
-  const allStages = [screener, ...shiftedPresetStages];
+  const defaultStages = input.createDefaultStages ? [screener] : [];
+  const allStages = [...defaultStages, ...shiftedPresetStages];
   let totalChallenges = 0;
 
   for (const stage of allStages) {

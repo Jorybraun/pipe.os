@@ -44,7 +44,7 @@ export type PipelineLevel =
 
 export interface CreatePipelineRequest {
   title: string;
-  level: PipelineLevel;
+  level?: PipelineLevel | null;
   stack?: string[];
   description?: string;
   /** Defaults to 'DRAFT' on the server when omitted. */
@@ -52,13 +52,15 @@ export interface CreatePipelineRequest {
   /** Defaults to 'BLANK' on the server when omitted. */
   creationMode?: 'BLANK' | 'PRESET';
   presetId?: string;
+  /** Defaults to true on the server. Set false for roleless interview plans. */
+  createDefaultStages?: boolean;
 }
 
 export interface CreatePipelineResponse {
   pipeline: {
     id: string;
     title: string;
-    level: string;
+    level: string | null;
     status: string;
     stageCount: number;
     createdAt: string;

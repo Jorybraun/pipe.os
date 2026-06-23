@@ -2,6 +2,7 @@ import { type CSSProperties, type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Loader2, Play } from 'lucide-react';
 import { createApiClient } from '../lib/api/client';
+import type { CreatePipelineResponse } from '../lib/api/types';
 import { useAuth } from '../providers';
 
 type StageChoice = {
@@ -72,9 +73,12 @@ export default function PipelineNewRoutePage(): JSX.Element {
   const companyValue = company.trim();
   const locationValue = location.trim();
   const roleDescriptionValue = roleDescription.trim();
+  const hasRoleContext = roleDescriptionValue.length >= MIN_DESCRIPTION_LENGTH;
+  const hasPartialRoleContext =
+    roleDescriptionValue.length > 0 && roleDescriptionValue.length < MIN_DESCRIPTION_LENGTH;
   const canSubmit =
     roleTitleValue.length > 0 &&
-    roleDescriptionValue.length >= MIN_DESCRIPTION_LENGTH &&
+    !hasPartialRoleContext &&
     selectedStages.length > 0 &&
     !isSubmitting;
 
@@ -84,25 +88,47 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
     if (!canSubmit) {
       if (roleTitleValue.length === 0) {
-        setError('Role title is required.');
-      } else if (roleDescriptionValue.length < MIN_DESCRIPTION_LENGTH) {
-        setError(`Role description must be at least ${MIN_DESCRIPTION_LENGTH} characters.`);
+        setError('Plan title is required.');
+      } else if (hasPartialRoleContext) {
+        setError(`Optional context must be blank or at least ${MIN_DESCRIPTION_LENGTH} characters.`);
       } else if (selectedStages.length === 0) {
-        setError('Select at least one round.');
+        setError('Select at least one interview type.');
       }
       return;
     }
 
     setIsSubmitting(true);
 
-    const jobDescriptionMd = [
-      `## Role Title\n${roleTitleValue}`,
-      ...(companyValue ? [`## Company\n${companyValue}`] : []),
-      ...(locationValue ? [`## Location\n${locationValue}`] : []),
-      `## Role Scope\n${roleDescriptionValue}`,
-    ].join('\n\n');
-
     try {
+      if (!hasRoleContext) {
+        const created = await api.post<CreatePipelineResponse>('/api/v1/pipelines', {
+          title: roleTitleValue,
+          description: undefined,
+          status: 'DRAFT',
+          creationMode: 'BLANK',
+          createDefaultStages: false,
+        });
+
+        for (const stageValue of selectedStages) {
+          const stage = STAGE_CHOICES.find((choice) => choice.value === stageValue);
+          await api.post(`/api/v1/pipelines/${created.pipeline.id}/stages`, {
+            title: stage?.label ?? 'Interview',
+            stageType: stageValue,
+            isScheduled: true,
+          });
+        }
+
+        navigate(`/pipeline/${created.pipeline.id}`);
+        return;
+      }
+
+      const jobDescriptionMd = [
+        `## Role Title\n${roleTitleValue}`,
+        ...(companyValue ? [`## Company\n${companyValue}`] : []),
+        ...(locationValue ? [`## Location\n${locationValue}`] : []),
+        `## Role Scope\n${roleDescriptionValue}`,
+      ].join('\n\n');
+
       const roleContext = await api.post<SimpleRoleContextResponse>('/api/v1/role-contexts/simple-job-description', {
         jobDescriptionMd,
         title: roleTitleValue,
@@ -184,7 +210,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
               New Interview Plan
             </h1>
             <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--pipe-text-muted)' }}>
-              Add optional role context, then pick the interview types to run.
+              Create a roleless interview plan, or add source context when you have it.
             </p>
           </div>
           <div>
@@ -224,12 +250,12 @@ export default function PipelineNewRoutePage(): JSX.Element {
           <div style={{ display: 'grid', gap: 14 }}>
             <label style={{ display: 'grid', gap: 8 }}>
               <span style={fieldLabelStyle}>
-                ROLE / CONTEXT TITLE
+                PLAN TITLE
               </span>
               <input
                 value={roleTitle}
                 onChange={(e) => setRoleTitle(e.target.value)}
-                placeholder="Senior Frontend Engineer"
+                placeholder="Frontend interview / Coffee chat / Senior Frontend Engineer"
                 required
                 style={inputStyle}
               />
@@ -237,7 +263,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
             <label style={{ display: 'grid', gap: 8 }}>
               <span style={fieldLabelStyle}>
-                COMPANY
+                COMPANY / CLIENT
               </span>
               <input
                 value={company}
@@ -299,15 +325,13 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
           <span style={fieldLabelStyle}>
-            ROLE CONTEXT
+            OPTIONAL SOURCE CONTEXT
           </span>
           <textarea
             value={roleDescription}
             onChange={(e) => setRoleDescription(e.target.value)}
             rows={10}
-            placeholder="Paste role expectations, constraints, and technical requirements. Leave out anything you do not know yet."
-            required
-            minLength={MIN_DESCRIPTION_LENGTH}
+            placeholder="Paste role expectations, meeting context, or technical requirements if you have them. Leave this blank to create a simple interview plan first."
             style={{
               ...inputStyle,
               width: '100%',
@@ -317,8 +341,15 @@ export default function PipelineNewRoutePage(): JSX.Element {
               padding: 14,
             }}
           />
-          <span style={{ fontSize: 10, color: roleDescription.trim().length >= 20 ? 'var(--pipe-text-dim)' : '#dc2626' }}>
-            {roleDescriptionValue.length} / {MIN_DESCRIPTION_LENGTH} chars
+          <span
+            style={{
+              fontSize: 10,
+              color: hasPartialRoleContext ? '#dc2626' : 'var(--pipe-text-dim)',
+            }}
+          >
+            {roleDescriptionValue.length === 0
+              ? 'No source context yet'
+              : `${roleDescriptionValue.length} / ${MIN_DESCRIPTION_LENGTH} chars`}
           </span>
         </label>
 
