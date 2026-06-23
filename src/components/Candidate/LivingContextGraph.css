@@ -9,6 +9,9 @@
   --lc-card: var(--pipe-surface);
   --lc-card-strong: var(--pipe-surface-hover);
   --lc-card-border: var(--pipe-border-light);
+  --lc-record-text: var(--pipe-text);
+  --lc-record-muted: var(--pipe-text-muted);
+  --lc-record-dim: var(--pipe-text-dim);
   container-name: living-context;
   container-type: inline-size;
   color: var(--pipe-text);
@@ -23,6 +26,9 @@ html[data-theme="anatomy"] .living-context {
   --lc-card: #ffffff;
   --lc-card-strong: rgba(15, 23, 42, 0.07);
   --lc-card-border: rgba(15, 23, 42, 0.10);
+  --lc-record-text: #111827;
+  --lc-record-muted: #374151;
+  --lc-record-dim: #6b7280;
 }
 
 html[data-theme="dark"] .living-context,
@@ -38,6 +44,9 @@ html[data-theme="pipe-blue"] .living-context {
   --lc-card: rgba(108, 195, 255, 0.045);
   --lc-card-strong: rgba(108, 195, 255, 0.10);
   --lc-card-border: rgba(108, 195, 255, 0.12);
+  --lc-record-text: rgba(244, 248, 255, 0.96);
+  --lc-record-muted: rgba(244, 248, 255, 0.76);
+  --lc-record-dim: rgba(244, 248, 255, 0.54);
 }
 
 .living-context__toolbar {
@@ -917,10 +926,10 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record {
   min-width: 0;
-  padding: 12px 13px;
+  padding: 13px 14px;
   border: 1px solid rgba(129, 140, 248, 0.22);
-  border-radius: 6px;
-  background: var(--lc-panel-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--lc-panel) 82%, var(--lc-structural) 18%);
 }
 
 .living-context__context-record-toggle {
@@ -932,7 +941,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   text-align: left;
   cursor: pointer;
 }
@@ -957,10 +966,10 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__context-record-title {
   display: block;
   min-width: 0;
-  color: var(--lc-assertion);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.5;
+  color: var(--lc-record-text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
   letter-spacing: 0;
   text-wrap: pretty;
   overflow-wrap: break-word;
@@ -980,9 +989,9 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__context-record-meta {
   max-width: 100%;
   padding: 2px 5px;
-  border: 1px solid var(--pipe-border);
+  border: 1px solid var(--lc-card-border);
   border-radius: 3px;
-  color: var(--pipe-text-dim);
+  color: var(--lc-record-dim);
   font: 8px "Space Mono", monospace;
   line-height: 1.35;
   overflow: hidden;
@@ -1011,7 +1020,7 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-heading {
   margin-bottom: 7px;
-  color: var(--pipe-text-dim);
+  color: var(--lc-record-dim);
   font: 8px "Space Mono", monospace;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1045,7 +1054,7 @@ html[data-theme="pipe-blue"] .living-context {
   padding: 8px 9px;
   border-left: 2px solid var(--lc-source);
   background: rgba(56, 189, 248, 0.04);
-  color: var(--pipe-text-muted);
+  color: var(--lc-record-muted);
   font-size: 11px;
   line-height: 1.55;
   overflow-wrap: break-word;
@@ -1359,7 +1368,7 @@ html[data-theme="pipe-blue"] .living-context {
   }
 
   .living-context__context-record {
-    padding: 11px;
+    padding: 12px;
   }
 
   .living-context__context-record-toggle {
@@ -1367,8 +1376,8 @@ html[data-theme="pipe-blue"] .living-context {
   }
 
   .living-context__context-record-title {
-    font-size: 10px;
-    line-height: 1.5;
+    font-size: 12px;
+    line-height: 1.45;
   }
 
   .living-context__context-record-badges {
@@ -1377,11 +1386,12 @@ html[data-theme="pipe-blue"] .living-context {
 
   .living-context__context-record-type,
   .living-context__context-record-meta {
-    font-size: 7px;
+    font-size: 8px;
   }
 
   .living-context__narrative {
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.55;
   }
 }
 
