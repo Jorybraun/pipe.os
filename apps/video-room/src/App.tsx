@@ -4,7 +4,6 @@ import {
   Camera,
   CameraOff,
   Circle,
-  Loader2,
   Mic,
   MicOff,
   PhoneOff,
@@ -57,6 +56,31 @@ function RoomStateMark({
       <span className="state-scan" />
       <PipeMark className="state-logo" />
       {icon && <span className="state-icon">{icon}</span>}
+    </div>
+  );
+}
+
+function DevicePlaceholder({
+  state,
+}: {
+  state: 'checking' | 'ready' | 'error';
+}): JSX.Element {
+  if (state === 'ready') {
+    return (
+      <div className="device-placeholder" aria-hidden="true">
+        <PipeMark className="device-placeholder-logo" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="device-placeholder">
+      <RoomStateMark
+        loading={state === 'checking'}
+        variant={state === 'error' ? 'error' : 'default'}
+        icon={state === 'error' ? <CameraOff size={18} /> : undefined}
+      />
+      <span>{state === 'checking' ? 'Preparing camera' : 'Camera access needed'}</span>
     </div>
   );
 }
@@ -216,12 +240,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         <section className="device-panel" data-testid="device-check">
           <div className="preview-shell">
             {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
-            {deviceState === 'checking' && <Loader2 className="spin" size={28} />}
-            {deviceState === 'error' && <CameraOff size={32} />}
+            {!preview && <DevicePlaceholder state={deviceState} />}
           </div>
           <div className="device-meta">
-            <span>{metadata.role === 'HOST' ? 'HOST' : 'GUEST'}</span>
-            <span><Users size={13} /> {metadata.participants.length + 1}</span>
+            <span>Camera preview</span>
+            <span><ShieldCheck size={13} /> Private room</span>
           </div>
           <button
             className="primary"
@@ -242,6 +265,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   );
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
   const isConnecting = room.phase === 'connecting';
+  const isRoomError = room.phase === 'error';
+  const recordingLabel = {
+    idle: 'Ready',
+    recording: 'Recording',
+    uploading: 'Saving',
+    saved: 'Saved',
+    failed: 'Save issue',
+  }[recordingState];
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
@@ -249,15 +280,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">
           <BrandMark />
-          <RoomStateMark loading={isConnecting} icon={!isConnecting ? <Users size={24} /> : undefined} />
+          <RoomStateMark
+            loading={isConnecting}
+            variant={isRoomError ? 'error' : 'default'}
+            icon={!isConnecting ? <Users size={24} /> : undefined}
+          />
           <h2>
-            {isConnecting
+            {isRoomError
+              ? 'Connection interrupted'
+              : isConnecting
               ? 'Connecting...'
               : metadata.role === 'HOST'
                 ? 'Waiting for your guest'
                 : 'Waiting for the host'}
           </h2>
-          <p>The call will stay ready while the other participant joins.</p>
+          <p>
+            {isRoomError
+              ? 'Refresh the room link when you are ready to try again.'
+              : 'The room stays ready while the other participant joins.'}
+          </p>
           {canStart && (
             <button className="primary" onClick={() => void room.startCall()} data-testid="start-call">
               <Video size={17} /> Start call
@@ -278,7 +319,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         </div>
         <div className={`recording is-${recordingState}`} data-testid="recording-state">
           <Circle size={9} fill="currentColor" />
-          {recordingState === 'recording' ? 'Recording' : recordingState}
+          {recordingLabel}
         </div>
       </header>
 
@@ -326,8 +367,8 @@ export default function App(): JSX.Element {
       setError('This room link is invalid.');
       return;
     }
-    void loadRoom(token).then(setMetadata).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : 'Unable to open this room.');
+    void loadRoom(token).then(setMetadata).catch(() => {
+      setError('This room link is expired or unavailable.');
     });
   }, [token]);
 

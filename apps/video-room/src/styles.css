@@ -260,12 +260,14 @@ button:focus-visible {
 }
 
 .lobby {
+  height: 100dvh;
   min-height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 480px);
   align-items: center;
   gap: clamp(32px, 5vw, 68px);
   padding: clamp(28px, 5vw, 56px);
+  overflow-y: auto;
 }
 
 .lobby-copy,
@@ -366,6 +368,7 @@ button:focus-visible {
 }
 
 .preview-shell {
+  position: relative;
   aspect-ratio: 16 / 10;
   min-height: 250px;
   display: grid;
@@ -380,6 +383,49 @@ button:focus-visible {
     #071524;
   background-size: auto, 28px 28px, 28px 28px, auto;
   color: var(--ink-dim);
+}
+
+.device-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  gap: 14px;
+  padding: 18px;
+  text-align: center;
+}
+
+.device-placeholder .state-mark {
+  width: 92px;
+  height: 92px;
+  margin: 0;
+  box-shadow: 0 0 0 8px rgba(127, 199, 255, .045), 0 0 46px rgba(127, 199, 255, .18);
+}
+
+.device-placeholder .state-logo {
+  width: 42px;
+  height: 42px;
+}
+
+.device-placeholder .state-icon {
+  width: 28px;
+  height: 28px;
+  right: 5px;
+  bottom: 5px;
+}
+
+.device-placeholder-logo {
+  width: 74px;
+  height: 74px;
+  opacity: .34;
+  filter: drop-shadow(0 0 20px rgba(170, 210, 255, .34));
+}
+
+.device-placeholder span {
+  color: var(--ink-dim);
+  font: 700 10px/1 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
 .preview-video {
@@ -494,7 +540,7 @@ button:focus-visible {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  padding: 16px 18px;
+  padding: calc(16px + env(safe-area-inset-top)) calc(18px + env(safe-area-inset-right)) 16px calc(18px + env(safe-area-inset-left));
   z-index: 4;
   pointer-events: none;
 }
@@ -568,11 +614,15 @@ button:focus-visible {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 28px;
+  padding: calc(28px + env(safe-area-inset-top)) calc(28px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(28px + env(safe-area-inset-left));
 }
 
 .center-message {
   position: fixed;
+}
+
+.waiting-state {
+  padding-bottom: calc(132px + env(safe-area-inset-bottom));
 }
 
 .waiting-state > .brand,
@@ -741,7 +791,7 @@ button:focus-visible {
 .local-tile {
   position: absolute;
   right: 18px;
-  bottom: 102px;
+  bottom: calc(102px + env(safe-area-inset-bottom));
   z-index: 4;
   width: min(20vw, 240px);
   min-width: 150px;
@@ -779,11 +829,12 @@ button:focus-visible {
 .controls {
   position: absolute;
   left: 50%;
-  bottom: 22px;
+  bottom: calc(22px + env(safe-area-inset-bottom));
   z-index: 5;
   transform: translateX(-50%);
   display: flex;
   gap: 10px;
+  max-width: calc(100vw - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
   padding: 8px;
   border: 1px solid var(--rule-2);
   border-radius: 999px;
@@ -836,7 +887,7 @@ button:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: calc(24px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
   text-align: center;
   overflow: hidden;
   background: rgba(5, 12, 22, .94);
@@ -945,7 +996,7 @@ button:focus-visible {
 
   .call-header {
     min-height: 64px;
-    padding: 12px;
+    padding: calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 12px calc(12px + env(safe-area-inset-left));
   }
 
   .call-header strong {
@@ -964,13 +1015,13 @@ button:focus-visible {
 
   .local-tile {
     right: 12px;
-    bottom: 88px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
     width: 38vw;
     min-width: 118px;
   }
 
   .controls {
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
     gap: 8px;
     padding: 7px;
   }
@@ -1000,6 +1051,25 @@ button:focus-visible {
     height: 30px;
     right: 7px;
     bottom: 7px;
+  }
+
+  .device-placeholder {
+    gap: 10px;
+  }
+
+  .device-placeholder .state-mark {
+    width: 78px;
+    height: 78px;
+  }
+
+  .device-placeholder .state-logo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .device-placeholder-logo {
+    width: 58px;
+    height: 58px;
   }
 }
 
