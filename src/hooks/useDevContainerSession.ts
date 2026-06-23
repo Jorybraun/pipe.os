@@ -187,11 +187,12 @@ export function shouldUseCloudflareDevContainers(
 
 const USE_CLOUDFLARE = shouldUseCloudflareDevContainers();
 
-export function useDevContainerSession(): UseDevContainerSessionReturn {
-  const cloudflare = useDevContainerSessionCloudflare();
-  const appsync = useDevContainerSessionAppSync();
-  return USE_CLOUDFLARE ? cloudflare : appsync;
-}
+// Select exactly one backend for this bundle/session. Calling both hooks would
+// still initialize the inactive backend and can crash deployed Cloudflare flows
+// when the legacy AppSync provider is not configured.
+export const useDevContainerSession: () => UseDevContainerSessionReturn = USE_CLOUDFLARE
+  ? useDevContainerSessionCloudflare
+  : useDevContainerSessionAppSync;
 
 // ─── Cloudflare implementation (ADR-037) ────────────────────────────────────
 
