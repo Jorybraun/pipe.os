@@ -11,6 +11,10 @@ name: E2E Test Environment
 #   TEST_APP_BASE               — e.g. https://pipe-app-test.pages.dev
 #   E2E_EMAIL                   — Clerk test user email (e.g. e2e-test@pipe.dev)
 #   E2E_PASSWORD                — Clerk test user password
+#
+# Remote E2E is opt-in for pull requests because it requires a fully
+# provisioned Cloudflare Pages test project and real Clerk test credentials.
+# Set repository variable RUN_REMOTE_E2E=true to enable this job.
 
 on:
   pull_request:
@@ -29,20 +33,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Remote E2E disabled
+        if: vars.RUN_REMOTE_E2E != 'true'
+        run: |
+          echo "Remote E2E is disabled for this repository."
+          echo "Set repository variable RUN_REMOTE_E2E=true and configure the required secrets to run it."
+
       - name: Set up Node.js
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies (frontend)
+        if: vars.RUN_REMOTE_E2E == 'true'
         run: npm ci
 
       - name: Install dependencies (worker)
+        if: vars.RUN_REMOTE_E2E == 'true'
         working-directory: workers/api
         run: npm ci
 
       - name: Apply D1 migrations (test)
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -51,6 +65,7 @@ jobs:
           command: d1 migrations apply pipe-db-test --env test --remote
 
       - name: Deploy Worker (test)
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -59,12 +74,14 @@ jobs:
           command: deploy --env test
 
       - name: Build frontend (test target)
+        if: vars.RUN_REMOTE_E2E == 'true'
         env:
           VITE_API_BASE: ${{ secrets.TEST_API_BASE }}
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npm run build
 
       - name: Deploy Pages (test)
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -74,6 +91,7 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Wait for worker health
+        if: vars.RUN_REMOTE_E2E == 'true'
         run: |
           deadline=$((SECONDS+60))
           until curl -fsS "${{ secrets.TEST_API_BASE }}/health" >/dev/null 2>&1; do
@@ -85,6 +103,7 @@ jobs:
           done
 
       - name: Reset test DB
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -93,6 +112,7 @@ jobs:
           command: d1 execute pipe-db-test --env test --remote --file scripts/reset-test-db.sql
 
       - name: Seed test DB
+        if: vars.RUN_REMOTE_E2E == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -101,9 +121,11 @@ jobs:
           command: d1 execute pipe-db-test --env test --remote --file scripts/seed-test-db.sql
 
       - name: Install Playwright browsers
+        if: vars.RUN_REMOTE_E2E == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright
+        if: vars.RUN_REMOTE_E2E == 'true'
         env:
           API_BASE: ${{ secrets.TEST_API_BASE }}
           APP_BASE: ${{ secrets.TEST_APP_BASE }}
@@ -113,7 +135,7 @@ jobs:
         run: npx playwright test --workers=1
 
       - name: Upload Playwright report
-        if: always()
+        if: always() && vars.RUN_REMOTE_E2E == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
