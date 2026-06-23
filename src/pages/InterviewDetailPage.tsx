@@ -123,6 +123,47 @@ function parseAnalysisList(raw: string | null | undefined, key: 'topics' | 'deci
   }
 }
 
+function parseAnalysisString(raw: string | null | undefined, key: string): string | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const value = parsed[key];
+    return typeof value === 'string' && value.trim().length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function transcriptStatusLabel(status: string): string {
+  switch (status) {
+    case 'READY':
+    case 'COMPLETED':
+      return 'Transcript ready';
+    case 'PROCESSING':
+      return 'Processing transcript';
+    case 'FAILED':
+      return 'Transcript failed';
+    case 'RECORDING':
+      return 'Recording';
+    case 'NONE':
+      return 'Not recorded yet';
+    default:
+      return status.replace(/[_-]+/g, ' ').toLowerCase();
+  }
+}
+
+function personContextModeText(mode: string | null, reason: string | null): string | null {
+  if (mode === 'attributed') {
+    return 'Guest statements are attached to this person with speaker-attributed source spans.';
+  }
+  if (mode === 'summary_only') {
+    return reason === 'guest_contact_id_missing'
+      ? 'Transcript is stored, but person evidence is summary-only until the guest is linked to a person.'
+      : 'Transcript is stored as meeting evidence, but person signals stay summary-only because speaker attribution was not strong enough.';
+  }
+  return null;
+}
+
 function StatusBadge({ status }: { status: string | null | undefined }): JSX.Element {
   const label = status ?? 'INVITED';
   const color = STATUS_COLORS[label] ?? '#9ca3af';
@@ -216,6 +257,14 @@ export default function InterviewDetailPage(): JSX.Element {
   );
   const transcriptDecisions = useMemo(
     () => parseAnalysisList(interview?.linkedMeeting?.transcriptAnalysisJson, 'decisions'),
+    [interview?.linkedMeeting?.transcriptAnalysisJson],
+  );
+  const personContextMode = useMemo(
+    () => parseAnalysisString(interview?.linkedMeeting?.transcriptAnalysisJson, 'personContextMode'),
+    [interview?.linkedMeeting?.transcriptAnalysisJson],
+  );
+  const personContextReason = useMemo(
+    () => parseAnalysisString(interview?.linkedMeeting?.transcriptAnalysisJson, 'personContextReason'),
     [interview?.linkedMeeting?.transcriptAnalysisJson],
   );
 
@@ -360,6 +409,7 @@ export default function InterviewDetailPage(): JSX.Element {
     ?? interview.transcriptArtifact?.status
     ?? 'NONE';
   const transcriptError = interview.linkedMeeting?.transcriptError ?? interview.transcriptArtifact?.errorMessage ?? null;
+  const transcriptContextText = personContextModeText(personContextMode, personContextReason);
   const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
   const personProfilePath = interview.contactId
     ? `/people/${interview.contactId}`
@@ -485,13 +535,16 @@ export default function InterviewDetailPage(): JSX.Element {
               : transcriptStatus === 'FAILED'
                 ? <AlertCircle size={14} color="#f87171" />
                 : <Clock size={14} color="var(--pipe-text-dim)" />}
-            <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatus}</span>
+            <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatusLabel(transcriptStatus)}</span>
           </div>
           {interview.linkedMeeting?.transcriptSummary && (
             <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
           )}
           {interview.linkedMeeting?.recordingR2Key && (
             <div style={SMALL_NOTE}>Recording stored. Transcript and context are rebuilt from the meeting source.</div>
+          )}
+          {transcriptContextText && (
+            <div style={SMALL_NOTE}>{transcriptContextText}</div>
           )}
           {transcriptTopics.length > 0 && (
             <div style={ANALYSIS_GROUP}>
