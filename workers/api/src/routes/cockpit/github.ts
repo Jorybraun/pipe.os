@@ -1,7 +1,7 @@
 /**
  * GitHub PR proxy routes — Phase 2
  *
- * GET  /api/v1/github/pulls?repoUrl=...   List open PRs for a repo
+ * GET  /api/v1/github/pulls?repoUrl=...   List PRs for a repo
  * POST /api/v1/github/pr                  Fetch a single PR diff + metadata
  *
  * All calls are proxied server-side using GITHUB_TOKEN — the token is never
@@ -32,6 +32,11 @@ const fetchPrSchema = z.object({
   challengeId: z.string().optional(),
 });
 
+const listPullsQuerySchema = z.object({
+  state: z.enum(['open', 'closed', 'all']).default('open'),
+  merged: z.enum(['true', 'false']).optional(),
+});
+
 // ─── Router ────────────────────────────────────────────────────────────────────
 
 const github = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -39,7 +44,7 @@ const github = new Hono<{ Bindings: Env; Variables: Variables }>();
 github.use('*', authMiddleware);
 
 /**
- * GET /api/v1/github/pulls?repoUrl=<url>&state=open
+ * GET /api/v1/github/pulls?repoUrl=<url>&state=closed&merged=true
  *
  * Lists pull requests for a GitHub repository, proxied through GITHUB_TOKEN.
  *
@@ -50,7 +55,15 @@ github.use('*', authMiddleware);
  */
 github.get('/pulls', async (c) => {
   const repoUrl = c.req.query('repoUrl');
-  const state = c.req.query('state') ?? 'open';
+  const parsedQuery = listPullsQuerySchema.safeParse({
+    state: c.req.query('state') ?? undefined,
+    merged: c.req.query('merged') ?? undefined,
+  });
+  if (!parsedQuery.success) {
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid GitHub pull request query.');
+  }
+  const { state, merged } = parsedQuery.data;
+  const onlyMerged = merged === 'true';
 
   if (!repoUrl) {
     return apiError(c, 'VALIDATION_ERROR', 'repoUrl query parameter is required.');
@@ -71,7 +84,7 @@ github.get('/pulls', async (c) => {
   }
 
   const res = await fetch(
-    `https://api.github.com/repos/${repoPath}/pulls?state=${state}&per_page=50`,
+    `https://api.github.com/repos/${repoPath}/pulls?state=${state}&sort=updated&direction=desc&per_page=50`,
     { headers },
   );
 
@@ -103,6 +116,7 @@ github.get('/pulls', async (c) => {
     draft: boolean;
     created_at: string;
     updated_at: string;
+    merged_at: string | null;
     html_url: string;
     labels: Array<{ name: string }>;
     base: { ref: string };
@@ -110,20 +124,24 @@ github.get('/pulls', async (c) => {
   }
 
   const prs = (await res.json()) as GitHubPRItem[];
+  const filteredPrs = onlyMerged
+    ? prs.filter((pr) => Boolean(pr.merged_at))
+    : prs;
 
   return c.json({
     success: true,
     data: {
-      prs: prs.map((pr) => ({
+      prs: filteredPrs.map((pr) => ({
         number: pr.number,
         title: pr.title,
         description: pr.body ?? '',
         author: pr.user.login,
         avatar: pr.user.avatar_url,
-        state: pr.state,
+        state: pr.merged_at ? 'merged' : pr.state,
         draft: pr.draft,
         createdAt: pr.created_at,
         updatedAt: pr.updated_at,
+        mergedAt: pr.merged_at,
         htmlUrl: pr.html_url,
         labels: pr.labels.map((l) => l.name),
         baseBranch: pr.base.ref,

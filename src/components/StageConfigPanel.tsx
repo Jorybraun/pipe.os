@@ -1131,6 +1131,7 @@ interface PRSummary {
   draft: boolean;
   createdAt: string;
   updatedAt: string;
+  mergedAt?: string | null;
   htmlUrl: string;
   labels: string[];
   baseBranch: string;
@@ -1193,14 +1194,14 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
         success: boolean;
         error?: string;
         data?: { prs: PRSummary[] };
-      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=open`);
+      }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=closed&merged=true`);
       if (!result.success) {
         setError(result.error ?? 'Failed to fetch pull requests.');
         return;
       }
       const fetched = result.data?.prs ?? [];
       setPrs(fetched);
-      if (fetched.length === 0) setError('No open pull requests found.');
+      if (fetched.length === 0) setError('No merged pull requests found.');
     } catch (err) {
       console.error('[CodeReviewPicker] Failed to list PRs:', err);
       setError('Failed to fetch pull requests.');
@@ -1397,7 +1398,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           }}>
             <Loader size={20} style={{ animation: 'spin 1s linear infinite' }} />
             <span style={{ fontSize: 9, fontFamily: '"Space Mono", monospace', letterSpacing: '0.1em' }}>
-              FETCHING_PRS...
+              FETCHING_MERGED_PRS...
             </span>
           </div>
         ) : error ? (
@@ -1463,6 +1464,18 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
                         DRAFT
                       </span>
                     )}
+                    {pr.state === 'merged' && (
+                      <span style={{
+                        fontSize: 7,
+                        padding: '1px 4px',
+                        background: 'rgba(74,222,128,0.08)',
+                        border: '1px solid rgba(74,222,128,0.2)',
+                        borderRadius: 2,
+                        color: '#4ade80',
+                      }}>
+                        MERGED
+                      </span>
+                    )}
                   </div>
                   <div style={{
                     fontSize: 10,
@@ -1498,7 +1511,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
         letterSpacing: '0.1em',
         textAlign: 'center',
       }}>
-        {prs.length} PRS — {existingCount} ADDED
+        {prs.length} MERGED PRS — {existingCount} ADDED
       </div>
     </>
   );
