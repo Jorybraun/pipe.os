@@ -6,7 +6,7 @@ import type { CreatePipelineResponse } from '../lib/api/types';
 import { useAuth } from '../providers';
 
 type StageChoice = {
-  value: 'SCREENING' | 'CODE_REVIEW' | 'LIVE_CODING';
+  value: 'SCREENING' | 'CODE_REVIEW' | 'OPEN_SOURCE';
   label: string;
   description: string;
 };
@@ -23,7 +23,7 @@ const STAGE_CHOICES: StageChoice[] = [
     description: 'Use the video interview around a real PR review and source-backed findings.',
   },
   {
-    value: 'LIVE_CODING',
+    value: 'OPEN_SOURCE',
     label: 'Implementation challenge',
     description: 'Match the person to a repo-backed task when you need hands-on evidence.',
   },

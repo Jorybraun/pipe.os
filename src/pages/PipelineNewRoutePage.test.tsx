@@ -194,4 +194,46 @@ describe('PipelineNewRoutePage', () => {
       expect(mocks.navigate).toHaveBeenCalledWith('/pipeline/pipeline-roleless-1');
     });
   });
+
+  it('uses the backend stage enum for implementation challenges', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        pipeline: {
+          id: 'pipeline-roleless-2',
+          title: 'Implementation Trial',
+          level: null,
+          status: 'DRAFT',
+          stageCount: 0,
+          createdAt: '2026-06-23T00:00:00.000Z',
+        },
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-video-2',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'stage-open-source-1',
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }));
+
+    render(
+      <MemoryRouter>
+        <PipelineNewRoutePage />
+      </MemoryRouter>,
+    );
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByPlaceholderText('Frontend interview / Coffee chat / Senior Frontend Engineer'),
+      'Implementation Trial',
+    );
+    await user.click(screen.getByRole('button', { name: /implementation challenge/i }));
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+      title: 'Implementation challenge',
+      stageType: 'OPEN_SOURCE',
+      isScheduled: true,
+    });
+  });
 });
