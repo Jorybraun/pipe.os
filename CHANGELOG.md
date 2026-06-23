@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a canonical `/people/:personId` profile surface with relationship timeline, source-backed context records, evidence artifacts, and living-context graph visualization; `/person/:personId` now redirects to the shared people profile.
 - Branded the standalone video room experience with PIPE logo/loading states and refreshed room chrome while preserving recording, lobby, and call controls.
+- Added `npm run smoke:scheduling-invite-dev` to prove the deployed app-dev invite path creates a roleless interview, sends through Cloudflare Email Sending, returns one canonical guest room link, and persists source-backed invite context.
 - Simplified demo-facing interview plan language across the sidebar, plan list, and new-plan flow so role context is clearly optional and roleless interviews remain first-class.
 - Person and role plan surfaces now use higher-contrast living-context/readability treatments for source-backed context records across light and dark themes, including narrow-drawer chip wrapping for long concept/source labels.
 - Improved living-context graph theme contrast and context-record wrapping so source-backed evidence remains readable across light and dark app surfaces.
