@@ -33,6 +33,7 @@ interface ResolvedRoom {
   started_at: string | null;
   ended_at: string | null;
   guest_contact_id: string | null;
+  scheduled_interview_id: string | null;
 }
 
 interface MeetingAnalysis {
@@ -178,7 +179,7 @@ async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom 
             mr.status AS room_status, mrt.role,
             m.owner_id, m.title, m.description, m.scheduled_at,
             m.meeting_type, m.status AS meeting_status,
-            m.started_at, m.ended_at,
+            m.started_at, m.ended_at, m.scheduled_interview_id,
             (
               SELECT mp.contact_id
                 FROM meeting_room_tokens guest_token
@@ -273,7 +274,12 @@ async function processRecording(
           contentType,
         )
       : null;
-    let provider = structured ? 'deepgram-multichannel' : 'workers-ai-whisper';
+    const hasAttributedGuestAudio = Boolean(structured && room.guest_contact_id);
+    const provider = structured
+      ? hasAttributedGuestAudio
+        ? 'deepgram-multichannel'
+        : 'deepgram-multichannel-summary-only'
+      : 'workers-ai-whisper-summary-only';
     let segments: MeetingTranscriptSegmentInput[];
     let transcript: string;
     if (structured) {
@@ -308,6 +314,16 @@ async function processRecording(
     }
 
     const analysis = await analyzeMeeting(env.AI, transcript, segments);
+    const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
+    const analysisForStorage = {
+      ...analysis,
+      personContextMode,
+      personContextReason: hasAttributedGuestAudio
+        ? null
+        : structured
+          ? 'guest_contact_id_missing'
+          : 'mixed_audio_without_speaker_attribution',
+    };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
       stable_segment_id: segment.stableSegmentId,
       speaker: segment.speakerLabel ?? null,
@@ -333,7 +349,7 @@ async function processRecording(
     ).bind(
       transcriptJson,
       analysis.summary,
-      JSON.stringify(analysis),
+      JSON.stringify(analysisForStorage),
       recordingKey,
       now,
       room.meeting_id,
@@ -341,10 +357,11 @@ async function processRecording(
     await ingestMeetingTranscriptToLivingContext(env.DB, {
       meetingId: room.meeting_id,
       ownerId: room.owner_id,
+      scheduledInterviewId: room.scheduled_interview_id,
       transcript,
       segments,
       summary: analysis.summary,
-      semanticAssertions: analysis.semanticAssertions,
+      semanticAssertions: hasAttributedGuestAudio ? analysis.semanticAssertions : [],
       extractorVersion: 'meeting-transcript-open-v1',
       startedAt: room.started_at,
       endedAt: room.ended_at,
@@ -415,7 +432,7 @@ meetingRooms.get('/:token/ws', async (c) => {
     body: JSON.stringify({
       meetingId: room.meeting_id,
       hostId: room.owner_id,
-      resetEnded: room.room_status === 'WAITING',
+      resetEnded: room.room_status !== 'ENDED',
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {

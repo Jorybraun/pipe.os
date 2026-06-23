@@ -259,7 +259,15 @@ async function ensureScheduledInterviewRoomLinks(
     interview_type: string | null;
   },
   inviteEmail: string,
-): Promise<{ hostUrl: string; guestUrl: string; expiresAt: string; contactId: string; meetingId: string }> {
+): Promise<{
+  roomId: string;
+  sessionId: string;
+  hostUrl: string;
+  guestUrl: string;
+  expiresAt: string;
+  contactId: string;
+  meetingId: string;
+}> {
   const email = inviteEmail.trim().toLowerCase();
   const name = (
     interview.candidate_name
@@ -329,6 +337,8 @@ async function ensureScheduledInterviewRoomLinks(
   ).bind(room.guestUrl, now, interview.id).run();
 
   return {
+    roomId: room.id,
+    sessionId: room.sessionId,
     hostUrl: room.hostUrl,
     guestUrl: room.guestUrl,
     expiresAt: room.expiresAt,
@@ -1223,6 +1233,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
               m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
               m.meeting_type, m.transcript_status, m.transcript_summary,
+              m.transcript_json, m.transcript_analysis_json, m.transcript_error,
               m.recording_r2_key, m.created_at, m.updated_at,
               mr.id AS room_id, mr.session_id, mr.status AS room_status
        FROM meetings m
@@ -1245,6 +1256,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       meeting_type: string;
       transcript_status: string;
       transcript_summary: string | null;
+      transcript_json: string | null;
+      transcript_analysis_json: string | null;
+      transcript_error: string | null;
       recording_r2_key: string | null;
       created_at: string;
       updated_at: string;
@@ -1307,6 +1321,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         meetingType: linkedMeeting.meeting_type,
         transcriptStatus: linkedMeeting.transcript_status,
         transcriptSummary: linkedMeeting.transcript_summary,
+        transcriptJson: linkedMeeting.transcript_json,
+        transcriptAnalysisJson: linkedMeeting.transcript_analysis_json,
+        transcriptError: linkedMeeting.transcript_error,
         recordingR2Key: linkedMeeting.recording_r2_key,
         room: linkedMeeting.room_id ? {
           id: linkedMeeting.room_id,
@@ -1700,7 +1717,12 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-  const candidateName = escapeHtml(interview.candidate_name ?? email.split('@')[0] ?? 'there');
+  const candidateName = escapeHtml(
+    interview.candidate_name
+    ?? interview.recipient_name
+    ?? email.split('@')[0]
+    ?? 'there',
+  );
   const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
   const stageTitle = escapeHtml(interview.stage_title ?? '');
   const safeMeetingUrl = encodeURI(meetingUrl);
@@ -1748,7 +1770,16 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       html,
     });
   } catch (err) {
+    const emailError = err instanceof Error ? err.message : String(err);
     console.error('[scheduling/invite] Email send failed:', err);
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, now, id)
+      .run();
     await persistScheduledInterviewInviteDeliveryContext(db, {
       contactId: roomLinks.contactId,
       ownerId: userId,
@@ -1762,7 +1793,19 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       providerMessageId: null,
       createdAt: now,
     });
-    return c.json({ success: false, emailSent: false, meetingUrl }, 502);
+    return c.json({
+      success: true,
+      emailSent: false,
+      emailError,
+      meetingUrl,
+      room: {
+        id: roomLinks.roomId,
+        sessionId: roomLinks.sessionId,
+        hostUrl: roomLinks.hostUrl,
+        guestUrl: roomLinks.guestUrl,
+        expiresAt: roomLinks.expiresAt,
+      },
+    });
   }
 
   if (!result) {
@@ -1791,6 +1834,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
+      room: {
+        id: roomLinks.roomId,
+        sessionId: roomLinks.sessionId,
+        hostUrl: roomLinks.hostUrl,
+        guestUrl: roomLinks.guestUrl,
+        expiresAt: roomLinks.expiresAt,
+      },
     });
   }
 
@@ -1825,6 +1875,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     emailSent: true,
     meetingUrl,
     provider: result.provider,
+    room: {
+      id: roomLinks.roomId,
+      sessionId: roomLinks.sessionId,
+      hostUrl: roomLinks.hostUrl,
+      guestUrl: roomLinks.guestUrl,
+      expiresAt: roomLinks.expiresAt,
+    },
   });
 });
 

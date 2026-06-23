@@ -5,9 +5,11 @@ export type InterviewStatus = 'INVITED' | 'SCHEDULED' | 'ACTIVE' | 'COMPLETED' |
 export type MeetingType = 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
 
 export interface TranscriptEntry {
-  role: 'recruiter' | 'candidate' | 'model' | 'user';
+  role: string;
   text: string;
   timestamp?: string | null;
+  timestampStartMs?: number | null;
+  timestampEndMs?: number | null;
 }
 
 export interface TranscriptArtifact {
@@ -82,6 +84,9 @@ export interface LinkedMeetingSummary {
   meetingType: string;
   transcriptStatus: string;
   transcriptSummary: string | null;
+  transcriptJson?: string | null;
+  transcriptAnalysisJson?: string | null;
+  transcriptError?: string | null;
   recordingR2Key: string | null;
   room: {
     id: string;

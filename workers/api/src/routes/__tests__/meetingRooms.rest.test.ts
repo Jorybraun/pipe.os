@@ -78,33 +78,40 @@ function createFakeStorage(): R2Bucket {
 
 function createFakeAi(): Ai {
   return {
-    run: vi.fn(async () => ({
-      response: JSON.stringify({
-        summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
-        decisions: [],
-        actionItems: [],
-        topics: ['lattice replay buffers'],
-        followUps: [],
-        semanticAssertions: [{
-          sourceSegmentIds: ['utterance-0002'],
-          subjectSegmentId: 'utterance-0002',
-          predicate: 'implemented a source-described recovery mechanism',
-          narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
-          objectType: 'source-described mechanism',
-          objectValue: { surface: 'lattice replay buffers' },
-          qualifiers: {},
-          confidence: 0.92,
-          polarity: 1,
-          concepts: [{
-            surface: 'lattice replay buffers',
-            relationship: 'mechanism implemented for ecommerce order recovery',
-            weight: 0.9,
-            evidenceLevel: 'implemented',
-            strength: 0.88,
+    run: vi.fn(async (model: unknown) => {
+      if (String(model).includes('whisper')) {
+        return {
+          text: 'Mixed audio transcript: I implemented lattice replay buffers for ecommerce order recovery.',
+        };
+      }
+      return {
+        response: JSON.stringify({
+          summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
+          decisions: [],
+          actionItems: [],
+          topics: ['lattice replay buffers'],
+          followUps: [],
+          semanticAssertions: [{
+            sourceSegmentIds: ['utterance-0002'],
+            subjectSegmentId: 'utterance-0002',
+            predicate: 'implemented a source-described recovery mechanism',
+            narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
+            objectType: 'source-described mechanism',
+            objectValue: { surface: 'lattice replay buffers' },
+            qualifiers: {},
+            confidence: 0.92,
+            polarity: 1,
+            concepts: [{
+              surface: 'lattice replay buffers',
+              relationship: 'mechanism implemented for ecommerce order recovery',
+              weight: 0.9,
+              evidenceLevel: 'implemented',
+              strength: 0.88,
+            }],
           }],
-        }],
-      }),
-    })),
+        }),
+      };
+    }),
   } as unknown as Ai;
 }
 
@@ -380,8 +387,10 @@ describe('meeting room recording living-context route', () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
     const personEmail = 'meeting-graph-person@example.com';
+    const scheduledInterviewId = 'scheduled-interview-graph-1';
     const rolelessMessage =
       'Roleless follow-up: the same person can discuss lattice replay buffers and join the talent pool.';
+    sqlite.prepare('INSERT INTO scheduled_interviews (id) VALUES (?)').run(scheduledInterviewId);
 
     const createMeetingRes = await app.request('/meetings', {
       method: 'POST',
@@ -391,6 +400,7 @@ describe('meeting room recording living-context route', () => {
         recipientEmail: personEmail,
         title: 'Living graph technical discussion',
         meetingType: 'INTERVIEW',
+        scheduledInterviewId,
       }),
     }, env, ctx);
     expect(createMeetingRes.status).toBe(201);
@@ -490,6 +500,12 @@ describe('meeting room recording living-context route', () => {
       totalScore: 0.88,
       evidenceCount: 1,
     });
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_record_entities
+        WHERE entity_type = 'scheduled_interview'
+          AND entity_id = ?`,
+    ).get(scheduledInterviewId)).toEqual({ count: 2 });
 
     const candidateRes = await app.request('/candidates', {
       method: 'POST',
@@ -568,5 +584,81 @@ describe('meeting room recording living-context route', () => {
     ).toBe(true);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+  });
+
+  it('keeps mixed Whisper fallback transcripts summary-only without person semantic signals', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    delete (env as { DEEPGRAM_API_KEY?: string }).DEEPGRAM_API_KEY;
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Mixed Audio Person',
+        recipientEmail: 'mixed-audio@example.com',
+        title: 'Mixed audio fallback call',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'audio/webm',
+        'Content-Length': '3',
+      },
+      body: new Uint8Array([1, 2, 3]),
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_analysis_json
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_analysis_json: string;
+    };
+    expect(meetingRow.transcript_status).toBe('READY');
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const contactGraphRes = await app.request(
+      `/contacts/${created.meeting.contactId}/living-context`,
+      {},
+      env,
+      ctx,
+    );
+    expect(contactGraphRes.status).toBe(200);
+    const contactGraph = await contactGraphRes.json() as GraphBody;
+    expect(contactGraph.summary).toMatchObject({
+      interactionCount: 1,
+      artifactCount: 1,
+      contextRecordCount: 1,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: 1,
+    });
+    expect(contactGraph.assertions).toEqual([]);
+    expect(contactGraph.signals).toEqual([]);
+    expect(contactGraph.contextRecords).toContainEqual(expect.objectContaining({
+      recordType: 'meeting_transcript',
+      predicate: 'preserves meeting transcript',
+    }));
   });
 });

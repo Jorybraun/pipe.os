@@ -13,9 +13,20 @@ import {
   Video,
 } from 'lucide-react';
 import { loadRoom, postRoomEvent, uploadRecording } from './lib/api';
-import { createCompositeRecording, preferredRecordingMimeType } from './lib/recording';
+import { createCompositeRecording, preferredRecordingOptions } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
 import type { RoomMetadata } from './types';
+import pipeLogoUrl from '../../../public/mario-pipe.svg';
+
+function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
+  return (
+    <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
+      <img aria-hidden="true" className="brand-logo" src={pipeLogoUrl} alt="" />
+      <span className="brand-word">PIPE</span>
+      <span className="brand-chip">Room</span>
+    </div>
+  );
+}
 
 function StreamVideo({
   stream,
@@ -45,6 +56,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const autoAcceptingRef = useRef(false);
+  const endingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,11 +83,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     ) return;
 
     void createCompositeRecording(room.localStream, room.remoteStream).then((composite) => {
-      const mimeType = preferredRecordingMimeType();
-      const recorder = new MediaRecorder(
-        composite.stream,
-        mimeType ? { mimeType } : undefined,
-      );
+      const recorder = new MediaRecorder(composite.stream, preferredRecordingOptions());
       recordingChunksRef.current = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) recordingChunksRef.current.push(event.data);
@@ -108,28 +116,47 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const stopAndUploadRecording = async (): Promise<void> => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === 'inactive') return;
+    if (!recorder || recorder.state === 'inactive') {
+      await recordingDisposeRef.current?.();
+      recorderRef.current = null;
+      recordingDisposeRef.current = null;
+      return;
+    }
     setRecordingState('uploading');
-    await new Promise<void>((resolve) => {
-      recorder.addEventListener('stop', () => resolve(), { once: true });
-      recorder.stop();
-    });
-    const blob = new Blob(recordingChunksRef.current, {
-      type: recorder.mimeType || 'video/webm',
-    });
-    await recordingDisposeRef.current?.();
-    recorderRef.current = null;
-    await uploadRecording(token, blob);
-    setRecordingState('saved');
+    try {
+      await new Promise<void>((resolve) => {
+        recorder.addEventListener('stop', () => resolve(), { once: true });
+        recorder.stop();
+      });
+      const blob = new Blob(recordingChunksRef.current, {
+        type: recorder.mimeType || 'video/webm',
+      });
+      await uploadRecording(token, blob);
+      setRecordingState('saved');
+    } finally {
+      await recordingDisposeRef.current?.().catch(() => undefined);
+      recorderRef.current = null;
+      recordingDisposeRef.current = null;
+      recordingChunksRef.current = [];
+    }
   };
 
   const endCall = async (): Promise<void> => {
+    if (endingRef.current) return;
+    endingRef.current = true;
     room.hangUp();
     if (metadata.role === 'HOST') {
+      let failed = false;
       try {
         await stopAndUploadRecording();
-        await postRoomEvent(token, 'ENDED');
       } catch {
+        failed = true;
+      } finally {
+        await postRoomEvent(token, 'ENDED').catch(() => {
+          failed = true;
+        });
+      }
+      if (failed) {
         setRecordingState('failed');
       }
     } else {
@@ -142,10 +169,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     return (
       <main className="lobby">
         <section className="lobby-copy">
-          <div className="brand"><span>PIPE</span> ROOM</div>
+          <BrandMark />
           <div className="eyebrow">{metadata.meetingType.replace(/_/g, ' ')}</div>
           <h1>{metadata.title}</h1>
-          <p>{metadata.description || 'A private video meeting hosted with Pipe.'}</p>
+          {metadata.description && <p>{metadata.description}</p>}
           <div className="privacy-line">
             <ShieldCheck size={16} />
             <span>Private link · recording begins after the call connects</span>
@@ -185,6 +212,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">
+          <BrandMark />
           <div className="pulse"><Users size={30} /></div>
           <h2>
             {room.phase === 'connecting'
@@ -209,10 +237,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       <header className="call-header">
         <div>
-          <div className="brand"><span>PIPE</span> ROOM</div>
+          <BrandMark compact />
           <strong>{metadata.title}</strong>
         </div>
-        <div className={`recording ${recordingState}`} data-testid="recording-state">
+        <div className={`recording is-${recordingState}`} data-testid="recording-state">
           <Circle size={9} fill="currentColor" />
           {recordingState === 'recording' ? 'Recording' : recordingState}
         </div>
@@ -237,6 +265,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       {room.phase === 'ended' && (
         <div className="ended-overlay">
+          <BrandMark />
           <h2>Call ended</h2>
           <p>
             {metadata.role === 'HOST' && recordingState === 'uploading'
@@ -267,18 +296,20 @@ export default function App(): JSX.Element {
 
   if (error) {
     return (
-      <main className="center-message">
-        <div className="brand"><span>PIPE</span> ROOM</div>
-        <h1>Room unavailable</h1>
+      <main className="center-message is-error">
+        <BrandMark />
+        <h1>PIPE room unavailable</h1>
         <p>{error}</p>
       </main>
     );
   }
   if (!metadata) {
     return (
-      <main className="center-message">
+      <main className="center-message is-loading">
+        <BrandMark />
         <Loader2 className="spin" size={30} />
-        <p>Opening secure room...</p>
+        <h1>Opening secure PIPE room</h1>
+        <p>Preparing the branded video room.</p>
       </main>
     );
   }

@@ -3,21 +3,18 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
-  Briefcase,
-  Calendar,
   CheckCircle,
   Clock,
   Copy,
-  ExternalLink,
   FileText,
   GitPullRequest,
   Loader2,
   Mail,
+  Network,
   User,
   Video,
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
-import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import type {
   ScheduledInterviewDetail,
   TranscriptArtifact,
@@ -43,6 +40,15 @@ interface PreparedRoomLinks {
   expiresAt: string;
 }
 
+interface InviteResponse {
+  success: boolean;
+  emailSent: boolean;
+  meetingUrl: string;
+  provider?: string;
+  emailError?: string;
+  room?: PreparedRoomLinks;
+}
+
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
   if (!value) return fallback;
   return new Date(value).toLocaleString(undefined, {
@@ -54,17 +60,59 @@ function formatDate(value: string | null | undefined, fallback = 'Not scheduled'
   });
 }
 
-function parseTranscript(artifact: TranscriptArtifact | null | undefined): TranscriptEntry[] {
-  if (!artifact?.transcriptJson) return [];
+function formatDurationMs(value: number | null | undefined): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
+  if (!raw) return [];
   try {
-    const parsed = JSON.parse(artifact.transcriptJson) as unknown;
+    const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
-      ? parsed.filter((entry): entry is TranscriptEntry => (
-          Boolean(entry)
-          && typeof entry === 'object'
-          && typeof (entry as TranscriptEntry).text === 'string'
-          && typeof (entry as TranscriptEntry).role === 'string'
-        ))
+      ? parsed.flatMap((entry): TranscriptEntry[] => {
+          if (!entry || typeof entry !== 'object') return [];
+          const record = entry as Record<string, unknown>;
+          if (typeof record.text !== 'string' || record.text.trim().length === 0) return [];
+          const role =
+            typeof record.role === 'string' && record.role.length > 0
+              ? record.role
+              : typeof record.speaker === 'string' && record.speaker.length > 0
+                ? record.speaker
+                : 'speaker';
+          return [{
+            role,
+            text: record.text,
+            timestamp: typeof record.timestamp === 'string' ? record.timestamp : null,
+            timestampStartMs: typeof record.timestamp_start_ms === 'number' ? record.timestamp_start_ms : null,
+            timestampEndMs: typeof record.timestamp_end_ms === 'number' ? record.timestamp_end_ms : null,
+          }];
+        })
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseTranscript(artifact: TranscriptArtifact | null | undefined): TranscriptEntry[] {
+  return parseTranscriptJson(artifact?.transcriptJson);
+}
+
+function transcriptTimeLabel(entry: TranscriptEntry): string | null {
+  if (entry.timestamp) return formatDate(entry.timestamp, '');
+  return formatDurationMs(entry.timestampStartMs);
+}
+
+function parseAnalysisList(raw: string | null | undefined, key: 'topics' | 'decisions' | 'followUps'): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const value = parsed[key];
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).slice(0, 4)
       : [];
   } catch {
     return [];
@@ -118,53 +166,6 @@ function Section({
   );
 }
 
-function Field({ label, value }: { label: string; value: ReactNode }): JSX.Element {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div style={FIELD_LABEL}>{label}</div>
-      <div style={FIELD_VALUE}>{value}</div>
-    </div>
-  );
-}
-
-function ActionLink({
-  href,
-  children,
-  tone = 'blue',
-}: {
-  href: string | null | undefined;
-  children: ReactNode;
-  tone?: 'blue' | 'green' | 'neutral';
-}): JSX.Element | null {
-  if (!href) return null;
-  const color = tone === 'green' ? '#4ade80' : tone === 'neutral' ? 'var(--pipe-text)' : '#60a5fa';
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '10px 14px',
-        borderRadius: 6,
-        border: `1px solid ${tone === 'neutral' ? 'var(--pipe-border)' : `${color}40`}`,
-        background: tone === 'neutral' ? 'rgba(255,255,255,0.04)' : `${color}16`,
-        color,
-        fontFamily: FONT,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: '0.06em',
-        textDecoration: 'none',
-      }}
-    >
-      {children}
-      <ExternalLink size={13} />
-    </a>
-  );
-}
-
 export default function InterviewDetailPage(): JSX.Element {
   const { interviewId } = useParams<{ interviewId: string }>();
   const navigate = useNavigate();
@@ -198,9 +199,20 @@ export default function InterviewDetailPage(): JSX.Element {
     void load();
   }, [load]);
 
-  const transcriptEntries = useMemo(
-    () => parseTranscript(interview?.transcriptArtifact),
-    [interview?.transcriptArtifact],
+  const transcriptEntries = useMemo(() => {
+    const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
+    return meetingEntries.length > 0
+      ? meetingEntries
+      : parseTranscript(interview?.transcriptArtifact);
+  }, [interview?.linkedMeeting?.transcriptJson, interview?.transcriptArtifact]);
+
+  const transcriptTopics = useMemo(
+    () => parseAnalysisList(interview?.linkedMeeting?.transcriptAnalysisJson, 'topics'),
+    [interview?.linkedMeeting?.transcriptAnalysisJson],
+  );
+  const transcriptDecisions = useMemo(
+    () => parseAnalysisList(interview?.linkedMeeting?.transcriptAnalysisJson, 'decisions'),
+    [interview?.linkedMeeting?.transcriptAnalysisJson],
   );
 
   const ensureRoomLinks = useCallback(async (): Promise<PreparedRoomLinks | null> => {
@@ -263,8 +275,14 @@ export default function InterviewDetailPage(): JSX.Element {
     const links = existingGuestUrl ? null : await ensureRoomLinks();
     const guestUrl = existingGuestUrl ?? links?.guestUrl ?? null;
     if (!guestUrl) return;
-    await navigator.clipboard.writeText(guestUrl);
-    setRoomNotice('Guest link copied.');
+    try {
+      await navigator.clipboard.writeText(guestUrl);
+      setRoomNotice('Guest link copied.');
+      setRoomError(null);
+    } catch {
+      setRoomNotice(null);
+      setRoomError('Copy failed. Select the guest link below.');
+    }
   }, [ensureRoomLinks, interview?.linkedMeeting?.meetingUrl, roomLinks?.guestUrl]);
 
   const sendInvite = useCallback(async () => {
@@ -278,14 +296,22 @@ export default function InterviewDetailPage(): JSX.Element {
     setRoomNotice(null);
     setIsSendingInvite(true);
     try {
-      const result = await api.post<{
-        success: boolean;
-        emailSent: boolean;
-        meetingUrl: string;
-      }>(`/api/v1/scheduling/interviews/${interview.id}/invite`, { email });
+      const result = await api.post<InviteResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/invite`,
+        { email },
+      );
+      if (result.room) {
+        setRoomLinks(result.room);
+      } else if (result.meetingUrl) {
+        setRoomLinks((current) => current
+          ? { ...current, guestUrl: result.meetingUrl }
+          : current);
+      }
       setRoomNotice(result.emailSent
-        ? 'Invite sent.'
-        : 'Guest link is ready. Email delivery is not configured locally.');
+        ? `Invite sent${result.provider ? ` via ${result.provider}` : ''}.`
+        : result.emailError
+          ? 'Guest link is ready, but email delivery failed. Copy the link manually.'
+          : 'Guest link is ready. Email delivery is not configured locally.');
       await load();
     } catch (err) {
       setRoomError(err instanceof Error ? err.message : 'Unable to send invite');
@@ -329,18 +355,28 @@ export default function InterviewDetailPage(): JSX.Element {
     interview.linkedMeeting?.transcriptStatus
     ?? interview.transcriptArtifact?.status
     ?? 'NONE';
+  const transcriptError = interview.linkedMeeting?.transcriptError ?? interview.transcriptArtifact?.errorMessage ?? null;
   const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
   const hasInviteDelivery = Boolean(interview.inviteLinkSentAt ?? interview.emailSentAt);
-  const hasRoleContext = Boolean(interview.pipelineId || interview.stageId || interview.pipelineTitle || interview.stageTitle);
-  const livingContextSummary = interview.livingContext?.summary;
-  const hasLivingContextEvidence = Boolean(livingContextSummary && (
-    livingContextSummary.interactionCount > 0
-    || livingContextSummary.contextRecordCount > 0
-    || livingContextSummary.artifactCount > 0
-    || livingContextSummary.sourceSpanCount > 0
-    || livingContextSummary.assertionCount > 0
-    || livingContextSummary.signalCount > 0
-  ));
+  const contextSummary = interview.livingContext?.summary ?? null;
+  const contextRecords = interview.livingContext?.contextRecords ?? [];
+  const hasLivingContextEvidence = Boolean(
+    contextSummary && (
+      contextSummary.interactionCount > 0
+      || contextSummary.artifactCount > 0
+      || contextSummary.contextRecordCount > 0
+      || contextSummary.sourceSpanCount > 0
+      || contextSummary.assertionCount > 0
+      || contextSummary.signalCount > 0
+    ),
+  );
+  const hasTranscriptEvidence = Boolean(
+    transcriptEntries.length > 0
+    || interview.linkedMeeting?.transcriptSummary
+    || transcriptError
+    || ['READY', 'COMPLETED', 'PROCESSING', 'FAILED'].includes(transcriptStatus),
+  );
+  const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
 
   return (
     <div style={PAGE}>
@@ -367,10 +403,6 @@ export default function InterviewDetailPage(): JSX.Element {
               PERSON
             </button>
           )}
-          <ActionLink href={interview.schedulingUrl}>
-            <Calendar size={14} />
-            BOOKING
-          </ActionLink>
         </div>
       </header>
 
@@ -382,7 +414,9 @@ export default function InterviewDetailPage(): JSX.Element {
           </div>
           <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
           <div style={ROOM_LINK_TEXT}>
-            {guestRoomUrl ? 'Guest link ready' : 'Open the host room to create the guest link'}
+            {guestRoomUrl
+              ? 'Guest link is ready. Send it, copy it, or open the host room.'
+              : 'Send an invite to create the guest room link.'}
           </div>
           {roomLinks?.expiresAt && (
             <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
@@ -391,14 +425,16 @@ export default function InterviewDetailPage(): JSX.Element {
           )}
         </div>
         <div style={ROOM_ACTIONS}>
-          <button
-            onClick={() => void openHostRoom()}
-            disabled={isPreparingRoom}
-            style={{ ...PRIMARY_BUTTON, ...ROOM_PRIMARY_BUTTON }}
-          >
-            {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-            OPEN HOST ROOM
-          </button>
+          {personEmail && (
+            <button
+              onClick={() => void sendInvite()}
+              disabled={isSendingInvite}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_PRIMARY_BUTTON }}
+            >
+              {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+              {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
+            </button>
+          )}
           <button
             onClick={() => void copyGuestLink()}
             disabled={isPreparingRoom}
@@ -407,133 +443,156 @@ export default function InterviewDetailPage(): JSX.Element {
             <Copy size={14} />
             COPY GUEST LINK
           </button>
-          {personEmail && (
-            <button
-              onClick={() => void sendInvite()}
-              disabled={isSendingInvite}
-              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
-            >
-              {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
-              {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
-            </button>
+          <button
+            onClick={() => void openHostRoom()}
+            disabled={isPreparingRoom}
+            style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+          >
+            {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+            OPEN HOST ROOM
+          </button>
+          {guestRoomUrl && (
+            <label style={ROOM_GUEST_LINK_LABEL}>
+              <span style={ROOM_GUEST_LINK_TEXT}>GUEST LINK</span>
+              <input
+                readOnly
+                value={guestRoomUrl}
+                onFocus={(event) => event.currentTarget.select()}
+                style={ROOM_GUEST_LINK_INPUT}
+              />
+            </label>
           )}
           {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
           {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
         </div>
       </section>
 
-      <div style={GRID}>
-        <main style={DETAIL_GRID}>
-          <Section title="Meeting" icon={<Calendar size={15} />}>
-            <div style={FIELD_GRID}>
-              <Field label="When" value={formatDate(interview.scheduledAt)} />
-              <Field label="Event" value={interview.interviewType ?? 'VIDEO'} />
-              <Field label="Context" value={roleTitle} />
-            </div>
-            {interview.recruiterNotes && (
-              <div style={NOTE}>{interview.recruiterNotes}</div>
-            )}
-          </Section>
-
-          <Section title="Person" icon={<User size={15} />}>
-            <div style={FIELD_GRID}>
-              <Field label="Name" value={personName} />
-              <Field label="Email" value={personEmail ?? 'No email'} />
-              <Field label="Created" value={formatDate(interview.createdAt, 'Unknown')} />
-            </div>
-          </Section>
-
-          {hasRoleContext && (
-            <Section title="Role context" icon={<Briefcase size={15} />}>
-              <div style={FIELD_GRID}>
-                <Field label="Role" value={roleTitle} />
-                <Field label="Stage" value={stageTitle} />
-              </div>
-            </Section>
-          )}
-
-          {(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId) && (
+      {(hasCodeReviewEvidence || hasTranscriptEvidence || hasLivingContextEvidence) && (
+        <main style={EVIDENCE_GRID}>
+          {hasCodeReviewEvidence && (
             <Section title="Code review" icon={<GitPullRequest size={15} />}>
-              <div style={FIELD_GRID}>
-                <Field label="Repo id" value={interview.matchedRepoId ?? 'None'} />
-                <Field label="PR" value={interview.githubPrNumber ? `#${interview.githubPrNumber}` : 'None'} />
-                <Field label="Completed" value={formatDate(interview.completedAt, 'Not completed')} />
-                <Field
-                  label="Repository"
-                  value={interview.githubRepoUrl ? (
+              <div style={EVIDENCE_LIST}>
+                {interview.githubRepoUrl && (
+                  <div style={EVIDENCE_ROW}>
+                    <span style={FIELD_LABEL}>Repository</span>
                     <a href={interview.githubRepoUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
                       {interview.githubRepoUrl}
                     </a>
-                  ) : 'None'}
-                />
+                  </div>
+                )}
+                {interview.githubPrNumber && (
+                  <div style={EVIDENCE_ROW}>
+                    <span style={FIELD_LABEL}>PR</span>
+                    <span style={FIELD_VALUE}>#{interview.githubPrNumber}</span>
+                  </div>
+                )}
+                {interview.matchedRepoId && (
+                  <div style={EVIDENCE_ROW}>
+                    <span style={FIELD_LABEL}>Repo id</span>
+                    <span style={FIELD_VALUE}>{interview.matchedRepoId}</span>
+                  </div>
+                )}
               </div>
             </Section>
           )}
 
-          <Section title="Transcript" icon={<FileText size={15} />}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: transcriptEntries.length > 0 ? 14 : 0 }}>
-              {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
-                ? <CheckCircle size={14} color="#4ade80" />
-                : transcriptStatus === 'FAILED'
-                  ? <AlertCircle size={14} color="#f87171" />
-                  : <Clock size={14} color="var(--pipe-text-dim)" />}
-              <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatus}</span>
-            </div>
-            {interview.linkedMeeting?.transcriptSummary && (
-              <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
-            )}
-            {interview.transcriptArtifact?.errorMessage && (
-              <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
-                {interview.transcriptArtifact.errorMessage}
+          {hasTranscriptEvidence && (
+            <Section title="Transcript" icon={<FileText size={15} />}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: transcriptEntries.length > 0 ? 14 : 0 }}>
+                {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
+                  ? <CheckCircle size={14} color="#4ade80" />
+                  : transcriptStatus === 'FAILED'
+                    ? <AlertCircle size={14} color="#f87171" />
+                    : <Clock size={14} color="var(--pipe-text-dim)" />}
+                <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatus}</span>
               </div>
-            )}
-            {transcriptEntries.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {transcriptEntries.map((entry, index) => (
-                  <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
-                    <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
-                      {entry.timestamp && (
-                        <div style={TRANSCRIPT_TIME}>{formatDate(entry.timestamp, '')}</div>
-                      )}
-                    </div>
+              {interview.linkedMeeting?.transcriptSummary && (
+                <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
+              )}
+              {interview.linkedMeeting?.recordingR2Key && (
+                <div style={SMALL_NOTE}>Recording stored. Transcript and context are rebuilt from the meeting source.</div>
+              )}
+              {transcriptTopics.length > 0 && (
+                <div style={ANALYSIS_GROUP}>
+                  <div style={FIELD_LABEL}>Topics</div>
+                  <div style={TAG_ROW}>
+                    {transcriptTopics.map((topic) => <span key={topic} style={TAG}>{topic}</span>)}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div style={EMPTY_TEXT}>Transcript will appear here after the call.</div>
-            )}
-          </Section>
+                </div>
+              )}
+              {transcriptDecisions.length > 0 && (
+                <div style={ANALYSIS_GROUP}>
+                  <div style={FIELD_LABEL}>Decisions</div>
+                  <div style={TAG_ROW}>
+                    {transcriptDecisions.map((decision) => <span key={decision} style={TAG}>{decision}</span>)}
+                  </div>
+                </div>
+              )}
+              {transcriptError && (
+                <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
+                  {transcriptError}
+                </div>
+              )}
+              {transcriptEntries.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {transcriptEntries.map((entry, index) => {
+                    const timeLabel = transcriptTimeLabel(entry);
+                    return (
+                      <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
+                        <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
+                          {timeLabel && (
+                            <div style={TRANSCRIPT_TIME}>{timeLabel}</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={EMPTY_TEXT}>Transcript is being prepared.</div>
+              )}
+            </Section>
+          )}
 
-          {hasInviteDelivery && (
-            <Section title="Delivery" icon={<Mail size={15} />}>
-              <div style={FIELD_GRID_SINGLE}>
-                <Field label="Invite sent" value={formatDate(interview.inviteLinkSentAt ?? interview.emailSentAt, 'Not sent')} />
+          {hasLivingContextEvidence && contextSummary && (
+            <Section title="Context captured" icon={<Network size={15} />}>
+              <div style={CONTEXT_METRICS}>
+                <div style={CONTEXT_METRIC}>
+                  <span style={CONTEXT_METRIC_VALUE}>{contextSummary.interactionCount}</span>
+                  <span style={CONTEXT_METRIC_LABEL}>interactions</span>
+                </div>
+                <div style={CONTEXT_METRIC}>
+                  <span style={CONTEXT_METRIC_VALUE}>{contextSummary.contextRecordCount}</span>
+                  <span style={CONTEXT_METRIC_LABEL}>context records</span>
+                </div>
+                <div style={CONTEXT_METRIC}>
+                  <span style={CONTEXT_METRIC_VALUE}>{contextSummary.sourceSpanCount}</span>
+                  <span style={CONTEXT_METRIC_LABEL}>source spans</span>
+                </div>
+                <div style={CONTEXT_METRIC}>
+                  <span style={CONTEXT_METRIC_VALUE}>{contextSummary.assertionCount}</span>
+                  <span style={CONTEXT_METRIC_LABEL}>assertions</span>
+                </div>
               </div>
+              {contextRecords.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {contextRecords.slice(0, 3).map((record) => (
+                    <div key={record.id} style={CONTEXT_RECORD}>
+                      <div style={TRANSCRIPT_ROLE}>{record.recordType}</div>
+                      <div style={TRANSCRIPT_TEXT}>{record.narrative}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={EMPTY_TEXT}>No context records have been extracted yet.</div>
+              )}
             </Section>
           )}
         </main>
-      </div>
-
-      {interview.livingContext && hasLivingContextEvidence && (
-        <section style={GRAPH_SECTION}>
-          <div style={GRAPH_HEADER}>
-            <div>
-              <div style={EYEBROW}>LIVING GRAPH</div>
-              <h2 style={GRAPH_TITLE}>Source-backed person context</h2>
-            </div>
-            <div style={GRAPH_META}>
-              {interview.livingContext.summary.contextRecordCount} records · {interview.livingContext.summary.sourceSpanCount} spans
-            </div>
-          </div>
-          <LivingContextGraph
-            candidateId={interview.candidateId ?? `interview:${interview.id}`}
-            livingContextEndpoint={`/api/v1/scheduling/interviews/${interview.id}`}
-            initialLivingContext={interview.livingContext}
-          />
-        </section>
       )}
+
     </div>
   );
 }
@@ -555,17 +614,10 @@ const PAGE: CSSProperties = {
   maxWidth: 1180,
   margin: '0 auto',
   padding: 22,
-  border: '1px solid rgba(148,163,184,0.18)',
+  border: '1px solid var(--pipe-border)',
   borderRadius: 8,
-  background: 'rgba(6,10,18,0.96)',
-  boxShadow: '0 24px 80px rgba(0,0,0,0.34)',
-};
-
-const GRID: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr',
-  gap: 16,
-  alignItems: 'start',
+  background: 'var(--pipe-surface-elevated)',
+  boxShadow: '0 24px 80px var(--pipe-shadow)',
 };
 
 const ROOM_PANEL: CSSProperties = {
@@ -573,11 +625,11 @@ const ROOM_PANEL: CSSProperties = {
   gridTemplateColumns: 'minmax(0, 1fr) minmax(280px, 420px)',
   gap: 22,
   alignItems: 'center',
-  border: '1px solid rgba(96,165,250,0.34)',
+  border: '1px solid var(--pipe-accent-border)',
   borderRadius: 8,
-  background: 'rgba(10,16,28,0.92)',
+  background: 'var(--pipe-surface-solid)',
   padding: 20,
-  boxShadow: '0 18px 42px rgba(0,0,0,0.22)',
+  boxShadow: '0 18px 42px var(--pipe-shadow)',
 };
 
 const ROOM_TITLE: CSSProperties = {
@@ -588,42 +640,24 @@ const ROOM_TITLE: CSSProperties = {
   letterSpacing: 0,
 };
 
-const DETAIL_GRID: CSSProperties = {
+const EVIDENCE_GRID: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
   gap: 14,
   minWidth: 0,
 };
 
-const GRAPH_SECTION: CSSProperties = {
+const EVIDENCE_LIST: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 14,
+  gap: 10,
 };
 
-const GRAPH_HEADER: CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-end',
-  justifyContent: 'space-between',
-  gap: 16,
-  flexWrap: 'wrap',
-};
-
-const GRAPH_TITLE: CSSProperties = {
-  margin: 0,
-  color: 'var(--pipe-text)',
-  fontSize: 18,
-  lineHeight: 1.25,
-  letterSpacing: 0,
-};
-
-const GRAPH_META: CSSProperties = {
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
+const EVIDENCE_ROW: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '96px minmax(0, 1fr)',
+  gap: 12,
+  alignItems: 'baseline',
 };
 
 const SECTION: CSSProperties = {
@@ -644,18 +678,6 @@ const SECTION_TITLE: CSSProperties = {
   fontWeight: 700,
   letterSpacing: '0.12em',
   textTransform: 'uppercase',
-};
-
-const FIELD_GRID: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-  gap: 14,
-};
-
-const FIELD_GRID_SINGLE: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr',
-  gap: 14,
 };
 
 const FIELD_LABEL: CSSProperties = {
@@ -733,7 +755,7 @@ const PRIMARY_BUTTON: CSSProperties = {
   padding: '10px 14px',
   borderRadius: 6,
   border: '1px solid var(--pipe-border)',
-  background: 'rgba(255,255,255,0.05)',
+  background: 'var(--pipe-surface)',
   color: 'var(--pipe-text)',
   cursor: 'pointer',
   fontFamily: FONT,
@@ -745,7 +767,7 @@ const PRIMARY_BUTTON: CSSProperties = {
 const TEXT_BUTTON: CSSProperties = {
   border: 'none',
   background: 'transparent',
-  color: '#60a5fa',
+  color: 'var(--pipe-accent)',
   cursor: 'pointer',
   fontFamily: FONT,
   fontSize: 12,
@@ -753,7 +775,7 @@ const TEXT_BUTTON: CSSProperties = {
 };
 
 const INLINE_LINK: CSSProperties = {
-  color: '#60a5fa',
+  color: 'var(--pipe-accent)',
   textDecoration: 'none',
   overflowWrap: 'anywhere',
 };
@@ -767,8 +789,8 @@ const ROOM_ACTIONS: CSSProperties = {
 const ROOM_PRIMARY_BUTTON: CSSProperties = {
   justifyContent: 'center',
   width: '100%',
-  borderColor: 'rgba(96,165,250,0.46)',
-  background: 'rgba(96,165,250,0.16)',
+  borderColor: 'var(--pipe-accent-border)',
+  background: 'var(--pipe-accent-surface)',
 };
 
 const ROOM_SECONDARY_BUTTON: CSSProperties = {
@@ -781,6 +803,32 @@ const ROOM_LINK_TEXT: CSSProperties = {
   fontFamily: FONT,
   fontSize: 10,
   lineHeight: 1.5,
+};
+
+const ROOM_GUEST_LINK_LABEL: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+};
+
+const ROOM_GUEST_LINK_TEXT: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 9,
+  fontWeight: 700,
+  letterSpacing: '0.12em',
+};
+
+const ROOM_GUEST_LINK_INPUT: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 10,
+  lineHeight: 1.4,
+  padding: '10px 11px',
 };
 
 const ERROR_NOTE: CSSProperties = {
@@ -808,10 +856,45 @@ const NOTE: CSSProperties = {
   padding: 12,
   borderRadius: 6,
   border: '1px solid var(--pipe-border)',
-  background: 'rgba(255,255,255,0.035)',
+  background: 'var(--pipe-surface)',
   color: 'var(--pipe-text-dim)',
   fontSize: 12,
   lineHeight: 1.6,
+};
+
+const SMALL_NOTE: CSSProperties = {
+  marginTop: 10,
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 10,
+  lineHeight: 1.5,
+};
+
+const ANALYSIS_GROUP: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  marginTop: 14,
+};
+
+const TAG_ROW: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+};
+
+const TAG: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  maxWidth: '100%',
+  padding: '5px 8px',
+  borderRadius: 999,
+  border: '1px solid var(--pipe-border)',
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 10,
+  lineHeight: 1.4,
+  overflowWrap: 'anywhere',
 };
 
 const EMPTY_TEXT: CSSProperties = {
@@ -826,7 +909,7 @@ const TRANSCRIPT_ROW: CSSProperties = {
   padding: 12,
   border: '1px solid var(--pipe-border)',
   borderRadius: 6,
-  background: 'rgba(255,255,255,0.025)',
+  background: 'var(--pipe-surface)',
 };
 
 const TRANSCRIPT_ROLE: CSSProperties = {
@@ -851,6 +934,52 @@ const TRANSCRIPT_TIME: CSSProperties = {
   color: 'var(--pipe-text-dim)',
   fontFamily: FONT,
   fontSize: 10,
+};
+
+const CONTEXT_METRICS: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: 1,
+  overflow: 'hidden',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-border)',
+  marginBottom: 14,
+};
+
+const CONTEXT_METRIC: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 12,
+  background: 'var(--pipe-surface)',
+};
+
+const CONTEXT_METRIC_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 18,
+  fontWeight: 800,
+  lineHeight: 1,
+};
+
+const CONTEXT_METRIC_LABEL: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontFamily: FONT,
+  fontSize: 9,
+  fontWeight: 700,
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+};
+
+const CONTEXT_RECORD: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '120px minmax(0, 1fr)',
+  gap: 12,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
 };
 
 const CENTERED: CSSProperties = {

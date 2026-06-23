@@ -78,3 +78,12 @@ export function preferredRecordingMimeType(): string {
   ];
   return options.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
 }
+
+export function preferredRecordingOptions(): MediaRecorderOptions | undefined {
+  const mimeType = preferredRecordingMimeType();
+  return {
+    ...(mimeType ? { mimeType } : {}),
+    audioBitsPerSecond: 96_000,
+    videoBitsPerSecond: 650_000,
+  };
+}
