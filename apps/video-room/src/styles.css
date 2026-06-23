@@ -2,6 +2,7 @@
 
 :root {
   --bg: #06111f;
+  --bg-deep: #02060d;
   --bg-2: #091828;
   --bg-3: #0d2033;
   --ink: #f4f8ff;
@@ -18,6 +19,8 @@
   --blood-hot: #a9d9ff;
   --chrome: linear-gradient(180deg, #ffffff 0%, #eaf5ff 28%, #9dcdf0 55%, #ffffff 82%, #b5daf6 100%);
   --chrome-soft: linear-gradient(180deg, #ffffff 0%, #e9f7ff 35%, #a7d7f7 70%, #ffffff 100%);
+  --pipe-blue: #6fc6ff;
+  --pipe-blue-hot: #c5ebff;
   --scanline: rgba(255, 255, 255, .035);
   --grain: rgba(255, 255, 255, .025);
   --pcb: rgba(127, 199, 255, .08);
@@ -73,10 +76,10 @@ body,
 body {
   min-width: 320px;
   background:
-    radial-gradient(ellipse 75% 45% at 50% -8%, rgba(82, 150, 210, .32) 0%, transparent 66%),
-    radial-gradient(ellipse 50% 50% at 72% 34%, rgba(115, 190, 245, .15) 0%, transparent 62%),
+    radial-gradient(ellipse 75% 45% at 50% -8%, rgba(82, 150, 210, .36) 0%, transparent 66%),
+    radial-gradient(ellipse 50% 50% at 72% 34%, rgba(115, 190, 245, .18) 0%, transparent 62%),
     radial-gradient(ellipse 55% 50% at 18% 78%, rgba(132, 182, 230, .10) 0%, transparent 66%),
-    linear-gradient(180deg, #071323 0%, #06101c 52%, #050b14 100%);
+    linear-gradient(180deg, #071323 0%, #050d17 52%, var(--bg-deep) 100%);
   color: var(--ink);
   overflow: hidden;
 }
@@ -140,18 +143,17 @@ button:focus-visible {
 }
 
 .brand-logo {
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   flex: 0 0 auto;
   display: block;
-  object-fit: contain;
-  color: #fff;
+  color: var(--ink-strong);
   filter: drop-shadow(0 0 14px rgba(170, 210, 255, .42)) drop-shadow(0 2px 6px rgba(0, 0, 0, .55));
 }
 
 .brand.compact .brand-logo {
-  width: 25px;
-  height: 25px;
+  width: 30px;
+  height: 30px;
 }
 
 .brand-word {
@@ -162,8 +164,8 @@ button:focus-visible {
   -webkit-background-clip: text;
   background-clip: text;
   font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-  font-size: 28px;
-  font-weight: 700;
+  font-size: 32px;
+  font-weight: 800;
   letter-spacing: .02em;
   line-height: .92;
 }
@@ -188,7 +190,7 @@ button:focus-visible {
 }
 
 .brand.compact .brand-word {
-  font-size: 21px;
+  font-size: 23px;
 }
 
 .brand-chip {
@@ -207,6 +209,14 @@ button:focus-visible {
 .brand.compact .brand-chip {
   padding: 4px 7px;
   font-size: 8px;
+}
+
+.brand-line {
+  width: min(280px, 46vw);
+  height: 1px;
+  margin: 24px 0 0;
+  background: linear-gradient(90deg, var(--pipe-blue-hot), rgba(111, 198, 255, .18), transparent);
+  box-shadow: 0 0 22px rgba(111, 198, 255, .22);
 }
 
 .lobby,
@@ -243,10 +253,10 @@ button:focus-visible {
   z-index: -3;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 70% 44% at 52% -8%, rgba(82, 150, 210, .28), transparent 66%),
-    radial-gradient(ellipse 45% 44% at 76% 32%, rgba(127, 199, 255, .13), transparent 64%),
+    radial-gradient(ellipse 70% 44% at 52% -8%, rgba(82, 150, 210, .34), transparent 66%),
+    radial-gradient(ellipse 45% 44% at 76% 32%, rgba(127, 199, 255, .16), transparent 64%),
     radial-gradient(ellipse 56% 48% at 14% 80%, rgba(106, 165, 216, .12), transparent 68%),
-    linear-gradient(180deg, var(--bg) 0%, #050b14 100%);
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
 }
 
 .lobby {
@@ -276,7 +286,7 @@ button:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin: 48px 0 14px;
+  margin: 34px 0 14px;
   color: var(--ember);
   font: 700 10px/1 var(--mono);
   letter-spacing: .12em;
@@ -405,13 +415,13 @@ button:focus-visible {
   gap: 9px;
   border: 1px solid #eef8ff;
   border-radius: 999px;
-  background: #eef8ff;
+  background: linear-gradient(180deg, #ffffff 0%, #dff2ff 100%);
   color: var(--bg);
   font: 800 11px/1 Inter, system-ui, sans-serif;
   letter-spacing: .12em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow: 0 18px 46px rgba(127, 199, 255, .18);
+  box-shadow: 0 18px 46px rgba(127, 199, 255, .22), inset 0 1px 0 rgba(255, 255, 255, .8);
   transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease, opacity .18s ease;
 }
 
@@ -433,10 +443,10 @@ button:focus-visible {
   height: 100dvh;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 28%, rgba(127, 199, 255, .12), transparent 62%),
+    radial-gradient(ellipse at 50% 28%, rgba(127, 199, 255, .14), transparent 62%),
     linear-gradient(rgba(214, 232, 255, .035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(214, 232, 255, .035) 1px, transparent 1px),
-    linear-gradient(180deg, var(--bg) 0%, #050b14 100%);
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
   background-size: auto, 42px 42px, 42px 42px, auto;
 }
 
@@ -600,8 +610,8 @@ button:focus-visible {
 
 .state-mark {
   position: relative;
-  width: 108px;
-  height: 108px;
+  width: 116px;
+  height: 116px;
   display: grid;
   place-items: center;
   margin: 0 0 2px;
@@ -613,7 +623,7 @@ button:focus-visible {
     linear-gradient(90deg, rgba(214, 232, 255, .04) 1px, transparent 1px),
     rgba(8, 24, 40, .62);
   background-size: auto, 18px 18px, 18px 18px, auto;
-  box-shadow: 0 0 0 12px rgba(127, 199, 255, .045), 0 0 58px rgba(127, 199, 255, .18);
+  box-shadow: 0 0 0 12px rgba(127, 199, 255, .045), 0 0 70px rgba(127, 199, 255, .22);
   backdrop-filter: blur(12px);
   overflow: hidden;
 }
@@ -669,11 +679,26 @@ button:focus-visible {
 .state-logo {
   position: relative;
   z-index: 1;
-  width: 46px;
-  height: 46px;
+  width: 56px;
+  height: 56px;
   display: block;
-  object-fit: contain;
+  color: var(--ink-strong);
   filter: drop-shadow(0 0 18px rgba(170, 210, 255, .50)) drop-shadow(0 2px 8px rgba(0, 0, 0, .55));
+}
+
+.center-message.is-loading .brand {
+  margin-bottom: 30px;
+}
+
+.center-message.is-loading .state-mark {
+  width: 132px;
+  height: 132px;
+  margin-bottom: 8px;
+}
+
+.center-message.is-loading .state-logo {
+  width: 64px;
+  height: 64px;
 }
 
 .state-icon {

@@ -16,12 +16,33 @@ import { loadRoom, postRoomEvent, uploadRecording } from './lib/api';
 import { createCompositeRecording, preferredRecordingOptions } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
 import type { RoomMetadata } from './types';
-import pipeLogoUrl from '../../../public/mario-pipe.svg';
+
+function PipeMark({ className }: { className?: string }): JSX.Element {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 1000 1000"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
+        stroke="currentColor"
+        strokeWidth="192"
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+      />
+      <rect x="615" y="450" width="250" height="100" fill="currentColor" />
+      <rect x="135" y="450" width="250" height="100" fill="currentColor" />
+    </svg>
+  );
+}
 
 function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
     <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
-      <img aria-hidden="true" className="brand-logo" src={pipeLogoUrl} alt="" />
+      <PipeMark className="brand-logo" />
       <span className="brand-word" data-text="PIPE">PIPE</span>
       <span className="brand-chip">Room</span>
     </div>
@@ -44,7 +65,7 @@ function RoomStateMark({
     >
       <span className="state-orbit" />
       <span className="state-scan" />
-      <img className="state-logo" src={pipeLogoUrl} alt="" />
+      <PipeMark className="state-logo" />
       {icon && <span className="state-icon">{icon}</span>}
     </div>
   );
@@ -193,6 +214,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       <main className="lobby">
         <section className="lobby-copy">
           <BrandMark />
+          <div className="brand-line" />
           <div className="eyebrow">{metadata.meetingType.replace(/_/g, ' ')}</div>
           <h1>{metadata.title}</h1>
           {metadata.description && <p>{metadata.description}</p>}
