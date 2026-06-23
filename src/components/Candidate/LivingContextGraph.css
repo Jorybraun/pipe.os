@@ -91,6 +91,10 @@ html[data-theme="pipe-blue"] .living-context {
   background: var(--pipe-border);
 }
 
+.living-context__summary .living-context__metric:nth-child(n + 5) {
+  display: none;
+}
+
 .living-context__metric {
   min-width: 0;
   padding: 12px 14px;
@@ -212,6 +216,10 @@ html[data-theme="pipe-blue"] .living-context {
   font: 8px "Space Mono", monospace;
   letter-spacing: 0.11em;
   text-transform: uppercase;
+}
+
+.living-context__metric-label {
+  overflow-wrap: break-word;
 }
 
 .living-context__review-match {
@@ -1444,10 +1452,12 @@ html[data-theme="pipe-blue"] .living-context {
 }
 
 .context-tree__narrative {
-  font: 11px "Space Mono", monospace;
+  font-size: 12px;
   color: var(--pipe-text);
   line-height: 1.5;
   margin-bottom: 6px;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .context-tree__meta {
@@ -1509,10 +1519,8 @@ html[data-theme="pipe-blue"] .living-context {
 .context-tree__entity-value {
   color: var(--pipe-text);
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 140px;
+  overflow-wrap: anywhere;
 }
 
 .context-tree__entity-confidence {
@@ -1576,6 +1584,30 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--pipe-text);
   line-height: 1.5;
   border-radius: 0 3px 3px 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+@container living-context (max-width: 1120px) {
+  .living-context__summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .living-context__workspace {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .living-context__rail,
+  .living-context__canvas {
+    border-right: 0;
+    border-bottom: 1px solid var(--pipe-border);
+  }
+
+  .living-context__inspector {
+    position: static;
+    border-top: 0;
+  }
 }
 
 @container living-context (max-width: 760px) {

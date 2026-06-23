@@ -246,10 +246,10 @@ export default function PersonProfilePage(): JSX.Element {
         gap: 10,
         marginTop: 18,
       }}>
-        <Metric label="Interactions" value={livingContext?.summary.interactionCount ?? 0} />
-        <Metric label="Context records" value={livingContext?.summary.contextRecordCount ?? 0} />
-        <Metric label="Source spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
-        <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
+        <Metric label="Conversations" value={livingContext?.summary.interactionCount ?? 0} />
+        <Metric label="Evidence records" value={livingContext?.summary.contextRecordCount ?? 0} />
+        <Metric label="Original spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
+        <Metric label="Source files" value={livingContext?.summary.artifactCount ?? 0} />
       </section>
 
       <section style={{
@@ -283,7 +283,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Interview Performance" icon={<Signal size={15} />}>
+        <Panel title="Performance Evidence" icon={<Signal size={15} />}>
           {sourceBackedSignals.length === 0 ? (
             <EmptyPanel>No source-backed performance evidence yet.</EmptyPanel>
           ) : sourceBackedSignals.map((signal) => (
@@ -303,7 +303,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Context Records" icon={<Network size={15} />}>
+        <Panel title="Relationship Context" icon={<Network size={15} />}>
           {recentRecords.length === 0 ? (
             <EmptyPanel>No context records yet.</EmptyPanel>
           ) : recentRecords.map((record) => (
@@ -326,7 +326,7 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Source Evidence" icon={<FileText size={15} />}>
+        <Panel title="Original Source Material" icon={<FileText size={15} />}>
           {evidenceArtifacts.length === 0 ? (
             <EmptyPanel>No source artifacts have been attached yet.</EmptyPanel>
           ) : evidenceArtifacts.map((artifact) => (
@@ -351,10 +351,10 @@ export default function PersonProfilePage(): JSX.Element {
             <Network size={16} color="var(--pipe-accent)" />
             <div>
               <h2 style={{ margin: 0, fontSize: 18, color: 'var(--pipe-text)', letterSpacing: 0 }}>
-                Source Graph
+                Evidence Audit
               </h2>
               <p style={GRAPH_SUBTITLE}>
-                Inspect the exact records, source spans, and evidence projections behind this profile.
+                Inspect exact source spans and rebuildable graph projections behind this profile.
               </p>
             </div>
           </div>
@@ -363,7 +363,7 @@ export default function PersonProfilePage(): JSX.Element {
             onClick={() => setShowSourceGraph((value) => !value)}
             style={GRAPH_TOGGLE}
           >
-            {showSourceGraph ? 'Hide graph' : 'Open graph'}
+            {showSourceGraph ? 'Hide audit' : 'Open audit'}
           </button>
         </div>
         {showSourceGraph && contextEndpoint ? (
@@ -374,7 +374,7 @@ export default function PersonProfilePage(): JSX.Element {
           />
         ) : (
           <div style={SOURCE_GRAPH_PLACEHOLDER}>
-            This profile is summarized from source-backed context. Open the graph when you need to audit provenance or debug ingestion.
+            This profile is summarized from source-backed context. Open the audit when you need provenance, exact source text, or ingestion debugging.
           </div>
         )}
       </section>
