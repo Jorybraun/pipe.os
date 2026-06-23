@@ -1,4 +1,4 @@
-name: Deploy Staging
+name: Deploy Dev Demo
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    name: Deploy to Staging
+    name: Deploy Dev Demo
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,7 +19,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies (frontend)
@@ -29,23 +29,37 @@ jobs:
         working-directory: workers/api
         run: npm ci
 
+      - name: Install dependencies (video room)
+        working-directory: apps/video-room
+        run: npm install --no-audit --no-fund
+
       - name: Build frontend
         run: npm run build
 
-      - name: Deploy Worker (staging)
+      - name: Build video room
+        working-directory: apps/video-room
+        run: npm run build
+
+      - name: Deploy API (dev)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: workers/api
-          command: deploy --env staging
+          command: deploy --env dev
 
-      # TODO: create Pages project `pipe-app-staging` in Cloudflare dashboard first
-      # - name: Deploy Pages (preview)
-      #   uses: cloudflare/pages-action@v1
-      #   with:
-      #     apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      #     accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      #     projectName: pipe-app-staging
-      #     directory: dist
-      #     gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy app shell (dev)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/app
+          command: deploy
+
+      - name: Deploy video room (dev)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/video-room
+          command: deploy
