@@ -76,17 +76,21 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     remoteRef.current = remoteStream;
   }, [remoteStream]);
 
-  const send = useCallback((type: string, payload: unknown): void => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, payload }));
-    }
-  }, []);
+  const hasOpenSignal = useCallback((): boolean => (
+    wsRef.current?.readyState === WebSocket.OPEN
+  ), []);
 
-  const sendStatus = useCallback((status: string): void => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'STATUS_UPDATE', status }));
-    }
-  }, []);
+  const send = useCallback((type: string, payload: unknown): boolean => {
+    if (!hasOpenSignal()) return false;
+    wsRef.current!.send(JSON.stringify({ type, payload }));
+    return true;
+  }, [hasOpenSignal]);
+
+  const sendStatus = useCallback((status: string): boolean => {
+    if (!hasOpenSignal()) return false;
+    wsRef.current!.send(JSON.stringify({ type: 'STATUS_UPDATE', status }));
+    return true;
+  }, [hasOpenSignal]);
 
   const drainIce = useCallback(async (): Promise<void> => {
     const peer = peerRef.current;
@@ -112,6 +116,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
   const closePeer = useCallback((nextPhase?: RoomPhase): void => {
     clearPeerDisconnectTimer();
+    clearPeerRenegotiateTimer();
     const peer = peerRef.current;
     if (peer) {
       peer.onicecandidate = null;
@@ -127,7 +132,12 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     if (nextPhase) {
       setConnectionPhase(nextPhase);
     }
-  }, [clearPeerDisconnectTimer, setConnectionPhase]);
+  }, [clearPeerDisconnectTimer, clearPeerRenegotiateTimer, setConnectionPhase]);
+
+  const handleSignalUnavailable = useCallback((): void => {
+    if (phaseRef.current === 'ended') return;
+    closePeer('peer_disconnected');
+  }, [closePeer]);
 
   const scheduleHostRenegotiation = useCallback((): void => {
     if (role !== 'HOST' || phaseRef.current === 'ended') return;
@@ -369,27 +379,49 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     startingCallRef.current = true;
     setConnectionPhase('connecting');
     try {
+      if (!localRef.current || !hasOpenSignal()) {
+        handleSignalUnavailable();
+        return;
+      }
       const config = await getIceServerConfig(token).catch(() => ({
         iceServers: FALLBACK_ICE,
         provider: 'fallback' as const,
       }));
+      if (!localRef.current || !hasOpenSignal()) {
+        handleSignalUnavailable();
+        return;
+      }
       setIceProvider(config.provider);
       const peer = createPeer(config.iceServers);
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
-      send('OFFER', {
+      const offered = send('OFFER', {
         type: offer.type,
         sdp: offer.sdp,
         iceServers: config.iceServers,
         iceProvider: config.provider,
       });
+      if (!offered) {
+        handleSignalUnavailable();
+        return;
+      }
       sendStatus('CALLING');
     } catch {
       closePeer('error');
     } finally {
       startingCallRef.current = false;
     }
-  }, [closePeer, createPeer, role, send, sendStatus, setConnectionPhase, token]);
+  }, [
+    closePeer,
+    createPeer,
+    handleSignalUnavailable,
+    hasOpenSignal,
+    role,
+    send,
+    sendStatus,
+    setConnectionPhase,
+    token,
+  ]);
   startCallRef.current = startCall;
 
   const acceptCall = useCallback(async (): Promise<void> => {
@@ -397,15 +429,37 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     if (role !== 'GUEST' || !offer) return;
     setConnectionPhase('connecting');
     setIceProvider(offer.iceProvider ?? 'unknown');
-    const peer = createPeer(offer.iceServers ?? FALLBACK_ICE);
-    await peer.setRemoteDescription(new RTCSessionDescription(offer));
-    remoteReadyRef.current = true;
-    await drainIce();
-    const answer = await peer.createAnswer();
-    await peer.setLocalDescription(answer);
-    send('ANSWER', { type: answer.type, sdp: answer.sdp });
-    sendStatus('ACTIVE');
-  }, [createPeer, drainIce, role, send, sendStatus, setConnectionPhase]);
+    try {
+      if (!localRef.current || !hasOpenSignal()) {
+        handleSignalUnavailable();
+        return;
+      }
+      const peer = createPeer(offer.iceServers ?? FALLBACK_ICE);
+      await peer.setRemoteDescription(new RTCSessionDescription(offer));
+      remoteReadyRef.current = true;
+      await drainIce();
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      const answered = send('ANSWER', { type: answer.type, sdp: answer.sdp });
+      if (!answered) {
+        handleSignalUnavailable();
+        return;
+      }
+      sendStatus('ACTIVE');
+    } catch {
+      closePeer('error');
+    }
+  }, [
+    closePeer,
+    createPeer,
+    drainIce,
+    handleSignalUnavailable,
+    hasOpenSignal,
+    role,
+    send,
+    sendStatus,
+    setConnectionPhase,
+  ]);
 
   const retryConnection = useCallback((): void => {
     if (phaseRef.current === 'ended') return;
