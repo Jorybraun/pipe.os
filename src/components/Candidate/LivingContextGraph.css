@@ -948,8 +948,8 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-head {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1 1 auto;
-  width: 100%;
   min-width: 0;
   gap: 6px;
 }
@@ -965,6 +965,7 @@ html[data-theme="pipe-blue"] .living-context {
   text-wrap: pretty;
   overflow-wrap: break-word;
   word-break: normal;
+  hyphens: auto;
 }
 
 .living-context__context-record-badges {
@@ -984,14 +985,16 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--pipe-text-dim);
   font: 8px "Space Mono", monospace;
   line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: normal;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  word-break: keep-all;
 }
 
 .living-context__context-record-type {
   flex: 0 1 auto;
   max-width: 100%;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .living-context__context-record-meta {
@@ -1033,7 +1036,8 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-row span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .living-context__context-record-source-snippet {
@@ -1363,7 +1367,7 @@ html[data-theme="pipe-blue"] .living-context {
   }
 
   .living-context__context-record-title {
-    font-size: 9px;
+    font-size: 10px;
     line-height: 1.5;
   }
 
@@ -1741,12 +1745,13 @@ html[data-theme="pipe-blue"] .living-context {
 
   .living-context__context-record-title {
     font-size: 11px;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   .living-context__context-record-badges {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .living-context__context-record-type,
