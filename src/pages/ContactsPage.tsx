@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@clerk/react';
+import { useNavigate } from 'react-router-dom';
 import {
   UserPlus, Search, X, ChevronRight, Loader,
   Mail, Phone, Building2, Briefcase, Link, StickyNote, Trash2, Save,
@@ -87,6 +88,7 @@ const TYPE_LABELS: Record<ContactType, string> = {
 export default function ContactsPage(): JSX.Element {
   const { getToken } = useAuth();
   const api = createApiClient({ getToken });
+  const navigate = useNavigate();
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -248,7 +250,7 @@ export default function ContactsPage(): JSX.Element {
                   key={contact.id}
                   contact={contact}
                   isSelected={selected?.id === contact.id}
-                  onClick={() => { setSelected(contact); setShowAdd(false); }}
+                  onClick={() => { navigate(`/people/${contact.id}`); }}
                 />
               ))}
             </div>

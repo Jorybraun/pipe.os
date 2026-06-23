@@ -1023,10 +1023,10 @@ export function LivingContextGraph({
               <UserRound size={14} color="var(--lc-structural)" />
               <div style={{ minWidth: 0 }}>
                 <div className="living-context__person-name">
-                  {livingContext.person.displayName ?? livingContext.person.primaryEmail ?? 'Person'}
+                  {livingContext.person?.displayName ?? livingContext.person?.primaryEmail ?? 'Person'}
                 </div>
                 <div className="living-context__person-meta">
-                  {livingContext.person.roles.map((role) => role.roleType).join(' · ') || 'person'}
+                  {livingContext.person?.roles.map((role) => role.roleType).join(' · ') || 'person'}
                 </div>
               </div>
             </div>

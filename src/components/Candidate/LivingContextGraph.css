@@ -3,6 +3,9 @@
   --lc-assertion: #f59e0b;
   --lc-signal: #34d399;
   --lc-structural: #a78bfa;
+  --lc-panel: var(--pipe-surface-solid);
+  --lc-panel-soft: var(--pipe-surface);
+  --lc-panel-hover: var(--pipe-surface-hover);
   container-name: living-context;
   container-type: inline-size;
   min-width: 0;
@@ -27,7 +30,7 @@
   padding: 0 12px 0 34px;
   border: 1px solid var(--pipe-border);
   border-radius: 5px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--lc-panel);
   color: var(--pipe-text);
   font: 10px "Space Mono", monospace;
   letter-spacing: 0;
@@ -74,7 +77,7 @@
 .living-context__metric {
   min-width: 0;
   padding: 12px 14px;
-  background: rgba(10, 12, 17, 0.72);
+  background: var(--lc-panel);
 }
 
 .living-context__meeting-evidence {
@@ -663,8 +666,10 @@
   grid-template-columns: minmax(190px, 0.72fr) minmax(360px, 1.6fr) minmax(250px, 0.95fr);
   min-height: 620px;
   border: 1px solid var(--pipe-border);
-  background: rgba(8, 10, 14, 0.96);
+  border-radius: 8px;
+  background: var(--lc-panel);
   backdrop-filter: blur(14px);
+  overflow: hidden;
 }
 
 .living-context__rail,
@@ -672,6 +677,7 @@
 .living-context__inspector {
   min-width: 0;
   padding: 18px;
+  background: transparent;
 }
 
 .living-context__rail,
@@ -763,7 +769,7 @@
 }
 
 .living-context__interaction:hover {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--lc-panel-hover);
 }
 
 .living-context__interaction--active {
@@ -870,14 +876,15 @@
   padding: 12px 13px;
   border: 1px solid rgba(129, 140, 248, 0.22);
   border-radius: 6px;
-  background: rgba(129, 140, 248, 0.035);
+  background: var(--lc-panel-soft);
 }
 
 .living-context__context-record-toggle {
   display: flex;
   width: 100%;
   min-width: 0;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 7px;
   padding: 0;
   border: 0;
@@ -965,16 +972,19 @@
 }
 
 .living-context__predicate {
+  flex: 1 1 180px;
+  min-width: min(100%, 160px);
   overflow-wrap: anywhere;
   color: var(--lc-assertion);
   font: 8px "Space Mono", monospace;
+  line-height: 1.45;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
 .living-context__narrative {
   margin-top: 7px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--pipe-text);
   font-size: 12px;
   line-height: 1.55;
@@ -1022,9 +1032,8 @@
 }
 
 .living-context__source-button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .living-context__artifacts {

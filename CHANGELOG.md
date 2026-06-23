@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Dev Demo Room and Person Context
+
+- Added a canonical `/people/:personId` profile surface with relationship timeline, source-backed context records, evidence artifacts, and living-context graph visualization; `/person/:personId` now redirects to the shared people profile.
+- Branded the standalone video room experience with PIPE logo/loading states and refreshed room chrome while preserving recording, lobby, and call controls.
+- Improved living-context graph theme contrast and context-record wrapping so source-backed evidence remains readable across light and dark app surfaces.
+
 ### Fixed — Contact Living Context Graph
 
 - Contact/people drawer context now renders the shared living-context graph from `/api/v1/contacts/:id/living-context` instead of incorrectly treating the contact ID as a candidate ID.

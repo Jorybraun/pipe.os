@@ -1189,7 +1189,7 @@ export interface LivingContextReadModel {
       activeFrom: string | null;
       activeTo: string | null;
     }>;
-  };
+  } | null;
   summary: {
     interactionCount: number;
     artifactCount: number;

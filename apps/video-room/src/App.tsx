@@ -22,8 +22,30 @@ function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
     <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
       <img aria-hidden="true" className="brand-logo" src={pipeLogoUrl} alt="" />
-      <span className="brand-word">PIPE</span>
+      <span className="brand-word" data-text="PIPE">PIPE</span>
       <span className="brand-chip">Room</span>
+    </div>
+  );
+}
+
+function RoomStateMark({
+  icon,
+  loading = false,
+  variant = 'default',
+}: {
+  icon?: JSX.Element;
+  loading?: boolean;
+  variant?: 'default' | 'error';
+}): JSX.Element {
+  return (
+    <div
+      className={`state-mark${loading ? ' is-loading' : ''}${variant === 'error' ? ' is-error' : ''}`}
+      aria-hidden="true"
+    >
+      <span className="state-orbit" />
+      <span className="state-scan" />
+      <img className="state-logo" src={pipeLogoUrl} alt="" />
+      {icon && <span className="state-icon">{icon}</span>}
     </div>
   );
 }
@@ -206,6 +228,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
   );
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
+  const isConnecting = room.phase === 'connecting';
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
@@ -213,9 +236,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">
           <BrandMark />
-          <div className="pulse"><Users size={30} /></div>
+          <RoomStateMark loading={isConnecting} icon={!isConnecting ? <Users size={24} /> : undefined} />
           <h2>
-            {room.phase === 'connecting'
+            {isConnecting
               ? 'Connecting...'
               : metadata.role === 'HOST'
                 ? 'Waiting for your guest'
@@ -266,6 +289,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       {room.phase === 'ended' && (
         <div className="ended-overlay">
           <BrandMark />
+          <RoomStateMark />
           <h2>Call ended</h2>
           <p>
             {metadata.role === 'HOST' && recordingState === 'uploading'
@@ -298,6 +322,7 @@ export default function App(): JSX.Element {
     return (
       <main className="center-message is-error">
         <BrandMark />
+        <RoomStateMark variant="error" />
         <h1>PIPE room unavailable</h1>
         <p>{error}</p>
       </main>
@@ -307,9 +332,9 @@ export default function App(): JSX.Element {
     return (
       <main className="center-message is-loading">
         <BrandMark />
-        <Loader2 className="spin" size={30} />
+        <RoomStateMark loading />
         <h1>Opening secure PIPE room</h1>
-        <p>Preparing the branded video room.</p>
+        <p>Checking room access.</p>
       </main>
     );
   }
