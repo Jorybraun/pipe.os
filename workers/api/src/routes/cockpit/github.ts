@@ -23,7 +23,7 @@ import type { Env, Variables } from '../../types';
 const fetchPrSchema = z.object({
   repoUrl: z
     .string({ required_error: 'repoUrl is required' })
-    .url('repoUrl must be a valid URL'),
+    .min(1, 'repoUrl is required'),
   prNumber: z
     .number({ required_error: 'prNumber is required' })
     .int()
@@ -228,7 +228,7 @@ github.post('/pr', async (c) => {
 // ─── POST /api/v1/github/repo-context ──────────────────────────────────────
 
 const repoContextSchema = z.object({
-  repoUrl: z.string().url('repoUrl must be a valid URL'),
+  repoUrl: z.string().min(1, 'repoUrl is required'),
   prNumber: z.number().int().positive('prNumber must be a positive integer'),
 });
 

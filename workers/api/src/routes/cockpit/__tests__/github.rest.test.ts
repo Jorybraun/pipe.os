@@ -94,6 +94,52 @@ describe('GET /pulls', () => {
     });
   });
 
+  it('accepts owner/repo shorthand for pull request selection', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      expect(url).toBe(
+        'https://api.github.com/repos/acme/widgets/pulls?state=closed&sort=updated&direction=desc&per_page=50',
+      );
+      return new Response(JSON.stringify([
+        {
+          number: 42,
+          title: 'Fix order retry state',
+          body: null,
+          user: { login: 'ada', avatar_url: 'https://example.com/ada.png' },
+          state: 'closed',
+          draft: false,
+          created_at: '2026-06-01T00:00:00Z',
+          updated_at: '2026-06-02T00:00:00Z',
+          merged_at: '2026-06-02T01:00:00Z',
+          html_url: 'https://github.com/acme/widgets/pull/42',
+          labels: [],
+          base: { ref: 'main' },
+          head: { ref: 'retry-fix' },
+        },
+      ]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    const response = await createApp().request(
+      '/pulls?repoUrl=acme%2Fwidgets&state=closed&merged=true',
+      {},
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      data: {
+        prs: [{
+          number: 42,
+          title: 'Fix order retry state',
+          state: 'merged',
+        }],
+      },
+    });
+  });
+
   it('rejects invalid pull request list query options', async () => {
     const response = await createApp().request(
       '/pulls?repoUrl=https%3A%2F%2Fgithub.com%2Facme%2Fwidgets&state=garbage',

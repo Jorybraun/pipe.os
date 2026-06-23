@@ -5,7 +5,7 @@
  *   - What the code review interview is + candidate flow
  *   - PR configuration (repo + PR select) with inline CTA
  *   - Interview mode toggles: multi-turn, AI assistant, persona
- *   - The 3 scoring dimensions (Communication, Technical, Review Practice)
+ *   - Review rubric (Communication, Technical, Review Practice)
  */
 
 import { useState, useCallback } from 'react';
@@ -35,7 +35,7 @@ import type { StagePanelContext } from '../StagePanel';
 
 const mono = '"Space Mono", monospace';
 
-/** The 3 scoring dimensions from the panel-based scorer. */
+/** Static UI rubric labels. Persisted semantic evidence is source-backed elsewhere. */
 const SCORING_DIMENSIONS = [
   {
     key: 'communication',
@@ -44,7 +44,6 @@ const SCORING_DIMENSIONS = [
     color: '#60a5fa',
     icon: MessageSquare,
     description: 'Tone, clarity, pushback handling, guidance quality',
-    signals: ['Constructive framing', 'Clear explanations', 'Handles disagreement well'],
   },
   {
     key: 'technical',
@@ -53,7 +52,6 @@ const SCORING_DIMENSIONS = [
     color: '#f97316',
     icon: Code2,
     description: 'Bug detection, severity calibration, trade-off awareness',
-    signals: ['Finds planted bugs', 'Correct severity', 'Design trade-off discussion'],
   },
   {
     key: 'review-practice',
@@ -62,7 +60,6 @@ const SCORING_DIMENSIONS = [
     color: '#4ade80',
     icon: Search,
     description: 'Understanding first, prioritization, completeness, driving to conclusion',
-    signals: ['Reads before commenting', 'Prioritizes critical issues', 'Positive recognition'],
   },
 ] as const;
 
@@ -576,7 +573,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
               </div>
             </div>
           ) : (
-            /* Placeholder — candidate-matched repository */
+            /* Placeholder — source-backed candidate match */
             <div
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 14,
@@ -587,12 +584,13 @@ export default function CodeReviewDetailTab(): JSX.Element {
               <Target size={18} color="#4ade80" style={{ flexShrink: 0, marginTop: 2 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', fontFamily: mono, marginBottom: 4 }}>
-                  Candidate-Matched Repository
+                  Source-backed candidate match
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, lineHeight: 1.5 }}>
-                  Each candidate receives a pull request from the repository
-                  best matched to their profile by the AI ingestion pipeline.
-                  Requires candidate resume ingestion to complete.
+                  PIPE selects a reviewable pull request only when person
+                  evidence and repository challenge packets support it. If
+                  evidence is missing, the match reports the gap instead of
+                  choosing a generic fallback.
                 </div>
               </div>
             </div>
@@ -620,7 +618,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Target size={12} /> USE MATCHED REPO
+                  <Target size={12} /> USE EVIDENCE MATCH
                 </span>
               </button>
               <button
@@ -640,7 +638,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
                   <Target size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} /> MATCHED REPO
                 </div>
                 <div style={{ fontSize: 9, color: 'var(--pipe-text-dim)', fontFamily: mono, lineHeight: 1.5 }}>
-                  AI selects the best repository for each candidate based on their resume, skills, and experience.
+                  PIPE matches only from source-backed person evidence and approved repository challenge packets.
                 </div>
               </div>
               <div style={{ textAlign: 'left', padding: '10px 12px', background: 'var(--pipe-surface)', borderRadius: 6, border: '1px solid var(--pipe-border)' }}>
@@ -763,21 +761,6 @@ export default function CodeReviewDetailTab(): JSX.Element {
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', fontFamily: mono, marginBottom: 8 }}>
                   {dim.description}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {dim.signals.map((signal) => (
-                    <span
-                      key={signal}
-                      style={{
-                        fontSize: 8, padding: '2px 8px',
-                        background: `${dim.color}08`, border: `1px solid ${dim.color}18`,
-                        borderRadius: 3, color: 'var(--pipe-text-dim)',
-                        fontFamily: mono, letterSpacing: '0.05em',
-                      }}
-                    >
-                      {signal}
-                    </span>
-                  ))}
                 </div>
               </div>
               <div style={{ width: 48, flexShrink: 0 }}>

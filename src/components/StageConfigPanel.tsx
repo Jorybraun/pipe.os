@@ -1138,8 +1138,25 @@ interface PRSummary {
   featureBranch: string;
 }
 
+function normalizeGitHubRepoUrl(input: string): string | null {
+  const trimmed = input.trim().replace(/\.git$/, '');
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) {
+    return `https://github.com/${trimmed}`;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname !== 'github.com') return null;
+    const [owner, repo] = url.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
+    if (!owner || !repo) return null;
+    return `https://github.com/${owner}/${repo}`;
+  } catch {
+    return null;
+  }
+}
+
 function isValidGitHubUrl(url: string): boolean {
-  return url.startsWith('https://github.com/') && url.split('/').filter(Boolean).length >= 4;
+  return normalizeGitHubRepoUrl(url) !== null;
 }
 
 const SAVED_REPOS_KEY = 'pipe_saved_repos';
@@ -1195,7 +1212,9 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
     try {
       const raw = localStorage.getItem(SAVED_REPOS_KEY);
       const parsed = raw ? (JSON.parse(raw) as string[]) : [];
-      return parsed.filter(isValidGitHubUrl);
+      return parsed
+        .map(normalizeGitHubRepoUrl)
+        .filter((repoUrl): repoUrl is string => Boolean(repoUrl));
     } catch {
       return [];
     }
@@ -1215,7 +1234,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
         const repos = result.repos
           .map((repo) => ({
             id: repo.id,
-            url: repo.github_url ?? '',
+            url: normalizeGitHubRepoUrl(repo.github_url ?? repo.full_name ?? '') ?? '',
           }))
           .filter((repo): repo is RepoCatalogItem => Number.isFinite(repo.id) && isValidGitHubUrl(repo.url));
         const deduped = new Map<string, RepoCatalogItem>();
@@ -1279,8 +1298,9 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   }, [catalogRepoByUrl]);
 
   const fetchPRs = useCallback(async (url: string): Promise<void> => {
-    if (!isValidGitHubUrl(url)) return;
-    setRepoUrl(url);
+    const normalizedUrl = normalizeGitHubRepoUrl(url);
+    if (!normalizedUrl) return;
+    setRepoUrl(normalizedUrl);
     setIsFetching(true);
     setError(null);
     setSourceNotice(null);
@@ -1293,7 +1313,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           success: boolean;
           error?: string;
           data?: { prs: PRSummary[] };
-        }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(url.trim())}&state=closed&merged=true`);
+        }>(`/api/v1/github/pulls?repoUrl=${encodeURIComponent(normalizedUrl)}&state=closed&merged=true`);
         if (!result.success) {
           liveFetchError = result.error ?? 'Failed to fetch pull requests from GitHub.';
         } else {
@@ -1310,7 +1330,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
       }
 
       try {
-        const storedPrs = await fetchStoredPRs(api, url.trim());
+        const storedPrs = await fetchStoredPRs(api, normalizedUrl);
         if (storedPrs.length > 0) {
           setPrs(storedPrs);
           setSourceNotice(liveFetchError
@@ -1358,14 +1378,14 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
   };
 
   const handleAddRepo = (): void => {
-    const trimmed = newRepoUrl.trim();
-    if (!isValidGitHubUrl(trimmed)) return;
-    if (!savedRepos.includes(trimmed) && !catalogRepoByUrl.has(trimmed)) {
-      setSavedRepos((prev) => [...prev, trimmed]);
+    const normalizedUrl = normalizeGitHubRepoUrl(newRepoUrl);
+    if (!normalizedUrl) return;
+    if (!savedRepos.includes(normalizedUrl) && !catalogRepoByUrl.has(normalizedUrl)) {
+      setSavedRepos((prev) => [...prev, normalizedUrl]);
     }
     setNewRepoUrl('');
     setShowAddRepo(false);
-    void fetchPRs(trimmed);
+    void fetchPRs(normalizedUrl);
   };
 
   return (
@@ -1486,7 +1506,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
               value={newRepoUrl}
               onChange={(e) => setNewRepoUrl(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAddRepo(); if (e.key === 'Escape') setShowAddRepo(false); }}
-              placeholder="https://github.com/owner/repo"
+              placeholder="https://github.com/owner/repo or owner/repo"
               style={{
                 flex: 1,
                 padding: '8px 10px',
