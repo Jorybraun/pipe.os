@@ -110,6 +110,7 @@ export default function PersonProfilePage(): JSX.Element {
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showSourceGraph, setShowSourceGraph] = useState(false);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
 
@@ -144,13 +145,15 @@ export default function PersonProfilePage(): JSX.Element {
 
   const recentInteractions = livingContext?.interactions.slice(0, 5) ?? [];
   const recentRecords = livingContext?.contextRecords.slice(0, 5) ?? [];
-  const strongestSignals = livingContext?.signals.slice(0, 5) ?? [];
+  const sourceBackedSignals = livingContext?.signals
+    .filter((signal) => signal.evidence.some((evidence) => evidence.sources.length > 0))
+    .slice(0, 5) ?? [];
   const evidenceArtifacts = livingContext?.artifacts.slice(0, 5) ?? [];
 
   if (isLoading) {
     return (
       <div style={{ padding: 32, color: 'var(--pipe-text-dim)' }}>
-        LOADING_PERSON_CONTEXT
+        Loading person context...
       </div>
     );
   }
@@ -235,16 +238,14 @@ export default function PersonProfilePage(): JSX.Element {
 
       <section style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
         gap: 10,
         marginTop: 18,
       }}>
         <Metric label="Interactions" value={livingContext?.summary.interactionCount ?? 0} />
         <Metric label="Context records" value={livingContext?.summary.contextRecordCount ?? 0} />
-        <Metric label="Artifacts" value={livingContext?.summary.artifactCount ?? 0} />
         <Metric label="Source spans" value={livingContext?.summary.sourceSpanCount ?? 0} />
-        <Metric label="Assertions" value={livingContext?.summary.assertionCount ?? 0} />
-        <Metric label="Signals" value={livingContext?.summary.signalCount ?? 0} />
+        <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
       </section>
 
       <section style={{
@@ -278,21 +279,21 @@ export default function PersonProfilePage(): JSX.Element {
           ))}
         </Panel>
 
-        <Panel title="Performance / Signals" icon={<Signal size={15} />}>
-          {strongestSignals.length === 0 ? (
-            <EmptyPanel>No source-backed performance signals yet.</EmptyPanel>
-          ) : strongestSignals.map((signal) => (
+        <Panel title="Interview Performance" icon={<Signal size={15} />}>
+          {sourceBackedSignals.length === 0 ? (
+            <EmptyPanel>No source-backed performance evidence yet.</EmptyPanel>
+          ) : sourceBackedSignals.map((signal) => (
             <article key={signal.signalKey} style={listItemStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
                   {signal.label}
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>
-                  {signal.evidence.length} evidence
+                  {signal.evidenceCount} evidence
                 </div>
               </div>
-              <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
-                {signal.namespace}
+              <div style={{ marginTop: 8, fontSize: 11, color: 'var(--pipe-text-muted)', lineHeight: 1.45 }}>
+                {Math.round(signal.totalScore * 100)}% accumulated from {signal.sourceDiversity} source{signal.sourceDiversity === 1 ? '' : 's'}.
               </div>
             </article>
           ))}
@@ -336,18 +337,36 @@ export default function PersonProfilePage(): JSX.Element {
       </section>
 
       <section style={{ marginTop: 22 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <Network size={16} color="var(--pipe-accent)" />
-          <h2 style={{ margin: 0, fontSize: 18, color: 'var(--pipe-text)', letterSpacing: 0 }}>
-            Source-backed living context
-          </h2>
+        <div style={GRAPH_HEADER}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <Network size={16} color="var(--pipe-accent)" />
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, color: 'var(--pipe-text)', letterSpacing: 0 }}>
+                Source Graph
+              </h2>
+              <p style={GRAPH_SUBTITLE}>
+                Inspect the exact records, spans, assertions, and projections behind this profile.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowSourceGraph((value) => !value)}
+            style={GRAPH_TOGGLE}
+          >
+            {showSourceGraph ? 'Hide graph' : 'Open graph'}
+          </button>
         </div>
-        {contextEndpoint && (
+        {showSourceGraph && contextEndpoint ? (
           <LivingContextGraph
             candidateId={personId ?? contact.id}
             livingContextEndpoint={contextEndpoint}
             initialLivingContext={livingContext}
           />
+        ) : (
+          <div style={SOURCE_GRAPH_PLACEHOLDER}>
+            This profile is summarized from source-backed context. Open the graph when you need to audit provenance or debug ingestion.
+          </div>
         )}
       </section>
     </div>
@@ -398,3 +417,39 @@ const listItemStyle = {
   background: 'var(--pipe-surface)',
   padding: 12,
 } satisfies CSSProperties;
+
+const GRAPH_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+  marginBottom: 12,
+};
+
+const GRAPH_SUBTITLE: CSSProperties = {
+  maxWidth: 680,
+  margin: '6px 0 0',
+  color: 'var(--pipe-text-dim)',
+  fontSize: 12,
+  lineHeight: 1.5,
+};
+
+const GRAPH_TOGGLE: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid var(--pipe-border)',
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  cursor: 'pointer',
+  padding: '9px 12px',
+  fontSize: 11,
+  fontWeight: 700,
+};
+
+const SOURCE_GRAPH_PLACEHOLDER: CSSProperties = {
+  border: '1px dashed var(--pipe-border)',
+  background: 'var(--pipe-surface-solid)',
+  color: 'var(--pipe-text-dim)',
+  padding: 18,
+  fontSize: 12,
+  lineHeight: 1.6,
+};
