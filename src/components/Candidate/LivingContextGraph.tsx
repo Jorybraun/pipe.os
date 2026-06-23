@@ -984,7 +984,7 @@ export function LivingContextGraph({
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="SEARCH EVIDENCE, CONCEPTS, ASSERTIONS..."
+            placeholder="Search evidence, concepts, and source text..."
             aria-label="Search living context"
           />
         </div>
@@ -1044,7 +1044,7 @@ export function LivingContextGraph({
             >
               <div className="living-context__interaction-title">All context</div>
               <div className="living-context__interaction-meta">
-                <span>{livingContext.summary.assertionCount} assertions</span>
+                <span>{livingContext.summary.assertionCount} claims</span>
                 <span>{livingContext.summary.signalCount} signals</span>
               </div>
             </button>
@@ -1060,7 +1060,7 @@ export function LivingContextGraph({
                 </div>
                 <div className="living-context__interaction-meta">
                   <span>{interactionDate(interaction)}</span>
-                  <span>{interaction.assertionIds.length} assertions</span>
+                  <span>{interaction.assertionIds.length} claims</span>
                   <span>{interaction.signalKeys.length} signals</span>
                 </div>
               </button>

@@ -989,7 +989,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {(stage?.title ?? 'NO_STAGE').toUpperCase()}
+                      {(stage?.title ?? 'No round').toUpperCase()}
                     </div>
                     <div
                       style={{
@@ -1031,7 +1031,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
       {!hasProfile && !hasInsights && !isDraft && (
         <SectionCard
           variant="solid"
-          label="NO_ROLE_PROFILE"
+          label="Role context"
           icon={<Target size={16} color="var(--pipe-text-dim)" />}
         >
           <div

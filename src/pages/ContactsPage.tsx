@@ -952,9 +952,9 @@ function ContactLivingContext({ contactId, api }: { contactId: string; api: Retu
     })();
   }, [api, endpoint]);
 
-  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>LOADING_CONTEXT</div>;
+  if (isLoading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>Loading context...</div>;
   if (!livingContext || livingContext.summary.interactionCount === 0) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>NO_CONTEXT_YET</div>;
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pipe-text-dim)' }}>No context captured yet.</div>;
   }
 
   return (

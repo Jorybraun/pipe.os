@@ -345,7 +345,7 @@ export default function PersonProfilePage(): JSX.Element {
                 Source Graph
               </h2>
               <p style={GRAPH_SUBTITLE}>
-                Inspect the exact records, spans, assertions, and projections behind this profile.
+                Inspect the exact records, source spans, and evidence projections behind this profile.
               </p>
             </div>
           </div>
