@@ -47,7 +47,9 @@ function PipeMark({ className }: { className?: string }): JSX.Element {
 function BrandMark({ compact = false }: { compact?: boolean }): JSX.Element {
   return (
     <div className={compact ? 'brand compact' : 'brand'} aria-label="PIPE room">
-      <PipeMark className="brand-logo" />
+      <span className="brand-logo-shell">
+        <PipeMark className="brand-logo" />
+      </span>
       <span className="brand-word">PIPE</span>
       <span className="brand-chip">Room</span>
     </div>
@@ -131,6 +133,11 @@ function StreamVideo({
     if (ref.current) ref.current.srcObject = stream;
   }, [stream]);
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} data-testid={testId} />;
+}
+
+function isSyntheticMedia(stream: MediaStream | null): boolean {
+  if (!stream) return false;
+  return stream.getTracks().some((track) => /fake|synthetic|virtual/i.test(track.label));
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
@@ -317,6 +324,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const inLobby = room.localStream === null;
+  const previewIsSynthetic = isSyntheticMedia(preview);
+  const localIsSynthetic = isSyntheticMedia(room.localStream);
   if (inLobby) {
     const isDeviceChecking = deviceState === 'checking';
     const hasDeviceError = deviceState === 'error';
@@ -358,6 +367,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <div className="preview-shell">
             {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
             {!preview && <DevicePlaceholder state={deviceState} />}
+            {previewIsSynthetic && (
+              <span className="media-watermark" data-testid="synthetic-media-label">
+                Test camera
+              </span>
+            )}
           </div>
           <div className="device-meta">
             <span>Camera preview</span>
@@ -476,6 +490,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       <div className="local-tile">
         <StreamVideo stream={room.localStream} muted className="local-video" testId="local-video" />
         <span>You</span>
+        {localIsSynthetic && <em>Test camera</em>}
       </div>
 
       <div className="controls">
