@@ -173,7 +173,10 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       updated_at TEXT NOT NULL
     );
     CREATE TABLE scheduled_interviews (
-      id TEXT PRIMARY KEY
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'INVITED',
+      completed_at TEXT,
+      updated_at TEXT
     );
   `);
   sqlite.exec(contactsMigration);
@@ -329,6 +332,31 @@ describe('meeting room recording living-context route', () => {
       { role: 'GUEST', count: 1, active: 1 },
       { role: 'HOST', count: 3, active: 1 },
     ]);
+
+    const endedRes = await app.request(`/meeting/${secondHostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT status FROM meeting_rooms WHERE id = ?',
+    ).get(first.room.id)).toEqual({ status: 'ENDED' });
+
+    const reopenedRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(reopenedRes.status).toBe(200);
+    const reopened = await reopenedRes.json() as {
+      room: { id: string; sessionId: string; hostUrl: string; guestUrl: string };
+    };
+    expect(reopened.room.id).toBe(first.room.id);
+    expect(reopened.room.sessionId).toBe(first.room.sessionId);
+    expect(reopened.room.guestUrl).toBe(first.room.guestUrl);
+    expect(reopened.room.hostUrl).not.toBe(second.room.hostUrl);
+    expect(sqlite.prepare(
+      'SELECT status FROM meeting_rooms WHERE id = ?',
+    ).get(first.room.id)).toEqual({ status: 'WAITING' });
   });
 
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
@@ -382,7 +410,10 @@ describe('meeting room recording living-context route', () => {
     const scheduledInterviewId = 'scheduled-interview-graph-1';
     const rolelessMessage =
       'Roleless follow-up: the same person can discuss lattice replay buffers and join the talent pool.';
-    sqlite.prepare('INSERT INTO scheduled_interviews (id) VALUES (?)').run(scheduledInterviewId);
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (id, status, updated_at)
+       VALUES (?, 'INVITED', ?)`,
+    ).run(scheduledInterviewId, new Date().toISOString());
 
     const createMeetingRes = await app.request('/meetings', {
       method: 'POST',
@@ -414,6 +445,13 @@ describe('meeting room recording living-context route', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: 'STARTED' }),
     }, env, ctx);
+
+    expect(sqlite.prepare(
+      'SELECT status, completed_at FROM scheduled_interviews WHERE id = ?',
+    ).get(scheduledInterviewId)).toEqual({
+      status: 'ACTIVE',
+      completed_at: null,
+    });
 
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
@@ -454,6 +492,11 @@ describe('meeting room recording living-context route', () => {
     expect(endedState.started_at).toEqual(expect.any(String));
     expect(endedState.ended_at).toEqual(expect.any(String));
     expect(endedState.duration_secs).not.toBeNull();
+    const interviewState = sqlite.prepare(
+      'SELECT status, completed_at FROM scheduled_interviews WHERE id = ?',
+    ).get(scheduledInterviewId) as { status: string; completed_at: string | null };
+    expect(interviewState.status).toBe('COMPLETED');
+    expect(interviewState.completed_at).toEqual(expect.any(String));
 
     expect(sqlite.prepare(
       `SELECT transcript_status, transcript_summary FROM meetings WHERE id = ?`,

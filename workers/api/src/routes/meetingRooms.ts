@@ -449,7 +449,7 @@ meetingRooms.post('/:token/events', async (c) => {
   const now = new Date().toISOString();
   const event = parsed.data.event;
   if (event === 'STARTED' && room.role === 'HOST') {
-    await c.env.DB.batch([
+    const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `UPDATE meeting_rooms SET status = 'ACTIVE', updated_at = ? WHERE id = ?`,
       ).bind(now, room.room_id),
@@ -459,9 +459,23 @@ meetingRooms.post('/:token/events', async (c) => {
              transcript_status = 'RECORDING', updated_at = ?
          WHERE id = ?`,
       ).bind(now, now, room.meeting_id),
-    ]);
+    ];
+    if (room.scheduled_interview_id) {
+      statements.push(
+        c.env.DB.prepare(
+          `UPDATE scheduled_interviews
+           SET status = CASE
+                 WHEN status IN ('CANCELLED', 'NO_SHOW', 'COMPLETED') THEN status
+                 ELSE 'ACTIVE'
+               END,
+               updated_at = ?
+           WHERE id = ?`,
+        ).bind(now, room.scheduled_interview_id),
+      );
+    }
+    await c.env.DB.batch(statements);
   } else if (event === 'ENDED' && room.role === 'HOST') {
-    await c.env.DB.batch([
+    const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
         `UPDATE meeting_rooms SET status = 'ENDED', updated_at = ? WHERE id = ?`,
       ).bind(now, room.room_id),
@@ -475,7 +489,19 @@ meetingRooms.post('/:token/events', async (c) => {
              updated_at = ?
          WHERE id = ?`,
       ).bind(now, now, now, room.meeting_id),
-    ]);
+    ];
+    if (room.scheduled_interview_id) {
+      statements.push(
+        c.env.DB.prepare(
+          `UPDATE scheduled_interviews
+           SET status = 'COMPLETED',
+               completed_at = COALESCE(completed_at, ?),
+               updated_at = ?
+           WHERE id = ?`,
+        ).bind(now, now, room.scheduled_interview_id),
+      );
+    }
+    await c.env.DB.batch(statements);
   }
 
   return c.json({ accepted: true });
@@ -606,18 +632,26 @@ export async function ensureMeetingRoomLinks(
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString();
   let room = await db.prepare(
-    'SELECT id, session_id FROM meeting_rooms WHERE meeting_id = ?',
-  ).bind(meetingId).first<{ id: string; session_id: string }>();
+    'SELECT id, session_id, status FROM meeting_rooms WHERE meeting_id = ?',
+  ).bind(meetingId).first<{ id: string; session_id: string; status: string }>();
 
   if (!room) {
     room = {
       id: crypto.randomUUID(),
       session_id: crypto.randomUUID(),
+      status: 'WAITING',
     };
     await db.prepare(
       `INSERT INTO meeting_rooms (id, meeting_id, session_id, status, created_at, updated_at)
        VALUES (?, ?, ?, 'WAITING', ?, ?)`,
     ).bind(room.id, meetingId, room.session_id, now, now).run();
+  } else if (room.status === 'ENDED') {
+    await db.prepare(
+      `UPDATE meeting_rooms
+       SET status = 'WAITING', updated_at = ?
+       WHERE id = ?`,
+    ).bind(now, room.id).run();
+    room = { ...room, status: 'WAITING' };
   }
 
   await db.prepare(
