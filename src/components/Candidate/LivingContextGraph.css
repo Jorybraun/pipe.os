@@ -4,11 +4,11 @@
   --lc-signal: #059669;
   --lc-structural: #7c3aed;
   --lc-panel: var(--pipe-surface-solid, #ffffff);
-  --lc-panel-soft: rgba(15, 23, 42, 0.035);
+  --lc-panel-soft: var(--pipe-surface, rgba(15, 23, 42, 0.035));
   --lc-panel-hover: var(--pipe-surface-hover, rgba(15, 23, 42, 0.07));
-  --lc-card: rgba(15, 23, 42, 0.035);
-  --lc-card-strong: rgba(15, 23, 42, 0.07);
-  --lc-card-border: rgba(15, 23, 42, 0.09);
+  --lc-card: var(--pipe-surface, rgba(15, 23, 42, 0.035));
+  --lc-card-strong: var(--pipe-surface-hover, rgba(15, 23, 42, 0.07));
+  --lc-card-border: var(--pipe-border, rgba(15, 23, 42, 0.09));
   container-name: living-context;
   container-type: inline-size;
   color: var(--pipe-text);
@@ -247,7 +247,7 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__match-status {
   flex: 0 0 auto;
   padding: 4px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--pipe-border);
   border-radius: 999px;
   color: var(--pipe-text-muted);
   font: 9px "Space Mono", monospace;
@@ -655,9 +655,9 @@ html[data-theme="pipe-blue"] .living-context {
 .living-context__diagnostic-row {
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--lc-card-border);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--lc-card);
 }
 
 .living-context__diagnostic-row span {
@@ -866,7 +866,7 @@ html[data-theme="pipe-blue"] .living-context {
   height: 3px;
   margin-top: 5px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--lc-card-strong);
 }
 
 .living-context__score-fill {
@@ -903,12 +903,12 @@ html[data-theme="pipe-blue"] .living-context {
 }
 
 .living-context__context-record-toggle {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   width: 100%;
   min-width: 0;
-  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 7px;
+  gap: 7px 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -921,15 +921,28 @@ html[data-theme="pipe-blue"] .living-context {
   transform: rotate(90deg);
 }
 
+.living-context__context-record-head {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
 .living-context__context-record-title {
-  flex: 1 1 220px;
   min-width: 0;
   color: var(--lc-assertion);
   font: 10px "Space Mono", monospace;
   font-weight: 700;
   line-height: 1.45;
   letter-spacing: 0;
+  text-wrap: pretty;
   overflow-wrap: anywhere;
+}
+
+.living-context__context-record-badges {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .living-context__context-record-type,
@@ -1362,7 +1375,7 @@ html[data-theme="pipe-blue"] .living-context {
 
 .context-tree__polarity--neutral {
   color: var(--pipe-text-dim);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--lc-card);
 }
 
 .context-tree__narrative {

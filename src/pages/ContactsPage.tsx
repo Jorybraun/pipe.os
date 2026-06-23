@@ -167,8 +167,8 @@ export default function ContactsPage(): JSX.Element {
                   border: '1px solid',
                   borderRadius: 3,
                   cursor: 'pointer',
-                  borderColor: activeTab === t ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
-                  background: activeTab === t ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  borderColor: activeTab === t ? 'var(--pipe-accent-border)' : 'var(--pipe-border)',
+                  background: activeTab === t ? 'var(--pipe-accent-surface)' : 'transparent',
                   color: activeTab === t ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
                 }}
               >
@@ -210,7 +210,7 @@ export default function ContactsPage(): JSX.Element {
                     width: '100%', padding: '8px 8px 8px 30px',
                     fontSize: 9, fontFamily: '"Space Mono", monospace',
                     letterSpacing: '0.08em',
-                    background: 'rgba(255,255,255,0.03)',
+                    background: 'var(--pipe-surface)',
                     border: '1px solid var(--pipe-border)',
                     borderRadius: 4, color: 'var(--pipe-text)', outline: 'none',
                   }}
@@ -316,11 +316,11 @@ function ContactRow({ contact, isSelected, onClick }: {
         padding: '12px 24px',
         borderBottom: '1px solid var(--pipe-border)',
         cursor: 'pointer',
-        background: isSelected ? 'rgba(255,255,255,0.04)' : 'transparent',
+        background: isSelected ? 'var(--pipe-surface-hover)' : 'transparent',
         display: 'flex', alignItems: 'center', gap: 12,
         transition: 'background 0.15s',
       }}
-      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.02)'; }}
+      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'var(--pipe-surface)'; }}
       onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
     >
       {/* Avatar */}
@@ -500,8 +500,8 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
                 border: '1px solid',
                 borderRadius: 3,
                 cursor: 'pointer',
-                borderColor: activeTab === tab ? 'rgba(255,255,255,0.3)' : 'var(--pipe-border)',
-                background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+                borderColor: activeTab === tab ? 'var(--pipe-accent-border)' : 'var(--pipe-border)',
+                background: activeTab === tab ? 'var(--pipe-accent-surface)' : 'transparent',
                 color: activeTab === tab ? 'var(--pipe-text)' : 'var(--pipe-text-dim)',
               }}
             >
@@ -565,7 +565,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
           style={{
             flex: 1, padding: '8px 10px', fontSize: 11,
             fontFamily: '"Space Mono", monospace',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--pipe-surface)',
             border: '1px solid var(--pipe-border)', borderRadius: 4,
             color: 'var(--pipe-text)', outline: 'none', resize: 'vertical',
           }}
@@ -578,7 +578,7 @@ function ContactForm({ title, form, onChange, onSave, onClose, onDelete, isSavin
           style={{
             flex: 1, padding: '8px 10px', fontSize: 11,
             fontFamily: '"Space Mono", monospace',
-            background: 'rgba(255,255,255,0.03)',
+            background: 'var(--pipe-surface)',
             border: '1px solid var(--pipe-border)', borderRadius: 4,
             color: 'var(--pipe-text)', outline: 'none',
           }}
@@ -805,7 +805,7 @@ function SourceSearchPanel({ api, onContact }: {
             style={{
               width: '100%', padding: '10px 12px', fontSize: 12,
               fontFamily: '"Space Mono", monospace',
-              background: 'rgba(255,255,255,0.03)',
+              background: 'var(--pipe-surface)',
               border: '1px solid var(--pipe-border)', borderRadius: 4,
               color: 'var(--pipe-text)', outline: 'none',
             }}
@@ -911,7 +911,7 @@ function SourceSearchPanel({ api, onContact }: {
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
               {person.status !== 'contacted' && (
                 <>
-                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
+                  <button onClick={() => void handleFlag(person)} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: person.status === 'flagged' ? 'rgba(251,191,36,0.12)' : 'var(--pipe-surface)', border: '1px solid var(--pipe-border)', borderRadius: 3, color: person.status === 'flagged' ? '#fbbf24' : 'var(--pipe-text-dim)', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>
                     {person.status === 'flagged' ? 'UNFLAG' : 'FLAG'}
                   </button>
                   <button onClick={() => void handleContact(person, 'phone')} disabled={actionIds.has(person.poolId)} style={{ padding: '5px 8px', fontSize: 8, fontWeight: 700, letterSpacing: '0.08em', fontFamily: '"Space Mono", monospace', background: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.2)', borderRadius: 3, color: '#4ade80', cursor: actionIds.has(person.poolId) ? 'default' : 'pointer' }}>CALL</button>

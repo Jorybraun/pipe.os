@@ -131,13 +131,17 @@ export function ContextRecordTree({
           size={13}
           className={expanded ? 'living-context__context-record-chevron--open' : undefined}
         />
-        <span className="living-context__context-record-title" title={predicateLabel}>
-          {displayLabel(predicateLabel)}
+        <span className="living-context__context-record-head">
+          <span className="living-context__context-record-title" title={predicateLabel}>
+            {displayLabel(predicateLabel)}
+          </span>
+          <span className="living-context__context-record-badges">
+            <span className="living-context__context-record-type">{displayLabel(record.recordType)}</span>
+            {recordConfidence && <span className="living-context__context-record-meta">{recordConfidence}</span>}
+            {dateLabel && <span className="living-context__context-record-meta">{dateLabel}</span>}
+            {record.polarity <= 0 && <span className="living-context__context-record-meta">{polarityLabel}</span>}
+          </span>
         </span>
-        <span className="living-context__context-record-type">{displayLabel(record.recordType)}</span>
-        {recordConfidence && <span className="living-context__context-record-meta">{recordConfidence}</span>}
-        {dateLabel && <span className="living-context__context-record-meta">{dateLabel}</span>}
-        {record.polarity <= 0 && <span className="living-context__context-record-meta">{polarityLabel}</span>}
       </button>
 
       <div className="living-context__narrative">{record.narrative}</div>
@@ -241,7 +245,7 @@ export function ContextRecordForest({
   onSelectSource: (source: LivingContextSourceRef) => void;
 }): JSX.Element {
   if (records.length === 0) {
-    return <div className="living-context__empty">NO_CONTEXT_RECORDS</div>;
+    return <div className="living-context__empty">No source-backed context records yet.</div>;
   }
 
   return (

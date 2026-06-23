@@ -251,9 +251,9 @@ export function InviteCreationModal({
                 href={`/interviews/${createdInviteId}`}
                 style={{
                   padding: '10px 20px',
-                  background: '#ffffff',
-                  border: '1px solid #ffffff',
-                  color: '#0c0c0e',
+                  background: 'var(--pipe-text)',
+                  border: '1px solid var(--pipe-accent-border)',
+                  color: 'var(--pipe-bg)',
                   fontSize: 10,
                   letterSpacing: '0.1em',
                   fontFamily: '"Space Mono", monospace',

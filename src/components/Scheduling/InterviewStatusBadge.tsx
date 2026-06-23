@@ -1,7 +1,7 @@
 import type { InterviewStatus } from '../../lib/scheduling/types';
 
 const STATUS_STYLES: Record<InterviewStatus, { label: string; color: string; bg: string }> = {
-  INVITED:   { label: 'Invited',   color: 'var(--pipe-text-muted)', bg: 'rgba(255,255,255,0.12)' },
+  INVITED:   { label: 'Invited',   color: 'var(--pipe-text-muted)', bg: 'var(--pipe-surface-hover)' },
   SCHEDULED: { label: 'Scheduled', color: '#60a5fa',               bg: 'rgba(96,165,250,0.12)' },
   ACTIVE:    { label: 'Active',    color: '#a78bfa',               bg: 'rgba(167,139,250,0.12)' },
   COMPLETED: { label: 'Completed', color: '#4ade80',               bg: 'rgba(74,222,128,0.12)' },

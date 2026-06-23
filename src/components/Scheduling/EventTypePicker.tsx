@@ -70,7 +70,7 @@ export function EventTypePicker({
   if (!connection || connection.status !== 'ACTIVE') {
     return (
       <div style={containerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--pipe-text-dim)' }}>
           <Calendar size={14} />
           <span style={labelStyle}>
             Connect a scheduling provider to assign event types
@@ -114,7 +114,7 @@ export function EventTypePicker({
   if (eventTypes.length === 0) {
     return (
       <div style={containerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.4)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--pipe-text-dim)' }}>
           <AlertTriangle size={14} />
           <span style={labelStyle}>
             No event types found. Create one in {connection.providerId === 'CALENDLY' ? 'Calendly' : 'Cal.com'} first.

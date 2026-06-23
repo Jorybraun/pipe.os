@@ -957,7 +957,7 @@ export function LivingContextGraph({
   }, [livingContext]);
 
   if (isLoading && !livingContext) {
-    return <div className="living-context__loading">LOADING_CONTEXT_GRAPH</div>;
+    return <div className="living-context__loading">Loading source-backed context...</div>;
   }
   if (error || !livingContext) {
     return (
@@ -1105,7 +1105,7 @@ export function LivingContextGraph({
               ))}
             </div>
           ) : (
-            <div className="living-context__empty">NO_SIGNAL_EVIDENCE</div>
+            <div className="living-context__empty">No source-backed signal evidence yet.</div>
           )}
 
           <div className="living-context__section-head" style={{ marginTop: 22 }}>
@@ -1124,7 +1124,7 @@ export function LivingContextGraph({
               ))}
             </div>
           ) : (
-            <div className="living-context__empty">NO_SOURCE_BACKED_ASSERTIONS</div>
+            <div className="living-context__empty">No source-backed assertions yet.</div>
           )}
 
           <div className="living-context__artifacts">
@@ -1171,7 +1171,7 @@ export function LivingContextGraph({
               </dl>
             </>
           ) : (
-            <div className="living-context__empty">NO_SOURCE_SELECTED</div>
+            <div className="living-context__empty">Select source evidence to inspect the original text.</div>
           )}
           {selectedInteraction && (
             <div style={{ marginTop: 24 }}>

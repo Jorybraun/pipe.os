@@ -59,7 +59,7 @@ export function InterviewCard({
   const scheduled = interview.scheduledAt ? new Date(interview.scheduledAt).getTime() : null;
 
   // Determine dot color
-  let dotColor = 'rgba(255,255,255,0.3)'; // Default: dim for past/unscheduled
+  let dotColor = 'var(--pipe-text-dim)'; // Default: dim for past/unscheduled
   if (scheduled && scheduled > now) {
     const minutesUntil = (scheduled - now) / 1000 / 60;
     if (minutesUntil <= 15) {
@@ -131,7 +131,7 @@ export function InterviewCard({
             {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
           </div>
           {candidateEmail && (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', fontFamily: '"Space Mono", monospace' }}>
+            <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {candidateEmail}
             </div>
           )}
@@ -182,9 +182,9 @@ export function InterviewCard({
               alignItems: 'center',
               gap: 6,
               padding: '8px 16px',
-              background: joinable ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${joinable ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.08)'}`,
-              color: joinable ? '#60a5fa' : 'rgba(255,255,255,0.2)',
+              background: joinable ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+              border: `1px solid ${joinable ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+              color: joinable ? '#60a5fa' : 'var(--pipe-text-dim)',
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',
