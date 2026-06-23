@@ -1929,7 +1929,12 @@ candidateOps.get('/:candidateId', async (c) => {
     } as any, matchData, calendar);
   }
 
-  const identity = await ensureCandidateLivingContext(db, candidateId);
+  let identity: { personId: string; workspacePersonId: string; applicationId: string } | null = null;
+  try {
+    identity = await ensureCandidateLivingContext(db, candidateId);
+  } catch (err) {
+    console.warn('[candidates] Candidate/person identity bridge unavailable:', err);
+  }
   let contactId: string | null = null;
   if (candidate.email) {
     try {
