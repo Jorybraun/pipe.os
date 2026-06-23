@@ -84,7 +84,7 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(86px, 1fr));
+  grid-template-columns: repeat(4, minmax(86px, 1fr));
   gap: 1px;
   margin-bottom: 18px;
   border: 1px solid var(--pipe-border);
@@ -948,19 +948,30 @@ html[data-theme="pipe-blue"] .living-context {
   min-width: 0;
   flex-wrap: wrap;
   gap: 5px;
+  align-items: flex-start;
 }
 
 .living-context__context-record-type,
 .living-context__context-record-meta {
-  max-width: 100%;
   padding: 2px 5px;
   border: 1px solid var(--pipe-border);
   border-radius: 3px;
   color: var(--pipe-text-dim);
   font: 8px "Space Mono", monospace;
   line-height: 1.35;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
+}
+
+.living-context__context-record-type {
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.living-context__context-record-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .living-context__context-record-body {
@@ -1061,9 +1072,12 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__concept,
 .living-context__relation {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   padding: 3px 6px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
   border: 1px solid var(--pipe-border);
   border-radius: 3px;
   color: var(--pipe-text-muted);
@@ -1072,6 +1086,8 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__source-button {
   display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   align-items: center;
   gap: 5px;
@@ -1093,7 +1109,8 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__source-button span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .living-context__artifacts {

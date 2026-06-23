@@ -1090,56 +1090,58 @@ export function LivingContextGraph({
             onSelectSource={setSelectedSource}
           />
 
-          <div className="living-context__section-head" style={{ marginTop: 22 }}>
-            <div className="living-context__section-title">Signals</div>
-            <div className="living-context__count">{visibleSignals.length}</div>
-          </div>
-          {visibleSignals.length > 0 ? (
-            <div className="living-context__signal-grid">
-              {visibleSignals.map((signal) => (
-                <SignalNode
-                  key={signal.signalKey}
-                  signal={signal}
+          {visibleSignals.length > 0 && (
+            <>
+              <div className="living-context__section-head" style={{ marginTop: 22 }}>
+                <div className="living-context__section-title">Signals</div>
+                <div className="living-context__count">{visibleSignals.length}</div>
+              </div>
+              <div className="living-context__signal-grid">
+                {visibleSignals.map((signal) => (
+                  <SignalNode
+                    key={signal.signalKey}
+                    signal={signal}
+                    onSelectSource={setSelectedSource}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {visibleAssertions.length > 0 && (
+            <>
+              <div className="living-context__section-head" style={{ marginTop: 22 }}>
+                <div className="living-context__section-title">Evidence claims</div>
+                <div className="living-context__count">{visibleAssertions.length}</div>
+              </div>
+              <div className="living-context__assertions">
+                {visibleAssertions.map((assertion) => (
+                  <AssertionNode
+                    key={assertion.id}
+                    assertion={assertion}
+                    relatedPredicates={relationshipsByAssertion.get(assertion.id) ?? []}
+                    onSelectSource={setSelectedSource}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          {visibleArtifacts.length > 0 && (
+            <div className="living-context__artifacts">
+              <div className="living-context__section-head">
+                <div className="living-context__section-title">Source artifacts</div>
+                <div className="living-context__count">{visibleArtifacts.length}</div>
+              </div>
+              {visibleArtifacts.map((artifact) => (
+                <ArtifactNode
+                  key={artifact.id}
+                  artifact={artifact}
                   onSelectSource={setSelectedSource}
                 />
               ))}
             </div>
-          ) : (
-            <div className="living-context__empty">No source-backed signal evidence yet.</div>
           )}
-
-          <div className="living-context__section-head" style={{ marginTop: 22 }}>
-            <div className="living-context__section-title">Evidence claims</div>
-            <div className="living-context__count">{visibleAssertions.length}</div>
-          </div>
-          {visibleAssertions.length > 0 ? (
-            <div className="living-context__assertions">
-              {visibleAssertions.map((assertion) => (
-                <AssertionNode
-                  key={assertion.id}
-                  assertion={assertion}
-                  relatedPredicates={relationshipsByAssertion.get(assertion.id) ?? []}
-                  onSelectSource={setSelectedSource}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="living-context__empty">No source-backed evidence claims yet.</div>
-          )}
-
-          <div className="living-context__artifacts">
-            <div className="living-context__section-head">
-              <div className="living-context__section-title">Source artifacts</div>
-              <div className="living-context__count">{visibleArtifacts.length}</div>
-            </div>
-            {visibleArtifacts.map((artifact) => (
-              <ArtifactNode
-                key={artifact.id}
-                artifact={artifact}
-                onSelectSource={setSelectedSource}
-              />
-            ))}
-          </div>
         </main>
 
         <aside className="living-context__inspector">
