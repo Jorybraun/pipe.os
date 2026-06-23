@@ -15,9 +15,9 @@
  * context so nested routes never re-fetch.
  */
 
-import { useState, useCallback, useEffect } from 'react';
-import { useParams, useNavigate, Outlet, useLocation } from 'react-router-dom';
-import { Rocket, Plus, LayoutGrid, AlertTriangle, X, Pencil, Undo2 } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { useParams, useNavigate, Outlet } from 'react-router-dom';
+import { Rocket, Plus, LayoutGrid, Pencil, Undo2 } from 'lucide-react';
 import { LiquidMetalCard } from '../components';
 // LiquidMetalCard is used for the error card only. The shell no longer wraps
 // the outlet in a container card — nested SectionCards provide their own
@@ -64,16 +64,9 @@ function PipelineShellSkeleton(): JSX.Element {
   );
 }
 
-interface AutoBuildWarning {
-  code: string;
-  severity: 'warn';
-  message: string;
-}
-
 export default function PipelineShellPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const {
     pipeline,
@@ -92,19 +85,6 @@ export default function PipelineShellPage(): JSX.Element {
   const [showAddCandidate, setShowAddCandidate] = useState(false);
   const [showNewStage, setShowNewStage] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
-
-  // Warnings arriving via navigate state from the auto-build wizard. Captured
-  // once on mount so the banner persists even after route state is cleared.
-  const [autoBuildWarnings, setAutoBuildWarnings] = useState<AutoBuildWarning[]>([]);
-
-  useEffect(() => {
-    const state = location.state as { autoBuildWarnings?: AutoBuildWarning[] } | null;
-    if (state?.autoBuildWarnings && state.autoBuildWarnings.length > 0) {
-      setAutoBuildWarnings(state.autoBuildWarnings);
-      // Clear the route state so a refresh doesn't replay the banner.
-      window.history.replaceState({}, '');
-    }
-  }, [location.state]);
 
   const handlePublish = useCallback(async (): Promise<void> => {
     try {
@@ -237,68 +217,6 @@ export default function PipelineShellPage(): JSX.Element {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 32, padding: '0 0 80px' }}>
       {/* Header - spans both columns */}
       <div style={{ gridColumn: '1 / -1' }}>
-      {autoBuildWarnings.length > 0 && (
-        <div
-          data-testid="auto-build-warnings-banner"
-          style={{
-            display: 'flex',
-            gap: 12,
-            padding: '14px 16px',
-            marginBottom: 20,
-            background: 'rgba(251, 191, 36, 0.08)',
-            border: '1px solid rgba(251, 191, 36, 0.3)',
-            borderRadius: 6,
-            alignItems: 'flex-start',
-          }}
-        >
-          <AlertTriangle size={16} color="#fbbf24" style={{ flexShrink: 0, marginTop: 2 }} />
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: '0.18em',
-                color: '#fbbf24',
-                fontFamily: '"Space Mono", monospace',
-                marginBottom: 8,
-              }}
-            >
-              ROLE BUILD WARNINGS
-            </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {autoBuildWarnings.map((w) => (
-                <li
-                  key={w.code}
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--pipe-text)',
-                    lineHeight: 1.5,
-                    fontFamily: '"Space Mono", monospace',
-                  }}
-                >
-                  <span style={{ color: 'var(--pipe-text-dim)' }}>[{w.code}]</span> {w.message}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <button
-            onClick={() => setAutoBuildWarnings([])}
-            aria-label="Dismiss warnings"
-            data-testid="auto-build-warnings-dismiss"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--pipe-text-dim)',
-              cursor: 'pointer',
-              padding: 4,
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
       {/* Header row */}
       <div
         style={{
