@@ -502,6 +502,10 @@ meetingRooms.post('/:token/events', async (c) => {
                WHEN started_at IS NULL THEN NULL
                ELSE CAST((julianday(?) - julianday(started_at)) * 86400 AS INTEGER)
              END,
+             transcript_status = CASE
+               WHEN transcript_status = 'RECORDING' AND recording_r2_key IS NULL THEN 'NONE'
+               ELSE transcript_status
+             END,
              updated_at = ?
          WHERE id = ?`,
       ).bind(now, now, now, room.meeting_id),

@@ -191,4 +191,46 @@ describe('InterviewDetailPage', () => {
 
     expect(mocks.api.get).toHaveBeenCalledTimes(1);
   });
+
+  it('does not poll forever for stale recording state after a disconnected call', async () => {
+    vi.setSystemTime(new Date('2026-06-23T12:00:00.000Z'));
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        linkedMeeting: {
+          id: 'meeting-1',
+          title: 'Ada Candidate interview',
+          description: null,
+          status: 'COMPLETED',
+          scheduledAt: null,
+          startedAt: '2026-06-22T12:00:00.000Z',
+          endedAt: null,
+          durationSecs: null,
+          meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+          meetingType: 'INTERVIEW',
+          transcriptStatus: 'RECORDING',
+          transcriptSummary: null,
+          transcriptJson: null,
+          transcriptAnalysisJson: null,
+          transcriptError: null,
+          recordingR2Key: null,
+          room: { id: 'room-1', sessionId: 'session-1', status: 'ENDED' },
+          createdAt: '2026-06-22T12:00:00.000Z',
+          updatedAt: '2026-06-22T12:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    expect(screen.getByText('Ada Candidate')).toBeTruthy();
+    expect(screen.getByText('Not recorded yet')).toBeTruthy();
+    expect(screen.getByText('The call ended or disconnected before a recording was saved. Start a fresh room to collect transcript evidence.')).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(mocks.api.get).toHaveBeenCalledTimes(1);
+  });
 });

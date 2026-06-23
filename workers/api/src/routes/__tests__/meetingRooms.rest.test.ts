@@ -359,6 +359,62 @@ describe('meeting room recording living-context route', () => {
     ).get(first.room.id)).toEqual({ status: 'WAITING' });
   });
 
+  it('clears recording status when a room ends before recording upload arrives', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Disconnected Guest',
+        recipientEmail: 'disconnected@example.com',
+        title: 'Disconnected interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { meeting: { id: string } };
+
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const prepared = await roomRes.json() as {
+      room: { hostUrl: string };
+    };
+    const hostToken = new URL(prepared.room.hostUrl).pathname.split('/').pop()!;
+
+    const startedRes = await app.request(`/meeting/${hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    expect(startedRes.status).toBe(200);
+    expect(sqlite.prepare(
+      'SELECT status, transcript_status, recording_r2_key FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({
+      status: 'IN_PROGRESS',
+      transcript_status: 'RECORDING',
+      recording_r2_key: null,
+    });
+
+    const endedRes = await app.request(`/meeting/${hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    expect(sqlite.prepare(
+      'SELECT status, transcript_status, recording_r2_key FROM meetings WHERE id = ?',
+    ).get(created.meeting.id)).toEqual({
+      status: 'COMPLETED',
+      transcript_status: 'NONE',
+      recording_r2_key: null,
+    });
+  });
+
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

@@ -37,6 +37,8 @@ const STATUS_COLORS: Record<string, string> = {
   NO_SHOW: '#9ca3af',
 };
 
+const LIVE_RECORDING_STALE_AFTER_MS = 4 * 60 * 60 * 1000;
+
 interface PreparedRoomLinks {
   id: string;
   sessionId: string | null;
@@ -151,6 +153,17 @@ function transcriptStatusLabel(status: string): string {
     default:
       return status.replace(/[_-]+/g, ' ').toLowerCase();
   }
+}
+
+function isLiveRecordingMeeting(meeting: ScheduledInterviewDetail['linkedMeeting']): boolean {
+  if (!meeting || meeting.transcriptStatus !== 'RECORDING') return false;
+  if (meeting.endedAt || meeting.recordingR2Key) return false;
+  const status = meeting.status.toUpperCase();
+  if (status !== 'IN_PROGRESS' && status !== 'ACTIVE') return false;
+  if (!meeting.startedAt) return true;
+  const startedAtMs = new Date(meeting.startedAt).getTime();
+  if (!Number.isFinite(startedAtMs)) return true;
+  return Date.now() - startedAtMs < LIVE_RECORDING_STALE_AFTER_MS;
 }
 
 function personContextModeText(mode: string | null, reason: string | null): string | null {
@@ -388,13 +401,22 @@ export default function InterviewDetailPage(): JSX.Element {
   }, [load]);
 
   useEffect(() => {
-    const status = interview?.linkedMeeting?.transcriptStatus ?? interview?.transcriptArtifact?.status ?? null;
-    if (status !== 'RECORDING' && status !== 'PROCESSING') return undefined;
+    const rawStatus = interview?.linkedMeeting?.transcriptStatus ?? interview?.transcriptArtifact?.status ?? null;
+    const shouldPoll = rawStatus === 'PROCESSING' || isLiveRecordingMeeting(interview?.linkedMeeting ?? null);
+    if (!shouldPoll) return undefined;
     const timer = window.setInterval(() => {
       void load({ showLoading: false });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [interview?.linkedMeeting?.transcriptStatus, interview?.transcriptArtifact?.status, load]);
+  }, [
+    interview?.linkedMeeting?.transcriptStatus,
+    interview?.linkedMeeting?.status,
+    interview?.linkedMeeting?.startedAt,
+    interview?.linkedMeeting?.endedAt,
+    interview?.linkedMeeting?.recordingR2Key,
+    interview?.transcriptArtifact?.status,
+    load,
+  ]);
 
   if (isLoading) {
     return (
@@ -427,10 +449,13 @@ export default function InterviewDetailPage(): JSX.Element {
   const personEmail = interview.candidateEmail ?? interview.recipientEmail ?? null;
   const roleTitle = interview.pipelineTitle ?? 'Talent Pool';
   const stageTitle = interview.stageTitle ?? interview.interviewType ?? 'Interview';
-  const transcriptStatus =
+  const rawTranscriptStatus =
     interview.linkedMeeting?.transcriptStatus
     ?? interview.transcriptArtifact?.status
     ?? 'NONE';
+  const isLiveRecording = isLiveRecordingMeeting(interview.linkedMeeting);
+  const isStaleRecording = rawTranscriptStatus === 'RECORDING' && !isLiveRecording;
+  const transcriptStatus = isStaleRecording ? 'NONE' : rawTranscriptStatus;
   const transcriptError = interview.linkedMeeting?.transcriptError ?? interview.transcriptArtifact?.errorMessage ?? null;
   const transcriptContextText = personContextModeText(personContextMode, personContextReason);
   const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
@@ -458,6 +483,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'
     ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
+    : isStaleRecording
+      ? 'The call ended or disconnected before a recording was saved. Start a fresh room to collect transcript evidence.'
     : transcriptStatus === 'FAILED'
       ? 'Transcript failed. The original recording/error stays attached for review.'
       : guestRoomUrl
