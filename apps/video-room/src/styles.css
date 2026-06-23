@@ -147,7 +147,7 @@ button:focus-visible {
   height: 42px;
   flex: 0 0 auto;
   display: block;
-  color: var(--ink-strong);
+  object-fit: contain;
   filter: drop-shadow(0 0 14px rgba(170, 210, 255, .42)) drop-shadow(0 2px 6px rgba(0, 0, 0, .55));
 }
 
@@ -682,7 +682,7 @@ button:focus-visible {
   width: 56px;
   height: 56px;
   display: block;
-  color: var(--ink-strong);
+  object-fit: contain;
   filter: drop-shadow(0 0 18px rgba(170, 210, 255, .50)) drop-shadow(0 2px 8px rgba(0, 0, 0, .55));
 }
 

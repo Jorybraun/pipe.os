@@ -19,23 +19,13 @@ import type { RoomMetadata } from './types';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
-    <svg
+    <img
       className={className}
-      viewBox="0 0 1000 1000"
-      fill="none"
+      src="/pipe-room-mark.svg"
+      alt=""
       aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500"
-        stroke="currentColor"
-        strokeWidth="192"
-        strokeLinecap="butt"
-        strokeLinejoin="round"
-      />
-      <rect x="615" y="450" width="250" height="100" fill="currentColor" />
-      <rect x="135" y="450" width="250" height="100" fill="currentColor" />
-    </svg>
+      draggable={false}
+    />
   );
 }
 
