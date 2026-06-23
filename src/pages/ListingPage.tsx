@@ -49,7 +49,7 @@ const ListingSkeleton = () => (
 );
 
 /**
- * ListingPage - Optional source context overview with server-side pagination, filtering, and search.
+ * ListingPage - Interview plan overview with server-side pagination, filtering, and search.
  */
 export default function ListingPage(): JSX.Element {
   const navigate = useNavigate();
@@ -99,7 +99,7 @@ export default function ListingPage(): JSX.Element {
   };
 
   const handleDeletePipeline = async (id: string, title: string): Promise<void> => {
-    if (!window.confirm(`Delete context "${title}"? This action cannot be undone.`)) {
+    if (!window.confirm(`Delete interview plan "${title}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -130,18 +130,18 @@ export default function ListingPage(): JSX.Element {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
-            SOURCE CONTEXT
+            INTERVIEW PLANS
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text, #fff)', letterSpacing: '-0.02em', margin: 0 }}>
-            Optional source context
+            Interview plans
           </h1>
           <p style={{ margin: '8px 0 0', maxWidth: 560, color: 'var(--pipe-text-dim)', fontSize: 13, lineHeight: 1.5 }}>
-            Add a job description when it helps. People can still interview and build context without one.
+            Create a simple interview, then add a role or job description only when it helps.
           </p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
-            {total} contexts total
+            {total} plans
           </span>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#34d399', fontFamily: '"Space Mono", monospace' }}>
@@ -173,7 +173,7 @@ export default function ListingPage(): JSX.Element {
               <Search size={14} color="var(--pipe-text-dim)" />
               <input
                 type="text"
-                placeholder="Search source context..."
+                placeholder="Search interview plans..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 style={{
@@ -207,7 +207,7 @@ export default function ListingPage(): JSX.Element {
               }}
             >
               <Plus size={14} />
-              ADD CONTEXT
+              NEW PLAN
             </button>
           </div>
 
@@ -224,7 +224,7 @@ export default function ListingPage(): JSX.Element {
             }}>
               <Briefcase size={40} color="var(--pipe-text-dim)" style={{ marginBottom: 16 }} />
               <p style={{ color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', fontSize: 13 }}>
-                No source context yet
+                No interview plans yet
               </p>
             </div>
           ) : (
@@ -234,8 +234,8 @@ export default function ListingPage(): JSX.Element {
                   key={p.id}
                   id={p.id}
                   title={p.title}
-                  department={p.level || "Engineering"}
-                  location="Remote"
+                  interviewSummary={p.stageCount === 1 ? "1 interview" : `${p.stageCount} interviews`}
+                  contextSummary={p.level ? p.level : "role optional"}
                   status={
                     p.status === "ARCHIVED"
                       ? "closed"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
@@ -224,26 +224,31 @@ export default function InterviewDetailPage(): JSX.Element {
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const hasLoadedOnceRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!interviewId) return;
-    setIsLoading(true);
+    const showLoading = options?.showLoading ?? !hasLoadedOnceRef.current;
+    if (showLoading) setIsLoading(true);
     setError(null);
     try {
       const result = await api.get<{ interview: ScheduledInterviewDetail }>(
         `/api/v1/scheduling/interviews/${interviewId}`,
       );
+      hasLoadedOnceRef.current = true;
       setInterview(result.interview);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load interview');
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   }, [api, interviewId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    hasLoadedOnceRef.current = false;
+    setInterview(null);
+    void load({ showLoading: true });
+  }, [interviewId, load]);
 
   const transcriptEntries = useMemo(() => {
     const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
@@ -307,7 +312,7 @@ export default function InterviewDetailPage(): JSX.Element {
         {},
       );
       setRoomLinks(prepared.room);
-      await load();
+      await load({ showLoading: false });
       return prepared.room;
     } catch (err) {
       setRoomError(err instanceof Error ? err.message : 'Unable to prepare video room');
@@ -366,7 +371,7 @@ export default function InterviewDetailPage(): JSX.Element {
         : result.emailError
           ? 'Guest link is ready, but email delivery failed. Copy the link manually.'
           : 'Guest link is ready. Email delivery is not configured locally.');
-      await load();
+      await load({ showLoading: false });
     } catch (err) {
       setRoomError(err instanceof Error ? err.message : 'Unable to send invite');
     } finally {
@@ -376,7 +381,7 @@ export default function InterviewDetailPage(): JSX.Element {
 
   useEffect(() => {
     const handleVisibilityChange = (): void => {
-      if (document.visibilityState === 'visible') void load();
+      if (document.visibilityState === 'visible') void load({ showLoading: false });
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -384,9 +389,9 @@ export default function InterviewDetailPage(): JSX.Element {
 
   useEffect(() => {
     const status = interview?.linkedMeeting?.transcriptStatus ?? interview?.transcriptArtifact?.status ?? null;
-    if (status !== 'RECORDING' && status !== 'PROCESSING' && status !== 'PENDING') return undefined;
+    if (status !== 'RECORDING' && status !== 'PROCESSING') return undefined;
     const timer = window.setInterval(() => {
-      void load();
+      void load({ showLoading: false });
     }, 5000);
     return () => window.clearInterval(timer);
   }, [interview?.linkedMeeting?.transcriptStatus, interview?.transcriptArtifact?.status, load]);

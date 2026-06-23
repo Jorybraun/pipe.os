@@ -210,7 +210,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
               New Interview Plan
             </h1>
             <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--pipe-text-muted)' }}>
-              Create a roleless interview plan, or add source context when you have it.
+              Start with the interview. Add a role, job description, or technical context only when it helps.
             </p>
           </div>
           <div>
@@ -325,7 +325,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
           <span style={fieldLabelStyle}>
-            OPTIONAL SOURCE CONTEXT
+            OPTIONAL ROLE OR CONTEXT
           </span>
           <textarea
             value={roleDescription}
@@ -348,7 +348,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
             }}
           >
             {roleDescriptionValue.length === 0
-              ? 'No source context yet'
+              ? 'No role context yet'
               : `${roleDescriptionValue.length} / ${MIN_DESCRIPTION_LENGTH} chars`}
           </span>
         </label>

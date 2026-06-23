@@ -8,7 +8,7 @@
  * (which is rare — Clerk tokens last ~60 seconds and are refreshed silently).
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useAuth as useClerkAuth } from '@clerk/react';
 import { createApiClient } from '../lib/api/client';
 import type { ApiClient } from '../lib/api/client';
@@ -22,10 +22,13 @@ import type { ApiClient } from '../lib/api/client';
  */
 export function useApiClient(): ApiClient {
   const { getToken } = useClerkAuth();
+  const getTokenRef = useRef(getToken);
 
-  return useMemo(
-    () => createApiClient({ getToken }),
-     
-    [getToken],
-  );
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  return useMemo(() => createApiClient({
+    getToken: () => getTokenRef.current(),
+  }), []);
 }

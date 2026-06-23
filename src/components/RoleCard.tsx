@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
-  Building,
-  MapPin,
   Calendar,
   ChevronRight,
   MoreHorizontal,
   Activity,
   Users,
   Trash2,
+  ClipboardList,
 } from "lucide-react";
 import { LiquidMetalCard } from "./ui/LiquidMetalCard";
 
@@ -16,8 +15,8 @@ export type RoleStatus = "active" | "draft" | "closed";
 interface RoleCardProps {
   id: string;
   title: string;
-  department: string;
-  location: string;
+  interviewSummary: string;
+  contextSummary: string;
   status: RoleStatus;
   candidates: number;
   createdAt: string;
@@ -30,8 +29,8 @@ interface RoleCardProps {
 export function RoleCard({
   id: _id,
   title,
-  department,
-  location,
+  interviewSummary,
+  contextSummary,
   status,
   candidates,
   createdAt,
@@ -155,7 +154,7 @@ export function RoleCard({
 
               <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Building size={12} color="var(--pipe-text-dim)" />
+                  <ClipboardList size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -163,11 +162,11 @@ export function RoleCard({
                       fontFamily: "Space Mono",
                     }}
                   >
-                    {department.toUpperCase()}
+                    {interviewSummary.toUpperCase()}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <MapPin size={12} color="var(--pipe-text-dim)" />
+                  <Activity size={12} color="var(--pipe-text-dim)" />
                   <span
                     style={{
                       fontSize: 10,
@@ -175,7 +174,7 @@ export function RoleCard({
                       fontFamily: "Space Mono",
                     }}
                   >
-                    {location.toUpperCase()}
+                    {contextSummary.toUpperCase()}
                   </span>
                 </div>
               </div>
