@@ -114,7 +114,7 @@ export default function PersonProfilePage(): JSX.Element {
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showSourceGraph, setShowSourceGraph] = useState(false);
+  const [showSourceGraph, setShowSourceGraph] = useState(true);
 
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
 
@@ -351,10 +351,10 @@ export default function PersonProfilePage(): JSX.Element {
             <Network size={16} color="var(--pipe-accent)" />
             <div>
               <h2 style={{ margin: 0, fontSize: 18, color: 'var(--pipe-text)', letterSpacing: 0 }}>
-                Evidence Audit
+                Living Context Graph
               </h2>
               <p style={GRAPH_SUBTITLE}>
-                Inspect exact source spans and rebuildable graph projections behind this profile.
+                See how conversations, interviews, source artifacts, context records, and evidence-backed signals accumulate around this person.
               </p>
             </div>
           </div>
@@ -363,7 +363,7 @@ export default function PersonProfilePage(): JSX.Element {
             onClick={() => setShowSourceGraph((value) => !value)}
             style={GRAPH_TOGGLE}
           >
-            {showSourceGraph ? 'Hide audit' : 'Open audit'}
+            {showSourceGraph ? 'Hide graph' : 'Open graph'}
           </button>
         </div>
         {showSourceGraph && contextEndpoint ? (
@@ -374,7 +374,7 @@ export default function PersonProfilePage(): JSX.Element {
           />
         ) : (
           <div style={SOURCE_GRAPH_PLACEHOLDER}>
-            This profile is summarized from source-backed context. Open the audit when you need provenance, exact source text, or ingestion debugging.
+            This profile is summarized from source-backed context. Open the graph when you need provenance, exact source text, or accumulated relationship evidence.
           </div>
         )}
       </section>
