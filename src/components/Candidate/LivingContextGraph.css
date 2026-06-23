@@ -1,4 +1,13 @@
 .living-context {
+  --pipe-text: #f8fafc;
+  --pipe-text-muted: rgba(226, 232, 240, 0.78);
+  --pipe-text-dim: rgba(203, 213, 225, 0.58);
+  --pipe-border: rgba(148, 163, 184, 0.22);
+  --pipe-border-light: rgba(148, 163, 184, 0.14);
+  --pipe-surface-solid: rgba(5, 12, 22, 0.96);
+  --pipe-surface: rgba(8, 17, 31, 0.78);
+  --pipe-surface-hover: rgba(15, 23, 42, 0.92);
+  --pipe-shadow: rgba(0, 0, 0, 0.42);
   --lc-source: #38bdf8;
   --lc-assertion: #f59e0b;
   --lc-signal: #34d399;
@@ -8,6 +17,7 @@
   --lc-panel-hover: var(--pipe-surface-hover);
   container-name: living-context;
   container-type: inline-size;
+  color: var(--pipe-text);
   min-width: 0;
 }
 
@@ -39,6 +49,10 @@
 
 .living-context__search input:focus {
   border-color: rgba(56, 189, 248, 0.55);
+}
+
+.living-context__search input::placeholder {
+  color: var(--pipe-text-dim);
 }
 
 .living-context__search svg {

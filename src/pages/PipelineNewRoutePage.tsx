@@ -141,27 +141,33 @@ export default function PipelineNewRoutePage(): JSX.Element {
     <form
       onSubmit={handleSubmit}
       style={{
-        minHeight: 0,
-        height: 'calc(100dvh - 124px)',
-        maxHeight: 'calc(100dvh - 124px)',
-        padding: '16px 20px',
+        minHeight: 'calc(100dvh - 124px)',
+        padding: '24px 24px 40px',
         background: 'transparent',
         color: 'var(--pipe-text)',
-        overflow: 'hidden',
         boxSizing: 'border-box',
         margin: '0',
         width: '100%',
         display: 'flex',
         justifyContent: 'flex-start',
+        overflowY: 'auto',
       }}
     >
       <div
         style={{
+          '--pipe-text': '#f8fafc',
+          '--pipe-text-muted': 'rgba(226, 232, 240, 0.76)',
+          '--pipe-text-dim': 'rgba(203, 213, 225, 0.58)',
+          '--pipe-bg': '#050b14',
+          '--pipe-border': 'rgba(148, 163, 184, 0.22)',
+          '--pipe-border-light': 'rgba(148, 163, 184, 0.14)',
+          '--pipe-surface-solid': 'rgba(5, 12, 22, 0.96)',
+          '--pipe-surface': 'rgba(8, 17, 31, 0.76)',
+          '--pipe-surface-hover': 'rgba(15, 23, 42, 0.96)',
+          '--pipe-shadow': 'rgba(0, 0, 0, 0.42)',
           maxWidth: 920,
           margin: '0',
           width: '100%',
-          height: '100%',
-          overflow: 'hidden',
           border: '1px solid var(--pipe-border-light)',
           borderRadius: 14,
           padding: 22,
@@ -171,7 +177,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-        }}
+        } as CSSProperties}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
@@ -225,7 +231,6 @@ export default function PipelineNewRoutePage(): JSX.Element {
             display: 'grid',
             gridTemplateColumns: 'minmax(0, 1.1fr) minmax(280px, 1fr)',
             gap: 22,
-            flex: '0 0 auto',
           }}
         >
           <div style={{ display: 'grid', gap: 14 }}>
@@ -304,7 +309,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
           </div>
         </div>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0, flex: '1 1 auto' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
           <span style={fieldLabelStyle}>
             ROLE_DESCRIPTION (source-backed)
           </span>
@@ -318,8 +323,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
             style={{
               ...inputStyle,
               width: '100%',
-              minHeight: 0,
-              flex: '1 1 auto',
+              minHeight: 220,
               resize: 'none',
               lineHeight: 1.5,
               padding: 14,
