@@ -45,6 +45,10 @@ function sawFrame(frames: string[], type: string): boolean {
   return frames.some((frame) => frame.includes(`"type":"${type}"`));
 }
 
+function countFrames(frames: string[], type: string): number {
+  return frames.filter((frame) => frame.includes(`"type":"${type}"`)).length;
+}
+
 async function createMeetingRoom(
   request: APIRequestContext,
   token: string,
@@ -136,6 +140,62 @@ test.describe('two-user video room', () => {
       expect(sawFrame(guestFrames, 'ANSWER')).toBeTruthy();
       expect(sawFrame(hostFrames, 'ICE_CANDIDATE')).toBeTruthy();
       expect(sawFrame(guestFrames, 'ICE_CANDIDATE')).toBeTruthy();
+    } finally {
+      await hostContext.close();
+      await guestContext.close();
+    }
+  });
+
+  test('renegotiates when the guest rejoins the same room link', async ({
+    browser,
+    page,
+    request,
+  }) => {
+    const token = await getAuthToken(page);
+    const { hostUrl, guestUrl } = await createMeetingRoom(request, token);
+
+    const hostContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+    const guestContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+
+    try {
+      const host = await newRoomContext(hostContext);
+      const firstGuest = await newRoomContext(guestContext);
+      const hostFrames = observeRoomFrames(host);
+
+      await Promise.all([
+        host.goto(hostUrl),
+        firstGuest.goto(guestUrl),
+      ]);
+      await Promise.all([
+        expect(host.getByTestId('device-check')).toBeVisible(),
+        expect(firstGuest.getByTestId('device-check')).toBeVisible(),
+      ]);
+      await Promise.all([
+        host.getByTestId('join-room').click(),
+        firstGuest.getByTestId('join-room').click(),
+      ]);
+
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(firstGuest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+
+      await firstGuest.close();
+
+      const rejoinedGuest = await newRoomContext(guestContext);
+      await rejoinedGuest.goto(guestUrl);
+      await expect(rejoinedGuest.getByTestId('device-check')).toBeVisible();
+      await rejoinedGuest.getByTestId('join-room').click();
+
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(rejoinedGuest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(host.getByTestId('remote-video')).toBeVisible();
+      await expect(rejoinedGuest.getByTestId('remote-video')).toBeVisible();
+      expect(countFrames(hostFrames, 'OFFER')).toBeGreaterThanOrEqual(2);
     } finally {
       await hostContext.close();
       await guestContext.close();

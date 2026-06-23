@@ -29,8 +29,8 @@ const FALLBACK_ICE: RTCIceServer[] = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const PEER_DISCONNECT_GRACE_MS = 8000;
-const PEER_FAILED_GRACE_MS = 8000;
+const PEER_DISCONNECT_GRACE_MS = 15000;
+const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
 
 function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
@@ -288,6 +288,12 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
           }
         } else if (message.type === 'PEER_CONNECTED') {
           const peer = peerRef.current;
+          if (role === 'HOST' && message.role !== role && localRef.current) {
+            clearPeerDisconnectTimer();
+            closePeer('peer_connected');
+            scheduleHostRenegotiation();
+            return;
+          }
           if (peer?.connectionState === 'failed' || peer?.connectionState === 'closed') {
             closePeer('peer_connected');
           } else if (remoteRef.current || peer?.connectionState === 'connected') {
@@ -539,7 +545,8 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       !localStream ||
       phase !== 'peer_connected' ||
       startingCallRef.current ||
-      autoStartTimerRef.current !== null
+      autoStartTimerRef.current !== null ||
+      peerRenegotiateTimerRef.current !== null
     ) {
       return undefined;
     }
