@@ -287,6 +287,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
     return (
       <main className="lobby">
+        <PipeMark className="room-watermark lobby-watermark" />
         <section className="lobby-copy">
           <BrandMark />
           <div className="brand-line" />
@@ -345,6 +346,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
+      {!room.remoteStream && <PipeMark className="room-watermark call-watermark" />}
       <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">
@@ -482,6 +484,7 @@ export default function App(): JSX.Element {
   if (!metadata) {
     return (
       <main className="center-message is-loading">
+        <PipeMark className="room-watermark center-watermark" />
         <BrandMark />
         <RoomStateMark loading />
         <h1>Opening secure PIPE room</h1>
