@@ -19,6 +19,7 @@ import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
 import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
 import { ReviewSessionPage } from './ReviewSessionPage';
+import { VideoShell } from '../components/Shells/VideoShell';
 
 /**
  * Build a RawStage from the stage config DTO + current challenge content.
@@ -366,6 +367,11 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   }
   const totalChallenges = stageConfig.challenges?.length ?? 1;
   const isLastChallenge = currentOrder === totalChallenges - 1;
+  const shouldWrapLiveVideo =
+    stageConfig.mode === 'LIVE_VIDEO' &&
+    currentType !== 'LIVE_VIDEO' &&
+    candidateIds !== null &&
+    sessionToken !== null;
 
   // Determine if we're in the review session v2 flow
   const isReviewSessionV2 =
@@ -508,9 +514,20 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             </TimerProvider>
           );
 
-          // VideoShell only activates once past the LIVE_VIDEO waiting room step
-          // (recruiter initiates the call, not the candidate)
-          return inner;
+          // A stage can be a live video interview with code-review or
+          // dev-container work inside it. The standalone LIVE_VIDEO challenge
+          // still renders its own waiting-room panel.
+          if (!shouldWrapLiveVideo || !candidateIds) return inner;
+          return (
+            <VideoShell
+              stageId={candidateIds.stageId}
+              candidateId={candidateIds.candidateId}
+              role="CANDIDATE"
+              sessionToken={sessionToken}
+            >
+              {inner}
+            </VideoShell>
+          );
         })()}
       </InterviewProvider>
 

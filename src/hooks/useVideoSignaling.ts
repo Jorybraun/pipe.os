@@ -155,7 +155,7 @@ export function useVideoSignaling({
       ws.close();
       wsRef.current = null;
     };
-  }, [session?.id, role]);
+  }, [session?.id, role, sessionToken]);
 
   // Initial loading state
   useEffect(() => {

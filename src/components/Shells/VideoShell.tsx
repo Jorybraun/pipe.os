@@ -20,6 +20,8 @@ interface VideoShellProps {
   candidateId: string;
   /** Role of the current user. RECRUITER = authenticated. CANDIDATE = /assess/:token. */
   role: VideoRole;
+  /** Candidate JWT used by /assess/:token sessions for candidate WebSocket auth. */
+  sessionToken?: string | null;
   children: React.ReactNode;
 }
 
@@ -84,6 +86,7 @@ export function VideoShell({
   stageId,
   candidateId,
   role,
+  sessionToken,
   children,
 }: VideoShellProps): JSX.Element {
   const [deviceReady, setDeviceReady] = useState(false);
@@ -108,8 +111,17 @@ export function VideoShell({
     stageId,
     candidateId,
     role,
+    sessionToken: sessionToken ?? null,
     onSignal: handleSignal,
   });
+  const activeVideoSessionId = signaling.session?.id;
+  const joinVideoSession = signaling.joinSession;
+
+  useEffect(() => {
+    if (role !== "CANDIDATE") return;
+    if (activeVideoSessionId) return;
+    joinVideoSession(`${stageId}--${candidateId}`);
+  }, [activeVideoSessionId, candidateId, joinVideoSession, role, stageId]);
 
   // ---- WebRTC session hook ------------------------------------------------
 
