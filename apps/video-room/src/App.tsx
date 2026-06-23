@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+  AlertCircle,
   Camera,
   CameraOff,
   Circle,
@@ -21,6 +22,8 @@ import {
 } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
 import type { IceServerProvider, RoomMetadata } from './types';
+
+type RecordingState = 'idle' | 'recording' | 'uploading' | 'saved' | 'failed';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -145,7 +148,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const room = useRoomConnection(token, metadata.role, enteredRoom);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
-  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'uploading' | 'saved' | 'failed'>('idle');
+  const [recordingState, setRecordingState] = useState<RecordingState>('idle');
+  const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -230,9 +235,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = recorder;
       transcriptionRecorderRef.current = transcriptionRecorder;
       recordingDisposeRef.current = composite.dispose;
+      setRecordingError(null);
+      setRecordingNotice('Recording started. Transcript processing begins after the host ends the call.');
       setRecordingState('recording');
       void postRoomEvent(token, 'STARTED');
-    }).catch(() => setRecordingState('failed'));
+    }).catch((error) => {
+      setRecordingState('failed');
+      setRecordingError(error instanceof Error ? error.message : 'Recording could not start.');
+    });
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
   useEffect(() => {
@@ -270,9 +280,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingDisposeRef.current = null;
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
+      if (metadata.role === 'HOST') {
+        setRecordingNotice('No recording was captured because the call never reached an active recorded state.');
+      }
       return;
     }
     setRecordingState('uploading');
+    setRecordingError(null);
+    setRecordingNotice('Saving recording and starting transcript processing...');
     try {
       await Promise.all([
         stopRecorder(recorder),
@@ -287,8 +302,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             type: transcriptionRecorder?.mimeType || 'audio/webm',
           })
         : undefined;
-      await uploadRecording(token, blob, transcriptionAudio);
+      const result = await uploadRecording(token, blob, transcriptionAudio);
       setRecordingState('saved');
+      setRecordingNotice(
+        result.transcriptStatus === 'PROCESSING'
+          ? 'Recording saved. Transcript processing has started.'
+          : 'Recording saved.',
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Recording upload failed.';
+      setRecordingState('failed');
+      setRecordingError(message);
+      throw error;
     } finally {
       await recordingDisposeRef.current?.().catch(() => undefined);
       recorderRef.current = null;
@@ -406,8 +431,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     recording: 'Recording',
     uploading: 'Saving',
     saved: 'Saved',
-    failed: 'Save issue',
+    failed: 'Save failed',
   }[recordingState];
+  const visibleRecordingNotice = recordingError ?? recordingNotice;
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
@@ -471,6 +497,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         </div>
       )}
 
+      {metadata.role === 'HOST' && visibleRecordingNotice && (recordingState === 'uploading' || recordingState === 'saved' || recordingState === 'failed') && (
+        <div className={`save-banner is-${recordingState}`} data-testid="recording-save-status">
+          <span>
+            {recordingState === 'failed' ? <AlertCircle size={14} /> : <Circle size={9} fill="currentColor" />}
+            {visibleRecordingNotice}
+          </span>
+        </div>
+      )}
+
       <header className="call-header">
         <div>
           <BrandMark compact />
@@ -513,7 +548,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <p>
             {metadata.role === 'HOST' && recordingState === 'uploading'
               ? 'Saving the recording and starting transcription...'
-              : 'You can close this window.'}
+              : metadata.role === 'HOST' && recordingState === 'saved'
+                ? (recordingNotice ?? 'Recording saved. Transcript processing has started.')
+                : metadata.role === 'HOST' && recordingState === 'failed'
+                  ? `Recording was not saved: ${recordingError ?? 'unknown error'}`
+                  : 'You can close this window.'}
           </p>
         </div>
       )}

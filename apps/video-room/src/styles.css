@@ -748,6 +748,53 @@ button:focus-visible {
   background: rgba(255, 229, 173, .18);
 }
 
+.save-banner {
+  position: absolute;
+  left: 50%;
+  top: calc(86px + env(safe-area-inset-top));
+  z-index: 5;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  max-width: min(620px, calc(100vw - 28px));
+  padding: 9px 13px;
+  border: 1px solid rgba(127, 199, 255, .34);
+  border-radius: 999px;
+  background: rgba(5, 14, 26, .78);
+  color: var(--ink-dim);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, .34), 0 0 34px rgba(127, 199, 255, .12);
+  backdrop-filter: blur(16px);
+}
+
+.save-banner span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 800 10px/1.25 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.save-banner.is-uploading {
+  border-color: rgba(255, 229, 173, .38);
+  color: #ffe5ad;
+}
+
+.save-banner.is-saved {
+  border-color: rgba(157, 232, 216, .38);
+  color: #9de8d8;
+}
+
+.save-banner.is-failed {
+  border-color: rgba(255, 113, 130, .46);
+  color: #ffd5da;
+}
+
 .recording,
 .network {
   flex: 0 0 auto;

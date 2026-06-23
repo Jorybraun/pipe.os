@@ -39,7 +39,7 @@ export async function uploadRecording(
   token: string,
   recording: Blob,
   transcriptionAudio?: Blob,
-): Promise<void> {
+): Promise<{ accepted: boolean; transcriptStatus?: string }> {
   if (transcriptionAudio && transcriptionAudio.size > 0) {
     const body = new FormData();
     body.append('recording', recording, 'recording.webm');
@@ -48,8 +48,7 @@ export async function uploadRecording(
       method: 'POST',
       body,
     });
-    await parseResponse<{ accepted: boolean }>(response);
-    return;
+    return parseResponse<{ accepted: boolean; transcriptStatus?: string }>(response);
   }
 
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
@@ -57,7 +56,7 @@ export async function uploadRecording(
     headers: { 'Content-Type': recording.type || 'video/webm' },
     body: recording,
   });
-  await parseResponse<{ accepted: boolean }>(response);
+  return parseResponse<{ accepted: boolean; transcriptStatus?: string }>(response);
 }
 
 export async function getIceServerConfig(token: string): Promise<{
