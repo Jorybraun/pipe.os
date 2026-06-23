@@ -59,12 +59,12 @@ describe('PipelineNewRoutePage', () => {
     await user.type(screen.getByPlaceholderText('Acme Corp'), 'Acme');
     await user.type(screen.getByPlaceholderText('Remote / NYC / Berlin'), 'Remote');
     await user.type(
-      screen.getByPlaceholderText('Paste role expectations, constraints, and technical requirements.'),
+      screen.getByPlaceholderText(/Paste role expectations, constraints, and technical requirements/i),
       'Build React interfaces and review frontend architecture decisions.',
     );
 
     await user.click(screen.getByRole('button', { name: /code-review interview/i }));
-    await user.click(screen.getByRole('button', { name: /create role/i }));
+    await user.click(screen.getByRole('button', { name: /create plan/i }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
 

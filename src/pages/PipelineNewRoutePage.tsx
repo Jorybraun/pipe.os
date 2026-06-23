@@ -181,10 +181,10 @@ export default function PipelineNewRoutePage(): JSX.Element {
               PIPE OS
             </div>
             <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, letterSpacing: 0, color: 'var(--pipe-text)' }}>
-              New Role
+              New Interview Plan
             </h1>
             <p style={{ margin: '10px 0 0', fontSize: 13, color: 'var(--pipe-text-muted)' }}>
-              Paste a job description, then pick the interview type to run.
+              Add optional role context, then pick the interview types to run.
             </p>
           </div>
           <div>
@@ -208,7 +208,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
               }}
             >
               {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-              CREATE ROLE
+              CREATE PLAN
             </button>
           </div>
         </div>
@@ -224,7 +224,7 @@ export default function PipelineNewRoutePage(): JSX.Element {
           <div style={{ display: 'grid', gap: 14 }}>
             <label style={{ display: 'grid', gap: 8 }}>
               <span style={fieldLabelStyle}>
-                ROLE_TITLE
+                ROLE / CONTEXT TITLE
               </span>
               <input
                 value={roleTitle}
@@ -299,13 +299,13 @@ export default function PipelineNewRoutePage(): JSX.Element {
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18, minHeight: 0 }}>
           <span style={fieldLabelStyle}>
-            JOB DESCRIPTION
+            ROLE CONTEXT
           </span>
           <textarea
             value={roleDescription}
             onChange={(e) => setRoleDescription(e.target.value)}
             rows={10}
-            placeholder="Paste role expectations, constraints, and technical requirements."
+            placeholder="Paste role expectations, constraints, and technical requirements. Leave out anything you do not know yet."
             required
             minLength={MIN_DESCRIPTION_LENGTH}
             style={{

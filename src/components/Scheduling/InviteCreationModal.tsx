@@ -14,8 +14,22 @@ interface InviteCreationModalProps {
     scheduledAt?: string;
     schedulingProvider?: SchedulingProvider;
     schedulingUrl?: string;
-  }) => Promise<{ id: string }>;
+  }) => Promise<{
+    id: string;
+    meetingUrl?: string | null;
+    emailSent?: boolean;
+    provider?: string | undefined;
+    emailError?: string | undefined;
+  }>;
   initialInterviewType?: InterviewType;
+}
+
+interface CreatedInviteState {
+  id: string;
+  meetingUrl: string | null;
+  emailSent: boolean | null;
+  provider?: string | undefined;
+  emailError?: string | undefined;
 }
 
 const INTERVIEW_MODES: Array<{
@@ -42,7 +56,7 @@ export function InviteCreationModal({
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [createdInviteId, setCreatedInviteId] = useState<string | null>(null);
+  const [createdInvite, setCreatedInvite] = useState<CreatedInviteState | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Reset state when modal opens
@@ -119,7 +133,13 @@ export function InviteCreationModal({
       }
       
       const result = await onCreateInvite(inviteData);
-      setCreatedInviteId(result.id);
+      setCreatedInvite({
+        id: result.id,
+        meetingUrl: result.meetingUrl ?? null,
+        emailSent: typeof result.emailSent === 'boolean' ? result.emailSent : null,
+        provider: result.provider,
+        emailError: result.emailError,
+      });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create invite');
     } finally {
@@ -128,9 +148,8 @@ export function InviteCreationModal({
   };
 
   const handleCopy = () => {
-    if (createdInviteId) {
-      const inviteUrl = `${window.location.origin}/interviews/${createdInviteId}`;
-      navigator.clipboard.writeText(inviteUrl);
+    if (createdInvite?.meetingUrl) {
+      navigator.clipboard.writeText(createdInvite.meetingUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -143,7 +162,7 @@ export function InviteCreationModal({
     setScheduledAt('');
     setSchedulingMode('manual');
     setCreateError(null);
-    setCreatedInviteId(null);
+    setCreatedInvite(null);
     setCopied(false);
     onClose();
   };
@@ -181,7 +200,7 @@ export function InviteCreationModal({
               INTERVIEW
             </div>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--pipe-text)' }}>
-              {createdInviteId ? 'Interview Created' : 'New interview'}
+              {createdInvite ? 'Invite Ready' : 'New interview'}
             </h2>
           </div>
           <button
@@ -193,7 +212,7 @@ export function InviteCreationModal({
           </button>
         </div>
 
-        {createdInviteId ? (
+        {createdInvite ? (
           /* Success state with invite link */
           <div>
             <div
@@ -208,6 +227,13 @@ export function InviteCreationModal({
               <div style={{ fontSize: 12, color: 'var(--pipe-text)', marginBottom: 12, fontFamily: '"Space Mono", monospace' }}>
                 Interview created for <strong>{recipientName}</strong> ({recipientEmail})
               </div>
+              <div style={{ fontSize: 11, color: createdInvite.emailSent ? '#4ade80' : 'var(--pipe-text-dim)', marginBottom: 12, fontFamily: '"Space Mono", monospace', lineHeight: 1.5 }}>
+                {createdInvite.emailSent === true
+                  ? `Invite email sent${createdInvite.provider ? ` via ${createdInvite.provider}` : ''}.`
+                  : createdInvite.emailError
+                    ? 'Guest link is ready, but email delivery failed. Copy and send it manually.'
+                    : 'Guest link is ready. Copy it or send it from the interview page.'}
+              </div>
               <div
                 style={{
                   display: 'flex',
@@ -220,10 +246,11 @@ export function InviteCreationModal({
                 }}
               >
                 <div style={{ flex: 1, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {window.location.origin}/interviews/{createdInviteId}
+                  {createdInvite.meetingUrl ?? 'Open the interview to prepare a guest room link.'}
                 </div>
                 <button
                   onClick={handleCopy}
+                  disabled={!createdInvite.meetingUrl}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -235,7 +262,8 @@ export function InviteCreationModal({
                     fontSize: 10,
                     letterSpacing: '0.1em',
                     fontFamily: '"Space Mono", monospace',
-                    cursor: 'pointer',
+                    cursor: createdInvite.meetingUrl ? 'pointer' : 'default',
+                    opacity: createdInvite.meetingUrl ? 1 : 0.45,
                     borderRadius: 4,
                     transition: 'all 0.2s',
                   }}
@@ -248,7 +276,7 @@ export function InviteCreationModal({
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
               <a
-                href={`/interviews/${createdInviteId}`}
+                href={`/interviews/${createdInvite.id}`}
                 style={{
                   padding: '10px 20px',
                   background: 'var(--pipe-text)',

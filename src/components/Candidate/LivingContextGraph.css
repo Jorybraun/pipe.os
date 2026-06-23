@@ -890,6 +890,7 @@ html[data-theme="pipe-blue"] .living-context {
 }
 
 .living-context__context-record {
+  min-width: 0;
   padding: 12px 13px;
   border: 1px solid rgba(129, 140, 248, 0.22);
   border-radius: 6px;
@@ -897,12 +898,11 @@ html[data-theme="pipe-blue"] .living-context {
 }
 
 .living-context__context-record-toggle {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   width: 100%;
   min-width: 0;
   align-items: flex-start;
-  gap: 7px 8px;
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -917,16 +917,18 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-head {
   display: grid;
+  flex: 1 1 auto;
   min-width: 0;
   gap: 6px;
 }
 
 .living-context__context-record-title {
+  display: block;
   min-width: 0;
   color: var(--lc-assertion);
-  font: 10px "Space Mono", monospace;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.5;
   letter-spacing: 0;
   text-wrap: pretty;
   overflow-wrap: break-word;
@@ -955,6 +957,7 @@ html[data-theme="pipe-blue"] .living-context {
 
 .living-context__context-record-body {
   display: grid;
+  min-width: 0;
   gap: 11px;
   margin-top: 12px;
 }
@@ -995,8 +998,10 @@ html[data-theme="pipe-blue"] .living-context {
   border-left: 2px solid var(--lc-source);
   background: rgba(56, 189, 248, 0.04);
   color: var(--pipe-text-muted);
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .living-context__assertion {

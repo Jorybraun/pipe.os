@@ -11,6 +11,14 @@ import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
 
+interface InviteResponse {
+  success: boolean;
+  emailSent: boolean;
+  meetingUrl: string;
+  provider?: string;
+  emailError?: string;
+}
+
 function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
   if (!scheduledAt) return 'UNSCHEDULED';
 
@@ -241,8 +249,24 @@ export function SchedulingDashboard(): JSX.Element {
             '/api/v1/scheduling/interviews',
             data,
           );
+          let inviteResult: InviteResponse | null = null;
+          let inviteError: string | undefined;
+          try {
+            inviteResult = await api.post<InviteResponse>(
+              `/api/v1/scheduling/interviews/${result.interview.id}/invite`,
+              { email: data.recipientEmail },
+            );
+          } catch (err) {
+            inviteError = err instanceof Error ? err.message : 'Invite email could not be sent.';
+          }
           await refetch();
-          return { id: result.interview.id };
+          return {
+            id: result.interview.id,
+            meetingUrl: inviteResult?.meetingUrl ?? null,
+            emailSent: inviteResult?.emailSent ?? false,
+            provider: inviteResult?.provider,
+            emailError: inviteResult?.emailError ?? inviteError,
+          };
         }}
       />
     </div>
