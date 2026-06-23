@@ -986,9 +986,10 @@
 }
 
 .living-context__predicate {
-  flex: 1 1 180px;
-  min-width: min(100%, 160px);
-  overflow-wrap: anywhere;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
   color: var(--lc-assertion);
   font: 8px "Space Mono", monospace;
   line-height: 1.45;
