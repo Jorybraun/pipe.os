@@ -260,11 +260,12 @@ Rules:
 async function processRecording(
   env: Env,
   room: ResolvedRoom,
+  transcriptionSourceKey: string,
   recordingKey: string,
 ): Promise<void> {
   try {
-    const object = await env.STORAGE.get(recordingKey);
-    if (!object) throw new Error('Recording was not found after upload.');
+    const object = await env.STORAGE.get(transcriptionSourceKey);
+    if (!object) throw new Error('Transcription source was not found after upload.');
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
     const structured = env.DEEPGRAM_API_KEY
@@ -380,6 +381,21 @@ async function processRecording(
 }
 
 export const meetingRooms = new Hono<{ Bindings: Env }>();
+
+interface UploadedBlobPart {
+  size: number;
+  type?: string;
+  arrayBuffer: () => Promise<ArrayBuffer>;
+}
+
+function isUploadedBlobPart(value: unknown): value is UploadedBlobPart {
+  if (!value || typeof value !== 'object') return false;
+  const part = value as Partial<UploadedBlobPart>;
+  return (
+    typeof part.size === 'number'
+    && typeof part.arrayBuffer === 'function'
+  );
+}
 
 meetingRooms.get('/:token', async (c) => {
   const room = await resolveRoom(c.env.DB, c.req.param('token'));
@@ -516,15 +532,55 @@ meetingRooms.post('/:token/recording', async (c) => {
   if (contentLength > 100 * 1024 * 1024) {
     return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
   }
-  const bytes = await c.req.arrayBuffer();
-  if (bytes.byteLength === 0) return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  const requestContentType = c.req.header('Content-Type') ?? 'audio/webm';
+  let bytes: ArrayBuffer;
+  let contentType: string;
+  let transcriptionBytes: ArrayBuffer | null = null;
+  let transcriptionContentType: string | null = null;
 
-  const contentType = c.req.header('Content-Type') ?? 'audio/webm';
+  if (requestContentType.toLowerCase().includes('multipart/form-data')) {
+    const form = await c.req.formData();
+    const recording = form.get('recording');
+    if (!isUploadedBlobPart(recording)) {
+      return apiError(c, 'VALIDATION_ERROR', 'Recording upload is missing the recording file.');
+    }
+    bytes = await recording.arrayBuffer();
+    contentType = recording.type || 'video/webm';
+
+    const transcriptionAudio = form.get('transcriptionAudio');
+    if (isUploadedBlobPart(transcriptionAudio) && transcriptionAudio.size > 0) {
+      transcriptionBytes = await transcriptionAudio.arrayBuffer();
+      transcriptionContentType = transcriptionAudio.type || 'audio/webm';
+    }
+  } else {
+    bytes = await c.req.arrayBuffer();
+    contentType = requestContentType;
+  }
+
+  if (bytes.byteLength === 0) return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  if (bytes.byteLength + (transcriptionBytes?.byteLength ?? 0) > 100 * 1024 * 1024) {
+    return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
+  }
+
   const recordingKey = `meetings/${room.owner_id}/${room.meeting_id}/recording.webm`;
   await c.env.STORAGE.put(recordingKey, bytes, {
     httpMetadata: { contentType },
     customMetadata: { meetingId: room.meeting_id, roomId: room.room_id },
   });
+
+  let transcriptionSourceKey = recordingKey;
+  if (transcriptionBytes) {
+    transcriptionSourceKey = `meetings/${room.owner_id}/${room.meeting_id}/transcription-audio.webm`;
+    await c.env.STORAGE.put(transcriptionSourceKey, transcriptionBytes, {
+      httpMetadata: { contentType: transcriptionContentType ?? 'audio/webm' },
+      customMetadata: {
+        meetingId: room.meeting_id,
+        roomId: room.room_id,
+        derivedFrom: recordingKey,
+      },
+    });
+  }
+
   await c.env.DB.prepare(
     `UPDATE meetings
      SET transcript_status = 'PROCESSING', recording_r2_key = ?,
@@ -532,7 +588,7 @@ meetingRooms.post('/:token/recording', async (c) => {
      WHERE id = ?`,
   ).bind(recordingKey, new Date().toISOString(), room.meeting_id).run();
 
-  c.executionCtx.waitUntil(processRecording(c.env, room, recordingKey));
+  c.executionCtx.waitUntil(processRecording(c.env, room, transcriptionSourceKey, recordingKey));
   return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
 

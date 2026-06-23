@@ -648,26 +648,37 @@ describe('meeting room recording living-context route', () => {
       body: JSON.stringify({ event: 'STARTED' }),
     }, env, ctx);
 
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([9, 9, 9])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'audio/webm',
-        'Content-Length': '3',
-      },
-      body: new Uint8Array([1, 2, 3]),
+      body: form,
     }, env, ctx);
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
 
     const meetingRow = sqlite.prepare(
-      `SELECT transcript_status, transcript_analysis_json
+      `SELECT transcript_status, transcript_analysis_json, recording_r2_key
          FROM meetings
         WHERE id = ?`,
     ).get(created.meeting.id) as {
       transcript_status: string;
       transcript_analysis_json: string;
+      recording_r2_key: string;
     };
     expect(meetingRow.transcript_status).toBe('READY');
+    expect(meetingRow.recording_r2_key).toBe(
+      `meetings/owner-1/${created.meeting.id}/recording.webm`,
+    );
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
       personContextMode: 'summary_only',
       personContextReason: 'mixed_audio_without_speaker_attribution',

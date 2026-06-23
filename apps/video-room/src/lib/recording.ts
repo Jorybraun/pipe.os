@@ -1,5 +1,6 @@
 interface CompositeRecording {
   stream: MediaStream;
+  transcriptionStream: MediaStream;
   dispose: () => Promise<void>;
 }
 
@@ -54,19 +55,38 @@ export async function createCompositeRecording(
   }
   channelMerger.connect(destination);
 
+  const transcriptionStream = destination.stream;
   const stream = canvas.captureStream(30);
-  for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
+  for (const track of transcriptionStream.getAudioTracks()) stream.addTrack(track);
 
   return {
     stream,
+    transcriptionStream,
     dispose: async () => {
       cancelAnimationFrame(frameId);
       stream.getTracks().forEach((track) => track.stop());
+      transcriptionStream.getTracks().forEach((track) => track.stop());
       audioNodes.forEach((node) => node.disconnect());
       localVideo.srcObject = null;
       remoteVideo.srcObject = null;
       await audioContext.close();
     },
+  };
+}
+
+export function preferredAudioRecordingMimeType(): string {
+  const options = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+  ];
+  return options.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+}
+
+export function preferredAudioRecordingOptions(): MediaRecorderOptions | undefined {
+  const mimeType = preferredAudioRecordingMimeType();
+  return {
+    ...(mimeType ? { mimeType } : {}),
+    audioBitsPerSecond: 96_000,
   };
 }
 

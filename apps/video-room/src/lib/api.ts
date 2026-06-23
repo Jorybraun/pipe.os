@@ -35,7 +35,23 @@ export async function postRoomEvent(
   await parseResponse<{ accepted: boolean }>(response);
 }
 
-export async function uploadRecording(token: string, recording: Blob): Promise<void> {
+export async function uploadRecording(
+  token: string,
+  recording: Blob,
+  transcriptionAudio?: Blob,
+): Promise<void> {
+  if (transcriptionAudio && transcriptionAudio.size > 0) {
+    const body = new FormData();
+    body.append('recording', recording, 'recording.webm');
+    body.append('transcriptionAudio', transcriptionAudio, 'transcription-audio.webm');
+    const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
+      method: 'POST',
+      body,
+    });
+    await parseResponse<{ accepted: boolean }>(response);
+    return;
+  }
+
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
     method: 'POST',
     headers: { 'Content-Type': recording.type || 'video/webm' },

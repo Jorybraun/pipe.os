@@ -14,7 +14,11 @@ import {
   Video,
 } from 'lucide-react';
 import { loadRoom, postRoomEvent, uploadRecording } from './lib/api';
-import { createCompositeRecording, preferredRecordingOptions } from './lib/recording';
+import {
+  createCompositeRecording,
+  preferredAudioRecordingOptions,
+  preferredRecordingOptions,
+} from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
 import type { IceServerProvider, RoomMetadata } from './types';
 
@@ -136,7 +140,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'uploading' | 'saved' | 'failed'>('idle');
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
+  const transcriptionChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const autoAcceptingRef = useRef(false);
   const endingRef = useRef(false);
@@ -195,11 +201,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     void createCompositeRecording(room.localStream, room.remoteStream).then((composite) => {
       const recorder = new MediaRecorder(composite.stream, preferredRecordingOptions());
       recordingChunksRef.current = [];
+      transcriptionChunksRef.current = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) recordingChunksRef.current.push(event.data);
       };
+
+      const transcriptionTracks = composite.transcriptionStream.getAudioTracks();
+      let transcriptionRecorder: MediaRecorder | null = null;
+      if (transcriptionTracks.length > 0) {
+        transcriptionRecorder = new MediaRecorder(
+          composite.transcriptionStream,
+          preferredAudioRecordingOptions(),
+        );
+        transcriptionRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) transcriptionChunksRef.current.push(event.data);
+        };
+        transcriptionRecorder.start(1000);
+      }
+
       recorder.start(1000);
       recorderRef.current = recorder;
+      transcriptionRecorderRef.current = transcriptionRecorder;
       recordingDisposeRef.current = composite.dispose;
       setRecordingState('recording');
       void postRoomEvent(token, 'STARTED');
@@ -224,30 +246,49 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     void postRoomEvent(token, 'JOINED');
   };
 
+  const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
+    if (!recorder || recorder.state === 'inactive') return;
+    await new Promise<void>((resolve) => {
+      recorder.addEventListener('stop', () => resolve(), { once: true });
+      recorder.stop();
+    });
+  };
+
   const stopAndUploadRecording = async (): Promise<void> => {
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === 'inactive') {
       await recordingDisposeRef.current?.();
       recorderRef.current = null;
+      transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
+      recordingChunksRef.current = [];
+      transcriptionChunksRef.current = [];
       return;
     }
     setRecordingState('uploading');
     try {
-      await new Promise<void>((resolve) => {
-        recorder.addEventListener('stop', () => resolve(), { once: true });
-        recorder.stop();
-      });
+      await Promise.all([
+        stopRecorder(recorder),
+        stopRecorder(transcriptionRecorderRef.current),
+      ]);
       const blob = new Blob(recordingChunksRef.current, {
         type: recorder.mimeType || 'video/webm',
       });
-      await uploadRecording(token, blob);
+      const transcriptionRecorder = transcriptionRecorderRef.current;
+      const transcriptionAudio = transcriptionChunksRef.current.length > 0
+        ? new Blob(transcriptionChunksRef.current, {
+            type: transcriptionRecorder?.mimeType || 'audio/webm',
+          })
+        : undefined;
+      await uploadRecording(token, blob, transcriptionAudio);
       setRecordingState('saved');
     } finally {
       await recordingDisposeRef.current?.().catch(() => undefined);
       recorderRef.current = null;
+      transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
       recordingChunksRef.current = [];
+      transcriptionChunksRef.current = [];
     }
   };
 
