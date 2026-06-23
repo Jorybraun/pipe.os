@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Copy, Check, Video, Calendar, Code2, SquareTerminal } from 'lucide-react';
-import type { InterviewType, MeetingType, SchedulingProvider } from '../../lib/scheduling/types';
+import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
 interface InviteCreationModalProps {
@@ -23,9 +23,9 @@ const INTERVIEW_MODES: Array<{
   label: string;
   icon: React.ReactNode;
 }> = [
-  { value: 'VIDEO', label: 'Video interview', icon: <Video size={16} /> },
-  { value: 'CODE_REVIEW', label: 'Automated code review', icon: <Code2 size={16} /> },
-  { value: 'TECHNICAL', label: 'Code sandbox challenge', icon: <SquareTerminal size={16} /> },
+  { value: 'VIDEO', label: INTERVIEW_TYPE_LABELS.VIDEO, icon: <Video size={16} /> },
+  { value: 'CODE_REVIEW', label: INTERVIEW_TYPE_LABELS.CODE_REVIEW, icon: <Code2 size={16} /> },
+  { value: 'TECHNICAL', label: INTERVIEW_TYPE_LABELS.TECHNICAL, icon: <SquareTerminal size={16} /> },
 ];
 
 export function InviteCreationModal({

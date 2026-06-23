@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, UserPlus, Send, Calendar } from 'lucide-react';
 import { useApiClient } from '../../hooks/useApiClient';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
-import type { InterviewType, SchedulingProvider } from '../../lib/scheduling/types';
+import { INTERVIEW_TYPE_LABELS, type InterviewType, type SchedulingProvider } from '../../lib/scheduling/types';
 
 interface InviteCandidateModalProps {
   onClose: () => void;
@@ -200,7 +200,7 @@ export function InviteCandidateModal({
                       transition: 'all 0.15s',
                     }}
                   >
-                    {type}
+                    {INTERVIEW_TYPE_LABELS[type]}
                   </button>
                 ))}
               </div>

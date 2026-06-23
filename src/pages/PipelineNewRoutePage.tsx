@@ -13,17 +13,17 @@ type StageChoice = {
 const STAGE_CHOICES: StageChoice[] = [
   {
     value: 'SCREENING',
-    label: 'Video Interview',
+    label: 'Video interview',
     description: 'Schedule a recorded call, capture the transcript, and grow the person context.',
   },
   {
     value: 'CODE_REVIEW',
-    label: 'Code Review Interview',
+    label: 'Code-review interview',
     description: 'Use the video interview around a real PR review and source-backed findings.',
   },
   {
     value: 'LIVE_CODING',
-    label: 'Implementation Challenge',
+    label: 'Implementation challenge',
     description: 'Match the person to a repo-backed task when you need hands-on evidence.',
   },
 ];

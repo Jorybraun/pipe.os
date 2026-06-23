@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Video } from 'lucide-react';
-import type { InterviewType, ScheduledInterview } from '../../lib/scheduling/types';
+import { INTERVIEW_TYPE_LABELS, type ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
@@ -29,13 +29,6 @@ interface InterviewCardProps {
 }
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
-
-const INTERVIEW_TYPE_LABELS: Record<InterviewType, string> = {
-  VIDEO: 'Video interview',
-  CODE_REVIEW: 'Automated code review',
-  TECHNICAL: 'Code sandbox challenge',
-  SCREENING: 'Screening',
-};
 
 function isJoinable(interview: ScheduledInterview): boolean {
   // Allow host to join for both INVITED and SCHEDULED statuses

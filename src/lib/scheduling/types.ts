@@ -33,6 +33,13 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK' | 'POLL';
  */
 export type InterviewType = 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW';
 
+export const INTERVIEW_TYPE_LABELS = {
+  VIDEO: 'Video interview',
+  CODE_REVIEW: 'Code-review interview',
+  TECHNICAL: 'Implementation challenge',
+  SCREENING: 'Video interview',
+} satisfies Record<InterviewType, string>;
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
