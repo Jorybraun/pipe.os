@@ -1929,9 +1929,31 @@ candidateOps.get('/:candidateId', async (c) => {
     } as any, matchData, calendar);
   }
 
+  const identity = await ensureCandidateLivingContext(db, candidateId);
+  let contactId: string | null = null;
+  if (candidate.email) {
+    try {
+      const contact = await db.prepare(
+        `SELECT id
+           FROM contacts
+          WHERE owner_id = ?1
+            AND lower(email) = ?2
+          ORDER BY created_at ASC
+          LIMIT 1`,
+      ).bind(userId, candidate.email.toLowerCase()).first<{ id: string }>();
+      contactId = contact?.id ?? null;
+    } catch {
+      contactId = null;
+    }
+  }
+
   return c.json({
     candidate: {
       id: candidate.id,
+      personId: identity?.personId ?? null,
+      workspacePersonId: identity?.workspacePersonId ?? null,
+      applicationId: identity?.applicationId ?? null,
+      contactId,
       name: candidate.name,
       email: candidate.email,
       phoneNumber: candidate.phone_number,

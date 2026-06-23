@@ -1417,108 +1417,134 @@ export default function CandidateProfilePage(): JSX.Element {
               marginBottom: 8,
             }}
           >
-            CANDIDATE_PROFILE / {candidate.status}
+            PERSON_ASSESSMENT / {candidate.status}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: "50%",
-                background: signalColors.bg,
-                border: `2px solid ${signalColors.border}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                fontWeight: 900,
-                color: signalColors.text,
-                fontFamily: '"Space Mono", monospace',
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </div>
-            <div>
-              <h1
-                data-testid="candidate-name"
-                style={{
-                  fontSize: 24,
-                  fontWeight: 900,
-                  color: "var(--pipe-text, #fff)",
-                  margin: 0,
-                  lineHeight: 1.2,
-                }}
-              >
-                {candidateLabel}
-              </h1>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
               <div
                 style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "50%",
+                  background: signalColors.bg,
+                  border: `2px solid ${signalColors.border}`,
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  marginTop: 4,
-                  fontSize: 12,
-                  color: "var(--pipe-text-dim)",
+                  justifyContent: "center",
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: signalColors.text,
                   fontFamily: '"Space Mono", monospace',
+                  flexShrink: 0,
                 }}
               >
-                <Mail size={11} /> {candidate.email}
-                {candidate.currentRole && (
-                  <>
-                    <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
-                    <Briefcase size={11} /> {candidate.currentRole}
-                  </>
-                )}
-                <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
-                {editingPhone ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <Phone size={11} />
-                    <input
-                      autoFocus
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void handleSavePhone();
-                        if (e.key === 'Escape') setEditingPhone(false);
-                      }}
-                      placeholder="+1234567890"
-                      style={{
-                        width: 120,
-                        padding: "2px 4px",
-                        fontSize: 11,
-                        fontFamily: '"Space Mono", monospace',
-                        background: "transparent",
-                        border: "1px solid var(--pipe-border)",
-                        borderRadius: 3,
-                        color: "var(--pipe-text)",
-                        outline: "none",
-                      }}
-                    />
-                    <button onClick={() => void handleSavePhone()} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", padding: 2 }}>
-                      <Check size={11} />
-                    </button>
-                    <button onClick={() => setEditingPhone(false)} style={{ background: "none", border: "none", color: "var(--pipe-text-dim)", cursor: "pointer", padding: 2 }}>
-                      <XIcon size={11} />
-                    </button>
-                  </span>
-                ) : (
-                  <span
-                    onClick={() => { setPhoneInput(candidate.phoneNumber ?? ''); setEditingPhone(true); }}
-                    style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
-                    title="Click to edit phone number"
-                  >
-                    <Phone size={11} />
-                    {candidate.phoneNumber ? (
-                      <>{candidate.phoneNumber}</>
-                    ) : (
-                      <span style={{ opacity: 0.4, fontStyle: "italic" }}>add phone</span>
-                    )}
-                    <Edit3 size={9} style={{ opacity: 0.4 }} />
-                  </span>
-                )}
+                {initials}
+              </div>
+              <div>
+                <h1
+                  data-testid="candidate-name"
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 900,
+                    color: "var(--pipe-text, #fff)",
+                    margin: 0,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {candidateLabel}
+                </h1>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 4,
+                    fontSize: 12,
+                    color: "var(--pipe-text-dim)",
+                    fontFamily: '"Space Mono", monospace',
+                  }}
+                >
+                  <Mail size={11} /> {candidate.email}
+                  {candidate.currentRole && (
+                    <>
+                      <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
+                      <Briefcase size={11} /> {candidate.currentRole}
+                    </>
+                  )}
+                  <span style={{ color: "var(--pipe-text-dim)" }}>·</span>
+                  {editingPhone ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      <Phone size={11} />
+                      <input
+                        autoFocus
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void handleSavePhone();
+                          if (e.key === 'Escape') setEditingPhone(false);
+                        }}
+                        placeholder="+1234567890"
+                        style={{
+                          width: 120,
+                          padding: "2px 4px",
+                          fontSize: 11,
+                          fontFamily: '"Space Mono", monospace',
+                          background: "transparent",
+                          border: "1px solid var(--pipe-border)",
+                          borderRadius: 3,
+                          color: "var(--pipe-text)",
+                          outline: "none",
+                        }}
+                      />
+                      <button onClick={() => void handleSavePhone()} style={{ background: "none", border: "none", color: "#4ade80", cursor: "pointer", padding: 2 }}>
+                        <Check size={11} />
+                      </button>
+                      <button onClick={() => setEditingPhone(false)} style={{ background: "none", border: "none", color: "var(--pipe-text-dim)", cursor: "pointer", padding: 2 }}>
+                        <XIcon size={11} />
+                      </button>
+                    </span>
+                  ) : (
+                    <span
+                      onClick={() => { setPhoneInput(candidate.phoneNumber ?? ''); setEditingPhone(true); }}
+                      style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                      title="Click to edit phone number"
+                    >
+                      <Phone size={11} />
+                      {candidate.phoneNumber ? (
+                        <>{candidate.phoneNumber}</>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontStyle: "italic" }}>add phone</span>
+                      )}
+                      <Edit3 size={9} style={{ opacity: 0.4 }} />
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+            {candidate.contactId && (
+              <button
+                type="button"
+                onClick={() => navigate(`/people/${candidate.contactId}`)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  border: '1px solid var(--pipe-border)',
+                  background: 'var(--pipe-surface)',
+                  color: 'var(--pipe-text)',
+                  padding: '10px 12px',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  fontFamily: '"Space Mono", monospace',
+                  letterSpacing: '0.08em',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Network size={13} />
+                PERSON CONTEXT
+              </button>
+            )}
           </div>
 
         </div>

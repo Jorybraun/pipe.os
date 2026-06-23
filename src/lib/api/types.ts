@@ -686,6 +686,10 @@ export interface ProfileStage {
 
 export interface CandidateProfileRecord {
   id: string;
+  personId?: string | null;
+  workspacePersonId?: string | null;
+  applicationId?: string | null;
+  contactId?: string | null;
   name: string | null;
   email: string | null;
   phoneNumber: string | null;
