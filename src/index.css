@@ -121,7 +121,8 @@ html {
 }
 
 html[data-theme="dark"],
-html[data-theme="anatomy-dark"] {
+html[data-theme="anatomy-dark"],
+html[data-theme="pipe-blue"] {
   color-scheme: dark;
 }
 
