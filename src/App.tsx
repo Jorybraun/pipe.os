@@ -86,7 +86,7 @@ const SubHeader = () => {
         justifyContent: "space-between",
         marginBottom: 0,
         padding: 20,
-        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        borderBottom: "1px solid var(--pipe-border-light)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 32 }}>
@@ -440,7 +440,7 @@ function App(): JSX.Element {
         <Route
           path="*"
           element={
-            <ThemeProvider forceMode="dark">
+            <ThemeProvider forceMode="pipe-blue">
             <ClerkAuthGate>
               <ClerkAuthWrapper>
                 <RecruiterThemeSync />
