@@ -374,6 +374,23 @@ export default function InterviewDetailPage(): JSX.Element {
     }
   }, [api, interview, load]);
 
+  useEffect(() => {
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [load]);
+
+  useEffect(() => {
+    const status = interview?.linkedMeeting?.transcriptStatus ?? interview?.transcriptArtifact?.status ?? null;
+    if (status !== 'RECORDING' && status !== 'PROCESSING' && status !== 'PENDING') return undefined;
+    const timer = window.setInterval(() => {
+      void load();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [interview?.linkedMeeting?.transcriptStatus, interview?.transcriptArtifact?.status, load]);
+
   if (isLoading) {
     return (
       <div style={CENTERED}>
