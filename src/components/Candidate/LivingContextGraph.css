@@ -15,6 +15,16 @@
   min-width: 0;
 }
 
+html[data-theme="light"] .living-context,
+html[data-theme="anatomy"] .living-context {
+  --lc-panel: #ffffff;
+  --lc-panel-soft: rgba(15, 23, 42, 0.035);
+  --lc-panel-hover: rgba(15, 23, 42, 0.06);
+  --lc-card: #ffffff;
+  --lc-card-strong: rgba(15, 23, 42, 0.07);
+  --lc-card-border: rgba(15, 23, 42, 0.10);
+}
+
 html[data-theme="dark"] .living-context,
 html[data-theme="anatomy-dark"] .living-context,
 html[data-theme="pipe-blue"] .living-context {
@@ -22,6 +32,12 @@ html[data-theme="pipe-blue"] .living-context {
   --lc-assertion: #f59e0b;
   --lc-signal: #34d399;
   --lc-structural: #a78bfa;
+  --lc-panel: var(--pipe-surface-solid);
+  --lc-panel-soft: rgba(108, 195, 255, 0.055);
+  --lc-panel-hover: rgba(108, 195, 255, 0.10);
+  --lc-card: rgba(108, 195, 255, 0.045);
+  --lc-card-strong: rgba(108, 195, 255, 0.10);
+  --lc-card-border: rgba(108, 195, 255, 0.12);
 }
 
 .living-context__toolbar {
@@ -696,6 +712,7 @@ html[data-theme="pipe-blue"] .living-context {
   background: var(--lc-panel);
   backdrop-filter: blur(14px);
   overflow: hidden;
+  box-shadow: 0 18px 54px var(--pipe-shadow);
 }
 
 .living-context__rail,
@@ -946,7 +963,7 @@ html[data-theme="pipe-blue"] .living-context {
   line-height: 1.5;
   letter-spacing: 0;
   text-wrap: pretty;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 

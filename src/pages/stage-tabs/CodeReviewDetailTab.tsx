@@ -20,7 +20,6 @@ import {
   Target,
   Search,
   Repeat,
-  FileCode,
   CheckCircle2,
   Bot,
   HelpCircle,
@@ -28,6 +27,7 @@ import {
   ToggleRight,
   Save,
   Check,
+  Video,
 } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { useChallengeMutations } from '../../hooks/useChallengeMutations';
@@ -372,9 +372,9 @@ export default function CodeReviewDetailTab(): JSX.Element {
     >
       {/* Hero — what this stage is */}
       <SectionCard
-        label="CODE_REVIEW_INTERVIEW"
+        label="VIDEO_INTERVIEW"
         icon={<GitPullRequest size={16} color="var(--pipe-text-dim)" />}
-        meta="AI_IMPLEMENTER_AGENT"
+        meta="CODE_REVIEW"
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <p
@@ -386,12 +386,10 @@ export default function CodeReviewDetailTab(): JSX.Element {
               fontFamily: mono,
             }}
           >
-            The candidate reviews a real GitHub PR containing planted bugs and
-            design trade-offs. When multi-turn is enabled, an AI implementer
-            agent plays the PR author — responding to review comments with
-            pushback, clarification, or fixes. The conversation continues for
-            multiple rounds, testing how the candidate drives a review to
-            resolution.
+            This is a video interview centered on a real GitHub PR. The person
+            joins the room, reviews the code, explains trade-offs, and leaves
+            source-backed evidence that can become person context after the
+            call.
           </p>
 
           {/* Candidate flow */}
@@ -407,17 +405,17 @@ export default function CodeReviewDetailTab(): JSX.Element {
           >
             {(multiTurn
               ? [
-                  { label: 'RECEIVE PR', icon: FileCode },
-                  { label: 'REVIEW', icon: Search },
-                  { label: 'AGENT RESPONDS', icon: Bot },
-                  { label: 'BACK & FORTH', icon: Repeat },
-                  { label: 'VERDICT', icon: CheckCircle2 },
+                  { label: 'JOIN ROOM', icon: Video },
+                  { label: 'REVIEW PR', icon: Search },
+                  { label: 'DISCUSS', icon: MessageSquare },
+                  { label: 'FOLLOW UP', icon: Repeat },
+                  { label: 'SUMMARY', icon: CheckCircle2 },
                 ]
               : [
-                  { label: 'RECEIVE PR', icon: FileCode },
-                  { label: 'REVIEW CODE', icon: Search },
-                  { label: 'ANNOTATE', icon: MessageSquare },
-                  { label: 'VERDICT', icon: CheckCircle2 },
+                  { label: 'JOIN ROOM', icon: Video },
+                  { label: 'REVIEW PR', icon: Search },
+                  { label: 'EXPLAIN', icon: MessageSquare },
+                  { label: 'SUMMARY', icon: CheckCircle2 },
                 ]
             ).map((step, i, arr) => (
               <div
@@ -477,9 +475,9 @@ export default function CodeReviewDetailTab(): JSX.Element {
               },
               {
                 icon: Bot,
-                label: 'PERSONA',
+                label: 'FOLLOW-UP',
                 value: persona.toUpperCase(),
-                sub: multiTurn ? `${maxRounds} rounds max` : 'single-pass review',
+                sub: multiTurn ? `${maxRounds} prompts max` : 'single conversation',
               },
               {
                 icon: Shield,
@@ -517,7 +515,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
 
       {/* PR configuration */}
       <SectionCard
-        label="PULL_REQUEST"
+        label="PR_CONTEXT"
         icon={<GitPullRequest size={16} color="var(--pipe-text-dim)" />}
         meta={
           hasChallenge && challenge?.githubRepoUrl ? (
@@ -544,7 +542,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
                 letterSpacing: '0.1em', fontFamily: mono, cursor: 'pointer',
               }}
             >
-              SELECT_PR <ChevronRight size={10} />
+              SELECT PR <ChevronRight size={10} />
             </button>
           ) : undefined
         }
@@ -606,7 +604,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
           >
             <GitPullRequest size={24} color="rgba(96,165,250,0.4)" style={{ marginBottom: 12 }} />
             <div style={{ fontSize: 11, color: 'var(--pipe-text-muted)', fontFamily: mono, marginBottom: 20, lineHeight: 1.6 }}>
-              Choose how the pull request for this stage is selected.
+              Choose the PR context for this interview.
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button
@@ -618,7 +616,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Target size={12} /> USE EVIDENCE MATCH
+                  <Target size={12} /> MATCH FROM EVIDENCE
                 </span>
               </button>
               <button
@@ -629,7 +627,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
                   letterSpacing: '0.12em', fontFamily: mono, cursor: 'pointer',
                 }}
               >
-                + SELECT_PR
+                + SELECT PR
               </button>
             </div>
             <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -656,7 +654,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
 
       {/* Interview mode configuration */}
       <SectionCard
-        label="INTERVIEW_MODE"
+        label="CALL_FLOW"
         icon={<Bot size={16} color="var(--pipe-text-dim)" />}
         meta={
           <button
@@ -682,16 +680,16 @@ export default function CodeReviewDetailTab(): JSX.Element {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <ToggleRow
             icon={Repeat}
-            label="Multi-Turn Conversation"
-            description="AI implementer agent responds to review comments with pushback, clarification, or code fixes. Without this, candidates submit a one-pass review."
+            label="Guided Follow-Up"
+            description="After the review, PIPE can ask follow-up prompts about trade-offs, risks, tests, and implementation decisions."
             enabled={multiTurn}
             onChange={setMultiTurn}
           />
 
           <ToggleRow
             icon={HelpCircle}
-            label="AI Code Assistant"
-            description="Candidates can ask an AI assistant questions about the codebase — architecture, patterns, test approach. Budget: 6 questions."
+            label="Code Context Assistant"
+            description="The person can ask questions about the repo context, architecture, patterns, and testing approach."
             enabled={aiAssistant}
             onChange={setAiAssistant}
           />
@@ -699,7 +697,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
           <ToggleRow
             icon={MessageSquare}
             label="Follow-Up Debrief"
-            description="After submitting their review, the candidate answers 5 AI-generated follow-up questions based on their actual annotations and verdict. Probes depth of understanding — did they find the bug by pattern-matching or do they understand why it matters?"
+            description="After the call, PIPE can summarize the discussion and capture source-backed follow-up evidence."
             enabled={followUp}
             onChange={setFollowUp}
           />
@@ -708,7 +706,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
           {multiTurn && (
             <div style={{ padding: '4px 0' }}>
               <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: mono, marginBottom: 10 }}>
-                IMPLEMENTER_PERSONA
+                FOLLOW_UP_STYLE
               </div>
               <PersonaSelector value={persona} onChange={setPersona} />
             </div>
