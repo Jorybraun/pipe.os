@@ -34,6 +34,8 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Build frontend
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY_TEST }}
         run: npm run build
 
       - name: Build video room
