@@ -15,6 +15,10 @@ import {
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import { createApiClient } from '../lib/api/client';
 import type { LivingContextReadModel } from '../lib/api/types';
+import {
+  contextRecordTitle,
+  contextRecordTypeLabel,
+} from '../lib/livingContextDisplay';
 
 interface PersonContact {
   id: string;
@@ -304,12 +308,17 @@ export default function PersonProfilePage(): JSX.Element {
             <EmptyPanel>No context records yet.</EmptyPanel>
           ) : recentRecords.map((record) => (
             <article key={record.id} style={listItemStyle}>
-              <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
-                {record.predicate}
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', marginBottom: 6 }}>
+                {contextRecordTypeLabel(record)}
               </div>
-              <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
-                {record.narrative ?? record.recordType}
-              </p>
+              <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
+                {contextRecordTitle(record)}
+              </div>
+              {record.narrative && record.narrative !== contextRecordTitle(record) && (
+                <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
+                  {record.narrative}
+                </p>
+              )}
               <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
                 {record.sources.length} source {record.sources.length === 1 ? 'span' : 'spans'}
               </div>

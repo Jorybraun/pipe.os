@@ -20,6 +20,10 @@ import type {
   TranscriptArtifact,
   TranscriptEntry,
 } from '../lib/scheduling/types';
+import {
+  contextRecordTitle,
+  contextRecordTypeLabel,
+} from '../lib/livingContextDisplay';
 
 const FONT = '"Space Mono", monospace';
 
@@ -550,17 +554,23 @@ export default function InterviewDetailPage(): JSX.Element {
                 </div>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.assertionCount}</span>
-                  <span style={CONTEXT_METRIC_LABEL}>assertions</span>
+                  <span style={CONTEXT_METRIC_LABEL}>evidence claims</span>
                 </div>
               </div>
               {contextRecords.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {contextRecords.slice(0, 3).map((record) => (
-                    <div key={record.id} style={CONTEXT_RECORD}>
-                      <div style={TRANSCRIPT_ROLE}>{record.recordType}</div>
-                      <div style={TRANSCRIPT_TEXT}>{record.narrative}</div>
-                    </div>
-                  ))}
+                  {contextRecords.slice(0, 3).map((record) => {
+                    const title = contextRecordTitle(record);
+                    return (
+                      <div key={record.id} style={CONTEXT_RECORD}>
+                        <div style={TRANSCRIPT_ROLE}>{contextRecordTypeLabel(record)}</div>
+                        <div style={TRANSCRIPT_TEXT}>{title}</div>
+                        {record.narrative && record.narrative !== title && (
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{record.narrative}</div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div style={EMPTY_TEXT}>No context records have been extracted yet.</div>
@@ -982,12 +992,17 @@ const CONTEXT_METRIC_LABEL: CSSProperties = {
 
 const CONTEXT_RECORD: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '120px minmax(0, 1fr)',
-  gap: 12,
+  gap: 8,
   padding: 12,
   border: '1px solid var(--pipe-border)',
   borderRadius: 6,
   background: 'var(--pipe-surface)',
+};
+
+const CONTEXT_RECORD_NARRATIVE: CSSProperties = {
+  color: 'var(--pipe-text-dim)',
+  fontSize: 12,
+  lineHeight: 1.55,
 };
 
 const CENTERED: CSSProperties = {
