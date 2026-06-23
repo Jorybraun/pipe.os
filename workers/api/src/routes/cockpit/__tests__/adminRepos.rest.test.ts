@@ -87,3 +87,84 @@ describe('GET /repos', () => {
     expect(listBind).toHaveBeenCalledWith('approved', 3, 'suitable', 12, 0);
   });
 });
+
+describe('GET /repos/lookup', () => {
+  it('finds an exact crawler repo by GitHub URL for code review setup', async () => {
+    const first = vi.fn(async () => ({
+      id: 4128,
+      full_name: 'mrousavy/react-native-vision-camera',
+      github_url: 'https://github.com/mrousavy/react-native-vision-camera',
+      primary_language: 'TypeScript',
+      stars: 24000,
+      admin_status: 'pending',
+      disqualified: 0,
+      pass: 2,
+      challenge_suitability_verdict: 'suitable',
+      confidence_score: 0.82,
+      confidence_verdict: 'high',
+    }));
+    const bind = vi.fn(() => ({ first }));
+    const prepare = vi.fn(() => ({ bind }));
+    const db = { prepare } as unknown as D1Database;
+
+    const response = await createApp().request(
+      '/repos/lookup?repoUrl=https%3A%2F%2Fgithub.com%2Fmrousavy%2Freact-native-vision-camera.git&minPass=2&suitability=suitable',
+      {},
+      { ...baseEnv, DB: db },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      repo: {
+        id: 4128,
+        github_url: 'https://github.com/mrousavy/react-native-vision-camera',
+        pass: 2,
+        challenge_suitability_verdict: 'suitable',
+      },
+    });
+    expect(bind).toHaveBeenCalledWith(
+      'mrousavy/react-native-vision-camera',
+      'https://github.com/mrousavy/react-native-vision-camera',
+      2,
+      'suitable',
+    );
+  });
+
+  it('returns null when the exact repo is not in crawler evidence', async () => {
+    const first = vi.fn(async () => null);
+    const bind = vi.fn(() => ({ first }));
+    const prepare = vi.fn(() => ({ bind }));
+    const db = { prepare } as unknown as D1Database;
+
+    const response = await createApp().request(
+      '/repos/lookup?repoUrl=acme%2Fmissing&minPass=2&suitability=suitable',
+      {},
+      { ...baseEnv, DB: db },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ repo: null });
+    expect(bind).toHaveBeenCalledWith(
+      'acme/missing',
+      'https://github.com/acme/missing',
+      2,
+      'suitable',
+    );
+  });
+
+  it('rejects invalid lookup filters', async () => {
+    const response = await createApp().request(
+      '/repos/lookup?repoUrl=acme%2Fwidgets&minPass=banana',
+      {},
+      { ...baseEnv, DB: {} as D1Database },
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid minPass filter.',
+      },
+    });
+  });
+});

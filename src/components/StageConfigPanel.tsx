@@ -1171,9 +1171,27 @@ interface RepoCatalogResponse {
   }>;
 }
 
+interface RepoLookupResponse {
+  repo: RepoCatalogResponse['repos'][number] | null;
+}
+
 interface RepoCatalogItem {
   id: number;
   url: string;
+}
+
+function mapRepoCatalogItems(repos: RepoCatalogResponse['repos']): RepoCatalogItem[] {
+  const deduped = new Map<string, RepoCatalogItem>();
+  repos
+    .map((repo) => ({
+      id: repo.id,
+      url: normalizeGitHubRepoUrl(repo.github_url ?? repo.full_name ?? '') ?? '',
+    }))
+    .filter((repo): repo is RepoCatalogItem => Number.isFinite(repo.id) && isValidGitHubUrl(repo.url))
+    .forEach((repo) => {
+      if (!deduped.has(repo.url)) deduped.set(repo.url, repo);
+    });
+  return [...deduped.values()];
 }
 
 interface StoredPRSummary {
@@ -1228,20 +1246,18 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
     let cancelled = false;
     setIsLoadingCatalog(true);
     const api = createApiClient({ getToken });
-    void api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=approved&pass=3&suitability=suitable&limit=12')
-      .then((result) => {
+    void (async () => {
+      const approved = await api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=approved&pass=3&suitability=suitable&limit=12');
+      let repos = mapRepoCatalogItems(approved.repos);
+      if (repos.length === 0) {
+        const crawler = await api.get<RepoCatalogResponse>('/api/v1/admin/repos?status=all&pass=2&suitability=suitable&limit=24');
+        repos = mapRepoCatalogItems(crawler.repos);
+      }
+      return repos;
+    })()
+      .then((repos) => {
         if (cancelled) return;
-        const repos = result.repos
-          .map((repo) => ({
-            id: repo.id,
-            url: normalizeGitHubRepoUrl(repo.github_url ?? repo.full_name ?? '') ?? '',
-          }))
-          .filter((repo): repo is RepoCatalogItem => Number.isFinite(repo.id) && isValidGitHubUrl(repo.url));
-        const deduped = new Map<string, RepoCatalogItem>();
-        repos.forEach((repo) => {
-          if (!deduped.has(repo.url)) deduped.set(repo.url, repo);
-        });
-        setCatalogRepos([...deduped.values()]);
+        setCatalogRepos(repos);
       })
       .catch(() => {
         if (!cancelled) setCatalogRepos([]);
@@ -1269,7 +1285,18 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
     api: ReturnType<typeof createApiClient>,
     url: string,
   ): Promise<PRSummary[]> => {
-    const repo = catalogRepoByUrl.get(url);
+    let repo = catalogRepoByUrl.get(url);
+    if (!repo) {
+      const lookup = await api.get<RepoLookupResponse>(
+        `/api/v1/admin/repos/lookup?repoUrl=${encodeURIComponent(url)}&minPass=2&suitability=suitable`,
+      );
+      const lookupUrl = lookup.repo
+        ? normalizeGitHubRepoUrl(lookup.repo.github_url ?? lookup.repo.full_name ?? '')
+        : null;
+      if (lookup.repo && lookupUrl) {
+        repo = { id: lookup.repo.id, url: lookupUrl };
+      }
+    }
     if (!repo) return [];
 
     const result = await api.get<{ prs: StoredPRSummary[] }>(`/api/v1/admin/repos/${repo.id}/prs`);
@@ -1335,7 +1362,7 @@ function CodeReviewPicker({ stageId, existingCount, onAdded, onBack }: {
           setPrs(storedPrs);
           setSourceNotice(liveFetchError
             ? `Showing crawler-vetted PRs because live GitHub is unavailable: ${liveFetchError}`
-            : 'Showing crawler-vetted PRs from the approved repo bank.');
+            : 'Showing crawler-vetted PRs from stored repository evidence.');
           return;
         }
       } catch (err) {

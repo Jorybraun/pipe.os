@@ -92,6 +92,26 @@ interface SamplePRRow {
   resolves_issue_number: number | null;
 }
 
+function normalizeGitHubRepoInput(input: string): { fullName: string; githubUrl: string } | null {
+  const trimmed = input.trim().replace(/\.git$/, '');
+  const shorthand = trimmed.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (shorthand?.[1] && shorthand[2]) {
+    const fullName = `${shorthand[1]}/${shorthand[2]}`;
+    return { fullName, githubUrl: `https://github.com/${fullName}` };
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname.toLowerCase() !== 'github.com') return null;
+    const [owner, repo] = url.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/');
+    if (!owner || !repo) return null;
+    const fullName = `${owner}/${repo}`;
+    return { fullName, githubUrl: `https://github.com/${fullName}` };
+  } catch {
+    return null;
+  }
+}
+
 // ─── GET /api/v1/admin/repos ─────────────────────────────────────────────────
 
 adminRepos.get('/repos', async (c) => {
@@ -171,6 +191,76 @@ adminRepos.get('/repos', async (c) => {
     page,
     limit,
   });
+});
+
+// ─── GET /api/v1/admin/repos/lookup ──────────────────────────────────────────
+// Exact lookup for a manually typed GitHub repo URL. Used by the code-review
+// picker so crawler-backed PRs remain usable even when the repo is not in the
+// first catalog page.
+
+adminRepos.get('/repos/lookup', async (c) => {
+  const repoUrlParam = c.req.query('repoUrl');
+  if (!repoUrlParam) return apiError(c, 'VALIDATION_ERROR', 'repoUrl query parameter is required.');
+
+  const normalized = normalizeGitHubRepoInput(repoUrlParam);
+  if (!normalized) return apiError(c, 'VALIDATION_ERROR', 'Invalid GitHub repository URL.');
+
+  const rawMinPass = Number(c.req.query('minPass') ?? '2');
+  if (!Number.isFinite(rawMinPass)) {
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid minPass filter.');
+  }
+  const minPass = Math.min(3, Math.max(1, rawMinPass));
+  const suitabilityParam = c.req.query('suitability') ?? 'suitable';
+  if (!['suitable', 'hold', 'reject', 'any'].includes(suitabilityParam)) {
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid suitability filter.');
+  }
+
+  const suitabilitySql = suitabilityParam === 'any'
+    ? ''
+    : 'AND res.challenge_suitability_verdict = ?4';
+  const params: Array<string | number> = [
+    normalized.fullName.toLowerCase(),
+    normalized.githubUrl.toLowerCase(),
+    minPass,
+  ];
+  if (suitabilityParam !== 'any') params.push(suitabilityParam);
+
+  const repo = await c.env.DB.prepare(
+    `SELECT
+       qr.id, qr.full_name, qr.github_url, qr.primary_language, qr.stars,
+       qr.admin_status, qr.disqualified, qr.pass,
+       res.challenge_suitability_verdict,
+       res.confidence_score,
+       res.confidence_verdict
+     FROM qualified_repos qr
+     LEFT JOIN repo_engineering_signals res ON res.repo_id = qr.id
+     WHERE qr.disqualified = 0
+       AND qr.pass >= ?3
+       AND (
+         LOWER(qr.full_name) = ?1
+         OR LOWER(REPLACE(qr.github_url, '.git', '')) = ?2
+       )
+       ${suitabilitySql}
+     ORDER BY
+       CASE qr.admin_status WHEN 'approved' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+       qr.pass DESC,
+       qr.stars DESC
+     LIMIT 1`,
+  ).bind(...params).first<{
+    id: number;
+    full_name: string;
+    github_url: string;
+    primary_language: string;
+    stars: number;
+    admin_status: string;
+    disqualified: number;
+    pass: number;
+    challenge_suitability_verdict: string | null;
+    confidence_score: number | null;
+    confidence_verdict: string | null;
+  }>();
+
+  return c.json({ repo: repo ?? null });
 });
 
 // ─── GET /api/v1/admin/repos/:id ─────────────────────────────────────────────
