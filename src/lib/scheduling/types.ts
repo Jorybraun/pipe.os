@@ -38,6 +38,7 @@ export interface ScheduledInterview {
   readonly createdAt: string;
   readonly updatedAt: string;
   candidateId?: string | null;
+  contactId?: string | null;
   pipelineId?: string | null;
   stageId?: string | null;
   interviewType?: InterviewType | null;

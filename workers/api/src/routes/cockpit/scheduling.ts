@@ -1163,6 +1163,15 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               si.email_sent_at, si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
               si.submission_json, si.completed_at, si.created_at, si.updated_at,
+              (
+                SELECT rc.id
+                FROM contacts rc
+                WHERE rc.owner_id = si.owner_id
+                  AND si.recipient_email IS NOT NULL
+                  AND lower(rc.email) = lower(si.recipient_email)
+                ORDER BY rc.updated_at DESC
+                LIMIT 1
+              ) AS recipient_contact_id,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -1200,6 +1209,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       completed_at: string | null;
       created_at: string;
       updated_at: string;
+      recipient_contact_id: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -1273,6 +1283,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     interview: {
       id: interview.id,
       candidateId: interview.candidate_id,
+      contactId: interview.recipient_contact_id,
       pipelineId: interview.pipeline_id,
       stageId: interview.stage_id,
       interviewType: interview.interview_type ?? 'VIDEO',

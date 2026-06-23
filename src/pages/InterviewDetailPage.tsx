@@ -357,6 +357,11 @@ export default function InterviewDetailPage(): JSX.Element {
     ?? 'NONE';
   const transcriptError = interview.linkedMeeting?.transcriptError ?? interview.transcriptArtifact?.errorMessage ?? null;
   const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
+  const personProfilePath = interview.contactId
+    ? `/people/${interview.contactId}`
+    : interview.candidateId
+      ? `/candidates/${interview.candidateId}`
+      : null;
   const hasInviteDelivery = Boolean(interview.inviteLinkSentAt ?? interview.emailSentAt);
   const contextSummary = interview.livingContext?.summary ?? null;
   const contextRecords = interview.livingContext?.contextRecords ?? [];
@@ -397,8 +402,8 @@ export default function InterviewDetailPage(): JSX.Element {
         </div>
 
         <div style={ACTION_ROW}>
-          {interview.candidateId && (
-            <button onClick={() => navigate(`/candidates/${interview.candidateId}`)} style={PRIMARY_BUTTON}>
+          {personProfilePath && (
+            <button onClick={() => navigate(personProfilePath)} style={PRIMARY_BUTTON}>
               <User size={14} />
               PERSON
             </button>
