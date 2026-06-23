@@ -679,6 +679,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
+  let scheduledInterview: { id: string; status: string; meetingUrl: string | null } | null = null;
 
   // Use requested stage or fall back to first stage
   let stageId = requestedStageId ?? null;
@@ -729,6 +730,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
           )
           .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
           .run();
+        scheduledInterview = { id: interviewId, status: 'INVITED', meetingUrl: null };
       }
     }
   } catch (err) {
@@ -739,8 +741,10 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     throw err;
   }
 
-  // Fire-and-forget invitation email via Resend
-  if (c.env.RESEND_API_KEY && !skipEmail) {
+  // Fire-and-forget assessment email for non-scheduled stages. Scheduled
+  // interviews use /scheduling/interviews/:id/invite so room links, email
+  // delivery, and living-context evidence stay on one canonical path.
+  if (c.env.RESEND_API_KEY && !skipEmail && !scheduledInterview) {
     const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
     const assessUrl = `${baseUrl}/assess/${inviteToken}`;
 
@@ -857,6 +861,7 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
       inviteToken,
       status: 'INVITED',
       currentStageId: stageId,
+      scheduledInterview,
     },
   }, 201);
 });

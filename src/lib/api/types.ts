@@ -280,6 +280,11 @@ export interface CreateCandidateResponse {
     inviteToken: string;
     status: string;
     currentStageId: string | null;
+    scheduledInterview?: {
+      id: string;
+      status: string;
+      meetingUrl: string | null;
+    } | null;
   };
 }
 

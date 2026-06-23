@@ -22,6 +22,7 @@ import { FieldGroup, TextInput } from "../ui/form";
 import { useCandidateCreate } from "../../hooks/useCandidateCreate";
 import { useAuth as useClerkAuth } from "@clerk/react";
 import { useTheme } from "../../contexts/ThemeContext";
+import { createApiClient } from "../../lib/api/client";
 
 interface CandidateIntakeModalProps {
   pipelineId: string;
@@ -46,6 +47,10 @@ export function CandidateIntakeModal({
   const [isProcessing, setIsProcessing] = useState(false);
   const [createdCandidateId, setCreatedCandidateId] = useState<string | null>(null);
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [scheduledInterviewId, setScheduledInterviewId] = useState<string | null>(null);
+  const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
+  const [scheduledEmailSent, setScheduledEmailSent] = useState<boolean | null>(null);
+  const [scheduledEmailError, setScheduledEmailError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [parsedData, setParsedData] = useState<{
@@ -64,7 +69,35 @@ export function CandidateIntakeModal({
   const isLight = theme.mode === 'light' || theme.mode === 'anatomy';
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pipe.build';
-  const inviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
+  const assessInviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
+  const inviteUrl = meetingUrl ?? assessInviteUrl;
+  const inviteKind = meetingUrl ? 'room' : 'assessment';
+
+  const prepareScheduledInterviewInvite = async (
+    interviewId: string | null | undefined,
+    recipientEmail: string,
+    sendEmail: boolean,
+  ): Promise<void> => {
+    if (!interviewId) return;
+    setScheduledInterviewId(interviewId);
+    setScheduledEmailSent(null);
+    setScheduledEmailError(null);
+    const api = createApiClient({ getToken });
+    const result = await api.post<{
+      success: boolean;
+      emailSent?: boolean;
+      emailError?: string;
+      meetingUrl?: string | null;
+      room?: { guestUrl?: string | null };
+    }>(
+      `/api/v1/scheduling/interviews/${interviewId}/invite`,
+      { email: recipientEmail.trim(), sendEmail },
+    );
+    const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
+    if (guestUrl) setMeetingUrl(guestUrl);
+    setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
+    setScheduledEmailError(result.emailError ?? null);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -108,6 +141,29 @@ export function CandidateIntakeModal({
     if (!createdCandidateId || resendStatus === 'sending') return;
     setResendStatus('sending');
     try {
+      if (scheduledInterviewId) {
+        const api = createApiClient({ getToken });
+        const result = await api.post<{
+          emailSent?: boolean;
+          emailError?: string;
+          meetingUrl?: string | null;
+          room?: { guestUrl?: string | null };
+        }>(
+          `/api/v1/scheduling/interviews/${scheduledInterviewId}/invite`,
+          { email: email.trim(), sendEmail: true },
+        );
+        const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
+        if (guestUrl) setMeetingUrl(guestUrl);
+        setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
+        setScheduledEmailError(result.emailError ?? null);
+        if (result.emailError || result.emailSent === false) {
+          throw new Error(result.emailError ?? 'Email delivery is not configured');
+        }
+        setResendStatus('sent');
+        setTimeout(() => setResendStatus('idle'), 3000);
+        return;
+      }
+
       const token = await getToken();
       const apiUrl =
         typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
@@ -162,6 +218,7 @@ export function CandidateIntakeModal({
         if (!result) throw new Error("Failed to create candidate");
         setCreatedCandidateId(result.id);
         setInviteToken(result.inviteToken);
+        await prepareScheduledInterviewInvite(result.scheduledInterview?.id, email, !skipEmail);
         setStep("CONFIRM");
       } catch (err) {
         console.error("[CandidateIntake] Error:", err);
@@ -183,12 +240,14 @@ export function CandidateIntakeModal({
         name,
         email,
         ...(stageId ? { currentStageId: stageId } : {}),
+        skipEmail,
       });
 
       if (!createResult) throw new Error("Failed to create candidate");
       candidateId = createResult.id;
       setCreatedCandidateId(candidateId);
       setInviteToken(createResult.inviteToken);
+      await prepareScheduledInterviewInvite(createResult.scheduledInterview?.id, email, !skipEmail);
 
       // 2. Upload CV directly to the Worker, which stores it in R2.
       //    The Worker returns the R2 key and persists it on the candidate record.
@@ -646,7 +705,17 @@ export function CandidateIntakeModal({
                   <Mail size={10} style={{ marginRight: 6 }} /> INVITE_STATUS
                 </div>
                 <div style={{ fontSize: 12, color: skipEmail ? '#fbbf24' : '#34d399', fontFamily: "Space Mono" }}>
-                  {skipEmail ? '⚠ Invite link generated — email not sent' : '✓ Invite email sent automatically'}
+                  {inviteKind === 'room'
+                    ? scheduledEmailSent
+                      ? 'Video room link ready — invite email sent'
+                      : scheduledEmailError
+                        ? 'Video room link ready — email delivery failed'
+                        : skipEmail
+                          ? 'Video room link generated — email not sent'
+                          : 'Video room link ready — email not configured'
+                    : skipEmail
+                      ? 'Invite link generated — email not sent'
+                      : 'Invite email sent automatically'}
                 </div>
 
                 <div style={{ 
@@ -692,6 +761,37 @@ export function CandidateIntakeModal({
                     {copied ? "COPIED" : "COPY"}
                   </button>
                 </div>
+
+                {scheduledEmailError && (
+                  <div style={{ fontSize: 10, color: '#f87171', fontFamily: 'Space Mono', lineHeight: 1.5 }}>
+                    {scheduledEmailError}
+                  </div>
+                )}
+
+                {scheduledInterviewId && (
+                  <a
+                    href={`/interviews/${scheduledInterviewId}`}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      background: "rgba(96, 165, 250, 0.10)",
+                      border: "1px solid rgba(96, 165, 250, 0.28)",
+                      borderRadius: 4,
+                      color: "#60a5fa",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      fontFamily: "Space Mono",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    OPEN INTERVIEW ROOM SETUP
+                  </a>
+                )}
 
                 {!skipEmail && (
                   <button

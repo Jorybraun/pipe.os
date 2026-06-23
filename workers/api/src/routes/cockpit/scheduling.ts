@@ -137,6 +137,7 @@ const updateInterviewSchema = z.object({
 const inviteToCallSchema = z.object({
   email: z.string().email(),
   message: z.string().max(1000).optional(),
+  sendEmail: z.boolean().optional(),
 });
 
 // ─── Status transition validation ───────────────────────────────────────────
@@ -1673,6 +1674,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   }
 
   const { email, message: customMessage } = parsed.data;
+  const shouldSendEmail = parsed.data.sendEmail !== false;
 
   // Fetch interview with enriched data
   const interview = await db
@@ -1772,6 +1774,42 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
     : `Video call invitation — ${rawPipelineTitle}`;
   const now = new Date().toISOString();
+
+  if (!shouldSendEmail) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+         SET invite_link_sent_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(now, now, id)
+      .run();
+    await persistScheduledInterviewInviteDeliveryContext(db, {
+      contactId: roomLinks.contactId,
+      ownerId: userId,
+      interviewId: id,
+      meetingId: roomLinks.meetingId,
+      recipientEmail: email.trim().toLowerCase(),
+      subject,
+      meetingUrl,
+      customMessage: customMessage ?? null,
+      emailSent: false,
+      providerMessageId: null,
+      createdAt: now,
+    });
+    return c.json({
+      success: true,
+      emailSent: false,
+      meetingUrl,
+      room: {
+        id: roomLinks.roomId,
+        sessionId: roomLinks.sessionId,
+        hostUrl: roomLinks.hostUrl,
+        guestUrl: roomLinks.guestUrl,
+        expiresAt: roomLinks.expiresAt,
+      },
+    });
+  }
 
   let result: Awaited<ReturnType<typeof sendTransactionalEmail>> | null = null;
   try {
