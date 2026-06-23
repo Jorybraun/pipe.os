@@ -244,7 +244,23 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
-        if (phaseRef.current === 'disconnected') setConnectionPhase('waiting');
+        const peer = peerRef.current;
+        if (
+          remoteRef.current ||
+          peer?.connectionState === 'connected' ||
+          peer?.iceConnectionState === 'connected' ||
+          peer?.iceConnectionState === 'completed'
+        ) {
+          clearPeerDisconnectTimer();
+          setConnectionPhase('connected');
+          sendStatus('ACTIVE');
+          return;
+        }
+        if (phaseRef.current === 'disconnected') {
+          setConnectionPhase('waiting');
+        } else if (phaseRef.current === 'peer_disconnected' && role === 'HOST') {
+          scheduleHostRenegotiation();
+        }
       };
       ws.onmessage = (event) => {
         let message: {
@@ -342,7 +358,9 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     closePeer,
     drainIce,
     role,
+    scheduleHostRenegotiation,
     schedulePeerClose,
+    sendStatus,
     setConnectionPhase,
     token,
   ]);
