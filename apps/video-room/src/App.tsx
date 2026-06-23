@@ -11,19 +11,27 @@ import {
   PhoneOff,
   RefreshCcw,
   ShieldCheck,
+  SquareTerminal,
   Users,
   Video,
 } from 'lucide-react';
-import { loadRoom, postRoomEvent, uploadRecording } from './lib/api';
+import {
+  getRoomWorkspace,
+  launchRoomWorkspace,
+  loadRoom,
+  postRoomEvent,
+  roomWorkspaceProxyUrl,
+  uploadRecording,
+} from './lib/api';
 import {
   createCompositeRecording,
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
-import type { IceServerProvider, RoomMetadata } from './types';
+import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
 
-type RecordingState = 'idle' | 'recording' | 'uploading' | 'saved' | 'failed';
+type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -89,7 +97,7 @@ function DevicePlaceholder({
   if (state === 'ready') {
     return (
       <div className="device-placeholder" aria-hidden="true">
-        <PipeMark className="device-placeholder-logo" />
+        <span>Camera ready</span>
       </div>
     );
   }
@@ -146,6 +154,9 @@ function isSyntheticMedia(stream: MediaStream | null): boolean {
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const room = useRoomConnection(token, metadata.role, enteredRoom);
+  const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
+  const [workspaceLoading, setWorkspaceLoading] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -159,6 +170,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const autoAcceptingRef = useRef(false);
   const endingRef = useRef(false);
   const deviceRequestRef = useRef(0);
+  const callStartedRef = useRef(false);
+  const recordingStartedRef = useRef(false);
+  const recordingAutoStartRef = useRef(false);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -204,13 +218,84 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   useEffect(() => {
     if (
       metadata.role !== 'HOST' ||
+      callStartedRef.current ||
+      room.phase !== 'connected' ||
+      !room.localStream ||
+      !room.remoteStream
+    ) return;
+    callStartedRef.current = true;
+    void postRoomEvent(token, 'STARTED');
+  }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
+
+  useEffect(() => {
+    setWorkspace(metadata.workspace ?? null);
+  }, [metadata.workspace]);
+
+  const refreshWorkspace = useCallback(async (): Promise<void> => {
+    if (!workspace?.enabled) return;
+    try {
+      setWorkspace(await getRoomWorkspace(token));
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Workspace status failed.');
+    }
+  }, [token, workspace?.enabled]);
+
+  const launchWorkspace = useCallback(async (): Promise<void> => {
+    setWorkspaceLoading(true);
+    setWorkspaceError(null);
+    try {
+      setWorkspace(await launchRoomWorkspace(token));
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
+    } finally {
+      setWorkspaceLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!workspace?.enabled) return undefined;
+    const status = workspace.session?.status;
+    if (status !== 'LAUNCHING') return undefined;
+    const timer = window.setInterval(() => {
+      void refreshWorkspace();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [refreshWorkspace, workspace?.enabled, workspace?.session?.status]);
+
+  useEffect(() => {
+    if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
+      return;
+    }
+    autoAcceptingRef.current = true;
+    void room.acceptCall().finally(() => {
+      autoAcceptingRef.current = false;
+    });
+  }, [metadata.role, room.acceptCall, room.phase]);
+
+  const joinLobby = (): void => {
+    if (!preview) return;
+    room.setLocalStream(preview);
+    setPreview(null);
+    setEnteredRoom(true);
+    void postRoomEvent(token, 'JOINED');
+  };
+
+  const startRecording = useCallback(async (): Promise<void> => {
+    if (
+      metadata.role !== 'HOST' ||
       room.phase !== 'connected' ||
       !room.localStream ||
       !room.remoteStream ||
       recorderRef.current
     ) return;
 
-    void createCompositeRecording(room.localStream, room.remoteStream).then((composite) => {
+    let dispose: (() => Promise<void>) | null = null;
+    setRecordingError(null);
+    setRecordingState('starting');
+    setRecordingNotice('Starting recording...');
+    try {
+      const composite = await createCompositeRecording(room.localStream, room.remoteStream);
+      dispose = composite.dispose;
       const recorder = new MediaRecorder(composite.stream, preferredRecordingOptions());
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
@@ -235,33 +320,41 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = recorder;
       transcriptionRecorderRef.current = transcriptionRecorder;
       recordingDisposeRef.current = composite.dispose;
-      setRecordingError(null);
+      recordingStartedRef.current = true;
       setRecordingNotice('Recording started. Transcript processing begins after the host ends the call.');
       setRecordingState('recording');
-      void postRoomEvent(token, 'STARTED');
-    }).catch((error) => {
+      void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
+        setRecordingNotice('Recording started. Status will sync when the call ends.');
+      });
+    } catch (error) {
+      await dispose?.().catch(() => undefined);
+      const message = error instanceof Error ? error.message : 'Recording could not start.';
       setRecordingState('failed');
-      setRecordingError(error instanceof Error ? error.message : 'Recording could not start.');
-    });
+      setRecordingError(message);
+    }
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
   useEffect(() => {
-    if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
-      return;
-    }
-    autoAcceptingRef.current = true;
-    void room.acceptCall().finally(() => {
-      autoAcceptingRef.current = false;
-    });
-  }, [metadata.role, room.acceptCall, room.phase]);
+    if (
+      metadata.role !== 'HOST' ||
+      recordingAutoStartRef.current ||
+      recordingStartedRef.current ||
+      recordingState !== 'idle' ||
+      room.phase !== 'connected' ||
+      !room.localStream ||
+      !room.remoteStream
+    ) return;
 
-  const joinLobby = (): void => {
-    if (!preview) return;
-    room.setLocalStream(preview);
-    setPreview(null);
-    setEnteredRoom(true);
-    void postRoomEvent(token, 'JOINED');
-  };
+    recordingAutoStartRef.current = true;
+    void startRecording();
+  }, [
+    metadata.role,
+    recordingState,
+    room.localStream,
+    room.phase,
+    room.remoteStream,
+    startRecording,
+  ]);
 
   const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
     if (!recorder || recorder.state === 'inactive') return;
@@ -327,6 +420,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const endCall = async (): Promise<void> => {
     if (endingRef.current) return;
     endingRef.current = true;
+    if (
+      metadata.role === 'HOST' &&
+      !recordingStartedRef.current &&
+      !window.confirm('End this call without a recording? No transcript will be generated.')
+    ) {
+      endingRef.current = false;
+      return;
+    }
     room.hangUp();
     if (metadata.role === 'HOST') {
       let failed = false;
@@ -336,7 +437,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         failed = true;
       }
       try {
-        await stopAndUploadRecording();
+        if (recordingStartedRef.current) {
+          await stopAndUploadRecording();
+        } else {
+          setRecordingNotice('Call ended without a recording.');
+        }
       } catch {
         failed = true;
       }
@@ -362,7 +467,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const joinButtonHint = hasDeviceError
       ? 'Enable camera and microphone access in your browser, then try again.'
       : isDeviceChecking
-        ? 'PIPE is preparing your camera and microphone preview.'
+        ? 'Preparing your camera and microphone preview.'
         : 'You will enter the private room with camera and microphone ready.';
     const joinButtonIcon = hasDeviceError
       ? <CameraOff size={17} />
@@ -372,7 +477,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
     return (
       <main className="lobby">
-        <PipeMark className="room-watermark lobby-watermark" />
         <section className="lobby-copy">
           <BrandMark />
           <div className="brand-line" />
@@ -386,8 +490,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         </section>
         <section className="device-panel" data-testid="device-check">
           <div className="device-brand">
-            <PipeMark className="device-brand-logo" />
-            <span>PIPE room prejoin</span>
+            <span>Room prejoin</span>
           </div>
           <div className="preview-shell">
             {preview && <StreamVideo stream={preview} muted className="preview-video" testId="preview-video" />}
@@ -417,9 +520,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     );
   }
 
-  const canStart = metadata.role === 'HOST' && (
+  const canStartCall = metadata.role === 'HOST' && (
     room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
   );
+  const hasConnectedMedia = room.phase === 'connected' && Boolean(room.localStream && room.remoteStream);
+  const canStartRecording = metadata.role === 'HOST'
+    && hasConnectedMedia
+    && !recorderRef.current
+    && (recordingState === 'idle' || recordingState === 'failed');
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
   const isConnecting = room.phase === 'connecting';
   const isOpening = room.phase === 'disconnected';
@@ -427,21 +535,92 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const isRoomError = room.phase === 'error';
   const canRetry = room.phase === 'peer_disconnected' || room.phase === 'error';
   const recordingLabel = {
-    idle: 'Ready',
+    idle: 'Not recording',
+    starting: 'Starting',
     recording: 'Recording',
     uploading: 'Saving',
     saved: 'Saved',
     failed: 'Save failed',
   }[recordingState];
   const visibleRecordingNotice = recordingError ?? recordingNotice;
+  const recordingButtonLabel = {
+    idle: 'Start recording',
+    starting: 'Starting',
+    recording: 'Recording',
+    uploading: 'Saving',
+    saved: 'Saved',
+    failed: 'Retry recording',
+  }[recordingState];
+  const workspaceSession = workspace?.session ?? null;
+  const workspaceReady = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const workspaceUrl = workspaceReady && workspaceSession
+    ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
+    : null;
+  const canLaunchWorkspace = metadata.role === 'HOST'
+    && Boolean(workspace?.enabled)
+    && !workspaceLoading
+    && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
-      {!room.remoteStream && <PipeMark className="room-watermark call-watermark" />}
       <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
+      {workspace?.enabled && (
+        <section className={`workspace-panel${workspaceReady ? ' is-ready' : ''}`} data-testid="workspace-panel">
+          <div className="workspace-header">
+            <div>
+              <span><SquareTerminal size={14} /> Live workspace</span>
+              <strong>{workspace.repoUrl ?? 'Repository not configured'}</strong>
+            </div>
+            {workspace.githubPrNumber && <em>PR #{workspace.githubPrNumber}</em>}
+          </div>
+
+          {workspaceUrl ? (
+            <iframe
+              src={workspaceUrl}
+              title="PIPE live implementation workspace"
+              className="workspace-iframe"
+              data-testid="workspace-iframe"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
+            />
+          ) : (
+            <div className="workspace-empty">
+              <SquareTerminal size={26} />
+              <h3>
+                {workspaceSession?.status === 'LAUNCHING'
+                  ? 'Starting workspace...'
+                  : workspaceSession?.status === 'ERROR'
+                    ? 'Workspace failed'
+                    : 'Workspace ready to launch'}
+              </h3>
+              <p>
+                {workspaceSession?.status === 'LAUNCHING'
+                  ? 'The container is warming up. This can take 20-30 seconds.'
+                  : workspaceSession?.errorMessage
+                    ? workspaceSession.errorMessage
+                  : workspaceError
+                    ? workspaceError
+                    : metadata.role === 'HOST'
+                      ? 'Launch the repo into a live code-server workspace for this call.'
+                      : 'The host can launch the live code workspace.'}
+              </p>
+              {canLaunchWorkspace && (
+                <button className="primary workspace-launch" onClick={() => void launchWorkspace()}>
+                  {workspaceLoading ? <Loader2 size={16} className="spin" /> : <SquareTerminal size={16} />}
+                  Launch workspace
+                </button>
+              )}
+              {workspaceSession?.status === 'LAUNCHING' && (
+                <button className="workspace-refresh" onClick={() => void refreshWorkspace()}>
+                  <RefreshCcw size={14} />
+                  Refresh
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">
-          <BrandMark />
           <RoomStateMark
             loading={isConnecting}
             variant={isRoomError ? 'error' : 'default'}
@@ -474,7 +653,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               <RefreshCcw size={17} /> Retry connection
             </button>
           )}
-          {!canRetry && canStart && (
+          {!canRetry && canStartCall && (
             <button className="primary" onClick={() => void room.startCall()} data-testid="start-call">
               <Video size={17} /> Start call
             </button>
@@ -532,6 +711,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         <button onClick={room.toggleMic} aria-label="Toggle microphone">
           {room.micEnabled ? <Mic /> : <MicOff />}
         </button>
+        {metadata.role === 'HOST' && (
+          <button
+            className={`record-control is-${recordingState}`}
+            onClick={() => void startRecording()}
+            disabled={!canStartRecording}
+            aria-label={recordingButtonLabel}
+            title={hasConnectedMedia ? recordingButtonLabel : 'Recording is available after the guest connects'}
+            data-testid="start-recording"
+          >
+            <Circle size={15} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
+            <span>{recordingButtonLabel}</span>
+          </button>
+        )}
         <button className="hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
           <PhoneOff />
         </button>
@@ -542,7 +734,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       {room.phase === 'ended' && (
         <div className="ended-overlay">
-          <BrandMark />
           <RoomStateMark />
           <h2>Call ended</h2>
           <p>
@@ -579,9 +770,8 @@ export default function App(): JSX.Element {
   if (error) {
     return (
       <main className="center-message is-error">
-        <BrandMark />
         <RoomStateMark variant="error" />
-        <h1>PIPE room unavailable</h1>
+        <h1>Room unavailable</h1>
         <p>{error}</p>
       </main>
     );
@@ -589,11 +779,9 @@ export default function App(): JSX.Element {
   if (!metadata) {
     return (
       <main className="center-message is-loading">
-        <PipeMark className="room-watermark center-watermark" />
-        <BrandMark />
         <RoomStateMark loading />
-        <h1>Opening secure PIPE room</h1>
-        <p>Checking room access.</p>
+        <h1>Opening room...</h1>
+        <p>Connecting to the private room.</p>
       </main>
     );
   }

@@ -1006,7 +1006,8 @@ describe('GET /interviews/:id detail', () => {
     expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: barbara@example.com',
       expect.stringMatching(/^Subject: Video call invitation — Interview \(.+\)$/),
-      `Meeting URL: ${inviteBody.meetingUrl}`,
+      `Delivered URL: ${inviteBody.meetingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
       'Custom message: Please join prepared code review discussion.',
       'Email sent: no',
       'Provider message id: none',
@@ -1075,6 +1076,7 @@ describe('GET /interviews/:id detail', () => {
       emailSent: boolean;
       provider: string;
       meetingUrl: string;
+      deliveredUrl: string;
       room: { hostUrl: string; guestUrl: string };
     };
 
@@ -1084,6 +1086,7 @@ describe('GET /interviews/:id detail', () => {
       provider: 'cloudflare',
     });
     expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
+    expect(inviteBody.deliveredUrl).toBe(inviteBody.meetingUrl);
     expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]).toMatchObject({
@@ -1119,9 +1122,117 @@ describe('GET /interviews/:id detail', () => {
     ).get('margaret@example.com') as { exact_text: string } | undefined;
     expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: margaret@example.com',
-      `Meeting URL: ${inviteBody.meetingUrl}`,
+      `Delivered URL: ${inviteBody.meetingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
       'Email sent: yes',
       'Provider message id: cf-message-1',
+    ]));
+  });
+
+  it('sends Calendly scheduling URL while still preparing the room link', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+    }> = [];
+    const app = mountSchedulingApp({
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          return { messageId: 'cf-calendly-message-1' };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+    } as Partial<Env>);
+
+    const schedulingUrl = 'https://calendly.com/pipe/code-review';
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string };
+    };
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'grace@example.com' }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      provider: string;
+      meetingUrl: string;
+      schedulingUrl: string;
+      deliveredUrl: string;
+      room: { hostUrl: string; guestUrl: string };
+    };
+
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: true,
+      provider: 'cloudflare',
+      schedulingUrl,
+      deliveredUrl: schedulingUrl,
+    });
+    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
+    expect(inviteBody.room.hostUrl).not.toBe(inviteBody.room.guestUrl);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      to: 'grace@example.com',
+      from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
+      subject: 'Schedule interview — Interview',
+    });
+    expect(sentMessages[0]?.html).toContain(schedulingUrl);
+    expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, scheduling_provider, scheduling_url
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+    };
+    expect(scheduledRow).toMatchObject({
+      meeting_url: inviteBody.meetingUrl,
+      scheduling_provider: 'CALENDLY',
+      scheduling_url: schedulingUrl,
+    });
+
+    const deliverySource = sqlite!.prepare(
+      `SELECT ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+          AND cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get('grace@example.com') as { exact_text: string } | undefined;
+    expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Recipient email: grace@example.com',
+      'Subject: Schedule interview — Interview',
+      `Delivered URL: ${schedulingUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
+      'Email sent: yes',
+      'Provider message id: cf-calendly-message-1',
     ]));
   });
 });

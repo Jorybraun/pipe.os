@@ -15,6 +15,8 @@ interface InviteResponse {
   success: boolean;
   emailSent: boolean;
   meetingUrl: string;
+  schedulingUrl?: string | null;
+  deliveredUrl?: string | null;
   provider?: string;
   emailError?: string;
 }
@@ -244,6 +246,8 @@ export function SchedulingDashboard(): JSX.Element {
           scheduledAt?: string;
           schedulingProvider?: SchedulingProvider;
           schedulingUrl?: string;
+          githubRepoUrl?: string | null;
+          githubPrNumber?: number | null;
         }) => {
           const result = await api.post<{ interview: { id: string } }>(
             '/api/v1/scheduling/interviews',
@@ -262,7 +266,7 @@ export function SchedulingDashboard(): JSX.Element {
           await refetch();
           return {
             id: result.interview.id,
-            meetingUrl: inviteResult?.meetingUrl ?? null,
+            meetingUrl: inviteResult?.deliveredUrl ?? inviteResult?.schedulingUrl ?? inviteResult?.meetingUrl ?? data.schedulingUrl ?? null,
             emailSent: inviteResult?.emailSent ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,

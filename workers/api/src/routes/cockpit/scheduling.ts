@@ -99,6 +99,9 @@ const createInterviewSchema = z.object({
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
+  matchedRepoId: z.number().int().positive().nullable().optional(),
+  githubRepoUrl: z.string().trim().url().nullable().optional(),
+  githubPrNumber: z.number().int().positive().nullable().optional(),
 }).superRefine((value, ctx) => {
   const hasCandidate = Boolean(value.candidateId);
   const hasRecipient = Boolean(value.recipientName && value.recipientEmail);
@@ -132,6 +135,9 @@ const updateInterviewSchema = z.object({
   scheduledAt: z.string().optional(),
   meetingUrl: z.string().optional(),
   recruiterNotes: z.string().optional(),
+  matchedRepoId: z.number().int().positive().nullable().optional(),
+  githubRepoUrl: z.string().trim().url().nullable().optional(),
+  githubPrNumber: z.number().int().positive().nullable().optional(),
 });
 
 const inviteToCallSchema = z.object({
@@ -487,7 +493,8 @@ async function persistContactFirstInterviewInviteContext(
 function inviteDeliverySourceText(input: {
   recipientEmail: string;
   subject: string;
-  meetingUrl: string;
+  deliveredUrl: string;
+  roomUrl: string;
   customMessage: string | null;
   emailSent: boolean;
   providerMessageId: string | null;
@@ -497,7 +504,8 @@ function inviteDeliverySourceText(input: {
     'Scheduled interview invite delivery',
     `Recipient email: ${input.recipientEmail}`,
     `Subject: ${input.subject}`,
-    `Meeting URL: ${input.meetingUrl}`,
+    `Delivered URL: ${input.deliveredUrl}`,
+    `Room URL: ${input.roomUrl}`,
     `Custom message: ${input.customMessage ?? 'none'}`,
     `Email sent: ${input.emailSent ? 'yes' : 'no'}`,
     `Provider message id: ${input.providerMessageId ?? 'none'}`,
@@ -514,7 +522,8 @@ async function persistScheduledInterviewInviteDeliveryContext(
     meetingId: string;
     recipientEmail: string;
     subject: string;
-    meetingUrl: string;
+    deliveredUrl: string;
+    roomUrl: string;
     customMessage: string | null;
     emailSent: boolean;
     providerMessageId: string | null;
@@ -535,6 +544,8 @@ async function persistScheduledInterviewInviteDeliveryContext(
       scheduledInterviewId: input.interviewId,
       meetingId: input.meetingId,
       emailSent: input.emailSent,
+      deliveredUrl: input.deliveredUrl,
+      roomUrl: input.roomUrl,
     },
   });
   const artifact = await store.upsertArtifact({
@@ -564,6 +575,8 @@ async function persistScheduledInterviewInviteDeliveryContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       meetingId: input.meetingId,
+      deliveredUrl: input.deliveredUrl,
+      roomUrl: input.roomUrl,
       source: 'scheduled_interview_invite_delivery',
     },
   });
@@ -581,6 +594,8 @@ async function persistScheduledInterviewInviteDeliveryContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       meetingId: input.meetingId,
+      deliveredUrl: input.deliveredUrl,
+      roomUrl: input.roomUrl,
       source: 'scheduled_interview_invite_delivery',
     },
   });
@@ -1498,6 +1513,9 @@ schedulingAuth.post('/interviews', async (c) => {
     scheduledAt,
     schedulingProvider,
     schedulingUrl,
+    matchedRepoId,
+    githubRepoUrl,
+    githubPrNumber,
   } = parsed.data;
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
@@ -1550,14 +1568,16 @@ schedulingAuth.post('/interviews', async (c) => {
        (id, candidate_id, pipeline_id, stage_id, owner_id, status,
         interview_type, meeting_type, scheduled_at, scheduling_provider,
         scheduling_url, recipient_name, recipient_email, sync_source,
+        matched_repo_id, github_repo_url, github_pr_number,
         created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?)`
+       VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, ?, ?, ?, 'MANUAL', ?, ?, ?, ?, ?)`
     )
     .bind(
       id, candidateId ?? null, pipelineId ?? null, stageId ?? null, userId,
       effectiveInterviewType, effectiveMeetingType, scheduledAt ?? null,
       schedulingProvider ?? null, schedulingUrl ?? null,
       recipientName ?? null, recipientEmail?.trim().toLowerCase() ?? null,
+      matchedRepoId ?? null, githubRepoUrl ?? null, githubPrNumber ?? null,
       now, now,
     )
     .run();
@@ -1593,6 +1613,9 @@ schedulingAuth.post('/interviews', async (c) => {
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
+      matchedRepoId: matchedRepoId ?? null,
+      githubRepoUrl: githubRepoUrl ?? null,
+      githubPrNumber: githubPrNumber ?? null,
     },
   }, 201);
 });
@@ -1642,6 +1665,18 @@ schedulingAuth.patch('/interviews/:id', async (c) => {
     updates.push('recruiter_notes = ?');
     values.push(parsed.data.recruiterNotes);
   }
+  if (parsed.data.matchedRepoId !== undefined) {
+    updates.push('matched_repo_id = ?');
+    values.push(parsed.data.matchedRepoId);
+  }
+  if (parsed.data.githubRepoUrl !== undefined) {
+    updates.push('github_repo_url = ?');
+    values.push(parsed.data.githubRepoUrl);
+  }
+  if (parsed.data.githubPrNumber !== undefined) {
+    updates.push('github_pr_number = ?');
+    values.push(parsed.data.githubPrNumber);
+  }
 
   if (updates.length === 0) {
     return apiError(c, 'VALIDATION_ERROR', 'No fields to update.');
@@ -1681,7 +1716,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     .prepare(
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
               si.scheduled_at, si.meeting_url, si.recipient_name, si.recipient_email,
-              si.interview_type,
+              si.interview_type, si.scheduling_provider, si.scheduling_url,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -1703,6 +1738,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       recipient_name: string | null;
       recipient_email: string | null;
       interview_type: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -1719,6 +1756,14 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     email,
   );
   const meetingUrl = roomLinks.guestUrl;
+  const schedulingInviteUrl = interview.scheduling_url
+    && (interview.scheduling_provider === 'CALENDLY' || interview.scheduling_provider === 'CAL_COM')
+    ? interview.scheduling_url
+    : null;
+  const deliveredUrl = schedulingInviteUrl ?? meetingUrl;
+  const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : 'join a video call';
+  const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
+  const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
@@ -1738,7 +1783,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   );
   const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
   const stageTitle = escapeHtml(interview.stage_title ?? '');
-  const safeMeetingUrl = encodeURI(meetingUrl);
+  const safeDeliveredUrl = encodeURI(deliveredUrl);
 
   // Build HTML email
   const customBlock = customMessage
@@ -1752,27 +1797,28 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const html = `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi ${candidateName},</h1>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
-    You've been invited to a video call for <strong>${pipelineTitle}</strong>.
+    You've been invited to ${inviteVerb} for <strong>${pipelineTitle}</strong>.
   </p>
   ${customBlock}
   <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
     ${stageTitle ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> ${stageTitle}</p>` : ''}
     ${timeBlock}
-    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="${safeMeetingUrl}" style="color: #60a5fa;">Join Video Call</a></p>
+    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">${linkLabel}:</strong> <a href="${safeDeliveredUrl}" style="color: #60a5fa;">${escapeHtml(inviteCta)}</a></p>
   </div>
-  <a href="${safeMeetingUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
-    JOIN VIDEO CALL →
+  <a href="${safeDeliveredUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
+    ${escapeHtml(inviteCta)} →
   </a>
   <p style="font-size: 12px; color: #666; margin-top: 40px;">
     If the button doesn't work, copy this link:<br/>
-    <a href="${safeMeetingUrl}" style="color: #888;">${escapeHtml(meetingUrl)}</a>
+    <a href="${safeDeliveredUrl}" style="color: #888;">${escapeHtml(deliveredUrl)}</a>
   </p>
 </div>`;
 
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
+  const subjectPrefix = schedulingInviteUrl ? 'Schedule interview' : 'Video call invitation';
   const subject = scheduledTime
-    ? `Video call invitation — ${rawPipelineTitle} (${scheduledTime})`
-    : `Video call invitation — ${rawPipelineTitle}`;
+    ? `${subjectPrefix} — ${rawPipelineTitle} (${scheduledTime})`
+    : `${subjectPrefix} — ${rawPipelineTitle}`;
   const now = new Date().toISOString();
 
   if (!shouldSendEmail) {
@@ -1791,7 +1837,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingId: roomLinks.meetingId,
       recipientEmail: email.trim().toLowerCase(),
       subject,
-      meetingUrl,
+      deliveredUrl,
+      roomUrl: meetingUrl,
       customMessage: customMessage ?? null,
       emailSent: false,
       providerMessageId: null,
@@ -1801,6 +1848,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
+      schedulingUrl: schedulingInviteUrl,
+      deliveredUrl,
       room: {
         id: roomLinks.roomId,
         sessionId: roomLinks.sessionId,
@@ -1836,7 +1885,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingId: roomLinks.meetingId,
       recipientEmail: email.trim().toLowerCase(),
       subject,
-      meetingUrl,
+      deliveredUrl,
+      roomUrl: meetingUrl,
       customMessage: customMessage ?? null,
       emailSent: false,
       providerMessageId: null,
@@ -1847,6 +1897,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       emailSent: false,
       emailError,
       meetingUrl,
+      schedulingUrl: schedulingInviteUrl,
+      deliveredUrl,
       room: {
         id: roomLinks.roomId,
         sessionId: roomLinks.sessionId,
@@ -1873,7 +1925,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       meetingId: roomLinks.meetingId,
       recipientEmail: email.trim().toLowerCase(),
       subject,
-      meetingUrl,
+      deliveredUrl,
+      roomUrl: meetingUrl,
       customMessage: customMessage ?? null,
       emailSent: false,
       providerMessageId: null,
@@ -1883,6 +1936,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
+      schedulingUrl: schedulingInviteUrl,
+      deliveredUrl,
       room: {
         id: roomLinks.roomId,
         sessionId: roomLinks.sessionId,
@@ -1912,7 +1967,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     meetingId: roomLinks.meetingId,
     recipientEmail: email.trim().toLowerCase(),
     subject,
-    meetingUrl,
+    deliveredUrl,
+    roomUrl: meetingUrl,
     customMessage: customMessage ?? null,
     emailSent: Boolean(result),
     providerMessageId: result.id,
@@ -1923,6 +1979,8 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     success: true,
     emailSent: true,
     meetingUrl,
+    schedulingUrl: schedulingInviteUrl,
+    deliveredUrl,
     provider: result.provider,
     room: {
       id: roomLinks.roomId,

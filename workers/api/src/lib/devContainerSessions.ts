@@ -22,9 +22,13 @@ export type DevContainerStatus =
 export interface DevContainerSessionRow {
   id: string;
   session_id: string;
-  candidate_id: string;
+  candidate_id: string | null;
   challenge_id: string | null;
-  pipeline_id: string;
+  pipeline_id: string | null;
+  meeting_id: string | null;
+  meeting_room_id: string | null;
+  owner_id: string | null;
+  access_scope: 'candidate' | 'meeting_room';
   status: DevContainerStatus;
   instance_type: string;
   ttl_seconds: number;
@@ -52,6 +56,20 @@ export interface InsertSessionInput {
   ttlSource: TtlSource;
   expiresAt: string;
   repoGitUrl: string | null;
+  challengeBranch: string | null;
+}
+
+export interface InsertRoomSessionInput {
+  id: string;
+  sessionId: string;
+  meetingId: string;
+  meetingRoomId: string;
+  ownerId: string;
+  instanceType: string;
+  ttlSeconds: number;
+  ttlSource: TtlSource;
+  expiresAt: string;
+  repoGitUrl: string;
   challengeBranch: string | null;
 }
 
@@ -84,6 +102,37 @@ export async function insertSession(
     .run();
 }
 
+/** Insert a LAUNCHING row for a live meeting room workspace. */
+export async function insertRoomSession(
+  db: D1Database,
+  input: InsertRoomSessionInput,
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO dev_container_sessions (
+         id, session_id, candidate_id, challenge_id, pipeline_id,
+         meeting_id, meeting_room_id, owner_id, access_scope,
+         status, instance_type, ttl_seconds, ttl_source, expires_at,
+         repo_git_url, challenge_branch
+       ) VALUES (?1, ?2, NULL, NULL, NULL, ?3, ?4, ?5, 'meeting_room',
+         'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11)`,
+    )
+    .bind(
+      input.id,
+      input.sessionId,
+      input.meetingId,
+      input.meetingRoomId,
+      input.ownerId,
+      input.instanceType,
+      input.ttlSeconds,
+      input.ttlSource,
+      input.expiresAt,
+      input.repoGitUrl,
+      input.challengeBranch,
+    )
+    .run();
+}
+
 /**
  * Fetch a session by its external session_id, verifying ownership.
  * Returns null if the session does not exist OR belongs to another candidate.
@@ -101,6 +150,41 @@ export async function getSessionByIdForCandidate(
        LIMIT 1`,
     )
     .bind(sessionId, candidateId)
+    .first<DevContainerSessionRow>();
+}
+
+/** Fetch a room-scoped session by public session_id and meeting room owner. */
+export async function getSessionByIdForRoom(
+  db: D1Database,
+  sessionId: string,
+  meetingRoomId: string,
+): Promise<DevContainerSessionRow | null> {
+  return db
+    .prepare(
+      `SELECT * FROM dev_container_sessions
+       WHERE session_id = ?1
+         AND meeting_room_id = ?2
+         AND access_scope = 'meeting_room'
+       LIMIT 1`,
+    )
+    .bind(sessionId, meetingRoomId)
+    .first<DevContainerSessionRow>();
+}
+
+/** Latest live room-scoped session, if any. */
+export async function getLatestSessionForRoom(
+  db: D1Database,
+  meetingRoomId: string,
+): Promise<DevContainerSessionRow | null> {
+  return db
+    .prepare(
+      `SELECT * FROM dev_container_sessions
+       WHERE meeting_room_id = ?1
+         AND access_scope = 'meeting_room'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .bind(meetingRoomId)
     .first<DevContainerSessionRow>();
 }
 
@@ -187,9 +271,9 @@ export async function markError(
 /** Columns exposed to the cockpit. Excludes internal `id` and proxy `url`. */
 export interface CockpitSessionRow {
   session_id: string;
-  candidate_id: string;
+  candidate_id: string | null;
   challenge_id: string | null;
-  pipeline_id: string;
+  pipeline_id: string | null;
   status: DevContainerStatus;
   ttl_seconds: number;
   ttl_source: TtlSource;

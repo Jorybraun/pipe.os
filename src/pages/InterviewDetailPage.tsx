@@ -237,6 +237,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
+  const [workspacePrNumber, setWorkspacePrNumber] = useState('');
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const hasLoadedOnceRef = useRef(false);
 
   const load = useCallback(async (options?: { showLoading?: boolean }) => {
@@ -262,6 +265,12 @@ export default function InterviewDetailPage(): JSX.Element {
     setInterview(null);
     void load({ showLoading: true });
   }, [interviewId, load]);
+
+  useEffect(() => {
+    if (!interview) return;
+    setWorkspaceRepoUrl(interview.githubRepoUrl ?? '');
+    setWorkspacePrNumber(interview.githubPrNumber ? String(interview.githubPrNumber) : '');
+  }, [interview]);
 
   const transcriptEntries = useMemo(() => {
     const meetingEntries = parseTranscriptJson(interview?.linkedMeeting?.transcriptJson);
@@ -392,6 +401,39 @@ export default function InterviewDetailPage(): JSX.Element {
     }
   }, [api, interview, load]);
 
+  const saveWorkspaceConfig = useCallback(async () => {
+    if (!interview) return;
+    const repoUrl = workspaceRepoUrl.trim();
+    const prNumber = workspacePrNumber.trim().length > 0
+      ? Number.parseInt(workspacePrNumber.trim(), 10)
+      : null;
+    if (!repoUrl) {
+      setRoomNotice(null);
+      setRoomError('Add a GitHub repository URL before launching a live workspace.');
+      return;
+    }
+    if (prNumber !== null && (!Number.isFinite(prNumber) || prNumber <= 0)) {
+      setRoomNotice(null);
+      setRoomError('PR number must be a positive number.');
+      return;
+    }
+    setIsSavingWorkspace(true);
+    setRoomError(null);
+    setRoomNotice(null);
+    try {
+      await api.patch(`/api/v1/scheduling/interviews/${interview.id}`, {
+        githubRepoUrl: repoUrl,
+        githubPrNumber: prNumber,
+      });
+      setRoomNotice('Workspace repository saved.');
+      await load({ showLoading: false });
+    } catch (err) {
+      setRoomError(err instanceof Error ? err.message : 'Unable to save workspace repository');
+    } finally {
+      setIsSavingWorkspace(false);
+    }
+  }, [api, interview, load, workspacePrNumber, workspaceRepoUrl]);
+
   useEffect(() => {
     const handleVisibilityChange = (): void => {
       if (document.visibilityState === 'visible') void load({ showLoading: false });
@@ -481,6 +523,7 @@ export default function InterviewDetailPage(): JSX.Element {
     ),
   );
   const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
+  const usesWorkspaceInterview = interview.interviewType === 'CODE_REVIEW' || interview.interviewType === 'TECHNICAL';
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'
     ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
     : isStaleRecording
@@ -579,6 +622,43 @@ export default function InterviewDetailPage(): JSX.Element {
           {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
         </div>
       </section>
+
+      {usesWorkspaceInterview && (
+        <section style={WORKSPACE_CONFIG_PANEL}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
+              <GitPullRequest size={15} />
+              Live workspace
+            </div>
+            <div style={ROOM_LINK_TEXT}>
+              Pick the repository that should open inside the live implementation room.
+            </div>
+          </div>
+          <div style={WORKSPACE_CONFIG_FORM}>
+            <input
+              value={workspaceRepoUrl}
+              onChange={(event) => setWorkspaceRepoUrl(event.currentTarget.value)}
+              placeholder="https://github.com/owner/repo"
+              style={WORKSPACE_INPUT}
+            />
+            <input
+              value={workspacePrNumber}
+              onChange={(event) => setWorkspacePrNumber(event.currentTarget.value)}
+              placeholder="PR # optional"
+              inputMode="numeric"
+              style={{ ...WORKSPACE_INPUT, maxWidth: 140 }}
+            />
+            <button
+              onClick={() => void saveWorkspaceConfig()}
+              disabled={isSavingWorkspace}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+            >
+              {isSavingWorkspace ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={14} />}
+              SAVE
+            </button>
+          </div>
+        </section>
+      )}
 
       <main style={EVIDENCE_GRID}>
         <Section title="Call record" icon={<FileText size={15} />}>
@@ -754,6 +834,37 @@ const ROOM_PANEL: CSSProperties = {
   background: 'var(--pipe-surface-solid)',
   padding: 20,
   boxShadow: '0 18px 42px var(--pipe-shadow)',
+};
+
+const WORKSPACE_CONFIG_PANEL: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) minmax(340px, 560px)',
+  gap: 18,
+  alignItems: 'center',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+};
+
+const WORKSPACE_CONFIG_FORM: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 8,
+  minWidth: 0,
+};
+
+const WORKSPACE_INPUT: CSSProperties = {
+  minWidth: 0,
+  width: '100%',
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+  color: 'var(--pipe-text)',
+  padding: '10px 12px',
+  fontFamily: FONT,
+  fontSize: 11,
 };
 
 const ROOM_TITLE: CSSProperties = {
