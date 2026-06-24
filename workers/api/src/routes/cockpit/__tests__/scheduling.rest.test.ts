@@ -734,6 +734,67 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('never fabricates /video fallback links when meeting_url is null', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    // Both seeded interviews have meeting_url = NULL. The detail endpoint must
+    // return null — never a fabricated /video/stageId--candidateId fallback.
+    const pipelineRes = await app.request('/interviews/interview-1');
+    expect(pipelineRes.status).toBe(200);
+    const pipelineBody = await pipelineRes.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(pipelineBody.interview.meetingUrl).toBeNull();
+
+    const rolelessRes = await app.request('/interviews/interview-roleless-1');
+    expect(rolelessRes.status).toBe(200);
+    const rolelessBody = await rolelessRes.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(rolelessBody.interview.meetingUrl).toBeNull();
+
+    // The list endpoint must also return null, not a fabricated /video/ link.
+    const listRes = await app.request('/interviews');
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json() as {
+      interviews: Array<{ id: string; meetingUrl: string | null }>;
+    };
+    for (const iv of listBody.interviews) {
+      expect(iv.meetingUrl).toBeNull();
+    }
+
+    // After inviting (which creates a /room/ link), the detail endpoint must
+    // return the /room/ URL — never a /video/ fallback.
+    const inviteRes = await app.request('/interviews/interview-1/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.com', sendEmail: false }),
+    });
+    expect(inviteRes.status).toBe(200);
+    const inviteBody = await inviteRes.json() as {
+      meetingUrl: string;
+      room: { guestUrl: string };
+    };
+    expect(inviteBody.meetingUrl).toMatch(/\/room\//);
+    expect(inviteBody.meetingUrl).not.toContain('/video/');
+
+    const detailAfterInvite = await app.request('/interviews/interview-1');
+    expect(detailAfterInvite.status).toBe(200);
+    const detailBody = await detailAfterInvite.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(detailBody.interview.meetingUrl).toMatch(/\/room\//);
+    expect(detailBody.interview.meetingUrl).not.toContain('/video/');
+
+    // The persisted scheduled_interviews.meeting_url must be a /room/ URL.
+    const storedRow = sqlite!.prepare(
+      'SELECT meeting_url FROM scheduled_interviews WHERE id = ?',
+    ).get('interview-1') as { meeting_url: string | null };
+    expect(storedRow.meeting_url).toMatch(/\/room\//);
+    expect(storedRow.meeting_url).not.toContain('/video/');
+  });
+
   it('creates a contact-first scheduled interview without candidate, role, or application', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();
