@@ -12,6 +12,7 @@ interface GitHubPRResponse {
   title: string;
   body: string | null;
   state: string;
+  changed_files: number;
   user: { login: string };
   created_at: string;
   merged_at: string | null;
@@ -57,6 +58,10 @@ export interface GitHubDiffResult {
     description: string;
   };
 }
+
+const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 15_000;
+const GITHUB_FILES_PAGE_SIZE = 100;
+const MAX_GITHUB_FILES_PAGES = 10;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -114,6 +119,29 @@ function encodeGitHubPath(path: string): string {
   return path.split('/').map((part) => encodeURIComponent(part)).join('/');
 }
 
+function githubRequestTimeoutMs(): number {
+  const env = (globalThis as {
+    process?: { env?: Record<string, string | undefined> };
+  }).process?.env;
+  const value = Number(env?.['GITHUB_REQUEST_TIMEOUT_MS'] ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_GITHUB_REQUEST_TIMEOUT_MS;
+  return Math.round(value);
+}
+
+async function timedGitHubFetch(
+  input: string,
+  init: RequestInit,
+): Promise<Response | null> {
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: AbortSignal.timeout(githubRequestTimeoutMs()),
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function fetchHeadFileContent(input: {
   repoPath: string;
   filename: string;
@@ -122,17 +150,47 @@ async function fetchHeadFileContent(input: {
 }): Promise<{ content: string; url: string } | null> {
   if (!input.filename.trim() || input.headSha.trim() === '') return null;
   const url = `https://api.github.com/repos/${input.repoPath}/contents/${encodeGitHubPath(input.filename)}?ref=${input.headSha}`;
-  const response = await fetch(url, {
+  const response = await timedGitHubFetch(url, {
     headers: {
       ...input.headers,
       Accept: 'application/vnd.github.raw',
     },
   });
-  if (!response.ok) return null;
+  if (!response?.ok) return null;
   return {
     content: await response.text(),
     url,
   };
+}
+
+async function fetchChangedFiles(input: {
+  repoPath: string;
+  prNumber: number;
+  expectedChangedFiles: number;
+  headers: Record<string, string>;
+}): Promise<GitHubFilesResponse[] | null> {
+  const expected = Number.isFinite(input.expectedChangedFiles) && input.expectedChangedFiles >= 0
+    ? input.expectedChangedFiles
+    : null;
+  const expectedPages = expected === null
+    ? MAX_GITHUB_FILES_PAGES
+    : Math.min(MAX_GITHUB_FILES_PAGES, Math.ceil(expected / GITHUB_FILES_PAGE_SIZE) || 1);
+  const files: GitHubFilesResponse[] = [];
+
+  for (let page = 1; page <= expectedPages; page++) {
+    const filesRes = await timedGitHubFetch(
+      `https://api.github.com/repos/${input.repoPath}/pulls/${input.prNumber}/files?per_page=${GITHUB_FILES_PAGE_SIZE}&page=${page}`,
+      { headers: input.headers },
+    );
+    if (!filesRes?.ok) return null;
+    const pageFiles = (await filesRes.json()) as GitHubFilesResponse[];
+    if (!Array.isArray(pageFiles)) return null;
+    files.push(...pageFiles);
+    if (expected === null && pageFiles.length < GITHUB_FILES_PAGE_SIZE) break;
+  }
+
+  if (expected !== null && files.length !== expected) return null;
+  return files;
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -158,20 +216,22 @@ export async function fetchGitHubDiff(
   }
 
   // Fetch PR metadata
-  const prRes = await fetch(
+  const prRes = await timedGitHubFetch(
     `https://api.github.com/repos/${repoPath}/pulls/${prNumber}`,
     { headers },
   );
-  if (!prRes.ok) return null;
+  if (!prRes?.ok) return null;
   const prData = (await prRes.json()) as GitHubPRResponse;
 
-  // Fetch changed files with patches
-  const filesRes = await fetch(
-    `https://api.github.com/repos/${repoPath}/pulls/${prNumber}/files?per_page=100`,
-    { headers },
-  );
-  if (!filesRes.ok) return null;
-  const filesData = (await filesRes.json()) as GitHubFilesResponse[];
+  // Fetch changed files with patches. Fail closed rather than building challenge
+  // packets from a truncated PR file list.
+  const filesData = await fetchChangedFiles({
+    repoPath,
+    prNumber,
+    expectedChangedFiles: prData.changed_files,
+    headers,
+  });
+  if (!filesData) return null;
 
   const diffFiles: DiffFile[] = await Promise.all(filesData.map(async (file) => {
     const headFile = file.status === 'removed'

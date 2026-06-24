@@ -685,6 +685,7 @@ export function explainChallengeMatch(
     pairScore: entry.pairScore.total,
     episodeMultiplier: entry.atom.episodeMultiplier,
     stretch: entry.stretch,
+    roleSourceRefs: [],
     candidateSourceRefs: entry.atom.sourceRefs,
     challengeSourceRefs: entry.demand.sourceRefs,
   }));

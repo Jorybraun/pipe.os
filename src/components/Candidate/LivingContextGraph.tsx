@@ -15,6 +15,7 @@ import type {
   LivingContextAssertion,
   LivingContextInteraction,
   LivingContextReadModel,
+  LivingContextRecord,
   LivingContextSignal,
   LivingContextSourceRef,
   StandaloneReviewExcludedPacket,
@@ -24,6 +25,7 @@ import type {
   StandaloneReviewSourceRef,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
+import { buildLivingContextBranches } from '../../lib/livingContextTree';
 import { ContextRecordForest } from './ContextRecordTree';
 import './LivingContextGraph.css';
 
@@ -90,6 +92,65 @@ function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
 }
 
+type RecordingProvenance = {
+  recordingKey?: string;
+  transcriptionAudioKey?: string;
+  provider?: string;
+  transcriptStatus?: string;
+};
+
+function asMetadataRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function sourceMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  return asMetadataRecord(metadata.fixtureSource) ?? metadata;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | undefined {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function mergeRecordingProvenance(
+  target: RecordingProvenance,
+  metadata: Record<string, unknown>,
+): void {
+  const source = sourceMetadata(metadata);
+  const recordingKey = metadataString(source, 'recordingKey');
+  const transcriptionAudioKey = metadataString(source, 'transcriptionAudioKey');
+  const provider = metadataString(source, 'provider');
+  const transcriptStatus = metadataString(source, 'transcriptStatus');
+  if (target.recordingKey === undefined && recordingKey) target.recordingKey = recordingKey;
+  if (target.transcriptionAudioKey === undefined && transcriptionAudioKey) {
+    target.transcriptionAudioKey = transcriptionAudioKey;
+  }
+  if (target.provider === undefined && provider) target.provider = provider;
+  if (target.transcriptStatus === undefined && transcriptStatus) target.transcriptStatus = transcriptStatus;
+}
+
+function recordingProvenanceForBranch(
+  interaction: LivingContextInteraction,
+  artifacts: LivingContextArtifact[],
+): RecordingProvenance | null {
+  const provenance: RecordingProvenance = {};
+  mergeRecordingProvenance(provenance, interaction.metadata);
+  for (const artifact of artifacts) {
+    mergeRecordingProvenance(provenance, artifact.metadata);
+    for (const source of artifact.sourceSpans) {
+      mergeRecordingProvenance(provenance, source.metadata);
+    }
+  }
+  return provenance.recordingKey
+    || provenance.transcriptionAudioKey
+    || provenance.provider
+    || provenance.transcriptStatus
+    ? provenance
+    : null;
+}
+
 function reviewSourceLabel(source: StandaloneReviewSourceRef): string {
   return source.locator
     ?? `${source.artifactId.slice(0, 10)}:${source.startOffset}-${source.endOffset}`;
@@ -111,6 +172,10 @@ function roleSourceLabel(source: StandaloneReviewRoleSource): string {
   return source.locator || source.entityId;
 }
 
+function roleSourceSnippet(source: StandaloneReviewRoleSource): string | null {
+  return source.exactText?.trim() || null;
+}
+
 function reviewSourceFileLabel(source: StandaloneReviewSourceRef): string {
   if (!source.locator) return source.artifactId;
   const lineLocator = source.locator.match(/^(.+?)(?::\d+(?::\d+)?|#L\d+(?:-L\d+)?)$/);
@@ -127,15 +192,6 @@ function reviewAnchorId(value: string, index: number): string {
 
 function uniqueReviewSourceLabels(sources: StandaloneReviewSourceRef[]): string[] {
   return [...new Set(sources.map(reviewSourceFileLabel))];
-}
-
-function isMeetingEvidenceInteraction(
-  interaction: LivingContextInteraction,
-  artifacts: LivingContextArtifact[],
-): boolean {
-  const interactionType = interaction.interactionType.toLowerCase();
-  return interactionType.includes('meeting')
-    || artifacts.some((artifact) => artifact.artifactType.toLowerCase() === 'meeting_transcript');
 }
 
 function matchStatusLabel(status: StandaloneReviewMatchRecord['matchStatus']): string {
@@ -212,6 +268,162 @@ function ReviewSourceList({
         </div>
       )}
     </div>
+  );
+}
+
+function BridgeRoleSourceList({
+  roleSources,
+}: {
+  roleSources: StandaloneReviewRoleSource[];
+}): JSX.Element {
+  if (roleSources.length === 0) {
+    return (
+      <div className="living-context__bridge-source living-context__bridge-source--missing">
+        missing role source
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {roleSources.slice(0, 2).map((source) => (
+        <div
+          key={`${source.entityId}:${source.locator}:${source.sourceRefId ?? ''}`}
+          className="living-context__bridge-source"
+          data-testid="match-bridge-role-source"
+          data-source-ref-type={source.sourceRefType}
+          data-source-ref-id={source.sourceRefId}
+          data-source-span-id={source.sourceSpanId}
+          data-content-hash={source.contentHash}
+        >
+          <strong>{roleSourceLabel(source)}</strong>
+          {source.conceptKeys.length > 0 && (
+            <span>{source.conceptKeys.slice(0, 3).join(', ')}</span>
+          )}
+          {roleSourceSnippet(source) && (
+            <blockquote>{roleSourceSnippet(source)}</blockquote>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function BridgeReviewSourceList({
+  sources,
+  missingLabel,
+  testId,
+}: {
+  sources: StandaloneReviewSourceRef[];
+  missingLabel: string;
+  testId: string;
+}): JSX.Element {
+  if (sources.length === 0) {
+    return (
+      <div className="living-context__bridge-source living-context__bridge-source--missing">
+        {missingLabel}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {sources.slice(0, 2).map((source, index) => (
+        <div
+          key={`${testId}:${source.artifactId}:${source.startOffset}:${source.endOffset}:${index}`}
+          className="living-context__bridge-source"
+          data-testid={testId}
+          data-source-ref-type={source.sourceRefType}
+          data-source-ref-id={source.sourceRefId}
+          data-source-span-id={source.sourceSpanId}
+          data-content-hash={source.contentHash}
+        >
+          <strong>{reviewSourceLabel(source)}</strong>
+          <span>{source.artifactVersion}</span>
+          {source.exactText && <blockquote>{source.exactText}</blockquote>}
+        </div>
+      ))}
+    </>
+  );
+}
+
+function MatchEvidenceBridgePanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord;
+}): JSX.Element | null {
+  if (match.evidence.length === 0 && match.roleSources.length === 0) return null;
+
+  return (
+    <section
+      className="living-context__match-bridge"
+      aria-label="Cross-scope match evidence bridge"
+      data-testid="match-evidence-bridge"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Evidence bridge</div>
+          <div className="living-context__eyebrow">
+            {'role context -> person context -> repo challenge'}
+          </div>
+        </div>
+        <Network size={14} color="var(--lc-source)" />
+      </div>
+
+      <div className="living-context__bridge-grid living-context__bridge-grid--head">
+        <div>Role requirement</div>
+        <div>Person evidence</div>
+        <div>Repo challenge</div>
+      </div>
+
+      {match.evidence.length > 0 ? (
+        match.evidence.slice(0, 4).map((entry) => (
+            <article
+              key={`${entry.atomId}:${entry.demandId}`}
+              className="living-context__bridge-row"
+              data-testid="match-bridge-row"
+            >
+              <div className="living-context__bridge-row-head">
+                <strong>{`${entry.atomId} -> ${entry.demandId}`}</strong>
+                <span>{Math.round(entry.pairScore * 100)}% alignment</span>
+                {entry.purpose && <span>{entry.purpose}</span>}
+              </div>
+              {entry.sharedConcepts.length > 0 && (
+                <div className="living-context__concepts">
+                  {entry.sharedConcepts.slice(0, 5).map((concept) => (
+                    <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="living-context__bridge-grid">
+                <div>
+                  <BridgeRoleSourceList roleSources={entry.roleSourceRefs} />
+                </div>
+                <div>
+                  <BridgeReviewSourceList
+                    sources={entry.candidateSourceRefs}
+                    missingLabel="missing person source"
+                    testId="match-bridge-person-source"
+                  />
+                </div>
+                <div>
+                  <BridgeReviewSourceList
+                    sources={entry.challengeSourceRefs}
+                    missingLabel="missing repo source"
+                    testId="match-bridge-repo-source"
+                  />
+                </div>
+              </div>
+            </article>
+        ))
+      ) : (
+        <div className="living-context__bridge-source living-context__bridge-source--missing">
+          No aligned person/repo evidence yet.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -402,6 +614,8 @@ function StandaloneReviewMatchPanel({
           )}
         </div>
       )}
+
+      <MatchEvidenceBridgePanel match={match} />
 
       {primaryEvidence.length > 0 && (
         <div className="living-context__review-evidence" data-testid="standalone-review-evidence">
@@ -673,6 +887,41 @@ function ArtifactNode({
   );
 }
 
+function MeetingRecordingProvenance({
+  provenance,
+}: {
+  provenance: RecordingProvenance;
+}): JSX.Element {
+  const entries = [
+    provenance.transcriptStatus
+      ? { label: 'Transcript', value: provenance.transcriptStatus }
+      : null,
+    provenance.provider
+      ? { label: 'Provider', value: provenance.provider }
+      : null,
+    provenance.recordingKey
+      ? { label: 'Recording', value: provenance.recordingKey }
+      : null,
+    provenance.transcriptionAudioKey
+      ? { label: 'Audio', value: provenance.transcriptionAudioKey }
+      : null,
+  ].filter((entry): entry is { label: string; value: string } => Boolean(entry));
+
+  return (
+    <div
+      className="living-context__meeting-recording"
+      data-testid="meeting-recording-provenance"
+    >
+      {entries.map((entry) => (
+        <span key={`${entry.label}:${entry.value}`}>
+          <strong>{entry.label}</strong>
+          {entry.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function MeetingEvidencePanel({
   livingContext,
   onSelectSource,
@@ -680,41 +929,11 @@ function MeetingEvidencePanel({
   livingContext: LivingContextReadModel;
   onSelectSource: (source: LivingContextSourceRef) => void;
 }): JSX.Element | null {
-  const branches = livingContext.interactions
-    .map((interaction) => {
-      const artifacts = livingContext.artifacts.filter(
-        (artifact) => artifact.interactionId === interaction.id,
-      );
-      const assertions = livingContext.assertions.filter(
-        (assertion) => assertion.interactionId === interaction.id,
-      );
-      const sourceSpanIds = new Set(
-        artifacts
-          .flatMap((artifact) => artifact.sourceSpans)
-          .map((source) => source.sourceSpanId),
-      );
-      const contextRecords = livingContext.contextRecords.filter(
-        (record) => record.interactionId === interaction.id
-          || record.sources.some((source) => (
-            typeof source.sourceSpanId === 'string'
-            && sourceSpanIds.has(source.sourceSpanId)
-          )),
-      );
-      const sourceSpans = artifacts.flatMap((artifact) => artifact.sourceSpans);
-      const signalLabels = livingContext.signals
-        .filter((signal) => signal.evidence.some((evidence) => evidence.interactionId === interaction.id))
-        .map((signal) => signal.label);
-
-      return {
-        interaction,
-        artifacts,
-        assertions,
-        contextRecords,
-        sourceSpans,
-        signalLabels,
-      };
-    })
-    .filter((branch) => isMeetingEvidenceInteraction(branch.interaction, branch.artifacts));
+  const branches = buildLivingContextBranches(livingContext).filter((branch) => branch.isMeetingEvidence);
+  const branchViews = branches.map((branch) => ({
+    branch,
+    recordingProvenance: recordingProvenanceForBranch(branch.interaction, branch.artifacts),
+  }));
 
   if (branches.length === 0) return null;
 
@@ -735,7 +954,7 @@ function MeetingEvidencePanel({
       </div>
 
       <div className="living-context__meeting-grid">
-        {branches.map((branch) => (
+        {branchViews.map(({ branch, recordingProvenance }) => (
           <article
             key={branch.interaction.id}
             className="living-context__meeting-card"
@@ -759,6 +978,10 @@ function MeetingEvidencePanel({
                 <span>{countLabel(branch.assertions.length, 'claim')}</span>
               </div>
             </div>
+
+            {recordingProvenance && (
+              <MeetingRecordingProvenance provenance={recordingProvenance} />
+            )}
 
             {branch.sourceSpans.length > 0 && (
               <div className="living-context__meeting-sources">
@@ -797,11 +1020,11 @@ function MeetingEvidencePanel({
               </div>
             )}
 
-            {branch.signalLabels.length > 0 && (
+            {branch.signals.length > 0 && (
               <div className="living-context__concepts">
-                {branch.signalLabels.slice(0, 4).map((label) => (
-                  <span key={`${branch.interaction.id}:${label}`} className="living-context__concept">
-                    {label}
+                {branch.signals.slice(0, 4).map((signal) => (
+                  <span key={`${branch.interaction.id}:${signal.signalKey}`} className="living-context__concept">
+                    {signal.label}
                   </span>
                 ))}
               </div>
@@ -837,7 +1060,7 @@ export function LivingContextGraph({
 
   useEffect(() => {
     if (!livingContext || selectedInteractionId !== null) return;
-    setSelectedInteractionId(livingContext.interactions[0]?.id ?? 'all');
+    setSelectedInteractionId('all');
   }, [livingContext, selectedInteractionId]);
 
   useEffect(() => {
@@ -852,6 +1075,26 @@ export function LivingContextGraph({
   const selectedInteraction = livingContext?.interactions.find(
     (interaction) => interaction.id === selectedInteractionId,
   ) ?? null;
+
+  const contextRecordIdsByInteraction = useMemo(() => {
+    const index = new Map<string, Set<string>>();
+    if (!livingContext) return index;
+    for (const branch of buildLivingContextBranches(livingContext)) {
+      index.set(
+        branch.interaction.id,
+        new Set(branch.contextRecords.map((record) => record.id)),
+      );
+    }
+    return index;
+  }, [livingContext]);
+
+  const isRecordVisibleForInteraction = useMemo(() => (
+    (record: LivingContextRecord): boolean => {
+      if (selectedInteractionId === 'all') return true;
+      if (record.interactionId === selectedInteractionId) return true;
+      return contextRecordIdsByInteraction.get(selectedInteractionId ?? '')?.has(record.id) ?? false;
+    }
+  ), [contextRecordIdsByInteraction, selectedInteractionId]);
 
   const visibleAssertions = useMemo(() => {
     if (!livingContext) return [];
@@ -893,7 +1136,7 @@ export function LivingContextGraph({
         ]),
       ], normalizedSearch);
     });
-  }, [livingContext, normalizedSearch, selectedInteractionId]);
+  }, [isRecordVisibleForInteraction, livingContext, normalizedSearch]);
 
   const visibleArtifacts = useMemo(() => {
     if (!livingContext) return [];
@@ -912,7 +1155,7 @@ export function LivingContextGraph({
   const visibleContextRecords = useMemo(() => {
     if (!livingContext) return [];
     return livingContext.contextRecords.filter((record) => {
-      if (selectedInteractionId !== 'all' && record.interactionId !== selectedInteractionId) {
+      if (!isRecordVisibleForInteraction(record)) {
         return false;
       }
       return includesQuery([

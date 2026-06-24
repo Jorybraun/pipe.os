@@ -122,6 +122,71 @@ describe('checkReviewGraphBackfillReport', () => {
     expect(result.readyOutcomes[0]?.contextRecordId).toBe('context_record_123');
   });
 
+  it('fails write reports that skipped selected PRs even when one packet persisted', () => {
+    const result = validateBackfillReport(report({
+      mode: 'write',
+      stats: {
+        selected: 3,
+        built: 1,
+        persisted: 1,
+        dryRun: 0,
+        ineligible: 0,
+        skippedExisting: 0,
+        skippedFetch: 1,
+        skippedNoHunks: 1,
+        errors: 0,
+      },
+      outcomes: [
+        {
+          ...report().outcomes[0]!,
+          status: 'persisted',
+          productionReady: true,
+          contextRecordId: 'context_record_123',
+          repoSourceRefCount: 8,
+          conceptLinkCount: 5,
+          persistedContextReady: true,
+        },
+        {
+          ...report().outcomes[0]!,
+          status: 'skipped_fetch',
+          packetId: null,
+          repoSnapshotId: null,
+          packetContentHash: null,
+          eligible: null,
+          qualityScore: null,
+          demandCount: null,
+          sourceSpanCount: null,
+          changedFileCount: null,
+          structuralFactCount: null,
+          error: 'GitHub diff or pull request refs were unavailable',
+        },
+        {
+          ...report().outcomes[0]!,
+          status: 'skipped_no_hunks',
+          packetId: null,
+          repoSnapshotId: null,
+          packetContentHash: null,
+          eligible: null,
+          qualityScore: null,
+          demandCount: null,
+          sourceSpanCount: null,
+          changedFileCount: null,
+          structuralFactCount: null,
+          error: 'pull request diff contained no source hunks',
+        },
+      ],
+    }), {
+      expectedMode: 'write',
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.persistedContextReadyCount).toBe(1);
+    expect(result.failures).toEqual(expect.arrayContaining([
+      'write-mode backfill skipped selected PRs because GitHub data was unavailable',
+      'write-mode backfill skipped selected PRs because source hunks were unavailable',
+    ]));
+  });
+
   it('fails dry-run reports that build packets without structural facts', () => {
     const result = validateBackfillReport(report({
       outcomes: [

@@ -38,6 +38,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 export interface ReviewChallengeGraphReadinessOptions {
   target?: 'local' | 'remote';
   prepareLocal?: boolean;
+  schemaOnly?: boolean;
   requireGitHub?: boolean;
   githubToken?: string;
   githubTimeoutMs?: number;
@@ -62,7 +63,13 @@ export interface ReviewChallengeGraphReadinessReport {
   nextActions: string[];
 }
 
-function auditFailures(audit: AuditResult): string[] {
+function auditFailures(
+  audit: AuditResult,
+  options: Pick<ReviewChallengeGraphReadinessOptions, 'schemaOnly'> = {},
+): string[] {
+  if (options.schemaOnly && audit.status !== 'missing_graph_tables') {
+    return [];
+  }
   const projectionFailures = [
     ...audit.missingContextRecordPacketIds.map((id) =>
       `review challenge packet ${id} is missing its repo_challenge_packet context record`
@@ -108,7 +115,7 @@ function nextActionsForAudit(
     case 'missing_graph_tables':
       return options.target === 'remote'
         ? [
-            'Apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 before packet backfill.',
+            'Run the Review Graph Rollout workflow with prepare_graph_schema_only=true, or apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 after reviewing the migration backlog.',
           ]
         : ['Run prepareReviewChallengeGraphLocalDb.ts against the local crawler D1 before packet backfill.'];
     case 'no_packets':
@@ -144,7 +151,7 @@ export async function checkReviewChallengeGraphReadiness(
       })
     : null;
 
-  const failures = auditFailures(audit);
+  const failures = auditFailures(audit, options);
   const nextActions = nextActionsForAudit(audit, options);
   if (github && !github.ok) {
     failures.push(`GitHub API is not reachable for review packet backfill: ${github.message}`);
@@ -172,6 +179,7 @@ function usage(): string {
     '  --remote              Audit Cloudflare D1 via REST',
     '  --database-path PATH  Override local SQLite discovery',
     '  --prepare-local       Apply graph/context migrations before auditing',
+    '  --schema-only         Require only graph tables, allowing packet backfill to run next',
     '  --require-github      Fail unless GitHub API is reachable',
     '  --json                Print machine-readable JSON',
     '  --help, -h            Show this help',
@@ -182,6 +190,7 @@ interface CliOptions {
   target: 'local' | 'remote';
   databasePath?: string;
   prepareLocal: boolean;
+  schemaOnly: boolean;
   requireGitHub: boolean;
   json: boolean;
 }
@@ -198,6 +207,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     target: 'local',
     prepareLocal: false,
+    schemaOnly: false,
     requireGitHub: false,
     json: false,
   };
@@ -209,6 +219,8 @@ function parseArgs(argv: string[]): CliOptions {
       options.target = 'remote';
     } else if (arg === '--prepare-local') {
       options.prepareLocal = true;
+    } else if (arg === '--schema-only') {
+      options.schemaOnly = true;
     } else if (arg === '--require-github') {
       options.requireGitHub = true;
     } else if (arg === '--json') {
@@ -292,6 +304,7 @@ async function main(): Promise<void> {
       databasePath: opened?.path ?? 'remote',
       options: {
         prepareLocal: options.prepareLocal,
+        schemaOnly: options.schemaOnly,
         requireGitHub: options.requireGitHub,
         target: options.target,
         githubToken: process.env['GITHUB_TOKEN'],

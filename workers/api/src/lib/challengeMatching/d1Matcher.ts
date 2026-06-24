@@ -22,6 +22,7 @@ import {
 } from '../repoSemanticGraph';
 import { LivingContextStore } from '../livingContext/persistence';
 import { openSemanticTerm } from '../livingContext/openTerms';
+import { ensureCandidateLivingContext } from '../livingContext/compatibility';
 import type {
   ContextRecordConceptInput,
   ContextRecordEntityInput,
@@ -305,6 +306,17 @@ async function loadCandidateSignals(
     signals.push(signal);
   }
   return signals;
+}
+
+async function ensureCandidateMatchBridge(
+  db: D1Database,
+  candidateId: string,
+): Promise<void> {
+  const existing = await db.prepare(
+    `SELECT id FROM applications WHERE legacy_candidate_id = ?1 LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (existing) return;
+  await ensureCandidateLivingContext(db, candidateId);
 }
 
 function packetSourceRef(span: RepoSpanRow): SourceRef {
@@ -1114,6 +1126,17 @@ function normalizeRoleSourcesForExplanation(
   );
 }
 
+function roleSourcesForSharedConcepts(
+  roleSources: MatchExplanation['roleSources'],
+  sharedConcepts: string[],
+): MatchExplanation['roleSources'] {
+  if (roleSources.length === 0 || sharedConcepts.length === 0) return [];
+  const shared = new Set(sharedConcepts);
+  return roleSources.filter((source) =>
+    source.conceptKeys.some((conceptKey) => shared.has(conceptKey))
+  );
+}
+
 function diagnosticMissingEvidence(input: {
   status: CandidateReviewChallengeMatch['status'];
   compiledStatus: ReturnType<typeof compileCandidateMatchQuery>['status'];
@@ -1187,7 +1210,22 @@ function buildRunExplanation(input: {
   });
   const roleSources = normalizeRoleSourcesForExplanation(input.roleSourceReferences);
   if (input.selected) {
-    return explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence, roleSources });
+    const explanation = explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence, roleSources });
+    return {
+      ...explanation,
+      evidence: explanation.evidence.map((entry) => {
+        const alignment = input.selected?.alignments.find((candidate) =>
+          candidate.atom.id === entry.atomId && candidate.demand.id === entry.demandId
+        );
+        const sharedConcepts = alignment
+          ? alignment.atom.concepts.filter((concept) => alignment.demand.concepts.includes(concept))
+          : [];
+        return {
+          ...entry,
+          roleSourceRefs: roleSourcesForSharedConcepts(roleSources, sharedConcepts),
+        };
+      }),
+    };
   }
   return {
     status: input.status,
@@ -1214,6 +1252,7 @@ export async function matchCandidateToReviewChallenge(
   candidateId: string,
   options: CandidateReviewChallengeOptions = {},
 ): Promise<CandidateReviewChallengeMatch> {
+  await ensureCandidateMatchBridge(db, candidateId);
   const [signals, challengeLoad] = await Promise.all([
     loadCandidateSignals(db, candidateId),
     loadChallengePackets(db, options.roleConcepts),
@@ -1302,6 +1341,7 @@ export async function matchCandidateToReviewChallenge(
   const application = await db.prepare(
     `SELECT id FROM applications WHERE legacy_candidate_id = ?1`,
   ).bind(candidateId).first<{ id: string }>();
+  const roleSourcesForRun = normalizeRoleSourcesForExplanation(options.roleSourceReferences ?? []);
 
   await db.prepare(
     `INSERT INTO match_runs (
@@ -1341,19 +1381,23 @@ export async function matchCandidateToReviewChallenge(
       stretchDemandWeightRatio: alignment.stretchDemandWeightRatio,
       provenanceComplete: alignment.provenanceComplete,
       eligible: alignment.eligible,
-      alignments: alignment.alignments.map((entry) => ({
-        atomId: entry.atom.id,
-        demandId: entry.demand.id,
-        pairScore: entry.pairScore.total,
-        pairScoreBreakdown: entry.pairScore,
-        weightedScore: entry.weightedScore,
-        stretch: entry.stretch ?? null,
-        sharedConcepts: entry.atom.concepts.filter((concept) =>
+      alignments: alignment.alignments.map((entry) => {
+        const sharedConcepts = entry.atom.concepts.filter((concept) =>
           entry.demand.concepts.includes(concept)
-        ),
-        candidateSourceRefs: entry.atom.sourceRefs,
-        challengeSourceRefs: entry.demand.sourceRefs,
-      })),
+        );
+        return {
+          atomId: entry.atom.id,
+          demandId: entry.demand.id,
+          pairScore: entry.pairScore.total,
+          pairScoreBreakdown: entry.pairScore,
+          weightedScore: entry.weightedScore,
+          stretch: entry.stretch ?? null,
+          sharedConcepts,
+          roleSourceRefs: roleSourcesForSharedConcepts(roleSourcesForRun, sharedConcepts),
+          candidateSourceRefs: entry.atom.sourceRefs,
+          challengeSourceRefs: entry.demand.sourceRefs,
+        };
+      }),
       rejectionReasons: alignment.rejectionReasons,
     }))),
     selected?.challenge.id ?? null,

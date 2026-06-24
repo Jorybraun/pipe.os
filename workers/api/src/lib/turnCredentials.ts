@@ -37,7 +37,7 @@ async function fetchCloudflareTurn(env: Env, logPrefix: string): Promise<IceServ
   if (!keyId || !apiToken) return null;
 
   const response = await fetch(
-    `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`,
+    `https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate`,
     {
       method: 'POST',
       headers: {

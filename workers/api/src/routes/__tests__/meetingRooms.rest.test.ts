@@ -6,6 +6,23 @@ import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD
 import { candidateOps } from '../cockpit/candidates';
 import { contacts } from '../cockpit/contacts';
 import { meetingRooms, meetingsAuth } from '../meetingRooms';
+import { matchCandidateToReviewChallenge } from '../../lib/challengeMatching/d1Matcher';
+import {
+  buildChallengePacket,
+  buildCodeEpisode,
+  buildFacet,
+  buildRepoSignal,
+  buildRepoSnapshot,
+  buildSemanticAssertion,
+  buildSourceArtifact,
+  buildSourceArtifactVersion,
+  buildSourceSpan,
+  buildStructuralFact,
+  buildSymbol,
+  persistReviewChallengeGraph,
+  type ChallengePacket as RepoChallengePacket,
+  type NormalizedPullRequestInput,
+} from '../../lib/repoSemanticGraph';
 import type { Env, Variables } from '../../types';
 
 const contactsMigration = readMigration('0075_contacts.sql');
@@ -13,8 +30,10 @@ const meetingsMigration = readMigration('0076_meetings.sql');
 const meetingParticipantsMigration = readMigration('0077_meeting_participants.sql');
 const meetingRoomsMigration = readMigration('0081_meeting_rooms.sql');
 const livingContextMigration = readMigration('0082_living_context_graph.sql');
+const repoSemanticGraphMigration = readMigration('0083_repo_semantic_graph_and_match_runs.sql');
 const transcriptProjectionMigration = readMigration('0091_transcript_semantic_projections.sql');
 const contextRecordsMigration = readMigration('0095_context_records.sql');
+const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
 function readMigration(name: string): string {
   return readFileSync(new URL(`../../../migrations/${name}`, import.meta.url), 'utf8');
@@ -132,7 +151,152 @@ function createFakeAi(): Ai {
   } as unknown as Ai;
 }
 
-function installDeepgramFetch(): void {
+function createMatchingFakeAi(): Ai {
+  return {
+    run: vi.fn(async (model: unknown) => {
+      if (String(model).includes('whisper')) {
+        return {
+          text: 'Mixed audio transcript: I implemented TypeScript lattice replay buffers for ecommerce order recovery and validated Vitest coverage.',
+        };
+      }
+      return {
+        response: JSON.stringify({
+          summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
+          decisions: [],
+          actionItems: [],
+          topics: ['lattice replay buffers', 'ecommerce order recovery'],
+          followUps: [],
+          semanticAssertions: [
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'implemented a source-described recovery mechanism',
+              narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
+              objectType: 'source-described mechanism',
+              objectValue: { surface: 'lattice replay buffers' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'lattice replay buffers',
+                  relationship: 'mechanism implemented for ecommerce order recovery',
+                  weight: 1,
+                  evidenceLevel: 'implemented',
+                  strength: 1,
+                },
+              ],
+            },
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'implemented ecommerce order recovery work',
+              narrative: 'Implemented ecommerce order recovery work.',
+              objectType: 'source-described domain',
+              objectValue: { surface: 'ecommerce order recovery' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'ecommerce order recovery',
+                  relationship: 'domain where the mechanism was implemented',
+                  weight: 1,
+                  evidenceLevel: 'implemented',
+                  strength: 1,
+                },
+              ],
+            },
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'validated order recovery behavior',
+              narrative: 'Validated order recovery behavior.',
+              objectType: 'source-described validation',
+              objectValue: { surface: 'order recovery' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'order recovery',
+                  relationship: 'recovery domain described by candidate',
+                  weight: 1,
+                  evidenceLevel: 'validated',
+                  strength: 1,
+                },
+              ],
+            },
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'implemented TypeScript source changes',
+              narrative: 'Implemented TypeScript source changes.',
+              objectType: 'source-described implementation',
+              objectValue: { surface: 'TypeScript' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'TypeScript',
+                  relationship: 'implementation language used for source changes',
+                  weight: 1,
+                  evidenceLevel: 'implemented',
+                  strength: 1,
+                },
+              ],
+            },
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'validated Vitest coverage',
+              narrative: 'Validated Vitest coverage.',
+              objectType: 'source-described validation',
+              objectValue: { surface: 'Vitest coverage' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'Vitest',
+                  relationship: 'test framework used for validation coverage',
+                  weight: 1,
+                  evidenceLevel: 'validated',
+                  strength: 1,
+                },
+              ],
+            },
+            {
+              sourceSegmentIds: ['utterance-0002'],
+              subjectSegmentId: 'utterance-0002',
+              predicate: 'explained replay buffer mechanism',
+              narrative: 'Explained replay buffers as the recovery mechanism.',
+              objectType: 'source-described mechanism',
+              objectValue: { surface: 'replay buffers' },
+              qualifiers: {},
+              confidence: 1,
+              polarity: 1,
+              concepts: [
+                {
+                  surface: 'replay buffers',
+                  relationship: 'mechanism used for order recovery validation',
+                  weight: 1,
+                  evidenceLevel: 'explained',
+                  strength: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      };
+    }),
+  } as unknown as Ai;
+}
+
+function installDeepgramFetch(
+  guestTranscript = 'I implemented lattice replay buffers for ecommerce order recovery.',
+): void {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
     metadata: { channels: 2 },
     results: {
@@ -148,7 +312,7 @@ function installDeepgramFetch(): void {
         },
         {
           id: 'dg-guest-1',
-          transcript: 'I implemented lattice replay buffers for ecommerce order recovery.',
+          transcript: guestTranscript,
           start: 2.1,
           end: 6.5,
           channel: 1,
@@ -161,6 +325,294 @@ function installDeepgramFetch(): void {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })));
+}
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function sourceEndPosition(value: string): { byteOffset: number; line: number; column: number } {
+  const lines = value.split('\n');
+  return {
+    byteOffset: byteLength(value),
+    line: lines.length,
+    column: lines[lines.length - 1]!.length + 1,
+  };
+}
+
+async function buildRepoChangedFile(input: {
+  repoSnapshotId: string;
+  path: string;
+  content: string;
+  symbolName: string;
+  symbolKind: 'function' | 'test';
+  signature: string;
+}) {
+  const artifact = await buildSourceArtifact({
+    repoSnapshotId: input.repoSnapshotId,
+    kind: 'source',
+    path: input.path,
+    language: 'typescript',
+  });
+  const artifactVersion = await buildSourceArtifactVersion({
+    artifactId: artifact.id,
+    repoSnapshotId: input.repoSnapshotId,
+    content: input.content,
+    createdAt: OBSERVED_AT,
+  });
+  const sourceSpan = await buildSourceSpan({
+    repoSnapshotId: input.repoSnapshotId,
+    artifactId: artifact.id,
+    artifactVersionId: artifactVersion.id,
+    contentHash: artifactVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(input.content),
+    exactText: input.content,
+    displayLabel: `${input.path}:1-${input.content.split('\n').length}`,
+    prSide: 'head',
+  });
+  const symbol = await buildSymbol({
+    repoSnapshotId: input.repoSnapshotId,
+    language: 'typescript',
+    qualifiedName: `${input.path}:${input.symbolName}`,
+    name: input.symbolName,
+    kind: input.symbolKind,
+    signature: input.signature,
+    definingSpanId: sourceSpan.id,
+    exported: true,
+  });
+
+  return {
+    file: {
+      path: input.path,
+      status: 'modified' as const,
+      language: 'typescript',
+      additions: input.content.split('\n').length,
+      deletions: 0,
+      artifact,
+      artifactVersion,
+      hunks: [{
+        header: `@@ ${input.symbolName} @@`,
+        patch: input.content,
+        sourceSpan,
+        changedSymbolIds: [symbol.id],
+      }],
+      symbols: [symbol],
+    },
+    sourceSpan,
+    symbol,
+  };
+}
+
+async function buildLatticeReviewChallengeFixture(): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  const repoSnapshot = await buildRepoSnapshot({
+    repository: {
+      provider: 'github',
+      owner: 'pipe',
+      name: 'order-recovery',
+      canonicalUrl: 'https://github.com/pipe/order-recovery',
+    },
+    commitSha: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    defaultBranch: 'main',
+    observedAt: OBSERVED_AT,
+  });
+  const primary = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/orderRecoveryReplay.ts',
+    symbolName: 'recoverOrderWithLatticeReplayBuffers',
+    symbolKind: 'function',
+    signature: 'export function recoverOrderWithLatticeReplayBuffers(orderId: string, attempts: number): RecoveryPlan',
+    content: [
+      'import { createLatticeReplayBufferKey } from "./latticeReplayBuffers";',
+      '',
+      'export function recoverOrderWithLatticeReplayBuffers(orderId: string, attempts: number) {',
+      '  const replayKey = createLatticeReplayBufferKey(orderId);',
+      '  const recoveryTopic = "orders.recovery.lattice";',
+      '  const recoveryWindow = Math.max(1, attempts);',
+      '  return {',
+      '    replayKey,',
+      '    recoveryTopic,',
+      '    recoveryWindow,',
+      '    mechanism: "lattice replay buffers",',
+      '    domain: "ecommerce order recovery",',
+      '  };',
+      '}',
+    ].join('\n'),
+  });
+  const helper = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/latticeReplayBuffers.ts',
+    symbolName: 'createLatticeReplayBufferKey',
+    symbolKind: 'function',
+    signature: 'export function createLatticeReplayBufferKey(orderId: string): string',
+    content: [
+      'export function createLatticeReplayBufferKey(orderId: string) {',
+      '  const normalized = orderId.trim().toLowerCase();',
+      '  const prefix = "lattice-replay-buffers";',
+      '  const suffix = normalized || "missing-order";',
+      '  return `${prefix}:${suffix}`;',
+      '}',
+    ].join('\n'),
+  });
+  const test = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'src/orderRecoveryReplay.test.ts',
+    symbolName: 'validatesLatticeReplayBuffersForOrderRecovery',
+    symbolKind: 'test',
+    signature: 'it("validates lattice replay buffers for ecommerce order recovery", () => void)',
+    content: [
+      'import { describe, expect, it } from "vitest";',
+      'import { recoverOrderWithLatticeReplayBuffers } from "./orderRecoveryReplay";',
+      '',
+      'describe("recoverOrderWithLatticeReplayBuffers", () => {',
+      '  it("validates lattice replay buffers for ecommerce order recovery", () => {',
+      '    const plan = recoverOrderWithLatticeReplayBuffers("ORDER-123", 2);',
+      '    expect(plan.replayKey).toBe("lattice-replay-buffers:order-123");',
+      '    expect(plan.mechanism).toBe("lattice replay buffers");',
+      '    expect(plan.domain).toBe("ecommerce order recovery");',
+      '  });',
+      '});',
+    ].join('\n'),
+  });
+  const issueText = [
+    'Issue #144: Ecommerce order recovery needs source-backed lattice replay buffers.',
+    'The review should verify replay keys, recovery topic routing, and regression coverage.',
+  ].join('\n');
+  const issueArtifact = await buildSourceArtifact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'issue',
+    externalRef: 'https://github.com/pipe/order-recovery/issues/144',
+    mediaType: 'text/markdown',
+  });
+  const issueVersion = await buildSourceArtifactVersion({
+    artifactId: issueArtifact.id,
+    repoSnapshotId: repoSnapshot.id,
+    content: issueText,
+    createdAt: OBSERVED_AT,
+  });
+  const issueSpan = await buildSourceSpan({
+    repoSnapshotId: repoSnapshot.id,
+    artifactId: issueArtifact.id,
+    artifactVersionId: issueVersion.id,
+    contentHash: issueVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(issueText),
+    exactText: issueText,
+    displayLabel: 'issues/144:1-2',
+    prSide: 'metadata',
+  });
+
+  const input: NormalizedPullRequestInput = {
+    repoSnapshot,
+    number: 144,
+    url: 'https://github.com/pipe/order-recovery/pull/144',
+    title: 'Add lattice replay buffers for ecommerce order recovery',
+    body: 'Implements source-backed lattice replay buffers and regression coverage for order recovery.',
+    author: 'engineer',
+    primaryLanguage: 'TypeScript',
+    baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    headSha: repoSnapshot.commitSha,
+    mergedAt: OBSERVED_AT,
+    metadataSourceSpanIds: [issueSpan.id],
+    sourceArtifacts: [issueArtifact],
+    sourceArtifactVersions: [issueVersion],
+    sourceSpans: [primary.sourceSpan, helper.sourceSpan, test.sourceSpan, issueSpan],
+    changedFiles: [primary.file, helper.file, test.file],
+    tests: [{
+      path: test.file.path,
+      framework: 'vitest',
+      sourceSpanIds: [test.sourceSpan.id],
+      relatedSymbolIds: [test.symbol.id],
+    }],
+    issue: {
+      number: 144,
+      title: 'Ecommerce order recovery needs source-backed lattice replay buffers',
+      body: issueText,
+      labels: ['lattice replay buffers', 'ecommerce order recovery', 'order recovery', 'replay buffers'],
+      sourceSpanIds: [issueSpan.id],
+    },
+  };
+  const fact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'calls',
+    subject: { symbolId: primary.symbol.id },
+    object: { symbolId: helper.symbol.id },
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id],
+    confidence: 0.94,
+    parser: 'typescript-compiler-api-test',
+  });
+  const episode = await buildCodeEpisode({
+    repoSnapshotId: repoSnapshot.id,
+    title: 'lattice-replay-buffers-order-recovery',
+    narrative: 'The PR implements lattice replay buffers for ecommerce order recovery and verifies the replay key contract.',
+    symbolIds: [primary.symbol.id, helper.symbol.id, test.symbol.id],
+    structuralFactIds: [fact.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    conceptKeys: ['term:lattice-replay-buffers', 'term:ecommerce-order-recovery', 'term:order-recovery'],
+  });
+  const facet = await buildFacet({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'source-derived-mechanism',
+    key: 'lattice-replay-buffers-order-recovery',
+    label: 'Lattice replay buffers for ecommerce order recovery',
+    aliases: [],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.91,
+  });
+  const assertion = await buildSemanticAssertion({
+    repoSnapshotId: repoSnapshot.id,
+    episodeId: episode.id,
+    subject: primary.symbol.id,
+    predicate: 'implements.source.backed.lattice.replay.buffers',
+    object: 'term:lattice-replay-buffers',
+    narrative: 'The source implements lattice replay buffers for ecommerce order recovery.',
+    qualifiers: { source: 'normalized-pr-fixture' },
+    facetIds: [facet.id],
+    conceptKeys: ['term:lattice-replay-buffers', 'term:ecommerce-order-recovery', 'term:order-recovery'],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.92,
+    extractor: 'repo-semantic-test-v1',
+  });
+  const signal = await buildRepoSignal({
+    repoSnapshotId: repoSnapshot.id,
+    key: 'lattice-replay-buffers-order-recovery',
+    narrative: 'The repository demonstrates lattice replay buffers backed by exact source and test spans.',
+    assertionIds: [assertion.id],
+    facetIds: [facet.id],
+    sourceSpanIds: [primary.sourceSpan.id, helper.sourceSpan.id, test.sourceSpan.id],
+    confidence: 0.9,
+    sourceDiversity: 3,
+  });
+
+  return {
+    input,
+    packet: await buildChallengePacket(input),
+    graph: {
+      structuralFacts: [fact],
+      codeEpisodes: [episode],
+      facets: [facet],
+      semanticAssertions: [assertion],
+      repoSignals: [signal],
+    },
+  };
+}
+
+async function seedLatticeReviewChallengePacket(
+  db: D1Database,
+  repoId = 144,
+): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  await db.prepare('INSERT INTO qualified_repos (id) VALUES (?1)').bind(repoId).run();
+  const data = await buildLatticeReviewChallengeFixture();
+  await persistReviewChallengeGraph(db, repoId, data.input, data.packet, data.graph);
+  return data;
 }
 
 function seedSchema(sqlite: BetterSqliteDb): void {
@@ -195,12 +647,14 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       completed_at TEXT,
       updated_at TEXT
     );
+    CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
   `);
   sqlite.exec(contactsMigration);
   sqlite.exec(meetingsMigration);
   sqlite.exec(meetingParticipantsMigration);
   sqlite.exec(meetingRoomsMigration);
   sqlite.exec(livingContextMigration);
+  sqlite.exec(repoSemanticGraphMigration);
   sqlite.exec(transcriptProjectionMigration);
   sqlite.exec(contextRecordsMigration);
 }
@@ -369,7 +823,7 @@ describe('meeting room recording living-context route', () => {
       room: { id: string; sessionId: string; hostUrl: string; guestUrl: string };
     };
     expect(reopened.room.id).toBe(first.room.id);
-    expect(reopened.room.sessionId).toBe(first.room.sessionId);
+    expect(reopened.room.sessionId).not.toBe(first.room.sessionId);
     expect(reopened.room.guestUrl).toBe(first.room.guestUrl);
     expect(reopened.room.hostUrl).not.toBe(second.room.hostUrl);
     expect(sqlite.prepare(
@@ -712,6 +1166,172 @@ describe('meeting room recording living-context route', () => {
     ).toBe(true);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+  });
+
+  it('uses recording-route transcript evidence to select a source-backed PR challenge', async () => {
+    env.AI = createMatchingFakeAi();
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const personEmail = 'recording-match-person@example.com';
+    const transcriptText =
+      'I implemented TypeScript lattice replay buffers for ecommerce order recovery and validated Vitest coverage.';
+    installDeepgramFetch(transcriptText);
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Recording Match Person',
+        recipientEmail: personEmail,
+        title: 'Recording-to-match interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: personEmail }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([4, 5, 6])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    const recordingKey = `meetings/owner-1/${created.meeting.id}/recording.webm`;
+    const transcriptionAudioKey = `meetings/owner-1/${created.meeting.id}/transcription-audio.webm`;
+    await expect(env.STORAGE.head(recordingKey)).resolves.toEqual(expect.objectContaining({
+      key: recordingKey,
+    }));
+    await expect(env.STORAGE.head(transcriptionAudioKey)).resolves.toEqual(expect.objectContaining({
+      key: transcriptionAudioKey,
+    }));
+    expect(sqlite.prepare(
+      `SELECT transcript_status, recording_r2_key FROM meetings WHERE id = ?`,
+    ).get(created.meeting.id)).toEqual({
+      transcript_status: 'READY',
+      recording_r2_key: recordingKey,
+    });
+    const transcriptArtifactMetadata = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'
+          AND logical_key = ?`,
+    ).get(created.meeting.id) as { metadata_json: string } | undefined;
+    expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toEqual(expect.objectContaining({
+      recordingKey,
+      transcriptionAudioKey,
+      provider: 'deepgram-multichannel',
+      transcriptStatus: 'READY',
+    }));
+
+    const candidateRes = await app.request('/candidates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Recording Match Candidate',
+        email: personEmail,
+        message: 'Joining the talent pool after the recorded technical discussion.',
+        skipEmail: true,
+      }),
+    }, env, ctx);
+    expect(candidateRes.status).toBe(201);
+    const candidateBody = await candidateRes.json() as { candidate: { id: string } };
+
+    const packetData = await seedLatticeReviewChallengePacket(env.DB, 144);
+    expect(packetData.packet.quality.eligible).toBe(true);
+
+    const match = await matchCandidateToReviewChallenge(env.DB, candidateBody.candidate.id);
+
+    expect(match.status).toBe('MATCHED');
+    expect(match.repoId).toBe(144);
+    expect(match.prNumber).toBe(packetData.packet.pullRequest.number);
+    expect(match.explanation?.selectedPr).toEqual(expect.objectContaining({
+      challengeId: packetData.packet.id,
+      repoId: '144',
+      prNumber: packetData.packet.pullRequest.number,
+    }));
+    expect(match.explanation?.evidence.some((entry) =>
+      entry.candidateSourceRefs.some((source) =>
+        source.sourceRefType === 'source_span'
+        && source.exactText === transcriptText
+      )
+      && entry.challengeSourceRefs.some((source) =>
+        source.sourceRefType === 'repo_source_span'
+        && source.exactText?.includes('lattice replay buffers')
+      )
+    )).toBe(true);
+
+    const queryRow = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(match.matchRunId) as { query_json: string };
+    const query = JSON.parse(queryRow.query_json) as {
+      validationAtoms: Array<{
+        concepts: string[];
+        sourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+      }>;
+    };
+    expect(query.validationAtoms.some((atom) =>
+      atom.concepts.includes('term:lattice-replay-buffers')
+      && atom.sourceRefs.some((source) =>
+        source.sourceRefType === 'source_span'
+        && source.exactText === transcriptText
+      )
+    )).toBe(true);
+
+    const matchSourceRefs = sqlite.prepare(
+      `SELECT crsr.source_ref_type, crsr.evidence_role, crsr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+        WHERE cr.scope_type = 'match_run'
+          AND cr.scope_id = ?
+          AND cr.record_type = 'candidate_pr_match_decision'`,
+    ).all(match.matchRunId) as Array<{
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string | null;
+    }>;
+    expect(matchSourceRefs).toContainEqual(expect.objectContaining({
+      source_ref_type: 'source_span',
+      evidence_role: 'selected_candidate_evidence',
+      exact_text: transcriptText,
+    }));
+    expect(matchSourceRefs.some((source) =>
+      source.source_ref_type === 'repo_source_span'
+      && source.evidence_role === 'selected_repo_evidence'
+      && source.exact_text?.includes('lattice replay buffers')
+    )).toBe(true);
   });
 
   it('retries transcript processing from an existing saved room recording', async () => {

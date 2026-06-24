@@ -158,6 +158,41 @@ describe('checkReviewChallengeGraphReadiness', () => {
     );
   });
 
+  it('can act as a pre-backfill schema gate once graph tables exist', async () => {
+    sqlite = setupCrawlerOnlyDb();
+
+    const report = await readiness(sqlite, {
+      prepareLocal: true,
+      schemaOnly: true,
+      requireGitHub: true,
+      fetchImpl: okGitHubFetch,
+    });
+
+    expect(report.ready).toBe(true);
+    expect(report.status).toBe('ready');
+    expect(report.audit.status).toBe('no_packets');
+    expect(report.audit.missingTables).toEqual([]);
+    expect(report.failures).toEqual([]);
+    expect(report.nextActions).toContain(
+      'Run backfillReviewChallengePackets.ts after GitHub API connectivity is available.',
+    );
+  });
+
+  it('keeps the schema gate closed when graph tables are absent', async () => {
+    sqlite = setupCrawlerOnlyDb();
+
+    const report = await readiness(sqlite, {
+      schemaOnly: true,
+    });
+
+    expect(report.ready).toBe(false);
+    expect(report.status).toBe('not_ready');
+    expect(report.audit.status).toBe('missing_graph_tables');
+    expect(report.failures).toContain(
+      'review challenge graph tables are missing: review_challenge_packets, context_records, context_record_source_refs, context_record_concepts',
+    );
+  });
+
   it('gives remote migration guidance when crawler data exists but graph tables are absent', async () => {
     sqlite = setupCrawlerOnlyDb();
 
@@ -169,7 +204,7 @@ describe('checkReviewChallengeGraphReadiness', () => {
     expect(report.audit.status).toBe('missing_graph_tables');
     expect(report.audit.sourceStats.eligibleSamplePullRequests).toBe(1);
     expect(report.nextActions).toEqual([
-      'Apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 before packet backfill.',
+      'Run the Review Graph Rollout workflow with prepare_graph_schema_only=true, or apply migrations 0082_living_context_graph.sql, 0083_repo_semantic_graph_and_match_runs.sql, and 0095_context_records.sql to remote D1 after reviewing the migration backlog.',
     ]);
   });
 

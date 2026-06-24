@@ -287,6 +287,7 @@ describe('Standalone CODE_REVIEW match summary', () => {
         purpose: 'validation',
         pairScore: 0.9,
         sharedConcepts: ['graphql'],
+        roleSourceRefs: [],
         candidateSourceRefs: [{
           artifactId: 'resume-artifact',
           artifactVersion: 'v1',
@@ -444,6 +445,7 @@ function createStandaloneReviewProfileApp(options: {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      roleSourceRefs: STANDALONE_REVIEW_ROLE_SOURCES,
       stretch: {
         atomConcept: 'term:kafka-order-events',
         demandConcept: 'term:distributed-order-retry',
@@ -630,6 +632,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
     const body = await response.json() as {
       standaloneReviewMatch: {
         matchStatus: string;
+        packetId: string | null;
         repoName: string | null;
         repoUrl: string | null;
         prNumber: number | null;
@@ -702,6 +705,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
     })]);
     expect(body.standaloneReviewMatch).toMatchObject({
       matchStatus: 'MATCHED',
+      packetId: 'packet-source-backed',
       repoName: 'pipe/source-backed-orders',
       repoUrl: 'https://github.com/pipe/source-backed-orders',
       prNumber: 42,
@@ -722,6 +726,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       atomId: 'candidate-atom-kafka',
       demandId: 'repo-demand-retry',
       sharedConcepts: ['term:kafka-order-events'],
+      roleSourceRefs: STANDALONE_REVIEW_ROLE_SOURCES,
       candidateSourceRefs: [{
         sourceRefType: 'source_span',
         sourceRefId: 'candidate-span-kafka',
@@ -791,6 +796,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
     const body = await response.json() as {
       standaloneReviewMatch: {
         repoName: string | null;
+        packetId: string | null;
         repoUrl: string | null;
         prNumber: number | null;
         prUrl: string | null;
@@ -804,6 +810,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
 
     expect(body.standaloneReviewMatch).toMatchObject({
       repoName: 'pipe/source-backed-orders',
+      packetId: 'packet-source-backed',
       repoUrl: 'https://github.com/pipe/source-backed-orders',
       prNumber: 42,
       prUrl: 'https://github.com/pipe/source-backed-orders/pull/42',
@@ -975,6 +982,8 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           purpose: 'validation',
           pairScore: 0.93,
           sharedConcepts: ['term:crystalline-quorum-ledger'],
+          // Legacy rows written before per-alignment roleSourceRefs still carry source-backed
+          // JD evidence in query_json.roleGuardrails.sourceReferences.
           candidateSourceRefs: [{
             artifactId: 'resume-artifact',
             artifactVersion: 'v1',
@@ -1100,6 +1109,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       expect(response.status).toBe(200);
       const body = await response.json() as {
         standaloneReviewMatch: {
+          packetId: string | null;
           repoId: number | null;
           repoName: string | null;
           repoUrl: string | null;
@@ -1109,6 +1119,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
           roleSources: Array<{ entityId: string; locator: string; conceptKeys: string[] }>;
           evidence: Array<{
             sharedConcepts: string[];
+            roleSourceRefs: Array<{ entityId: string; locator: string; conceptKeys: string[] }>;
             candidateSourceRefs: Array<{ sourceRefId?: string; exactText?: string }>;
             challengeSourceRefs: Array<{ sourceRefType?: string; sourceRefId?: string; exactText?: string }>;
           }>;
@@ -1116,6 +1127,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       };
 
       expect(body.standaloneReviewMatch).toMatchObject({
+        packetId: 'packet-from-backfill',
         repoId: 77,
         repoName: 'pipe-labs/orders',
         repoUrl: 'https://github.com/pipe-labs/orders',
@@ -1127,6 +1139,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       expect(body.standaloneReviewMatch.evidence[0].sharedConcepts).toEqual([
         'term:crystalline-quorum-ledger',
       ]);
+      expect(body.standaloneReviewMatch.evidence[0].roleSourceRefs).toEqual(roleSources);
       expect(body.standaloneReviewMatch.evidence[0].candidateSourceRefs[0]).toMatchObject({
         sourceRefId: 'candidate-span-ledger',
         exactText: 'Implemented CrystallineQuorumLedger commits for order recovery.',
@@ -1146,6 +1159,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       const legacyBody = await legacyResponse.json() as {
         standaloneReviewMatch: {
           matchStatus: string;
+          packetId: string | null;
           repoId: number | null;
           repoUrl: string | null;
           prNumber: number | null;
@@ -1157,6 +1171,7 @@ describe('GET /:candidateId standalone CODE_REVIEW context', () => {
       };
       expect(legacyBody.standaloneReviewMatch).toMatchObject({
         matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
+        packetId: null,
         repoId: null,
         repoUrl: null,
         prNumber: null,

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Scoped Living Context Graph CI Lane
+
+- Added role-context graph visualization, source-backed role/person/repo evidence bridge rendering, host-manual video-room recording coverage, live review-packet backfill export, and remote E2E workflow wiring for the deployed recording-to-match proof.
+- Hardened review-graph rollout with schema-only preparation, migration-plan gating, bounded GitHub/D1 fetches, and report gates that require context-ready source-backed packets.
+
 ### Added — Dev Demo Room and Person Context
 
 - Added a canonical `/people/:personId` profile surface with relationship timeline, source-backed context records, evidence artifacts, and living-context graph visualization; `/person/:personId` now redirects to the shared people profile.

@@ -18,9 +18,11 @@ import {
   Target,
   Activity,
   UserCircle2,
+  Network,
 } from 'lucide-react';
 import { SectionCard } from '../components';
 import { PipelineTemplateModal } from '../components/PipelineTemplateModal';
+import { RoleContextLivingGraph } from '../components/RoleDiscovery/RoleContextLivingGraph';
 import { useStageMutations } from '../hooks/useStageMutations';
 import type { PipelineShellContext } from './PipelineShellPage';
 import type { CandidatePersona } from '../lib/api/types';
@@ -108,6 +110,7 @@ function Metric({
 }
 
 type CombinedTab =
+  | 'graph'
   | 'profile'
   | 'persona'
   | 'job_description'
@@ -297,27 +300,31 @@ export default function PipelineInsightsPanel(): JSX.Element {
   // depending on what data the pipeline has. The tab bar only appears if 2+
   // tabs are available.
   const hasProfile = !!roleContext;
+  const hasGraph = !!roleContext?.id;
   const hasPersona = !!roleContext?.persona;
   const hasJobDescription =
     !!roleContext?.jobDescription && roleContext.jobDescription.trim() !== '';
   const hasInsights = !isEmpty;
   const hasCandidates = candidates.length > 0;
 
-  // Default tab order: persona → job description → profile → insights → candidates
+  // Default tab order: persona → job description → graph → profile → insights → candidates
   const defaultTab: CombinedTab = hasPersona
     ? 'persona'
     : hasJobDescription
       ? 'job_description'
-      : hasProfile
-        ? 'profile'
-        : hasInsights
-          ? 'insights'
-          : 'candidates';
+      : hasGraph
+        ? 'graph'
+        : hasProfile
+          ? 'profile'
+          : hasInsights
+            ? 'insights'
+            : 'candidates';
 
   const [activeTab, setActiveTab] = useState<CombinedTab>(defaultTab);
   const availableTabCount =
     (hasPersona ? 1 : 0) +
     (hasJobDescription ? 1 : 0) +
+    (hasGraph ? 1 : 0) +
     (hasProfile ? 1 : 0) +
     (hasInsights ? 1 : 0) +
     (hasCandidates ? 1 : 0);
@@ -328,6 +335,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
     if (activeTab === 'persona' && hasPersona) return 'persona';
     if (activeTab === 'job_description' && hasJobDescription)
       return 'job_description';
+    if (activeTab === 'graph' && hasGraph) return 'graph';
     if (activeTab === 'profile' && hasProfile) return 'profile';
     if (activeTab === 'insights' && hasInsights) return 'insights';
     if (activeTab === 'candidates' && hasCandidates) return 'candidates';
@@ -454,6 +462,7 @@ export default function PipelineInsightsPanel(): JSX.Element {
       {/* Combined card with internal tab toggle in the header meta slot. */}
       {(hasPersona ||
         hasJobDescription ||
+        hasGraph ||
         hasProfile ||
         hasInsights ||
         hasCandidates) && (
@@ -464,17 +473,21 @@ export default function PipelineInsightsPanel(): JSX.Element {
               ? 'PERSON_CONTEXT'
               : effectiveTab === 'job_description'
                 ? 'SOURCE_BRIEF'
-                : effectiveTab === 'profile'
-                  ? 'SOURCE_CONTEXT'
-                  : effectiveTab === 'insights'
-                    ? 'INTERVIEW_STATE'
-                    : 'PEOPLE'
+                : effectiveTab === 'graph'
+                  ? 'ROLE_GRAPH'
+                  : effectiveTab === 'profile'
+                    ? 'SOURCE_CONTEXT'
+                    : effectiveTab === 'insights'
+                      ? 'INTERVIEW_STATE'
+                      : 'PEOPLE'
           }
           icon={
             effectiveTab === 'persona' ? (
               <UserCircle2 size={16} color="#fbbf24" />
             ) : effectiveTab === 'job_description' ? (
               <FileText size={16} color="#60a5fa" />
+            ) : effectiveTab === 'graph' ? (
+              <Network size={16} color="var(--pipe-accent)" />
             ) : effectiveTab === 'profile' ? (
               <Sparkles size={16} color="var(--pipe-accent)" />
             ) : effectiveTab === 'insights' ? (
@@ -498,6 +511,13 @@ export default function PipelineInsightsPanel(): JSX.Element {
                     label="BRIEF"
                     isActive={effectiveTab === 'job_description'}
                     onClick={() => setActiveTab('job_description')}
+                  />
+                )}
+                {hasGraph && (
+                  <CombinedTabButton
+                    label="GRAPH"
+                    isActive={effectiveTab === 'graph'}
+                    onClick={() => setActiveTab('graph')}
                   />
                 )}
                 {hasProfile && (
@@ -526,6 +546,8 @@ export default function PipelineInsightsPanel(): JSX.Element {
               roleContext.persona.seniority.toUpperCase()
             ) : effectiveTab === 'job_description' ? (
               'MARKDOWN'
+            ) : effectiveTab === 'graph' ? (
+              'SOURCE-BACKED'
             ) : effectiveTab === 'insights' ? (
               `${stages.length} INTERVIEW${stages.length === 1 ? '' : 'S'}`
             ) : (
@@ -551,6 +573,10 @@ export default function PipelineInsightsPanel(): JSX.Element {
             >
               <ReactMarkdown>{roleContext!.jobDescription!}</ReactMarkdown>
             </div>
+          )}
+
+          {effectiveTab === 'graph' && hasGraph && (
+            <RoleContextLivingGraph roleContextId={roleContext!.id} />
           )}
 
           {effectiveTab === 'profile' && roleContext && (

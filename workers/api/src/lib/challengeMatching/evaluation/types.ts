@@ -112,6 +112,7 @@ export interface PersistedMatchAlignment {
   weightedScore?: number;
   stretch: StretchPath | null;
   sharedConcepts: string[];
+  roleSourceRefs: RoleSourceReference[];
   candidateSourceRefs: SourceRef[];
   challengeSourceRefs: SourceRef[];
 }
