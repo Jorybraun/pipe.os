@@ -654,6 +654,19 @@ export function buildStandaloneReviewMatchSummary(
   };
 }
 
+function interviewTypeForStage(stageType: string | null | undefined): 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW' {
+  if (stageType === 'CODE_REVIEW') return 'CODE_REVIEW';
+  if (stageType === 'OPEN_SOURCE') return 'TECHNICAL';
+  if (stageType === 'SCREENING') return 'SCREENING';
+  return 'VIDEO';
+}
+
+function meetingTypeForInterviewType(
+  interviewType: 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW',
+): 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW' {
+  return interviewType === 'SCREENING' ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL';
+}
+
 // ─── Pipeline-scoped routes ──────────────────────────────────────────────────
 
 const pipelineCandidates = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -702,7 +715,13 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
   const id = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
-  let scheduledInterview: { id: string; status: string; meetingUrl: string | null } | null = null;
+  let scheduledInterview: {
+    id: string;
+    status: string;
+    meetingUrl: string | null;
+    interviewType: 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW';
+    meetingType: 'DIRECT_VIDEO_CALL' | 'SCREENING_INTERVIEW';
+  } | null = null;
 
   // Use requested stage or fall back to first stage
   let stageId = requestedStageId ?? null;
@@ -740,20 +759,69 @@ pipelineCandidates.post('/:pipelineId/candidates', async (c) => {
     // Create scheduled_interviews row for scheduled/LIVE_VIDEO stages
     if (stageId) {
       const stageCheck = await db
-        .prepare('SELECT mode, is_scheduled FROM stages WHERE id = ?')
+        .prepare('SELECT mode, is_scheduled, stage_type FROM stages WHERE id = ?')
         .bind(stageId)
-        .first<{ mode: string | null; is_scheduled: number | null }>();
+        .first<{ mode: string | null; is_scheduled: number | null; stage_type: string | null }>();
 
       if (stageCheck?.is_scheduled || stageCheck?.mode === 'LIVE_VIDEO') {
+        const interviewType = interviewTypeForStage(stageCheck.stage_type);
+        const meetingType = meetingTypeForInterviewType(interviewType);
+        const challengeContext = interviewType === 'CODE_REVIEW'
+          ? await db
+            .prepare(
+              `SELECT github_repo_url, github_pr_number
+                 FROM challenges
+                WHERE stage_id = ?
+                  AND type = 'CODE_REVIEW'
+                  AND github_repo_url IS NOT NULL
+                ORDER BY sort_order ASC
+                LIMIT 1`,
+            )
+            .bind(stageId)
+            .first<{ github_repo_url: string | null; github_pr_number: number | null }>()
+          : interviewType === 'TECHNICAL'
+            ? await db
+              .prepare(
+                `SELECT COALESCE(dev_container_repo_url, github_repo_url) AS github_repo_url,
+                        github_pr_number
+                   FROM challenges
+                  WHERE stage_id = ?
+                    AND type IN ('CODE_IMPLEMENTATION', 'CODE_REVIEW')
+                    AND COALESCE(dev_container_repo_url, github_repo_url) IS NOT NULL
+                  ORDER BY sort_order ASC
+                  LIMIT 1`,
+              )
+              .bind(stageId)
+              .first<{ github_repo_url: string | null; github_pr_number: number | null }>()
+            : null;
         const interviewId = crypto.randomUUID();
         await db
           .prepare(
-            `INSERT INTO scheduled_interviews (id, candidate_id, pipeline_id, stage_id, owner_id, status, scheduling_provider, scheduling_url, sync_source, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, 'MANUAL', ?, ?)`
+            `INSERT INTO scheduled_interviews (
+               id, candidate_id, pipeline_id, stage_id, owner_id, status,
+               interview_type, meeting_type, scheduling_provider, scheduling_url,
+               matched_repo_id, github_repo_url, github_pr_number,
+               sync_source, created_at, updated_at
+             )
+             VALUES (?, ?, ?, ?, ?, 'INVITED', ?, ?, ?, ?, NULL, ?, ?, 'MANUAL', ?, ?)`
           )
-          .bind(interviewId, id, pipelineId, stageId, userId, schedulingProvider ?? null, schedulingUrl ?? null, now, now)
+          .bind(
+            interviewId,
+            id,
+            pipelineId,
+            stageId,
+            userId,
+            interviewType,
+            meetingType,
+            schedulingProvider ?? null,
+            schedulingUrl ?? null,
+            challengeContext?.github_repo_url ?? null,
+            challengeContext?.github_pr_number ?? null,
+            now,
+            now,
+          )
           .run();
-        scheduledInterview = { id: interviewId, status: 'INVITED', meetingUrl: null };
+        scheduledInterview = { id: interviewId, status: 'INVITED', meetingUrl: null, interviewType, meetingType };
       }
     }
   } catch (err) {

@@ -6,7 +6,8 @@ set -euo pipefail
 # Env vars (all optional):
 #   REPO_GIT_URL       — public git URL to clone (MVP path, ADR-037)
 #   REPO_R2_URL        — presigned R2 URL for a repo tarball (future path)
-#   CHALLENGE_BRANCH   — branch to check out after clone/extract
+#   CHALLENGE_BRANCH   — branch/ref to check out after clone/extract.
+#                        GitHub PR refs use refs/pull/<number>/head.
 
 mkdir -p /workspace
 
@@ -26,10 +27,21 @@ else
 fi
 
 if [[ -n "${CHALLENGE_BRANCH:-}" && -d /workspace/.git ]]; then
-  echo "[entrypoint] Checking out challenge branch: ${CHALLENGE_BRANCH}"
+  echo "[entrypoint] Checking out challenge ref: ${CHALLENGE_BRANCH}"
   cd /workspace
-  git fetch --all || true
-  git checkout "$CHALLENGE_BRANCH" || echo "[entrypoint] branch not found, using default"
+  if [[ "$CHALLENGE_BRANCH" =~ ^refs/pull/[0-9]+/head$ ]]; then
+    pr_ref="${CHALLENGE_BRANCH#refs/pull/}"
+    pr_number="${pr_ref%/head}"
+    pr_branch="pipe-pr-${pr_number}"
+    if git fetch origin "${CHALLENGE_BRANCH}:refs/heads/${pr_branch}"; then
+      git checkout "$pr_branch" || echo "[entrypoint] PR checkout failed, using default"
+    else
+      echo "[entrypoint] PR ref fetch failed, using default"
+    fi
+  else
+    git fetch --all || true
+    git checkout "$CHALLENGE_BRANCH" || echo "[entrypoint] branch not found, using default"
+  fi
   cd /
 fi
 

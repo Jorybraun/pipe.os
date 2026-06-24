@@ -49,6 +49,10 @@ const selectedStagesSchema = z
     return [...new Set(normalized)] as SelectedStage[];
   });
 
+function defaultModeForAutoBuiltStage(stageType: SelectedStage): 'ASYNC' | 'LIVE_VIDEO' {
+  return stageType === 'CODE_REVIEW' ? 'LIVE_VIDEO' : 'ASYNC';
+}
+
 const bodySchema = z.object({
   role_context_id: z.string().min(1),
   pipeline_title: z.string().min(1).max(200).optional(),
@@ -352,9 +356,17 @@ autoBuild.post('/auto-build', async (c) => {
   for (const rec of stageRecords) {
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, owner_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
-      ).bind(rec.stageId, pipelineId, rec.title, rec.sortOrder, rec.stageType, userId),
+        `INSERT INTO stages (id, pipeline_id, title, sort_order, stage_type, mode, owner_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+      ).bind(
+        rec.stageId,
+        pipelineId,
+        rec.title,
+        rec.sortOrder,
+        rec.stageType,
+        defaultModeForAutoBuiltStage(rec.stageType),
+        userId,
+      ),
     );
   }
 
@@ -402,6 +414,7 @@ autoBuild.post('/auto-build', async (c) => {
         title: rec.title,
         type: rec.challengeType,
         sortOrder: rec.sortOrder,
+        mode: defaultModeForAutoBuiltStage(rec.stageType),
         repoId: rec.repoId,
         githubRepoUrl: rec.githubRepoUrl,
         githubPrNumber: rec.githubPrNumber,

@@ -98,6 +98,12 @@ const reorderChallengesSchema = z.object({
   ),
 });
 
+function defaultModeForStageType(stageType: typeof STAGE_TYPES[number] | null | undefined): 'ASYNC' | 'LIVE_VIDEO' {
+  return stageType === 'CODE_REVIEW' || stageType === 'LIVE_PANEL'
+    ? 'LIVE_VIDEO'
+    : 'ASYNC';
+}
+
 // ─── Router: POST /api/v1/pipelines/:pipelineId/stages ───────────────────────
 
 /**
@@ -155,12 +161,13 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
   }
 
   const stageId = generateId();
+  const mode = defaultModeForStageType(input.stageType);
 
   // Insert without owner_id — it is an optional Phase 2 column (added via ALTER TABLE
   // in migration 0002). Ownership is enforced via the pipeline JOIN in auth checks.
   await c.env.DB.prepare(
-    `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, is_scheduled)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    `INSERT INTO stages (id, pipeline_id, title, description, sort_order, stage_type, mode, is_scheduled)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
   )
     .bind(
       stageId,
@@ -169,6 +176,7 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
       input.description ?? null,
       sortOrder,
       input.stageType ?? null,
+      mode,
       input.isScheduled ? 1 : 0,
     )
     .run();
@@ -181,7 +189,7 @@ pipelineStages.post('/:pipelineId/stages', async (c) => {
     order: sortOrder,
     sortOrder,
     timeLimit: null,
-    mode: 'ASYNC',
+    mode,
     notificationTemplates: [],
     schedulingEventTypeId: null,
     stageType: input.stageType ?? null,

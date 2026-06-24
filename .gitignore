@@ -59,6 +59,16 @@ google-cloud-cli-*.tar.gz
 .swarm/
 *.db-shm
 *.db-wal
+.wrangler/state/
+
+# Dream-cycle generated output
+harness/brain/rooms/discovery/__pycache__/
+harness/brain/rooms/discovery/raw-dream-cycle-*.md
+harness/brain/rooms/discovery/semantic-graph.json
+knowledge/plan/pipe-strategy-v2-dream-cycle-brief-*.md
+
+# Dogfood output (generated)
+dogfood-output/
 
 # Temporary / sensitive files
 get_token.cjs
