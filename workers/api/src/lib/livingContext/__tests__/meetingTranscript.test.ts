@@ -9,6 +9,11 @@ import {
 } from '../meetingTranscript';
 import { ensureCandidateLivingContext } from '../compatibility';
 import { loadCandidateLivingContext, loadContactLivingContext } from '../readModel';
+import {
+  loadInteractionLivingContext,
+  loadMeetingTranscriptContext,
+  searchTranscriptSourceSpans,
+} from '../readModel';
 
 
 
@@ -811,5 +816,379 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'source_spans')).toBe(1);
     expect(count(sqlite, 'source_span_attributions')).toBe(0);
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
+  });
+
+  it('regression: a previously unseen concept survives as an open concept with source-backed spans', async () => {
+    // "phosphor lattice accumulator" is a deliberately unseen surface — no
+    // hard-coded skill/domain alias should map or reject it. It must survive as
+    // an open concept whose assertion/context record link back to exact spans.
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Describe a novel mechanism you designed.',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I designed a phosphor lattice accumulator for low-light signal recovery.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.97,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'designed a source-described mechanism',
+        narrative: 'Designed a phosphor lattice accumulator for low-light signal recovery.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'phosphor lattice accumulator' },
+        confidence: 0.93,
+        polarity: 1,
+        concepts: [{
+          surface: 'Phosphor lattice accumulator',
+          relationship: 'mechanism designed for low-light signal recovery',
+          weight: 0.88,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.91,
+        }],
+      }],
+      extractorVersion: 'open-meeting-regression-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    const result = await ingestMeetingTranscriptToLivingContext(db, input);
+    expect(result.assertionCount).toBe(1);
+
+    // The unseen surface survives as an open concept with a term: canonical key
+    // and no hard-coded namespace alias.
+    expect(sqlite.prepare(
+      `SELECT canonical_key, namespace, label FROM concepts`,
+    ).get()).toEqual({
+      canonical_key: 'term:phosphor-lattice-accumulator',
+      namespace: 'term',
+      label: 'Phosphor lattice accumulator',
+    });
+
+    // The assertion and its context record link back to the exact guest span.
+    const assertionSpanText = sqlite.prepare(
+      `SELECT ss.exact_text
+         FROM assertion_source_spans ass
+         JOIN source_spans ss ON ss.id = ass.source_span_id
+         JOIN semantic_assertions sa ON sa.id = ass.assertion_id
+        WHERE sa.predicate = 'designed a source-described mechanism'`,
+    ).all() as Array<{ exact_text: string }>;
+    expect(assertionSpanText.map((row) => row.exact_text)).toEqual([
+      'I designed a phosphor lattice accumulator for low-light signal recovery.',
+    ]);
+
+    const contextRecordSpanText = sqlite.prepare(
+      `SELECT ss.exact_text
+         FROM context_record_source_refs crsr
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+        WHERE cr.record_type = 'meeting_transcript_assertion'`,
+    ).all() as Array<{ exact_text: string }>;
+    expect(contextRecordSpanText.map((row) => row.exact_text)).toEqual([
+      'I designed a phosphor lattice accumulator for low-light signal recovery.',
+    ]);
+
+    // Signal snapshot reflects the open concept.
+    expect(sqlite.prepare(
+      `SELECT signal_key, total_score, evidence_count FROM signal_snapshots`,
+    ).get()).toEqual({
+      signal_key: 'term:phosphor-lattice-accumulator',
+      total_score: 0.91,
+      evidence_count: 1,
+    });
+  });
+
+  it('read model returns source span exact text for every transcript-derived assertion and context record', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Walk me through a system you owned end to end.',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I owned a causal replay log for distributed order reconciliation.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['host-1', 'guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'owned a source-described system',
+        narrative: 'Owned a causal replay log for distributed order reconciliation.',
+        objectType: 'source-described system',
+        objectValue: { surface: 'causal replay log' },
+        confidence: 0.9,
+        polarity: 1,
+        concepts: [{
+          surface: 'Causal replay log',
+          relationship: 'system owned for distributed order reconciliation',
+          weight: 0.84,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.86,
+        }],
+      }],
+      extractorVersion: 'open-meeting-readmodel-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+
+    const graph = await loadContactLivingContext(db, 'contact-1');
+    expect(graph).not.toBeNull();
+
+    // Every transcript-derived assertion must cite at least one source span
+    // whose exact text is non-empty and matches the ingested transcript.
+    for (const assertion of graph!.assertions) {
+      expect(assertion.sources.length).toBeGreaterThan(0);
+      for (const source of assertion.sources) {
+        expect(source.exactText.length).toBeGreaterThan(0);
+        expect(source.artifactType).toBe('meeting_transcript');
+        expect(source.charStart).not.toBeNull();
+        expect(source.charEnd).not.toBeNull();
+      }
+    }
+
+    // Every transcript-derived context record must carry source span exact text.
+    for (const record of graph!.contextRecords) {
+      expect(record.sources.length).toBeGreaterThan(0);
+      for (const source of record.sources) {
+        if (source.sourceRefType === 'source_span') {
+          expect(source.exactText.length).toBeGreaterThan(0);
+        }
+      }
+    }
+
+    // Signal evidence must trace back to exact source span text.
+    for (const signal of graph!.signals) {
+      for (const evidence of signal.evidence) {
+        expect(evidence.sources.length).toBeGreaterThan(0);
+        for (const source of evidence.sources) {
+          expect(source.exactText.length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it('keeps interaction context separately reviewable from the accumulated person graph', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'What is the hardest bug you fixed?',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I fixed a vector clock skew bug in the causal replay log.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'fixed a source-described bug',
+        narrative: 'Fixed a vector clock skew bug in the causal replay log.',
+        objectType: 'source-described bug',
+        objectValue: { surface: 'vector clock skew bug' },
+        confidence: 0.89,
+        polarity: 1,
+        concepts: [{
+          surface: 'Vector clock skew bug',
+          relationship: 'bug fixed in the causal replay log',
+          weight: 0.8,
+          evidenceLevel: 'demonstrated' as const,
+          strength: 0.82,
+        }],
+      }],
+      extractorVersion: 'open-meeting-interaction-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+
+    const meetingContext = await loadMeetingTranscriptContext(db, 'meeting-1');
+    expect(meetingContext).not.toBeNull();
+    expect(meetingContext!.meetingId).toBe('meeting-1');
+    expect(meetingContext!.interactions).toHaveLength(1);
+
+    const interaction = meetingContext!.interactions[0]!;
+    expect(interaction.interaction.interactionType).toBe('video_meeting');
+    expect(interaction.interaction.externalReference).toBe('meeting-1');
+    expect(interaction.summary).toMatchObject({
+      assertionCount: 1,
+      contextRecordCount: 1,
+      signalEvidenceCount: 1,
+    });
+
+    // Shared immutable transcript artifact is reviewable with exact spans.
+    expect(meetingContext!.sharedArtifacts).toHaveLength(1);
+    const sharedArtifact = meetingContext!.sharedArtifacts[0]!;
+    expect(sharedArtifact.artifactType).toBe('meeting_transcript');
+    expect(sharedArtifact.sourceSpans.map((span) => span.exactText)).toEqual([
+      'What is the hardest bug you fixed?',
+      'I fixed a vector clock skew bug in the causal replay log.',
+    ]);
+
+    // Meeting-scoped context records (the meeting_transcript record) are
+    // reviewable at the meeting level, separate from per-interaction records.
+    expect(meetingContext!.contextRecords.map((record) => record.recordType)).toEqual([
+      'meeting_transcript',
+    ]);
+    expect(meetingContext!.summary.contextRecordCount).toBe(2);
+
+    // Interaction assertions link back to exact transcript spans.
+    expect(interaction.assertions[0]?.predicate).toBe('fixed a source-described bug');
+    expect(interaction.assertions[0]?.sources[0]?.exactText).toBe(
+      'I fixed a vector clock skew bug in the causal replay log.',
+    );
+
+    // Interaction context records carry the per-participant assertion record.
+    expect(interaction.contextRecords.map((record) => record.recordType)).toEqual([
+      'meeting_transcript_assertion',
+    ]);
+    const assertionRecord = interaction.contextRecords.find(
+      (record) => record.recordType === 'meeting_transcript_assertion',
+    );
+    expect(assertionRecord?.sources[0]?.exactText).toBe(
+      'I fixed a vector clock skew bug in the causal replay log.',
+    );
+
+    // Signal evidence is reviewable at the interaction scope.
+    expect(interaction.signalEvidence[0]?.signalKey).toBe('term:vector-clock-skew-bug');
+    expect(interaction.signalEvidence[0]?.sources[0]?.exactText).toBe(
+      'I fixed a vector clock skew bug in the causal replay log.',
+    );
+
+    // The interaction-scoped read is independent of the person graph: deleting
+    // the person projection outbox does not remove the interaction context.
+    sqlite.prepare('DELETE FROM projection_outbox').run();
+    const replay = await loadInteractionLivingContext(
+      db,
+      interaction.interaction.id,
+    );
+    expect(replay).not.toBeNull();
+    expect(replay!.assertions).toHaveLength(1);
+    expect(replay!.contextRecords).toHaveLength(1);
+    expect(replay!.signalEvidence).toHaveLength(1);
+  });
+
+  it('searches original transcript text and explains each hit with exact spans and citing records', async () => {
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Tell me about your causal replay log work.',
+          speakerRole: 'host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I built a causal replay log for distributed order reconciliation.',
+          speakerRole: 'guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_500,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'built a source-described system',
+        narrative: 'Built a causal replay log for distributed order reconciliation.',
+        objectType: 'source-described system',
+        objectValue: { surface: 'causal replay log' },
+        confidence: 0.9,
+        polarity: 1,
+        concepts: [{
+          surface: 'Causal replay log',
+          relationship: 'system built for distributed order reconciliation',
+          weight: 0.84,
+          evidenceLevel: 'implemented' as const,
+          strength: 0.86,
+        }],
+      }],
+      extractorVersion: 'open-meeting-search-v1',
+      provider: 'deepgram-multichannel',
+      startedAt: '2026-06-13T10:00:00.000Z',
+      endedAt: '2026-06-13T10:30:00.000Z',
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+
+    const result = await searchTranscriptSourceSpans(db, 'meeting-1', 'causal replay log');
+    expect(result.meetingId).toBe('meeting-1');
+    expect(result.query).toBe('causal replay log');
+    expect(result.hits.length).toBe(2);
+
+    const guestHit = result.hits.find(
+      (hit) => hit.stableSegmentId === 'guest-1',
+    )!;
+    expect(guestHit.exactText).toBe(
+      'I built a causal replay log for distributed order reconciliation.',
+    );
+    expect(guestHit.matchOffset).toBe(
+      'I built a causal replay log for distributed order reconciliation.'
+        .toLowerCase()
+        .indexOf('causal replay log'),
+    );
+    expect(guestHit.matchLength).toBe('causal replay log'.length);
+    expect(guestHit.charStart).not.toBeNull();
+    expect(guestHit.charEnd).not.toBeNull();
+    expect(guestHit.artifactType).toBe('meeting_transcript');
+    // The hit explains which assertion and context record cite this span.
+    expect(guestHit.citingAssertionIds.length).toBe(1);
+    expect(guestHit.citingContextRecordIds.length).toBeGreaterThanOrEqual(1);
+
+    // A query that does not match returns no hits but stays explainable.
+    const empty = await searchTranscriptSourceSpans(db, 'meeting-1', 'nonexistent phrase xyz');
+    expect(empty.hits).toEqual([]);
   });
 });

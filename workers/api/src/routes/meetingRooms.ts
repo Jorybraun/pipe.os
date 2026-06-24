@@ -10,6 +10,10 @@ import {
   type StructuredTranscription,
 } from '../lib/transcribe';
 import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
+import {
+  loadMeetingTranscriptContext,
+  searchTranscriptSourceSpans,
+} from '../lib/livingContext/readModel';
 import { getTurnIceServers } from '../lib/turnCredentials';
 import { sendTransactionalEmail } from '../lib/transactionalEmail';
 import {
@@ -1643,4 +1647,46 @@ meetingsAuth.post('/:id/invite', async (c) => {
     joinUrl,
     provider: emailResult.provider,
   });
+});
+
+// GET /:id/interaction-context — source-backed interaction context for a meeting.
+// Keeps transcript/interaction evidence separately reviewable from accumulated
+// person projections. Returns the shared immutable transcript artifact, its
+// exact source spans, and per-participant derived assertions/context records.
+meetingsAuth.get('/:id/interaction-context', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const meeting = await db.prepare(
+    'SELECT id FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(id, userId).first<{ id: string }>();
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const context = await loadMeetingTranscriptContext(db, id);
+  if (!context) return apiError(c, 'NOT_FOUND', 'Meeting interaction context not found.');
+
+  return c.json(context);
+});
+
+// GET /:id/transcript/search?q= — search original transcript text for a meeting.
+// Returns explainable hits that point back to exact source spans (with
+// char/line/timestamp offsets) plus the assertions/context records citing them.
+meetingsAuth.get('/:id/transcript/search', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const meeting = await db.prepare(
+    'SELECT id FROM meetings WHERE id = ? AND owner_id = ?',
+  ).bind(id, userId).first<{ id: string }>();
+  if (!meeting) return apiError(c, 'NOT_FOUND', 'Meeting not found.');
+
+  const query = c.req.query('q') ?? '';
+  if (!query.trim()) {
+    return apiError(c, 'VALIDATION_ERROR', 'query parameter "q" is required');
+  }
+
+  const result = await searchTranscriptSourceSpans(db, id, query);
+  return c.json(result);
 });

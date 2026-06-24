@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Source-Backed Transcript and Interaction Semantics Ingestion (HAS-85)
+
+- Meeting transcripts are now persisted as immutable artifact versions with content hashes, exact paragraph/source spans (char/byte/line offsets), and per-segment speaker attribution that never trusts unbound diarized labels as person identity.
+- Extracted semantic assertions link back to exact transcript source spans via `assertion_source_spans`, with open predicates/narratives/qualifiers preserved verbatim from the source rather than forced into a fixed taxonomy.
+- Unknown concepts surfaced in transcript assertions survive as open `term:*` concepts in the concept registry, accumulating signal evidence (noisy-or) across interactions without requiring a pre-known vocabulary.
+- Interaction context remains separately reviewable: meeting interactions are stored in the `interactions` table and surfaced as their own read-model section, while context records distinguish `meeting_transcript` (raw evidence) from `meeting_transcript_assertion` (derived meaning) so reviewers can audit each independently.
+- Re-processing a corrected transcript creates a new immutable version; re-running an extractor removes stale derived meaning (assertions, episodes, signal evidence) while preserving the immutable transcript artifact and source spans.
+- Source-only backfill replay preserves newer semantic projections instead of deleting them, and mixed-audio Whisper fallback transcripts stay summary-only without fabricating person semantic signals.
+- Added `loadInteractionLivingContext` and `loadMeetingTranscriptContext` read models that keep interaction context separately reviewable from accumulated person projections (deleting the projection outbox does not remove the per-event source-backed record).
+- Added `searchTranscriptSourceSpans` and `GET /meetings/:id/transcript/search?q=` so original transcript text remains searchable and explainable — each hit returns exact source span offsets plus the assertions/context records that cite it.
+- Added `GET /meetings/:id/interaction-context` to expose the shared immutable transcript artifact, exact source spans, and per-participant derived assertions/context records/signal evidence as a single reviewable view.
+- Added regression proving a previously unseen concept (`phosphor lattice accumulator`) survives as an open `term:*` concept with assertions and context records linked back to exact transcript spans.
+- Added invariant test that the read model returns source span exact text for every transcript-derived assertion, context record, and signal evidence entry.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
