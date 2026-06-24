@@ -7,10 +7,6 @@ import {
   buildStructuralFact,
   buildSymbol,
 } from './builders';
-import {
-  analyzeRuntimeSourceFile,
-  canAnalyzeRuntimeSource,
-} from './sourceAnalysis';
 import type {
   NormalizedPullRequestFile,
   NormalizedPullRequestInput,
@@ -282,6 +278,7 @@ export async function normalizeGitHubPullRequest(input: {
         content: file.headContent,
         createdAt: observedAt,
       });
+      const { canAnalyzeRuntimeSource, analyzeRuntimeSourceFile } = await import('./sourceAnalysis');
       if (canAnalyzeRuntimeSource(language)) {
         try {
           const analysis = await analyzeRuntimeSourceFile({
