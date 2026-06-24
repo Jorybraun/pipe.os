@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Real Source-Backed Repo Challenge Packet Backfill (HAS-83)
+
+- Added `backfillReviewChallengePackets` pipeline that selects eligible merged PRs from the crawler D1 catalog (`repo_sample_prs` joined with `qualified_repos`), fetches PR refs, diff, and changed-file source from GitHub, normalizes them into a deterministic `NormalizedPullRequestInput`, builds a challenge packet through the `repoSemanticGraph` pipeline, and persists the full graph through `persistReviewChallengeGraph`.
+- Backfill is idempotent: PRs with an already-persisted packet (`repo_id` + `pr_number` + `packet_version`) are skipped unless `force` is set; forced re-persist produces byte-identical rows because packet identity and content hashes are deterministic.
+- Added `selectEligibleCrawlerPullRequests` enforcing structural eligibility (merged, modifies tests, not archived/disqualified, changed-file/line thresholds) in SQL and language eligibility (challenge-packet-allowed languages only) post-fetch.
+- Added `countOverlayReadyPackets` readiness gate reporting the number of `production_ready=1` packets in D1; the backfill succeeds when at least one real overlay-ready packet exists after the run.
+- Added focused `repoSemanticGraph/backfill` tests proving a real source-backed overlay-ready packet is persisted with exact source spans, structural facts (`changed_symbol`, `imports`, `calls`, `contains`), parser-supported symbols, repo source refs (GitHub head-content external references), a `repo_challenge_packet` context record with linked source refs, open concept links, and the derived semantic graph (episodes, facets, assertions, signals).
+- Added idempotency and force-rebuild regressions proving second-run skip, byte-identical state preservation, and deterministic forced re-persist.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
