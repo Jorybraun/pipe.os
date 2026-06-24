@@ -658,3 +658,179 @@ describe('ranking and explanations', () => {
     ]);
   });
 });
+
+describe('fake semantics and fallback removal (HAS-86)', () => {
+  it('prevents embedding-only match decisions when concepts do not overlap', () => {
+    const compiled = compile([
+      signal('one', {
+        concepts: ['technology:kafka'],
+        problems: ['ordered-replay'],
+        mechanisms: ['consumer-offsets'],
+        embedding: [1, 0],
+      }),
+    ]);
+    const packet = challenge('embedding-only', [
+      demand('one', 0.5, {
+        concepts: ['technology:redis'],
+        problems: ['cache-invalidation'],
+        mechanisms: ['ttl-eviction'],
+        embedding: [1, 0],
+      }),
+      demand('two', 0.5, {
+        family: 'second-family',
+        concepts: ['technology:redis'],
+        problems: ['cache-invalidation'],
+        mechanisms: ['ttl-eviction'],
+        embedding: [1, 0],
+      }),
+    ], { concepts: ['technology:redis'] });
+
+    const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(result.alignments).toEqual([]);
+    expect(result.eligible).toBe(false);
+    expect(result.rejectionReasons).toContain('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
+  });
+
+  it('does not fabricate semantic similarity from text overlap when embeddings are absent', () => {
+    const compiled = compile([
+      signal('one', {
+        narrative: 'Implemented an ordered event processor and validated failure recovery.',
+        concepts: ['technology:kafka'],
+        problems: ['ordered-replay'],
+        mechanisms: ['consumer-offsets'],
+        embedding: undefined,
+      }),
+      signal('two', {
+        narrative: 'Implemented a bounded queue for backpressure handling.',
+        concepts: ['architecture:event-driven'],
+        problems: ['backpressure'],
+        mechanisms: ['bounded-queue'],
+        embedding: undefined,
+      }),
+    ]);
+    const packet = challenge('no-embedding', [
+      demand('one', 0.5, {
+        narrative: 'Review an ordered event processor and verify failure recovery.',
+        concepts: ['technology:kafka'],
+        problems: ['ordered-replay'],
+        mechanisms: ['consumer-offsets'],
+        embedding: undefined,
+      }),
+      demand('two', 0.5, {
+        family: 'second-family',
+        narrative: 'Review a bounded queue for backpressure handling.',
+        concepts: ['architecture:event-driven'],
+        problems: ['backpressure'],
+        mechanisms: ['bounded-queue'],
+        embedding: undefined,
+      }),
+    ]);
+
+    const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(result.alignments).toHaveLength(2);
+    expect(result.alignments.every((entry) => entry.pairScore.semanticNarrative === 0)).toBe(true);
+  });
+
+  it('makes role discovery optional — a challenge is eligible without role requirements', () => {
+    const compiled = compile([
+      signal('one', {
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+      }),
+      signal('two', {
+        concepts: ['domain:fraud'],
+        problems: ['false-positive'],
+        mechanisms: ['rate-limiting'],
+      }),
+    ]);
+    const packet = challenge('no-role', [
+      demand('one', 0.5, {
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('two', 0.5, {
+        family: 'second-family',
+        concepts: ['domain:fraud'],
+        problems: ['false-positive'],
+        mechanisms: ['rate-limiting'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+
+    const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(result.eligible).toBe(true);
+    expect(result.rejectionReasons).not.toContain('ROLE_RELEVANCE_BELOW_THRESHOLD');
+    expect(result.rejectionReasons).not.toContain('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
+  });
+
+  it('still enforces role relevance when role requirements are present', () => {
+    const compiled = compile([
+      signal('one', {
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+      }),
+    ]);
+    const packet = challenge('role-required', [
+      demand('one', 0.5, {
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+        roleRequirement: true,
+        highWeightRoleRequirement: true,
+      }),
+      demand('two', 0.5, {
+        family: 'second-family',
+        concepts: ['domain:fraud'],
+        problems: ['false-positive'],
+        mechanisms: ['rate-limiting'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+
+    const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(result.eligible).toBe(false);
+    expect(result.rejectionReasons).toContain('ROLE_RELEVANCE_BELOW_THRESHOLD');
+  });
+
+  it('includes explicit rejection reasons for every rejected packet', () => {
+    const compiled = compile([
+      signal('generic', {
+        concepts: ['language:typescript'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('rejected', [
+      demand('one', 1, {
+        concepts: ['language:typescript'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ], { concepts: ['language:typescript'] });
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(alignment.eligible).toBe(false);
+    expect(alignment.rejectionReasons.length).toBeGreaterThan(0);
+    const explanation = explainChallengeMatch(alignment);
+    expect(explanation.status).toBe('NO_ROLE_SAFE_CHALLENGE');
+    expect(explanation.rejectionReasons).toEqual(alignment.rejectionReasons);
+    expect(explanation.rejectionReasons.length).toBeGreaterThan(0);
+  });
+});

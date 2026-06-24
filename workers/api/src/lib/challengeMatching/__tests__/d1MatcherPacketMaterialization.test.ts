@@ -147,4 +147,49 @@ describe('materializeChallengePacketForMatching', () => {
       })],
     }));
   });
+
+  it('does not fabricate role requirement defaults when no role concepts are provided', () => {
+    const loaded = materializeChallengePacketForMatching(7, repoPacket(), spanMap());
+
+    expect('packet' in loaded ? loaded.packet : null).toEqual(expect.objectContaining({
+      demands: [expect.objectContaining({
+        id: 'demand-1',
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      })],
+    }));
+  });
+
+  it('does not mark non-role demands as high-weight role requirements', () => {
+    const packet = repoPacket({
+      demands: [
+        {
+          ...repoPacket().demands[0]!,
+          id: 'demand-role',
+          conceptKeys: ['term:kafka'],
+          weight: 0.4,
+          contentHash: 'sha256:demand-role',
+        },
+        {
+          ...repoPacket().demands[0]!,
+          id: 'demand-non-role',
+          conceptKeys: ['term:unrelated'],
+          weight: 1,
+          sourceSpanIds: ['span-1'],
+          contentHash: 'sha256:demand-non-role',
+        },
+      ],
+    });
+    const loaded = materializeChallengePacketForMatching(7, packet, spanMap(), ['term:kafka']);
+
+    const pkt = 'packet' in loaded ? loaded.packet : null;
+    expect(pkt).not.toBeNull();
+    const demands = pkt!.demands;
+    const roleDemand = demands.find((d) => d.id === 'demand-role')!;
+    const nonRoleDemand = demands.find((d) => d.id === 'demand-non-role')!;
+    expect(roleDemand.roleRequirement).toBe(true);
+    expect(roleDemand.highWeightRoleRequirement).toBe(true);
+    expect(nonRoleDemand.roleRequirement).toBe(false);
+    expect(nonRoleDemand.highWeightRoleRequirement).toBe(false);
+  });
 });

@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added focused `repoSemanticGraph/backfill` tests proving a real source-backed overlay-ready packet is persisted with exact source spans, structural facts (`changed_symbol`, `imports`, `calls`, `contains`), parser-supported symbols, repo source refs (GitHub head-content external references), a `repo_challenge_packet` context record with linked source refs, open concept links, and the derived semantic graph (episodes, facets, assertions, signals).
 - Added idempotency and force-rebuild regressions proving second-run skip, byte-identical state preservation, and deterministic forced re-persist.
 
+### Changed — Harden source-backed repo discovery and matching (HAS-86)
+
+- Removed the `jaccardText` text-overlap fallback in `semanticSimilarity` so the `semanticNarrative` scoring dimension contributes zero when embedding evidence is absent instead of fabricating a heuristic text-overlap score.
+- Removed fabricated `roleRequirement: true` and `highWeightRoleRequirement: true` defaults in `materializeChallengePacketForMatching` when no role concepts are provided; demands are now only marked as role requirements when backed by source-evidenced role concept overlap.
+- Made role discovery optional in `alignCandidateToChallenge`: `ROLE_RELEVANCE_BELOW_THRESHOLD` and `NO_HIGH_WEIGHT_ROLE_REQUIREMENT` rejection reasons are only applied when at least one demand carries a role requirement, so challenges remain eligible without role context.
+- Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.
+- Added tests proving embedding-only match decisions are prevented, semantic similarity is not fabricated from text overlap, role discovery is optional, fabricated role requirement defaults are gone, non-role demands are not marked as high-weight role requirements, and rejected packets always include explicit reasons.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
@@ -355,6 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `packages/ui/src/Layout.tsx`: Added `rightPanel`, `rightPanelOpen`, `rightPanelWidth` props for sliding panel support with content push effect.
 
 **Technical Notes:**
+
 - **CopilotKit-compatible custom agent pattern** - Backend implements CopilotKit v2 API interface (`/api/copilotkit`) but uses custom agent that works in Cloudflare Workers
 - Frontend uses CopilotKit v2 hooks (`useChat`, `useComponent`) - complies with project rule
 - Custom agent uses Cloudflare AI binding directly with Gemma 4 model
@@ -364,6 +373,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Production-ready per Pipe standards
 
 **Lesson Learned: CopilotKit v2 + Cloudflare Workers Incompatibility**
+
 - CopilotKit v2's package structure includes Node.js dependencies (`@hono/node-server`, `express`, `@segment/analytics-node`) at the package level
 - Wrangler's bundler (Rolldown) automatically injects `createRequire(import.meta.url)` for CommonJS interop
 - `import.meta.url` is `undefined` in Cloudflare Workers bundled output, causing crash at module initialization
@@ -660,6 +670,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 **Task B — Role Discovery Agent:**
+
 - Role Discovery agent now uses 6 calibrated probes instead of open-ended Six Domains exploration
 - Role Context Document (RCD) is now the primary synthesis artifact
 - Added calibration review UI for recruiters to flag and correct RCD attributes
@@ -667,12 +678,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration `0049_role_nodes.sql`**: derivative sub-element view of RCDs; FK to `role_contexts` with `ON DELETE CASCADE`, 11-type `CHECK` constraint, and partial index on active (`superseded_at IS NULL`) nodes.
 
 **Task C — Code Review Golden Path:**
+
 - CODE_REVIEW stages now create review session on stage entry
 - New review session endpoints: `/rpc/review/session/init`, `/message`, `/complete`
 - Added dedicated review session page with diff + chat interface
 - Recruiter dashboard now shows review session status, score, and transcript
 
 **Infrastructure & Docs:**
+
 - Phase 5 CI/CD: GitHub Actions workflows for CI, staging deploy, and production deploy
 - ADR-041: Cloudflare-native deployment with Wrangler (drops Terraform)
 - `workers/api/wrangler.jsonc` environments: `staging` and `production`
@@ -684,6 +697,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Role context embedding:** `buildAndStoreRoleEmbedding` fires best-effort when role discovery reaches `COMPLETE`, building `role_searchable_profile` from `job_description_md` and embedding via BGE-large-en-v1.5.
 
 ### Removed
+
 - **Deprecated stage types:** Removed all dead stage types (`AI_COLLAB`, `PLANNING`, `VOICE`, `INGESTION`, `TECHNICAL`, `QUESTIONS`, `VOICE_INTERVIEW`) from frontend and backend.
 - Locked to exactly 5 stage types: `SCREENING`, `CULTURAL`, `CODE_REVIEW`, `OPEN_SOURCE`, `LIVE_PANEL`.
 - Aligned `workers/api/src/validation/stages.ts`, `src/lib/stageTemplates.ts`, `src/types/index.ts`, and all UI components.
@@ -692,6 +706,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleaned up unused lucide-react imports (Zap, Brain, Mic) from modified components.
 
 ### Changed
+
 - `docs/vision.md`: Aligned with project brief — added product thesis, full vision reference, and guardrails
 - `migration/PLAN.md`: Added Product Phases (P1–P5) section with 2026-04-22 decisions
 - Documentation reorganization: unified navigation hub, split decisions into current/historical, extracted model routing, archived stale artifacts
@@ -709,4 +724,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.1] - 2026-04-22
 
 ### Added
+
 - Initial changelog

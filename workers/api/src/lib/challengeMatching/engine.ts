@@ -220,20 +220,6 @@ function containmentRatio(a: string[] | undefined, b: string[] | undefined): num
   return overlap / Math.min(left.length, right.length);
 }
 
-function jaccardText(a: string, b: string): number {
-  const tokenize = (value: string) => new Set(
-    value.toLowerCase().split(/[^a-z0-9+#.-]+/).filter((token) => token.length > 2),
-  );
-  const left = tokenize(a);
-  const right = tokenize(b);
-  if (left.size === 0 || right.size === 0) return 0;
-  let overlap = 0;
-  for (const token of left) {
-    if (right.has(token)) overlap++;
-  }
-  return overlap / (left.size + right.size - overlap);
-}
-
 function cosine(a: number[] | undefined, b: number[] | undefined): number | null {
   if (!a || !b || a.length === 0 || a.length !== b.length) return null;
   let dot = 0;
@@ -251,7 +237,7 @@ function cosine(a: number[] | undefined, b: number[] | undefined): number | null
 }
 
 function semanticSimilarity(atom: QueryAtom, demand: ChallengeDemand): number {
-  return cosine(atom.embedding, demand.embedding) ?? jaccardText(atom.narrative, demand.narrative);
+  return cosine(atom.embedding, demand.embedding) ?? 0;
 }
 
 function findStretch(
@@ -592,14 +578,16 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
     + validationDeepeningValue * 0.10,
   );
 
+  const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
+  const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
   const rejectionReasons: string[] = [];
   if (!challengePassesGuardrails(input.challenge, input.query.roleGuardrails)) rejectionReasons.push('ROLE_GUARDRAIL_FAILED');
   if (candidateEvidenceAlignment < 0.60) rejectionReasons.push('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
-  if (roleRelevance < 0.60) rejectionReasons.push('ROLE_RELEVANCE_BELOW_THRESHOLD');
+  if (hasRoleRequirements && roleRelevance < 0.60) rejectionReasons.push('ROLE_RELEVANCE_BELOW_THRESHOLD');
   if (challengeQuality < 0.70) rejectionReasons.push('CHALLENGE_QUALITY_BELOW_THRESHOLD');
   if (demandFamilies.size < 2) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
   if (!hasNonGeneric) rejectionReasons.push('NO_NON_GENERIC_ALIGNMENT');
-  if (!hasHighWeightRoleRequirement) rejectionReasons.push('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
+  if (hasHighWeightRoleRequirements && !hasHighWeightRoleRequirement) rejectionReasons.push('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
   if (!provenanceComplete) rejectionReasons.push('INCOMPLETE_PROVENANCE');
   if (stretches.length > input.query.maxAdjacentStretches) rejectionReasons.push('TOO_MANY_STRETCHES');
   if (stretchDemandWeightRatio > 0.20 + 1e-12) rejectionReasons.push('STRETCH_WEIGHT_EXCEEDED');
