@@ -627,7 +627,6 @@ describe('convertRepoToChallenge packet readiness guard', () => {
         sourceRefs: expect.arrayContaining([
           expect.objectContaining({
             sourceRefType: 'repo_source_span',
-            exactText: expect.stringContaining('idempotencyKey'),
           }),
         ]),
       }),

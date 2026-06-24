@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runEvaluationCli } from '../../../../../scripts/evaluateMatching';
+import { runEvaluationCli, parseEvaluationArgs } from '../../../../../scripts/evaluateMatching';
 import { createMockD1 } from '../../../../__tests__/helpers/mockD1';
 import { runEvaluation } from '../cli';
 
@@ -22,8 +22,9 @@ function expertCorpusJson(): string {
   const corpus = JSON.parse(readFileSync(corpusFixture, 'utf8')) as {
     corpusId: string;
     description: string;
-    expertLabels: Array<{ labelId: string; labeledBy: string }>;
-    metadata: { syntheticFixtureCount: number };
+    expertLabels: Array<{ labelId: string; labeledBy: string; challengeId: string }>;
+    metadata: { syntheticFixtureCount: number; totalExpectedPackets?: number };
+    expectedPackets?: unknown[];
   };
   corpus.corpusId = 'expert-corpus-v1';
   corpus.description = 'Test-only corpus with non-synthetic labels for persisted evaluation coverage';
@@ -42,6 +43,15 @@ function expertCorpusJson(): string {
     },
   }));
   corpus.metadata.syntheticFixtureCount = 0;
+  // Declare expected packets matching the seeded match runs so the production
+  // rollout gate's packet coverage requirement is satisfied.
+  corpus.expectedPackets = [{
+    challengeId: 'challenge-1',
+    repoId: 'repo-1',
+    prNumber: 42,
+    sourceVersion: 'commit-abc',
+  }];
+  corpus.metadata.totalExpectedPackets = 1;
   return JSON.stringify(corpus);
 }
 
@@ -167,6 +177,10 @@ function persistedResultFixture(overrides?: {
   expertLabelCount?: number;
   syntheticFixtureCount?: number;
   requireExpertLabels?: boolean;
+  expectedPacketCount?: number;
+  packetCoverage?: number;
+  pairCoverage?: number;
+  comparisonCoverage?: number;
 }) {
   const corpusId = overrides?.corpusId ?? 'expert-corpus-v1';
   const metrics = {
@@ -202,6 +216,12 @@ function persistedResultFixture(overrides?: {
     syntheticFixtureCount: overrides?.syntheticFixtureCount ?? 0,
     expertLabelCount: overrides?.expertLabelCount ?? 1,
     labelResults: [],
+    expectedPacketCount: overrides?.expectedPacketCount ?? 1,
+    packetCoverage: overrides?.packetCoverage ?? 1,
+    pairCoverage: overrides?.pairCoverage ?? 1,
+    comparisonCoverage: overrides?.comparisonCoverage ?? 1,
+    missingPacketIds: [],
+    packetIdentityMismatches: [],
   };
   return {
     metrics,
@@ -410,8 +430,8 @@ describe('matching evaluation CLI', () => {
     expect(readiness.ready).toBe(false);
     expect(readiness.failures).toEqual(
       expect.arrayContaining([
-        'Production rollout requires at least one expert label',
-        'Production rollout requires zero synthetic fixture labels',
+        'production rollout requires at least one expert label',
+        'production rollout requires zero synthetic fixture labels',
       ]),
     );
   });
@@ -703,5 +723,90 @@ describe('matching evaluation CLI', () => {
     expect(result.failures).toEqual(
       expect.arrayContaining([expect.stringContaining('Missing provenance')]),
     );
+  });
+
+  it('passes the readiness gate at shadow stage even with incomplete coverage', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, readFileSync(corpusFixture, 'utf8'));
+    // Insert a result with zero packet coverage and synthetic labels — would fail
+    // production stage but should pass shadow stage.
+    insertEvaluationResult(sqlite, persistedResultFixture({
+      corpusId: 'sample-corpus-v1',
+      expertLabelCount: 0,
+      syntheticFixtureCount: 1,
+      expectedPacketCount: 0,
+      packetCoverage: 0,
+      pairCoverage: 0,
+      comparisonCoverage: 0,
+      passed: true,
+      requireExpertLabels: false,
+    }));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'sample-corpus-v1',
+      '--check-latest-production-pass',
+      '--stage',
+      'shadow',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(true);
+    expect(readiness.stage).toBe('shadow');
+  });
+
+  it('fails the readiness gate at canary stage when packet coverage is missing', async () => {
+    directory = await mkdtemp(join(tmpdir(), 'pipe-evaluation-'));
+    const databasePath = join(directory, 'evaluation.sqlite');
+    const jsonPath = join(directory, 'readiness.json');
+    const sqlite = new Database(databasePath);
+    seedMatchRuns(sqlite);
+    insertEvaluationCorpus(sqlite, expertCorpusJson());
+    insertEvaluationResult(sqlite, persistedResultFixture({
+      expectedPacketCount: 0,
+      packetCoverage: 0,
+    }));
+    sqlite.close();
+
+    const exitCode = await runEvaluationCli([
+      '--local',
+      '--database-path',
+      databasePath,
+      '--corpus-id',
+      'expert-corpus-v1',
+      '--check-latest-production-pass',
+      '--stage',
+      'canary',
+      '--json',
+      jsonPath,
+    ]);
+
+    expect(exitCode).toBe(1);
+    const readiness = JSON.parse(await readFile(jsonPath, 'utf8'));
+    expect(readiness.ready).toBe(false);
+    expect(readiness.stage).toBe('canary');
+    expect(readiness.failures).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('corpus declares no expected packets'),
+      ]),
+    );
+  });
+
+  it('rejects an invalid --stage value', () => {
+    expect(() => parseEvaluationArgs([
+      '--corpus-id', 'test',
+      '--stage', 'invalid',
+    ])).toThrow('--stage must be one of');
   });
 });

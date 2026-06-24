@@ -879,6 +879,61 @@ export interface StandaloneReviewSubmissionSummary {
   }>;
 }
 
+export interface StandaloneReviewPacketDemand {
+  id: string;
+  family: string;
+  narrative: string;
+  conceptKeys: string[];
+  sourceSpanIds: string[];
+  changedSymbolIds: string[];
+  weight: number;
+}
+
+export interface StandaloneReviewPacketTestChange {
+  path: string;
+  framework: string | null;
+  sourceSpanIds: string[];
+  relatedSymbolIds: string[];
+}
+
+export interface StandaloneReviewPacketIssue {
+  number: number;
+  title: string;
+  labels: string[];
+  sourceSpanIds: string[];
+}
+
+export interface StandaloneReviewPacketQualityGate {
+  gate: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface StandaloneReviewPacketQuality {
+  score: number;
+  eligible: boolean;
+  metrics: {
+    provenanceCoverage: number;
+    reviewableSize: number;
+    testCoverage: number;
+    issueContext: number;
+    demandDiversity: number;
+  };
+  gates: StandaloneReviewPacketQualityGate[];
+}
+
+export interface StandaloneReviewPacketDetail {
+  packetId: string;
+  changedFilePaths: string[];
+  changedSymbolIds: string[];
+  sourceSpanIds: string[];
+  demandFamilies: string[];
+  demands: StandaloneReviewPacketDemand[];
+  testChanges: StandaloneReviewPacketTestChange[];
+  issue: StandaloneReviewPacketIssue | null;
+  quality: StandaloneReviewPacketQuality | null;
+}
+
 export interface StandaloneReviewMatchRecord {
   interviewId: string;
   interviewStatus: string;
@@ -897,6 +952,7 @@ export interface StandaloneReviewMatchRecord {
   roleSources: StandaloneReviewRoleSource[];
   gaps: string[];
   diagnostics: StandaloneReviewDiagnostics;
+  packet: StandaloneReviewPacketDetail | null;
   submitted: boolean;
   submission: StandaloneReviewSubmissionSummary | null;
   completedAt: string | null;

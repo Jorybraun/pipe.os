@@ -47,6 +47,7 @@ export interface EvaluationCliOptions {
   persist: boolean;
   allowSynthetic: boolean;
   checkLatestProductionPass: boolean;
+  stage: 'shadow' | 'canary' | 'production';
 }
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -203,6 +204,12 @@ function valueFor(argv: string[], flag: string): string | undefined {
   return valuesFor(argv, flag)[0];
 }
 
+function parseStage(value: string | undefined): 'shadow' | 'canary' | 'production' {
+  if (!value) return 'production';
+  if (value === 'shadow' || value === 'canary' || value === 'production') return value;
+  throw new Error(`--stage must be one of: shadow, canary, production (got "${value}")`);
+}
+
 export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null {
   if (argv.includes('--help') || argv.includes('-h')) return null;
   const corpusId = valueFor(argv, '--corpus-id');
@@ -226,6 +233,7 @@ export function parseEvaluationArgs(argv: string[]): EvaluationCliOptions | null
     persist: argv.includes('--persist'),
     allowSynthetic: argv.includes('--allow-synthetic'),
     checkLatestProductionPass: argv.includes('--check-latest-production-pass'),
+    stage: parseStage(valueFor(argv, '--stage')),
   };
 }
 
@@ -245,6 +253,8 @@ Options:
   --check-latest-production-pass
                                 Read-only rollout gate: require latest persisted
                                 result for --corpus-id to satisfy production gates
+  --stage <shadow|canary|production>
+                                Rollout stage for the readiness gate (default: production)
   --allow-synthetic             Fixture testing only; cannot be combined with --persist`;
 }
 
@@ -320,6 +330,7 @@ export async function runEvaluationCli(argv: string[]): Promise<number> {
     if (options.checkLatestProductionPass) {
       const readiness = await checkLatestProductionEvaluation(db as unknown as D1Database, {
         corpusId: options.corpusId,
+        stage: options.stage,
       });
       const json = `${JSON.stringify(readiness, null, 2)}\n`;
       const report = `${generateEvaluationReadinessReport(readiness)}\n`;

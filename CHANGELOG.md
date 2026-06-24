@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Real Source-Backed Repo Challenge Packet Backfill (HAS-83)
+
+- Added `backfillReviewChallengePackets` pipeline that selects eligible merged PRs from the crawler D1 catalog (`repo_sample_prs` joined with `qualified_repos`), fetches PR refs, diff, and changed-file source from GitHub, normalizes them into a deterministic `NormalizedPullRequestInput`, builds a challenge packet through the `repoSemanticGraph` pipeline, and persists the full graph through `persistReviewChallengeGraph`.
+- Backfill is idempotent: PRs with an already-persisted packet (`repo_id` + `pr_number` + `packet_version`) are skipped unless `force` is set; forced re-persist produces byte-identical rows because packet identity and content hashes are deterministic.
+- Added `selectEligibleCrawlerPullRequests` enforcing structural eligibility (merged, modifies tests, not archived/disqualified, changed-file/line thresholds) in SQL and language eligibility (challenge-packet-allowed languages only) post-fetch.
+- Added `countOverlayReadyPackets` readiness gate reporting the number of `production_ready=1` packets in D1; the backfill succeeds when at least one real overlay-ready packet exists after the run.
+- Added focused `repoSemanticGraph/backfill` tests proving a real source-backed overlay-ready packet is persisted with exact source spans, structural facts (`changed_symbol`, `imports`, `calls`, `contains`), parser-supported symbols, repo source refs (GitHub head-content external references), a `repo_challenge_packet` context record with linked source refs, open concept links, and the derived semantic graph (episodes, facets, assertions, signals).
+- Added idempotency and force-rebuild regressions proving second-run skip, byte-identical state preservation, and deterministic forced re-persist.
+
+### Changed — Harden source-backed repo discovery and matching (HAS-86)
+
+- Removed the `jaccardText` text-overlap fallback in `semanticSimilarity` so the `semanticNarrative` scoring dimension contributes zero when embedding evidence is absent instead of fabricating a heuristic text-overlap score.
+- Removed fabricated `roleRequirement: true` and `highWeightRoleRequirement: true` defaults in `materializeChallengePacketForMatching` when no role concepts are provided; demands are now only marked as role requirements when backed by source-evidenced role concept overlap.
+- Made role discovery optional in `alignCandidateToChallenge`: `ROLE_RELEVANCE_BELOW_THRESHOLD` and `NO_HIGH_WEIGHT_ROLE_REQUIREMENT` rejection reasons are only applied when at least one demand carries a role requirement, so challenges remain eligible without role context.
+- Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.
+- Added tests proving embedding-only match decisions are prevented, semantic similarity is not fabricated from text overlap, role discovery is optional, fabricated role requirement defaults are gone, non-role demands are not marked as high-weight role requirements, and rejected packets always include explicit reasons.
+
+### Added — Expert-Labelled Evaluation and Rollout Gate for Deterministic Matching (HAS-88)
+
+- Added staged rollout gate tests covering shadow, canary, and production stages with strictly increasing thresholds for packet coverage, pair coverage, comparison rerun coverage, expert labels, byte-identical determinism, guardrail violations, and provenance completeness.
+- Added `--stage` CLI flag to `evaluateMatching.ts` so the readiness gate can enforce shadow, canary, or production stage thresholds; the readiness gate is now fully stage-aware (shadow relaxes all coverage and quality checks).
+- Added full E2E evaluation scenario: roleless person + simple JD + real repo packet (repo/PR/commit) + explained candidate-to-PR match with alignment source references linking candidate evidence, JD text, and PR diff content, plus independent comparison rerun for byte-identical determinism proof.
+- Fixed `persistedResultFixture` in CLI tests to include packet coverage fields (`expectedPacketCount`, `packetCoverage`, `pairCoverage`, `comparisonCoverage`, `missingPacketIds`, `packetIdentityMismatches`) so the readiness gate can evaluate persisted results correctly.
+- Updated expert corpus fixture to declare expected packets matching seeded match runs so the production readiness gate passes end-to-end.
+
+### Added — V1 Semantic Context Records (HAS-96)
+
+- Projected source-backed `context_records` into the Neo4j living-context graph, including linked entities, source refs, and concept edges so multi-entity meaning is rebuildable from immutable source spans rather than hard-coded semantic edges.
+- Extended the workspace-person concept projection to union concepts surfaced only through `context_record_concepts`, so unseen/open-data concepts survive ingestion and projection rebuild without alias lists or hard-coded semantic families.
+- Added a regression proving an unseen context-record-only concept persists through idempotent replay and two projection rebuilds (delete + re-project), remaining the source-backed truth for multi-entity meaning.
+
+### Added — Source-Backed Transcript and Interaction Semantics Ingestion (HAS-85)
+
+- Meeting transcripts are now persisted as immutable artifact versions with content hashes, exact paragraph/source spans (char/byte/line offsets), and per-segment speaker attribution that never trusts unbound diarized labels as person identity.
+- Extracted semantic assertions link back to exact transcript source spans via `assertion_source_spans`, with open predicates/narratives/qualifiers preserved verbatim from the source rather than forced into a fixed taxonomy.
+- Unknown concepts surfaced in transcript assertions survive as open `term:*` concepts in the concept registry, accumulating signal evidence (noisy-or) across interactions without requiring a pre-known vocabulary.
+- Interaction context remains separately reviewable: meeting interactions are stored in the `interactions` table and surfaced as their own read-model section, while context records distinguish `meeting_transcript` (raw evidence) from `meeting_transcript_assertion` (derived meaning) so reviewers can audit each independently.
+- Re-processing a corrected transcript creates a new immutable version; re-running an extractor removes stale derived meaning (assertions, episodes, signal evidence) while preserving the immutable transcript artifact and source spans.
+- Source-only backfill replay preserves newer semantic projections instead of deleting them, and mixed-audio Whisper fallback transcripts stay summary-only without fabricating person semantic signals.
+- Added `loadInteractionLivingContext` and `loadMeetingTranscriptContext` read models that keep interaction context separately reviewable from accumulated person projections (deleting the projection outbox does not remove the per-event source-backed record).
+- Added `searchTranscriptSourceSpans` and `GET /meetings/:id/transcript/search?q=` so original transcript text remains searchable and explainable — each hit returns exact source span offsets plus the assertions/context records that cite it.
+- Added `GET /meetings/:id/interaction-context` to expose the shared immutable transcript artifact, exact source spans, and per-participant derived assertions/context records/signal evidence as a single reviewable view.
+- Added regression proving a previously unseen concept (`phosphor lattice accumulator`) survives as an open `term:*` concept with assertions and context records linked back to exact transcript spans.
+- Added invariant test that the read model returns source span exact text for every transcript-derived assertion, context record, and signal evidence entry.
+
+### Changed — Quiet Empty Living Graph (HAS-81)
+
+- The `LivingContextGraph` now stays quiet when a person has no source-backed evidence yet: summary metrics, search toolbar, interactions rail, accumulated-context canvas, and source inspector are hidden behind a single "No source-backed living evidence yet" state instead of rendering an empty debug dashboard.
+- Source-backed standalone code-review match panels remain visible alongside the quiet empty state so reviewers still see match evidence, gaps, and packet diagnostics when present.
+- Empty-state quietness is covered by BDD regressions proving empty sections collapse with and without a standalone review match.
+
+### Added — Graph and Match Explanation UI (HAS-87)
+
+- Added a repository packet view (`RepoPacketPanel`) to the living context graph that renders files, source spans, symbols, structural facts (quality gates), behavioral episodes (test changes + linked issue), packet assertions (demands with narratives and concept keys), and packet concepts from the persisted challenge packet.
+- Extended the candidate profile API (`StandaloneReviewMatchRecord`) with a `packet` field carrying structured packet detail parsed from `packet_json`, so the recruiter UI can render the full repo packet alongside the candidate-to-PR overlay.
+- Added a "Show provenance IDs" drill-down toggle on the repo packet panel that hides raw internal IDs (packet ID, span IDs, symbol IDs, demand IDs, full file paths, quality scores) by default and reveals them on demand for debugging and provenance audit.
+- Made empty graph states quiet: the zero-count summary dashboard and the graph workspace no longer render when there is no living context evidence, replaced by a single quiet empty-state message.
+
+### Added — Person-First Interview Model (HAS-80)
+
+- Added `DEV_CONTAINER_CHALLENGE` as a first-class interview type so a recruiter can create a dev-container challenge interview for any person (contact, candidate, customer, client, or lead) without requiring a pipeline/role container.
+- Dev-container challenge interviews attach a source-backed repo/PR task via `matchedRepoId` or an explicit `githubRepoUrl` + `githubPrNumber` pair; the create-interview schema rejects a `DEV_CONTAINER_CHALLENGE` request that carries no source-backed task.
+- Shared the `INTERVIEW_TYPE_VALUES` constant between the scheduling and candidates routes so standalone candidate creation and the scheduling endpoint accept the same interview-type set.
+- Frontend invite modals now expose the Dev-container challenge option with a dedicated mode card, and the interview detail page treats `DEV_CONTAINER_CHALLENGE` as a workspace-backed interview for dev-container session handling.
+- Added scheduling route tests proving person-first `DEV_CONTAINER_CHALLENGE` interviews persist with the repo/PR task and that the source-backed-task requirement is enforced.
+
+### Added — MVP-Simple Interview Flow with No Fabricated /video Fallback Links (HAS-89)
+
+- Added regression tests proving roleless meetings (no pipeline, stage, or role) create `/room/:token` links end-to-end and never fabricate `/video/stageId--candidateId` fallback URLs across room preparation, guest invites, public room resolution, room reopening, and persisted `meetings.meeting_url`.
+- Added regression tests proving scheduled interview detail/list endpoints return `null` (not a fabricated `/video/` link) when `meeting_url` is null, and return the canonical `/room/` URL after an invite creates one.
+- Confirmed `buildInternalVideoUrl` returns `null` when no `meeting_url` exists, so the person-first MVP flow keeps the UI clean without noisy fabricated video links while video-call recordings/transcripts continue feeding the living graph.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
@@ -346,6 +418,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `packages/ui/src/Layout.tsx`: Added `rightPanel`, `rightPanelOpen`, `rightPanelWidth` props for sliding panel support with content push effect.
 
 **Technical Notes:**
+
 - **CopilotKit-compatible custom agent pattern** - Backend implements CopilotKit v2 API interface (`/api/copilotkit`) but uses custom agent that works in Cloudflare Workers
 - Frontend uses CopilotKit v2 hooks (`useChat`, `useComponent`) - complies with project rule
 - Custom agent uses Cloudflare AI binding directly with Gemma 4 model
@@ -355,6 +428,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Production-ready per Pipe standards
 
 **Lesson Learned: CopilotKit v2 + Cloudflare Workers Incompatibility**
+
 - CopilotKit v2's package structure includes Node.js dependencies (`@hono/node-server`, `express`, `@segment/analytics-node`) at the package level
 - Wrangler's bundler (Rolldown) automatically injects `createRequire(import.meta.url)` for CommonJS interop
 - `import.meta.url` is `undefined` in Cloudflare Workers bundled output, causing crash at module initialization
@@ -651,6 +725,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 **Task B — Role Discovery Agent:**
+
 - Role Discovery agent now uses 6 calibrated probes instead of open-ended Six Domains exploration
 - Role Context Document (RCD) is now the primary synthesis artifact
 - Added calibration review UI for recruiters to flag and correct RCD attributes
@@ -658,12 +733,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Migration `0049_role_nodes.sql`**: derivative sub-element view of RCDs; FK to `role_contexts` with `ON DELETE CASCADE`, 11-type `CHECK` constraint, and partial index on active (`superseded_at IS NULL`) nodes.
 
 **Task C — Code Review Golden Path:**
+
 - CODE_REVIEW stages now create review session on stage entry
 - New review session endpoints: `/rpc/review/session/init`, `/message`, `/complete`
 - Added dedicated review session page with diff + chat interface
 - Recruiter dashboard now shows review session status, score, and transcript
 
 **Infrastructure & Docs:**
+
 - Phase 5 CI/CD: GitHub Actions workflows for CI, staging deploy, and production deploy
 - ADR-041: Cloudflare-native deployment with Wrangler (drops Terraform)
 - `workers/api/wrangler.jsonc` environments: `staging` and `production`
@@ -675,6 +752,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Role context embedding:** `buildAndStoreRoleEmbedding` fires best-effort when role discovery reaches `COMPLETE`, building `role_searchable_profile` from `job_description_md` and embedding via BGE-large-en-v1.5.
 
 ### Removed
+
 - **Deprecated stage types:** Removed all dead stage types (`AI_COLLAB`, `PLANNING`, `VOICE`, `INGESTION`, `TECHNICAL`, `QUESTIONS`, `VOICE_INTERVIEW`) from frontend and backend.
 - Locked to exactly 5 stage types: `SCREENING`, `CULTURAL`, `CODE_REVIEW`, `OPEN_SOURCE`, `LIVE_PANEL`.
 - Aligned `workers/api/src/validation/stages.ts`, `src/lib/stageTemplates.ts`, `src/types/index.ts`, and all UI components.
@@ -683,6 +761,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleaned up unused lucide-react imports (Zap, Brain, Mic) from modified components.
 
 ### Changed
+
 - `docs/vision.md`: Aligned with project brief — added product thesis, full vision reference, and guardrails
 - `migration/PLAN.md`: Added Product Phases (P1–P5) section with 2026-04-22 decisions
 - Documentation reorganization: unified navigation hub, split decisions into current/historical, extracted model routing, archived stale artifacts
@@ -700,4 +779,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.1] - 2026-04-22
 
 ### Added
+
 - Initial changelog

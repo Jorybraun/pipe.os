@@ -28,7 +28,9 @@ vi.mock('../../neo4j/query', () => ({
 }));
 
 import { ingestMeetingTranscriptToLivingContext } from '../meetingTranscript';
+import { LivingContextStore } from '../persistence';
 import { processProjectionOutbox } from '../projection';
+import type { ContextRecordInput } from '../types';
 
 
 
@@ -242,5 +244,156 @@ describe('living-context Neo4j projection outbox', () => {
       .map((call) => call[1])
       .join('\n');
     expect(cypher).toContain('DETACH DELETE wp');
+  });
+
+  it('preserves unseen context-record-only concepts through a projection rebuild', async () => {
+    const store = new LivingContextStore(db, () => '2026-06-13T11:00:00.000Z');
+    const workspacePerson = sqlite.prepare(
+      `SELECT id FROM workspace_people LIMIT 1`,
+    ).get() as { id: string };
+    const sourceSpan = sqlite.prepare(
+      `SELECT ss.id FROM source_spans ss LIMIT 1`,
+    ).get() as { id: string };
+    const interaction = sqlite.prepare(
+      `SELECT id FROM interactions LIMIT 1`,
+    ).get() as { id: string };
+
+    // An "unseen" concept: persisted only as open data, never linked to any
+    // semantic assertion. It must survive ingestion and a projection rebuild
+    // purely through its context_record_concepts edge.
+    const unseenConcept = await store.upsertConcept({
+      ingestionKey: 'open-term:unseen-context-only-quantum-replay',
+      canonicalKey: 'term:unseen-context-only-quantum-replay',
+      namespace: 'term',
+      label: 'unseen context only quantum replay',
+      metadata: { source: 'has-96-unseen-concept-projection' },
+    });
+    expect(
+      sqlite.prepare(
+        `SELECT COUNT(*) AS count FROM assertion_concepts WHERE concept_id = ?`,
+      ).get(unseenConcept.id),
+    ).toEqual({ count: 0 });
+
+    const contextRecordInput: ContextRecordInput = {
+      ingestionKey: 'context-record:has-96:unseen-concept-rebuild',
+      workspacePersonId: workspacePerson.id,
+      interactionId: interaction.id,
+      recordType: 'source_backed_meaning',
+      predicate: 'designed',
+      narrative: 'Designed an unseen quantum replay strategy for order events.',
+      qualifiers: { sourceSegmentId: 'guest-1' },
+      confidence: 0.9,
+      extractionVersion: 'has-96-projection-v1',
+      observedAt: '2026-06-13T11:00:00.000Z',
+      sources: [{ sourceSpanId: sourceSpan.id, evidenceRole: 'source' }],
+      entities: [
+        {
+          entityType: 'workspace_person',
+          entityId: workspacePerson.id,
+          relationship: 'speaker',
+        },
+        {
+          entityType: 'business_object',
+          relationship: 'object',
+          value: { literal: 'quantum order events' },
+        },
+      ],
+      concepts: [
+        {
+          conceptId: unseenConcept.id,
+          relationship: 'mechanism',
+          weight: 0.92,
+        },
+      ],
+    };
+    const contextRecord = await store.upsertContextRecord(contextRecordInput);
+    // Idempotent replay must not duplicate the unseen concept linkage.
+    await store.upsertContextRecord(contextRecordInput);
+
+    // Scope counts to the record under test: the beforeEach meeting-transcript
+    // ingestion already persists its own context records, so a global count
+    // would conflate them with the unseen-concept record under test.
+    expect(
+      sqlite.prepare(
+        `SELECT COUNT(*) AS count FROM context_records WHERE ingestion_key = ?`,
+      ).get(contextRecordInput.ingestionKey),
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite.prepare(
+        `SELECT COUNT(*) AS count FROM context_record_concepts WHERE context_record_id = ?`,
+      ).get(contextRecord.id),
+    ).toEqual({ count: 1 });
+    expect(
+      sqlite.prepare(
+        `SELECT canonical_key FROM context_record_concepts crc
+           JOIN concepts c ON c.id = crc.concept_id
+          WHERE crc.context_record_id = ?`,
+      ).get(contextRecord.id),
+    ).toEqual({
+      canonical_key: 'term:unseen-context-only-quantum-replay',
+    });
+
+    const result = await processProjectionOutbox({
+      DB: db,
+      NEO4J_URI: 'bolt://test',
+      NEO4J_PASSWORD: 'test',
+    } as unknown as Parameters<typeof processProjectionOutbox>[0]);
+
+    expect(result).toEqual({ completed: 1, failed: 0 });
+    const calls = runWriteQuery.mock.calls as Array<
+      [unknown, string, Record<string, unknown>]
+    >;
+    const cypher = calls.map((call) => call[1]).join('\n');
+
+    // The unseen concept node is projected even though no assertion references it.
+    expect(cypher).toContain('MERGE (c:Concept {concept_id: row.concept_id})');
+    expect(cypher).toContain('RELATES_TO_CONCEPT');
+    expect(cypher).toContain('MERGE (cr:ContextRecord {context_record_id: row.id})');
+
+    const conceptCall = calls.find((call) =>
+      call[1].includes('RELATES_TO_CONCEPT'),
+    );
+    // The RELATES_TO_CONCEPT batch projects every context-record concept for
+    // the workspace person, including the beforeEach assertion concept. Assert
+    // the unseen concept is present rather than the sole row.
+    expect(conceptCall?.[2]).toMatchObject({
+      rows: expect.arrayContaining([
+        expect.objectContaining({
+          concept_id: unseenConcept.id,
+          canonical_key: 'term:unseen-context-only-quantum-replay',
+          relationship: 'mechanism',
+          weight: 0.92,
+        }),
+      ]),
+    });
+
+    // A second rebuild (delete + re-project) must still surface the unseen
+    // concept, proving it survives projection rebuild rather than being dropped.
+    sqlite.prepare(
+      `UPDATE projection_outbox
+          SET status = 'pending', completed_at = NULL, attempts = 0`,
+    ).run();
+    runWriteQuery.mockClear();
+    const rebuild = await processProjectionOutbox({
+      DB: db,
+      NEO4J_URI: 'bolt://test',
+      NEO4J_PASSWORD: 'test',
+    } as unknown as Parameters<typeof processProjectionOutbox>[0]);
+
+    expect(rebuild).toEqual({ completed: 1, failed: 0 });
+    const rebuildCalls = runWriteQuery.mock.calls as Array<
+      [unknown, string, Record<string, unknown>]
+    >;
+    const rebuildConceptCall = rebuildCalls.find((call) =>
+      call[1].includes('RELATES_TO_CONCEPT'),
+    );
+    expect(rebuildConceptCall?.[2]).toMatchObject({
+      rows: expect.arrayContaining([
+        expect.objectContaining({
+          concept_id: unseenConcept.id,
+          canonical_key: 'term:unseen-context-only-quantum-replay',
+        }),
+      ]),
+    });
   });
 });

@@ -734,6 +734,67 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('never fabricates /video fallback links when meeting_url is null', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    // Both seeded interviews have meeting_url = NULL. The detail endpoint must
+    // return null — never a fabricated /video/stageId--candidateId fallback.
+    const pipelineRes = await app.request('/interviews/interview-1');
+    expect(pipelineRes.status).toBe(200);
+    const pipelineBody = await pipelineRes.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(pipelineBody.interview.meetingUrl).toBeNull();
+
+    const rolelessRes = await app.request('/interviews/interview-roleless-1');
+    expect(rolelessRes.status).toBe(200);
+    const rolelessBody = await rolelessRes.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(rolelessBody.interview.meetingUrl).toBeNull();
+
+    // The list endpoint must also return null, not a fabricated /video/ link.
+    const listRes = await app.request('/interviews');
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json() as {
+      interviews: Array<{ id: string; meetingUrl: string | null }>;
+    };
+    for (const iv of listBody.interviews) {
+      expect(iv.meetingUrl).toBeNull();
+    }
+
+    // After inviting (which creates a /room/ link), the detail endpoint must
+    // return the /room/ URL — never a /video/ fallback.
+    const inviteRes = await app.request('/interviews/interview-1/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.com', sendEmail: false }),
+    });
+    expect(inviteRes.status).toBe(200);
+    const inviteBody = await inviteRes.json() as {
+      meetingUrl: string;
+      room: { guestUrl: string };
+    };
+    expect(inviteBody.meetingUrl).toMatch(/\/room\//);
+    expect(inviteBody.meetingUrl).not.toContain('/video/');
+
+    const detailAfterInvite = await app.request('/interviews/interview-1');
+    expect(detailAfterInvite.status).toBe(200);
+    const detailBody = await detailAfterInvite.json() as {
+      interview: { id: string; meetingUrl: string | null };
+    };
+    expect(detailBody.interview.meetingUrl).toMatch(/\/room\//);
+    expect(detailBody.interview.meetingUrl).not.toContain('/video/');
+
+    // The persisted scheduled_interviews.meeting_url must be a /room/ URL.
+    const storedRow = sqlite!.prepare(
+      'SELECT meeting_url FROM scheduled_interviews WHERE id = ?',
+    ).get('interview-1') as { meeting_url: string | null };
+    expect(storedRow.meeting_url).toMatch(/\/room\//);
+    expect(storedRow.meeting_url).not.toContain('/video/');
+  });
+
   it('creates a contact-first scheduled interview without candidate, role, or application', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();
@@ -1234,6 +1295,215 @@ describe('GET /interviews/:id detail', () => {
       'Email sent: yes',
       'Provider message id: cf-calendly-message-1',
     ]));
+  });
+});
+
+// ─── Dev-container challenge (HAS-80) tests ─────────────────────────────────
+
+describe('POST /interviews dev-container challenge (HAS-80)', () => {
+  let sqlite: BetterSqliteDb | null = null;
+
+  afterEach(() => {
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  function mountSchedulingApp(envOverrides: Partial<Env> = {}): Hono<{ Bindings: Env; Variables: Variables }> {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+    app.use('*', async (c, next) => {
+      c.env = {
+        DB: createMockD1(sqlite!),
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'owner-1',
+        APP_BASE_URL: 'http://localhost:5173',
+        ...envOverrides,
+      } as unknown as Env;
+      await next();
+    });
+    app.route('/', schedulingAuth);
+    return app;
+  }
+
+  function seedDevContainerFixture(): void {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        status TEXT,
+        name TEXT,
+        email TEXT
+      );
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        email TEXT,
+        name TEXT,
+        company TEXT,
+        role TEXT,
+        phone TEXT,
+        linkedin TEXT,
+        notes TEXT,
+        type TEXT NOT NULL DEFAULT 'lead',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        title TEXT
+      );
+      CREATE TABLE stages (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT NOT NULL,
+        title TEXT
+      );
+      CREATE TABLE scheduled_interviews (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        pipeline_id TEXT,
+        stage_id TEXT,
+        owner_id TEXT NOT NULL,
+        interview_type TEXT,
+        meeting_type TEXT,
+        status TEXT,
+        scheduled_at TEXT,
+        meeting_url TEXT,
+        scheduling_provider TEXT,
+        scheduling_url TEXT,
+        external_event_id TEXT,
+        recruiter_notes TEXT,
+        sync_source TEXT,
+        last_synced_at TEXT,
+        invite_link_sent_at TEXT,
+        email_sent_at TEXT,
+        recipient_name TEXT,
+        recipient_email TEXT,
+        matched_repo_id INTEGER,
+        github_repo_url TEXT,
+        github_pr_number INTEGER,
+        submission_json TEXT,
+        completed_at TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(contextRecordsMigration);
+  }
+
+  it('rejects DEV_CONTAINER_CHALLENGE without a source-backed repo task', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Linus Torvalds',
+        recipientEmail: 'linus@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'DEV_CONTAINER_CHALLENGE',
+      }),
+    });
+    expect(response.status).toBe(422);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('DEV_CONTAINER_CHALLENGE requires a source-backed repo task');
+  });
+
+  it('creates a person-first DEV_CONTAINER_CHALLENGE with explicit repo url + PR', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Linus Torvalds',
+        recipientEmail: 'linus@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'DEV_CONTAINER_CHALLENGE',
+        githubRepoUrl: 'https://github.com/hash-pipe/example-challenge',
+        githubPrNumber: 42,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        pipelineId: string | null;
+        candidateId: string | null;
+        contactId: string | null;
+      };
+    };
+    expect(body.interview.interviewType).toBe('DEV_CONTAINER_CHALLENGE');
+    expect(body.interview.githubRepoUrl).toBe('https://github.com/hash-pipe/example-challenge');
+    expect(body.interview.githubPrNumber).toBe(42);
+    expect(body.interview.matchedRepoId).toBeNull();
+    // Person-first: no pipeline/role container required.
+    expect(body.interview.pipelineId).toBeNull();
+    expect(body.interview.candidateId).toBeNull();
+    expect(body.interview.contactId).not.toBeNull();
+
+    const row = sqlite!.prepare(
+      `SELECT interview_type, matched_repo_id, github_repo_url, github_pr_number,
+              pipeline_id, candidate_id, recipient_name, recipient_email
+         FROM scheduled_interviews WHERE id = ?`,
+    ).get(body.interview.id) as {
+      interview_type: string;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      pipeline_id: string | null;
+      candidate_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+    };
+    expect(row.interview_type).toBe('DEV_CONTAINER_CHALLENGE');
+    expect(row.github_repo_url).toBe('https://github.com/hash-pipe/example-challenge');
+    expect(row.github_pr_number).toBe(42);
+    expect(row.matched_repo_id).toBeNull();
+    expect(row.pipeline_id).toBeNull();
+    expect(row.candidate_id).toBeNull();
+    expect(row.recipient_name).toBe('Linus Torvalds');
+    expect(row.recipient_email).toBe('linus@example.com');
+  });
+
+  it('creates a person-first DEV_CONTAINER_CHALLENGE with matchedRepoId', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lovelace',
+        recipientEmail: 'ada@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'DEV_CONTAINER_CHALLENGE',
+        matchedRepoId: 7,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: { id: string; matchedRepoId: number | null; interviewType: string };
+    };
+    expect(body.interview.interviewType).toBe('DEV_CONTAINER_CHALLENGE');
+    expect(body.interview.matchedRepoId).toBe(7);
+
+    const row = sqlite!.prepare(
+      'SELECT interview_type, matched_repo_id FROM scheduled_interviews WHERE id = ?',
+    ).get(body.interview.id) as { interview_type: string; matched_repo_id: number | null };
+    expect(row.interview_type).toBe('DEV_CONTAINER_CHALLENGE');
+    expect(row.matched_repo_id).toBe(7);
   });
 });
 

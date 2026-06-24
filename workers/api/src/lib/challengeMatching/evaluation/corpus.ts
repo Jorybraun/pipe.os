@@ -2,6 +2,7 @@ import type {
   CandidatePersonEvidence,
   EvaluationCorpus,
   EvidenceReference,
+  ExpectedChallengePacket,
   ExpertLabel,
   RelevanceGrade,
   RoleRequirements,
@@ -185,6 +186,59 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
     label.eligibleChallengeIds.forEach((id) => challengeIds.add(id));
   }
 
+  const expectedPackets = corpus.expectedPackets ?? [];
+  const expectedPacketIds = new Set<string>();
+  for (const packet of expectedPackets) {
+    if (!packet.challengeId) {
+      failures.push('expected packet is missing challengeId');
+      continue;
+    }
+    if (expectedPacketIds.has(packet.challengeId)) {
+      failures.push(`duplicate expected packet challengeId: ${packet.challengeId}`);
+    }
+    expectedPacketIds.add(packet.challengeId);
+    if (!nonEmptyString(packet.repoId)) {
+      failures.push(`expected packet is missing repoId: ${packet.challengeId}`);
+    }
+    if (!Number.isInteger(packet.prNumber) || packet.prNumber <= 0) {
+      failures.push(`expected packet prNumber must be a positive integer: ${packet.challengeId}`);
+    }
+    if (!nonEmptyString(packet.sourceVersion)) {
+      failures.push(`expected packet is missing sourceVersion: ${packet.challengeId}`);
+    }
+    if (packet.packetContentHash !== undefined && !nonEmptyString(packet.packetContentHash)) {
+      failures.push(`expected packet packetContentHash must be non-empty: ${packet.challengeId}`);
+    }
+    if (!challengeIds.has(packet.challengeId)) {
+      failures.push(`expected packet references unlabelled challenge: ${packet.challengeId}`);
+    }
+    if (Array.isArray(packet.demands)) {
+      const demandIds = new Set<string>();
+      for (const demand of packet.demands) {
+        if (!nonEmptyString(demand.demandId)) {
+          failures.push(`expected packet demand is missing demandId: ${packet.challengeId}`);
+          continue;
+        }
+        if (demandIds.has(demand.demandId)) {
+          failures.push(`duplicate expected packet demandId: ${packet.challengeId}/${demand.demandId}`);
+        }
+        demandIds.add(demand.demandId);
+        if (!Array.isArray(demand.concepts)) {
+          failures.push(`expected packet demand concepts must be an array: ${packet.challengeId}/${demand.demandId}`);
+        }
+        if (!Array.isArray(demand.sourceRefs) || demand.sourceRefs.length === 0) {
+          failures.push(`expected packet demand must contain source references: ${packet.challengeId}/${demand.demandId}`);
+          continue;
+        }
+        for (const reference of demand.sourceRefs) {
+          if (!sourceRefComplete(reference)) {
+            failures.push(`expected packet demand source reference missing exact immutable provenance: ${packet.challengeId}/${demand.demandId}`);
+          }
+        }
+      }
+    }
+  }
+
   const syntheticCount = corpus.expertLabels.filter(
     (label) => label.labeledBy === 'synthetic-fixture',
   ).length;
@@ -202,6 +256,12 @@ export function validateCorpus(corpus: EvaluationCorpus): void {
   }
   if (corpus.metadata.syntheticFixtureCount !== syntheticCount) {
     failures.push('metadata.syntheticFixtureCount does not match labeling provenance');
+  }
+  if (
+    corpus.metadata.totalExpectedPackets !== undefined
+    && corpus.metadata.totalExpectedPackets !== expectedPackets.length
+  ) {
+    failures.push('metadata.totalExpectedPackets does not match expectedPackets');
   }
   if (failures.length > 0) throw new CorpusValidationError(failures);
 }
@@ -291,4 +351,17 @@ export function getAllChallengeIds(corpus: EvaluationCorpus): string[] {
     ]),
   );
   return Array.from(challengeSet).sort();
+}
+
+export function getExpectedPackets(corpus: EvaluationCorpus): ExpectedChallengePacket[] {
+  return corpus.expectedPackets ?? [];
+}
+
+export function getExpectedPacket(
+  corpus: EvaluationCorpus,
+  challengeId: string,
+): ExpectedChallengePacket | undefined {
+  return (corpus.expectedPackets ?? []).find(
+    (packet) => packet.challengeId === challengeId,
+  );
 }

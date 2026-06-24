@@ -514,7 +514,7 @@ export function materializeChallengePacketForMatching(
   const roleConceptSet = roleConcepts ? new Set(roleConcepts) : null;
   const roleDemands = roleConceptSet
     ? packet.demands.filter((demand) => demand.conceptKeys.some((key) => roleConceptSet.has(key)))
-    : packet.demands;
+    : [];
   const maxRoleWeight = roleDemands.length > 0
     ? Math.max(...roleDemands.map((demand) => demand.weight))
     : null;
@@ -550,10 +550,10 @@ export function materializeChallengePacketForMatching(
           sourceRefs,
           roleRequirement: roleConceptSet
             ? demand.conceptKeys.some((key) => roleConceptSet.has(key))
-            : true,
+            : false,
           highWeightRoleRequirement: maxRoleWeight !== null
             && demand.weight === maxRoleWeight
-            && (!roleConceptSet || demand.conceptKeys.some((key) => roleConceptSet.has(key))),
+            && demand.conceptKeys.some((key) => roleConceptSet?.has(key) ?? false),
         };
       }),
       quality: {

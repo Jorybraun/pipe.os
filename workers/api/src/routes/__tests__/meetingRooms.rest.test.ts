@@ -1693,4 +1693,278 @@ describe('meeting room recording living-context route', () => {
       `meetings/owner-1/${created.meeting.id}/recording.webm`,
     );
   });
+
+  it('exposes source-backed interaction context and transcript search for a recorded meeting', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const personEmail = 'interaction-context-person@example.com';
+    const scheduledInterviewId = 'scheduled-interview-interaction-context';
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (id, status, updated_at)
+       VALUES (?, 'INVITED', ?)`,
+    ).run(scheduledInterviewId, new Date().toISOString());
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Interaction Context Person',
+        recipientEmail: personEmail,
+        title: 'Interaction context discussion',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: personEmail }),
+    }, env, ctx);
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'audio/webm', 'Content-Length': '3' },
+      body: new Uint8Array([1, 2, 3]),
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+
+    // GET /meetings/:id/interaction-context keeps the interaction context
+    // separately reviewable from the accumulated person graph.
+    const interactionContextRes = await app.request(
+      `/meetings/${created.meeting.id}/interaction-context`,
+      {},
+      env,
+      ctx,
+    );
+    expect(interactionContextRes.status).toBe(200);
+    const interactionContext = await interactionContextRes.json() as {
+      meetingId: string;
+      interactions: Array<{
+        interaction: { externalReference: string; interactionType: string };
+        assertions: Array<{ predicate: string; sources: Array<{ exactText: string }> }>;
+        contextRecords: Array<{ recordType: string }>;
+        signalEvidence: Array<{ signalKey: string }>;
+        summary: { assertionCount: number; contextRecordCount: number };
+      }>;
+      sharedArtifacts: Array<{
+        artifactType: string;
+        sourceSpans: Array<{ exactText: string }>;
+      }>;
+      contextRecords: Array<{ recordType: string }>;
+      summary: {
+        interactionCount: number;
+        artifactCount: number;
+        assertionCount: number;
+        contextRecordCount: number;
+      };
+    };
+    expect(interactionContext.meetingId).toBe(created.meeting.id);
+    expect(interactionContext.interactions).toHaveLength(1);
+    expect(interactionContext.interactions[0]?.interaction.externalReference).toBe(
+      created.meeting.id,
+    );
+    expect(interactionContext.interactions[0]?.summary).toMatchObject({
+      assertionCount: 1,
+      contextRecordCount: 1,
+    });
+    expect(interactionContext.interactions[0]?.assertions[0]?.predicate).toBe(
+      'implemented a source-described recovery mechanism',
+    );
+    expect(interactionContext.interactions[0]?.assertions[0]?.sources[0]?.exactText).toBe(
+      'I implemented lattice replay buffers for ecommerce order recovery.',
+    );
+    expect(interactionContext.interactions[0]?.signalEvidence[0]?.signalKey).toBe(
+      'term:lattice-replay-buffers',
+    );
+    expect(interactionContext.sharedArtifacts).toHaveLength(1);
+    expect(interactionContext.sharedArtifacts[0]?.artifactType).toBe('meeting_transcript');
+    expect(interactionContext.sharedArtifacts[0]?.sourceSpans.map((span) => span.exactText))
+      .toEqual([
+        'What system did you improve?',
+        'I implemented lattice replay buffers for ecommerce order recovery.',
+      ]);
+    expect(interactionContext.contextRecords.map((record) => record.recordType)).toEqual([
+      'meeting_transcript',
+    ]);
+    expect(interactionContext.summary).toMatchObject({
+      interactionCount: 1,
+      artifactCount: 1,
+      assertionCount: 1,
+      contextRecordCount: 2,
+    });
+
+    // GET /meetings/:id/transcript/search?q= searches original transcript text
+    // and explains each hit with exact spans and citing records.
+    const searchRes = await app.request(
+      `/meetings/${created.meeting.id}/transcript/search?q=${encodeURIComponent('lattice replay buffers')}`,
+      {},
+      env,
+      ctx,
+    );
+    expect(searchRes.status).toBe(200);
+    const searchResult = await searchRes.json() as {
+      meetingId: string;
+      query: string;
+      hits: Array<{
+        exactText: string;
+        matchOffset: number;
+        matchLength: number;
+        stableSegmentId: string;
+        citingAssertionIds: string[];
+        citingContextRecordIds: string[];
+      }>;
+    };
+    expect(searchResult.meetingId).toBe(created.meeting.id);
+    expect(searchResult.query).toBe('lattice replay buffers');
+    expect(searchResult.hits).toHaveLength(1);
+    const hit = searchResult.hits[0]!;
+    expect(hit.exactText).toBe(
+      'I implemented lattice replay buffers for ecommerce order recovery.',
+    );
+    expect(hit.matchLength).toBe('lattice replay buffers'.length);
+    expect(hit.stableSegmentId).toBe('utterance-0002');
+    expect(hit.citingAssertionIds).toHaveLength(1);
+    expect(hit.citingContextRecordIds.length).toBeGreaterThanOrEqual(1);
+
+    // A missing query parameter is rejected.
+    const missingQueryRes = await app.request(
+      `/meetings/${created.meeting.id}/transcript/search`,
+      {},
+      env,
+      ctx,
+    );
+    expect(missingQueryRes.status).toBe(422);
+
+    // An unknown meeting returns 404.
+    const unknownMeetingRes = await app.request(
+      '/meetings/nonexistent-meeting/interaction-context',
+      {},
+      env,
+      ctx,
+    );
+    expect(unknownMeetingRes.status).toBe(404);
+  });
+
+  it('never fabricates /video fallback links for roleless meetings', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    // Roleless MVP flow: create a meeting without a pipeline or stage.
+    // The person can interview without a role — no pipeline-first UX required.
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Roleless Link Person',
+        recipientEmail: 'roleless-links@example.com',
+        title: 'Roleless link interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    // The host token is an opaque room token, never a stageId--candidateId fabrication.
+    expect(created.hostToken).not.toContain('--');
+
+    // Prepare room links — both host and guest URLs must use /room/:token.
+    const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(roomRes.status).toBe(200);
+    const room = await roomRes.json() as {
+      room: { hostUrl: string; guestUrl: string; sessionId: string };
+    };
+    expect(room.room.hostUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(room.room.guestUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    // Explicitly assert no /video/ fallback is fabricated.
+    expect(room.room.hostUrl).not.toContain('/video/');
+    expect(room.room.guestUrl).not.toContain('/video/');
+    // Session ID is an opaque UUID, not a stageId--candidateId pair.
+    expect(room.room.sessionId).not.toContain('--');
+
+    // The persisted meeting_url must be a /room/ URL, never a /video/ URL.
+    const storedMeeting = sqlite.prepare(
+      'SELECT meeting_url FROM meetings WHERE id = ?',
+    ).get(created.meeting.id) as { meeting_url: string };
+    expect(storedMeeting.meeting_url).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(storedMeeting.meeting_url).not.toContain('/video/');
+
+    // Invite a guest — the join link must use /room/:token, not /video/.
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'roleless-links@example.com' }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+    const invite = await inviteRes.json() as {
+      success: boolean;
+      joinUrl: string;
+      guestToken: string;
+    };
+    expect(invite.joinUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(invite.joinUrl).not.toContain('/video/');
+    expect(invite.guestToken).not.toContain('--');
+
+    // Resolve the guest token via the public room endpoint.
+    const guestToken = new URL(invite.joinUrl).pathname.split('/').pop()!;
+    const guestRoomRes = await app.request(`/meeting/${guestToken}`, {}, env, ctx);
+    expect(guestRoomRes.status).toBe(200);
+    const guestRoom = await guestRoomRes.json() as {
+      room: { id: string; sessionId: string; role: string };
+    };
+    expect(guestRoom.room.role).toBe('GUEST');
+    expect(guestRoom.room.sessionId).not.toContain('--');
+
+    // Reopening the room must still produce /room/ links, never /video/ fallbacks.
+    const reopenRes = await app.request(`/meetings/${created.meeting.id}/room`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(reopenRes.status).toBe(200);
+    const reopened = await reopenRes.json() as {
+      room: { hostUrl: string; guestUrl: string };
+    };
+    expect(reopened.room.hostUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(reopened.room.guestUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+    expect(reopened.room.hostUrl).not.toContain('/video/');
+    expect(reopened.room.guestUrl).not.toContain('/video/');
+
+    // Every meeting_url in the database must be a /room/ URL — no /video/ fallbacks.
+    const allMeetingUrls = sqlite.prepare(
+      'SELECT meeting_url FROM meetings WHERE meeting_url IS NOT NULL',
+    ).all() as Array<{ meeting_url: string }>;
+    expect(allMeetingUrls.length).toBeGreaterThan(0);
+    for (const row of allMeetingUrls) {
+      expect(row.meeting_url).toMatch(/\/room\//);
+      expect(row.meeting_url).not.toContain('/video/');
+    }
+  });
 });
