@@ -158,6 +158,10 @@ export interface Env {
   DEV_BASIC_AUTH_USER?: string;
   /** Dev-only Basic Auth password embedded into generated room links. */
   DEV_BASIC_AUTH_PASSWORD?: string;
+  /** Dev-only Basic Auth username for the video room (overrides DEV_BASIC_AUTH_USER). */
+  VIDEO_ROOM_DEV_AUTH_USER?: string;
+  /** Dev-only Basic Auth password for the video room (overrides DEV_BASIC_AUTH_PASSWORD). */
+  VIDEO_ROOM_DEV_AUTH_PASSWORD?: string;
   /** Twilio Account SID for phone screening. */
   TWILIO_ACCOUNT_SID?: string;
   /** Twilio Auth Token for webhook signature validation. */

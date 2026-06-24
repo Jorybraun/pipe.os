@@ -22,7 +22,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
-import { ensureMeetingRoomLinks } from '../meetingRooms';
+import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
   LivingContextStore,
   deterministicEntityId,
@@ -279,6 +279,54 @@ async function ensureRecipientContact(
   ).bind(contactId, ownerId, email, name, now).run();
   await ensureContactLivingContext(db, contactId);
   return contactId;
+}
+
+/**
+ * Ensure a standalone (pipeline-free) candidate exists for the given email,
+ * returning the candidate id + invite token. Used for CODE_REVIEW and
+ * DEV_CONTAINER_CHALLENGE interviews so the email can include an assessment
+ * link that authenticates the candidate through /assess/:token.
+ */
+async function ensureStandaloneCandidateForInterview(
+  db: D1Database,
+  ownerId: string,
+  recipient: { name: string; email: string },
+  interviewId: string,
+): Promise<{ candidateId: string; inviteToken: string }> {
+  const email = recipient.email.trim().toLowerCase();
+  const name = recipient.name.trim();
+  const existing = await db
+    .prepare('SELECT id, invite_token FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
+    .bind(ownerId, email)
+    .first<{ id: string; invite_token: string }>();
+
+  if (existing) {
+    // Link the interview to this candidate if not already linked
+    await db
+      .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ? AND candidate_id IS NULL')
+      .bind(existing.id, new Date().toISOString(), interviewId)
+      .run();
+    return { candidateId: existing.id, inviteToken: existing.invite_token };
+  }
+
+  const candidateId = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, invite_token, status, current_stage_id, created_at, updated_at)
+       VALUES (?, NULL, ?, ?, ?, ?, 'INVITED', NULL, ?, ?)`,
+    )
+    .bind(candidateId, ownerId, name, email, inviteToken, now, now)
+    .run();
+
+  // Link the interview to this candidate
+  await db
+    .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ?')
+    .bind(candidateId, now, interviewId)
+    .run();
+
+  return { candidateId, inviteToken };
 }
 
 async function ensureScheduledInterviewRoomLinks(
@@ -1795,6 +1843,37 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : 'join a video call';
   const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
   const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
+
+  // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
+  // candidate exists so the email includes an assessment link that authenticates
+  // the candidate and routes them to the code review / dev container challenge.
+  const needsAssessmentLink = interview.interview_type === 'CODE_REVIEW'
+    || interview.interview_type === 'DEV_CONTAINER_CHALLENGE';
+  let assessUrl: string | null = null;
+  if (needsAssessmentLink && !interview.candidate_id) {
+    const recipientName = interview.candidate_name
+      ?? interview.recipient_name
+      ?? email.split('@')[0]
+      ?? 'Candidate';
+    const { inviteToken } = await ensureStandaloneCandidateForInterview(
+      db,
+      userId,
+      { name: recipientName, email },
+      interview.id,
+    );
+    const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+    assessUrl = withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, c.env);
+  } else if (needsAssessmentLink && interview.candidate_id) {
+    // Candidate already exists — fetch their invite token
+    const candidate = await db
+      .prepare('SELECT invite_token FROM candidates WHERE id = ?')
+      .bind(interview.candidate_id)
+      .first<{ invite_token: string }>();
+    if (candidate?.invite_token) {
+      const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
+      assessUrl = withDevBasicAuth(`${baseUrl}/assess/${candidate.invite_token}`, c.env);
+    }
+  }
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {

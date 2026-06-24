@@ -1153,7 +1153,7 @@ export async function ensureMeetingRoomLinks(
   db: D1Database,
   meetingId: string,
   roomAppUrl: string,
-  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD'>,
+  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD' | 'VIDEO_ROOM_DEV_AUTH_USER' | 'VIDEO_ROOM_DEV_AUTH_PASSWORD'>,
 ): Promise<{
   id: string;
   sessionId: string;
@@ -1261,7 +1261,7 @@ export async function ensureMeetingRoomLinks(
 
 export function withDevBasicAuth(
   rawUrl: string,
-  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD'>,
+  env?: Pick<Env, 'ENV' | 'DEV_BASIC_AUTH_USER' | 'DEV_BASIC_AUTH_PASSWORD' | 'VIDEO_ROOM_DEV_AUTH_USER' | 'VIDEO_ROOM_DEV_AUTH_PASSWORD'>,
 ): string {
   if (env?.ENV !== 'dev' || !env.DEV_BASIC_AUTH_USER || !env.DEV_BASIC_AUTH_PASSWORD) {
     return rawUrl;
@@ -1269,8 +1269,8 @@ export function withDevBasicAuth(
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return rawUrl;
-    url.username = env.DEV_BASIC_AUTH_USER;
-    url.password = env.DEV_BASIC_AUTH_PASSWORD;
+    url.username = env.VIDEO_ROOM_DEV_AUTH_USER || env.DEV_BASIC_AUTH_USER;
+    url.password = env.VIDEO_ROOM_DEV_AUTH_PASSWORD || env.DEV_BASIC_AUTH_PASSWORD;
     return url.toString();
   } catch {
     return rawUrl;

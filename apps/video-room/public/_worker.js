@@ -29,9 +29,17 @@ function bytesToHex(bytes) {
     .join('');
 }
 
+function roomAuthUser(env) {
+  return env.VIDEO_ROOM_DEV_AUTH_USER || env.DEV_BASIC_AUTH_USER;
+}
+
+function roomAuthPassword(env) {
+  return env.VIDEO_ROOM_DEV_AUTH_PASSWORD || env.DEV_BASIC_AUTH_PASSWORD;
+}
+
 async function devAuthCookieValue(env) {
-  const user = env.DEV_BASIC_AUTH_USER;
-  const password = env.DEV_BASIC_AUTH_PASSWORD;
+  const user = roomAuthUser(env);
+  const password = roomAuthPassword(env);
   const secret = env.DEV_PROXY_SECRET;
   if (!user || !password || !secret) return null;
 
@@ -50,8 +58,8 @@ function cookieValue(request, name) {
 }
 
 function hasValidBasicAuth(request, env) {
-  const user = env.DEV_BASIC_AUTH_USER;
-  const password = env.DEV_BASIC_AUTH_PASSWORD;
+  const user = roomAuthUser(env);
+  const password = roomAuthPassword(env);
   if (!user || !password) return false;
 
   const header = request.headers.get('Authorization') ?? '';
