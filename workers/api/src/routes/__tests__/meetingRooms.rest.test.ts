@@ -643,11 +643,42 @@ function seedSchema(sqlite: BetterSqliteDb): void {
     );
     CREATE TABLE scheduled_interviews (
       id TEXT PRIMARY KEY,
+      interview_type TEXT,
+      github_repo_url TEXT,
+      github_pr_number INTEGER,
+      matched_repo_id INTEGER,
       status TEXT NOT NULL DEFAULT 'INVITED',
       completed_at TEXT,
       updated_at TEXT
     );
     CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
+    CREATE TABLE dev_container_sessions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL UNIQUE,
+      candidate_id TEXT,
+      challenge_id TEXT,
+      pipeline_id TEXT,
+      meeting_id TEXT,
+      meeting_room_id TEXT,
+      owner_id TEXT,
+      access_scope TEXT NOT NULL DEFAULT 'candidate',
+      status TEXT NOT NULL DEFAULT 'LAUNCHING',
+      instance_type TEXT NOT NULL DEFAULT 'standard-1',
+      ttl_seconds INTEGER NOT NULL,
+      ttl_source TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      warned_at TEXT,
+      url TEXT,
+      repo_r2_key TEXT,
+      repo_git_url TEXT,
+      challenge_branch TEXT,
+      base_branch TEXT,
+      started_at TEXT,
+      stopped_at TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
   `);
   sqlite.exec(contactsMigration);
   sqlite.exec(meetingsMigration);
@@ -943,6 +974,85 @@ describe('meeting room recording living-context route', () => {
     expect(storedUrl.username).toBe('');
     expect(storedUrl.password).toBe('');
     expect(storedUrl.pathname).toBe(guestUrl.pathname);
+  });
+
+  it('launches a live workspace on the selected GitHub PR head ref', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
+    env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
+
+    const scheduledInterviewId = 'scheduled-interview-workspace-pr';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, 'CODE_REVIEW', ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/order-recovery',
+      144,
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Workspace Guest',
+        recipientEmail: 'workspace-guest@example.com',
+        title: 'Workspace PR challenge',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string };
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number;
+        session: {
+          status: string;
+          sessionId: string;
+          proxyPath: string | null;
+        };
+      };
+    };
+    expect(body.workspace.repoUrl).toBe('https://github.com/pipe/order-recovery');
+    expect(body.workspace.githubPrNumber).toBe(144);
+    expect(body.workspace.session.status).toBe('LAUNCHING');
+    expect(body.workspace.session.proxyPath).toBeNull();
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/order-recovery',
+      challenge_branch: 'refs/pull/144/head',
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/order-recovery',
+      challengeBranch: 'refs/pull/144/head',
+    }));
   });
 
   it('routes a recorded meeting transcript into the same graph after roleless candidate convergence', async () => {

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added role-context graph visualization, source-backed role/person/repo evidence bridge rendering, host-manual video-room recording coverage, live review-packet backfill export, and remote E2E workflow wiring for the deployed recording-to-match proof.
 - Hardened review-graph rollout with schema-only preparation, migration-plan gating, bounded GitHub/D1 fetches, and report gates that require context-ready source-backed packets.
+- Live meeting workspaces now launch dev containers on the selected GitHub PR head ref, preserving the specific review challenge branch instead of opening only the repository default branch.
 
 ### Added — Dev Demo Room and Person Context
 

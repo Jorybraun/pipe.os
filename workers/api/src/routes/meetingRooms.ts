@@ -254,6 +254,11 @@ function workspaceProxyPath(token: string, sessionId: string): string {
   return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
 }
 
+function githubPrChallengeRef(githubPrNumber: number | null): string | null {
+  if (!Number.isInteger(githubPrNumber) || (githubPrNumber ?? 0) <= 0) return null;
+  return `refs/pull/${githubPrNumber}/head`;
+}
+
 function serializeWorkspaceSession(
   token: string,
   session: DevContainerSessionRow | null,
@@ -722,6 +727,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
+  const challengeBranch = githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
     sessionId,
@@ -733,7 +739,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
     ttlSource: effective.source,
     expiresAt,
     repoGitUrl: workspace.repoUrl,
-    challengeBranch: null,
+    challengeBranch,
   });
 
   const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
@@ -747,7 +753,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         expiresAt,
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl: workspace.repoUrl,
-        challengeBranch: null,
+        challengeBranch,
       }),
     }).catch((err: unknown) => {
       console.error('[meetingRooms.workspace.launch] DO init failed:', err);
