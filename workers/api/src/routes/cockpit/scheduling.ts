@@ -88,6 +88,14 @@ const callbackSchema = z.object({
   codeVerifier: z.string().optional(),
 });
 
+export const INTERVIEW_TYPE_VALUES = [
+  'VIDEO',
+  'TECHNICAL',
+  'SCREENING',
+  'CODE_REVIEW',
+  'DEV_CONTAINER_CHALLENGE',
+] as const;
+
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
@@ -95,7 +103,7 @@ const createInterviewSchema = z.object({
   recipientName: z.string().trim().min(1).max(200).optional(),
   recipientEmail: z.string().trim().email().optional(),
   meetingType: z.enum(['DIRECT_VIDEO_CALL', 'SCREENING_INTERVIEW']).optional(),
-  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
+  interviewType: z.enum(INTERVIEW_TYPE_VALUES).optional(),
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
@@ -118,6 +126,21 @@ const createInterviewSchema = z.object({
       message: 'pipelineId and stageId require candidateId.',
       path: ['candidateId'],
     });
+  }
+  // DEV_CONTAINER_CHALLENGE interviews attach a source-backed repo/PR task.
+  // The task is identified by either a matched_repo_id (qualified_repos row)
+  // or an explicit github_repo_url + github_pr_number pair.
+  if (value.interviewType === 'DEV_CONTAINER_CHALLENGE') {
+    const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
+    const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
+    if (!hasMatchedRepo && !hasRepoUrlAndPr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'DEV_CONTAINER_CHALLENGE requires a source-backed repo task: provide matchedRepoId or githubRepoUrl plus githubPrNumber.',
+        path: ['matchedRepoId'],
+      });
+    }
   }
 });
 
