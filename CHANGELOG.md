@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Living Person Graph Convergence Proof (HAS-84)
+
+- Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
+- Added regression proving resume, interview, message, assessment, and phone-call evidence all attach to the shared person graph after identity convergence, queryable via both candidate and contact read models.
+- Added regression proving interaction-level records stay separate from accumulated person context (`workspace_people.context_json` never contains interaction narratives or record types).
+- Added regression proving existing `workspace_people.context_json` is preserved/merged (not overwritten) when a second identity source converges onto the same workspace person.
+- Strengthened the no-fabricated-signals assertion for applicant + client convergence (zero semantic assertions, signal evidence, and concepts after identity-only convergence).
+
 ### Added — Scoped Living Context Graph CI Lane
 
 - Added role-context graph visualization, source-backed role/person/repo evidence bridge rendering, host-manual video-room recording coverage, live review-packet backfill export, and remote E2E workflow wiring for the deployed recording-to-match proof.
