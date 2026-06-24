@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.
 - Added tests proving embedding-only match decisions are prevented, semantic similarity is not fabricated from text overlap, role discovery is optional, fabricated role requirement defaults are gone, non-role demands are not marked as high-weight role requirements, and rejected packets always include explicit reasons.
 
+### Added — Expert-Labelled Evaluation and Rollout Gate for Deterministic Matching (HAS-88)
+
+- Added staged rollout gate tests covering shadow, canary, and production stages with strictly increasing thresholds for packet coverage, pair coverage, comparison rerun coverage, expert labels, byte-identical determinism, guardrail violations, and provenance completeness.
+- Added `--stage` CLI flag to `evaluateMatching.ts` so the readiness gate can enforce shadow, canary, or production stage thresholds; the readiness gate is now fully stage-aware (shadow relaxes all coverage and quality checks).
+- Added full E2E evaluation scenario: roleless person + simple JD + real repo packet (repo/PR/commit) + explained candidate-to-PR match with alignment source references linking candidate evidence, JD text, and PR diff content, plus independent comparison rerun for byte-identical determinism proof.
+- Fixed `persistedResultFixture` in CLI tests to include packet coverage fields (`expectedPacketCount`, `packetCoverage`, `pairCoverage`, `comparisonCoverage`, `missingPacketIds`, `packetIdentityMismatches`) so the readiness gate can evaluate persisted results correctly.
+- Updated expert corpus fixture to declare expected packets matching seeded match runs so the production readiness gate passes end-to-end.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.

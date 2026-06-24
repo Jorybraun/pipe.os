@@ -84,6 +84,31 @@ export interface ExpertLabel {
   };
 }
 
+/**
+ * Expected repo packet / PR identity declared by the corpus.
+ *
+ * The corpus is self-describing about which challenge packets (repo + PR +
+ * source version) the matcher is expected to surface for each labelled
+ * challenge. The evaluation harness cross-checks persisted match runs against
+ * these declarations so that a drift in packet identity (e.g. a different PR
+ * number or source version for the same challenge id) is caught as a coverage
+ * failure rather than a silent rerank.
+ */
+export interface ExpectedDemandReference {
+  demandId: string;
+  concepts: string[];
+  sourceRefs: EvidenceReference[];
+}
+
+export interface ExpectedChallengePacket {
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  sourceVersion: string;
+  packetContentHash?: string;
+  demands?: ExpectedDemandReference[];
+}
+
 export interface EvaluationCorpus {
   version: typeof EVALUATION_CORPUS_VERSION;
   corpusId: string;
@@ -92,12 +117,20 @@ export interface EvaluationCorpus {
   candidateEvidence: CandidatePersonEvidence[];
   roleRequirements: RoleRequirements[];
   expertLabels: ExpertLabel[];
+  /**
+   * Expected repo packets / PRs that the matcher must surface for labelled
+   * challenges. Optional for backward compatibility with v1.0.0 corpora that
+   * predate packet identity coverage; the staged rollout gate treats a missing
+   * declaration as a coverage gap for canary/production stages.
+   */
+  expectedPackets?: ExpectedChallengePacket[];
   metadata: {
     totalLabels: number;
     totalCandidates: number;
     totalRoles: number;
     totalChallenges: number;
     syntheticFixtureCount: number;
+    totalExpectedPackets?: number;
   };
 }
 
@@ -176,6 +209,14 @@ export interface DeterminismComparison {
   comparisonFingerprint: string | null;
 }
 
+export interface PacketIdentityMismatch {
+  challengeId: string;
+  field: 'repoId' | 'prNumber' | 'sourceVersion' | 'packetContentHash';
+  expected: string;
+  actual: string;
+  matchRunId: string;
+}
+
 export interface EvaluationMetrics {
   corpusVersion: string;
   corpusId: string;
@@ -201,6 +242,15 @@ export interface EvaluationMetrics {
   syntheticFixtureCount: number;
   expertLabelCount: number;
   labelResults: LabelEvaluationResult[];
+  /**
+   * Coverage metrics for the staged rollout gate.
+   */
+  expectedPacketCount: number;
+  packetCoverage: number;
+  pairCoverage: number;
+  comparisonCoverage: number;
+  missingPacketIds: string[];
+  packetIdentityMismatches: PacketIdentityMismatch[];
 }
 
 export interface AcceptanceThresholds {
@@ -226,6 +276,79 @@ export const DEFAULT_ACCEPTANCE_THRESHOLDS: AcceptanceThresholds = {
   requireByteIdenticalRerun: true,
   requireExpertLabels: true,
 };
+
+/**
+ * Staged rollout gate thresholds.
+ *
+ * The matcher is rolled out in three stages, each strictly stronger than the
+ * last. A stage fails if any of its coverage requirements are missing.
+ */
+export type RolloutStage = 'shadow' | 'canary' | 'production';
+
+export interface RolloutGateThresholds extends AcceptanceThresholds {
+  stage: RolloutStage;
+  /** Minimum fraction of labelled candidate-role pairs with a persisted run. */
+  minPairCoverage: number;
+  /** Minimum fraction of pairs with an independent comparison rerun. */
+  minComparisonCoverage: number;
+  /** Minimum fraction of expected packets surfaced with matching identity. */
+  minPacketCoverage: number;
+  /** When true, the corpus must declare expected packets (canary/production). */
+  requireExpectedPackets: boolean;
+  /** Maximum allowed packet identity mismatches (0 for production). */
+  maxPacketIdentityMismatches: number;
+}
+
+export const STAGED_ROLLOUT_THRESHOLDS: Record<RolloutStage, RolloutGateThresholds> = {
+  shadow: {
+    ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+    stage: 'shadow',
+    minRecallAt50: 0,
+    minPrecisionAt3: 0,
+    minNdcgAt5: 0,
+    maxGuardrailViolations: Number.POSITIVE_INFINITY,
+    maxMultiStretchViolations: Number.POSITIVE_INFINITY,
+    maxMissingProvenance: Number.POSITIVE_INFINITY,
+    maxMissingMatchRuns: Number.POSITIVE_INFINITY,
+    requireByteIdenticalRerun: false,
+    requireExpertLabels: false,
+    minPairCoverage: 0,
+    minComparisonCoverage: 0,
+    minPacketCoverage: 0,
+    requireExpectedPackets: false,
+    maxPacketIdentityMismatches: Number.POSITIVE_INFINITY,
+  },
+  canary: {
+    ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+    stage: 'canary',
+    minRecallAt50: 0.90,
+    minPrecisionAt3: 0.70,
+    minNdcgAt5: 0.70,
+    minPairCoverage: 1,
+    minComparisonCoverage: 1,
+    minPacketCoverage: 1,
+    requireExpectedPackets: true,
+    maxPacketIdentityMismatches: 0,
+  },
+  production: {
+    ...DEFAULT_ACCEPTANCE_THRESHOLDS,
+    stage: 'production',
+    minPairCoverage: 1,
+    minComparisonCoverage: 1,
+    minPacketCoverage: 1,
+    requireExpectedPackets: true,
+    maxPacketIdentityMismatches: 0,
+  },
+};
+
+export interface RolloutGateResult {
+  stage: RolloutStage;
+  ready: boolean;
+  failures: string[];
+  warnings: string[];
+  metrics: EvaluationMetrics;
+  thresholds: RolloutGateThresholds;
+}
 
 export interface EvaluationResult {
   metrics: EvaluationMetrics;

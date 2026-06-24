@@ -1,18 +1,25 @@
+import { getExpectedPackets } from './corpus';
 import type {
   AcceptanceThresholds,
   DeterminismComparison,
   EvaluationCorpus,
   EvaluationMetrics,
   EvaluationResult,
+  ExpectedChallengePacket,
   ExpertLabel,
   GuardrailViolation,
   LabelEvaluationResult,
+  PacketIdentityMismatch,
   PersistedMatchAlignment,
   PersistedMatchRun,
   PersistedRankedChallenge,
   RelevanceGrade,
+  RolloutGateResult,
+  RolloutGateThresholds,
+  RolloutStage,
   StretchPath,
 } from './types';
+import { STAGED_ROLLOUT_THRESHOLDS } from './types';
 
 function pairKey(candidateId: string, roleId: string): string {
   return JSON.stringify([candidateId, roleId]);
@@ -349,6 +356,99 @@ export function evaluateMatchRuns(
   const syntheticFixtureCount = corpus.expertLabels.filter(
     (label) => label.labeledBy === 'synthetic-fixture',
   ).length;
+
+  const totalLabelledPairs = labelsByPair.size;
+  const pairsComparisonCovered = Array.from(labelsByPair.keys()).filter(
+    (key) => comparisons.has(key),
+  ).length;
+  const pairCoverage = totalLabelledPairs === 0
+    ? 0
+    : evaluatedPairCount / totalLabelledPairs;
+  const comparisonCoverage = totalLabelledPairs === 0
+    ? 0
+    : pairsComparisonCovered / totalLabelledPairs;
+
+  const expectedPackets = getExpectedPackets(corpus);
+  const packetById = new Map<string, ExpectedChallengePacket>(
+    expectedPackets.map((packet) => [packet.challengeId, packet]),
+  );
+  const surfacedPacketIds = new Set<string>();
+  const packetIdentityMismatches: PacketIdentityMismatch[] = [];
+  for (const run of matchRuns) {
+    for (const result of run.rankedChallenges) {
+      const expected = packetById.get(result.challengeId);
+      if (!expected) continue;
+      surfacedPacketIds.add(result.challengeId);
+      if (result.repoId !== expected.repoId) {
+        packetIdentityMismatches.push({
+          challengeId: result.challengeId,
+          field: 'repoId',
+          expected: expected.repoId,
+          actual: result.repoId,
+          matchRunId: run.matchRunId,
+        });
+      }
+      if (result.prNumber !== expected.prNumber) {
+        packetIdentityMismatches.push({
+          challengeId: result.challengeId,
+          field: 'prNumber',
+          expected: String(expected.prNumber),
+          actual: String(result.prNumber),
+          matchRunId: run.matchRunId,
+        });
+      }
+      if (result.sourceVersion !== expected.sourceVersion) {
+        packetIdentityMismatches.push({
+          challengeId: result.challengeId,
+          field: 'sourceVersion',
+          expected: expected.sourceVersion,
+          actual: result.sourceVersion,
+          matchRunId: run.matchRunId,
+        });
+      }
+      if (
+        expected.packetContentHash !== undefined
+        && result.alignments.length > 0
+      ) {
+        const actualHash = result.alignments
+          .flatMap((alignment) => alignment.challengeSourceRefs)
+          .map((ref) => ref.contentHash)
+          .find((hash) => hash === expected.packetContentHash);
+        if (actualHash === undefined) {
+          packetIdentityMismatches.push({
+            challengeId: result.challengeId,
+            field: 'packetContentHash',
+            expected: expected.packetContentHash,
+            actual: '(not found in challenge source refs)',
+            matchRunId: run.matchRunId,
+          });
+        }
+      }
+    }
+  }
+  const identityCleanPacketIds = new Set(
+    expectedPackets
+      .filter((packet) =>
+        !packetIdentityMismatches.some(
+          (mismatch) => mismatch.challengeId === packet.challengeId,
+        ),
+      )
+      .map((packet) => packet.challengeId),
+  );
+  const coveredPacketIds = expectedPackets
+    .filter((packet) =>
+      surfacedPacketIds.has(packet.challengeId)
+      && identityCleanPacketIds.has(packet.challengeId),
+    )
+    .map((packet) => packet.challengeId);
+  const missingPacketIds = expectedPackets
+    .filter((packet) => !coveredPacketIds.includes(packet.challengeId))
+    .map((packet) => packet.challengeId)
+    .sort();
+  const packetCoverage = expectedPackets.length === 0
+    ? 0
+    : coveredPacketIds.length / expectedPackets.length;
+
   return {
     corpusVersion: corpus.version,
     corpusId: corpus.corpusId,
@@ -378,6 +478,12 @@ export function evaluateMatchRuns(
     syntheticFixtureCount,
     expertLabelCount: corpus.expertLabels.length - syntheticFixtureCount,
     labelResults,
+    expectedPacketCount: expectedPackets.length,
+    packetCoverage,
+    pairCoverage,
+    comparisonCoverage,
+    missingPacketIds,
+    packetIdentityMismatches,
   };
 }
 
@@ -427,4 +533,76 @@ export function checkAcceptanceThresholds(
     failures,
     warnings,
   };
+}
+
+/**
+ * Staged rollout gate.
+ *
+ * Verifies that the matcher has the coverage required to advance to the next
+ * rollout stage. The gate fails if coverage is missing: unlabelled pairs
+ * without a persisted run, pairs without an independent comparison rerun, or
+ * expected packets that were not surfaced (or surfaced with a drifted
+ * identity).
+ */
+export function checkRolloutGate(
+  metrics: EvaluationMetrics,
+  thresholds: RolloutGateThresholds,
+): RolloutGateResult {
+  const failures: string[] = [];
+  const warnings: string[] = [];
+
+  const base = checkAcceptanceThresholds(metrics, thresholds);
+  failures.push(...base.failures);
+  warnings.push(...base.warnings);
+
+  if (metrics.pairCoverage < thresholds.minPairCoverage) {
+    failures.push(
+      `Pair coverage ${metrics.pairCoverage} below ${thresholds.minPairCoverage} for ${thresholds.stage} stage`,
+    );
+  }
+  if (metrics.comparisonCoverage < thresholds.minComparisonCoverage) {
+    failures.push(
+      `Comparison rerun coverage ${metrics.comparisonCoverage} below ${thresholds.minComparisonCoverage} for ${thresholds.stage} stage`,
+    );
+  }
+  if (metrics.packetCoverage < thresholds.minPacketCoverage) {
+    failures.push(
+      `Packet coverage ${metrics.packetCoverage} below ${thresholds.minPacketCoverage} for ${thresholds.stage} stage`,
+    );
+  }
+  if (thresholds.requireExpectedPackets && metrics.expectedPacketCount === 0) {
+    failures.push(
+      `${thresholds.stage} stage requires the corpus to declare expected packets`,
+    );
+  }
+  if (metrics.packetIdentityMismatches.length > thresholds.maxPacketIdentityMismatches) {
+    failures.push(
+      `Packet identity mismatches ${metrics.packetIdentityMismatches.length} exceed ${thresholds.maxPacketIdentityMismatches} for ${thresholds.stage} stage`,
+    );
+  }
+  if (metrics.missingPacketIds.length > 0 && thresholds.minPacketCoverage > 0) {
+    warnings.push(
+      `Missing expected packets: ${metrics.missingPacketIds.join(', ')}`,
+    );
+  }
+
+  return {
+    stage: thresholds.stage,
+    ready: failures.length === 0,
+    failures,
+    warnings,
+    metrics,
+    thresholds,
+  };
+}
+
+export function checkStagedRolloutGate(
+  metrics: EvaluationMetrics,
+  stage: RolloutStage,
+  thresholds?: Partial<RolloutGateThresholds>,
+): RolloutGateResult {
+  return checkRolloutGate(metrics, {
+    ...STAGED_ROLLOUT_THRESHOLDS[stage],
+    ...thresholds,
+  });
 }
