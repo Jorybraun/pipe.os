@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a "Show provenance IDs" drill-down toggle on the repo packet panel that hides raw internal IDs (packet ID, span IDs, symbol IDs, demand IDs, full file paths, quality scores) by default and reveals them on demand for debugging and provenance audit.
 - Made empty graph states quiet: the zero-count summary dashboard and the graph workspace no longer render when there is no living context evidence, replaced by a single quiet empty-state message.
 
+### Added — Person-First Interview Model (HAS-80)
+
+- Added `DEV_CONTAINER_CHALLENGE` as a first-class interview type so a recruiter can create a dev-container challenge interview for any person (contact, candidate, customer, client, or lead) without requiring a pipeline/role container.
+- Dev-container challenge interviews attach a source-backed repo/PR task via `matchedRepoId` or an explicit `githubRepoUrl` + `githubPrNumber` pair; the create-interview schema rejects a `DEV_CONTAINER_CHALLENGE` request that carries no source-backed task.
+- Shared the `INTERVIEW_TYPE_VALUES` constant between the scheduling and candidates routes so standalone candidate creation and the scheduling endpoint accept the same interview-type set.
+- Frontend invite modals now expose the Dev-container challenge option with a dedicated mode card, and the interview detail page treats `DEV_CONTAINER_CHALLENGE` as a workspace-backed interview for dev-container session handling.
+- Added scheduling route tests proving person-first `DEV_CONTAINER_CHALLENGE` interviews persist with the repo/PR task and that the source-backed-task requirement is enforced.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.

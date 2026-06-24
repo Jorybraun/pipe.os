@@ -25,6 +25,7 @@ import {
   hasSourceBackedReviewPacket,
   loadSourceBackedReviewPacketById,
 } from '../../lib/review/sourceBackedReviewDiff';
+import { INTERVIEW_TYPE_VALUES } from './scheduling';
 import type { JsonObject, JsonValue } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -1047,7 +1048,7 @@ candidateOps.use('*', authMiddleware);
 const createStandaloneCandidateSchema = z.object({
   name: z.string().min(1, 'name is required').max(200),
   email: z.string().email('valid email required'),
-  interviewType: z.enum(['VIDEO', 'TECHNICAL', 'SCREENING', 'CODE_REVIEW']).optional(),
+  interviewType: z.enum(INTERVIEW_TYPE_VALUES).optional(),
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),

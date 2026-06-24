@@ -523,7 +523,7 @@ export default function InterviewDetailPage(): JSX.Element {
     ),
   );
   const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
-  const usesWorkspaceInterview = interview.interviewType === 'CODE_REVIEW' || interview.interviewType === 'TECHNICAL';
+  const usesWorkspaceInterview = interview.interviewType === 'CODE_REVIEW' || interview.interviewType === 'TECHNICAL' || interview.interviewType === 'DEV_CONTAINER_CHALLENGE';
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'
     ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
     : isStaleRecording

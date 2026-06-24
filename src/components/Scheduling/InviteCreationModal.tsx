@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, Calendar, Code2, SquareTerminal } from 'lucide-react';
+import { X, Copy, Check, Video, Calendar, Code2, SquareTerminal, GitBranch } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
@@ -57,6 +57,12 @@ const INTERVIEW_MODES: Array<{
     label: INTERVIEW_TYPE_LABELS.TECHNICAL,
     description: 'Implementation challenge',
     icon: <SquareTerminal size={16} />,
+  },
+  {
+    value: 'DEV_CONTAINER_CHALLENGE',
+    label: INTERVIEW_TYPE_LABELS.DEV_CONTAINER_CHALLENGE,
+    description: 'Source-backed repo/PR challenge',
+    icon: <GitBranch size={16} />,
   },
 ];
 
@@ -128,7 +134,7 @@ export function InviteCreationModal({
   const calendlyEventTypes = connection?.eventTypes ?? [];
   const selectedCalendlyEventType = calendlyEventTypes[0] ?? null;
   const canUseCalendly = hasCalendly && Boolean(selectedCalendlyEventType?.schedulingUrl);
-  const usesWorkspace = interviewType === 'CODE_REVIEW' || interviewType === 'TECHNICAL';
+  const usesWorkspace = interviewType === 'CODE_REVIEW' || interviewType === 'TECHNICAL' || interviewType === 'DEV_CONTAINER_CHALLENGE';
   const parsedPrNumber = githubPrNumber.trim().length > 0
     ? Number.parseInt(githubPrNumber.trim(), 10)
     : null;
