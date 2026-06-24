@@ -39,7 +39,11 @@ import { embedAndUpsertRole } from '../../lib/roleDiscovery/embedRole';
 import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRoleProfile';
 import { buildRcdSearchProfile } from '../../lib/repoDiscovery/rcdSearchProfile';
 import { LivingContextStore } from '../../lib/livingContext/persistence';
-import { OPEN_TERM_RESOLVER_VERSION, openSemanticTerm } from '../../lib/livingContext/openTerms';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTerm,
+  type OpenSemanticTerm,
+} from '../../lib/livingContext/openTerms';
 import { loadRoleContextLivingContext } from '../../lib/livingContext/readModel';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
@@ -233,6 +237,397 @@ async function persistSimpleJobDescriptionContext(input: {
       })),
     ],
     concepts: contextConcepts,
+  });
+}
+
+function countLines(value: string): number {
+  return value.split(/\r\n|\r|\n/).length;
+}
+
+function textByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function exchangeHasAnswer(exchange: RoleExchange): exchange is RoleExchange & { answer: string } {
+  return typeof exchange.answer === 'string' && exchange.answer.trim().length > 0;
+}
+
+function extractAnswerPhraseTerms(answer: string, limit: number): OpenSemanticTerm[] {
+  const terms = new Map<string, OpenSemanticTerm>();
+  for (const match of answer.matchAll(/\b[A-Z][A-Za-z0-9+#.]*(?:\s+[A-Z][A-Za-z0-9+#.]*){1,5}\b/g)) {
+    const phrase = match[0].trim();
+    const term = openSemanticTerm(phrase);
+    if (term && !terms.has(term.canonicalKey)) terms.set(term.canonicalKey, term);
+    if (terms.size >= limit) return [...terms.values()];
+  }
+
+  const chunks = answer
+    .split(/[\n,;|/]+/g)
+    .map((chunk) => chunk.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+
+  for (const chunk of chunks) {
+    const words = chunk.match(/[A-Za-z0-9+#.]+/g) ?? [];
+    if (words.length < 2 || words.length > 6) continue;
+    const hasSpecificMarker = words.some((word) =>
+      /[A-Z]/.test(word[0] ?? '')
+      || /[0-9+#.]/.test(word)
+      || /[a-z][A-Z]/.test(word),
+    );
+    if (!hasSpecificMarker) continue;
+    const term = openSemanticTerm(chunk);
+    if (term && !terms.has(term.canonicalKey)) terms.set(term.canonicalKey, term);
+    if (terms.size >= limit) break;
+  }
+  return [...terms.values()];
+}
+
+function openConversationTerms(exchange: RoleExchange, limit = 8): OpenSemanticTerm[] {
+  if (!exchangeHasAnswer(exchange)) return [];
+  const terms = new Map<string, OpenSemanticTerm>();
+  const push = (term: OpenSemanticTerm): void => {
+    if (!terms.has(term.canonicalKey)) terms.set(term.canonicalKey, term);
+  };
+
+  if (exchange.input.type === 'tags' || exchange.input.type === 'select' || exchange.input.type === 'radio') {
+    for (const chunk of exchange.answer.split(/[,;\n]+/g)) {
+      const term = openSemanticTerm(chunk);
+      if (term) push(term);
+      if (terms.size >= limit) return [...terms.values()];
+    }
+  }
+
+  for (const term of extractAnswerPhraseTerms(exchange.answer, limit - terms.size)) {
+    push(term);
+    if (terms.size >= limit) return [...terms.values()];
+  }
+
+  const sourceText = `${exchange.answer}\n${exchange.question}`;
+  for (const match of sourceText.matchAll(/[A-Za-z][A-Za-z0-9+#.]*/g)) {
+    const token = match[0];
+    if (token.length < 3) continue;
+    const prior = sourceText.slice(0, match.index ?? 0).trimEnd();
+    const priorChar = prior[prior.length - 1] ?? '';
+    const isSentenceInitial = prior.length === 0 || /[.!?\n]/.test(priorChar);
+    const hasSpecificMarker = /[0-9+#.]/.test(token)
+      || /[a-z][A-Z]/.test(token)
+      || (/[A-Z]/.test(token[0] ?? '') && !isSentenceInitial);
+    if (!hasSpecificMarker) continue;
+    const term = openSemanticTerm(token);
+    if (term) push(term);
+    if (terms.size >= limit) return [...terms.values()];
+  }
+
+  return [...terms.values()];
+}
+
+interface TranscriptSpanDraft {
+  stableSegmentId: string;
+  exactText: string;
+  charStart: number;
+  charEnd: number;
+  byteStart: number;
+  byteEnd: number;
+  lineStart: number;
+  lineEnd: number;
+  metadata: Record<string, string | number | boolean | null>;
+}
+
+interface RoleConversationTranscript {
+  content: string;
+  spansByKey: Map<string, TranscriptSpanDraft>;
+}
+
+function buildRoleConversationTranscript(input: {
+  roleContextId: string;
+  participant: RoleContextParticipantRow;
+  exchanges: RoleExchange[];
+}): RoleConversationTranscript {
+  let content = '';
+  let line = 1;
+  const spansByKey = new Map<string, TranscriptSpanDraft>();
+
+  const append = (value: string): void => {
+    content += value;
+    line += (value.match(/\n/g) ?? []).length;
+  };
+
+  const appendSpan = (
+    stableSegmentId: string,
+    label: string,
+    exactText: string,
+    metadata: TranscriptSpanDraft['metadata'],
+  ): void => {
+    append(label);
+    const charStart = content.length;
+    const byteStart = textByteLength(content);
+    const lineStart = line;
+    append(exactText);
+    const charEnd = content.length;
+    const byteEnd = textByteLength(content);
+    const lineEnd = lineStart + countLines(exactText) - 1;
+    spansByKey.set(stableSegmentId, {
+      stableSegmentId,
+      exactText,
+      charStart,
+      charEnd,
+      byteStart,
+      byteEnd,
+      lineStart,
+      lineEnd,
+      metadata,
+    });
+    append('\n');
+  };
+
+  append(`# Role conversation transcript\n`);
+  append(`Role context: ${input.roleContextId}\n`);
+  append(`Participant: ${input.participant.name ?? input.participant.email ?? input.participant.id}\n`);
+  append(`Participant role: ${input.participant.participant_role ?? 'UNKNOWN'}\n\n`);
+
+  input.exchanges.forEach((exchange, index) => {
+    const ordinal = index + 1;
+    append(`## Exchange ${ordinal}: ${exchange.questionId}\n`);
+    const baseMetadata = {
+      roleContextId: input.roleContextId,
+      participantId: input.participant.id,
+      participantRole: input.participant.participant_role,
+      questionId: exchange.questionId,
+      exchangeIndex: index,
+      source: 'role_conversation',
+    };
+    appendSpan(
+      `exchange-${ordinal}-question`,
+      'Question: ',
+      exchange.question,
+      { ...baseMetadata, segmentRole: 'question' },
+    );
+    if (exchangeHasAnswer(exchange)) {
+      appendSpan(
+        `exchange-${ordinal}-answer`,
+        'Answer: ',
+        exchange.answer,
+        { ...baseMetadata, segmentRole: 'answer' },
+      );
+    } else {
+      append('Answer: \n');
+    }
+    append('\n');
+  });
+
+  return { content, spansByKey };
+}
+
+async function nextArtifactVersionNumber(
+  db: D1Database,
+  artifactId: string,
+  contentHash: string,
+): Promise<number> {
+  const existing = await db.prepare(
+    'SELECT version_number FROM artifact_versions WHERE artifact_id = ?1 AND content_hash = ?2',
+  ).bind(artifactId, contentHash).first<{ version_number: number }>();
+  if (existing) return existing.version_number;
+  const latest = await db.prepare(
+    'SELECT MAX(version_number) AS max_version FROM artifact_versions WHERE artifact_id = ?1',
+  ).bind(artifactId).first<{ max_version: number | null }>();
+  return (latest?.max_version ?? 0) + 1;
+}
+
+async function persistRoleConversationParticipantContext(input: {
+  db: D1Database;
+  roleContextId: string;
+  pipelineId: string | null;
+  participant: RoleContextParticipantRow;
+  timestamp: string;
+}): Promise<void> {
+  const exchanges = parseJsonColumn<RoleExchange[]>(input.participant.exchanges, []);
+  const answeredExchanges = exchanges.filter(exchangeHasAnswer);
+  if (answeredExchanges.length === 0) return;
+
+  const transcript = buildRoleConversationTranscript({
+    roleContextId: input.roleContextId,
+    participant: input.participant,
+    exchanges,
+  });
+  const contentHash = `sha256:${await sha256Hex(transcript.content)}`;
+  const encoded = new TextEncoder().encode(transcript.content);
+  const store = new LivingContextStore(input.db, () => input.timestamp);
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `role-context:${input.roleContextId}:participant:${input.participant.id}:conversation`,
+    artifactType: 'role_conversation_transcript',
+    logicalKey: `role-context/${input.roleContextId}/participants/${input.participant.id}/conversation.md`,
+    metadata: {
+      roleContextId: input.roleContextId,
+      pipelineId: input.pipelineId,
+      participantId: input.participant.id,
+      participantRole: input.participant.participant_role,
+      source: 'role_conversation',
+    },
+  });
+  const versionNumber = await nextArtifactVersionNumber(input.db, artifact.id, contentHash);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `role-context:${input.roleContextId}:participant:${input.participant.id}:conversation:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber,
+    contentHash,
+    mediaType: 'text/markdown',
+    contentText: transcript.content,
+    byteLength: encoded.byteLength,
+    metadata: {
+      roleContextId: input.roleContextId,
+      participantId: input.participant.id,
+      participantRole: input.participant.participant_role,
+      source: 'role_conversation',
+      answeredExchangeCount: answeredExchanges.length,
+    },
+  });
+
+  const sourceSpanIds = new Map<string, string>();
+  for (const span of transcript.spansByKey.values()) {
+    const persisted = await store.createSourceSpan({
+      ingestionKey: `role-context:${input.roleContextId}:participant:${input.participant.id}:conversation:${contentHash}:span:${span.stableSegmentId}`,
+      artifactVersionId: version.id,
+      stableSegmentId: span.stableSegmentId,
+      byteStart: span.byteStart,
+      byteEnd: span.byteEnd,
+      charStart: span.charStart,
+      charEnd: span.charEnd,
+      lineStart: span.lineStart,
+      lineEnd: span.lineEnd,
+      exactText: span.exactText,
+      metadata: span.metadata,
+    });
+    sourceSpanIds.set(span.stableSegmentId, persisted.id);
+  }
+
+  for (const exchange of answeredExchanges) {
+    const exchangeIndex = exchanges.indexOf(exchange);
+    const ordinal = exchangeIndex + 1;
+    const questionSpanId = sourceSpanIds.get(`exchange-${ordinal}-question`);
+    const answerSpanId = sourceSpanIds.get(`exchange-${ordinal}-answer`);
+    if (!questionSpanId || !answerSpanId) continue;
+
+    const contextConcepts: Array<{ conceptId: string; relationship: string; weight: number }> = [];
+    for (const term of openConversationTerms(exchange)) {
+      const concept = await store.upsertConcept({
+        ingestionKey: `role-context:${input.roleContextId}:conversation-term:${term.canonicalKey}`,
+        canonicalKey: term.canonicalKey,
+        namespace: 'term',
+        label: term.surface,
+        metadata: {
+          resolver: OPEN_TERM_RESOLVER_VERSION,
+          source: 'role_conversation',
+          roleContextId: input.roleContextId,
+        },
+      });
+      contextConcepts.push({
+        conceptId: concept.id,
+        relationship: 'mentioned_in_role_conversation',
+        weight: 1,
+      });
+    }
+
+    await store.upsertContextRecord({
+      ingestionKey: `role-context:${input.roleContextId}:participant:${input.participant.id}:exchange:${exchange.questionId}:answer-context`,
+      scopeType: 'role_context',
+      scopeId: input.roleContextId,
+      recordType: 'role_conversation_exchange',
+      predicate: 'captures stakeholder role context',
+      narrative: `Role stakeholder answered "${exchange.question}"`,
+      qualifiers: {
+        roleContextId: input.roleContextId,
+        pipelineId: input.pipelineId,
+        participantId: input.participant.id,
+        participantRole: input.participant.participant_role,
+        questionId: exchange.questionId,
+        inputType: exchange.input.type,
+        transcriptContentHash: contentHash,
+        source: 'role_conversation',
+      },
+      confidence: 1,
+      extractionVersion: 'role-conversation-v1',
+      observedAt: input.participant.updated_at ?? input.timestamp,
+      sources: [
+        { sourceSpanId: questionSpanId, evidenceRole: 'question' },
+        { sourceSpanId: answerSpanId, evidenceRole: 'answer' },
+      ],
+      entities: [
+        {
+          entityType: 'role_context',
+          entityId: input.roleContextId,
+          relationship: 'scope',
+        },
+        {
+          entityType: 'role_context_participant',
+          entityId: input.participant.id,
+          relationship: 'stakeholder',
+          metadata: {
+            participantRole: input.participant.participant_role,
+          },
+        },
+        {
+          entityType: 'role_conversation_exchange',
+          relationship: 'exchange',
+          value: {
+            questionId: exchange.questionId,
+            exchangeIndex,
+          },
+        },
+        {
+          entityType: 'role_question',
+          relationship: 'prompt',
+          value: {
+            questionId: exchange.questionId,
+            question: exchange.question,
+          },
+        },
+      ],
+      concepts: contextConcepts,
+    });
+  }
+}
+
+async function persistRoleConversationContext(input: {
+  db: D1Database;
+  roleContextId: string;
+  pipelineId: string | null;
+  timestamp?: string;
+  participantId?: string | null;
+}): Promise<void> {
+  const query = input.participantId
+    ? 'SELECT * FROM role_context_participants WHERE role_context_id = ?1 AND id = ?2 ORDER BY is_creator DESC, created_at ASC'
+    : 'SELECT * FROM role_context_participants WHERE role_context_id = ?1 ORDER BY is_creator DESC, created_at ASC';
+  const bound = input.participantId
+    ? input.db.prepare(query).bind(input.roleContextId, input.participantId)
+    : input.db.prepare(query).bind(input.roleContextId);
+  const result = await bound.all<RoleContextParticipantRow>();
+  const participants = result.results ?? [];
+  const timestamp = input.timestamp ?? now();
+  for (const participant of participants) {
+    await persistRoleConversationParticipantContext({
+      db: input.db,
+      roleContextId: input.roleContextId,
+      pipelineId: input.pipelineId,
+      participant,
+      timestamp,
+    });
+  }
+}
+
+function persistRoleConversationContextBestEffort(input: {
+  db: D1Database;
+  roleContextId: string;
+  pipelineId: string | null;
+  participantId: string;
+}): void {
+  persistRoleConversationContext({
+    db: input.db,
+    roleContextId: input.roleContextId,
+    pipelineId: input.pipelineId,
+    participantId: input.participantId,
+  }).catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[roleContexts] role conversation graph projection failed:', msg);
   });
 }
 
@@ -962,10 +1357,10 @@ roleContexts.get('/:id/living-context', async (c) => {
   const { id } = c.req.param();
 
   const row = await c.env.DB.prepare(
-    'SELECT id, owner_id FROM role_contexts WHERE id = ?1',
+    'SELECT id, owner_id, pipeline_id FROM role_contexts WHERE id = ?1',
   )
     .bind(id)
-    .first<{ id: string; owner_id: string }>();
+    .first<{ id: string; owner_id: string; pipeline_id: string | null }>();
 
   if (!row) {
     return apiError(c, 'NOT_FOUND', 'Role context not found.');
@@ -973,6 +1368,12 @@ roleContexts.get('/:id/living-context', async (c) => {
   if (row.owner_id !== userId) {
     return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
   }
+
+  await persistRoleConversationContext({
+    db: c.env.DB,
+    roleContextId: id,
+    pipelineId: row.pipeline_id,
+  });
 
   const livingContext = await loadRoleContextLivingContext(c.env.DB, id);
   if (!livingContext) {
@@ -1250,6 +1651,13 @@ async function persistQuestionTurn(
       ),
     ]);
   }
+
+  persistRoleConversationContextBestEffort({
+    db,
+    roleContextId,
+    pipelineId: (turn.state.baseline.pipelineId as string | undefined) ?? null,
+    participantId,
+  });
 }
 
 /** Persist synthesis results and mark participant complete. */
@@ -1320,6 +1728,13 @@ async function persistSynthesisTurn(
       .bind(now(), roleContextId)
       .run();
   }
+
+  persistRoleConversationContextBestEffort({
+    db,
+    roleContextId,
+    pipelineId: (turn.state.baseline.pipelineId as string | undefined) ?? null,
+    participantId,
+  });
 }
 
 roleContexts.post('/:id/respond', async (c) => {

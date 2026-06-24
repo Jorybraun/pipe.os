@@ -91,10 +91,11 @@ Required V1 behavior:
 Current proof:
 
 - `persistSimpleJobDescriptionContext` creates `job_description` artifacts, source spans, open concepts, and `simple_job_description` context records.
+- Role conversation participants now project answered `role_context_participants.exchanges` into `role_conversation_transcript` artifacts, exact question/answer source spans, `role_conversation_exchange` context records, linked stakeholder/exchange/question entities, and open concepts learned from literal conversation evidence. The scoped role graph read path backfills this projection idempotently before returning `GET /api/v1/role-contexts/:id/living-context`.
 
 Main gap:
 
-- Role conversation transcripts need the same source-backed context-record path as simple job descriptions.
+- Promote role conversation graph evidence into the browser-level role `GRAPH` and downstream role/person/repo matching proof, then combine it with recorded person evidence and live repo packets in deployed CI.
 
 ### Person Context Path
 
@@ -273,7 +274,7 @@ It returns the same kind of source-backed graph substrate that the candidate gra
 - concepts,
 - source refs.
 
-That turns simple job descriptions into first-class visual graph inputs. The role graph is now rendered as a `GRAPH` tab on the interview-plan overview when a role context exists, and the candidate graph renders a match evidence bridge that shows role-context evidence beside person evidence and repo challenge evidence in one connected overlay. The standalone review browser path now verifies that bridge with source-backed role evidence, meeting-shaped candidate transcript evidence, and repo packet evidence.
+That turns simple job descriptions and answered role conversations into first-class visual graph inputs. The role graph is now rendered as a `GRAPH` tab on the interview-plan overview when a role context exists, and the candidate graph renders a match evidence bridge that shows role-context evidence beside person evidence and repo challenge evidence in one connected overlay. The standalone review browser path now verifies that bridge with source-backed role evidence, meeting-shaped candidate transcript evidence, and repo packet evidence.
 
 The matcher proof now also starts from real meeting-transcript ingestion instead of hand-shaped candidate atoms: transcript segments become source spans, source spans back `meeting_transcript_assertion` hyperedges, those hyperedges produce candidate match atoms, and the deterministic matcher selects a source-backed PR packet with repo source spans in the explanation. The route-level proof goes one step further: the host recording upload path preserves `recording.webm` and `transcription-audio.webm`, processes the transcript through the meeting-room pipeline, repairs the candidate/person application bridge when matching needs it, and persists selected candidate/repo source refs on the match decision record. The browser proof now closes the user-visible loop: host-manual recording produces attributed transcript evidence, candidate convergence reuses that evidence, matching selects the fresh packet ID, and recruiter `CONTEXT` renders the recorded transcript source beside the role and repo source spans. The latest backend proof aligns that same role/person/repo loop with a live-shaped `mui/base-ui#973` packet and verifies the selected match hyperedge persists role source, transcript source, packet hash, repo source spans, entities, and matched open concepts. The CI wiring now makes the real-packet browser proof executable against a deployed test environment without opening production-only internal routes, and the room app now requires an explicit host click before recording starts.
 
