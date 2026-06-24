@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `persistedResultFixture` in CLI tests to include packet coverage fields (`expectedPacketCount`, `packetCoverage`, `pairCoverage`, `comparisonCoverage`, `missingPacketIds`, `packetIdentityMismatches`) so the readiness gate can evaluate persisted results correctly.
 - Updated expert corpus fixture to declare expected packets matching seeded match runs so the production readiness gate passes end-to-end.
 
+### Added — V1 Semantic Context Records (HAS-96)
+
+- Projected source-backed `context_records` into the Neo4j living-context graph, including linked entities, source refs, and concept edges so multi-entity meaning is rebuildable from immutable source spans rather than hard-coded semantic edges.
+- Extended the workspace-person concept projection to union concepts surfaced only through `context_record_concepts`, so unseen/open-data concepts survive ingestion and projection rebuild without alias lists or hard-coded semantic families.
+- Added a regression proving an unseen context-record-only concept persists through idempotent replay and two projection rebuilds (delete + re-project), remaining the source-backed truth for multi-entity meaning.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.

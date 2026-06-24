@@ -186,6 +186,60 @@ interface SemanticRelationshipRow {
   source_assertion_id: string | null;
 }
 
+interface ContextRecordRow {
+  id: string;
+  scope_type: string;
+  scope_id: string;
+  interaction_id: string | null;
+  application_id: string | null;
+  episode_id: string | null;
+  assertion_id: string | null;
+  record_type: string;
+  predicate: string | null;
+  narrative: string;
+  qualifiers_json: string;
+  confidence: number | null;
+  polarity: number;
+  extraction_version: string | null;
+  observed_at: string | null;
+}
+
+interface ContextRecordSourceRefRow {
+  context_record_id: string;
+  source_ref_type: string;
+  source_ref_id: string;
+  source_span_id: string | null;
+  evidence_role: string;
+  locator_json: string;
+  exact_text: string | null;
+  content_hash: string | null;
+  metadata_json: string;
+}
+
+interface ContextRecordEntityRow {
+  context_record_id: string;
+  entity_key: string;
+  entity_type: string;
+  entity_id: string | null;
+  relationship: string;
+  value_json: string | null;
+  confidence: number | null;
+  metadata_json: string;
+}
+
+interface ContextRecordConceptRow {
+  context_record_id: string;
+  concept_id: string;
+  canonical_key: string;
+  namespace: string;
+  label: string;
+  description: string | null;
+  aliases_json: string;
+  metadata_json: string;
+  relationship: string;
+  weight: number;
+}
+
 async function clearWorkspacePersonProjection(
   driver: Driver,
   workspacePersonId: string,
@@ -258,6 +312,10 @@ async function projectWorkspacePerson(
     signalEvidence,
     signalSnapshots,
     semanticRelationships,
+    contextRecords,
+    contextRecordSourceRefs,
+    contextRecordEntities,
+    contextRecordConcepts,
   ] = await Promise.all([
     env.DB.prepare(
       `SELECT id, legacy_candidate_id, pipeline_id, status, context_json
@@ -375,6 +433,13 @@ async function projectWorkspacePerson(
          JOIN assertion_concepts ac ON ac.concept_id = c.id
          JOIN semantic_assertions sa ON sa.id = ac.assertion_id
         WHERE sa.workspace_person_id = ?1
+        UNION
+        SELECT DISTINCT c.id, c.canonical_key, c.namespace, c.label,
+              c.description, c.aliases_json, c.metadata_json
+         FROM concepts c
+         JOIN context_record_concepts crc ON crc.concept_id = c.id
+         JOIN context_records cr ON cr.id = crc.context_record_id
+        WHERE cr.workspace_person_id = ?1
         ORDER BY c.canonical_key`,
     ).bind(workspacePersonId).all<ConceptRow>(),
     env.DB.prepare(
@@ -407,6 +472,41 @@ async function projectWorkspacePerson(
         WHERE workspace_person_id = ?1
         ORDER BY id`,
     ).bind(workspacePersonId).all<SemanticRelationshipRow>(),
+    env.DB.prepare(
+      `SELECT id, scope_type, scope_id, interaction_id, application_id,
+              episode_id, assertion_id, record_type, predicate, narrative,
+              qualifiers_json, confidence, polarity, extraction_version, observed_at
+         FROM context_records
+        WHERE workspace_person_id = ?1
+        ORDER BY COALESCE(observed_at, created_at), id`,
+    ).bind(workspacePersonId).all<ContextRecordRow>(),
+    env.DB.prepare(
+      `SELECT crsr.context_record_id, crsr.source_ref_type, crsr.source_ref_id,
+              crsr.source_span_id, crsr.evidence_role, crsr.locator_json,
+              crsr.exact_text, crsr.content_hash, crsr.metadata_json
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+        WHERE cr.workspace_person_id = ?1
+        ORDER BY crsr.context_record_id, crsr.source_ref_type, crsr.source_ref_id, crsr.evidence_role`,
+    ).bind(workspacePersonId).all<ContextRecordSourceRefRow>(),
+    env.DB.prepare(
+      `SELECT cre.context_record_id, cre.entity_key, cre.entity_type, cre.entity_id,
+              cre.relationship, cre.value_json, cre.confidence, cre.metadata_json
+         FROM context_record_entities cre
+         JOIN context_records cr ON cr.id = cre.context_record_id
+        WHERE cr.workspace_person_id = ?1
+        ORDER BY cre.context_record_id, cre.relationship, cre.entity_type, cre.entity_id`,
+    ).bind(workspacePersonId).all<ContextRecordEntityRow>(),
+    env.DB.prepare(
+      `SELECT crc.context_record_id, crc.concept_id, c.canonical_key,
+              c.namespace, c.label, c.description, c.aliases_json,
+              c.metadata_json, crc.relationship, crc.weight
+         FROM context_record_concepts crc
+         JOIN context_records cr ON cr.id = crc.context_record_id
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE cr.workspace_person_id = ?1
+        ORDER BY crc.context_record_id, crc.weight DESC, c.label`,
+    ).bind(workspacePersonId).all<ContextRecordConceptRow>(),
   ]);
 
   await runWriteQuery(
@@ -706,6 +806,100 @@ async function projectWorkspacePerson(
          MERGE (sr)-[:DERIVED_FROM]->(a)
        )`,
       { workspace_person_id: workspacePersonId, rows: semanticRelationships.results },
+    );
+  }
+  if (contextRecords.results.length > 0) {
+    await runWriteQuery(
+      driver,
+      `MATCH (wp:WorkspacePerson {workspace_person_id: $workspace_person_id})
+       UNWIND $rows AS row
+       MERGE (cr:ContextRecord {context_record_id: row.id})
+       SET cr.scope_type = row.scope_type,
+           cr.scope_id = row.scope_id,
+           cr.record_type = row.record_type,
+           cr.predicate = row.predicate,
+           cr.narrative = row.narrative,
+           cr.qualifiers_json = row.qualifiers_json,
+           cr.confidence = row.confidence,
+           cr.polarity = row.polarity,
+           cr.extraction_version = row.extraction_version,
+           cr.observed_at = row.observed_at
+       MERGE (wp)-[:HAS_CONTEXT_ENTITY]->(cr)
+       FOREACH (_ IN CASE WHEN row.interaction_id IS NULL THEN [] ELSE [1] END |
+         MERGE (i:Interaction {interaction_id: row.interaction_id})
+         MERGE (cr)-[:OBSERVED_IN]->(i)
+       )
+       FOREACH (_ IN CASE WHEN row.application_id IS NULL THEN [] ELSE [1] END |
+         MERGE (app:Application {application_id: row.application_id})
+         MERGE (cr)-[:FOR_APPLICATION]->(app)
+       )
+       FOREACH (_ IN CASE WHEN row.episode_id IS NULL THEN [] ELSE [1] END |
+         MERGE (e:Episode {episode_id: row.episode_id})
+         MERGE (cr)-[:PART_OF_EPISODE]->(e)
+       )
+       FOREACH (_ IN CASE WHEN row.assertion_id IS NULL THEN [] ELSE [1] END |
+         MERGE (a:SemanticAssertion {assertion_id: row.assertion_id})
+         MERGE (cr)-[:DERIVED_FROM]->(a)
+       )`,
+      { workspace_person_id: workspacePersonId, rows: contextRecords.results },
+    );
+  }
+  if (contextRecordSourceRefs.results.length > 0) {
+    await runWriteQuery(
+      driver,
+      `UNWIND $rows AS row
+       MATCH (cr:ContextRecord {context_record_id: row.context_record_id})
+       FOREACH (_ IN CASE WHEN row.source_span_id IS NULL THEN [] ELSE [1] END |
+         MATCH (s:SourceSpan {source_span_id: row.source_span_id})
+         MERGE (cr)-[r:EVIDENCED_BY {
+           source_ref_type: row.source_ref_type,
+           evidence_role: row.evidence_role
+         }]->(s)
+         SET r.locator_json = row.locator_json,
+             r.exact_text = row.exact_text,
+             r.content_hash = row.content_hash,
+             r.metadata_json = row.metadata_json
+       )`,
+      { rows: contextRecordSourceRefs.results },
+    );
+  }
+  if (contextRecordEntities.results.length > 0) {
+    await runWriteQuery(
+      driver,
+      `MATCH (wp:WorkspacePerson {workspace_person_id: $workspace_person_id})
+       UNWIND $rows AS row
+       MATCH (cr:ContextRecord {context_record_id: row.context_record_id})
+       MERGE (entity:ContextEntity {
+         entity_type: row.entity_type,
+         entity_key: row.entity_key
+       })
+       SET entity.entity_id = row.entity_id,
+           entity.value_json = row.value_json,
+           entity.confidence = row.confidence,
+           entity.metadata_json = row.metadata_json
+       MERGE (wp)-[:HAS_CONTEXT_ENTITY]->(entity)
+       MERGE (cr)-[r:REFERENCES_ENTITY {relationship: row.relationship}]->(entity)`,
+      { workspace_person_id: workspacePersonId, rows: contextRecordEntities.results },
+    );
+  }
+  if (contextRecordConcepts.results.length > 0) {
+    await runWriteQuery(
+      driver,
+      `UNWIND $rows AS row
+       MATCH (cr:ContextRecord {context_record_id: row.context_record_id})
+       MERGE (c:Concept {concept_id: row.concept_id})
+       SET c.canonical_key = row.canonical_key,
+           c.namespace = row.namespace,
+           c.label = row.label,
+           c.description = row.description,
+           c.aliases_json = row.aliases_json,
+           c.metadata_json = row.metadata_json
+       MERGE (cr)-[r:RELATES_TO_CONCEPT {
+         concept_id: row.concept_id,
+         relationship: row.relationship
+       }]->(c)
+       SET r.weight = row.weight`,
+      { rows: contextRecordConcepts.results },
     );
   }
 }
