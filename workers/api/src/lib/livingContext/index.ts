@@ -14,3 +14,8 @@ export * from './readModel';
 export * from './projection';
 export * from './openTerms';
 export { loadContactLivingContext } from './readModel';
+export {
+  loadInteractionLivingContext,
+  loadMeetingTranscriptContext,
+  searchTranscriptSourceSpans,
+} from './readModel';
