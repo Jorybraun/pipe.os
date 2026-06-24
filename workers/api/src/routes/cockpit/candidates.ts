@@ -195,6 +195,61 @@ interface StandaloneReviewPacketMetadata {
   prTitle: string | null;
 }
 
+interface StandaloneReviewPacketDemand {
+  id: string;
+  family: string;
+  narrative: string;
+  conceptKeys: string[];
+  sourceSpanIds: string[];
+  changedSymbolIds: string[];
+  weight: number;
+}
+
+interface StandaloneReviewPacketTestChange {
+  path: string;
+  framework: string | null;
+  sourceSpanIds: string[];
+  relatedSymbolIds: string[];
+}
+
+interface StandaloneReviewPacketIssue {
+  number: number;
+  title: string;
+  labels: string[];
+  sourceSpanIds: string[];
+}
+
+interface StandaloneReviewPacketQualityGate {
+  gate: string;
+  passed: boolean;
+  reason: string;
+}
+
+interface StandaloneReviewPacketQuality {
+  score: number;
+  eligible: boolean;
+  metrics: {
+    provenanceCoverage: number;
+    reviewableSize: number;
+    testCoverage: number;
+    issueContext: number;
+    demandDiversity: number;
+  };
+  gates: StandaloneReviewPacketQualityGate[];
+}
+
+interface StandaloneReviewPacketDetail {
+  packetId: string;
+  changedFilePaths: string[];
+  changedSymbolIds: string[];
+  sourceSpanIds: string[];
+  demandFamilies: string[];
+  demands: StandaloneReviewPacketDemand[];
+  testChanges: StandaloneReviewPacketTestChange[];
+  issue: StandaloneReviewPacketIssue | null;
+  quality: StandaloneReviewPacketQuality | null;
+}
+
 export type StandaloneReviewExclusionReason =
   | 'DEMAND_WITHOUT_SOURCE_SPANS'
   | 'MISSING_DEMAND_SOURCE_SPANS'
@@ -496,6 +551,99 @@ function parseStandaloneReviewPacketMetadata(
     prNumber: typeof row.pr_number === 'number' ? row.pr_number : packetPrNumber,
     prUrl: asOptionalString(pullRequest.url),
     prTitle: asOptionalString(pullRequest.title),
+  };
+}
+
+function asOptionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseStandaloneReviewPacketDemand(item: unknown): StandaloneReviewPacketDemand[] {
+  if (!isRecord(item) || typeof item.id !== 'string' || typeof item.family !== 'string') return [];
+  return [{
+    id: item.id,
+    family: item.family,
+    narrative: asOptionalString(item.narrative) ?? '',
+    conceptKeys: asStringArray(item.conceptKeys),
+    sourceSpanIds: asStringArray(item.sourceSpanIds),
+    changedSymbolIds: asStringArray(item.changedSymbolIds),
+    weight: asOptionalNumber(item.weight) ?? 0,
+  }];
+}
+
+function parseStandaloneReviewPacketTestChange(item: unknown): StandaloneReviewPacketTestChange[] {
+  if (!isRecord(item) || typeof item.path !== 'string') return [];
+  return [{
+    path: item.path,
+    framework: asOptionalString(item.framework),
+    sourceSpanIds: asStringArray(item.sourceSpanIds),
+    relatedSymbolIds: asStringArray(item.relatedSymbolIds),
+  }];
+}
+
+function parseStandaloneReviewPacketQuality(value: unknown): StandaloneReviewPacketQuality | null {
+  if (!isRecord(value)) return null;
+  const metricsRecord = isRecord(value.metrics) ? value.metrics : {};
+  const gates = Array.isArray(value.gates)
+    ? value.gates.flatMap((gate): StandaloneReviewPacketQualityGate[] => {
+        if (!isRecord(gate) || typeof gate.gate !== 'string') return [];
+        return [{
+          gate: gate.gate,
+          passed: gate.passed === true,
+          reason: asOptionalString(gate.reason) ?? '',
+        }];
+      })
+    : [];
+  return {
+    score: asOptionalNumber(value.score) ?? 0,
+    eligible: value.eligible === true,
+    metrics: {
+      provenanceCoverage: asOptionalNumber(metricsRecord.provenanceCoverage) ?? 0,
+      reviewableSize: asOptionalNumber(metricsRecord.reviewableSize) ?? 0,
+      testCoverage: asOptionalNumber(metricsRecord.testCoverage) ?? 0,
+      issueContext: asOptionalNumber(metricsRecord.issueContext) ?? 0,
+      demandDiversity: asOptionalNumber(metricsRecord.demandDiversity) ?? 0,
+    },
+    gates,
+  };
+}
+
+function parseStandaloneReviewPacketDetail(
+  packetId: string | null,
+  row: { packet_json: string | null } | null,
+): StandaloneReviewPacketDetail | null {
+  if (!row || !row.packet_json) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.packet_json);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  const demands = Array.isArray(parsed.demands)
+    ? parsed.demands.flatMap(parseStandaloneReviewPacketDemand)
+    : [];
+  const testChanges = Array.isArray(parsed.testChanges)
+    ? parsed.testChanges.flatMap(parseStandaloneReviewPacketTestChange)
+    : [];
+  const issueRecord = isRecord(parsed.issue) && typeof parsed.issue.number === 'number'
+    ? {
+        number: parsed.issue.number,
+        title: asOptionalString(parsed.issue.title) ?? '',
+        labels: asStringArray(parsed.issue.labels),
+        sourceSpanIds: asStringArray(parsed.issue.sourceSpanIds),
+      }
+    : null;
+  return {
+    packetId: packetId ?? asOptionalString(parsed.id) ?? '',
+    changedFilePaths: asStringArray(parsed.changedFilePaths),
+    changedSymbolIds: asStringArray(parsed.changedSymbolIds),
+    sourceSpanIds: asStringArray(parsed.sourceSpanIds),
+    demandFamilies: asStringArray(parsed.demandFamilies),
+    demands,
+    testChanges,
+    issue: issueRecord,
+    quality: parseStandaloneReviewPacketQuality(parsed.quality),
   };
 }
 
@@ -1639,6 +1787,7 @@ candidateOps.get('/:candidateId', async (c) => {
     roleSources: StandaloneReviewRoleSource[];
     gaps: string[];
     diagnostics: StandaloneReviewDiagnostics;
+    packet: StandaloneReviewPacketDetail | null;
     submitted: boolean;
     submission: StandaloneReviewSubmissionSummary | null;
     completedAt: string | null;
@@ -1736,9 +1885,13 @@ candidateOps.get('/:candidateId', async (c) => {
         ?? rankedResults[0]
         ?? null;
       const selectedPacketId = latestRun?.selected_packet_id ?? selectedResult?.challengeId ?? null;
-      const selectedPacketMetadata = selectedPacketId
-        ? parseStandaloneReviewPacketMetadata(await loadSourceBackedReviewPacketById(db, selectedPacketId))
+      const selectedPacketRow = selectedPacketId
+        ? await loadSourceBackedReviewPacketById(db, selectedPacketId)
         : null;
+      const selectedPacketMetadata = selectedPacketId
+        ? parseStandaloneReviewPacketMetadata(selectedPacketRow)
+        : null;
+      const selectedPacketDetail = parseStandaloneReviewPacketDetail(selectedPacketId, selectedPacketRow);
       const selectedPacketContextMissing = !!(selectedPacketId && !selectedPacketMetadata);
       const selectedResultForDisplay = selectedPacketContextMissing ? null : selectedResult;
       const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
@@ -1797,6 +1950,7 @@ candidateOps.get('/:candidateId', async (c) => {
         roleSources,
         gaps: [...graphContextGaps, ...summary.gaps],
         diagnostics,
+        packet: selectedPacketDetail,
         submitted: standaloneInterview.submission_json !== null,
         submission,
         completedAt: standaloneInterview.completed_at,

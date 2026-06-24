@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Graph and Match Explanation UI (HAS-87)
+
+- Added a repository packet view (`RepoPacketPanel`) to the living context graph that renders files, source spans, symbols, structural facts (quality gates), behavioral episodes (test changes + linked issue), packet assertions (demands with narratives and concept keys), and packet concepts from the persisted challenge packet.
+- Extended the candidate profile API (`StandaloneReviewMatchRecord`) with a `packet` field carrying structured packet detail parsed from `packet_json`, so the recruiter UI can render the full repo packet alongside the candidate-to-PR overlay.
+- Added a "Show provenance IDs" drill-down toggle on the repo packet panel that hides raw internal IDs (packet ID, span IDs, symbol IDs, demand IDs, full file paths, quality scores) by default and reveals them on demand for debugging and provenance audit.
+- Made empty graph states quiet: the zero-count summary dashboard and the graph workspace no longer render when there is no living context evidence, replaced by a single quiet empty-state message.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.

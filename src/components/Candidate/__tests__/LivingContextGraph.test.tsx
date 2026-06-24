@@ -180,6 +180,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
     submitted: false,
     submission: null,
     completedAt: null,
+    packet: null,
   };
 }
 
@@ -277,6 +278,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
     submitted: false,
     submission: null,
     completedAt: null,
+    packet: null,
   };
 }
 
@@ -501,6 +503,76 @@ function makeMeetingLivingContext(options: { includeRolelessMessage?: boolean } 
   };
 }
 
+function makePacketReviewMatch(): StandaloneReviewMatchRecord {
+  return {
+    ...makeStandaloneReviewMatch(),
+    packet: {
+      packetId: 'packet-source-backed',
+      changedFilePaths: ['src/orders/retry.ts', 'src/orders/kafkaProducer.ts', 'tests/orders/retry.test.ts'],
+      changedSymbolIds: ['symbol:src/orders/retry.ts:publishRetry', 'symbol:src/orders/kafkaProducer.ts:flush'],
+      sourceSpanIds: ['repo-span-retry', 'repo-span-kafka-producer'],
+      demandFamilies: ['artifact:source_file', 'structure:function_call'],
+      demands: [{
+        id: 'demand-retry',
+        family: 'artifact:source_file',
+        narrative: 'Review idempotent retry handling around order event publication.',
+        conceptKeys: ['term:kafka-order-events', 'term:idempotent-retry'],
+        sourceSpanIds: ['repo-span-retry'],
+        changedSymbolIds: ['symbol:src/orders/retry.ts:publishRetry'],
+        weight: 0.9,
+      }, {
+        id: 'demand-kafka-producer',
+        family: 'structure:function_call',
+        narrative: 'Review Kafka producer flush guarantees.',
+        conceptKeys: ['term:kafka-order-events'],
+        sourceSpanIds: ['repo-span-kafka-producer'],
+        changedSymbolIds: ['symbol:src/orders/kafkaProducer.ts:flush'],
+        weight: 0.6,
+      }],
+      testChanges: [{
+        path: 'tests/orders/retry.test.ts',
+        framework: 'vitest',
+        sourceSpanIds: ['repo-span-retry'],
+        relatedSymbolIds: ['symbol:src/orders/retry.ts:publishRetry'],
+      }],
+      issue: {
+        number: 31,
+        title: 'Order events occasionally dropped during Kafka rebalancing',
+        labels: ['bug', 'kafka'],
+        sourceSpanIds: [],
+      },
+      quality: {
+        score: 0.82,
+        eligible: true,
+        metrics: {
+          provenanceCoverage: 1,
+          reviewableSize: 0.7,
+          testCoverage: 0.5,
+          issueContext: 0.8,
+          demandDiversity: 0.6,
+        },
+        gates: [{
+          gate: 'production_language',
+          passed: true,
+          reason: 'TypeScript is a production language',
+        }, {
+          gate: 'merged_pull_request',
+          passed: true,
+          reason: 'pull request is merged',
+        }, {
+          gate: 'contains_tests',
+          passed: true,
+          reason: '1 normalized test changes available',
+        }, {
+          gate: 'demand_diversity',
+          passed: true,
+          reason: '2 distinct demand families extracted',
+        }],
+      },
+    },
+  };
+}
+
 describe('LivingContextGraph standalone review explanation', () => {
   it('renders source-backed evidence, gaps, excluded packets, and stretch diagnostics', () => {
     mocks.livingContext = makeLivingContext();
@@ -690,5 +762,131 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText(
       'Roleless follow-up: the same person can discuss temporal shard knitting and join the talent pool.',
     )).toBeInTheDocument();
+  });
+
+  it('renders the repo packet view with files, spans, symbols, structural facts, episodes, assertions, and concepts', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makePacketReviewMatch()}
+      />,
+    );
+
+    const packetPanel = screen.getByTestId('repo-packet-panel');
+    expect(screen.getByLabelText('Repository packet')).toBe(packetPanel);
+    expect(within(packetPanel).getByText('pipe/source-backed-orders · PR #42 · 2 source spans · 2 symbols')).toBeInTheDocument();
+
+    // Files
+    const files = within(packetPanel).getByTestId('packet-files');
+    expect(within(files).getByText('retry.ts')).toBeInTheDocument();
+    expect(within(files).getByText('kafkaProducer.ts')).toBeInTheDocument();
+    expect(within(files).getByText('retry.test.ts')).toBeInTheDocument();
+    expect(within(files).getAllByText('2 spans').length).toBeGreaterThan(0);
+    expect(within(files).getAllByText('2 symbols').length).toBeGreaterThan(0);
+
+    // Packet concepts
+    const concepts = within(packetPanel).getByTestId('packet-concepts');
+    expect(within(concepts).getByText('artifact:source_file')).toBeInTheDocument();
+    expect(within(concepts).getByText('structure:function_call')).toBeInTheDocument();
+    expect(within(concepts).getByText('term:kafka-order-events')).toBeInTheDocument();
+    expect(within(concepts).getByText('term:idempotent-retry')).toBeInTheDocument();
+
+    // Structural facts (quality gates)
+    const facts = within(packetPanel).getByTestId('packet-structural-facts');
+    const factRows = within(facts).getAllByTestId('packet-structural-fact');
+    expect(factRows.length).toBe(4);
+    const productionGate = factRows.find((row) => row.getAttribute('data-gate') === 'production_language');
+    expect(productionGate).toBeDefined();
+    expect(productionGate).toHaveAttribute('data-passed', 'true');
+    expect(within(facts).getByText('Production Language')).toBeInTheDocument();
+    expect(within(facts).getAllByText('Pass').length).toBeGreaterThan(0);
+    expect(within(facts).getByText('TypeScript is a production language')).toBeInTheDocument();
+
+    // Behavioral episodes (test changes + issue)
+    const episodes = within(packetPanel).getByTestId('packet-behavioral-episodes');
+    expect(within(episodes).getByText('retry.test.ts')).toBeInTheDocument();
+    expect(within(episodes).getByText('vitest')).toBeInTheDocument();
+    expect(within(episodes).getByText('Issue #31')).toBeInTheDocument();
+    expect(within(episodes).getByText('Order events occasionally dropped during Kafka rebalancing')).toBeInTheDocument();
+    expect(within(episodes).getByText('bug')).toBeInTheDocument();
+    expect(within(episodes).getByText('kafka')).toBeInTheDocument();
+
+    // Packet assertions (demands)
+    const assertions = within(packetPanel).getByTestId('packet-assertions');
+    expect(within(assertions).getByText('Source File (Artifact)')).toBeInTheDocument();
+    expect(within(assertions).getByText('Function Call (Structure)')).toBeInTheDocument();
+    expect(within(assertions).getByText('Review idempotent retry handling around order event publication.')).toBeInTheDocument();
+    expect(within(assertions).getByText('Review Kafka producer flush guarantees.')).toBeInTheDocument();
+    expect(within(assertions).getByText('90% weight')).toBeInTheDocument();
+    expect(within(assertions).getByText('60% weight')).toBeInTheDocument();
+  });
+
+  it('hides internal provenance IDs by default and reveals them via the drill-down toggle', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makePacketReviewMatch()}
+      />,
+    );
+
+    const packetPanel = screen.getByTestId('repo-packet-panel');
+
+    // By default, raw provenance IDs are hidden
+    expect(within(packetPanel).queryByTestId('packet-provenance-detail')).toBeNull();
+    expect(within(packetPanel).queryByTestId('packet-demand-ids')).toBeNull();
+    expect(within(packetPanel).queryByTestId('packet-file-ids')).toBeNull();
+    // The packet ID is not shown as visible text in the provenance detail
+    expect(within(packetPanel).queryByText('Packet ID')).toBeNull();
+
+    // The toggle is present and not pressed
+    const toggle = within(packetPanel).getByTestId('packet-provenance-toggle');
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveTextContent('Show provenance IDs');
+
+    // Reveal provenance IDs
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(toggle).toHaveTextContent('Hide provenance IDs');
+
+    const provenance = within(packetPanel).getByTestId('packet-provenance-detail');
+    expect(within(provenance).getByText('Packet ID')).toBeInTheDocument();
+    expect(within(provenance).getByText('packet-source-backed')).toBeInTheDocument();
+    expect(within(provenance).getByText('Source span IDs')).toBeInTheDocument();
+    expect(within(provenance).getByText('repo-span-retry, repo-span-kafka-producer')).toBeInTheDocument();
+    expect(within(provenance).getByText('Changed symbol IDs')).toBeInTheDocument();
+    expect(within(provenance).getByText('Quality score')).toBeInTheDocument();
+    expect(within(provenance).getByText('82%')).toBeInTheDocument();
+
+    // Demand IDs are now visible
+    const demandIds = within(packetPanel).getAllByTestId('packet-demand-ids');
+    expect(demandIds.length).toBe(2);
+    expect(within(demandIds[0]!).getByText('Demand ID')).toBeInTheDocument();
+    expect(within(demandIds[0]!).getByText('demand-retry')).toBeInTheDocument();
+
+    // File paths (full) are now visible
+    const fileIds = within(packetPanel).getAllByTestId('packet-file-ids');
+    expect(fileIds.length).toBe(3);
+  });
+
+  it('stays quiet when the living context graph is empty', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    // No noisy zero-count summary dashboard
+    expect(screen.queryByTestId('living-context-summary')).toBeNull();
+    // Quiet empty state for the graph workspace
+    expect(screen.getByTestId('living-context-quiet-empty')).toBeInTheDocument();
+    // The standalone review match panel still renders
+    expect(screen.getByLabelText('Standalone code review match')).toBeInTheDocument();
   });
 });
