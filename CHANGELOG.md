@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — MVP-Simple Interview Flow with No Fabricated /video Fallback Links (HAS-89)
+
+- Added regression tests proving roleless meetings (no pipeline, stage, or role) create `/room/:token` links end-to-end and never fabricate `/video/stageId--candidateId` fallback URLs across room preparation, guest invites, public room resolution, room reopening, and persisted `meetings.meeting_url`.
+- Added regression tests proving scheduled interview detail/list endpoints return `null` (not a fabricated `/video/` link) when `meeting_url` is null, and return the canonical `/room/` URL after an invite creates one.
+- Confirmed `buildInternalVideoUrl` returns `null` when no `meeting_url` exists, so the person-first MVP flow keeps the UI clean without noisy fabricated video links while video-call recordings/transcripts continue feeding the living graph.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
