@@ -884,8 +884,9 @@ describe('LivingContextGraph standalone review explanation', () => {
 
     // No noisy zero-count summary dashboard
     expect(screen.queryByTestId('living-context-summary')).toBeNull();
-    // Quiet empty state for the graph workspace
-    expect(screen.getByTestId('living-context-quiet-empty')).toBeInTheDocument();
+    // Quiet empty state (HAS-81 wraps the whole graph in a quiet mode)
+    expect(screen.getByTestId('living-context-quiet')).toBeInTheDocument();
+    expect(screen.getByTestId('living-context-empty')).toBeInTheDocument();
     // The standalone review match panel still renders
     expect(screen.getByLabelText('Standalone code review match')).toBeInTheDocument();
   });
