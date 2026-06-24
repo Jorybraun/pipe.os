@@ -4,8 +4,10 @@ import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
 import { generateRoomToken, hashRoomToken } from '../lib/roomTokens';
 import {
+  parseDeepgramStructuredTranscription,
   transcribeAudioDeepgramStructured,
   transcribeAudioWhisper,
+  type StructuredTranscription,
 } from '../lib/transcribe';
 import { ingestMeetingTranscriptToLivingContext } from '../lib/livingContext';
 import { getTurnIceServers } from '../lib/turnCredentials';
@@ -67,6 +69,9 @@ interface ResolvedMeetingRecording {
 
 const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
 const MEETING_ANALYSIS_TIMEOUT_MS = 30_000;
+const E2E_DEEPGRAM_RESPONSE_HEADER = 'X-Pipe-E2E-Deepgram-Response';
+const E2E_MEETING_ANALYSIS_HEADER = 'X-Pipe-E2E-Meeting-Analysis';
+const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
 const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
 const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
 const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
@@ -101,6 +106,11 @@ interface RoomWorkspacePayload {
     proxyPath: string | null;
     errorMessage: string | null;
   } | null;
+}
+
+interface RecordingProcessingOverrides {
+  structuredTranscription?: StructuredTranscription | null;
+  analysisJson?: string | null;
 }
 
 const evidenceLevelSchema = z.enum([
@@ -144,6 +154,19 @@ function extractAiText(value: unknown): string {
   if (!message || typeof message !== 'object') return '';
   const content = (message as Record<string, unknown>).content;
   return typeof content === 'string' ? content : '';
+}
+
+function isLocalOrTestRequest(env: Env, requestUrl: string): boolean {
+  if (env.ENV === 'test') return true;
+  const url = new URL(requestUrl);
+  const localHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  const appBase = env.APP_BASE_URL ?? '';
+  const localApp = appBase.startsWith('http://localhost:') || appBase.startsWith('http://127.0.0.1:');
+  return localHost && localApp;
+}
+
+function headerByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function parseAnalysis(
@@ -229,6 +252,11 @@ function parsePositiveIntEnv(value: string | undefined, fallback: number): numbe
 
 function workspaceProxyPath(token: string, sessionId: string): string {
   return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
+}
+
+function githubPrChallengeRef(githubPrNumber: number | null): string | null {
+  if (!Number.isInteger(githubPrNumber) || (githubPrNumber ?? 0) <= 0) return null;
+  return `refs/pull/${githubPrNumber}/head`;
 }
 
 function serializeWorkspaceSession(
@@ -444,25 +472,20 @@ async function processRecording(
   room: ResolvedRoom,
   transcriptionSourceKey: string,
   recordingKey: string,
+  overrides: RecordingProcessingOverrides = {},
 ): Promise<void> {
   try {
     const object = await env.STORAGE.get(transcriptionSourceKey);
     if (!object) throw new Error('Transcription source was not found after upload.');
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
-    const structured = env.DEEPGRAM_API_KEY
+    const structured = overrides.structuredTranscription ?? (env.DEEPGRAM_API_KEY
       ? await transcribeAudioDeepgramStructured(
           audioBuffer,
           env.DEEPGRAM_API_KEY,
           contentType,
         )
-      : null;
-    const hasAttributedGuestAudio = Boolean(structured && room.guest_contact_id);
-    const provider = structured
-      ? hasAttributedGuestAudio
-        ? 'deepgram-multichannel'
-        : 'deepgram-multichannel-summary-only'
-      : 'workers-ai-whisper-summary-only';
+      : null);
     let segments: MeetingTranscriptSegmentInput[];
     let transcript: string;
     if (structured) {
@@ -500,11 +523,23 @@ async function processRecording(
       }];
     }
 
-    const analysis = await withTimeout(
-      analyzeMeeting(env.AI, transcript, segments),
-      MEETING_ANALYSIS_TIMEOUT_MS,
-      'Meeting transcript analysis',
+    const hasAttributedGuestAudio = Boolean(
+      room.guest_contact_id
+        && segments.some((segment) => segment.contactId === room.guest_contact_id),
     );
+    const provider = structured
+      ? hasAttributedGuestAudio
+        ? 'deepgram-multichannel'
+        : 'deepgram-multichannel-summary-only'
+      : 'workers-ai-whisper-summary-only';
+
+    const analysis = overrides.analysisJson
+      ? parseAnalysis(overrides.analysisJson, transcript, segments)
+      : await withTimeout(
+          analyzeMeeting(env.AI, transcript, segments),
+          MEETING_ANALYSIS_TIMEOUT_MS,
+          'Meeting transcript analysis',
+        );
     const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
     const analysisForStorage = {
       ...analysis,
@@ -557,6 +592,7 @@ async function processRecording(
       startedAt: room.started_at,
       endedAt: room.ended_at,
       recordingKey,
+      transcriptionAudioKey: transcriptionSourceKey !== recordingKey ? transcriptionSourceKey : null,
       provider,
     });
   } catch (error) {
@@ -691,6 +727,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
+  const challengeBranch = githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
     sessionId,
@@ -702,7 +739,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
     ttlSource: effective.source,
     expiresAt,
     repoGitUrl: workspace.repoUrl,
-    challengeBranch: null,
+    challengeBranch,
   });
 
   const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
@@ -716,7 +753,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         expiresAt,
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl: workspace.repoUrl,
-        challengeBranch: null,
+        challengeBranch,
       }),
     }).catch((err: unknown) => {
       console.error('[meetingRooms.workspace.launch] DO init failed:', err);
@@ -921,6 +958,47 @@ meetingRooms.post('/:token/recording', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
   }
   const requestContentType = c.req.header('Content-Type') ?? 'audio/webm';
+  const e2eDeepgramResponse = c.req.header(E2E_DEEPGRAM_RESPONSE_HEADER);
+  const e2eMeetingAnalysis = c.req.header(E2E_MEETING_ANALYSIS_HEADER);
+  let processingOverrides: RecordingProcessingOverrides = {};
+  if (e2eDeepgramResponse || e2eMeetingAnalysis) {
+    if (!isLocalOrTestRequest(c.env, c.req.url)) {
+      return apiError(c, 'FORBIDDEN', 'E2E transcription overrides are only accepted in local/test environments.');
+    }
+    if (
+      (e2eDeepgramResponse && headerByteLength(e2eDeepgramResponse) > E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES)
+      || (e2eMeetingAnalysis && headerByteLength(e2eMeetingAnalysis) > E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES)
+    ) {
+      return apiError(c, 'VALIDATION_ERROR', 'E2E transcription override is too large.');
+    }
+    if (e2eDeepgramResponse) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(e2eDeepgramResponse);
+      } catch {
+        return apiError(c, 'VALIDATION_ERROR', 'E2E Deepgram override must be JSON.');
+      }
+      const structuredTranscription = parseDeepgramStructuredTranscription(parsed);
+      if (!structuredTranscription) {
+        return apiError(c, 'VALIDATION_ERROR', 'E2E Deepgram override did not contain usable segments.');
+      }
+      processingOverrides = {
+        ...processingOverrides,
+        structuredTranscription,
+      };
+    }
+    if (e2eMeetingAnalysis) {
+      try {
+        JSON.parse(e2eMeetingAnalysis);
+      } catch {
+        return apiError(c, 'VALIDATION_ERROR', 'E2E meeting analysis override must be JSON.');
+      }
+      processingOverrides = {
+        ...processingOverrides,
+        analysisJson: e2eMeetingAnalysis,
+      };
+    }
+  }
   let bytes: ArrayBuffer;
   let contentType: string;
   let transcriptionBytes: ArrayBuffer | null = null;
@@ -976,7 +1054,13 @@ meetingRooms.post('/:token/recording', async (c) => {
      WHERE id = ?`,
   ).bind(recordingKey, new Date().toISOString(), room.meeting_id).run();
 
-  c.executionCtx.waitUntil(processRecording(c.env, room, transcriptionSourceKey, recordingKey));
+  c.executionCtx.waitUntil(processRecording(
+    c.env,
+    room,
+    transcriptionSourceKey,
+    recordingKey,
+    processingOverrides,
+  ));
   return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
 
@@ -1090,12 +1174,13 @@ export async function ensureMeetingRoomLinks(
        VALUES (?, ?, ?, 'WAITING', ?, ?)`,
     ).bind(room.id, meetingId, room.session_id, now, now).run();
   } else if (room.status === 'ENDED') {
+    const sessionId = crypto.randomUUID();
     await db.prepare(
       `UPDATE meeting_rooms
-       SET status = 'WAITING', updated_at = ?
+       SET session_id = ?, status = 'WAITING', updated_at = ?
        WHERE id = ?`,
-    ).bind(now, room.id).run();
-    room = { ...room, status: 'WAITING' };
+    ).bind(sessionId, now, room.id).run();
+    room = { ...room, session_id: sessionId, status: 'WAITING' };
   }
 
   await db.prepare(
@@ -1545,10 +1630,12 @@ meetingsAuth.post('/:id/invite', async (c) => {
   }
 
   const now = new Date().toISOString();
-  await db.prepare(
-    `UPDATE meeting_participants SET invite_sent_at = COALESCE(invite_sent_at, ?), updated_at = ?
-     WHERE meeting_id = ? AND contact_id = ?`,
-  ).bind(now, now, id, participant?.id ?? '').run();
+  if (participant?.id) {
+    await db.prepare(
+      `UPDATE meeting_participants SET invite_sent_at = COALESCE(invite_sent_at, ?), updated_at = ?
+       WHERE meeting_id = ? AND id = ?`,
+    ).bind(now, now, id, participant.id).run();
+  }
 
   return c.json({
     success: true,

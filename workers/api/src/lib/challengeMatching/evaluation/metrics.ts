@@ -179,6 +179,7 @@ export function computeMatchRunFingerprint(run: PersistedMatchRun): string {
         weightedScore: alignment.weightedScore ?? null,
         stretch: alignment.stretch ?? null,
         sharedConcepts: alignment.sharedConcepts,
+        roleSourceRefs: alignment.roleSourceRefs,
         candidateSourceRefs: alignment.candidateSourceRefs,
         challengeSourceRefs: alignment.challengeSourceRefs,
       })),

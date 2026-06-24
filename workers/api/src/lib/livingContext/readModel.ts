@@ -217,6 +217,27 @@ export interface LivingContextReadModel {
   }>;
 }
 
+export interface ScopedLivingContextReadModel {
+  scope: {
+    scopeType: string;
+    scopeId: string;
+    label: string | null;
+    status: string | null;
+    ownerId: string | null;
+    pipelineId: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+    metadata: Record<string, unknown>;
+  };
+  summary: LivingContextReadModel['summary'];
+  interactions: LivingContextReadModel['interactions'];
+  artifacts: LivingContextArtifact[];
+  contextRecords: LivingContextRecord[];
+  assertions: LivingContextAssertion[];
+  signals: LivingContextSignal[];
+  relationships: LivingContextReadModel['relationships'];
+}
+
 interface IdentityRow {
   person_id: string;
   workspace_person_id: string;
@@ -401,6 +422,18 @@ interface SignalEvidenceRow {
   assertion_predicate: string;
 }
 
+interface RoleContextScopeRow {
+  id: string;
+  owner_id: string;
+  pipeline_id: string | null;
+  status: string | null;
+  baseline: string | null;
+  knowledge_state: string | null;
+  job_description_md: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 function parseRecord(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {
@@ -563,6 +596,300 @@ export async function loadWorkspacePersonLivingContext(
   if (!identity) return null;
 
   return loadLivingContextByWorkspacePerson(db, identity);
+}
+
+export async function loadRoleContextLivingContext(
+  db: D1Database,
+  roleContextId: string,
+): Promise<ScopedLivingContextReadModel | null> {
+  const roleContext = await db.prepare(
+    `SELECT id, owner_id, pipeline_id, status, baseline, knowledge_state,
+            job_description_md, created_at, updated_at
+       FROM role_contexts
+      WHERE id = ?1
+      LIMIT 1`,
+  ).bind(roleContextId).first<RoleContextScopeRow>();
+  if (!roleContext) return null;
+
+  const baseline = parseRecord(roleContext.baseline);
+  const label = typeof baseline.title === 'string'
+    ? baseline.title
+    : typeof baseline.roleTitle === 'string'
+      ? baseline.roleTitle
+      : null;
+
+  return loadScopedLivingContext(db, {
+    scopeType: 'role_context',
+    scopeId: roleContext.id,
+    label,
+    status: roleContext.status,
+    ownerId: roleContext.owner_id,
+    pipelineId: roleContext.pipeline_id,
+    createdAt: roleContext.created_at,
+    updatedAt: roleContext.updated_at,
+    metadata: {
+      baseline,
+      knowledgeState: parseRecord(roleContext.knowledge_state),
+      hasJobDescription: Boolean(roleContext.job_description_md),
+    },
+  });
+}
+
+async function loadScopedLivingContext(
+  db: D1Database,
+  scope: ScopedLivingContextReadModel['scope'],
+): Promise<ScopedLivingContextReadModel> {
+  const [
+    artifactsResult,
+    artifactSourcesResult,
+    contextRecordsResult,
+    contextRecordSourcesResult,
+    contextRecordEntitiesResult,
+    contextRecordConceptsResult,
+  ] = await Promise.all([
+    db.prepare(
+      `SELECT a.id,
+              a.interaction_id,
+              a.artifact_type,
+              a.logical_key,
+              a.metadata_json,
+              a.created_at,
+              a.updated_at,
+              av.id AS latest_version_id,
+              av.version_number AS latest_version_number,
+              av.media_type,
+              av.storage_key,
+              (SELECT COUNT(*) FROM artifact_versions versions
+                WHERE versions.artifact_id = a.id) AS version_count
+         FROM artifacts a
+         LEFT JOIN artifact_versions av
+           ON av.id = (
+             SELECT latest.id
+               FROM artifact_versions latest
+              WHERE latest.artifact_id = a.id
+              ORDER BY latest.version_number DESC
+              LIMIT 1
+           )
+        WHERE EXISTS (
+          SELECT 1
+            FROM artifact_versions scoped_av
+            JOIN source_spans scoped_ss ON scoped_ss.artifact_version_id = scoped_av.id
+            JOIN context_record_source_refs scoped_crsr
+              ON scoped_crsr.source_span_id = scoped_ss.id
+            JOIN context_records scoped_cr
+              ON scoped_cr.id = scoped_crsr.context_record_id
+           WHERE scoped_av.artifact_id = a.id
+             AND scoped_cr.scope_type = ?1
+             AND scoped_cr.scope_id = ?2
+        )
+        ORDER BY a.created_at DESC, a.id
+        LIMIT ?3`,
+    ).bind(scope.scopeType, scope.scopeId, ARTIFACT_LIMIT).all<ArtifactRow>(),
+    db.prepare(
+      `SELECT DISTINCT
+              NULL AS assertion_id,
+              NULL AS evidence_role,
+              ss.id AS source_span_id,
+              a.id AS artifact_id,
+              a.artifact_type,
+              a.logical_key,
+              av.id AS artifact_version_id,
+              av.version_number,
+              av.media_type,
+              av.storage_key,
+              ss.stable_segment_id,
+              ss.exact_text,
+              ss.byte_start,
+              ss.byte_end,
+              ss.char_start,
+              ss.char_end,
+              ss.line_start,
+              ss.line_end,
+              ss.timestamp_start_ms,
+              ss.timestamp_end_ms,
+              ss.metadata_json
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         JOIN artifacts a ON a.id = av.artifact_id
+        WHERE cr.scope_type = ?1
+          AND cr.scope_id = ?2
+        ORDER BY a.created_at DESC, ss.char_start, ss.timestamp_start_ms, ss.id
+        LIMIT ?3`,
+    ).bind(scope.scopeType, scope.scopeId, SOURCE_SPAN_LIMIT).all<SourceRow>(),
+    db.prepare(
+      `SELECT id, scope_type, scope_id,
+              interaction_id, application_id, episode_id, assertion_id,
+              record_type, predicate, narrative, qualifiers_json, confidence,
+              polarity, extraction_version, observed_at
+         FROM context_records cr
+        WHERE cr.scope_type = ?1
+          AND cr.scope_id = ?2
+        ORDER BY COALESCE(observed_at, created_at) DESC, id
+        LIMIT ?3`,
+    ).bind(scope.scopeType, scope.scopeId, CONTEXT_RECORD_LIMIT).all<ContextRecordRow>(),
+    db.prepare(
+      `SELECT crsr.context_record_id,
+              crsr.evidence_role,
+              crsr.source_ref_type,
+              crsr.source_ref_id,
+              crsr.source_span_id,
+              crsr.locator_json,
+              crsr.exact_text AS ref_exact_text,
+              crsr.content_hash,
+              a.id AS artifact_id,
+              a.artifact_type,
+              a.logical_key,
+              av.id AS artifact_version_id,
+              av.version_number,
+              av.media_type,
+              av.storage_key,
+              ss.stable_segment_id,
+              ss.exact_text AS span_exact_text,
+              ss.byte_start,
+              ss.byte_end,
+              ss.char_start,
+              ss.char_end,
+              ss.line_start,
+              ss.line_end,
+              ss.timestamp_start_ms,
+              ss.timestamp_end_ms,
+              crsr.metadata_json
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+         LEFT JOIN source_spans ss ON ss.id = crsr.source_span_id
+         LEFT JOIN artifact_versions av ON av.id = ss.artifact_version_id
+         LEFT JOIN artifacts a ON a.id = av.artifact_id
+        WHERE cr.scope_type = ?1
+          AND cr.scope_id = ?2
+        ORDER BY crsr.context_record_id, ss.char_start, ss.timestamp_start_ms, crsr.source_ref_type, crsr.source_ref_id
+        LIMIT ?3`,
+    ).bind(scope.scopeType, scope.scopeId, SOURCE_SPAN_LIMIT).all<ContextRecordSourceRow>(),
+    db.prepare(
+      `SELECT cre.context_record_id, cre.entity_type, cre.entity_id,
+              cre.relationship, cre.value_json, cre.confidence,
+              cre.metadata_json
+         FROM context_record_entities cre
+         JOIN context_records cr ON cr.id = cre.context_record_id
+        WHERE cr.scope_type = ?1
+          AND cr.scope_id = ?2
+        ORDER BY cre.context_record_id, cre.relationship, cre.entity_type, cre.entity_id`,
+    ).bind(scope.scopeType, scope.scopeId).all<ContextRecordEntityRow>(),
+    db.prepare(
+      `SELECT crc.context_record_id,
+              c.id,
+              c.canonical_key,
+              c.namespace,
+              c.label,
+              crc.relationship,
+              crc.weight
+         FROM context_record_concepts crc
+         JOIN context_records cr ON cr.id = crc.context_record_id
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE cr.scope_type = ?1
+          AND cr.scope_id = ?2
+        ORDER BY crc.context_record_id, crc.weight DESC, c.label`,
+    ).bind(scope.scopeType, scope.scopeId).all<ContextRecordConceptRow>(),
+  ]);
+
+  const sourceByContextRecord = new Map<string, LivingContextRecordSourceRef[]>();
+  for (const row of contextRecordSourcesResult.results ?? []) {
+    if (!row.context_record_id) continue;
+    const refs = sourceByContextRecord.get(row.context_record_id) ?? [];
+    refs.push(contextRecordSourceRef(row));
+    sourceByContextRecord.set(row.context_record_id, refs);
+  }
+
+  const sourcesByArtifact = new Map<string, LivingContextSourceRef[]>();
+  for (const row of artifactSourcesResult.results ?? []) {
+    const refs = sourcesByArtifact.get(row.artifact_id) ?? [];
+    refs.push(sourceRef(row));
+    sourcesByArtifact.set(row.artifact_id, refs);
+  }
+
+  const entitiesByContextRecord = new Map<string, LivingContextRecordEntity[]>();
+  for (const row of contextRecordEntitiesResult.results ?? []) {
+    const entities = entitiesByContextRecord.get(row.context_record_id) ?? [];
+    entities.push({
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      relationship: row.relationship,
+      value: parseUnknown(row.value_json),
+      confidence: row.confidence,
+      metadata: parseRecord(row.metadata_json),
+    });
+    entitiesByContextRecord.set(row.context_record_id, entities);
+  }
+
+  const conceptsByContextRecord = new Map<string, LivingContextRecordConcept[]>();
+  for (const row of contextRecordConceptsResult.results ?? []) {
+    const concepts = conceptsByContextRecord.get(row.context_record_id) ?? [];
+    concepts.push({
+      id: row.id,
+      canonicalKey: row.canonical_key,
+      namespace: row.namespace,
+      label: row.label,
+      relationship: row.relationship,
+      weight: row.weight,
+    });
+    conceptsByContextRecord.set(row.context_record_id, concepts);
+  }
+
+  const artifacts = (artifactsResult.results ?? []).map((row): LivingContextArtifact => ({
+    id: row.id,
+    interactionId: row.interaction_id,
+    artifactType: row.artifact_type,
+    logicalKey: row.logical_key,
+    metadata: parseRecord(row.metadata_json),
+    latestVersionId: row.latest_version_id,
+    latestVersionNumber: row.latest_version_number,
+    versionCount: row.version_count,
+    mediaType: row.media_type,
+    storageKey: row.storage_key,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    sourceSpans: sourcesByArtifact.get(row.id) ?? [],
+  }));
+
+  const contextRecords = (contextRecordsResult.results ?? []).map((row): LivingContextRecord => ({
+    id: row.id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    interactionId: row.interaction_id,
+    applicationId: row.application_id,
+    episodeId: row.episode_id,
+    assertionId: row.assertion_id,
+    recordType: row.record_type,
+    predicate: row.predicate,
+    narrative: row.narrative,
+    qualifiers: parseRecord(row.qualifiers_json),
+    confidence: row.confidence,
+    polarity: row.polarity,
+    extractionVersion: row.extraction_version,
+    observedAt: row.observed_at,
+    entities: entitiesByContextRecord.get(row.id) ?? [],
+    concepts: conceptsByContextRecord.get(row.id) ?? [],
+    sources: sourceByContextRecord.get(row.id) ?? [],
+  }));
+
+  return {
+    scope,
+    summary: {
+      interactionCount: 0,
+      artifactCount: artifacts.length,
+      contextRecordCount: contextRecords.length,
+      assertionCount: 0,
+      signalCount: 0,
+      sourceSpanCount: (artifactSourcesResult.results ?? []).length,
+    },
+    interactions: [],
+    artifacts,
+    contextRecords,
+    assertions: [],
+    signals: [],
+    relationships: [],
+  };
 }
 
 async function loadLivingContextByWorkspacePerson(

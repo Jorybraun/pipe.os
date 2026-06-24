@@ -73,7 +73,7 @@ export default defineConfig({
     : {
         webServer: [
           {
-            command: `cd workers/api && npx wrangler dev --port ${apiPort}`,
+            command: `cd workers/api && npx wrangler dev --port ${apiPort} --enable-containers=false`,
             url: `${apiBase}/api/health`,
             reuseExistingServer: true,
             timeout: 120000,

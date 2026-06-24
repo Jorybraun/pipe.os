@@ -26,7 +26,17 @@ on:
       apply_migrations:
         description: 'Apply production D1 migrations before checking/backfilling'
         required: true
-        default: true
+        default: false
+        type: boolean
+      prepare_graph_schema_only:
+        description: 'Execute only review-graph schema SQL files with d1 execute; does not update Wrangler migration ledger'
+        required: true
+        default: false
+        type: boolean
+      allow_extra_pending_migrations:
+        description: 'Allow applying unrelated pending production D1 migrations in the same batch'
+        required: true
+        default: false
         type: boolean
 
 jobs:
@@ -59,6 +69,30 @@ jobs:
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
         run: npm run review-graph:remote-readiness | tee review-graph-readiness-before.json
 
+      - name: Validate migration mode
+        if: ${{ inputs.apply_migrations && inputs.prepare_graph_schema_only }}
+        run: |
+          echo "Choose either apply_migrations or prepare_graph_schema_only, not both." >&2
+          exit 1
+
+      - name: Plan production D1 migrations
+        if: ${{ inputs.apply_migrations }}
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          ALLOW_EXTRA_PENDING_MIGRATIONS: ${{ inputs.allow_extra_pending_migrations }}
+        run: |
+          npx wrangler d1 migrations list pipe-db --env production --remote \
+            | tee review-graph-migrations-pending.txt
+          args=(--file review-graph-migrations-pending.txt --json)
+          if [ "$ALLOW_EXTRA_PENDING_MIGRATIONS" = "true" ]; then
+            args+=(--allow-extra-pending)
+          fi
+          npx tsx scripts/checkReviewGraphMigrationPlan.ts "${args[@]}" \
+            | tee review-graph-migration-plan.json
+
       - name: Apply production D1 migrations
         if: ${{ inputs.apply_migrations }}
         uses: cloudflare/wrangler-action@v3
@@ -68,14 +102,38 @@ jobs:
           workingDirectory: workers/api
           command: d1 migrations apply pipe-db --env production --remote
 
-      - name: Schema readiness after migrations
-        continue-on-error: ${{ inputs.mode == 'dry-run' }}
+      - name: Prepare review graph schema only
+        if: ${{ inputs.prepare_graph_schema_only }}
         working-directory: workers/api
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
-        run: npm run review-graph:remote-readiness | tee review-graph-readiness-after-migrations.json
+        run: |
+          mkdir -p review-graph-schema-prep
+          for migration in \
+            0082_living_context_graph.sql \
+            0083_repo_semantic_graph_and_match_runs.sql \
+            0095_context_records.sql
+          do
+            echo "::group::review graph schema: $migration"
+            npx wrangler d1 execute pipe-db \
+              --env production \
+              --remote \
+              --file "migrations/$migration" \
+              --yes \
+              | tee "review-graph-schema-prep/$migration.log"
+            echo "::endgroup::"
+          done
+
+      - name: Schema readiness after migrations
+        if: ${{ inputs.apply_migrations || inputs.prepare_graph_schema_only }}
+        working-directory: workers/api
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: npm run review-graph:remote-schema-readiness | tee review-graph-readiness-after-migrations.json
 
       - name: GitHub API preflight
         working-directory: workers/api
@@ -151,6 +209,9 @@ jobs:
           name: review-graph-rollout-${{ github.run_id }}
           path: |
             workers/api/review-graph-readiness-before.json
+            workers/api/review-graph-migrations-pending.txt
+            workers/api/review-graph-migration-plan.json
+            workers/api/review-graph-schema-prep/*.log
             workers/api/review-graph-readiness-after-migrations.json
             workers/api/review-graph-readiness-final.json
             workers/api/review-graph-backfill.json

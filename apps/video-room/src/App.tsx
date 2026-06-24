@@ -172,7 +172,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
   const recordingStartedRef = useRef(false);
-  const recordingAutoStartRef = useRef(false);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -334,28 +333,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
-  useEffect(() => {
-    if (
-      metadata.role !== 'HOST' ||
-      recordingAutoStartRef.current ||
-      recordingStartedRef.current ||
-      recordingState !== 'idle' ||
-      room.phase !== 'connected' ||
-      !room.localStream ||
-      !room.remoteStream
-    ) return;
-
-    recordingAutoStartRef.current = true;
-    void startRecording();
-  }, [
-    metadata.role,
-    recordingState,
-    room.localStream,
-    room.phase,
-    room.remoteStream,
-    startRecording,
-  ]);
-
   const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
     if (!recorder || recorder.state === 'inactive') return;
     await new Promise<void>((resolve) => {
@@ -485,7 +462,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           {metadata.description && <p>{metadata.description}</p>}
           <div className="privacy-line">
             <ShieldCheck size={16} />
-            <span>Private link · recording begins after the call connects</span>
+            <span>Private link · host controls recording after everyone connects</span>
           </div>
         </section>
         <section className="device-panel" data-testid="device-check">

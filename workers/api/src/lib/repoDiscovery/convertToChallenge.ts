@@ -36,6 +36,9 @@ interface GitHubPRListItem {
   deletions: number;
 }
 
+const PR_LIST_PAGE_SIZE = 30;
+const MAX_PR_LIST_PAGES = 5;
+
 /**
  * Converts an accepted repo into a CODE_REVIEW challenge template.
  */
@@ -225,26 +228,31 @@ async function findBestPR(
   };
   if (githubToken) headers['Authorization'] = `Bearer ${githubToken}`;
 
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=30`,
-    { headers },
-  );
+  for (let page = 1; page <= MAX_PR_LIST_PAGES; page++) {
+    const response = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls?state=closed&sort=updated&direction=desc&per_page=${PR_LIST_PAGE_SIZE}&page=${page}`,
+      { headers },
+    );
 
-  if (!response.ok) return null;
+    if (!response.ok) return null;
+    const prs = (await response.json()) as GitHubPRListItem[];
+    if (!Array.isArray(prs)) return null;
 
-  const prs = (await response.json()) as GitHubPRListItem[];
+    // Filter: merged, reasonable size
+    const candidates = prs
+      .filter((pr) => pr.merged_at !== null)
+      .filter((pr) => pr.changed_files >= 3 && pr.changed_files <= 50)
+      .filter((pr) => (pr.additions + pr.deletions) >= 20 && (pr.additions + pr.deletions) <= 2000);
 
-  // Filter: merged, reasonable size
-  const candidates = prs
-    .filter((pr) => pr.merged_at !== null)
-    .filter((pr) => pr.changed_files >= 3 && pr.changed_files <= 50)
-    .filter((pr) => (pr.additions + pr.deletions) >= 20 && (pr.additions + pr.deletions) <= 2000);
+    if (candidates.length > 0) {
+      // Prefer PRs in the 5-20 file range (good complexity for review)
+      const ideal = candidates.filter((pr) => pr.changed_files >= 5 && pr.changed_files <= 20);
+      return ideal[0] ?? candidates[0] ?? null;
+    }
+    if (prs.length < PR_LIST_PAGE_SIZE) break;
+  }
 
-  if (candidates.length === 0) return null;
-
-  // Prefer PRs in the 5-20 file range (good complexity for review)
-  const ideal = candidates.filter((pr) => pr.changed_files >= 5 && pr.changed_files <= 20);
-  return ideal[0] ?? candidates[0] ?? null;
+  return null;
 }
 
 async function resolveQualifiedRepoId(

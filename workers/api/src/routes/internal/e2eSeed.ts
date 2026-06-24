@@ -17,6 +17,7 @@ import {
   buildSymbol,
   deriveRepoSemantics,
   persistReviewChallengeGraph,
+  type ChallengePacket as RepoChallengePacket,
   type NormalizedPullRequestFile,
   type NormalizedPullRequestInput,
   type RepositoryRef,
@@ -44,6 +45,18 @@ type SeedCandidateEvidenceInput = {
   evidenceLevel: EvidenceLevel;
   strength?: number;
   confidence?: number;
+};
+
+type SeedCandidateEvidenceSourceInput = {
+  interactionType?: string;
+  artifactType?: string;
+  externalReference?: string;
+  logicalKey?: string;
+  contextRecordType?: string;
+  recordingKey?: string;
+  transcriptionAudioKey?: string;
+  provider?: string;
+  transcriptStatus?: string;
 };
 
 type SeedRepoSpanInput = {
@@ -78,17 +91,20 @@ type SeedRoleSourceInput = {
 type SeedRequest = {
   fixtureId?: string;
   candidateId: string;
+  useExistingCandidateEvidence?: boolean;
   omitSamplePrRow?: boolean;
+  existingChallengePacketId?: string;
   concepts: SeedConceptInput[];
   roleSource?: SeedRoleSourceInput;
+  candidateEvidenceSource?: SeedCandidateEvidenceSourceInput;
   candidateEvidence: SeedCandidateEvidenceInput[];
-  repo: {
+  repo?: {
     githubUrl: string;
     fullName: string;
     primaryLanguage?: string;
     description?: string;
   };
-  pullRequest: {
+  pullRequest?: {
     number: number;
     title: string;
     author?: string;
@@ -96,6 +112,13 @@ type SeedRequest = {
     headSha?: string;
     mergedAt?: string | null;
   };
+  repoSpans: SeedRepoSpanInput[];
+  demands: SeedDemandInput[];
+};
+
+type SeededRepoRequest = SeedRequest & {
+  repo: NonNullable<SeedRequest['repo']>;
+  pullRequest: NonNullable<SeedRequest['pullRequest']>;
   repoSpans: SeedRepoSpanInput[];
   demands: SeedDemandInput[];
 };
@@ -179,24 +202,45 @@ function optionalStringArray(record: Record<string, unknown>, key: string): stri
 
 function parseSeedRequest(value: unknown): SeedRequest {
   const body = requireRecord(value, 'body');
-  const repo = requireRecord(body.repo, 'repo');
-  const pullRequest = requireRecord(body.pullRequest, 'pullRequest');
+  const existingChallengePacketId = optionalString(body, 'existingChallengePacketId');
+  const repo = body.repo === undefined ? undefined : requireRecord(body.repo, 'repo');
+  const pullRequest = body.pullRequest === undefined ? undefined : requireRecord(body.pullRequest, 'pullRequest');
   const conceptsRaw = body.concepts;
   const candidateEvidenceRaw = body.candidateEvidence;
+  const useExistingCandidateEvidence = optionalBoolean(body, 'useExistingCandidateEvidence') ?? false;
   const roleSourceRaw = body.roleSource;
   const repoSpansRaw = body.repoSpans;
   const demandsRaw = body.demands;
   if (!Array.isArray(conceptsRaw) || conceptsRaw.length === 0) throw new Error('concepts must be a non-empty array');
-  if (!Array.isArray(candidateEvidenceRaw) || candidateEvidenceRaw.length === 0) {
+  if (
+    (!Array.isArray(candidateEvidenceRaw) || candidateEvidenceRaw.length === 0)
+    && !useExistingCandidateEvidence
+  ) {
     throw new Error('candidateEvidence must be a non-empty array');
   }
-  if (!Array.isArray(repoSpansRaw) || repoSpansRaw.length === 0) throw new Error('repoSpans must be a non-empty array');
-  if (!Array.isArray(demandsRaw) || demandsRaw.length === 0) throw new Error('demands must be a non-empty array');
+  if (candidateEvidenceRaw !== undefined && !Array.isArray(candidateEvidenceRaw)) {
+    throw new Error('candidateEvidence must be an array');
+  }
+  const usingExistingPacket = Boolean(existingChallengePacketId);
+  if (!usingExistingPacket) {
+    if (!repo) throw new Error('repo is required unless existingChallengePacketId is provided');
+    if (!pullRequest) throw new Error('pullRequest is required unless existingChallengePacketId is provided');
+    if (!Array.isArray(repoSpansRaw) || repoSpansRaw.length === 0) throw new Error('repoSpans must be a non-empty array');
+    if (!Array.isArray(demandsRaw) || demandsRaw.length === 0) throw new Error('demands must be a non-empty array');
+  }
+  if (repoSpansRaw !== undefined && !Array.isArray(repoSpansRaw)) {
+    throw new Error('repoSpans must be an array');
+  }
+  if (demandsRaw !== undefined && !Array.isArray(demandsRaw)) {
+    throw new Error('demands must be an array');
+  }
 
   return {
     fixtureId: optionalString(body, 'fixtureId'),
     candidateId: requireString(body, 'candidateId'),
+    useExistingCandidateEvidence,
     omitSamplePrRow: optionalBoolean(body, 'omitSamplePrRow') ?? false,
+    existingChallengePacketId,
     concepts: conceptsRaw.map((entry, index) => {
       const concept = requireRecord(entry, `concepts[${index}]`);
       const canonicalKey = requireString(concept, 'canonicalKey');
@@ -217,7 +261,23 @@ function parseSeedRequest(value: unknown): SeedRequest {
             selectedConceptKeys: stringArray(roleSource.selectedConceptKeys, 'selectedConceptKeys'),
           };
         })(),
-    candidateEvidence: candidateEvidenceRaw.map((entry, index) => {
+    candidateEvidenceSource: body.candidateEvidenceSource === undefined
+      ? undefined
+      : (() => {
+          const source = requireRecord(body.candidateEvidenceSource, 'candidateEvidenceSource');
+          return {
+            interactionType: optionalString(source, 'interactionType'),
+            artifactType: optionalString(source, 'artifactType'),
+            externalReference: optionalString(source, 'externalReference'),
+            logicalKey: optionalString(source, 'logicalKey'),
+            contextRecordType: optionalString(source, 'contextRecordType'),
+            recordingKey: optionalString(source, 'recordingKey'),
+            transcriptionAudioKey: optionalString(source, 'transcriptionAudioKey'),
+            provider: optionalString(source, 'provider'),
+            transcriptStatus: optionalString(source, 'transcriptStatus'),
+          };
+        })(),
+    candidateEvidence: (candidateEvidenceRaw ?? []).map((entry, index) => {
       const evidence = requireRecord(entry, `candidateEvidence[${index}]`);
       const evidenceLevel = requireString(evidence, 'evidenceLevel') as EvidenceLevel;
       if (!ALLOWED_EVIDENCE_LEVELS.has(evidenceLevel)) {
@@ -233,23 +293,27 @@ function parseSeedRequest(value: unknown): SeedRequest {
         confidence: optionalNumber(evidence, 'confidence') ?? 1,
       };
     }),
-    repo: {
-      githubUrl: requireString(repo, 'githubUrl'),
-      fullName: requireString(repo, 'fullName'),
-      primaryLanguage: optionalString(repo, 'primaryLanguage') ?? 'TypeScript',
-      description: optionalString(repo, 'description'),
-    },
-    pullRequest: {
-      number: requireNumber(pullRequest, 'number'),
-      title: requireString(pullRequest, 'title'),
-      author: optionalString(pullRequest, 'author') ?? 'pipe-e2e',
-      baseSha: optionalString(pullRequest, 'baseSha') ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-      headSha: optionalString(pullRequest, 'headSha') ?? 'dddddddddddddddddddddddddddddddddddddddd',
-      mergedAt: typeof pullRequest.mergedAt === 'string' || pullRequest.mergedAt === null
-        ? pullRequest.mergedAt
-        : '2026-06-14T08:00:00.000Z',
-    },
-    repoSpans: repoSpansRaw.map((entry, index) => {
+    repo: repo
+      ? {
+          githubUrl: requireString(repo, 'githubUrl'),
+          fullName: requireString(repo, 'fullName'),
+          primaryLanguage: optionalString(repo, 'primaryLanguage') ?? 'TypeScript',
+          description: optionalString(repo, 'description'),
+        }
+      : undefined,
+    pullRequest: pullRequest
+      ? {
+          number: requireNumber(pullRequest, 'number'),
+          title: requireString(pullRequest, 'title'),
+          author: optionalString(pullRequest, 'author') ?? 'pipe-e2e',
+          baseSha: optionalString(pullRequest, 'baseSha') ?? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          headSha: optionalString(pullRequest, 'headSha') ?? 'dddddddddddddddddddddddddddddddddddddddd',
+          mergedAt: typeof pullRequest.mergedAt === 'string' || pullRequest.mergedAt === null
+            ? pullRequest.mergedAt
+            : '2026-06-14T08:00:00.000Z',
+        }
+      : undefined,
+    repoSpans: (repoSpansRaw ?? []).map((entry, index) => {
       const span = requireRecord(entry, `repoSpans[${index}]`);
       return {
         key: requireString(span, 'key'),
@@ -260,7 +324,7 @@ function parseSeedRequest(value: unknown): SeedRequest {
         lineEnd: optionalNumber(span, 'lineEnd') ?? optionalNumber(span, 'lineStart') ?? 1,
       };
     }),
-    demands: demandsRaw.map((entry, index) => {
+    demands: (demandsRaw ?? []).map((entry, index) => {
       const demand = requireRecord(entry, `demands[${index}]`);
       return {
         id: requireString(demand, 'id'),
@@ -326,7 +390,7 @@ function normalizedLanguage(language: string | undefined): string {
   return (language ?? 'TypeScript').trim().toLowerCase();
 }
 
-function repositoryRef(seed: SeedRequest): RepositoryRef {
+function repositoryRef(seed: SeededRepoRequest): RepositoryRef {
   const [owner, ...nameParts] = seed.repo.fullName.split('/');
   return {
     provider: 'github',
@@ -418,16 +482,10 @@ async function loadCandidateIdentity(db: D1Database, candidateId: string, userId
   };
 }
 
-async function seedCandidateEvidence(input: {
-  db: D1Database;
-  fixtureId: string;
-  identity: Awaited<ReturnType<typeof loadCandidateIdentity>>;
-  concepts: SeedConceptInput[];
-  evidence: SeedCandidateEvidenceInput[];
-  now: string;
-}): Promise<{ conceptIds: Map<string, string>; sourceSpanIds: string[] }> {
-  const { db, fixtureId, identity, concepts, evidence, now } = input;
-  const store = new LivingContextStore(db);
+async function upsertSeedConcepts(
+  store: LivingContextStore,
+  concepts: SeedConceptInput[],
+): Promise<Map<string, string>> {
   const conceptIds = new Map<string, string>();
   for (const concept of concepts) {
     const persisted = await store.upsertConcept({
@@ -441,25 +499,46 @@ async function seedCandidateEvidence(input: {
     });
     conceptIds.set(concept.canonicalKey, persisted.id);
   }
+  return conceptIds;
+}
+
+async function seedCandidateEvidence(input: {
+  db: D1Database;
+  fixtureId: string;
+  identity: Awaited<ReturnType<typeof loadCandidateIdentity>>;
+  concepts: SeedConceptInput[];
+  evidence: SeedCandidateEvidenceInput[];
+  source?: SeedCandidateEvidenceSourceInput;
+  now: string;
+}): Promise<{ conceptIds: Map<string, string>; sourceSpanIds: string[] }> {
+  const { db, fixtureId, identity, concepts, evidence, source, now } = input;
+  const store = new LivingContextStore(db);
+  const interactionType = source?.interactionType ?? 'assessment';
+  const artifactType = source?.artifactType ?? 'assessment_response';
+  const externalReference = source?.externalReference ?? `e2e:${fixtureId}`;
+  const logicalKey = source?.logicalKey ?? `standalone-review-match-fixture:${fixtureId}`;
+  const contextRecordType = source?.contextRecordType
+    ?? (artifactType === 'meeting_transcript' ? 'meeting_transcript_assertion' : 'candidate_evidence_context');
+  const conceptIds = await upsertSeedConcepts(store, concepts);
 
   const content = evidence.map((entry) => entry.exactText).join('\n');
   const interaction = await store.upsertInteraction({
     ingestionKey: `e2e:${fixtureId}:candidate:${identity.candidateId}:interaction`,
     workspacePersonId: identity.workspacePersonId,
     applicationId: identity.applicationId,
-    interactionType: 'assessment',
-    externalReference: `e2e:${fixtureId}`,
+    interactionType,
+    externalReference,
     startedAt: now,
     endedAt: now,
-    metadata: { source: 'standalone-review-match-fixture' },
+    metadata: { source: 'standalone-review-match-fixture', fixtureSource: source ?? null },
   });
   const artifact = await store.upsertArtifact({
     ingestionKey: `e2e:${fixtureId}:candidate:${identity.candidateId}:artifact`,
     workspacePersonId: identity.workspacePersonId,
     interactionId: interaction.id,
-    artifactType: 'assessment_response',
-    logicalKey: `standalone-review-match-fixture:${fixtureId}`,
-    metadata: { source: 'e2e_seed' },
+    artifactType,
+    logicalKey,
+    metadata: { source: 'e2e_seed', fixtureSource: source ?? null },
   });
   const version = await store.createArtifactVersion({
     ingestionKey: `e2e:${fixtureId}:candidate:${identity.candidateId}:artifact-version:${await contentHash(content)}`,
@@ -469,7 +548,7 @@ async function seedCandidateEvidence(input: {
     mediaType: 'text/plain',
     contentText: content,
     byteLength: byteLength(content),
-    metadata: { source: 'e2e_seed' },
+    metadata: { source: 'e2e_seed', fixtureSource: source ?? null },
   });
 
   const sourceSpanIds: string[] = [];
@@ -489,7 +568,7 @@ async function seedCandidateEvidence(input: {
       lineStart: index + 1,
       lineEnd: index + 1,
       exactText: entry.exactText,
-      metadata: { source: 'e2e_seed' },
+      metadata: { source: 'e2e_seed', fixtureSource: source ?? null },
     });
     sourceSpanIds.push(sourceSpan.id);
 
@@ -544,7 +623,7 @@ async function seedCandidateEvidence(input: {
       interactionId: interaction.id,
       episodeId: episode.id,
       assertionId: assertion.id,
-      recordType: 'candidate_evidence_context',
+      recordType: contextRecordType,
       predicate: entry.predicate,
       narrative: entry.narrative ?? entry.exactText,
       confidence: entry.confidence ?? 1,
@@ -575,7 +654,7 @@ async function seedCandidateEvidence(input: {
 
 export async function buildFixtureChallengeInput(input: {
   fixtureId: string;
-  seed: SeedRequest;
+  seed: SeededRepoRequest;
   now: string;
 }): Promise<{
   challengeInput: NormalizedPullRequestInput;
@@ -939,7 +1018,7 @@ async function seedRoleSourceContext(input: {
 async function seedRepoChallenge(input: {
   db: D1Database;
   fixtureId: string;
-  seed: SeedRequest;
+  seed: SeededRepoRequest;
   now: string;
 }): Promise<{
   repoId: number;
@@ -947,6 +1026,8 @@ async function seedRepoChallenge(input: {
   repoSourceSpanIds: string[];
   demandIds: string[];
   demandFamilies: string[];
+  repoUrl: string;
+  prNumber: number;
 }> {
   const { db, fixtureId, seed, now } = input;
   await db.prepare(
@@ -1043,6 +1124,68 @@ async function seedRepoChallenge(input: {
     repoSourceSpanIds: packet.sourceSpanIds,
     demandIds: packet.demands.map((demand) => demand.id),
     demandFamilies: packet.demandFamilies,
+    repoUrl: seed.repo.githubUrl,
+    prNumber: seed.pullRequest.number,
+  };
+}
+
+function requireSeededRepoRequest(seed: SeedRequest): SeededRepoRequest {
+  if (!seed.repo || !seed.pullRequest || seed.repoSpans.length === 0 || seed.demands.length === 0) {
+    throw new Error('repo, pullRequest, repoSpans, and demands are required when no existingChallengePacketId is provided');
+  }
+  return seed as SeededRepoRequest;
+}
+
+export async function loadExistingRepoChallenge(input: {
+  db: D1Database;
+  packetId: string;
+}): Promise<{
+  repoId: number;
+  packetId: string;
+  repoSourceSpanIds: string[];
+  demandIds: string[];
+  demandFamilies: string[];
+  repoUrl: string;
+  prNumber: number;
+}> {
+  const row = await input.db.prepare(
+    `SELECT rcp.id, rcp.repo_id, rcp.pr_number, rcp.production_ready,
+            rcp.quality_score, rcp.packet_json, qr.github_url
+       FROM review_challenge_packets rcp
+       LEFT JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE rcp.id = ?1`,
+  ).bind(input.packetId).first<{
+    id: string;
+    repo_id: number;
+    pr_number: number | null;
+    production_ready: number;
+    quality_score: number | null;
+    packet_json: string;
+    github_url: string | null;
+  }>();
+  if (!row) throw new Error(`existingChallengePacketId ${input.packetId} was not found`);
+  if (row.production_ready !== 1 || (row.quality_score ?? 0) < 0.7) {
+    throw new Error(`existingChallengePacketId ${input.packetId} is not production-ready`);
+  }
+
+  let packet: RepoChallengePacket;
+  try {
+    packet = JSON.parse(row.packet_json) as RepoChallengePacket;
+  } catch {
+    throw new Error(`existingChallengePacketId ${input.packetId} has invalid packet_json`);
+  }
+  if (packet.id !== row.id) {
+    throw new Error(`existingChallengePacketId ${input.packetId} does not match packet_json id ${packet.id}`);
+  }
+
+  return {
+    repoId: row.repo_id,
+    packetId: row.id,
+    repoSourceSpanIds: packet.sourceSpanIds,
+    demandIds: packet.demands.map((demand) => demand.id),
+    demandFamilies: packet.demandFamilies,
+    repoUrl: row.github_url ?? packet.repository.canonicalUrl,
+    prNumber: row.pr_number ?? packet.pullRequest.number,
   };
 }
 
@@ -1067,20 +1210,31 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
   const now = new Date().toISOString();
   try {
     const identity = await loadCandidateIdentity(c.env.DB, seed.candidateId, c.get('userId'));
-    const candidate = await seedCandidateEvidence({
-      db: c.env.DB,
-      fixtureId,
-      identity,
-      concepts: seed.concepts,
-      evidence: seed.candidateEvidence,
-      now,
-    });
-    const repo = await seedRepoChallenge({
-      db: c.env.DB,
-      fixtureId,
-      seed,
-      now,
-    });
+    const candidate = seed.candidateEvidence.length > 0
+      ? await seedCandidateEvidence({
+          db: c.env.DB,
+          fixtureId,
+          identity,
+          concepts: seed.concepts,
+          evidence: seed.candidateEvidence,
+          source: seed.candidateEvidenceSource,
+          now,
+        })
+      : {
+          conceptIds: await upsertSeedConcepts(new LivingContextStore(c.env.DB), seed.concepts),
+          sourceSpanIds: [],
+        };
+    const repo = seed.existingChallengePacketId
+      ? await loadExistingRepoChallenge({
+          db: c.env.DB,
+          packetId: seed.existingChallengePacketId,
+        })
+      : await seedRepoChallenge({
+          db: c.env.DB,
+          fixtureId,
+          seed: requireSeededRepoRequest(seed),
+          now,
+        });
     const roleContext = await seedRoleSourceContext({
       db: c.env.DB,
       fixtureId,
@@ -1103,27 +1257,62 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
     if (roleContext && (seededMatch?.status !== 'MATCHED' || !seededMatch.repoId || !seededMatch.prNumber)) {
       throw new Error(`fixture role-backed matcher returned ${seededMatch?.status ?? 'NO_MATCH'}`);
     }
+    if (
+      roleContext
+      && seed.existingChallengePacketId
+      && seededMatch?.explanation?.selectedPr?.challengeId !== seed.existingChallengePacketId
+    ) {
+      throw new Error(
+        `fixture role-backed matcher selected ${seededMatch?.explanation?.selectedPr?.challengeId ?? 'NO_PACKET'} instead of existingChallengePacketId ${seed.existingChallengePacketId}`,
+      );
+    }
     if (roleContext && seededMatch?.repoId && seededMatch.prNumber) {
       const matchedRepo = await c.env.DB.prepare(
         `SELECT github_url FROM qualified_repos WHERE id = ?1`,
       ).bind(seededMatch.repoId).first<{ github_url: string | null }>();
-      if (!matchedRepo?.github_url) throw new Error('fixture role-backed match selected repo without github_url');
+      const matchedRepoUrl = matchedRepo?.github_url ?? repo.repoUrl;
+      if (!matchedRepoUrl) throw new Error('fixture role-backed match selected repo without github_url');
+      let standaloneInterview = await c.env.DB.prepare(
+        `SELECT id
+           FROM scheduled_interviews
+          WHERE candidate_id = ?1
+            AND interview_type = 'CODE_REVIEW'
+            AND stage_id IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+      ).bind(identity.candidateId).first<{ id: string }>();
+      if (!standaloneInterview) {
+        const interviewId = crypto.randomUUID();
+        await c.env.DB.prepare(
+          `INSERT INTO scheduled_interviews (
+             id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+             status, scheduled_at, scheduling_provider, scheduling_url, sync_source,
+             created_at, updated_at
+           ) VALUES (?1, ?2, ?3, NULL, ?4, 'CODE_REVIEW',
+             'INVITED', NULL, NULL, NULL, 'MANUAL', ?5, ?5)`,
+        ).bind(
+          interviewId,
+          identity.candidateId,
+          identity.pipelineId,
+          c.get('userId'),
+          now,
+        ).run();
+        standaloneInterview = { id: interviewId };
+      }
       await c.env.DB.prepare(
         `UPDATE scheduled_interviews
             SET matched_repo_id = ?1,
                 github_repo_url = ?2,
                 github_pr_number = ?3,
                 updated_at = ?4
-          WHERE candidate_id = ?5
-            AND interview_type = 'CODE_REVIEW'
-            AND stage_id IS NULL
+          WHERE id = ?5
             AND status NOT IN ('COMPLETED', 'CANCELLED')`,
       ).bind(
         seededMatch.repoId,
-        matchedRepo.github_url,
+        matchedRepoUrl,
         seededMatch.prNumber,
         now,
-        identity.candidateId,
+        standaloneInterview.id,
       ).run();
     }
 
@@ -1140,8 +1329,8 @@ e2eSeed.post('/standalone-review-match-fixture', async (c) => {
       repoSourceSpanIds: repo.repoSourceSpanIds,
       demandIds: repo.demandIds,
       demandFamilies: repo.demandFamilies,
-      repoUrl: seed.repo.githubUrl,
-      prNumber: seed.pullRequest.number,
+      repoUrl: repo.repoUrl,
+      prNumber: repo.prNumber,
       roleContextId: roleContext?.roleContextId ?? null,
       roleSources: roleContext?.sourceReferences ?? [],
     });

@@ -59,6 +59,7 @@ import {
 const PACKET_VERSION = 'repo-challenge-v1';
 const DEFAULT_BATCH_SIZE = 25;
 const MAX_BATCH_SIZE = 250;
+const DEFAULT_GITHUB_REQUEST_TIMEOUT_MS = 15_000;
 const REQUIRED_GRAPH_TABLES = [
   'review_challenge_packets',
   'context_records',
@@ -469,6 +470,26 @@ function githubHeaders(token?: string): Record<string, string> {
   return headers;
 }
 
+function githubRequestTimeoutMs(): number {
+  const value = Number(process.env['GITHUB_REQUEST_TIMEOUT_MS'] ?? DEFAULT_GITHUB_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_GITHUB_REQUEST_TIMEOUT_MS;
+  return Math.round(value);
+}
+
+async function timedGitHubFetch(
+  input: string,
+  init: RequestInit,
+): Promise<Response | null> {
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: AbortSignal.timeout(githubRequestTimeoutMs()),
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function fetchGitHubFileContent(input: {
   fullName: string;
   path: string;
@@ -479,7 +500,7 @@ async function fetchGitHubFileContent(input: {
     .split('/')
     .map((segment) => encodeURIComponent(segment))
     .join('/');
-  const response = await fetch(
+  const response = await timedGitHubFetch(
     `https://api.github.com/repos/${input.fullName}/contents/${encodedPath}?ref=${encodeURIComponent(input.ref)}`,
     {
       headers: {
@@ -488,7 +509,7 @@ async function fetchGitHubFileContent(input: {
       },
     },
   );
-  if (!response.ok) return null;
+  if (!response?.ok) return null;
   const content = await response.text();
   return content.length > 0 ? content : null;
 }
@@ -497,11 +518,11 @@ async function fetchPullRequestRefs(
   row: SamplePullRequestRow,
   token?: string,
 ): Promise<PullRequestRefs | null> {
-  const response = await fetch(
+  const response = await timedGitHubFetch(
     `https://api.github.com/repos/${row.full_name}/pulls/${row.pr_number}`,
     { headers: githubHeaders(token) },
   );
-  if (!response.ok) return null;
+  if (!response?.ok) return null;
   const body = await response.json() as {
     base?: { sha?: string; ref?: string };
     head?: { sha?: string };
@@ -1130,6 +1151,7 @@ export async function backfillReviewChallengePackets(
     const row = rows[index]!;
     const label = `${row.full_name}#${row.pr_number}`;
     try {
+      log.log(`[challenge-backfill] [${index + 1}/${rows.length}] fetching ${label}`);
       const [diffResult, refs] = await Promise.all([
         fetchDiff(row.github_url, row.pr_number, token),
         fetchRefs(row, token),
@@ -1142,6 +1164,9 @@ export async function backfillReviewChallengePackets(
         log.warn(`[challenge-backfill] [${index + 1}/${rows.length}] skip fetch ${label}`);
         continue;
       }
+      log.log(
+        `[challenge-backfill] [${index + 1}/${rows.length}] fetched ${label} files=${diffResult.diff.files.length}`,
+      );
       if (!diffResult.diff.files.some((file) => file.hunks.length > 0)) {
         stats.skippedNoHunks++;
         outcomes.push(buildBackfillRowOutcome(row, 'skipped_no_hunks', {
@@ -1156,12 +1181,23 @@ export async function backfillReviewChallengePackets(
         challengeStructuralFacts,
         structuralFacts,
       } = await buildNormalizedInput(row, refs, diffResult, token);
+      log.log(
+        `[challenge-backfill] [${index + 1}/${rows.length}] normalized ${label} changedFiles=${challengeInput.changedFiles.length} sourceSpans=${challengeInput.sourceSpans.length} structuralFacts=${structuralFacts.length}`,
+      );
+      log.log(`[challenge-backfill] [${index + 1}/${rows.length}] building packet ${label}`);
       const packet = await buildChallengePacket(challengeInput);
+      log.log(
+        `[challenge-backfill] [${index + 1}/${rows.length}] built packet ${label} demands=${packet.demands.length} eligible=${packet.quality.eligible}`,
+      );
+      log.log(`[challenge-backfill] [${index + 1}/${rows.length}] deriving repo semantics ${label}`);
       const semantics = await deriveRepoSemantics({
         pullRequest: challengeInput,
         packet,
         structuralFacts: challengeStructuralFacts,
       });
+      log.log(
+        `[challenge-backfill] [${index + 1}/${rows.length}] derived repo semantics ${label} assertions=${semantics.assertions.length} signals=${semantics.signals.length}`,
+      );
       stats.built++;
       if (!packet.quality.eligible) stats.ineligible++;
 
@@ -1184,6 +1220,7 @@ export async function backfillReviewChallengePackets(
         continue;
       }
 
+      log.log(`[challenge-backfill] [${index + 1}/${rows.length}] persisting ${label}`);
       await persistReviewChallengeGraph(db, row.repo_id, challengeInput, packet, {
         structuralFacts,
         codeEpisodes: semantics.episodes,
@@ -1191,6 +1228,7 @@ export async function backfillReviewChallengePackets(
         semanticAssertions: semantics.assertions,
         repoSignals: semantics.signals,
       });
+      log.log(`[challenge-backfill] [${index + 1}/${rows.length}] loading persisted coverage ${label}`);
       const persistedCoverage = await loadPersistedPacketCoverage(client, packet);
       stats.persisted++;
       outcomes.push(buildBackfillRowOutcome(row, 'persisted', {

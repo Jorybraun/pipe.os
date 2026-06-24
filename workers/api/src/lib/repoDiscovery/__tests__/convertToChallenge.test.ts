@@ -36,6 +36,7 @@ function prResponse() {
     title: 'Add idempotent order retry flow',
     body: 'Adds bounded retry behavior and source-backed tests.',
     state: 'closed',
+    changed_files: 3,
     user: { login: 'engineer' },
     created_at: '2026-06-18T12:00:00Z',
     merged_at: '2026-06-19T12:00:00Z',
@@ -114,7 +115,7 @@ function mockGitHubFetch(includeTest: boolean): void {
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    if (href.endsWith('/pulls/42/files?per_page=100')) {
+    if (href.endsWith('/pulls/42/files?per_page=100&page=1')) {
       return new Response(JSON.stringify(fileResponse(includeTest)), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -208,7 +209,14 @@ function setupDb(): BetterSqliteDb {
       created_at TEXT,
       updated_at TEXT
     );
-    CREATE TABLE candidates (id TEXT PRIMARY KEY);
+    CREATE TABLE candidates (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL DEFAULT 'workspace-1',
+      pipeline_id TEXT,
+      name TEXT,
+      email TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
   `);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoGraphMigration);
@@ -237,7 +245,8 @@ function seedCandidateEvidenceForConcepts(
   const now = '2026-06-20T00:00:00.000Z';
   const content = evidence.map((item) => item.exactText).join('\n');
   sqlite.exec(`
-    INSERT OR IGNORE INTO candidates (id) VALUES ('candidate-1');
+    INSERT OR IGNORE INTO candidates (id, owner_id, pipeline_id, name, email, status)
+    VALUES ('candidate-1', 'workspace-1', NULL, 'Candidate One', 'candidate@example.com', 'active');
     INSERT INTO people (
       id, ingestion_key, display_name, primary_email, external_ids_json, created_at, updated_at
     ) VALUES (
@@ -461,6 +470,77 @@ describe('convertRepoToChallenge packet readiness guard', () => {
     expect(sqlite!.prepare('SELECT status FROM discovered_repos WHERE id = ?').get('discovered-1')).toEqual({
       status: 'CHALLENGE_READY',
     });
+  });
+
+  it('auto-selects a reviewable merged PR from a bounded later page', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.includes('/pulls?state=closed') && href.includes('page=1')) {
+        return new Response(JSON.stringify(Array.from({ length: 30 }, (_, index) => ({
+          number: index + 1,
+          title: `Tiny typo fix ${index + 1}`,
+          body: null,
+          state: 'closed',
+          merged_at: '2026-06-19T12:00:00Z',
+          changed_files: 1,
+          additions: 1,
+          deletions: 0,
+        }))), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (href.includes('/pulls?state=closed') && href.includes('page=2')) {
+        return new Response(JSON.stringify([
+          {
+            number: 42,
+            title: 'Add idempotent order retry flow',
+            body: null,
+            state: 'closed',
+            merged_at: '2026-06-18T12:00:00Z',
+            changed_files: 3,
+            additions: 24,
+            deletions: 2,
+          },
+        ]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (href.endsWith('/pulls/42')) {
+        return new Response(JSON.stringify(prResponse()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (href.endsWith('/pulls/42/files?per_page=100&page=1')) {
+        return new Response(JSON.stringify(fileResponse(true)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const contentsMatch = href.match(/\/contents\/([^?]+)\?ref=/);
+      if (contentsMatch) {
+        const content = headContentResponse(decodeURIComponent(contentsMatch[1] ?? ''));
+        if (content !== null) {
+          return new Response(content, {
+            status: 200,
+            headers: { 'Content-Type': 'text/plain' },
+          });
+        }
+      }
+      return new Response('unexpected fetch', { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await convertRepoToChallenge(createMockD1(sqlite!), discoveredRepo(), {});
+
+    expect(result.prNumber).toBe(42);
+    expect(result.packetEligible).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('page=2'),
+      expect.any(Object),
+    );
   });
 
   it('feeds fetched GitHub PR packets into deterministic candidate matching with provenance', async () => {

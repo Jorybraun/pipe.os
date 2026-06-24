@@ -252,6 +252,7 @@ export interface MatchExplanation {
     pairScore: number;
     episodeMultiplier: number;
     stretch?: StretchMatch;
+    roleSourceRefs: RoleSourceReference[];
     candidateSourceRefs: SourceRef[];
     challengeSourceRefs: SourceRef[];
   }>;

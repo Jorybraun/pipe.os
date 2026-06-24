@@ -223,24 +223,35 @@ export async function transcribeAudioDeepgramStructured(
   audioBuffer: ArrayBuffer,
   apiKey: string,
   contentType = 'audio/webm',
+  timeoutMs = 25_000,
 ): Promise<StructuredTranscription | null> {
-  const response = await fetch(
-    'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&utterances=true&multichannel=true&diarize=true',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Token ${apiKey}`,
-        'Content-Type': contentType,
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(
+      'https://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&utterances=true&multichannel=true&diarize=true',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${apiKey}`,
+          'Content-Type': contentType,
+        },
+        body: audioBuffer,
+        signal: controller.signal,
       },
-      body: audioBuffer,
-    },
-  );
+    );
 
-  if (!response.ok) {
-    console.error('[transcribe] Deepgram error:', response.status, await response.text());
+    if (!response.ok) {
+      console.error('[transcribe] Deepgram error:', response.status, await response.text());
+      return null;
+    }
+    return parseDeepgramStructuredTranscription(await response.json());
+  } catch (err) {
+    console.error('[transcribe] Deepgram failed:', err);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
-  return parseDeepgramStructuredTranscription(await response.json());
 }
 
 /**

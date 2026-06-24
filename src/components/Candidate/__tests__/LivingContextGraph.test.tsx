@@ -75,6 +75,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
     interviewStatus: 'MATCHED',
     matchStatus: 'MATCHED',
     matchRunId: 'match-run-1',
+    packetId: 'packet-source-backed',
     repoId: 7,
     repoName: 'pipe/source-backed-orders',
     repoUrl: 'https://github.com/pipe/source-backed-orders',
@@ -87,6 +88,11 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       entityId: 'context-record-jd',
       locator: 'simple_job_description:source_span:jd-span-1',
       conceptKeys: ['term:kafka-order-events'],
+      sourceRefType: 'source_span',
+      sourceRefId: 'jd-span-1',
+      sourceSpanId: 'jd-span-1',
+      exactText: 'We need Kafka order events experience for retry-safe platform work.',
+      contentHash: 'role-source-hash',
     }],
     evidence: [{
       atomId: 'candidate-atom-kafka',
@@ -94,6 +100,16 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      roleSourceRefs: [{
+        entityId: 'context-record-jd',
+        locator: 'simple_job_description:source_span:jd-span-1',
+        conceptKeys: ['term:kafka-order-events'],
+        sourceRefType: 'source_span',
+        sourceRefId: 'jd-span-1',
+        sourceSpanId: 'jd-span-1',
+        exactText: 'We need Kafka order events experience for retry-safe platform work.',
+        contentHash: 'role-source-hash',
+      }],
       candidateSourceRefs: [{
         artifactId: 'resume-artifact',
         artifactVersion: 'v1',
@@ -173,6 +189,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
     interviewStatus: 'MATCHED',
     matchStatus: 'MATCHED',
     matchRunId: 'match-run-backfilled-1',
+    packetId: 'review-packet-77-42',
     repoId: 77,
     repoName: 'pipe-labs/orders',
     repoUrl: 'https://github.com/pipe-labs/orders',
@@ -192,6 +209,16 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'source-backed-validation',
       pairScore: 0.93,
       sharedConcepts: ['term:crystalline-quorum-ledger'],
+      roleSourceRefs: [{
+        entityId: 'context-record-role-backfill',
+        locator: 'simple_job_description:source_span:jd-span-crystalline',
+        conceptKeys: ['term:crystalline-quorum-ledger'],
+        sourceRefType: 'source_span',
+        sourceRefId: 'jd-span-crystalline',
+        sourceSpanId: 'jd-span-crystalline',
+        exactText: 'Review CrystallineQuorumLedger order recovery pull requests.',
+        contentHash: 'role-crystalline-hash',
+      }],
       candidateSourceRefs: [
         {
           artifactId: 'candidate-artifact-resume',
@@ -328,7 +355,10 @@ function makeMeetingLivingContext(options: { includeRolelessMessage?: boolean } 
         endedAt: '2026-06-13T10:30:00.000Z',
         createdAt: '2026-06-13T10:00:00.000Z',
         updatedAt: '2026-06-13T10:30:00.000Z',
-        metadata: {},
+        metadata: {
+          ownerId: 'owner-1',
+          participantRole: 'guest',
+        },
         artifactIds: ['artifact-meeting-transcript'],
         contextRecordIds: [],
         assertionIds: ['assertion-temporal-shards'],
@@ -357,7 +387,13 @@ function makeMeetingLivingContext(options: { includeRolelessMessage?: boolean } 
         interactionId: 'interaction-meeting-1',
         artifactType: 'meeting_transcript',
         logicalKey: 'meeting-1',
-        metadata: {},
+        metadata: {
+          meetingId: 'meeting-1',
+          recordingKey: 'meetings/owner-1/meeting-1/recording.webm',
+          transcriptionAudioKey: 'meetings/owner-1/meeting-1/transcription-audio.webm',
+          provider: 'deepgram-multichannel',
+          transcriptStatus: 'READY',
+        },
         latestVersionId: 'artifact-version-meeting-1',
         latestVersionNumber: 1,
         versionCount: 1,
@@ -487,6 +523,33 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(roleSources).getByText('simple_job_description:source_span:jd-span-1')).toBeInTheDocument();
     expect(within(roleSources).getByText('term:kafka-order-events')).toBeInTheDocument();
 
+    const bridge = screen.getByTestId('match-evidence-bridge');
+    expect(screen.getByLabelText('Cross-scope match evidence bridge')).toBe(bridge);
+    expect(within(bridge).getByText('role context -> person context -> repo challenge')).toBeInTheDocument();
+    expect(within(bridge).getByText('Role requirement')).toBeInTheDocument();
+    expect(within(bridge).getByText('Person evidence')).toBeInTheDocument();
+    expect(within(bridge).getByText('Repo challenge')).toBeInTheDocument();
+    expect(within(bridge).getByText('candidate-atom-kafka -> repo-demand-retry')).toBeInTheDocument();
+    expect(within(bridge).getByText('91% alignment')).toBeInTheDocument();
+    expect(within(bridge).getByText('We need Kafka order events experience for retry-safe platform work.')).toBeInTheDocument();
+    expect(within(bridge).getByText('Built Kafka order event retries for an ecommerce checkout platform.')).toBeInTheDocument();
+    expect(within(bridge).getByText('Add idempotent retry handling around order event publication.')).toBeInTheDocument();
+
+    const roleBridgeSource = within(bridge).getByTestId('match-bridge-role-source');
+    expect(roleBridgeSource).toHaveAttribute('data-source-ref-type', 'source_span');
+    expect(roleBridgeSource).toHaveAttribute('data-source-ref-id', 'jd-span-1');
+    expect(roleBridgeSource).toHaveAttribute('data-source-span-id', 'jd-span-1');
+    expect(roleBridgeSource).toHaveAttribute('data-content-hash', 'role-source-hash');
+
+    const personBridgeSource = within(bridge).getByTestId('match-bridge-person-source');
+    expect(personBridgeSource).toHaveAttribute('data-source-ref-type', 'source_span');
+    expect(personBridgeSource).toHaveAttribute('data-source-ref-id', 'candidate-span-kafka');
+    expect(personBridgeSource).toHaveAttribute('data-source-span-id', 'candidate-span-kafka');
+
+    const repoBridgeSource = within(bridge).getByTestId('match-bridge-repo-source');
+    expect(repoBridgeSource).toHaveAttribute('data-source-ref-type', 'repo_source_span');
+    expect(repoBridgeSource).toHaveAttribute('data-source-ref-id', 'repo-span-retry');
+
     expect(screen.getByText('candidate-atom-kafka → repo-demand-retry')).toBeInTheDocument();
     expect(screen.getByText('candidate: resume line 7')).toBeInTheDocument();
     expect(screen.getByText('PR: src/orders/retry.ts:18')).toBeInTheDocument();
@@ -544,7 +607,7 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(screen.getByText('Add idempotent order retry flow')).toBeInTheDocument();
     expect(screen.getByText('Matched backfilled PR packet using accumulated resume and meeting evidence.')).toBeInTheDocument();
     expect(screen.getAllByText('term:crystalline-quorum-ledger').length).toBeGreaterThan(0);
-    expect(screen.getByText('simple_job_description:source_span:jd-span-crystalline')).toBeInTheDocument();
+    expect(screen.getAllByText('simple_job_description:source_span:jd-span-crystalline').length).toBeGreaterThan(0);
 
     const repoOverlay = screen.getByTestId('repository-overlay-panel');
     expect(within(repoOverlay).getByText('pipe-labs/orders · PR #42')).toBeInTheDocument();
@@ -604,6 +667,11 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(panel).getByText('1 artifact')).toBeInTheDocument();
     expect(within(panel).getByText('1 span')).toBeInTheDocument();
     expect(within(panel).getByText('1 claim')).toBeInTheDocument();
+    const recordingProvenance = within(panel).getByTestId('meeting-recording-provenance');
+    expect(recordingProvenance).toHaveTextContent(/Transcript\s*READY/);
+    expect(recordingProvenance).toHaveTextContent(/Provider\s*deepgram-multichannel/);
+    expect(recordingProvenance).toHaveTextContent(/Recording\s*meetings\/owner-1\/meeting-1\/recording\.webm/);
+    expect(recordingProvenance).toHaveTextContent(/Audio\s*meetings\/owner-1\/meeting-1\/transcription-audio\.webm/);
 
     expect(within(panel).getByText('I implemented temporal shard knitting for order replay.')).toBeInTheDocument();
     expect(within(panel).getByText('Meeting transcript source evidence for meeting meeting-1.')).toBeInTheDocument();
@@ -611,7 +679,11 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(panel).getAllByText('temporal shard knitting').length).toBeGreaterThan(0);
     expect(within(panel).getByRole('button', { name: /Meeting Transcript.*line 1/i })).toBeInTheDocument();
 
-    expect(screen.getByText('Message')).toBeInTheDocument();
+    expect(screen.getByText('Accumulated context')).toBeInTheDocument();
+    expect(screen.getByText('Across every interaction')).toBeInTheDocument();
+    expect(screen.getAllByText('Meeting transcript source evidence for meeting meeting-1.').length)
+      .toBeGreaterThan(0);
+    expect(screen.getAllByText('Message').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /All context/i }));
     fireEvent.click(screen.getByRole('button', { name: /Message.*chars 0-92/i }));
