@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildChallengePacket, deriveRepoSemantics } from '../../../lib/repoSemanticGraph';
-import { buildFixtureChallengeInput } from '../e2eSeed';
+import { buildFixtureChallengeInput, loadExistingRepoChallenge } from '../e2eSeed';
 
 const NOW = '2026-06-21T18:00:00.000Z';
 
@@ -132,5 +132,65 @@ describe('standalone review E2E seed helpers', () => {
     )).toBe(true);
     expect(semantics.assertions).toHaveLength(packet.demands.length);
     expect(semantics.signals.some((signal) => signal.key === conceptKey)).toBe(true);
+  });
+
+  it('loads existing persisted review packets without fixture repo spans', async () => {
+    const packet = {
+      id: 'challenge_packet_live_mui_973',
+      repository: {
+        provider: 'github',
+        owner: 'mui',
+        name: 'base-ui',
+        canonicalUrl: 'https://github.com/mui/base-ui',
+      },
+      pullRequest: {
+        number: 973,
+      },
+      sourceSpanIds: ['repo-span-1', 'repo-span-2'],
+      demands: [
+        {
+          id: 'demand-popover',
+        },
+        {
+          id: 'demand-test',
+        },
+      ],
+      demandFamilies: ['artifact:source', 'artifact:test'],
+    };
+    const db = {
+      prepare() {
+        return {
+          bind(packetId: string) {
+            expect(packetId).toBe(packet.id);
+            return {
+              async first() {
+                return {
+                  id: packet.id,
+                  repo_id: 973,
+                  pr_number: null,
+                  production_ready: 1,
+                  quality_score: 0.9,
+                  packet_json: JSON.stringify(packet),
+                  github_url: null,
+                };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as D1Database;
+
+    await expect(loadExistingRepoChallenge({
+      db,
+      packetId: packet.id,
+    })).resolves.toEqual({
+      repoId: 973,
+      packetId: packet.id,
+      repoSourceSpanIds: ['repo-span-1', 'repo-span-2'],
+      demandIds: ['demand-popover', 'demand-test'],
+      demandFamilies: ['artifact:source', 'artifact:test'],
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+    });
   });
 });

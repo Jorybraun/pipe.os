@@ -822,6 +822,7 @@ export interface StandaloneReviewAlignment {
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
@@ -883,6 +884,7 @@ export interface StandaloneReviewMatchRecord {
   interviewStatus: string;
   matchStatus: StandaloneReviewMatchStatus;
   matchRunId: string | null;
+  packetId: string | null;
   repoId: number | null;
   repoName: string | null;
   repoUrl: string | null;
@@ -1230,6 +1232,31 @@ export interface LivingContextReadModel {
 
 export interface LivingContextResponse {
   livingContext: LivingContextReadModel;
+}
+
+export interface ScopedLivingContextReadModel {
+  scope: {
+    scopeType: string;
+    scopeId: string;
+    label: string | null;
+    status: string | null;
+    ownerId: string | null;
+    pipelineId: string | null;
+    createdAt: string | null;
+    updatedAt: string | null;
+    metadata: Record<string, unknown>;
+  };
+  summary: LivingContextReadModel['summary'];
+  interactions: LivingContextInteraction[];
+  artifacts: LivingContextArtifact[];
+  contextRecords: LivingContextRecord[];
+  assertions: LivingContextAssertion[];
+  signals: LivingContextSignal[];
+  relationships: LivingContextReadModel['relationships'];
+}
+
+export interface ScopedLivingContextResponse {
+  livingContext: ScopedLivingContextReadModel;
 }
 
 // ─── Interview State Machine (mirrors workers/api/src/lib/agents/interview/types.ts)

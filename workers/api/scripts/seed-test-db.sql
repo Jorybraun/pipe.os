@@ -8,11 +8,12 @@
 -- Apply with:
 --   wrangler d1 execute pipe-db-test --env test --remote --file scripts/seed-test-db.sql
 
-INSERT OR REPLACE INTO pipelines (id, owner_id, role, status, created_at, updated_at)
+INSERT OR REPLACE INTO pipelines (id, owner_id, title, level, status, created_at, updated_at)
 VALUES (
   'test-pipeline-0000',
   'user_test_recruiter',
   'Senior Backend Engineer',
+  'Senior',
   'ACTIVE',
   '2026-04-22T00:00:00Z',
   '2026-04-22T00:00:00Z'

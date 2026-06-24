@@ -98,6 +98,10 @@ interface SeedStandaloneReviewFixture extends SeedStandaloneReviewFixtureRespons
   conceptKey: string;
   conceptLabel: string;
   repoFullName: string;
+  recordingKey: string;
+  transcriptionAudioKey: string;
+  transcriptStatus: string;
+  transcriptionProvider: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -110,6 +114,10 @@ async function getAuthToken(page: Page): Promise<string> {
     throw new Error('[standalone-code-review-mvp.spec] No __session cookie. Run auth setup first.');
   }
   return sessionCookie.value;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function recruiterHeaders(token: string): Record<string, string> {
@@ -205,6 +213,10 @@ async function seedStandaloneReviewMatchFixture(
   const repoFullName = `pipe/e2e-source-backed-${suffix}`;
   const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
   const prNumber = 42;
+  const recordingKey = `meetings/e2e-owner/${suffix}/recording.webm`;
+  const transcriptionAudioKey = `meetings/e2e-owner/${suffix}/transcription-audio.webm`;
+  const transcriptStatus = 'READY';
+  const transcriptionProvider = 'deepgram-multichannel';
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
     headers: recruiterHeaders(authToken),
     data: {
@@ -242,6 +254,17 @@ async function seedStandaloneReviewMatchFixture(
         title: `Source-backed ${conceptLabel} role`,
         jobDescriptionMd: `Review TypeScript PRs that implement ${conceptLabel} retry idempotency with source-backed evidence.`,
         selectedConceptKeys: [conceptKey],
+      },
+      candidateEvidenceSource: {
+        interactionType: 'video_meeting',
+        artifactType: 'meeting_transcript',
+        externalReference: `meeting:${suffix}`,
+        logicalKey: `meeting:${suffix}:transcript`,
+        contextRecordType: 'meeting_transcript_assertion',
+        recordingKey,
+        transcriptionAudioKey,
+        provider: transcriptionProvider,
+        transcriptStatus,
       },
       candidateEvidence: [
         {
@@ -398,7 +421,16 @@ async function seedStandaloneReviewMatchFixture(
   expect(body.repoSourceSpanIds.length).toBeGreaterThan(0);
   expect(body.demandIds.length).toBeGreaterThanOrEqual(2);
   expect(body.demandFamilies.length).toBeGreaterThanOrEqual(2);
-  return { ...body, conceptKey, conceptLabel, repoFullName };
+  return {
+    ...body,
+    conceptKey,
+    conceptLabel,
+    repoFullName,
+    recordingKey,
+    transcriptionAudioKey,
+    transcriptStatus,
+    transcriptionProvider,
+  };
 }
 
 async function submitStandaloneCodeReview(
@@ -1012,10 +1044,10 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
-    await page.getByRole('button', { name: 'CONTEXT' }).click();
+    await page.locator('button').filter({ hasText: /^CONTEXT$/ }).click();
 
     const matchPanel = page.getByLabel('Standalone code review match');
-    await expect(matchPanel).toContainText('Standalone CODE_REVIEW match');
+    await expect(matchPanel).toContainText('Code review match');
     await expect(matchPanel).toContainText('PENDING INTAKE');
     await expect(matchPanel).toContainText(
       'Waiting for candidate resume/profile evidence before matching to a PR.',
@@ -1134,11 +1166,23 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/candidates/${reviewedCandidate.id}`);
-    await page.getByRole('button', { name: 'CONTEXT' }).click();
+    const contextTab = page.locator('button').filter({ hasText: /^CONTEXT$/ });
+    await expect(contextTab).toBeVisible({ timeout: 30000 });
+    await contextTab.click();
     await expect(page.getByTestId('living-context-graph')).toBeVisible({ timeout: 15000 });
 
+    const meetingEvidence = page.getByTestId('meeting-evidence-panel');
+    await expect(meetingEvidence).toBeVisible();
+    await expect(meetingEvidence).toContainText('Video Meeting');
+    await expect(meetingEvidence).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
+    await expect(meetingEvidence).toContainText(`Validated ${fixture.conceptLabel} retry behavior with tests.`);
+    await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.transcriptStatus);
+    await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.transcriptionProvider);
+    await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.recordingKey);
+    await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.transcriptionAudioKey);
+
     const matchPanel = page.getByTestId('standalone-review-match-panel');
-    await expect(matchPanel).toContainText('Standalone CODE_REVIEW match');
+    await expect(matchPanel).toContainText('Code review match');
     await expect(matchPanel).toContainText('MATCHED');
     await expect(matchPanel).toContainText(`${fixture.repoFullName} #${fixture.prNumber}`);
     await expect(matchPanel).toContainText('Review source-backed retry idempotency');
@@ -1147,6 +1191,49 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(roleSources).toContainText('Role sources');
     await expect(roleSources).toContainText(fixture.roleSources[0]!.locator);
     await expect(roleSources).toContainText(fixture.conceptKey);
+
+    const evidenceBridge = page.getByTestId('match-evidence-bridge');
+    await expect(evidenceBridge).toBeVisible();
+    await expect(evidenceBridge).toContainText('Evidence bridge');
+    await expect(evidenceBridge).toContainText('role context -> person context -> repo challenge');
+    await expect(evidenceBridge).toContainText('Role requirement');
+    await expect(evidenceBridge).toContainText('Person evidence');
+    await expect(evidenceBridge).toContainText('Repo challenge');
+    await expect(evidenceBridge).toContainText(
+      `Review TypeScript PRs that implement ${fixture.conceptLabel} retry idempotency with source-backed evidence.`,
+    );
+    await expect(evidenceBridge).toContainText(
+      `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+    );
+    await expect(evidenceBridge).toContainText(
+      `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+    );
+    await expect(evidenceBridge).toContainText(fixture.conceptKey);
+
+    const bridgeRoleSource = evidenceBridge
+      .getByTestId('match-bridge-role-source')
+      .filter({ hasText: fixture.roleSources[0]!.locator })
+      .first();
+    await expect(bridgeRoleSource).toContainText(fixture.conceptKey);
+    const bridgePersonSource = evidenceBridge
+      .getByTestId('match-bridge-person-source')
+      .filter({
+        hasText: `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+      })
+      .first();
+    await expect(bridgePersonSource).toHaveAttribute('data-source-ref-type', 'source_span');
+    await expect(bridgePersonSource).toHaveAttribute('data-source-ref-id', fixture.candidateSourceSpanIds[0]);
+    await expect(bridgePersonSource).toHaveAttribute('data-source-span-id', fixture.candidateSourceSpanIds[0]);
+    const bridgeRepoSource = evidenceBridge
+      .getByTestId('match-bridge-repo-source')
+      .filter({
+        hasText: `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+      })
+      .first();
+    await expect(bridgeRepoSource).toHaveAttribute('data-source-ref-type', 'repo_source_span');
+    await expect(bridgeRepoSource).toHaveAttribute('data-content-hash', /^sha256:/);
+    const bridgeRepoSourceRefId = await bridgeRepoSource.getAttribute('data-source-ref-id');
+    expect(fixture.repoSourceSpanIds).toContain(bridgeRepoSourceRefId);
 
     const submission = page.getByTestId('standalone-review-submission');
     await expect(submission).toContainText('Candidate review result');
@@ -1158,9 +1245,13 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
 
     const evidence = page.getByTestId('standalone-review-evidence');
     await expect(evidence).toContainText('Candidate evidence');
-    await expect(evidence).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
     await expect(evidence).toContainText('PR demand evidence');
-    await expect(evidence).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
+    await expect(evidence).toContainText(
+      new RegExp(`(Implemented|Validated|Published|Explained)[\\s\\S]*${escapeRegex(fixture.conceptLabel)}`),
+    );
+    await expect(evidence).toContainText(
+      new RegExp(`(Implement|Validate|publishRetry|buildRetryEnvelope)[\\s\\S]*${escapeRegex(fixture.conceptLabel)}`),
+    );
     await expect(evidence).toContainText(fixture.conceptKey);
 
     const repoOverlay = page.getByTestId('repository-overlay-panel');

@@ -19,9 +19,14 @@ import {
   buildStructuralFact,
   buildSymbol,
   persistReviewChallengeGraph,
+  sha256,
   type ChallengePacket as RepoChallengePacket,
   type NormalizedPullRequestInput,
+  type SourceArtifactKind,
+  type SymbolKind,
 } from '../../repoSemanticGraph';
+import { ingestMeetingTranscriptToLivingContext } from '../../livingContext/meetingTranscript';
+import { ensureCandidateLivingContext } from '../../livingContext/compatibility';
 
 
 const livingMigration = readFileSync(
@@ -34,6 +39,10 @@ const matchingMigration = readFileSync(
 );
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
+const transcriptProjectionMigration = readFileSync(
+  new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
 
@@ -128,12 +137,13 @@ async function buildRepoChangedFile(input: {
   path: string;
   content: string;
   symbolName: string;
-  symbolKind: 'function' | 'test';
+  symbolKind: SymbolKind;
   signature: string;
+  artifactKind?: SourceArtifactKind;
 }) {
   const artifact = await buildSourceArtifact({
     repoSnapshotId: input.repoSnapshotId,
-    kind: 'source',
+    kind: input.artifactKind ?? 'source',
     path: input.path,
     language: 'typescript',
   });
@@ -377,6 +387,257 @@ async function buildProductionReadyRepoChallengeFixture(): Promise<{
   };
 }
 
+async function buildMuiBaseUiPopoverChallengeFixture(): Promise<{
+  input: NormalizedPullRequestInput;
+  packet: RepoChallengePacket;
+  graph: Parameters<typeof persistReviewChallengeGraph>[4];
+}> {
+  const repoSnapshot = await buildRepoSnapshot({
+    repository: {
+      provider: 'github',
+      owner: 'mui',
+      name: 'base-ui',
+      canonicalUrl: 'https://github.com/mui/base-ui',
+    },
+    commitSha: '33e161fd46dfc287dfcde05427594db9a7225335',
+    defaultBranch: 'main',
+    parentCommitShas: ['58dff8444fa56e4444a3a1dd991c76b49cf4ab7e'],
+    observedAt: '2024-12-09T00:08:55.000Z',
+  });
+  const root = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'packages/react/src/popover/root/usePopoverRoot.ts',
+    symbolName: 'usePopoverRoot',
+    symbolKind: 'function',
+    signature: 'export function usePopoverRoot(params: PopoverRootParams): PopoverRootReturnValue',
+    content: [
+      'import * as React from "react";',
+      'import { useClick } from "@floating-ui/react";',
+      'import { PATIENT_CLICK_THRESHOLD } from "../utils/constants";',
+      '',
+      'export function usePopoverRoot(params: PopoverRootParams) {',
+      '  const { context } = params;',
+      '  const clickEnabledTimeoutRef = React.useRef<number | null>(null);',
+      '  const [clickEnabled, setClickEnabled] = React.useState(true);',
+      '',
+      '  React.useEffect(() => {',
+      '    if (!context.open) {',
+      '      setClickEnabled(true);',
+      '      return undefined;',
+      '    }',
+      '',
+      '    setClickEnabled(false);',
+      '    clickEnabledTimeoutRef.current = window.setTimeout(() => {',
+      '      setClickEnabled(true);',
+      '    }, PATIENT_CLICK_THRESHOLD);',
+      '',
+      '    return () => {',
+      '      if (clickEnabledTimeoutRef.current !== null) {',
+      '        window.clearTimeout(clickEnabledTimeoutRef.current);',
+      '      }',
+      '    };',
+      '  }, [context.open]);',
+      '',
+      '  return useClick(context, {',
+      '    enabled: clickEnabled,',
+      '    stickIfOpen: false,',
+      '  });',
+      '}',
+    ].join('\n'),
+  });
+  const constants = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'packages/react/src/popover/utils/constants.ts',
+    symbolName: 'PATIENT_CLICK_THRESHOLD',
+    symbolKind: 'constant',
+    signature: 'export const PATIENT_CLICK_THRESHOLD = 500',
+    content: [
+      'export const OPEN_DELAY = 300;',
+      'export const PATIENT_CLICK_THRESHOLD = 500;',
+    ].join('\n'),
+  });
+  const test = await buildRepoChangedFile({
+    repoSnapshotId: repoSnapshot.id,
+    path: 'packages/react/src/popover/trigger/PopoverTrigger.test.tsx',
+    symbolName: 'doesNotCloseForImpatientClicks',
+    symbolKind: 'test',
+    artifactKind: 'test',
+    signature: 'it("does not close for impatient trigger clicks after hover open", async () => void)',
+    content: [
+      'import { expect } from "chai";',
+      'import { PATIENT_CLICK_THRESHOLD } from "../utils/constants";',
+      '',
+      'describe("PopoverTrigger", () => {',
+      '  it("does not close for impatient trigger clicks after hover open", async () => {',
+      '    const trigger = await renderPopoverTrigger();',
+      '    await user.hover(trigger);',
+      '    await wait(PATIENT_CLICK_THRESHOLD - 1);',
+      '',
+      '    trigger.click();',
+      '',
+      '    expect(trigger).to.have.attribute("data-popup-open");',
+      '  });',
+      '});',
+    ].join('\n'),
+  });
+  const prText = [
+    '[popover] Better handle impatient clicks',
+    '',
+    'When a popover opens from hover, an impatient click on the trigger should not immediately close it.',
+    'Ignore trigger clicks for the patient click threshold window, then re-enable normal click closing.',
+  ].join('\n');
+  const prArtifact = await buildSourceArtifact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'pull_request',
+    externalRef: 'https://github.com/mui/base-ui/pull/973',
+    mediaType: 'text/markdown',
+  });
+  const prVersion = await buildSourceArtifactVersion({
+    artifactId: prArtifact.id,
+    repoSnapshotId: repoSnapshot.id,
+    content: prText,
+    createdAt: '2024-12-09T00:08:55.000Z',
+  });
+  const prSpan = await buildSourceSpan({
+    repoSnapshotId: repoSnapshot.id,
+    artifactId: prArtifact.id,
+    artifactVersionId: prVersion.id,
+    contentHash: prVersion.contentHash,
+    start: { byteOffset: 0, line: 1, column: 1 },
+    end: sourceEndPosition(prText),
+    exactText: prText,
+    displayLabel: 'pull/973:1-4',
+    prSide: 'metadata',
+  });
+  const callsFact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'calls',
+    subject: { symbolId: root.symbol.id },
+    object: { concept: 'use click' },
+    sourceSpanIds: [root.sourceSpan.id],
+    confidence: 0.94,
+    parser: 'typescript-compiler-api-live-shaped-test',
+  });
+  const importsFact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'imports',
+    subject: { symbolId: root.symbol.id },
+    object: { symbolId: constants.symbol.id },
+    sourceSpanIds: [root.sourceSpan.id, constants.sourceSpan.id],
+    confidence: 0.93,
+    parser: 'typescript-compiler-api-live-shaped-test',
+  });
+  const containsFact = await buildStructuralFact({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'contains',
+    subject: { symbolId: root.symbol.id },
+    object: { concept: 'popover click delay gate' },
+    sourceSpanIds: [root.sourceSpan.id],
+    confidence: 0.9,
+    parser: 'typescript-compiler-api-live-shaped-test',
+  });
+  const sourceSpanIds = [root.sourceSpan.id, constants.sourceSpan.id, test.sourceSpan.id, prSpan.id];
+  const input: NormalizedPullRequestInput = {
+    repoSnapshot,
+    number: 973,
+    url: 'https://github.com/mui/base-ui/pull/973',
+    title: '[popover] Better handle impatient clicks',
+    body: 'If clicked within 500ms after hover open, ignore click; if open longer than the patient click threshold, close normally.',
+    author: 'michaldudak',
+    primaryLanguage: 'TypeScript',
+    baseSha: '58dff8444fa56e4444a3a1dd991c76b49cf4ab7e',
+    headSha: repoSnapshot.commitSha,
+    mergedAt: '2024-12-09T00:08:55.000Z',
+    metadataSourceSpanIds: [prSpan.id],
+    sourceArtifacts: [prArtifact],
+    sourceArtifactVersions: [prVersion],
+    sourceSpans: [root.sourceSpan, constants.sourceSpan, test.sourceSpan, prSpan],
+    changedFiles: [root.file, constants.file, test.file],
+    tests: [{
+      path: test.file.path,
+      framework: 'javascript test runner',
+      sourceSpanIds: [test.sourceSpan.id],
+      relatedSymbolIds: [test.symbol.id],
+    }],
+    issue: {
+      number: 973,
+      title: '[popover] Better handle impatient clicks',
+      body: prText,
+      labels: [],
+      sourceSpanIds: [prSpan.id],
+    },
+    structuralFacts: [callsFact, importsFact, containsFact],
+  };
+  const episode = await buildCodeEpisode({
+    repoSnapshotId: repoSnapshot.id,
+    title: 'popover-patient-click-threshold',
+    narrative: 'The PR gates impatient popover trigger clicks with a patient click threshold and verifies the behavior.',
+    symbolIds: [root.symbol.id, constants.symbol.id, test.symbol.id],
+    structuralFactIds: [callsFact.id, importsFact.id, containsFact.id],
+    sourceSpanIds,
+    conceptKeys: [
+      'term:popover',
+      'term:click',
+      'term:patient-click-threshold',
+      'term:react',
+      'term:typescript',
+      'term:javascript-test-runner',
+    ],
+  });
+  const facet = await buildFacet({
+    repoSnapshotId: repoSnapshot.id,
+    kind: 'source-derived-mechanism',
+    key: 'popover-patient-click-threshold',
+    label: 'Popover patient click threshold',
+    aliases: ['impatient click handling'],
+    sourceSpanIds,
+    confidence: 0.92,
+  });
+  const assertion = await buildSemanticAssertion({
+    repoSnapshotId: repoSnapshot.id,
+    episodeId: episode.id,
+    subject: root.symbol.id,
+    predicate: 'implements.source.backed.popover.patient.click.threshold',
+    object: 'term:patient-click-threshold',
+    narrative: 'The source implements patient click threshold handling for popover trigger clicks.',
+    qualifiers: { source: 'live-shaped-mui-base-ui-973-test' },
+    facetIds: [facet.id],
+    conceptKeys: [
+      'term:popover',
+      'term:click',
+      'term:patient-click-threshold',
+      'term:react',
+      'term:typescript',
+      'term:javascript-test-runner',
+    ],
+    sourceSpanIds,
+    confidence: 0.93,
+    extractor: 'repo-semantic-live-shaped-test-v1',
+  });
+  const signal = await buildRepoSignal({
+    repoSnapshotId: repoSnapshot.id,
+    key: 'popover-patient-click-threshold',
+    narrative: 'The repository demonstrates source-backed popover impatient click handling with tests.',
+    assertionIds: [assertion.id],
+    facetIds: [facet.id],
+    sourceSpanIds,
+    confidence: 0.91,
+    sourceDiversity: 4,
+  });
+
+  return {
+    input,
+    packet: await buildChallengePacket(input),
+    graph: {
+      structuralFacts: [callsFact, importsFact, containsFact],
+      codeEpisodes: [episode],
+      facets: [facet],
+      semanticAssertions: [assertion],
+      repoSignals: [signal],
+    },
+  };
+}
+
 async function seedProductionReadyPacket(
   sqlite: NodeSqliteDatabase,
   repoId = 41,
@@ -612,6 +873,372 @@ function seedCandidateEvidence(sqlite: NodeSqliteDatabase): void {
         'term:kafka', 'validated', 1, 1, '{}', '${now}', '${now}'
       );
   `);
+}
+
+async function seedMeetingTranscriptCandidateEvidence(
+  sqlite: NodeSqliteDatabase,
+): Promise<{ transcriptText: string }> {
+  const transcriptText = 'I implemented Kafka retry idempotency for order replay and validated retry behavior.';
+  sqlite.prepare(
+    `INSERT INTO contacts (
+       id, owner_id, name, email, phone, company, role, type, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+  ).run(
+    'contact-1',
+    'workspace-1',
+    'Candidate One',
+    'candidate@example.com',
+    'Distributed systems engineer',
+    'candidate',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+  sqlite.prepare(
+    `INSERT INTO meetings (id, owner_id, started_at, ended_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(
+    'meeting-1',
+    'workspace-1',
+    '2026-06-14T07:30:00.000Z',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+  sqlite.prepare(
+    `INSERT INTO meeting_participants (
+       id, meeting_id, contact_id, role, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'participant-1',
+    'meeting-1',
+    'contact-1',
+    'ATTENDEE',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+
+  const db = createNodeSqliteD1(sqlite);
+  await ingestMeetingTranscriptToLivingContext(db, {
+    meetingId: 'meeting-1',
+    ownerId: 'workspace-1',
+    segments: [
+      {
+        stableSegmentId: 'host-1',
+        text: 'What production systems have you owned?',
+        speakerRole: 'host',
+        timestampStartMs: 1_000,
+        timestampEndMs: 2_000,
+      },
+      {
+        stableSegmentId: 'guest-1',
+        text: transcriptText,
+        speakerRole: 'guest',
+        contactId: 'contact-1',
+        timestampStartMs: 2_100,
+        timestampEndMs: 6_500,
+        confidence: 0.98,
+      },
+    ],
+    semanticAssertions: [
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented Kafka retry idempotency.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'Kafka retry idempotency' },
+        confidence: 0.96,
+        concepts: [
+          {
+            surface: 'Kafka',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+          {
+            surface: 'idempotency',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'validated',
+        narrative: 'Candidate validated retry behavior.',
+        objectType: 'source-described validation',
+        objectValue: { surface: 'retry behavior validation' },
+        confidence: 0.96,
+        concepts: [
+          {
+            surface: 'Kafka',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'retry',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
+      },
+    ],
+    extractorVersion: 'matcher-transcript-proof-v1',
+    provider: 'test-transcript-provider',
+    startedAt: '2026-06-14T07:30:00.000Z',
+    endedAt: OBSERVED_AT,
+  });
+  const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+  expect(identity).not.toBeNull();
+  return { transcriptText };
+}
+
+async function seedMuiBaseUiMeetingTranscriptCandidateEvidence(
+  sqlite: NodeSqliteDatabase,
+): Promise<{ transcriptText: string }> {
+  const transcriptText = [
+    'I implemented React TypeScript popover click handling in usePopoverRoot,',
+    'introduced a patient click threshold for impatient trigger clicks,',
+    'and validated the popover trigger behavior with a JavaScript test runner.',
+  ].join(' ');
+  sqlite.prepare(
+    `INSERT INTO contacts (
+       id, owner_id, name, email, phone, company, role, type, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+  ).run(
+    'contact-mui-1',
+    'workspace-1',
+    'Candidate One',
+    'candidate@example.com',
+    'React component systems engineer',
+    'candidate',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+  sqlite.prepare(
+    `INSERT INTO meetings (id, owner_id, started_at, ended_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(
+    'meeting-mui-1',
+    'workspace-1',
+    '2026-06-14T07:30:00.000Z',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+  sqlite.prepare(
+    `INSERT INTO meeting_participants (
+       id, meeting_id, contact_id, role, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'participant-mui-1',
+    'meeting-mui-1',
+    'contact-mui-1',
+    'ATTENDEE',
+    OBSERVED_AT,
+    OBSERVED_AT,
+  );
+
+  const db = createNodeSqliteD1(sqlite);
+  await ingestMeetingTranscriptToLivingContext(db, {
+    meetingId: 'meeting-mui-1',
+    ownerId: 'workspace-1',
+    segments: [
+      {
+        stableSegmentId: 'host-1',
+        text: 'What frontend review work have you done recently?',
+        speakerRole: 'host',
+        timestampStartMs: 1_000,
+        timestampEndMs: 2_000,
+      },
+      {
+        stableSegmentId: 'guest-1',
+        text: transcriptText,
+        speakerRole: 'guest',
+        contactId: 'contact-mui-1',
+        timestampStartMs: 2_100,
+        timestampEndMs: 8_500,
+        confidence: 0.98,
+      },
+    ],
+    semanticAssertions: [
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented React popover click handling in usePopoverRoot.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'React popover click handling' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'React',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented TypeScript popover click handling in usePopoverRoot.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'TypeScript popover click handling' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'TypeScript',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented popover click handling in usePopoverRoot.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'popover click handling' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'popover',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented click handling in usePopoverRoot.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'click handling' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'click',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Candidate implemented usePopoverRoot behavior for popover clicks.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'usePopoverRoot' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'usePopoverRoot',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'introduced',
+        narrative: 'Candidate introduced a patient click threshold for impatient trigger clicks.',
+        objectType: 'source-described mechanism',
+        objectValue: { surface: 'patient click threshold' },
+        confidence: 0.99,
+        concepts: [
+          {
+            surface: 'patient click threshold',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'implemented',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'validated',
+        narrative: 'Candidate validated popover trigger behavior with a JavaScript test runner.',
+        objectType: 'source-described validation',
+        objectValue: { surface: 'JavaScript test runner' },
+        confidence: 0.99,
+        concepts: [
+          {
+            surface: 'JavaScript test runner',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'validated',
+        narrative: 'Candidate validated popover trigger behavior.',
+        objectType: 'source-described validation',
+        objectValue: { surface: 'popover trigger' },
+        confidence: 0.99,
+        concepts: [
+          {
+            surface: 'popover trigger',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
+      },
+      {
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'validated',
+        narrative: 'Candidate validated trigger click behavior.',
+        objectType: 'source-described validation',
+        objectValue: { surface: 'trigger click behavior' },
+        confidence: 0.98,
+        concepts: [
+          {
+            surface: 'click',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
+      },
+    ],
+    extractorVersion: 'matcher-mui-transcript-proof-v1',
+    provider: 'test-transcript-provider',
+    startedAt: '2026-06-14T07:30:00.000Z',
+    endedAt: OBSERVED_AT,
+  });
+  const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+  expect(identity).not.toBeNull();
+  return { transcriptText };
 }
 
 function moveCandidateMeaningToContextRecords(sqlite: NodeSqliteDatabase): void {
@@ -922,14 +1549,50 @@ describe('matchCandidateToReviewChallenge', () => {
     sqlite = new DatabaseSync(':memory:');
     sqlite.exec(`
       PRAGMA foreign_keys = ON;
-      CREATE TABLE candidates (id TEXT PRIMARY KEY);
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'workspace-1',
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL DEFAULT 'active'
+      );
       CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
       CREATE TABLE role_contexts (id TEXT PRIMARY KEY);
-      INSERT INTO candidates (id) VALUES ('candidate-1');
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        phone TEXT,
+        company TEXT,
+        role TEXT,
+        type TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meetings (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        started_at TEXT,
+        ended_at TEXT,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meeting_participants (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL REFERENCES meetings(id),
+        contact_id TEXT NOT NULL REFERENCES contacts(id),
+        role TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+      VALUES ('candidate-1', 'workspace-1', NULL, 'Candidate One', 'candidate@example.com', 'active');
     `);
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
     sqlite.exec(contextRecordMigration);
+    sqlite.exec(transcriptProjectionMigration);
   });
 
   afterEach(() => sqlite.close());
@@ -1221,6 +1884,298 @@ describe('matchCandidateToReviewChallenge', () => {
     )).toBe(true);
   });
 
+  it('matches source-backed PR challenges from meeting transcript-derived person evidence', async () => {
+    const { transcriptText } = await seedMeetingTranscriptCandidateEvidence(sqlite);
+    const data = await seedProductionReadyPacket(sqlite, 3);
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(3);
+    expect(result.prNumber).toBe(data.packet.pullRequest.number);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.selectedPr).toEqual(expect.objectContaining({
+      challengeId: data.packet.id,
+      repoId: '3',
+      prNumber: data.packet.pullRequest.number,
+    }));
+    expect(result.explanation?.evidence.some((entry) =>
+      entry.candidateSourceRefs.some((source) =>
+        source.sourceRefType === 'source_span'
+        && source.exactText === transcriptText
+      )
+      && entry.challengeSourceRefs.some((source) => source.sourceRefType === 'repo_source_span')
+    )).toBe(true);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(transcriptText);
+
+    const queryRow = sqlite.prepare(
+      'SELECT query_json FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as { query_json: string };
+    const query = JSON.parse(queryRow.query_json) as {
+      validationAtoms: Array<{
+        concepts: string[];
+        sourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+      }>;
+    };
+    expect(query.validationAtoms.some((atom) =>
+      atom.concepts.includes('term:kafka')
+      && atom.sourceRefs.some((source) =>
+        source.sourceRefType === 'source_span'
+        && source.exactText === transcriptText
+      )
+    )).toBe(true);
+
+    const transcriptRecord = sqlite.prepare(
+      `SELECT cr.record_type, ss.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+        WHERE cr.record_type = 'meeting_transcript_assertion'
+          AND ss.exact_text = ?`,
+    ).get(transcriptText) as { record_type: string; exact_text: string } | undefined;
+    expect(transcriptRecord).toEqual({
+      record_type: 'meeting_transcript_assertion',
+      exact_text: transcriptText,
+    });
+  });
+
+  it('matches recorded person and role evidence to a live-shaped mui/base-ui PR packet', async () => {
+    const { transcriptText } = await seedMuiBaseUiMeetingTranscriptCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    sqlite.prepare('INSERT INTO role_contexts (id) VALUES (?)').run('role-context-mui-popover');
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+    const packetConcepts = new Set(data.packet.demands.flatMap((demand) => demand.conceptKeys));
+
+    expect(data.packet.quality.eligible).toBe(true);
+    expect(data.packet.quality.score).toBeGreaterThanOrEqual(0.7);
+    expect(data.packet.pullRequest.number).toBe(973);
+    expect(data.packet.repository).toEqual(expect.objectContaining({
+      owner: 'mui',
+      name: 'base-ui',
+    }));
+    expect(data.packet.demandFamilies).toEqual(expect.arrayContaining([
+      'artifact:source',
+      'artifact:test',
+      'structure:calls',
+      'structure:contains',
+      'structure:imports',
+      'verification:term:javascript-test-runner',
+    ]));
+    for (const concept of [
+      'term:popover',
+      'term:patient-click-threshold',
+      'term:typescript',
+      'term:react',
+      'term:javascript-test-runner',
+    ]) {
+      expect(packetConcepts.has(concept)).toBe(true);
+    }
+
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const roleExactText = [
+      'Review React TypeScript popover pull requests that add patient click threshold',
+      'handling for impatient trigger clicks and verify the behavior with tests.',
+    ].join(' ');
+    const roleConcepts = [
+      'term:click',
+      'term:javascript-test-runner',
+      'term:patient-click-threshold',
+      'term:popover',
+      'term:popover-trigger',
+      'term:react',
+      'term:typescript',
+      'term:use-popover-root',
+    ];
+    const roleSourceReferences = [{
+      entityId: 'role-source-mui-popover',
+      locator: 'simple_job_description:source_span:mui-popover',
+      conceptKeys: roleConcepts,
+      exactText: roleExactText,
+      contentHash: await sha256(roleExactText),
+    }];
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
+      roleContextId: 'role-context-mui-popover',
+      roleSnapshotId: 'role-context:mui-popover:source-backed:simple-jd-v1',
+      roleConcepts,
+      requiredConcepts: ['term:popover', 'term:patient-click-threshold'],
+      requiredLanguages: ['typescript'],
+      conceptResolverVersion: 'open-source-term-v2',
+      roleSourceReferences,
+    });
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(973);
+    expect(result.prNumber).toBe(973);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
+    expect(result.explanation?.evidence.some((entry) =>
+      entry.roleSourceRefs.some((source) => source.exactText === roleExactText)
+    )).toBe(true);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(transcriptText);
+    const repoEvidenceTexts = result.explanation?.evidence.flatMap((entry) =>
+      entry.challengeSourceRefs.flatMap((source) => source.exactText ? [source.exactText] : [])
+    ) ?? [];
+    expect(repoEvidenceTexts.some((text) => text.includes('PATIENT_CLICK_THRESHOLD = 500'))).toBe(true);
+    expect(repoEvidenceTexts.some((text) => text.includes('data-popup-open'))).toBe(true);
+    expect(result.diagnostics?.evaluatedChallenges).toEqual([
+      expect.objectContaining({
+        challengeId: data.packet.id,
+        repoId: '973',
+        prNumber: 973,
+        alignedDemandCount: expect.any(Number),
+        provenanceComplete: true,
+        contextProjectionComplete: true,
+        eligible: true,
+      }),
+    ]);
+
+    const ranked = sqlite.prepare(
+      'SELECT ranked_results_json, selected_packet_id FROM match_runs WHERE id = ?',
+    ).get(result.matchRunId) as {
+      ranked_results_json: string;
+      selected_packet_id: string;
+    };
+    expect(ranked.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(ranked.ranked_results_json) as Array<{
+      challengeId: string;
+      alignments: Array<{
+        sharedConcepts: string[];
+        roleSourceRefs: Array<{ exactText?: string; conceptKeys?: string[] }>;
+        candidateSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+        challengeSourceRefs: Array<{ sourceRefType?: string; exactText?: string }>;
+      }>;
+    }>;
+    expect(rankedResult).toEqual(expect.objectContaining({
+      challengeId: data.packet.id,
+    }));
+    const sharedConcepts = new Set(rankedResult.alignments.flatMap((alignment) => alignment.sharedConcepts));
+    expect(sharedConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect([...sharedConcepts].some((key) => key === 'term:popover' || key === 'term:popover-trigger')).toBe(true);
+    expect(rankedResult.alignments.some((alignment) =>
+      alignment.roleSourceRefs.some((source) => source.exactText === roleExactText)
+    )).toBe(true);
+    expect(rankedResult.alignments.every((alignment) =>
+      alignment.candidateSourceRefs.some((ref) =>
+        ref.sourceRefType === 'source_span'
+        && ref.exactText === transcriptText
+      )
+      && alignment.challengeSourceRefs.some((ref) =>
+        ref.sourceRefType === 'repo_source_span'
+        && ref.exactText
+      ),
+    )).toBe(true);
+
+    const contextRecord = sqlite.prepare(
+      `SELECT id, scope_type, scope_id, record_type, predicate
+         FROM context_records
+        WHERE scope_id = ?
+          AND record_type = 'candidate_pr_match_decision'`,
+    ).get(result.matchRunId) as {
+      id: string;
+      scope_type: string;
+      scope_id: string;
+      record_type: string;
+      predicate: string;
+    };
+    expect(contextRecord).toMatchObject({
+      scope_type: 'match_run',
+      scope_id: result.matchRunId,
+      record_type: 'candidate_pr_match_decision',
+      predicate: 'selects review challenge',
+    });
+    const contextRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text, content_hash, evidence_role
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY evidence_role, source_ref_id`,
+    ).all(contextRecord.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      exact_text: string | null;
+      content_hash: string | null;
+      evidence_role: string;
+    }>;
+    expect(contextRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: data.packet.id,
+        content_hash: data.packet.contentHash,
+        evidence_role: 'selected_packet',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'role_source',
+        source_ref_id: 'role-source-mui-popover',
+        exact_text: roleExactText,
+        evidence_role: 'role_source',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        exact_text: transcriptText,
+        evidence_role: 'selected_candidate_evidence',
+      }),
+    ]));
+    expect(contextRefs.some((ref) =>
+      ref.source_ref_type === 'repo_source_span'
+      && ref.evidence_role === 'selected_repo_evidence'
+      && ref.exact_text?.includes('PATIENT_CLICK_THRESHOLD = 500')
+    )).toBe(true);
+    expect(contextRefs.some((ref) =>
+      ref.source_ref_type === 'repo_source_span'
+      && ref.evidence_role === 'selected_repo_evidence'
+      && ref.exact_text?.includes('data-popup-open')
+    )).toBe(true);
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+          AND relationship = 'selected_packet'`,
+    ).get(contextRecord.id)).toEqual({
+      entity_type: 'review_challenge_packet',
+      entity_id: data.packet.id,
+      relationship: 'selected_packet',
+    });
+    expect(sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+          AND relationship = 'role_context'`,
+    ).get(contextRecord.id)).toEqual({
+      entity_type: 'role_context',
+      entity_id: 'role-context-mui-popover',
+      relationship: 'role_context',
+    });
+    const matchConcepts = sqlite.prepare(
+      `SELECT c.canonical_key
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(contextRecord.id) as Array<{ canonical_key: string }>;
+    const matchConceptKeys = matchConcepts.map((row) => row.canonical_key);
+    expect(matchConceptKeys).toContain('term:patient-click-threshold');
+    expect(matchConceptKeys.some((key) => key === 'term:popover' || key === 'term:popover-trigger')).toBe(true);
+  });
+
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {
     seedCandidateEvidence(sqlite);
     seedIneligiblePacket(sqlite);
@@ -1385,6 +2340,9 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(result.explanation?.candidateSpans).toHaveLength(2);
     expect(result.explanation?.repoSpans).toHaveLength(2);
     expect(result.explanation?.roleSources).toEqual(roleSourceReferences);
+    expect(result.explanation?.evidence.every((entry) =>
+      entry.roleSourceRefs.some((source) => source.entityId === 'context-record-jd')
+    )).toBe(true);
     expect(result.explanation?.rejectedPackets).toEqual([]);
     expect(result.explanation?.missingEvidence).toEqual([]);
     expect(result.diagnostics?.evaluatedChallenges).toEqual([

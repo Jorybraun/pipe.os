@@ -166,6 +166,7 @@ interface StandaloneReviewAlignment {
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
 }
@@ -340,19 +341,10 @@ function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSource
   });
 }
 
-function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): StandaloneReviewRoleSource[] {
-  if (!value) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return [];
-  }
-  if (!isRecord(parsed) || !isRecord(parsed.roleGuardrails)) return [];
-  const sourceReferences = parsed.roleGuardrails.sourceReferences;
-  if (!Array.isArray(sourceReferences)) return [];
+function parseStandaloneReviewRoleSources(value: unknown): StandaloneReviewRoleSource[] {
+  if (!Array.isArray(value)) return [];
   const deduped = new Map<string, StandaloneReviewRoleSource>();
-  for (const source of sourceReferences) {
+  for (const source of value) {
     if (!isRecord(source)) continue;
     const { entityId, locator } = source;
     if (typeof entityId !== 'string' || typeof locator !== 'string') continue;
@@ -374,7 +366,33 @@ function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): Standa
   );
 }
 
-function parseStandaloneReviewRankedResults(value: string | null): StandaloneReviewRankedResult[] {
+function parseStandaloneReviewRoleSourcesFromQuery(value: string | null): StandaloneReviewRoleSource[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.roleGuardrails)) return [];
+  return parseStandaloneReviewRoleSources(parsed.roleGuardrails.sourceReferences);
+}
+
+function roleSourcesForSharedConcepts(
+  roleSources: StandaloneReviewRoleSource[],
+  sharedConcepts: string[],
+): StandaloneReviewRoleSource[] {
+  if (roleSources.length === 0 || sharedConcepts.length === 0) return [];
+  const shared = new Set(sharedConcepts);
+  return roleSources.filter((source) =>
+    source.conceptKeys.some((conceptKey) => shared.has(conceptKey))
+  );
+}
+
+function parseStandaloneReviewRankedResults(
+  value: string | null,
+  fallbackRoleSources: StandaloneReviewRoleSource[] = [],
+): StandaloneReviewRankedResult[] {
   if (!value) return [];
   let parsed: unknown;
   try {
@@ -420,12 +438,17 @@ function parseStandaloneReviewRankedResults(value: string | null): StandaloneRev
           ) {
             return [];
           }
+          const sharedConcepts = asStringArray(alignment.sharedConcepts);
+          const hasPersistedRoleSourceRefs = Array.isArray(alignment.roleSourceRefs);
           return [{
             atomId,
             demandId,
             purpose: typeof alignment.purpose === 'string' ? alignment.purpose : null,
             pairScore,
-            sharedConcepts: asStringArray(alignment.sharedConcepts),
+            sharedConcepts,
+            roleSourceRefs: hasPersistedRoleSourceRefs
+              ? parseStandaloneReviewRoleSources(alignment.roleSourceRefs)
+              : roleSourcesForSharedConcepts(fallbackRoleSources, sharedConcepts),
             candidateSourceRefs: parseStandaloneReviewSourceRefs(alignment.candidateSourceRefs),
             challengeSourceRefs: parseStandaloneReviewSourceRefs(alignment.challengeSourceRefs),
           }];
@@ -1603,6 +1626,7 @@ candidateOps.get('/:candidateId', async (c) => {
     interviewStatus: string;
     matchStatus: StandaloneReviewMatchStatus;
     matchRunId: string | null;
+    packetId: string | null;
     repoId: number | null;
     repoName: string | null;
     repoUrl: string | null;
@@ -1695,8 +1719,11 @@ candidateOps.get('/:candidateId', async (c) => {
         query_json: string | null;
       }>();
 
-      const rankedResults = parseStandaloneReviewRankedResults(latestRun?.ranked_results_json ?? null);
       const roleSources = parseStandaloneReviewRoleSourcesFromQuery(latestRun?.query_json ?? null);
+      const rankedResults = parseStandaloneReviewRankedResults(
+        latestRun?.ranked_results_json ?? null,
+        roleSources,
+      );
       const diagnostics = buildStandaloneReviewDiagnostics(
         latestRun?.recalled_packets_json ?? null,
         latestRun?.excluded_packets_json ?? null,
@@ -1757,6 +1784,7 @@ candidateOps.get('/:candidateId', async (c) => {
         interviewStatus: standaloneInterview.status,
         matchStatus,
         matchRunId: latestRun?.id ?? null,
+        packetId: selectedResultForDisplay ? selectedPacketId : null,
         repoId: repoId !== null && Number.isFinite(repoId) ? repoId : null,
         repoName,
         repoUrl,

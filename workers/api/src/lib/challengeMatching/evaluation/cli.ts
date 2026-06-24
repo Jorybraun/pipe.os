@@ -107,6 +107,9 @@ function parseAlignment(
     sharedConcepts: Array.isArray(row.sharedConcepts)
       ? row.sharedConcepts.filter((entry): entry is string => typeof entry === 'string')
       : [],
+    roleSourceRefs: Array.isArray(row.roleSourceRefs)
+      ? row.roleSourceRefs as PersistedMatchAlignment['roleSourceRefs']
+      : [],
     candidateSourceRefs: Array.isArray(row.candidateSourceRefs)
       ? row.candidateSourceRefs as PersistedMatchAlignment['candidateSourceRefs']
       : [],

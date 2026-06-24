@@ -197,6 +197,16 @@
 				{ "binding": "REPO_INDEX", "index_name": "repo-profiles-test" },
 				{ "binding": "CANDIDATE_INDEX", "index_name": "candidate-profiles-test" },
 				{ "binding": "ROLE_INDEX", "index_name": "role-profiles-test" }
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "VIDEO_ROOM", "class_name": "VideoRoom" },
+					{ "name": "VOICE_SESSION", "class_name": "VoiceSessionDO" }
+				]
+			},
+			"migrations": [
+				{ "tag": "test-v1", "new_classes": ["VideoRoom"] },
+				{ "tag": "test-v2", "new_classes": ["VoiceSessionDO"] }
 			]
 		},
 		"production": {

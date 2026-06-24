@@ -173,6 +173,12 @@ export function validateBackfillReport(
   if (report['status'] === 'failed' || numberValue(stats['errors']) > 0) {
     failures.push('backfill report contains errors');
   }
+  if (mode === 'write' && numberValue(stats['skippedFetch']) > 0) {
+    failures.push('write-mode backfill skipped selected PRs because GitHub data was unavailable');
+  }
+  if (mode === 'write' && numberValue(stats['skippedNoHunks']) > 0) {
+    failures.push('write-mode backfill skipped selected PRs because source hunks were unavailable');
+  }
   if (outcomes.length === 0) {
     failures.push('backfill report has no PR outcomes');
   }

@@ -3,6 +3,7 @@
  *
  * POST /api/v1/role-contexts                — Create with baseline + creator participant
  * GET  /api/v1/role-contexts/:id            — Retrieve full state + participants
+ * GET  /api/v1/role-contexts/:id/living-context — Retrieve source-backed role graph
  * POST /api/v1/role-contexts/:id/start      — Start interview (returns calibration question)
  * POST /api/v1/role-contexts/:id/respond    — Submit answer, get next question (per-participant)
  * POST /api/v1/role-contexts/:id/complete   — Force-complete a participant's interview
@@ -39,6 +40,7 @@ import { buildRoleSearchableProfile } from '../../lib/roleDiscovery/buildRolePro
 import { buildRcdSearchProfile } from '../../lib/repoDiscovery/rcdSearchProfile';
 import { LivingContextStore } from '../../lib/livingContext/persistence';
 import { OPEN_TERM_RESOLVER_VERSION, openSemanticTerm } from '../../lib/livingContext/openTerms';
+import { loadRoleContextLivingContext } from '../../lib/livingContext/readModel';
 import type { Env, Variables, RoleContextRow, RoleContextParticipantRow, RoleExchange, ParticipantRole, RoleContextDocument } from '../../types';
 
 export const roleContexts = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -951,6 +953,33 @@ roleContexts.post('/transcribe', async (c) => {
 
   console.log('[roleContexts/transcribe] Whisper result:', transcript?.slice(0, 100));
   return c.json({ transcript: transcript ?? '' });
+});
+
+// ─── GET /:id/living-context — Source-backed role graph ───────────────────
+
+roleContexts.get('/:id/living-context', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+
+  const row = await c.env.DB.prepare(
+    'SELECT id, owner_id FROM role_contexts WHERE id = ?1',
+  )
+    .bind(id)
+    .first<{ id: string; owner_id: string }>();
+
+  if (!row) {
+    return apiError(c, 'NOT_FOUND', 'Role context not found.');
+  }
+  if (row.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this role context.');
+  }
+
+  const livingContext = await loadRoleContextLivingContext(c.env.DB, id);
+  if (!livingContext) {
+    return apiError(c, 'NOT_FOUND', 'Living context not found.');
+  }
+
+  return c.json({ livingContext });
 });
 
 // ─── GET /:id — Retrieve full state + participants ─────────────────────────

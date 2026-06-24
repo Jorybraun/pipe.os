@@ -59,6 +59,7 @@ export interface MeetingTranscriptIngestionInput {
   startedAt?: string | null;
   endedAt?: string | null;
   recordingKey?: string | null;
+  transcriptionAudioKey?: string | null;
   provider?: string | null;
 }
 
@@ -551,7 +552,9 @@ export async function ingestMeetingTranscriptToLivingContext(
       meetingId: input.meetingId,
       scheduledInterviewId: input.scheduledInterviewId ?? null,
       recordingKey: input.recordingKey ?? null,
+      transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       provider: input.provider ?? null,
+      transcriptStatus: 'READY',
     },
   });
   const now = new Date().toISOString();
@@ -588,6 +591,9 @@ export async function ingestMeetingTranscriptToLivingContext(
         meetingId: input.meetingId,
         scheduledInterviewId: input.scheduledInterviewId ?? null,
         provider: input.provider ?? null,
+        recordingKey: input.recordingKey ?? null,
+        transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+        transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
     });
@@ -663,6 +669,8 @@ export async function ingestMeetingTranscriptToLivingContext(
         ownerId: input.ownerId,
         provider: input.provider ?? null,
         recordingKey: input.recordingKey ?? null,
+        transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+        transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
       confidence: null,

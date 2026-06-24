@@ -17,6 +17,7 @@ import type { D1Config } from './types.js';
 const MAX_ATTEMPTS = 6;
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 20_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
 
 /**
  * Cloudflare error codes treated as transient.
@@ -48,6 +49,17 @@ export function loadD1Config(): D1Config {
   return { accountId, apiToken, databaseId };
 }
 
+export interface D1ClientOptions {
+  requestTimeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+function resolveRequestTimeoutMs(value: number | undefined): number {
+  const candidate = value ?? Number(process.env['D1_REQUEST_TIMEOUT_MS'] ?? DEFAULT_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(candidate) || candidate <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.round(candidate);
+}
+
 interface D1RestResponse<T> {
   success: boolean;
   errors?: Array<{ code: number; message: string }>;
@@ -72,13 +84,17 @@ function sleep(ms: number): Promise<void> {
 export class D1Client {
   private readonly endpoint: string;
   private readonly headers: Record<string, string>;
+  private readonly requestTimeoutMs: number;
+  private readonly fetchImpl: typeof fetch;
 
-  constructor(cfg: D1Config) {
+  constructor(cfg: D1Config, options: D1ClientOptions = {}) {
     this.endpoint = `https://api.cloudflare.com/client/v4/accounts/${cfg.accountId}/d1/database/${cfg.databaseId}/query`;
     this.headers = {
       'Authorization': `Bearer ${cfg.apiToken}`,
       'Content-Type': 'application/json',
     };
+    this.requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
+    this.fetchImpl = options.fetchImpl ?? fetch;
     logger.debug('[d1] Client ready', { databaseId: cfg.databaseId });
   }
 
@@ -91,10 +107,11 @@ export class D1Client {
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       try {
-        const res = await fetch(this.endpoint, {
+        const res = await this.fetchImpl(this.endpoint, {
           method: 'POST',
           headers: this.headers,
           body: JSON.stringify({ sql, params }),
+          signal: AbortSignal.timeout(this.requestTimeoutMs),
         });
 
         const bodyText = await res.text();
@@ -172,12 +189,15 @@ class TransientError extends Error {}
 
 function isNetworkError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError' || err.name === 'TimeoutError') return true;
   const msg = err.message.toLowerCase();
   return (
     msg.includes('fetch failed') ||
+    msg.includes('aborted') ||
     msg.includes('econnreset') ||
     msg.includes('etimedout') ||
     msg.includes('socket hang up') ||
+    msg.includes('timeout') ||
     msg.includes('network') ||
     msg.includes('enotfound')
   );

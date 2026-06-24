@@ -550,6 +550,7 @@ describe('Evaluation Metrics', () => {
             weightedScore: 0.9,
             stretch: null,
             sharedConcepts: ['term:kafka'],
+            roleSourceRefs: [],
             candidateSourceRefs: [sourceRef('candidate-missing-exact', { exactText: undefined })],
             challengeSourceRefs: [sourceRef('challenge-with-exact')],
           }],
@@ -576,6 +577,7 @@ describe('Determinism Verification', () => {
       weightedScore: 0.7,
       stretch: null,
       sharedConcepts,
+      roleSourceRefs: [],
       candidateSourceRefs: [sourceRef('candidate-deterministic', {
         artifactId: 'candidate-artifact',
         artifactVersion: 'candidate-version',
@@ -884,6 +886,11 @@ describe('Determinism Verification', () => {
               weightedScore: 0.7,
               stretch: null,
               sharedConcepts: ['term:kafka'],
+              roleSourceRefs: [{
+                entityId: 'context-record-role',
+                locator: 'simple_job_description:source_span:jd-span-kafka',
+                conceptKeys: ['term:kafka'],
+              }],
               candidateSourceRefs: [sourceRef('candidate-fingerprint', {
                 artifactId: 'candidate-artifact',
                 artifactVersion: 'candidate-version',
@@ -920,8 +927,9 @@ describe('Determinism Verification', () => {
       ],
     };
 
-    const { identical } = verifyByteIdenticalRerun(firstRun, secondRun);
+    const { identical, fingerprint } = verifyByteIdenticalRerun(firstRun, secondRun);
     expect(identical).toBe(false);
+    expect(fingerprint).toContain('"roleSourceRefs":[{"entityId":"context-record-role"');
   });
 });
 

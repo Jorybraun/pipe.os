@@ -92,6 +92,7 @@ function rankedResults(overrides?: Partial<Record<string, unknown>>): string {
       pairScore: 0.95,
       stretch: null,
       sharedConcepts: ['term:quantum-cryptography'],
+      roleSourceRefs: [],
       candidateSourceRefs: [sourceRef()],
       challengeSourceRefs: [sourceRef({
         artifactId: 'repo-artifact-1',
@@ -665,6 +666,7 @@ describe('matching evaluation CLI', () => {
         pairScore: 0.95,
         stretch: null,
         sharedConcepts: ['term:quantum-cryptography'],
+        roleSourceRefs: [],
         candidateSourceRefs: [],
         challengeSourceRefs: [],
       }],

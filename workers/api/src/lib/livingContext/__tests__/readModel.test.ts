@@ -5,7 +5,7 @@ import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mo
 import type { ContextualDecomposition } from '../../cultureContextualDecomposition';
 import { ingestCultureTurnToLivingContext } from '../cultureTurn';
 import { LivingContextStore } from '../persistence';
-import { loadCandidateLivingContext } from '../readModel';
+import { loadCandidateLivingContext, loadRoleContextLivingContext } from '../readModel';
 
 
 
@@ -19,6 +19,14 @@ const transcriptProjectionMigration = readFileSync(
 );
 const contextRecordMigration = readFileSync(
   new URL('../../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
+const roleContextsMigration = readFileSync(
+  new URL('../../../../migrations/0011_role_contexts.sql', import.meta.url),
+  'utf8',
+);
+const personaJdMigration = readFileSync(
+  new URL('../../../../migrations/0013_persona_jd.sql', import.meta.url),
   'utf8',
 );
 
@@ -40,7 +48,13 @@ describe('living-context candidate read model', () => {
         email TEXT,
         status TEXT NOT NULL
       );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL
+      );
     `);
+    sqlite.exec(roleContextsMigration);
+    sqlite.exec(personaJdMigration);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.exec(contextRecordMigration);
@@ -306,5 +320,87 @@ describe('living-context candidate read model', () => {
       'I implemented FluxCapacitorX for order replay.',
     );
     expect(graph?.relationships[0]?.predicate).toBe('person directly implemented');
+  });
+
+  it('shows only source spans cited by scoped context records', async () => {
+    const observedAt = '2026-06-13T21:00:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO role_contexts (
+         id, owner_id, baseline, knowledge_state, status, job_description_md, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'role-context-1',
+      'workspace-1',
+      JSON.stringify({ title: 'Staff Engineer' }),
+      JSON.stringify({}),
+      'BASELINE',
+      'Line A\nLine B',
+      observedAt,
+      observedAt,
+    );
+
+    const store = new LivingContextStore(db, () => observedAt);
+    const artifact = await store.upsertArtifact({
+      ingestionKey: 'role-context-1:artifact',
+      artifactType: 'job_description',
+      logicalKey: 'role-context/role-context-1/job-description.md',
+      metadata: {},
+    });
+    const artifactVersion = await store.createArtifactVersion({
+      ingestionKey: 'role-context-1:artifact:v1',
+      artifactId: artifact.id,
+      versionNumber: 1,
+      contentHash: 'role-context-1-content-hash',
+      mediaType: 'text/markdown',
+      contentText: 'Line A\nLine B',
+      byteLength: 'Line A\nLine B'.length,
+    });
+    const citedSpan = await store.createSourceSpan({
+      ingestionKey: 'role-context-1:span:cited',
+      artifactVersionId: artifactVersion.id,
+      stableSegmentId: 'line-a',
+      exactText: 'Line A',
+      byteStart: 0,
+      byteEnd: 6,
+      charStart: 0,
+      charEnd: 6,
+      lineStart: 1,
+      lineEnd: 1,
+    });
+    await store.createSourceSpan({
+      ingestionKey: 'role-context-1:span:uncited',
+      artifactVersionId: artifactVersion.id,
+      stableSegmentId: 'line-b',
+      exactText: 'Line B',
+      byteStart: 7,
+      byteEnd: 13,
+      charStart: 7,
+      charEnd: 13,
+      lineStart: 2,
+      lineEnd: 2,
+    });
+    await store.upsertContextRecord({
+      ingestionKey: 'role-context-1:context-record:cited-only',
+      scopeType: 'role_context',
+      scopeId: 'role-context-1',
+      recordType: 'role_requirement',
+      predicate: 'requires cited evidence only',
+      narrative: 'Line A is the only cited source evidence.',
+      confidence: 1,
+      extractionVersion: 'read-model-test-v1',
+      observedAt,
+      sources: [{ sourceSpanId: citedSpan.id, evidenceRole: 'source' }],
+    });
+
+    const graph = await loadRoleContextLivingContext(db, 'role-context-1');
+
+    expect(graph).not.toBeNull();
+    expect(graph?.summary).toMatchObject({
+      artifactCount: 1,
+      contextRecordCount: 1,
+      sourceSpanCount: 1,
+    });
+    expect(graph?.artifacts[0]?.sourceSpans.map((span) => span.exactText)).toEqual(['Line A']);
+    expect(graph?.contextRecords[0]?.sources.map((source) => source.exactText)).toEqual(['Line A']);
   });
 });

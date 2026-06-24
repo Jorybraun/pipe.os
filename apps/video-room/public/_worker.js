@@ -1,6 +1,7 @@
 const DEFAULT_API_ORIGIN = 'https://api-dev.hire-pipe.com';
 const DEV_AUTH_COOKIE = 'pipe_room_dev_auth';
 const DEV_AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+const AUTH_MODE_PUBLIC = 'public';
 
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
@@ -73,6 +74,8 @@ function hasValidBasicAuth(request, env) {
 }
 
 async function authorizationState(request, env) {
+  if (env.ROOM_AUTH_MODE === AUTH_MODE_PUBLIC) return AUTH_MODE_PUBLIC;
+
   const expectedCookie = await devAuthCookieValue(env);
   const suppliedCookie = cookieValue(request, DEV_AUTH_COOKIE);
   if (
@@ -139,14 +142,16 @@ async function devAuthEntryPage(request, env) {
 
 function proxyApi(request, env) {
   const secret = env.DEV_PROXY_SECRET;
-  if (!secret) return new Response('Missing dev proxy secret', { status: 503 });
+  if (!secret && env.ROOM_AUTH_MODE !== AUTH_MODE_PUBLIC) {
+    return new Response('Missing dev proxy secret', { status: 503 });
+  }
 
   const apiOrigin = env.API_ORIGIN || DEFAULT_API_ORIGIN;
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
   headers.delete('Authorization');
-  headers.set('X-Pipe-Dev-Proxy-Secret', secret);
+  if (secret) headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
