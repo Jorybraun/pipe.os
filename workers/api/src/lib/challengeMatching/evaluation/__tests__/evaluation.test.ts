@@ -19,16 +19,20 @@ import {
   computeMatchRunFingerprint,
   verifyByteIdenticalRerun,
   checkAcceptanceThresholds,
+  checkStagedRolloutGate,
+  checkRolloutGate,
 } from '../metrics';
 import {
   EVALUATION_CORPUS_VERSION,
   type EvaluationCorpus,
+  type EvaluationMetrics,
   type ExpertLabel,
   type RelevanceGrade,
   type PersistedMatchRun,
   type PersistedRankedChallenge,
   type RoleRequirements,
   DEFAULT_ACCEPTANCE_THRESHOLDS,
+  STAGED_ROLLOUT_THRESHOLDS,
 } from '../types';
 
 function sourceRef(id: string, overrides: Record<string, unknown> = {}) {
@@ -1155,5 +1159,574 @@ describe('Unseen Semantic Concepts', () => {
     };
 
     expect(() => loadCorpus(JSON.stringify(corpus))).not.toThrow();
+  });
+});
+
+/**
+ * Helper: build a fully-passing metrics object for rollout gate tests.
+ */
+function passingMetrics(overrides: Partial<EvaluationMetrics> = {}): EvaluationMetrics {
+  return {
+    corpusVersion: EVALUATION_CORPUS_VERSION,
+    corpusId: 'rollout-test-corpus',
+    matchRunIds: ['run-1'],
+    comparisonMatchRunIds: ['run-2'],
+    evaluatedAt: '2026-06-24T00:00:00Z',
+    recallAt50: 1,
+    precisionAt3: 1,
+    ndcgAt5: 1,
+    guardrailViolationCount: 0,
+    multiStretchViolationCount: 0,
+    missingProvenanceCount: 0,
+    missingMatchRunCount: 0,
+    byteIdenticalRerun: true,
+    rerunFingerprints: { '["candidate-1","role-1"]': 'fp-1' },
+    determinismComparisons: [{
+      candidateId: 'candidate-1',
+      roleId: 'role-1',
+      matchRunId: 'run-1',
+      comparisonMatchRunId: 'run-2',
+      identical: true,
+      fingerprint: 'fp-1',
+      comparisonFingerprint: 'fp-1',
+    }],
+    totalEvaluations: 1,
+    evaluatedPairCount: 1,
+    highlyRelevantInTop3: 1,
+    relevantInTop3: 0,
+    irrelevantInTop3: 0,
+    forbiddenInResults: 0,
+    syntheticFixtureCount: 0,
+    expertLabelCount: 1,
+    labelResults: [],
+    expectedPacketCount: 1,
+    packetCoverage: 1,
+    pairCoverage: 1,
+    comparisonCoverage: 1,
+    missingPacketIds: [],
+    packetIdentityMismatches: [],
+    ...overrides,
+  };
+}
+
+describe('Staged Rollout Gate', () => {
+  it('shadow stage passes with zero coverage and synthetic fixtures', () => {
+    const metrics = passingMetrics({
+      recallAt50: 0,
+      precisionAt3: 0,
+      ndcgAt5: 0,
+      guardrailViolationCount: 5,
+      multiStretchViolationCount: 3,
+      missingProvenanceCount: 2,
+      missingMatchRunCount: 1,
+      byteIdenticalRerun: false,
+      syntheticFixtureCount: 1,
+      expertLabelCount: 0,
+      pairCoverage: 0,
+      comparisonCoverage: 0,
+      packetCoverage: 0,
+      expectedPacketCount: 0,
+      determinismComparisons: [],
+    });
+    const result = checkStagedRolloutGate(metrics, 'shadow');
+    expect(result.stage).toBe('shadow');
+    expect(result.ready).toBe(true);
+    expect(result.failures).toHaveLength(0);
+  });
+
+  it('canary stage fails when packet coverage is incomplete', () => {
+    const metrics = passingMetrics({
+      packetCoverage: 0.5,
+      missingPacketIds: ['challenge-missing-1'],
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Packet coverage'))).toBe(true);
+  });
+
+  it('canary stage fails when expected packets are not declared', () => {
+    const metrics = passingMetrics({
+      expectedPacketCount: 0,
+      packetCoverage: 0,
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('declare expected packets'))).toBe(true);
+  });
+
+  it('canary stage fails when pair coverage is incomplete', () => {
+    const metrics = passingMetrics({
+      pairCoverage: 0.5,
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Pair coverage'))).toBe(true);
+  });
+
+  it('canary stage fails when comparison rerun coverage is incomplete', () => {
+    const metrics = passingMetrics({
+      comparisonCoverage: 0,
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Comparison rerun coverage'))).toBe(true);
+  });
+
+  it('canary stage fails when packet identity mismatches exist', () => {
+    const metrics = passingMetrics({
+      packetIdentityMismatches: [{
+        challengeId: 'challenge-1',
+        field: 'repoId',
+        expected: 'repo-expected',
+        actual: 'repo-actual',
+        matchRunId: 'run-1',
+      }],
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('identity mismatch'))).toBe(true);
+  });
+
+  it('canary stage fails when recall@50 is below threshold', () => {
+    const metrics = passingMetrics({
+      recallAt50: 0.80,
+    });
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Recall@50'))).toBe(true);
+  });
+
+  it('canary stage passes when all coverage and quality thresholds are met', () => {
+    const metrics = passingMetrics();
+    const result = checkStagedRolloutGate(metrics, 'canary');
+    expect(result.ready).toBe(true);
+    expect(result.failures).toHaveLength(0);
+  });
+
+  it('production stage fails when synthetic fixtures are present', () => {
+    const metrics = passingMetrics({
+      syntheticFixtureCount: 1,
+      expertLabelCount: 0,
+    });
+    const result = checkStagedRolloutGate(metrics, 'production');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('expert-labelled'))).toBe(true);
+  });
+
+  it('production stage fails when byte-identical rerun is not proven', () => {
+    const metrics = passingMetrics({
+      byteIdenticalRerun: false,
+    });
+    const result = checkStagedRolloutGate(metrics, 'production');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Byte-identical'))).toBe(true);
+  });
+
+  it('production stage fails when guardrail violations exist', () => {
+    const metrics = passingMetrics({
+      guardrailViolationCount: 1,
+    });
+    const result = checkStagedRolloutGate(metrics, 'production');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Guardrail violations'))).toBe(true);
+  });
+
+  it('production stage fails when missing provenance exists', () => {
+    const metrics = passingMetrics({
+      missingProvenanceCount: 1,
+    });
+    const result = checkStagedRolloutGate(metrics, 'production');
+    expect(result.ready).toBe(false);
+    expect(result.failures.some((f) => f.includes('Missing provenance'))).toBe(true);
+  });
+
+  it('production stage passes when all thresholds are met', () => {
+    const metrics = passingMetrics();
+    const result = checkStagedRolloutGate(metrics, 'production');
+    expect(result.stage).toBe('production');
+    expect(result.ready).toBe(true);
+    expect(result.failures).toHaveLength(0);
+  });
+
+  it('checkRolloutGate accepts custom threshold overrides', () => {
+    const metrics = passingMetrics({ recallAt50: 0.85 });
+    const result = checkRolloutGate(metrics, {
+      ...STAGED_ROLLOUT_THRESHOLDS.production,
+      minRecallAt50: 0.80,
+    });
+    expect(result.ready).toBe(true);
+  });
+
+  it('checkRolloutGate reports missing packets as warnings when coverage threshold is > 0', () => {
+    const metrics = passingMetrics({
+      packetCoverage: 0.5,
+      missingPacketIds: ['challenge-missing-1'],
+    });
+    const result = checkRolloutGate(metrics, STAGED_ROLLOUT_THRESHOLDS.production);
+    expect(result.ready).toBe(false);
+    expect(result.warnings.some((w) => w.includes('challenge-missing-1'))).toBe(true);
+  });
+
+  it('staged thresholds are strictly increasing from shadow to production', () => {
+    const shadow = STAGED_ROLLOUT_THRESHOLDS.shadow;
+    const canary = STAGED_ROLLOUT_THRESHOLDS.canary;
+    const production = STAGED_ROLLOUT_THRESHOLDS.production;
+    expect(canary.minRecallAt50).toBeGreaterThan(shadow.minRecallAt50);
+    expect(production.minRecallAt50).toBeGreaterThanOrEqual(canary.minRecallAt50);
+    expect(canary.minPairCoverage).toBeGreaterThan(shadow.minPairCoverage);
+    expect(production.minPairCoverage).toBeGreaterThanOrEqual(canary.minPairCoverage);
+    expect(canary.requireExpectedPackets).toBe(true);
+    expect(production.requireExpectedPackets).toBe(true);
+    expect(shadow.requireExpectedPackets).toBe(false);
+  });
+});
+
+/**
+ * Full E2E scenario: roleless person + simple JD + real repo packet + explained
+ * candidate-to-PR match.
+ *
+ * This test exercises the complete evaluation pipeline end-to-end:
+ *   1. A candidate with evidence but no pre-assigned role (roleless person)
+ *   2. A simple JD / role context with minimal requirements
+ *   3. A real repo packet declared as an expected challenge (repo + PR + commit)
+ *   4. A match run with alignments that explain the candidate-to-PR match via
+ *      exact source references linking candidate evidence, JD, and PR content
+ *   5. An expert label marking the challenge as highly relevant
+ *   6. An independent comparison rerun for byte-identical determinism proof
+ *
+ * The test verifies that all metrics pass and the production rollout gate opens.
+ */
+describe('E2E: roleless person + simple JD + real repo packet + explained match', () => {
+  const candidateId = 'person-alice';
+  const roleId = 'role-simple-backend-jd';
+  const challengeId = 'challenge-real-pr-247';
+  const repoId = 'github.com/acme/payments-service';
+  const prNumber = 247;
+  const sourceVersion = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
+  const evidenceId = 'evidence-alice-kafka-pipeline';
+  const episodeId = 'episode-alice-kafka-pipeline';
+
+  function e2eSourceRef(
+    id: string,
+    artifactId: string,
+    artifactVersion: string,
+    exactText: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      artifactId,
+      artifactVersion,
+      contentHash: `sha256:${id}`,
+      sourceRefType: artifactId.startsWith('repo-') ? 'repo_source_span' : 'source_span',
+      sourceRefId: `source-ref-${id}`,
+      sourceSpanId: artifactId.startsWith('repo-') ? undefined : `source-ref-${id}`,
+      exactText,
+      startOffset: 0,
+      endOffset: exactText.length,
+      ...overrides,
+    };
+  }
+
+  function e2eRoleSource(
+    id: string,
+    conceptKeys: string[],
+    exactText: string,
+  ): RoleRequirements['sourceReferences'][number] {
+    return {
+      entityId: id,
+      locator: `simple_job_description:source_span:jd-${id}`,
+      conceptKeys,
+      sourceRefType: 'source_span',
+      sourceRefId: `role-source-span-${id}`,
+      sourceSpanId: `role-source-span-${id}`,
+      exactText,
+      contentHash: `sha256:role-${id}`,
+    };
+  }
+
+  function e2eCorpus(): EvaluationCorpus {
+    return {
+      version: EVALUATION_CORPUS_VERSION,
+      corpusId: 'e2e-roleless-person-corpus-v1',
+      createdAt: '2026-06-24T00:00:00Z',
+      description: 'E2E: roleless person matched to a real PR via a simple JD',
+      candidateEvidence: [
+        {
+          candidateId,
+          evidenceId,
+          episodeId,
+          narrative:
+            'Built a high-throughput Kafka consumer pipeline that processes payment events '
+            + 'with exactly-once semantics and dead-letter queue handling.',
+          concepts: ['term:kafka', 'term:event-driven-architecture', 'term:exactly-once-semantics'],
+          mechanisms: ['term:consumer-group-rebalancing', 'term:idempotent-producer'],
+          domains: ['term:payments', 'term:message-streaming'],
+          businessObjects: ['term:payment-event', 'term:dead-letter-queue'],
+          ownershipActions: ['term:implemented', 'term:owned'],
+          evidenceReferences: [
+            e2eSourceRef(
+              'alice-evidence-1',
+              'candidate-episode-transcript',
+              'v1',
+              'I built a Kafka consumer pipeline for payment events with exactly-once semantics.',
+            ),
+          ],
+        },
+      ],
+      roleRequirements: [
+        {
+          roleId,
+          requiredLanguages: ['typescript'],
+          relevantConcepts: ['term:kafka', 'term:event-driven-architecture'],
+          requiredConcepts: ['term:message-streaming'],
+          sourceReferences: [
+            e2eRoleSource(
+              'jd-kafka',
+              ['term:kafka', 'term:event-driven-architecture'],
+              'We need someone to build event-driven services using Kafka for our payments platform.',
+            ),
+          ],
+        },
+      ],
+      expertLabels: [
+        {
+          labelId: 'expert-label-e2e-1',
+          candidateId,
+          roleId,
+          challengeId,
+          relevanceGrade: 'highly_relevant',
+          eligibleChallengeIds: [challengeId],
+          labelVersion: '1.0.0',
+          labeledAt: '2026-06-24T00:00:00Z',
+          labeledBy: 'expert-reviewer-1',
+          labelProvenance: {
+            reviewerId: 'expert-reviewer-1',
+            reviewerRole: 'senior-engineering-reviewer',
+            reviewArtifactId: 'expert-review-e2e-1',
+            reviewArtifactVersion: 'v1',
+            contentHash: 'sha256:expert-review-e2e-1',
+            locator: 'expert-review:e2e-1',
+            rubricVersion: 'candidate-pr-match-rubric-v1',
+          },
+        },
+      ],
+      expectedPackets: [
+        {
+          challengeId,
+          repoId,
+          prNumber,
+          sourceVersion,
+          demands: [
+            {
+              demandId: 'demand-kafka-consumer',
+              concepts: ['term:kafka', 'term:event-driven-architecture'],
+              sourceRefs: [
+                e2eSourceRef(
+                  'pr-demand-1',
+                  `repo-${repoId}`,
+                  sourceVersion,
+                  'Add Kafka consumer for payment events with exactly-once processing.',
+                ),
+              ],
+            },
+          ],
+        },
+      ],
+      metadata: {
+        totalLabels: 1,
+        totalCandidates: 1,
+        totalRoles: 1,
+        totalChallenges: 1,
+        syntheticFixtureCount: 0,
+        totalExpectedPackets: 1,
+      },
+    };
+  }
+
+  function e2eRankedChallenge(): PersistedRankedChallenge {
+    return {
+      rank: 1,
+      recallRank: 1,
+      challengeId,
+      repoId,
+      prNumber,
+      sourceVersion,
+      score: 0.92,
+      candidateEvidenceAlignment: 0.90,
+      roleRelevance: 0.88,
+      contextualSpecificity: 0.85,
+      challengeQuality: 0.95,
+      validationDeepeningValue: 0.80,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      stretchDemandWeightRatio: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [
+        {
+          atomId: 'atom-alice-kafka',
+          demandId: 'demand-kafka-consumer',
+          pairScore: 0.92,
+          pairScoreBreakdown: {
+            semanticNarrative: 0.85,
+            conceptCorrespondence: 1.0,
+            problemMechanismCorrespondence: 0.90,
+            domainBusinessContext: 0.88,
+            ownershipActionCorrespondence: 0.95,
+            total: 0.92,
+          },
+          weightedScore: 0.92,
+          stretch: null,
+          sharedConcepts: ['term:kafka', 'term:event-driven-architecture'],
+          roleSourceRefs: [
+            {
+              entityId: 'jd-kafka',
+              locator: 'simple_job_description:source_span:jd-jd-kafka',
+              conceptKeys: ['term:kafka', 'term:event-driven-architecture'],
+              sourceRefType: 'source_span',
+              sourceRefId: 'role-source-span-jd-kafka',
+              sourceSpanId: 'role-source-span-jd-kafka',
+              exactText:
+                'We need someone to build event-driven services using Kafka for our payments platform.',
+              contentHash: 'sha256:role-jd-kafka',
+            },
+          ],
+          candidateSourceRefs: [
+            e2eSourceRef(
+              'alice-evidence-1',
+              'candidate-episode-transcript',
+              'v1',
+              'I built a Kafka consumer pipeline for payment events with exactly-once semantics.',
+            ),
+          ],
+          challengeSourceRefs: [
+            e2eSourceRef(
+              'pr-247-diff',
+              `repo-${repoId}`,
+              sourceVersion,
+              'Add Kafka consumer for payment events with exactly-once processing.',
+            ),
+          ],
+        },
+      ],
+      rejectionReasons: [],
+    };
+  }
+
+  function e2eMatchRun(runId: string): PersistedMatchRun {
+    return {
+      matchRunId: runId,
+      candidateId,
+      roleId,
+      candidateSnapshotId: 'snapshot-alice-v1',
+      policyVersion: 'candidate-pr-v1',
+      modelVersion: null,
+      status: 'MATCHED',
+      rankedChallenges: [e2eRankedChallenge()],
+    };
+  }
+
+  it('produces a valid corpus that loads without errors', () => {
+    expect(() => loadCorpus(JSON.stringify(e2eCorpus()))).not.toThrow();
+  });
+
+  it('computes passing metrics with complete provenance and determinism', () => {
+    const corpus = e2eCorpus();
+    const primaryRun = e2eMatchRun('run-e2e-primary');
+    const comparisonRun = e2eMatchRun('run-e2e-comparison');
+    const metrics = evaluateMatchRuns(corpus, [primaryRun], [comparisonRun]);
+
+    expect(metrics.recallAt50).toBe(1);
+    expect(metrics.precisionAt3).toBe(1);
+    expect(metrics.ndcgAt5).toBe(1);
+    expect(metrics.guardrailViolationCount).toBe(0);
+    expect(metrics.multiStretchViolationCount).toBe(0);
+    expect(metrics.missingProvenanceCount).toBe(0);
+    expect(metrics.missingMatchRunCount).toBe(0);
+    expect(metrics.byteIdenticalRerun).toBe(true);
+    expect(metrics.expertLabelCount).toBe(1);
+    expect(metrics.syntheticFixtureCount).toBe(0);
+  });
+
+  it('surfaces the expected real repo packet with matching identity', () => {
+    const corpus = e2eCorpus();
+    const metrics = evaluateMatchRuns(corpus, [e2eMatchRun('run-e2e-primary')]);
+
+    expect(metrics.expectedPacketCount).toBe(1);
+    expect(metrics.packetCoverage).toBe(1);
+    expect(metrics.missingPacketIds).toHaveLength(0);
+    expect(metrics.packetIdentityMismatches).toHaveLength(0);
+  });
+
+  it('explains the candidate-to-PR match via alignment source references', () => {
+    const corpus = e2eCorpus();
+    const metrics = evaluateMatchRuns(corpus, [e2eMatchRun('run-e2e-primary')]);
+    const labelResult = metrics.labelResults.find((r) => r.labelId === 'expert-label-e2e-1');
+    expect(labelResult).toBeDefined();
+    expect(labelResult?.passed).toBe(true);
+    expect(labelResult?.actualRank).toBe(1);
+    expect(labelResult?.provenanceComplete).toBe(true);
+    expect(labelResult?.guardrailViolations).toHaveLength(0);
+
+    // The match explanation links candidate evidence, JD, and PR content
+    const run = e2eMatchRun('run-e2e-primary');
+    const alignment = run.rankedChallenges[0]?.alignments[0];
+    expect(alignment).toBeDefined();
+    expect(alignment?.sharedConcepts).toEqual(
+      expect.arrayContaining(['term:kafka', 'term:event-driven-architecture']),
+    );
+    expect(alignment?.candidateSourceRefs).toHaveLength(1);
+    expect(alignment?.candidateSourceRefs[0]?.exactText).toContain('Kafka consumer pipeline');
+    expect(alignment?.challengeSourceRefs).toHaveLength(1);
+    expect(alignment?.challengeSourceRefs[0]?.exactText).toContain('Kafka consumer for payment events');
+    expect(alignment?.roleSourceRefs).toHaveLength(1);
+    expect(alignment?.roleSourceRefs[0]?.exactText).toContain('event-driven services using Kafka');
+    expect(alignment?.pairScoreBreakdown).toBeDefined();
+    expect(alignment?.pairScoreBreakdown?.conceptCorrespondence).toBe(1.0);
+  });
+
+  it('passes the production rollout gate', () => {
+    const corpus = e2eCorpus();
+    const primaryRun = e2eMatchRun('run-e2e-primary');
+    const comparisonRun = e2eMatchRun('run-e2e-comparison');
+    const metrics = evaluateMatchRuns(corpus, [primaryRun], [comparisonRun]);
+
+    const gate = checkStagedRolloutGate(metrics, 'production');
+    expect(gate.stage).toBe('production');
+    expect(gate.ready).toBe(true);
+    expect(gate.failures).toHaveLength(0);
+  });
+
+  it('detects packet identity drift when the PR number changes', () => {
+    const corpus = e2eCorpus();
+    const driftedRun: PersistedMatchRun = {
+      ...e2eMatchRun('run-e2e-drift'),
+      rankedChallenges: [{
+        ...e2eRankedChallenge(),
+        prNumber: 999,
+      }],
+    };
+    const metrics = evaluateMatchRuns(corpus, [driftedRun]);
+
+    expect(metrics.packetIdentityMismatches).toHaveLength(1);
+    expect(metrics.packetIdentityMismatches[0]?.field).toBe('prNumber');
+    expect(metrics.packetCoverage).toBe(0);
+    expect(metrics.missingPacketIds).toContain(challengeId);
+  });
+
+  it('fails determinism when the comparison rerun has a different score', () => {
+    const corpus = e2eCorpus();
+    const primaryRun = e2eMatchRun('run-e2e-primary');
+    const driftedComparison: PersistedMatchRun = {
+      ...e2eMatchRun('run-e2e-comparison'),
+      rankedChallenges: [{
+        ...e2eRankedChallenge(),
+        score: 0.50,
+      }],
+    };
+    const metrics = evaluateMatchRuns(corpus, [primaryRun], [driftedComparison]);
+
+    expect(metrics.byteIdenticalRerun).toBe(false);
+    expect(metrics.determinismComparisons[0]?.identical).toBe(false);
   });
 });
