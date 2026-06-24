@@ -1928,3 +1928,258 @@ html[data-theme="pipe-blue"] .living-context {
     min-width: 0;
   }
 }
+
+/* ─── Repo packet panel (HAS-87) ──────────────────────────────────────────── */
+
+.living-context__repo-packet {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  border-radius: 7px;
+  background: rgba(124, 58, 237, 0.035);
+}
+
+.living-context__packet-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.living-context__packet-toggle {
+  padding: 4px 8px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 4px;
+  background: var(--lc-card);
+  color: var(--pipe-text-muted);
+  font: 8px "Space Mono", monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.living-context__packet-toggle:hover {
+  border-color: rgba(124, 58, 237, 0.32);
+  background: rgba(124, 58, 237, 0.06);
+}
+
+.living-context__packet-toggle[aria-pressed="true"] {
+  border-color: rgba(124, 58, 237, 0.45);
+  color: var(--lc-structural);
+}
+
+.living-context__packet-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.living-context__packet-files ul,
+.living-context__packet-facts ul,
+.living-context__packet-episodes ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.living-context__packet-files li,
+.living-context__packet-facts li,
+.living-context__packet-episodes li {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 5px;
+  background: var(--lc-card);
+}
+
+.living-context__packet-file-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px;
+  min-width: 0;
+}
+
+.living-context__packet-file-dir {
+  overflow-wrap: anywhere;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-file-path strong {
+  overflow-wrap: anywhere;
+  color: var(--pipe-text);
+  font-size: 11px;
+}
+
+.living-context__packet-file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-file-ids {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--lc-structural);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.living-context__packet-facts li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+
+.living-context__packet-facts li span {
+  overflow-wrap: anywhere;
+  color: var(--pipe-text-muted);
+  font: 9px "Space Mono", monospace;
+}
+
+.living-context__packet-facts li strong {
+  color: var(--pipe-text);
+  font-size: 9px;
+}
+
+.living-context__fact--pass strong {
+  color: var(--lc-signal);
+}
+
+.living-context__fact--fail strong {
+  color: #f87171;
+}
+
+.living-context__packet-facts li p,
+.living-context__packet-episodes li p {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+  overflow-wrap: anywhere;
+}
+
+.living-context__packet-episodes li span {
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-episodes li strong {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  color: var(--pipe-text);
+  font-size: 11px;
+}
+
+.living-context__packet-assertions {
+  margin-top: 12px;
+}
+
+.living-context__packet-demand-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.living-context__packet-demand {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--lc-card-border);
+  border-radius: 6px;
+  background: var(--lc-card);
+}
+
+.living-context__packet-demand-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.living-context__packet-demand-head strong {
+  overflow-wrap: anywhere;
+  color: var(--pipe-text);
+  font-size: 11px;
+}
+
+.living-context__packet-demand-head span {
+  color: var(--pipe-text-dim);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-demand p {
+  margin: 6px 0 0;
+  color: var(--pipe-text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.living-context__packet-demand-ids {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: minmax(80px, 0.4fr) minmax(0, 1fr);
+  gap: 2px 8px;
+  color: var(--lc-structural);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-demand-ids dt {
+  color: var(--pipe-text-dim);
+}
+
+.living-context__packet-demand-ids dd {
+  overflow-wrap: anywhere;
+}
+
+.living-context__packet-provenance {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--lc-card-border);
+  display: grid;
+  grid-template-columns: minmax(90px, 0.35fr) minmax(0, 1fr);
+  gap: 2px 8px;
+  color: var(--lc-structural);
+  font: 8px "Space Mono", monospace;
+}
+
+.living-context__packet-provenance dt {
+  color: var(--pipe-text-dim);
+}
+
+.living-context__packet-provenance dd {
+  overflow-wrap: anywhere;
+}
+
+.living-context__quiet-empty {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px dashed var(--lc-card-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--pipe-text-dim);
+  font: 10px "Space Mono", monospace;
+  text-align: center;
+  line-height: 1.6;
+}
+
+@container living-context (max-width: 760px) {
+  .living-context__packet-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

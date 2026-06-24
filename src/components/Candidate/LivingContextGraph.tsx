@@ -21,6 +21,9 @@ import type {
   StandaloneReviewExcludedPacket,
   StandaloneReviewEvaluatedChallenge,
   StandaloneReviewMatchRecord,
+  StandaloneReviewPacketDetail,
+  StandaloneReviewPacketDemand,
+  StandaloneReviewPacketQualityGate,
   StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
 } from '../../lib/api/types';
@@ -535,6 +538,291 @@ function RepositoryOverlayPanel({
   );
 }
 
+function fileNameFromPath(path: string): string {
+  const parts = path.split('/');
+  return parts[parts.length - 1] || path;
+}
+
+function directoryFromPath(path: string): string {
+  const index = path.lastIndexOf('/');
+  return index > 0 ? path.slice(0, index) : '';
+}
+
+function demandFamilyLabel(family: string): string {
+  const [namespace, ...rest] = family.split(':');
+  const detail = rest.join(':');
+  const ns = titleCase(namespace ?? family);
+  if (!detail) return ns;
+  return `${titleCase(detail)} (${ns})`;
+}
+
+function PacketProvenanceToggle({
+  showIds,
+  onToggle,
+}: {
+  showIds: boolean;
+  onToggle: (value: boolean) => void;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="living-context__packet-toggle"
+      onClick={() => onToggle(!showIds)}
+      aria-pressed={showIds}
+      aria-label="Toggle provenance IDs"
+      data-testid="packet-provenance-toggle"
+    >
+      {showIds ? 'Hide provenance IDs' : 'Show provenance IDs'}
+    </button>
+  );
+}
+
+function PacketFileList({
+  packet,
+  showIds,
+}: {
+  packet: StandaloneReviewPacketDetail;
+  showIds: boolean;
+}): JSX.Element | null {
+  if (packet.changedFilePaths.length === 0) return null;
+  return (
+    <div className="living-context__packet-files" data-testid="packet-files">
+      <div className="living-context__eyebrow">Files</div>
+      <ul>
+        {packet.changedFilePaths.map((path) => {
+          const dir = directoryFromPath(path);
+          const name = fileNameFromPath(path);
+          return (
+            <li key={path} data-testid="packet-file-row">
+              <div className="living-context__packet-file-path">
+                {dir && <span className="living-context__packet-file-dir">{dir}/</span>}
+                <strong>{name}</strong>
+              </div>
+              <div className="living-context__packet-file-meta">
+                <span>{packet.sourceSpanIds.length} spans</span>
+                <span>{packet.changedSymbolIds.length} symbols</span>
+              </div>
+              {showIds && (
+                <div className="living-context__packet-file-ids" data-testid="packet-file-ids">
+                  {path}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function PacketStructuralFacts({
+  packet,
+}: {
+  packet: StandaloneReviewPacketDetail;
+}): JSX.Element | null {
+  const gates = packet.quality?.gates ?? [];
+  if (gates.length === 0) return null;
+  return (
+    <div className="living-context__packet-facts" data-testid="packet-structural-facts">
+      <div className="living-context__eyebrow">Structural facts</div>
+      <ul>
+        {gates.map((gate: StandaloneReviewPacketQualityGate) => (
+          <li
+            key={gate.gate}
+            className={gate.passed ? 'living-context__fact--pass' : 'living-context__fact--fail'}
+            data-testid="packet-structural-fact"
+            data-gate={gate.gate}
+            data-passed={gate.passed}
+          >
+            <span>{titleCase(gate.gate.replace(/_/g, ' '))}</span>
+            <strong>{gate.passed ? 'Pass' : 'Fail'}</strong>
+            <p>{gate.reason}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PacketBehavioralEpisodes({
+  packet,
+}: {
+  packet: StandaloneReviewPacketDetail;
+}): JSX.Element | null {
+  const hasTests = packet.testChanges.length > 0;
+  const hasIssue = packet.issue !== null;
+  if (!hasTests && !hasIssue) return null;
+  return (
+    <div className="living-context__packet-episodes" data-testid="packet-behavioral-episodes">
+      <div className="living-context__eyebrow">Behavioral episodes</div>
+      <ul>
+        {packet.testChanges.map((test) => (
+          <li key={test.path} data-testid="packet-test-change">
+            <span>{fileNameFromPath(test.path)}</span>
+            <strong>{test.framework ?? 'test'}</strong>
+            <p>{test.path}</p>
+          </li>
+        ))}
+        {packet.issue && (
+          <li key={`issue:${packet.issue.number}`} data-testid="packet-issue">
+            <span>Issue #{packet.issue.number}</span>
+            <strong>{packet.issue.title}</strong>
+            {packet.issue.labels.length > 0 && (
+              <div className="living-context__concepts">
+                {packet.issue.labels.map((label) => (
+                  <span key={`issue-label:${label}`} className="living-context__concept">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function PacketAssertions({
+  packet,
+  showIds,
+}: {
+  packet: StandaloneReviewPacketDetail;
+  showIds: boolean;
+}): JSX.Element | null {
+  if (packet.demands.length === 0) return null;
+  return (
+    <div className="living-context__packet-assertions" data-testid="packet-assertions">
+      <div className="living-context__eyebrow">Packet assertions</div>
+      <div className="living-context__packet-demand-list">
+        {packet.demands.map((demand: StandaloneReviewPacketDemand) => (
+          <article
+            key={demand.id}
+            className="living-context__packet-demand"
+            data-testid="packet-demand"
+          >
+            <div className="living-context__packet-demand-head">
+              <strong>{demandFamilyLabel(demand.family)}</strong>
+              <span>{Math.round(demand.weight * 100)}% weight</span>
+            </div>
+            {demand.narrative && <p>{demand.narrative}</p>}
+            {demand.conceptKeys.length > 0 && (
+              <div className="living-context__concepts">
+                {demand.conceptKeys.slice(0, 6).map((concept) => (
+                  <span key={`${demand.id}:${concept}`} className="living-context__concept">
+                    {concept}
+                  </span>
+                ))}
+              </div>
+            )}
+            {showIds && (
+              <dl className="living-context__packet-demand-ids" data-testid="packet-demand-ids">
+                <dt>Demand ID</dt>
+                <dd>{demand.id}</dd>
+                <dt>Span IDs</dt>
+                <dd>{demand.sourceSpanIds.join(', ') || '—'}</dd>
+                <dt>Symbol IDs</dt>
+                <dd>{demand.changedSymbolIds.join(', ') || '—'}</dd>
+              </dl>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PacketConcepts({
+  packet,
+}: {
+  packet: StandaloneReviewPacketDetail;
+}): JSX.Element | null {
+  const concepts = [...new Set([
+    ...packet.demandFamilies,
+    ...packet.demands.flatMap((demand) => demand.conceptKeys),
+  ])];
+  if (concepts.length === 0) return null;
+  return (
+    <div className="living-context__packet-concepts" data-testid="packet-concepts">
+      <div className="living-context__eyebrow">Packet concepts</div>
+      <div className="living-context__concepts">
+        {concepts.slice(0, 12).map((concept) => (
+          <span key={concept} className="living-context__concept">{concept}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RepoPacketPanel({
+  match,
+}: {
+  match: StandaloneReviewMatchRecord;
+}): JSX.Element | null {
+  const packet: StandaloneReviewPacketDetail | null = match.packet;
+  const [showIds, setShowIds] = useState(false);
+  if (!packet) return null;
+  const repoLabel = match.repoName ?? match.repoUrl ?? 'Selected repository';
+  const prLabel = match.prNumber !== null ? `PR #${match.prNumber}` : 'Selected PR';
+  const hasContent = packet.changedFilePaths.length > 0
+    || packet.demands.length > 0
+    || packet.sourceSpanIds.length > 0
+    || (packet.quality?.gates.length ?? 0) > 0
+    || packet.testChanges.length > 0
+    || packet.issue !== null;
+  if (!hasContent) return null;
+
+  return (
+    <section
+      className="living-context__repo-packet"
+      aria-label="Repository packet"
+      data-testid="repo-packet-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Repository packet</div>
+          <div className="living-context__eyebrow">
+            {repoLabel} · {prLabel} · {packet.sourceSpanIds.length} source spans · {packet.changedSymbolIds.length} symbols
+          </div>
+        </div>
+        <div className="living-context__packet-head-actions">
+          <PacketProvenanceToggle showIds={showIds} onToggle={setShowIds} />
+        </div>
+      </div>
+
+      <div className="living-context__packet-layout">
+        <PacketFileList packet={packet} showIds={showIds} />
+        <div className="living-context__packet-side">
+          <PacketConcepts packet={packet} />
+          <PacketStructuralFacts packet={packet} />
+          <PacketBehavioralEpisodes packet={packet} />
+        </div>
+      </div>
+
+      <PacketAssertions packet={packet} showIds={showIds} />
+
+      {showIds && (
+        <dl className="living-context__packet-provenance" data-testid="packet-provenance-detail">
+          <dt>Packet ID</dt>
+          <dd>{packet.packetId}</dd>
+          <dt>Source span IDs</dt>
+          <dd>{packet.sourceSpanIds.join(', ') || '—'}</dd>
+          <dt>Changed symbol IDs</dt>
+          <dd>{packet.changedSymbolIds.slice(0, 12).join(', ') || '—'}</dd>
+          {packet.quality && (
+            <>
+              <dt>Quality score</dt>
+              <dd>{Math.round(packet.quality.score * 100)}%</dd>
+              <dt>Eligible</dt>
+              <dd>{packet.quality.eligible ? 'Yes' : 'No'}</dd>
+            </>
+          )}
+        </dl>
+      )}
+    </section>
+  );
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -689,6 +977,8 @@ function StandaloneReviewMatchPanel({
       )}
 
       <RepositoryOverlayPanel match={match} />
+
+      <RepoPacketPanel match={match} />
 
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
@@ -1249,6 +1539,12 @@ export function LivingContextGraph({
     ['Evidence claims', livingContext.summary.assertionCount],
     ['Signals', livingContext.summary.signalCount],
   ] as const;
+  const hasSummaryContent = summaryMetrics.some(([, value]) => value > 0);
+  const hasGraphContent = livingContext.interactions.length > 0
+    || livingContext.contextRecords.length > 0
+    || livingContext.assertions.length > 0
+    || livingContext.signals.length > 0
+    || livingContext.artifacts.length > 0;
 
   return (
     <div className="living-context" data-testid="living-context-graph">
@@ -1276,20 +1572,23 @@ export function LivingContextGraph({
 
       <StandaloneReviewMatchPanel match={reviewMatch} />
 
-      <div className="living-context__summary">
-        {summaryMetrics.map(([label, value]) => (
-          <div key={label} className="living-context__metric">
-            <div className="living-context__metric-value">{value}</div>
-            <div className="living-context__metric-label">{label}</div>
-          </div>
-        ))}
-      </div>
+      {hasSummaryContent && (
+        <div className="living-context__summary" data-testid="living-context-summary">
+          {summaryMetrics.map(([label, value]) => (
+            <div key={label} className="living-context__metric">
+              <div className="living-context__metric-value">{value}</div>
+              <div className="living-context__metric-label">{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <MeetingEvidencePanel
         livingContext={livingContext}
         onSelectSource={setSelectedSource}
       />
 
+      {hasGraphContent ? (
       <div className="living-context__workspace">
         <aside className="living-context__rail">
           <div className="living-context__person">
@@ -1471,6 +1770,11 @@ export function LivingContextGraph({
           )}
         </aside>
       </div>
+      ) : (
+        <div className="living-context__quiet-empty" data-testid="living-context-quiet-empty">
+          No living context evidence yet. Source-backed context will appear here after resumes, meetings, or assessments are ingested.
+        </div>
+      )}
     </div>
   );
 }
