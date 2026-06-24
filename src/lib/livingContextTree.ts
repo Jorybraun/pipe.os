@@ -4,6 +4,7 @@ import type {
   LivingContextInteraction,
   LivingContextReadModel,
   LivingContextRecord,
+  LivingContextRecordEntity,
   LivingContextRecordSourceRef,
   LivingContextSignal,
   LivingContextSourceRef,
@@ -24,6 +25,7 @@ export type LivingContextTreeNodeKind =
   | 'context_record'
   | 'assertion'
   | 'signal'
+  | 'entity'
   | 'concept'
   | 'provenance_ref';
 
@@ -134,6 +136,40 @@ function conceptNodes(record: LivingContextRecord | LivingContextAssertion): Liv
   }));
 }
 
+function entityValueText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function entityNodes(record: LivingContextRecord): LivingContextTreeNode[] {
+  return record.entities.map((entity: LivingContextRecordEntity, index) => {
+    const valueText = entityValueText(entity.value);
+    const label = entity.entityId ?? valueText ?? titleCaseSemanticLabel(entity.entityType);
+    const confidence = entity.confidence === null
+      ? null
+      : `${Math.round(entity.confidence * 100)}%`;
+    return {
+      id: `entity:${record.id}:${entity.entityType}:${entity.entityId ?? entity.relationship}:${index}`,
+      kind: 'entity' as const,
+      label,
+      detail: [
+        titleCaseSemanticLabel(entity.entityType),
+        entity.relationship,
+        confidence,
+      ].filter((value): value is string => Boolean(value)).join(' · '),
+      observedAt: null,
+      sourceText: valueText,
+      children: [],
+    };
+  });
+}
+
 function contextRecordNode(record: LivingContextRecord): LivingContextTreeNode {
   return {
     id: `context_record:${record.id}`,
@@ -144,6 +180,7 @@ function contextRecordNode(record: LivingContextRecord): LivingContextTreeNode {
     sourceText: contextRecordNarrative(record),
     children: [
       ...record.sources.map(recordSourceNode),
+      ...entityNodes(record),
       ...conceptNodes(record),
     ],
   };

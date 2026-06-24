@@ -129,7 +129,24 @@ function livingContext(): LivingContextReadModel {
         polarity: 1,
         extractionVersion: 'test-open-concept-v1',
         observedAt: '2026-06-23T15:00:00.000Z',
-        entities: [],
+        entities: [
+          {
+            entityType: 'workspace_person',
+            entityId: 'workspace-person-1',
+            relationship: 'subject',
+            value: null,
+            confidence: 1,
+            metadata: {},
+          },
+          {
+            entityType: 'repo_challenge_packet',
+            entityId: 'packet-1',
+            relationship: 'aligned_demand',
+            value: { demandId: 'demand-1' },
+            confidence: 0.82,
+            metadata: {},
+          },
+        ],
         concepts: [{
           id: 'concept-1',
           canonicalKey: 'term:order-event-idempotency',
@@ -229,6 +246,31 @@ describe('living context tree projection', () => {
       node.kind === 'context_record'
       && node.sourceText === 'Candidate described Kafka order retries.',
     )).toBe(true);
+    const contextRecordNode = branch?.node.children.find((node) =>
+      node.kind === 'context_record'
+      && node.id === 'context_record:record-1',
+    );
+    expect(contextRecordNode?.children).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'entity',
+        label: 'workspace-person-1',
+        detail: 'Workspace Person · subject · 100%',
+      }),
+      expect.objectContaining({
+        kind: 'entity',
+        label: 'packet-1',
+        detail: 'Repo Challenge Packet · aligned_demand · 82%',
+        sourceText: '{"demandId":"demand-1"}',
+      }),
+      expect.objectContaining({
+        kind: 'concept',
+        label: 'order event idempotency',
+      }),
+      expect.objectContaining({
+        kind: 'source_span',
+        sourceText: 'I used Kafka for ecommerce order retries.',
+      }),
+    ]));
     expect(branch?.node.children.some((node) =>
       node.kind === 'artifact'
       && node.children.some((child) =>
