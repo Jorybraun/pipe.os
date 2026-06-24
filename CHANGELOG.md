@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-<<<<<<< HEAD
-
 ### Added — Real Source-Backed Repo Challenge Packet Backfill (HAS-83)
 
 - Added `backfillReviewChallengePackets` pipeline that selects eligible merged PRs from the crawler D1 catalog (`repo_sample_prs` joined with `qualified_repos`), fetches PR refs, diff, and changed-file source from GitHub, normalizes them into a deterministic `NormalizedPullRequestInput`, builds a challenge packet through the `repoSemanticGraph` pipeline, and persists the full graph through `persistReviewChallengeGraph`.
@@ -53,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `GET /meetings/:id/interaction-context` to expose the shared immutable transcript artifact, exact source spans, and per-participant derived assertions/context records/signal evidence as a single reviewable view.
 - Added regression proving a previously unseen concept (`phosphor lattice accumulator`) survives as an open `term:*` concept with assertions and context records linked back to exact transcript spans.
 - Added invariant test that the read model returns source span exact text for every transcript-derived assertion, context record, and signal evidence entry.
+
+### Changed — Quiet Empty Living Graph (HAS-81)
+
+- The `LivingContextGraph` now stays quiet when a person has no source-backed evidence yet: summary metrics, search toolbar, interactions rail, accumulated-context canvas, and source inspector are hidden behind a single "No source-backed living evidence yet" state instead of rendering an empty debug dashboard.
+- Source-backed standalone code-review match panels remain visible alongside the quiet empty state so reviewers still see match evidence, gaps, and packet diagnostics when present.
+- Empty-state quietness is covered by BDD regressions proving empty sections collapse with and without a standalone review match.
 
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
