@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, Calendar, Code2, SquareTerminal, GitBranch } from 'lucide-react';
+import { X, Copy, Check, Video, Calendar, Code2, GitBranch } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
@@ -53,15 +53,9 @@ const INTERVIEW_MODES: Array<{
     icon: <Code2 size={16} />,
   },
   {
-    value: 'TECHNICAL',
-    label: INTERVIEW_TYPE_LABELS.TECHNICAL,
-    description: 'Implementation challenge',
-    icon: <SquareTerminal size={16} />,
-  },
-  {
     value: 'DEV_CONTAINER_CHALLENGE',
     label: INTERVIEW_TYPE_LABELS.DEV_CONTAINER_CHALLENGE,
-    description: 'Source-backed repo/PR challenge',
+    description: 'Live dev-container challenge (auto-matched or manual repo)',
     icon: <GitBranch size={16} />,
   },
 ];
@@ -83,6 +77,7 @@ export function InviteCreationModal({
   const [scheduledAt, setScheduledAt] = useState('');
   const [githubRepoUrl, setGithubRepoUrl] = useState('');
   const [githubPrNumber, setGithubPrNumber] = useState('');
+  const [manualRepoOverride, setManualRepoOverride] = useState(false);
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -134,7 +129,7 @@ export function InviteCreationModal({
   const calendlyEventTypes = connection?.eventTypes ?? [];
   const selectedCalendlyEventType = calendlyEventTypes[0] ?? null;
   const canUseCalendly = hasCalendly && Boolean(selectedCalendlyEventType?.schedulingUrl);
-  const usesWorkspace = interviewType === 'CODE_REVIEW' || interviewType === 'TECHNICAL' || interviewType === 'DEV_CONTAINER_CHALLENGE';
+  const usesWorkspace = interviewType === 'CODE_REVIEW' || interviewType === 'DEV_CONTAINER_CHALLENGE';
   const parsedPrNumber = githubPrNumber.trim().length > 0
     ? Number.parseInt(githubPrNumber.trim(), 10)
     : null;
@@ -170,7 +165,7 @@ export function InviteCreationModal({
         interviewType,
       };
 
-      if (usesWorkspace) {
+      if (usesWorkspace && manualRepoOverride) {
         const trimmedRepoUrl = githubRepoUrl.trim();
         if (trimmedRepoUrl) {
           inviteData.githubRepoUrl = trimmedRepoUrl;
@@ -515,27 +510,52 @@ export function InviteCreationModal({
 
             {usesWorkspace && (
               <div style={{ marginBottom: 20 }}>
-                <label style={labelStyle}>LIVE WORKSPACE REPOSITORY</label>
-                <input
-                  type="url"
-                  value={githubRepoUrl}
-                  onChange={(e) => setGithubRepoUrl(e.target.value)}
-                  placeholder="https://github.com/owner/repo"
-                  style={inputStyle}
-                />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 8 }}>
-                  <input
-                    type="number"
-                    min={1}
-                    value={githubPrNumber}
-                    onChange={(e) => setGithubPrNumber(e.target.value)}
-                    placeholder="Optional PR number"
-                    style={inputStyle}
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>CHALLENGE REPO</label>
+                  <button
+                    type="button"
+                    onClick={() => setManualRepoOverride(!manualRepoOverride)}
+                    style={{
+                      fontSize: 10,
+                      fontFamily: '"Space Mono", monospace',
+                      color: manualRepoOverride ? 'var(--pipe-text-dim)' : '#60a5fa',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    {manualRepoOverride ? 'Use auto-match instead' : 'Specify repo manually'}
+                  </button>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4, lineHeight: 1.5 }}>
-                  The live room will launch this repo in the implementation workspace.
-                </div>
+                {manualRepoOverride ? (
+                  <>
+                    <input
+                      type="url"
+                      value={githubRepoUrl}
+                      onChange={(e) => setGithubRepoUrl(e.target.value)}
+                      placeholder="https://github.com/owner/repo"
+                      style={inputStyle}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 8 }}>
+                      <input
+                        type="number"
+                        min={1}
+                        value={githubPrNumber}
+                        onChange={(e) => setGithubPrNumber(e.target.value)}
+                        placeholder="PR number"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4, lineHeight: 1.5 }}>
+                      Manual override — the live room will launch this specific repo/PR.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', lineHeight: 1.5, padding: '8px 0' }}>
+                    The matcher will select a source-backed PR challenge based on candidate evidence.
+                  </div>
+                )}
               </div>
             )}
 

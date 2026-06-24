@@ -1396,7 +1396,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     sqlite.exec(contextRecordsMigration);
   }
 
-  it('rejects DEV_CONTAINER_CHALLENGE without a source-backed repo task', async () => {
+  it('creates a DEV_CONTAINER_CHALLENGE without a manual repo (auto-match default)', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();
 
@@ -1410,9 +1410,29 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         interviewType: 'DEV_CONTAINER_CHALLENGE',
       }),
     });
+    expect(response.status).toBe(201);
+    const body = await response.json() as { interview: { id: string } };
+    expect(body.interview.id).toBeDefined();
+  });
+
+  it('rejects DEV_CONTAINER_CHALLENGE with partial manual repo (url without PR number)', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Linus Torvalds',
+        recipientEmail: 'linus@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'DEV_CONTAINER_CHALLENGE',
+        githubRepoUrl: 'https://github.com/owner/repo',
+      }),
+    });
     expect(response.status).toBe(422);
     const body = await response.json() as { error: { message: string } };
-    expect(body.error.message).toContain('DEV_CONTAINER_CHALLENGE requires a source-backed repo task');
+    expect(body.error.message).toContain('Manual repo override requires both githubRepoUrl and githubPrNumber');
   });
 
   it('creates a person-first DEV_CONTAINER_CHALLENGE with explicit repo url + PR', async () => {

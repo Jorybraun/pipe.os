@@ -31,12 +31,11 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK' | 'POLL';
  * ScheduledInterview — local TypeScript interface.
  * Matches the D1 schema (see workers/api/migrations/).
  */
-export type InterviewType = 'VIDEO' | 'TECHNICAL' | 'SCREENING' | 'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE';
+export type InterviewType = 'VIDEO' | 'SCREENING' | 'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE';
 
 export const INTERVIEW_TYPE_LABELS = {
   VIDEO: 'Video interview',
   CODE_REVIEW: 'Code-review interview',
-  TECHNICAL: 'Implementation challenge',
   SCREENING: 'Video interview',
   DEV_CONTAINER_CHALLENGE: 'Dev-container challenge',
 } satisfies Record<InterviewType, string>;

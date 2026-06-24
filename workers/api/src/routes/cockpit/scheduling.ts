@@ -90,7 +90,6 @@ const callbackSchema = z.object({
 
 export const INTERVIEW_TYPE_VALUES = [
   'VIDEO',
-  'TECHNICAL',
   'SCREENING',
   'CODE_REVIEW',
   'DEV_CONTAINER_CHALLENGE',
@@ -127,17 +126,26 @@ const createInterviewSchema = z.object({
       path: ['candidateId'],
     });
   }
-  // DEV_CONTAINER_CHALLENGE interviews attach a source-backed repo/PR task.
-  // The task is identified by either a matched_repo_id (qualified_repos row)
-  // or an explicit github_repo_url + github_pr_number pair.
+  // DEV_CONTAINER_CHALLENGE interviews can attach a source-backed repo/PR task
+  // as a manual override. When no repo is specified, the matcher will select
+  // a source-backed PR challenge based on candidate evidence at runtime.
   if (value.interviewType === 'DEV_CONTAINER_CHALLENGE') {
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
     const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
-    if (!hasMatchedRepo && !hasRepoUrlAndPr) {
+    const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
+    if (hasPartialManual) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message:
-          'DEV_CONTAINER_CHALLENGE requires a source-backed repo task: provide matchedRepoId or githubRepoUrl plus githubPrNumber.',
+          'Manual repo override requires both githubRepoUrl and githubPrNumber, or omit both for auto-match.',
+        path: ['githubRepoUrl'],
+      });
+    }
+    if (hasMatchedRepo && hasRepoUrlAndPr) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Provide either matchedRepoId or githubRepoUrl + githubPrNumber, not both.',
         path: ['matchedRepoId'],
       });
     }
