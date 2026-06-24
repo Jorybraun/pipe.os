@@ -692,3 +692,45 @@ describe('LivingContextGraph standalone review explanation', () => {
     )).toBeInTheDocument();
   });
 });
+
+describe('LivingContextGraph empty state quietness', () => {
+  it('hides empty living graph sections when no evidence exists and no review match is present', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(<LivingContextGraph candidateId="candidate-1" />);
+
+    // The quiet empty state should be surfaced instead of a debug dashboard.
+    expect(screen.getByTestId('living-context-empty')).toBeInTheDocument();
+    expect(screen.getByText(/No source-backed living evidence yet/i)).toBeInTheDocument();
+
+    // Summary metrics, workspace, and toolbar must not dominate the empty view.
+    expect(screen.queryByTestId('living-context-graph')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('Interactions')).toHaveLength(0);
+    expect(screen.queryAllByText('Context records')).toHaveLength(0);
+    expect(screen.queryAllByText('Accumulated context')).toHaveLength(0);
+    expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
+    expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
+  });
+
+  it('keeps the standalone review match visible while hiding empty living graph sections', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    // The source-backed review match panel stays visible.
+    expect(screen.getByLabelText('Standalone code review match')).toBeInTheDocument();
+    expect(screen.getByText('pipe/source-backed-orders #42')).toBeInTheDocument();
+
+    // Empty living graph sections remain quiet.
+    expect(screen.queryAllByText('Interactions')).toHaveLength(0);
+    expect(screen.queryAllByText('Context records')).toHaveLength(0);
+    expect(screen.queryAllByText('Accumulated context')).toHaveLength(0);
+    expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
+    expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
+  });
+});

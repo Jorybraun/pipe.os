@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Quiet Empty Living Graph (HAS-81)
+
+- The `LivingContextGraph` now stays quiet when a person has no source-backed evidence yet: summary metrics, search toolbar, interactions rail, accumulated-context canvas, and source inspector are hidden behind a single "No source-backed living evidence yet" state instead of rendering an empty debug dashboard.
+- Source-backed standalone code-review match panels remain visible alongside the quiet empty state so reviewers still see match evidence, gaps, and packet diagnostics when present.
+- Empty-state quietness is covered by BDD regressions proving empty sections collapse with and without a standalone review match.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.

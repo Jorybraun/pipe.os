@@ -92,6 +92,23 @@ function interactionDate(interaction: LivingContextInteraction): string {
   return formatDate(interaction.startedAt ?? interaction.createdAt);
 }
 
+function hasLivingEvidence(context: LivingContextReadModel): boolean {
+  const { summary } = context;
+  return (
+    summary.interactionCount > 0
+    || summary.artifactCount > 0
+    || summary.contextRecordCount > 0
+    || summary.assertionCount > 0
+    || summary.signalCount > 0
+    || summary.sourceSpanCount > 0
+    || context.interactions.length > 0
+    || context.artifacts.length > 0
+    || context.contextRecords.length > 0
+    || context.assertions.length > 0
+    || context.signals.length > 0
+  );
+}
+
 type RecordingProvenance = {
   recordingKey?: string;
   transcriptionAudioKey?: string;
@@ -1210,6 +1227,20 @@ export function LivingContextGraph({
     );
   }
 
+  const reviewMatch = standaloneReviewMatch ?? null;
+  const livingEvidencePresent = hasLivingEvidence(livingContext);
+
+  if (!livingEvidencePresent) {
+    return (
+      <div className="living-context living-context--quiet" data-testid="living-context-quiet">
+        <StandaloneReviewMatchPanel match={reviewMatch} />
+        <div className="living-context__empty" data-testid="living-context-empty">
+          No source-backed living evidence yet for this person.
+        </div>
+      </div>
+    );
+  }
+
   const summaryMetrics = [
     ['Interactions', livingContext.summary.interactionCount],
     ['Context records', livingContext.summary.contextRecordCount],
@@ -1243,7 +1274,7 @@ export function LivingContextGraph({
         </button>
       </div>
 
-      <StandaloneReviewMatchPanel match={standaloneReviewMatch ?? null} />
+      <StandaloneReviewMatchPanel match={reviewMatch} />
 
       <div className="living-context__summary">
         {summaryMetrics.map(([label, value]) => (
