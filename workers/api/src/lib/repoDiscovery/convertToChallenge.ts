@@ -271,11 +271,16 @@ async function resolveQualifiedRepoId(
 }
 
 function mapSeniorityToDifficulty(band: SeniorityBand | null): string {
+  if (band === null) {
+    throw new Error(
+      'Cannot derive challenge difficulty from a null seniority band; repo has no source-backed seniority evidence.',
+    );
+  }
   switch (band) {
     case 'JUNIOR': return 'JUNIOR';
     case 'MID': return 'MID';
     case 'SENIOR':
     case 'STAFF': return 'SENIOR';
-    default: return 'MID';
+    default: throw new Error(`Unknown seniority band: ${band}`);
   }
 }

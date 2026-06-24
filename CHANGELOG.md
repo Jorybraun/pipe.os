@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Harden source-backed repo discovery and matching (HAS-86)
+
+- Removed the `jaccardText` text-overlap fallback in `semanticSimilarity` so the `semanticNarrative` scoring dimension contributes zero when embedding evidence is absent instead of fabricating a heuristic text-overlap score.
+- Removed fabricated `roleRequirement: true` and `highWeightRoleRequirement: true` defaults in `materializeChallengePacketForMatching` when no role concepts are provided; demands are now only marked as role requirements when backed by source-evidenced role concept overlap.
+- Made role discovery optional in `alignCandidateToChallenge`: `ROLE_RELEVANCE_BELOW_THRESHOLD` and `NO_HIGH_WEIGHT_ROLE_REQUIREMENT` rejection reasons are only applied when at least one demand carries a role requirement, so challenges remain eligible without role context.
+- Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.
+- Added tests proving embedding-only match decisions are prevented, semantic similarity is not fabricated from text overlap, role discovery is optional, fabricated role requirement defaults are gone, non-role demands are not marked as high-weight role requirements, and rejected packets always include explicit reasons.
+
 ### Added — Living Person Graph Convergence Proof (HAS-84)
 
 - Added focused livingContext compatibility tests proving contact, applicant, candidate, customer, and client identities resolve to the same underlying workspace person when source identifiers converge.
