@@ -172,6 +172,10 @@ app.route('/api/v1/pipelines', ingestion);
 app.route('/api/v1/candidates', ingestionStatus);
 // Search: POST /api/v1/search/candidates, POST /api/v1/search/repos
 app.route('/api/v1/search', search);
+// Standalone host/guest meeting room runtime (opaque token auth — must be
+// mounted BEFORE devContainerSessions, which has a catch-all authMiddleware
+// on /api/v1/* that would otherwise intercept meeting-room requests)
+app.route('/api/v1/meeting-rooms', meetingRooms);
 // Dev container sessions: recruiter read-only cockpit routes (ADR-037, Phase 3b)
 app.route('/api/v1', devContainerSessions);
 // Email: POST /api/v1/candidates/:candidateId/send-invite, /send-result
@@ -197,8 +201,6 @@ app.route('/api/v1/video', videoAuth);
 app.route('/rpc/video', videoCandidate);
 // Video: public WebSocket connection (candidate via invite link, no auth)
 app.route('/api/v1/video/public', videoPublic);
-// Standalone host/guest meeting room runtime (opaque token auth)
-app.route('/api/v1/meeting-rooms', meetingRooms);
 // Meeting management: create/list/invite (authenticated)
 app.route('/api/v1/meetings', meetingsAuth);
 // Challenge submission scoring: PATCH /api/v1/challenge-submissions/:id
