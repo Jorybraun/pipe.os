@@ -1845,7 +1845,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   const meetingUrl = roomLinks.guestUrl;
   const schedulingInviteUrl = interview.scheduling_url
     && (interview.scheduling_provider === 'CALENDLY' || interview.scheduling_provider === 'CAL_COM')
-    ? interview.scheduling_url
+    ? withDevBasicAuth(interview.scheduling_url, c.env)
     : null;
 
   // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
@@ -2303,7 +2303,7 @@ schedulingPublic.post('/webhook', async (c) => {
             hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
           })
         : '';
-      const meetingUrl = normalized.meetingUrl ?? '';
+      const meetingUrl = withDevBasicAuth(normalized.meetingUrl ?? '', c.env);
 
       // Email the candidate
       c.executionCtx.waitUntil(
@@ -2637,6 +2637,8 @@ interface NormalizedEvent {
   scheduledAt: string | null;
   meetingUrl: string | null;
   candidateEmail: string | null;
+  interviewId: string | null;
+  inviteeUri: string | null;
 }
 
 function normalizeWebhookPayload(
