@@ -39,6 +39,7 @@ export interface RoomWorkspaceSession {
 
 export interface RoomWorkspace {
   enabled: boolean;
+  canLaunch: boolean;
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;

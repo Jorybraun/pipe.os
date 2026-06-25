@@ -157,6 +157,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -231,19 +232,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [metadata.workspace]);
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
-    if (!workspace?.enabled) return;
+    if (!workspace?.canLaunch) return;
     try {
       setWorkspace(await getRoomWorkspace(token));
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Workspace status failed.');
     }
-  }, [token, workspace?.enabled]);
+  }, [token, workspace?.canLaunch]);
 
   const launchWorkspace = useCallback(async (): Promise<void> => {
     setWorkspaceLoading(true);
     setWorkspaceError(null);
     try {
-      setWorkspace(await launchRoomWorkspace(token));
+      const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
+      setWorkspace(await launchRoomWorkspace(token, repoUrl));
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
     } finally {
@@ -252,14 +254,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [token]);
 
   useEffect(() => {
-    if (!workspace?.enabled) return undefined;
+    if (!workspace?.canLaunch) return undefined;
     const status = workspace.session?.status;
     if (status !== 'LAUNCHING') return undefined;
     const timer = window.setInterval(() => {
       void refreshWorkspace();
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [refreshWorkspace, workspace?.enabled, workspace?.session?.status]);
+  }, [refreshWorkspace, workspace?.canLaunch, workspace?.session?.status]);
 
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
@@ -554,21 +556,23 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
     : null;
   const canLaunchWorkspace = metadata.role === 'HOST'
-    && Boolean(workspace?.enabled)
+    && Boolean(workspace?.canLaunch)
     && !workspaceLoading
     && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
+  const showWorkspacePanel = Boolean(workspace?.canLaunch);
+  const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
       <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
-      {workspace?.enabled && (
+      {showWorkspacePanel && (
         <section className={`workspace-panel${workspaceReady ? ' is-ready' : ''}`} data-testid="workspace-panel">
           <div className="workspace-header">
             <div>
               <span><SquareTerminal size={14} /> Live workspace</span>
-              <strong>{workspace.repoUrl ?? 'Repository not configured'}</strong>
+              <strong>{workspace?.repoUrl ?? 'Repository not configured'}</strong>
             </div>
-            {workspace.githubPrNumber && <em>PR #{workspace.githubPrNumber}</em>}
+            {workspace?.githubPrNumber && <em>PR #{workspace.githubPrNumber}</em>}
           </div>
 
           {workspaceUrl ? (
@@ -597,11 +601,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   : workspaceError
                     ? workspaceError
                     : metadata.role === 'HOST'
-                      ? 'Launch the repo into a live code-server workspace for this call.'
+                      ? 'Launch a repo into a live code-server workspace for this call.'
                       : 'The host can launch the live code workspace.'}
               </p>
+              {needsRepoUrl && canLaunchWorkspace && (
+                <input
+                  type="url"
+                  className="workspace-repo-input"
+                  placeholder="https://github.com/org/repo"
+                  value={workspaceRepoInput}
+                  onChange={(e) => setWorkspaceRepoInput(e.target.value)}
+                  data-testid="workspace-repo-input"
+                />
+              )}
               {canLaunchWorkspace && (
-                <button className="primary workspace-launch" onClick={() => void launchWorkspace()}>
+                <button
+                  className="primary workspace-launch"
+                  onClick={() => void launchWorkspace()}
+                  disabled={needsRepoUrl && !workspaceRepoInput.trim()}
+                >
                   {workspaceLoading ? <Loader2 size={16} className="spin" /> : <SquareTerminal size={16} />}
                   Launch workspace
                 </button>

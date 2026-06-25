@@ -131,9 +131,11 @@ export async function getRoomWorkspace(token: string): Promise<RoomWorkspace> {
   return body.workspace;
 }
 
-export async function launchRoomWorkspace(token: string): Promise<RoomWorkspace> {
+export async function launchRoomWorkspace(token: string, repoUrl?: string): Promise<RoomWorkspace> {
   const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/workspace/launch`), {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(repoUrl ? { repoUrl } : {}),
     cache: 'no-store',
     credentials: 'same-origin',
   });

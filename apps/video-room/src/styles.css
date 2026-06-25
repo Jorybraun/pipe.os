@@ -706,6 +706,34 @@ button:focus-visible {
   margin-top: 6px;
 }
 
+.workspace-launch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.workspace-repo-input {
+  width: 100%;
+  max-width: 360px;
+  padding: 10px 14px;
+  border: 1px solid rgba(214, 232, 255, .18);
+  border-radius: 8px;
+  background: rgba(12, 12, 14, .6);
+  color: var(--ink);
+  font: 400 12px/1.4 var(--mono);
+  margin-top: 6px;
+  outline: none;
+  transition: border-color .15s;
+}
+
+.workspace-repo-input:focus {
+  border-color: rgba(127, 199, 255, .4);
+}
+
+.workspace-repo-input::placeholder {
+  color: var(--ink-dim);
+  opacity: 0.5;
+}
+
 .workspace-refresh {
   display: inline-flex;
   align-items: center;

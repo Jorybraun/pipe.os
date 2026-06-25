@@ -96,6 +96,7 @@ interface RoomWorkspaceInterview {
 
 interface RoomWorkspacePayload {
   enabled: boolean;
+  canLaunch: boolean;
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
@@ -319,6 +320,7 @@ async function buildRoomWorkspacePayload(
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
   return {
     enabled,
+    canLaunch: true,
     repoUrl: interview?.github_repo_url ?? null,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
@@ -707,6 +709,10 @@ meetingRooms.get('/:token/workspace', async (c) => {
   return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
 });
 
+const workspaceLaunchSchema = z.object({
+  repoUrl: z.string().url().optional(),
+});
+
 meetingRooms.post('/:token/workspace/launch', async (c) => {
   const token = c.req.param('token');
   const room = await resolveRoom(c.env.DB, token);
@@ -716,11 +722,18 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   }
 
   const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
-  if (!workspace.enabled) {
-    return apiError(c, 'VALIDATION_ERROR', 'This interview type does not use a live workspace.');
+  let body: z.infer<typeof workspaceLaunchSchema> = {};
+  try {
+    const raw = await c.req.json().catch(() => null);
+    if (raw && typeof raw === 'object') {
+      body = workspaceLaunchSchema.parse(raw);
+    }
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Invalid request body.');
   }
-  if (!workspace.repoUrl) {
-    return apiError(c, 'VALIDATION_ERROR', 'Choose a repository before launching the workspace.');
+  const effectiveRepoUrl = body.repoUrl || workspace.repoUrl;
+  if (!effectiveRepoUrl) {
+    return apiError(c, 'VALIDATION_ERROR', 'Provide a repository URL to launch the workspace.');
   }
 
   const existingSession = await getLatestSessionForRoom(c.env.DB, room.room_id);
@@ -774,7 +787,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
     ttlSeconds: effective.ttlSeconds,
     ttlSource: effective.source,
     expiresAt,
-    repoGitUrl: workspace.repoUrl,
+    repoGitUrl: effectiveRepoUrl,
     challengeBranch,
   });
 
@@ -788,7 +801,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         sessionId,
         expiresAt,
         ttlSeconds: effective.ttlSeconds,
-        repoGitUrl: workspace.repoUrl,
+        repoGitUrl: effectiveRepoUrl,
         challengeBranch,
       }),
     }).catch((err: unknown) => {
