@@ -198,7 +198,11 @@ describe('GET /interviews/:id detail', () => {
         pipeline_id TEXT,
         status TEXT,
         name TEXT,
-        email TEXT
+        email TEXT,
+        invite_token TEXT,
+        current_stage_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
       );
       CREATE TABLE contacts (
         id TEXT PRIMARY KEY,
@@ -973,6 +977,7 @@ describe('GET /interviews/:id detail', () => {
       success: boolean;
       emailSent: boolean;
       meetingUrl: string;
+      deliveredUrl: string;
       room: {
         id: string;
         sessionId: string;
@@ -1067,7 +1072,7 @@ describe('GET /interviews/:id detail', () => {
     expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: barbara@example.com',
       expect.stringMatching(/^Subject: Video call invitation — Interview \(.+\)$/),
-      `Delivered URL: ${inviteBody.meetingUrl}`,
+      `Delivered URL: ${inviteBody.deliveredUrl}`,
       `Room URL: ${inviteBody.meetingUrl}`,
       'Custom message: Please join prepared code review discussion.',
       'Email sent: no',
@@ -1335,7 +1340,11 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         pipeline_id TEXT,
         status TEXT,
         name TEXT,
-        email TEXT
+        email TEXT,
+        invite_token TEXT,
+        current_stage_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
       );
       CREATE TABLE contacts (
         id TEXT PRIMARY KEY,

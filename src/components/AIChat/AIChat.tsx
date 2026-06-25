@@ -25,7 +25,7 @@ import type { AIChatProps, SynthesisResult } from './types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const BASE_URL = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
+const BASE_URL = import.meta.env?.VITE_API_URL || '';
 
 // Clerk window shape — avoids `any`
 interface ClerkWindow extends Window {

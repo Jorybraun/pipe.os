@@ -3,7 +3,7 @@ import { QuestionVideoPlayer } from '../Challenge/QuestionVideoPlayer';
 import { useSpeechTranscription } from '../../hooks/useSpeechTranscription';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
 
 export interface VideoSubmissionPanelProps {
   /** Question heading displayed above the recording controls */

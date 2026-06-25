@@ -69,10 +69,6 @@ devContainer.post('/launch', async (c) => {
   const candidateId = c.get('candidateId');
   const pipelineId = c.get('pipelineId');
 
-  if (!pipelineId) {
-    return c.json({ error: { code: 'BAD_REQUEST', message: 'Dev container requires a pipeline assignment.' } }, 400);
-  }
-
   let body: LaunchRequestBody;
   try {
     body = (await c.req.json()) as LaunchRequestBody;
@@ -96,6 +92,27 @@ devContainer.post('/launch', async (c) => {
       repoGitUrl = meta.repo_git_url;
       challengeBranch = meta.challenge_branch;
     }
+  }
+
+  // For pipeline-free candidates (standalone dev container challenge),
+  // look up the repo URL from the scheduled_interviews table.
+  if (!pipelineId && !repoGitUrl) {
+    const interview = await c.env.DB.prepare(
+      `SELECT github_repo_url, github_pr_number
+       FROM scheduled_interviews
+       WHERE candidate_id = ?1 AND interview_type = 'DEV_CONTAINER_CHALLENGE'
+         AND stage_id IS NULL
+         AND status NOT IN ('COMPLETED', 'CANCELLED')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(candidateId).first<{ github_repo_url: string | null; github_pr_number: number | null }>();
+
+    if (interview?.github_repo_url) {
+      repoGitUrl = interview.github_repo_url;
+    }
+  }
+
+  if (!repoGitUrl) {
+    return c.json({ error: { code: 'BAD_REQUEST', message: 'No repository URL configured for this dev container challenge.' } }, 400);
   }
 
   // Per-launch admin override is honored only with the shared secret header.
@@ -154,7 +171,7 @@ devContainer.post('/launch', async (c) => {
       sessionId,
       candidateId,
       challengeId,
-      pipelineId,
+      pipelineId: pipelineId ?? null,
       instanceType: DEFAULT_INSTANCE_TYPE,
       ttlSeconds: effective.ttlSeconds,
       ttlSource: effective.source,

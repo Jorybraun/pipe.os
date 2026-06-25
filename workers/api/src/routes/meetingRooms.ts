@@ -984,11 +984,9 @@ meetingRooms.post('/:token/events', async (c) => {
       statements.push(
         c.env.DB.prepare(
           `UPDATE scheduled_interviews
-           SET status = 'COMPLETED',
-               completed_at = COALESCE(completed_at, ?),
-               updated_at = ?
+           SET updated_at = ?
            WHERE id = ?`,
-        ).bind(now, now, room.scheduled_interview_id),
+        ).bind(now, room.scheduled_interview_id),
       );
     }
     await c.env.DB.batch(statements);

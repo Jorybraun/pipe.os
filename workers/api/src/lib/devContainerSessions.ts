@@ -50,7 +50,7 @@ export interface InsertSessionInput {
   sessionId: string;
   candidateId: string;
   challengeId: string | null;
-  pipelineId: string;
+  pipelineId: string | null;
   instanceType: string;
   ttlSeconds: number;
   ttlSource: TtlSource;

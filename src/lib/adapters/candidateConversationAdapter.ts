@@ -156,7 +156,7 @@ export function createCandidateConversationAdapter(
   const {
     challengeId,
     sessionToken,
-    baseUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8787',
+    baseUrl = import.meta.env?.VITE_API_URL || '',
   } = opts;
 
   const baseEndpoint = `${baseUrl}/rpc/agent-interview/${challengeId}`;

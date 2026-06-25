@@ -443,6 +443,15 @@ function ContactDetailPanel({ contact, onUpdated, onDeleted, onClose, api }: {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'context'>('details');
+  const [cvFile, setCvFile] = useState<File | null>(null);
+  const [isUploadingCv, setIsUploadingCv] = useState(false);
+  const [cvUploadError, setCvUploadError] = useState<string | null>(null);
+  const [parsedCv, setParsedCv] = useState<{
+    skills?: string[];
+    yearsOfExperience?: number;
+    currentRole?: string;
+    education?: string[];
+  } | null>(null);
 
   // Reset form when contact changes
   useEffect(() => {

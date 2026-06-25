@@ -34,7 +34,7 @@ const API_BASE =
   typeof import.meta.env !== 'undefined' &&
   import.meta.env.VITE_API_URL
     ? (import.meta.env.VITE_API_URL as string)
-    : 'http://localhost:8787';
+    : '';
 
 async function fetchSessionState(token: string): Promise<CultureSessionState> {
   const res = await fetch(`${API_BASE}/rpc/culture/session/${token}/state`);

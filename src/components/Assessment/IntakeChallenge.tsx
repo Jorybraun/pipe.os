@@ -15,7 +15,7 @@ import { Upload, FileText, Loader2, ChevronRight, Github, Linkedin, CheckCircle,
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSessionToken } from '../../contexts/SessionTokenContext';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
 
 interface IntakeChallengeProps {
   challengeId: string;

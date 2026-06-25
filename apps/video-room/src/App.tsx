@@ -8,6 +8,7 @@ import {
   Loader2,
   Mic,
   MicOff,
+  PanelRightClose,
   PhoneOff,
   RefreshCcw,
   ShieldCheck,
@@ -15,6 +16,9 @@ import {
   Users,
   Video,
 } from 'lucide-react';
+import { Window, WindowHeader, WindowContent, Button as Win95Button } from 'react95';
+import { ThemeProvider, createGlobalStyle } from 'styled-components';
+import original from 'react95/dist/themes/original';
 import {
   getRoomWorkspace,
   launchRoomWorkspace,
@@ -32,6 +36,29 @@ import { useRoomConnection } from './hooks/useRoomConnection';
 import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
+
+const pipeWin95Theme = {
+  ...original,
+  headerBackground: '#0a2135',
+  headerText: '#b9e2ff',
+  headerNotActiveBackground: '#061625',
+  headerNotActiveText: 'rgba(185, 226, 255, 0.5)',
+  desktopBackground: '#008080',
+  canvas: '#03101d',
+  canvasText: '#f4f8ff',
+  material: '#0a2135',
+  materialText: '#f4f8ff',
+  materialDark: '#061625',
+  materialTextInvert: '#b9e2ff',
+  anchor: '#7fc7ff',
+  anchorVisited: '#7fc7ff',
+  progress: '#7fc7ff',
+  hoverBackground: 'rgba(127, 199, 255, 0.12)',
+};
+
+const Win95GlobalStyles = createGlobalStyle`
+  .win95-font { font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif; }
+`;
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -158,6 +185,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -561,78 +589,117 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
   const showWorkspacePanel = Boolean(workspace?.canLaunch);
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
+  const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
 
   return (
     <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
       <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
       {showWorkspacePanel && (
-        <section className={`workspace-panel${workspaceReady ? ' is-ready' : ''}`} data-testid="workspace-panel">
-          <div className="workspace-header">
-            <div>
-              <span><SquareTerminal size={14} /> Live workspace</span>
-              <strong>{workspace?.repoUrl ?? 'Repository not configured'}</strong>
-            </div>
-            {workspace?.githubPrNumber && <em>PR #{workspace.githubPrNumber}</em>}
-          </div>
-
-          {workspaceUrl ? (
-            <iframe
-              src={workspaceUrl}
-              title="PIPE live implementation workspace"
-              className="workspace-iframe"
-              data-testid="workspace-iframe"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
-            />
-          ) : (
-            <div className="workspace-empty">
-              <SquareTerminal size={26} />
-              <h3>
-                {workspaceSession?.status === 'LAUNCHING'
-                  ? 'Starting workspace...'
-                  : workspaceSession?.status === 'ERROR'
-                    ? 'Workspace failed'
-                    : 'Workspace ready to launch'}
-              </h3>
-              <p>
-                {workspaceSession?.status === 'LAUNCHING'
-                  ? 'The container is warming up. This can take 20-30 seconds.'
-                  : workspaceSession?.errorMessage
-                    ? workspaceSession.errorMessage
-                  : workspaceError
-                    ? workspaceError
-                    : metadata.role === 'HOST'
-                      ? 'Launch a repo into a live code-server workspace for this call.'
-                      : 'The host can launch the live code workspace.'}
-              </p>
-              {needsRepoUrl && canLaunchWorkspace && (
-                <input
-                  type="url"
-                  className="workspace-repo-input"
-                  placeholder="https://github.com/org/repo"
-                  value={workspaceRepoInput}
-                  onChange={(e) => setWorkspaceRepoInput(e.target.value)}
-                  data-testid="workspace-repo-input"
-                />
-              )}
-              {canLaunchWorkspace && (
-                <button
-                  className="primary workspace-launch"
-                  onClick={() => void launchWorkspace()}
-                  disabled={needsRepoUrl && !workspaceRepoInput.trim()}
+        <>
+          <button
+            className={`workspace-toggle${workspaceOpen ? ' is-open' : ''}${hasActiveWorkspace ? ' is-active' : ''}`}
+            onClick={() => setWorkspaceOpen((v) => !v)}
+            aria-label={workspaceOpen ? 'Close workspace' : 'Open workspace'}
+            data-testid="workspace-toggle"
+          >
+            {workspaceSession?.status === 'LAUNCHING'
+              ? <Loader2 size={18} className="spin" />
+              : <SquareTerminal size={18} />}
+          </button>
+          {workspaceOpen && (
+            <div className="workspace-window-wrapper" data-testid="workspace-panel">
+              <ThemeProvider theme={pipeWin95Theme}>
+                <Win95GlobalStyles />
+                <Window
+                  className="workspace-win95-window"
+                  shadow
+                  style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
                 >
-                  {workspaceLoading ? <Loader2 size={16} className="spin" /> : <SquareTerminal size={16} />}
-                  Launch workspace
-                </button>
-              )}
-              {workspaceSession?.status === 'LAUNCHING' && (
-                <button className="workspace-refresh" onClick={() => void refreshWorkspace()}>
-                  <RefreshCcw size={14} />
-                  Refresh
-                </button>
-              )}
+                  <WindowHeader className="workspace-win95-header win95-font">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <SquareTerminal size={14} />
+                      {workspace?.repoUrl ?? 'Repository not configured'}
+                    </span>
+                    <button
+                      className="workspace-win95-close"
+                      onClick={() => setWorkspaceOpen(false)}
+                      aria-label="Close workspace"
+                    >
+                      <PanelRightClose size={14} />
+                    </button>
+                  </WindowHeader>
+                  <WindowContent
+                    className="workspace-win95-content"
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}
+                  >
+                    {workspaceUrl ? (
+                      <iframe
+                        src={workspaceUrl}
+                        title="PIPE live implementation workspace"
+                        className="workspace-iframe"
+                        data-testid="workspace-iframe"
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
+                      />
+                    ) : (
+                      <div className="workspace-empty">
+                        <SquareTerminal size={26} />
+                        <h3>
+                          {workspaceSession?.status === 'LAUNCHING'
+                            ? 'Starting workspace...'
+                            : workspaceSession?.status === 'ERROR'
+                              ? 'Workspace failed'
+                              : 'Workspace ready to launch'}
+                        </h3>
+                        <p>
+                          {workspaceSession?.status === 'LAUNCHING'
+                            ? 'The container is warming up. This can take 20-30 seconds.'
+                            : workspaceSession?.errorMessage
+                              ? workspaceSession.errorMessage
+                            : workspaceError
+                              ? workspaceError
+                              : metadata.role === 'HOST'
+                                ? 'Launch a repo into a live code-server workspace for this call.'
+                                : 'The host can launch the live code workspace.'}
+                        </p>
+                        {needsRepoUrl && canLaunchWorkspace && (
+                          <input
+                            type="url"
+                            className="workspace-repo-input"
+                            placeholder="https://github.com/org/repo"
+                            value={workspaceRepoInput}
+                            onChange={(e) => setWorkspaceRepoInput(e.target.value)}
+                            data-testid="workspace-repo-input"
+                          />
+                        )}
+                        {canLaunchWorkspace && (
+                          <Win95Button
+                            className="workspace-launch-btn win95-font"
+                            onClick={() => void launchWorkspace()}
+                            disabled={needsRepoUrl && !workspaceRepoInput.trim()}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}
+                          >
+                            {workspaceLoading ? <Loader2 size={16} className="spin" /> : <SquareTerminal size={16} />}
+                            Launch workspace
+                          </Win95Button>
+                        )}
+                        {workspaceSession?.status === 'LAUNCHING' && (
+                          <Win95Button
+                            className="workspace-refresh-btn win95-font"
+                            onClick={() => void refreshWorkspace()}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}
+                          >
+                            <RefreshCcw size={14} />
+                            Refresh
+                          </Win95Button>
+                        )}
+                      </div>
+                    )}
+                  </WindowContent>
+                </Window>
+              </ThemeProvider>
             </div>
           )}
-        </section>
+        </>
       )}
       {!room.remoteStream && (
         <div className="waiting-state" data-testid="waiting-state">

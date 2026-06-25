@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — Win95-themed workspace overlay in video room
+
+- Replaced the always-visible workspace panel with a toggleable floating icon button in the video room.
+- Workspace panel now uses React95 `Window` components with a custom PIPE-infused Win95 theme (dark navy header, teal `#008080` desktop background, Lucide icons preserved).
+- Added `workspaceOpen` state so the panel is closed by default; host clicks the terminal icon to open it.
+- Window header shows repo URL with a close button; empty state uses classic Win95 teal desktop background.
+- Installed `react95` and `styled-components` in the video-room app.
+
+### Fixed — API route ordering and RPC auth bypass
+
+- Reordered Hono route mounts in `workers/api/src/index.ts` so `meetingRooms` is mounted before `devContainerSessions`, preventing the catch-all `authMiddleware` from intercepting meeting-room requests with 401 errors.
+- Added `/rpc/` path bypass in the global dev proxy secret middleware so RPC routes using candidate JWT auth are not blocked.
+- Restored `containers` config in `workers/api/wrangler.jsonc` dev environment for `DevContainerDO`.
+
+### Added — Standalone dev container challenge RPC support
+
+- Added `getPendingDevContainerChallenge` lookup in RPC routes for standalone `DEV_CONTAINER_CHALLENGE` interviews.
+- Added `StandaloneDevContainerRow` interface and pending challenge query for candidate-facing dev container flows.
+
 ### Added — Real Source-Backed Repo Challenge Packet Backfill (HAS-83)
 
 - Added `backfillReviewChallengePackets` pipeline that selects eligible merged PRs from the crawler D1 catalog (`repo_sample_prs` joined with `qualified_repos`), fetches PR refs, diff, and changed-file source from GitHub, normalizes them into a deterministic `NormalizedPullRequestInput`, builds a challenge packet through the `repoSemanticGraph` pipeline, and persists the full graph through `persistReviewChallengeGraph`.

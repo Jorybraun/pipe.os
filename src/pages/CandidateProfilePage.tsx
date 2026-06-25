@@ -1169,7 +1169,7 @@ export default function CandidateProfilePage(): JSX.Element {
       const baseUrl =
         typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
           ? import.meta.env.VITE_API_URL
-          : "http://localhost:8787";
+          : "";
 
       const formData = new FormData();
       formData.append("file", file);
@@ -1204,7 +1204,7 @@ export default function CandidateProfilePage(): JSX.Element {
       const baseUrl =
         typeof import.meta !== "undefined" && import.meta.env?.VITE_API_URL
           ? import.meta.env.VITE_API_URL
-          : "http://localhost:8787";
+          : "";
 
       const response = await fetch(`${baseUrl}/api/v1/candidates/${id}/resume`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -2684,7 +2684,7 @@ export default function CandidateProfilePage(): JSX.Element {
                             onClick={async () => {
                               try {
                                 const token = await getToken();
-                                const baseUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8787';
+                                const baseUrl = import.meta.env?.VITE_API_URL || '';
                                 const res = await fetch(`${baseUrl}/api/v1/phone/calls/${call.id}/recording`, {
                                   headers: token ? { Authorization: `Bearer ${token}` } : {},
                                 });

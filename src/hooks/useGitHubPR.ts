@@ -80,7 +80,7 @@ const API_BASE_URL =
   typeof import.meta.env !== 'undefined' &&
   import.meta.env.VITE_API_URL
     ? (import.meta.env.VITE_API_URL as string)
-    : 'http://localhost:8787';
+    : '';
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 

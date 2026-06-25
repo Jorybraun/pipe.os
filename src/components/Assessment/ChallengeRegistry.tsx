@@ -1,7 +1,7 @@
 import { useState, ReactNode, useMemo, useEffect } from 'react';
 import { useData, useStorage } from '../../providers';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
 import { resolveLayout, PanelType } from '../../lib/challenge/resolveLayout';
 import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';

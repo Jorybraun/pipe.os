@@ -9,7 +9,7 @@
 // NOTE: Only called by authenticated recruiters. Candidates receive ICE servers
 // via the OFFER payload — they never call this API directly.
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || '';
 
 /** Cached TURN credentials to avoid re-fetching during a session */
 let cachedIceServers: RTCIceServer[] | null = null;

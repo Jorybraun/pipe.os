@@ -1,21 +1,19 @@
 {
-  "name": "pipe-video-room",
+  "name": "pipe-intake",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5175",
+    "dev": "vite --port 5176",
     "build": "tsc && vite build",
     "type-check": "tsc --noEmit",
-    "preview": "vite preview --port 4175"
+    "preview": "vite preview --port 4176"
   },
   "dependencies": {
     "lucide-react": "^0.562.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.11.0",
-    "react95": "^4.0.0",
-    "styled-components": "^6.4.3"
+    "react-router-dom": "^7.11.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.66",

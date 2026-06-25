@@ -383,6 +383,15 @@ interface StandaloneReviewRow {
   submission_json: string | null;
 }
 
+interface StandaloneDevContainerRow {
+  id: string;
+  status: string;
+  matched_repo_id: number | null;
+  github_repo_url: string | null;
+  github_pr_number: number | null;
+  submission_json: string | null;
+}
+
 async function getPendingStandaloneReview(
   db: D1Database,
   candidateId: string,
@@ -397,6 +406,24 @@ async function getPendingStandaloneReview(
     ).bind(candidateId).first<StandaloneReviewRow>();
   } catch (err) {
     console.error('[standaloneReview] lookup failed:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+async function getPendingDevContainerChallenge(
+  db: D1Database,
+  candidateId: string,
+): Promise<StandaloneDevContainerRow | null> {
+  try {
+    return await db.prepare(
+      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number, submission_json
+       FROM scheduled_interviews
+       WHERE candidate_id = ?1 AND interview_type = 'DEV_CONTAINER_CHALLENGE' AND stage_id IS NULL
+         AND status NOT IN ('COMPLETED', 'CANCELLED')
+       ORDER BY created_at DESC LIMIT 1`,
+    ).bind(candidateId).first<StandaloneDevContainerRow>();
+  } catch (err) {
+    console.error('[standaloneDevContainer] lookup failed:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -810,17 +837,37 @@ rpcAuth.post('/get-stage-config', async (c) => {
       });
     }
 
+    // Standalone dev-container challenge interview: once the CV is in, serve the challenge stage
+    const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
+    if (!needsResume && standaloneDevContainer) {
+      return c.json({
+        isComplete: false,
+        stageId: 'standalone-dev-container',
+        candidateId,
+        stageTitle: 'Dev Container Challenge',
+        mode: 'ASYNC',
+        timeLimit: null,
+        challenges: [{ type: 'CODE_IMPLEMENTATION', order: 0, title: 'Dev Container Challenge' }],
+        currentIndex: 0,
+      });
+    }
+
+    const hasPendingStandalone = standaloneReview || standaloneDevContainer;
     return c.json({
-      isComplete: !needsResume,
+      isComplete: !needsResume && !hasPendingStandalone,
       stageId: 'talent-pool-intake',
       candidateId,
-      stageTitle: standaloneReview ? 'Code Review Interview' : needsResume ? 'Upload Your CV' : 'Thank You',
+      stageTitle: hasPendingStandalone
+        ? (standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review Interview')
+        : needsResume ? 'Upload Your CV' : 'Thank You',
       mode: 'INTAKE',
       timeLimit: null,
       challenges: needsResume
         ? [{ type: 'INTAKE', order: 0, title: 'Profile & Resume' }]
         : [],
-      upcoming: needsResume && standaloneReview ? [{ type: 'CODE_REVIEW', title: 'Code Review' }] : [],
+      upcoming: needsResume && hasPendingStandalone
+        ? [{ type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW', title: standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review' }]
+        : [],
       currentIndex: 0,
     });
   }
@@ -1081,10 +1128,32 @@ rpcAuth.post('/get-challenge', async (c) => {
     );
   }
 
-  // Pipeline-free candidate: INTAKE first, then standalone code review if invited
+  // Pipeline-free candidate: INTAKE first, then standalone code review or dev container if invited
   if (!pipelineId) {
     if (await candidateNeedsCvIntake(c.env.DB, candidateId)) {
       return c.json(INTAKE_CHALLENGE_CONTENT);
+    }
+
+    // Check for standalone dev-container challenge first
+    const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
+    if (standaloneDevContainer) {
+      const repoUrl = standaloneDevContainer.github_repo_url;
+      if (!repoUrl) {
+        return c.json(STANDALONE_WAITING_CHALLENGE);
+      }
+      return c.json({
+        id: `standalone-dev-container-${standaloneDevContainer.id}`,
+        type: 'CODE_IMPLEMENTATION',
+        title: 'Dev Container Challenge',
+        instructions: 'Complete the coding challenge in the dev container workspace provided below.',
+        config: JSON.stringify({ starterCode: '' }),
+        cachedDiffJson: null,
+        githubPrTitle: null,
+        githubPrNumber: standaloneDevContainer.github_pr_number ?? null,
+        githubRepoUrl: repoUrl,
+        githubPrDescription: null,
+        devContainerRepoUrl: repoUrl,
+      });
     }
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
@@ -1916,6 +1985,37 @@ function isAllowedMime(mimeType: string): boolean {
     mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   );
 }
+
+// ── GET /rpc/ingestion-status ───────────────────────────────────────────────
+// Candidate-facing ingestion status — returns the current state of the
+// candidate_ingestion row so the intake app can show live progress.
+
+rpcAuth.get('/ingestion-status', async (c) => {
+  const candidateId = c.get('candidateId');
+
+  const row = await c.env.DB.prepare(
+    `SELECT status, current_step, candidate_searchable_profile, key_concepts_json,
+            error_text, estimated_completion_at, updated_at
+     FROM candidate_ingestion
+     WHERE candidate_id = ?1`,
+  )
+    .bind(candidateId)
+    .first<{
+      status: string;
+      current_step: string | null;
+      candidate_searchable_profile: string | null;
+      key_concepts_json: string | null;
+      error_text: string | null;
+      estimated_completion_at: string | null;
+      updated_at: string | null;
+    }>();
+
+  if (!row) {
+    return c.json({ status: 'not_started', current_step: null, candidate_searchable_profile: null, key_concepts_json: null, error_text: null, estimated_completion_at: null });
+  }
+
+  return c.json(row);
+});
 
 rpcAuth.post('/upload-media', async (c) => {
   const candidateId = c.get('candidateId');

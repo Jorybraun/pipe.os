@@ -21,7 +21,7 @@ export function SecureVideoPlayer({ candidateId, r2Key }: { candidateId: string;
         const baseUrl =
           typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL
             ? (import.meta.env.VITE_API_URL as string)
-            : 'http://localhost:8787';
+            : '';
         const res = await fetch(
           `${baseUrl}/api/v1/candidates/${candidateId}/media?r2Key=${encodeURIComponent(r2Key)}`,
           { headers: { Authorization: `Bearer ${token}` } },

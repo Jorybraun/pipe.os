@@ -1,0 +1,139 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap");
+
+/* ── Pipe-blue design tokens ─────────────────────────────────────────────── */
+:root {
+  --pipe-bg: #0a0e1a;
+  --pipe-text: #e8f4ff;
+  --pipe-text-muted: rgba(232, 244, 255, 0.65);
+  --pipe-text-dim: rgba(232, 244, 255, 0.45);
+  --pipe-border: rgba(108, 195, 255, 0.15);
+  --pipe-border-light: rgba(108, 195, 255, 0.08);
+  --pipe-surface: rgba(108, 195, 255, 0.05);
+  --pipe-surface-hover: rgba(108, 195, 255, 0.10);
+  --pipe-surface-solid: #121828;
+  --pipe-surface-elevated: #162035;
+  --pipe-accent: #6cc3ff;
+  --pipe-accent-surface: rgba(108, 195, 255, 0.12);
+  --pipe-accent-border: rgba(108, 195, 255, 0.35);
+  --pipe-shadow: rgba(0, 0, 0, 0.4);
+
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --transition-fast: 200ms;
+  --transition-normal: 300ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--pipe-bg);
+  color: var(--pipe-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+}
+
+/* ── Pipe-blue radial glow background ────────────────────────────────────── */
+.pipe-bg-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(108, 195, 255, 0.15) 0%, rgba(10, 14, 26, 0.8) 50%, rgba(10, 14, 26, 1) 100%);
+  pointer-events: none;
+}
+
+/* ── Chrome mesh grid ────────────────────────────────────────────────────── */
+.pipe-mesh-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(108, 195, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(108, 195, 255, 0.015) 1px, transparent 1px);
+  background-size: 80px 80px;
+  pointer-events: none;
+}
+
+/* ── Content above background ────────────────────────────────────────────── */
+.pipe-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(108, 195, 255, 0.03) 25%,
+    rgba(108, 195, 255, 0.08) 50%,
+    rgba(108, 195, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(108, 195, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(108, 195, 255, 0.25);
+}

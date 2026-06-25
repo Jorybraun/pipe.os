@@ -1193,8 +1193,8 @@ describe('meeting room recording living-context route', () => {
     const interviewState = sqlite.prepare(
       'SELECT status, completed_at FROM scheduled_interviews WHERE id = ?',
     ).get(scheduledInterviewId) as { status: string; completed_at: string | null };
-    expect(interviewState.status).toBe('COMPLETED');
-    expect(interviewState.completed_at).toEqual(expect.any(String));
+    expect(interviewState.status).toBe('ACTIVE');
+    expect(interviewState.completed_at).toBeNull();
 
     expect(sqlite.prepare(
       `SELECT transcript_status, transcript_summary FROM meetings WHERE id = ?`,

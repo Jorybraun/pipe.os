@@ -110,6 +110,8 @@ app.use('*', async (c, next) => {
 
   const { pathname } = new URL(c.req.url);
   if (pathname === '/health' || pathname === '/api/health') return next();
+  // RPC routes use candidate JWT auth, not the dev proxy secret
+  if (pathname.startsWith('/rpc/')) return next();
 
   if (!c.env.DEV_PROXY_SECRET) {
     return c.json(

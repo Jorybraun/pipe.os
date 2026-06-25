@@ -92,7 +92,7 @@ export function resolveDevContainerApiBase(
     return runtimeLocation.origin;
   }
 
-  return 'http://localhost:8787';
+  return '';
 }
 
 function apiBase(): string {
