@@ -372,7 +372,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             type: transcriptionRecorder?.mimeType || 'audio/webm',
           })
         : undefined;
+      console.log('[room] Uploading recording', {
+        token,
+        recordingBytes: blob.size,
+        recordingType: blob.type,
+        hasTranscriptionAudio: Boolean(transcriptionAudio),
+        transcriptionBytes: transcriptionAudio?.size ?? 0,
+        iceProvider: room.iceProvider,
+      });
       const result = await uploadRecording(token, blob, transcriptionAudio);
+      console.log('[room] Recording upload succeeded', {
+        accepted: result.accepted,
+        transcriptStatus: result.transcriptStatus,
+      });
       setRecordingState('saved');
       setRecordingNotice(
         result.transcriptStatus === 'PROCESSING'
@@ -381,6 +393,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Recording upload failed.';
+      console.error('[room] Recording upload failed', {
+        token,
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+        iceProvider: room.iceProvider,
+        recordingChunks: recordingChunksRef.current.length,
+        transcriptionChunks: transcriptionChunksRef.current.length,
+      });
       setRecordingState('failed');
       setRecordingError(message);
       throw error;

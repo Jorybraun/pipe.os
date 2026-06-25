@@ -93,9 +93,19 @@ export async function getIceServerConfig(token: string): Promise<{
         iceServers: body.iceServers,
         provider: body.provider ?? 'unknown',
       };
+      console.log('[room/api] ICE server config', {
+        provider: result.provider,
+        serverCount: result.iceServers.length,
+        hasTurn: result.iceServers.some((s) => {
+          const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+          return urls.some((u) => u.startsWith('turn:') || u.startsWith('turns:'));
+        }),
+        attempt,
+      });
       if (result.provider !== 'fallback' || attempt === TURN_CREDENTIAL_ATTEMPTS) {
         return result;
       }
+      console.warn('[room/api] ICE provider is fallback, retrying', { attempt });
     } catch (error) {
       lastError = error;
       if (attempt === TURN_CREDENTIAL_ATTEMPTS) throw error;

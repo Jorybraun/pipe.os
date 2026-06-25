@@ -151,6 +151,7 @@ async function devAuthEntryPage(request, env) {
 function proxyApi(request, env) {
   const secret = env.DEV_PROXY_SECRET;
   if (!secret && env.ROOM_AUTH_MODE !== AUTH_MODE_PUBLIC) {
+    console.error('[room-proxy] Missing dev proxy secret');
     return new Response('Missing dev proxy secret', { status: 503 });
   }
 
@@ -158,17 +159,52 @@ function proxyApi(request, env) {
   const url = new URL(request.url);
   const target = new URL(`${url.pathname}${url.search}`, apiOrigin);
   const headers = new Headers(request.headers);
+  const contentLength = headers.get('Content-Length');
   headers.delete('Authorization');
   if (secret) headers.set('X-Pipe-Dev-Proxy-Secret', secret);
   headers.set('X-Forwarded-Host', url.host);
   headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
 
-  return fetch(new Request(target.toString(), {
+  const isRecording = url.pathname.endsWith('/recording');
+  if (isRecording) {
+    console.log('[room-proxy] Recording upload request', {
+      path: url.pathname,
+      method: request.method,
+      contentType: headers.get('Content-Type'),
+      contentLength: contentLength ?? 'unknown',
+      target: target.toString(),
+    });
+  }
+
+  const proxyRequest = new Request(target.toString(), {
     method: request.method,
     headers,
     body: request.body,
     redirect: request.redirect,
-  }));
+  });
+
+  return fetch(proxyRequest).then((response) => {
+    if (isRecording) {
+      console.log('[room-proxy] Recording upload response', {
+        path: url.pathname,
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
+    if (!response.ok && isRecording) {
+      console.error('[room-proxy] Recording upload failed', {
+        status: response.status,
+        statusText: response.statusText,
+      });
+    }
+    return response;
+  }).catch((error) => {
+    console.error('[room-proxy] Proxy fetch error', {
+      path: url.pathname,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  });
 }
 
 async function serveStatic(request, env) {

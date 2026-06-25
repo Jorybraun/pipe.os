@@ -478,11 +478,25 @@ async function processRecording(
   recordingKey: string,
   overrides: RecordingProcessingOverrides = {},
 ): Promise<void> {
+  const logPrefix = `[meetingRooms/processRecording:${room.meeting_id}]`;
+  console.log(`${logPrefix} Starting processing`, {
+    transcriptionSourceKey,
+    recordingKey,
+    hasOverrides: Object.keys(overrides).length > 0,
+  });
   try {
     const object = await env.STORAGE.get(transcriptionSourceKey);
-    if (!object) throw new Error('Transcription source was not found after upload.');
+    if (!object) {
+      console.error(`${logPrefix} Transcription source not found in R2`, { transcriptionSourceKey });
+      throw new Error('Transcription source was not found after upload.');
+    }
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
+    console.log(`${logPrefix} Retrieved audio from R2`, {
+      transcriptionSourceKey,
+      bytes: audioBuffer.byteLength,
+      contentType,
+    });
     const structured = overrides.structuredTranscription ?? (env.DEEPGRAM_API_KEY
       ? await transcribeAudioDeepgramStructured(
           audioBuffer,
@@ -490,6 +504,11 @@ async function processRecording(
           contentType,
         )
       : null);
+    console.log(`${logPrefix} Transcription result`, {
+      hasStructured: Boolean(structured),
+      hasDeepgramKey: Boolean(env.DEEPGRAM_API_KEY),
+      segmentCount: structured?.segments.length ?? 0,
+    });
     let segments: MeetingTranscriptSegmentInput[];
     let transcript: string;
     if (structured) {
@@ -513,12 +532,19 @@ async function processRecording(
       }));
       transcript = structured.transcript;
     } else {
+      console.log(`${logPrefix} Using Whisper fallback (no structured transcription)`);
       const whisperTranscript = await withTimeout(
         transcribeAudioWhisper(env.AI, audioBuffer),
         WHISPER_TRANSCRIPTION_TIMEOUT_MS,
         'Workers AI transcription',
       );
-      if (!whisperTranscript) throw new Error('Transcription returned no text.');
+      if (!whisperTranscript) {
+        console.error(`${logPrefix} Whisper transcription returned empty`);
+        throw new Error('Transcription returned no text.');
+      }
+      console.log(`${logPrefix} Whisper transcription succeeded`, {
+        transcriptLength: whisperTranscript.length,
+      });
       transcript = whisperTranscript;
       segments = [{
         stableSegmentId: 'mixed-0001',
@@ -601,12 +627,18 @@ async function processRecording(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error(`${logPrefix} Recording processing failed`, {
+      message,
+      stack,
+      transcriptionSourceKey,
+      recordingKey,
+    });
     await env.DB.prepare(
       `UPDATE meetings
        SET transcript_status = 'FAILED', transcript_error = ?, updated_at = ?
        WHERE id = ?`,
     ).bind(message, new Date().toISOString(), room.meeting_id).run();
-    console.error('[meetingRooms] Recording processing failed:', message);
   }
 }
 
@@ -953,12 +985,27 @@ meetingRooms.post('/:token/events', async (c) => {
 });
 
 meetingRooms.post('/:token/recording', async (c) => {
-  const room = await resolveRoom(c.env.DB, c.req.param('token'));
-  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
-  if (room.role !== 'HOST') return apiError(c, 'FORBIDDEN', 'Only the host can upload a room recording.');
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) {
+    console.warn('[meetingRooms] Recording upload: room not found', { token });
+    return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  }
+  if (room.role !== 'HOST') {
+    console.warn('[meetingRooms] Recording upload: non-host role', { token, role: room.role });
+    return apiError(c, 'FORBIDDEN', 'Only the host can upload a room recording.');
+  }
 
   const contentLength = Number(c.req.header('Content-Length') ?? '0');
+  console.log('[meetingRooms] Recording upload started', {
+    token,
+    meetingId: room.meeting_id,
+    roomId: room.room_id,
+    contentLength,
+    contentType: c.req.header('Content-Type') ?? 'unknown',
+  });
   if (contentLength > 100 * 1024 * 1024) {
+    console.warn('[meetingRooms] Recording upload: exceeds 100MB limit', { contentLength });
     return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
   }
   const requestContentType = c.req.header('Content-Type') ?? 'audio/webm';
@@ -1012,6 +1059,7 @@ meetingRooms.post('/:token/recording', async (c) => {
     const form = await c.req.formData();
     const recording = form.get('recording');
     if (!isUploadedBlobPart(recording)) {
+      console.warn('[meetingRooms] Recording upload: missing recording file in multipart', { token });
       return apiError(c, 'VALIDATION_ERROR', 'Recording upload is missing the recording file.');
     }
     bytes = await recording.arrayBuffer();
@@ -1027,16 +1075,40 @@ meetingRooms.post('/:token/recording', async (c) => {
     contentType = requestContentType;
   }
 
-  if (bytes.byteLength === 0) return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  console.log('[meetingRooms] Recording upload parsed', {
+    meetingId: room.meeting_id,
+    recordingBytes: bytes.byteLength,
+    hasTranscriptionAudio: transcriptionBytes !== null,
+    transcriptionBytes: transcriptionBytes?.byteLength ?? 0,
+    contentType,
+  });
+
+  if (bytes.byteLength === 0) {
+    console.warn('[meetingRooms] Recording upload: empty recording', { token });
+    return apiError(c, 'VALIDATION_ERROR', 'Recording is empty.');
+  }
   if (bytes.byteLength + (transcriptionBytes?.byteLength ?? 0) > 100 * 1024 * 1024) {
+    console.warn('[meetingRooms] Recording upload: exceeds limit after parse', {
+      recordingBytes: bytes.byteLength,
+      transcriptionBytes: transcriptionBytes?.byteLength ?? 0,
+    });
     return apiError(c, 'VALIDATION_ERROR', 'Recording exceeds the 100 MB limit.');
   }
 
   const recordingKey = `meetings/${room.owner_id}/${room.meeting_id}/recording.webm`;
-  await c.env.STORAGE.put(recordingKey, bytes, {
-    httpMetadata: { contentType },
-    customMetadata: { meetingId: room.meeting_id, roomId: room.room_id },
-  });
+  console.log('[meetingRooms] Storing recording to R2', { recordingKey, bytes: bytes.byteLength });
+  try {
+    await c.env.STORAGE.put(recordingKey, bytes, {
+      httpMetadata: { contentType },
+      customMetadata: { meetingId: room.meeting_id, roomId: room.room_id },
+    });
+  } catch (r2Error) {
+    console.error('[meetingRooms] R2 put failed for recording', {
+      recordingKey,
+      error: r2Error instanceof Error ? r2Error.message : String(r2Error),
+    });
+    throw r2Error;
+  }
 
   let transcriptionSourceKey = recordingKey;
   if (transcriptionBytes) {
@@ -1065,6 +1137,11 @@ meetingRooms.post('/:token/recording', async (c) => {
     recordingKey,
     processingOverrides,
   ));
+  console.log('[meetingRooms] Recording upload complete, processing started', {
+    meetingId: room.meeting_id,
+    recordingKey,
+    transcriptionSourceKey,
+  });
   return c.json({ accepted: true, transcriptStatus: 'PROCESSING' }, 202);
 });
 

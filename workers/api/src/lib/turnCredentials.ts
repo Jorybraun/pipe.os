@@ -83,19 +83,43 @@ async function fetchMeteredTurn(env: Env, logPrefix: string): Promise<IceServer[
 }
 
 export async function getTurnIceServers(env: Env, logPrefix = '[turn]'): Promise<IceServerResult> {
+  const cfKeyId = env.CLOUDFLARE_TURN_KEY_ID;
+  const cfApiToken = env.CLOUDFLARE_TURN_KEY_API_TOKEN;
+  const meteredKey = env.METERED_API_KEY;
+  console.log(`${logPrefix} ICE config check`, {
+    hasCloudflareKeyId: Boolean(cfKeyId),
+    hasCloudflareApiToken: Boolean(cfApiToken),
+    hasMeteredApiKey: Boolean(meteredKey),
+  });
+
   try {
     const cloudflare = await fetchCloudflareTurn(env, logPrefix);
-    if (cloudflare) return { iceServers: cloudflare, provider: 'cloudflare' };
+    if (cloudflare) {
+      console.log(`${logPrefix} Using Cloudflare TURN`, {
+        serverCount: cloudflare.length,
+        hasTurn: hasTurn(cloudflare),
+      });
+      return { iceServers: cloudflare, provider: 'cloudflare' };
+    }
+    console.warn(`${logPrefix} Cloudflare TURN returned null — falling through to Metered`);
   } catch (error) {
-    console.error(`${logPrefix} Cloudflare TURN credentials error:`, error);
+    console.error(`${logPrefix} Cloudflare TURN credentials error:`, error instanceof Error ? error.message : String(error));
   }
 
   try {
     const metered = await fetchMeteredTurn(env, logPrefix);
-    if (metered) return { iceServers: metered, provider: 'metered' };
+    if (metered) {
+      console.log(`${logPrefix} Using Metered TURN`, {
+        serverCount: metered.length,
+        hasTurn: hasTurn(metered),
+      });
+      return { iceServers: metered, provider: 'metered' };
+    }
+    console.warn(`${logPrefix} Metered TURN returned null — falling through to STUN-only fallback`);
   } catch (error) {
-    console.error(`${logPrefix} Metered TURN credentials error:`, error);
+    console.error(`${logPrefix} Metered TURN credentials error:`, error instanceof Error ? error.message : String(error));
   }
 
+  console.warn(`${logPrefix} All TURN providers failed — using STUN-only fallback. NAT traversal may fail.`);
   return { iceServers: FALLBACK_ICE_SERVERS, provider: 'fallback' };
 }
