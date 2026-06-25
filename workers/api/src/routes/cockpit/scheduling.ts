@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendNotificationEmail } from '../../lib/email';
@@ -1423,7 +1424,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         startedAt: linkedMeeting.started_at,
         endedAt: linkedMeeting.ended_at,
         durationSecs: linkedMeeting.duration_secs,
-        meetingUrl: linkedMeeting.meeting_url,
+        meetingUrl: linkedMeeting.meeting_url
+          ? withDevBasicAuth(linkedMeeting.meeting_url, c.env)
+          : null,
         meetingType: linkedMeeting.meeting_type,
         transcriptStatus: linkedMeeting.transcript_status,
         transcriptSummary: linkedMeeting.transcript_summary,
@@ -1514,16 +1517,19 @@ schedulingAuth.post('/interviews/sync', async (c) => {
   let synced = 0;
   const now = new Date().toISOString();
 
-  // Get all INVITED interviews for this user
+  // Get all INVITED interviews for this user — include both candidate email
+  // (via LEFT JOIN) and recipient_email (stored directly on the interview)
+  // so contact-first interviews without a candidate record can still match.
   const invited = await db
     .prepare(
-      `SELECT si.id, si.candidate_id, c.email AS candidate_email
+      `SELECT si.id, si.candidate_id, si.recipient_email,
+              c.email AS candidate_email
        FROM scheduled_interviews si
-       JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN candidates c ON c.id = si.candidate_id
        WHERE si.owner_id = ? AND si.status = 'INVITED'`
     )
     .bind(userId)
-    .all<{ id: string; candidate_id: string; candidate_email: string | null }>();
+    .all<{ id: string; candidate_id: string | null; recipient_email: string | null; candidate_email: string | null }>();
 
   // For each event, fetch invitees and try to match to our interviews
   for (const event of events) {
@@ -1538,9 +1544,11 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     };
 
     for (const invitee of inviteesData.collection ?? []) {
-      // Match by candidate email
+      // Match by candidate email OR recipient email
       const match = invited.results?.find(
-        (i) => i.candidate_email?.toLowerCase() === invitee.email.toLowerCase()
+        (i) =>
+          i.candidate_email?.toLowerCase() === invitee.email.toLowerCase() ||
+          i.recipient_email?.toLowerCase() === invitee.email.toLowerCase()
       );
       if (!match) continue;
 
@@ -1839,10 +1847,6 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     && (interview.scheduling_provider === 'CALENDLY' || interview.scheduling_provider === 'CAL_COM')
     ? interview.scheduling_url
     : null;
-  const deliveredUrl = schedulingInviteUrl ?? meetingUrl;
-  const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : 'join a video call';
-  const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
-  const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
@@ -1875,6 +1879,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     }
   }
 
+  // For assessment-type interviews, the candidate should land on the assess URL
+  // (which renders the code review / dev container challenge), not the video room.
+  const deliveredUrl = schedulingInviteUrl ?? (assessUrl ?? meetingUrl);
+  const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : needsAssessmentLink ? 'start your assessment' : 'join a video call';
+  const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : needsAssessmentLink ? 'START ASSESSMENT' : 'JOIN VIDEO CALL';
+  const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
+
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -1905,6 +1916,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     : '';
 
   const html = `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="48" height="48" style="display: block; margin-bottom: 24px;"><path d="M 740 500 L 740 752 A 120 120 0 0 1 500 752 L 500 248 A 120 120 0 0 0 260 248 L 260 500" fill="none" stroke="white" stroke-width="192" stroke-linecap="butt" stroke-linejoin="round"/><rect x="615" y="450" width="250" height="100" fill="white"/><rect x="135" y="450" width="250" height="100" fill="white"/></svg>
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi ${candidateName},</h1>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
     You've been invited to ${inviteVerb} for <strong>${pipelineTitle}</strong>.
@@ -2127,13 +2139,13 @@ schedulingPublic.post('/webhook', async (c) => {
   // Find active connection for this provider
   const connection = await db
     .prepare(
-      `SELECT id, owner_id, webhook_secret
+      `SELECT id, owner_id, webhook_secret, access_token
        FROM scheduling_connections
        WHERE provider_id = ? AND status = 'ACTIVE'
        ORDER BY connected_at DESC LIMIT 1`
     )
     .bind(providerId)
-    .first<{ id: string; owner_id: string; webhook_secret: string | null }>();
+    .first<{ id: string; owner_id: string; webhook_secret: string | null; access_token: string }>();
 
   if (!connection) {
     return c.json({ message: 'No active connection' }, 404);
@@ -2166,6 +2178,22 @@ schedulingPublic.post('/webhook', async (c) => {
     return c.json({ message: 'Could not normalize payload' }, 200);
   }
 
+  // If Calendly webhook didn't include a meeting URL, fetch it from the API
+  if (providerId === 'CALENDLY' && !normalized.meetingUrl && normalized.externalEventId && connection.access_token) {
+    try {
+      const eventRes = await fetch(normalized.externalEventId, {
+        headers: { Authorization: `Bearer ${connection.access_token}` },
+      });
+      if (eventRes.ok) {
+        const eventData = await eventRes.json() as { resource?: { location?: { join_url?: string; location?: string } } };
+        const loc = eventData.resource?.location;
+        normalized.meetingUrl = loc?.join_url ?? loc?.location ?? null;
+      }
+    } catch (err) {
+      console.error('[scheduling/webhook] Failed to fetch Calendly event location:', err);
+    }
+  }
+
   // Find matching scheduled interview
   let interview: { id: string; status: string } | null = null;
 
@@ -2179,17 +2207,17 @@ schedulingPublic.post('/webhook', async (c) => {
       .first<{ id: string; status: string }>();
   }
 
-  // Fallback: match by candidate email
+  // Fallback: match by candidate email OR recipient_email
   if (!interview && normalized.candidateEmail) {
     interview = await db
       .prepare(
         `SELECT si.id, si.status
          FROM scheduled_interviews si
-         JOIN candidates c ON c.id = si.candidate_id
-         WHERE c.email = ? AND si.status = 'INVITED'
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+         WHERE (c.email = ? OR si.recipient_email = ?) AND si.status = 'INVITED'
          ORDER BY si.created_at DESC LIMIT 1`
       )
-      .bind(normalized.candidateEmail)
+      .bind(normalized.candidateEmail, normalized.candidateEmail)
       .first<{ id: string; status: string }>();
   }
 
@@ -2659,5 +2687,95 @@ function normalizeWebhookPayload(
 
   return null;
 }
+
+// ─── SSE: Booking notifications ─────────────────────────────────────────────
+//
+// GET /events — SSE stream that polls for interview status changes.
+// Emits 'booking_update' events when an interview transitions to SCHEDULED,
+// CANCELLED, or COMPLETED via webhook or poll sync.
+//
+
+schedulingAuth.get('/events', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+  const acceptHeader = c.req.header('Accept');
+
+  // Non-streaming: return current state
+  if (acceptHeader !== 'text/event-stream') {
+    const recent = await db
+      .prepare(
+        `SELECT id, status, scheduled_at, meeting_url, recipient_name, recipient_email,
+                candidate_id, sync_source, updated_at
+         FROM scheduled_interviews
+         WHERE owner_id = ? AND updated_at > datetime('now', '-5 minutes')
+         ORDER BY updated_at DESC LIMIT 20`
+      )
+      .bind(userId)
+      .all();
+    return c.json({ interviews: recent.results ?? [] });
+  }
+
+  // Streaming: poll every 5s for status changes
+  let lastCheck = new Date(Date.now() - 5000).toISOString();
+
+  const response = streamSSE(c, async (stream) => {
+    try {
+      // Send initial heartbeat
+      await stream.writeSSE({ event: 'connected', data: JSON.stringify({ ts: Date.now() }) });
+
+      while (true) {
+        const changed = await db
+          .prepare(
+            `SELECT id, status, scheduled_at, meeting_url, recipient_name, recipient_email,
+                    candidate_id, sync_source, updated_at
+             FROM scheduled_interviews
+             WHERE owner_id = ? AND updated_at > ?
+             ORDER BY updated_at ASC`
+          )
+          .bind(userId, lastCheck)
+          .all();
+
+        for (const row of changed.results ?? []) {
+          const r = row as {
+            id: string; status: string; scheduled_at: string | null;
+            meeting_url: string | null; recipient_name: string | null;
+            recipient_email: string | null; candidate_id: string | null;
+            sync_source: string | null; updated_at: string;
+          };
+
+          // Only emit for webhook/poll-sourced updates (not manual recruiter changes)
+          if (r.sync_source === 'WEBHOOK' || r.sync_source === 'POLL') {
+            await stream.writeSSE({
+              event: 'booking_update',
+              data: JSON.stringify({
+                interviewId: r.id,
+                status: r.status,
+                scheduledAt: r.scheduled_at,
+                meetingUrl: r.meeting_url,
+                recipientName: r.recipient_name,
+                recipientEmail: r.recipient_email,
+                candidateId: r.candidate_id,
+                syncSource: r.sync_source,
+                updatedAt: r.updated_at,
+              }),
+            });
+          }
+        }
+
+        lastCheck = new Date().toISOString();
+        await stream.sleep(5000);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[scheduling/events] SSE error:', msg);
+    }
+  });
+
+  response.headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+  response.headers.set('Cache-Control', 'no-cache');
+  response.headers.set('Connection', 'keep-alive');
+  return response;
+});
 
 export { schedulingAuth, schedulingPublic };
