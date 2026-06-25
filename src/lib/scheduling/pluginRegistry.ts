@@ -23,6 +23,7 @@ export interface SchedulingWidgetProps {
   schedulingUrl: string;
   candidateName: string;
   candidateEmail?: string;
+  interviewId?: string;
   /** Called when the provider's embed detects a booking completion */
   onBookingComplete?: (externalEventId: string, scheduledAt: string) => void;
 }

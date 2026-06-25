@@ -21,10 +21,12 @@ const CalComWidget: FC<SchedulingProviderConfig> = ({
   schedulingUrl,
   candidateName,
   candidateEmail,
+  interviewId,
 }) => {
   const params = new URLSearchParams();
   if (candidateName)  params.set('name',  candidateName);
   if (candidateEmail) params.set('email', candidateEmail);
+  if (interviewId)    params.set('a1',   interviewId);
   const embedUrl = `${schedulingUrl}?${params.toString()}`;
 
   return (
@@ -44,6 +46,7 @@ const CalComPluginWidget: FC<SchedulingWidgetProps> = ({
   schedulingUrl,
   candidateName,
   candidateEmail,
+  interviewId,
   onBookingComplete,
 }) => {
   useEffect(() => {
@@ -72,6 +75,7 @@ const CalComPluginWidget: FC<SchedulingWidgetProps> = ({
       schedulingUrl={schedulingUrl}
       candidateName={candidateName}
       candidateEmail={candidateEmail}
+      interviewId={interviewId}
     />
   );
 };

@@ -1540,16 +1540,24 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     if (!inviteesRes.ok) continue;
 
     const inviteesData = await inviteesRes.json() as {
-      collection?: Array<{ email: string; uri: string }>;
+      collection?: Array<{ email: string; uri: string; answers?: Array<{ position: number; value: string }> }>;
     };
 
     for (const invitee of inviteesData.collection ?? []) {
-      // Match by candidate email OR recipient email
-      const match = invited.results?.find(
-        (i) =>
-          i.candidate_email?.toLowerCase() === invitee.email.toLowerCase() ||
-          i.recipient_email?.toLowerCase() === invitee.email.toLowerCase()
-      );
+      // Try to match by interview ID from custom answer a1 first
+      const a1Answer = invitee.answers?.find((a) => a.position === 1);
+      let match = a1Answer?.value
+        ? invited.results?.find((i) => i.id === a1Answer.value)
+        : null;
+
+      // Fallback: match by candidate email OR recipient email
+      if (!match) {
+        match = invited.results?.find(
+          (i) =>
+            i.candidate_email?.toLowerCase() === invitee.email.toLowerCase() ||
+            i.recipient_email?.toLowerCase() === invitee.email.toLowerCase()
+        );
+      }
       if (!match) continue;
 
       const meetingUrl = event.location?.join_url ?? null;
@@ -2194,11 +2202,44 @@ schedulingPublic.post('/webhook', async (c) => {
     }
   }
 
+  // Fetch invitee details to extract custom answers (a1 = interview ID)
+  if (providerId === 'CALENDLY' && normalized.inviteeUri && connection.access_token) {
+    try {
+      const inviteeRes = await fetch(normalized.inviteeUri, {
+        headers: { Authorization: `Bearer ${connection.access_token}` },
+      });
+      if (inviteeRes.ok) {
+        const inviteeData = await inviteeRes.json() as {
+          resource?: {
+            answers?: Array<{ position: number; value: string }>;
+          };
+        };
+        const answers = inviteeData.resource?.answers;
+        const a1 = answers?.find((a) => a.position === 1);
+        if (a1?.value) {
+          normalized.interviewId = a1.value;
+        }
+      }
+    } catch (err) {
+      console.error('[scheduling/webhook] Failed to fetch Calendly invitee answers:', err);
+    }
+  }
+
   // Find matching scheduled interview
   let interview: { id: string; status: string } | null = null;
 
-  // Try by external event ID first
-  if (normalized.externalEventId) {
+  // Try by interview ID from custom field first (most reliable)
+  if (normalized.interviewId) {
+    interview = await db
+      .prepare(
+        'SELECT id, status FROM scheduled_interviews WHERE id = ?'
+      )
+      .bind(normalized.interviewId)
+      .first<{ id: string; status: string }>();
+  }
+
+  // Try by external event ID
+  if (!interview && normalized.externalEventId) {
     interview = await db
       .prepare(
         'SELECT id, status FROM scheduled_interviews WHERE external_event_id = ?'
@@ -2659,6 +2700,8 @@ function normalizeWebhookPayload(
       scheduledAt: (scheduledEvent?.['start_time'] as string) ?? null,
       meetingUrl: (location?.['join_url'] as string) ?? null,
       candidateEmail: (p['email'] as string) ?? null,
+      interviewId: null,
+      inviteeUri: (p['uri'] as string) ?? null,
     };
   }
 
@@ -2684,6 +2727,8 @@ function normalizeWebhookPayload(
       scheduledAt: (p['startTime'] as string) ?? null,
       meetingUrl: (p['metadata']as Record<string, unknown>)?.['videoCallUrl'] as string ?? null,
       candidateEmail: (firstAttendee?.['email'] as string) ?? null,
+      interviewId: null,
+      inviteeUri: null,
     };
   }
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Calendar, UserPlus } from 'lucide-react';
+import { Calendar, UserPlus, X, CheckCircle2, XCircle } from 'lucide-react';
 import { useScheduledInterviews } from '../../hooks/useScheduledInterviews';
+import { useBookingNotifications, type BookingNotification } from '../../hooks/useBookingNotifications';
 import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
 import { InviteCreationModal } from './InviteCreationModal';
@@ -73,11 +74,46 @@ const TIMELINE_LABELS: Record<TimelineGroup, string> = {
  * stageTitle embedded via LEFT JOINs. This component simply groups by timeline
  * and renders.
  */
+interface ToastItem {
+  id: string;
+  notification: BookingNotification;
+}
+
+function statusIcon(status: string): JSX.Element {
+  if (status === 'SCHEDULED') return <CheckCircle2 size={16} color="#4ade80" />;
+  if (status === 'CANCELLED') return <XCircle size={16} color="#f87171" />;
+  return <Calendar size={16} color="#60a5fa" />;
+}
+
+function statusMessage(notification: BookingNotification): string {
+  const name = notification.recipientName ?? notification.recipientEmail ?? 'Someone';
+  const time = notification.scheduledAt
+    ? new Date(notification.scheduledAt).toLocaleString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit',
+      })
+    : '';
+
+  switch (notification.status) {
+    case 'SCHEDULED':
+      return time ? `${name} booked their interview for ${time}` : `${name} booked their interview`;
+    case 'CANCELLED':
+      return `${name} cancelled their interview`;
+    case 'COMPLETED':
+      return `${name}'s interview is complete`;
+    default:
+      return `${name}'s interview updated to ${notification.status}`;
+  }
+}
+
 export function SchedulingDashboard(): JSX.Element {
   const { interviews, isLoading, error, updateStatus, sendInvite, refetch } = useScheduledInterviews();
+  const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const seenNotificationIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (searchParams.get('new') !== '1') return;
@@ -86,6 +122,31 @@ export function SchedulingDashboard(): JSX.Element {
     next.delete('new');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+
+  // Process new notifications into toasts + trigger refetch
+  useEffect(() => {
+    if (notifications.length === 0) return;
+
+    const newToasts: ToastItem[] = [];
+    for (const n of notifications) {
+      const key = `${n.interviewId}-${n.updatedAt}`;
+      if (seenNotificationIds.current.has(key)) continue;
+      seenNotificationIds.current.add(key);
+      newToasts.push({ id: key, notification: n });
+    }
+
+    if (newToasts.length > 0) {
+      setToasts((prev) => [...prev, ...newToasts]);
+      // Refetch interviews to pick up the updated status
+      void refetch();
+      // Auto-dismiss each toast after 8 seconds
+      for (const t of newToasts) {
+        setTimeout(() => {
+          setToasts((prev) => prev.filter((x) => x.id !== t.id));
+        }, 8000);
+      }
+    }
+  }, [notifications, refetch]);
 
   // Group interviews by timeline, then sort within each group by time
   const groupedInterviews = useMemo(() => {
@@ -138,11 +199,84 @@ export function SchedulingDashboard(): JSX.Element {
 
   return (
     <div>
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 20,
+            right: 20,
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxWidth: 380,
+          }}
+        >
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: '12px 16px',
+                background: 'var(--pipe-surface-solid)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 8,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                animation: 'slideIn 0.3s ease',
+              }}
+            >
+              {statusIcon(t.notification.status)}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pipe-text)', fontFamily: '"Space Mono", monospace' }}>
+                  {statusMessage(t.notification)}
+                </div>
+                {t.notification.meetingUrl && (
+                  <a
+                    href={t.notification.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 10,
+                      color: '#60a5fa',
+                      textDecoration: 'none',
+                      fontFamily: '"Space Mono", monospace',
+                      marginTop: 4,
+                      display: 'inline-block',
+                    }}
+                  >
+                    Join meeting →
+                  </a>
+                )}
+              </div>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--pipe-text-dim)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Page header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <div>
           <div style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 8 }}>
             INTERVIEWS
+            {isConnected && (
+              <span style={{ marginLeft: 8, color: '#4ade80', fontSize: 8 }}>● LIVE</span>
+            )}
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 800, color: 'var(--pipe-text)', letterSpacing: '-0.02em' }}>
             Interviews

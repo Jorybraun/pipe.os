@@ -155,6 +155,7 @@ export function SchedulingStep({
         schedulingUrl={url}
         candidateName={candidateName}
         candidateEmail={candidateEmail}
+        interviewId={interview.id}
       />
 
       <p style={{ marginTop: 16, fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', textAlign: 'center' }}>

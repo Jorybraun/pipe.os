@@ -28,6 +28,7 @@ const CalendlyWidget: FC<SchedulingProviderConfig> = ({
   schedulingUrl,
   candidateName,
   candidateEmail,
+  interviewId,
 }) => {
   useEffect(() => {
     // Inject CSS once
@@ -47,10 +48,11 @@ const CalendlyWidget: FC<SchedulingProviderConfig> = ({
     }
   }, []);
 
-  // Build prefill query params
+  // Build prefill query params — a1 carries the interview ID for webhook matching
   const params = new URLSearchParams();
   if (candidateName)  params.set('name',  candidateName);
   if (candidateEmail) params.set('email', candidateEmail);
+  if (interviewId)    params.set('a1',   interviewId);
   const embedUrl = `${schedulingUrl}?${params.toString()}`;
 
   return (
@@ -70,6 +72,7 @@ const CalendlyPluginWidget: FC<SchedulingWidgetProps> = ({
   schedulingUrl,
   candidateName,
   candidateEmail,
+  interviewId,
   onBookingComplete,
 }) => {
   useEffect(() => {
@@ -98,6 +101,7 @@ const CalendlyPluginWidget: FC<SchedulingWidgetProps> = ({
       schedulingUrl={schedulingUrl}
       candidateName={candidateName}
       candidateEmail={candidateEmail}
+      interviewId={interviewId}
     />
   );
 };

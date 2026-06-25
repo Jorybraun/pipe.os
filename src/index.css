@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
-@import './styles/tokens.css';
+@import "./styles/tokens.css";
 
 /* ── Google Fonts: Inter ──────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
 
 /* ── Tailwind v4 theme customization ─────────────────────────────────────── */
 @theme {
@@ -57,8 +57,10 @@
   --color-error-900: #450a0a;
 
   /* Font families */
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Space Mono', 'Courier New', monospace;
+  --font-sans:
+    "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: "Space Mono", "Courier New", monospace;
 
   /* Custom font sizes */
   --text-micro: 7px;
@@ -79,10 +81,11 @@
   --text-h1--line-height: 1.2;
 
   /* Shadows */
-  --shadow-subtle: 0 1px 3px rgba(0,0,0,0.1);
-  --shadow-medium: 0 4px 6px rgba(0,0,0,0.1);
-  --shadow-large: 0 10px 15px rgba(0,0,0,0.1);
-  --shadow-glass: 0 20px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+  --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-medium: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-large: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-glass:
+    0 20px 60px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
   /* Backdrop blur */
   --blur-glass: 40px;
@@ -94,19 +97,40 @@
   --transition-duration-slow: 600ms;
 
   /* Animations */
-  --animate-shimmer: shimmer 2s cubic-bezier(0.4,0,0.6,1) infinite;
+  --animate-shimmer: shimmer 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   --animate-fade-in: fade-in 0.3s ease-out;
   --animate-pulse: pulse 2s ease-in-out infinite;
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 @keyframes fade-in {
-  0% { opacity: 0; transform: translateY(4px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* ── Base resets ──────────────────────────────────────────────────────────── */
@@ -133,7 +157,13 @@ html[data-theme="anatomy"] {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--pipe-bg, #0c0c0e);
@@ -141,9 +171,12 @@ body {
 }
 
 /* Code blocks and technical labels keep Space Mono */
-code, pre, kbd, samp,
+code,
+pre,
+kbd,
+samp,
 .font-mono {
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: "Space Mono", "Courier New", monospace;
 }
 
 #root {
@@ -210,7 +243,13 @@ code, pre, kbd, samp,
   line-height: 1.75;
   color: var(--pipe-text-muted);
   margin-bottom: 12px;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .jd-markdown ul {
@@ -223,7 +262,13 @@ code, pre, kbd, samp,
   line-height: 1.75;
   color: var(--pipe-text-muted);
   margin-bottom: 6px;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .jd-markdown li::marker {

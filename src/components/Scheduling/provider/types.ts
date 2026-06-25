@@ -5,6 +5,7 @@ export interface SchedulingProviderConfig {
   schedulingUrl: string;
   candidateName: string;
   candidateEmail?: string | undefined;
+  interviewId?: string | undefined;
 }
 
 export interface SchedulingProviderDef {
