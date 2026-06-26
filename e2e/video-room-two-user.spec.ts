@@ -33,6 +33,11 @@ function jsonAuthHeaders(token: string): Record<string, string> {
   };
 }
 
+interface CreateMeetingRoomOptions {
+  title?: string;
+  scheduledInterviewId?: string;
+}
+
 function observeRoomFrames(page: Page): string[] {
   const frames: string[] = [];
   page.on('websocket', (ws) => {
@@ -59,6 +64,7 @@ function countFrames(frames: string[], type: string): number {
 async function createMeetingRoom(
   request: APIRequestContext,
   token: string,
+  options: CreateMeetingRoomOptions = {},
 ): Promise<{ meetingId: string; hostUrl: string; guestUrl: string; recipientEmail: string }> {
   const unique = Date.now();
   const recipientEmail = `video-room-${unique}@pipe-test.dev`;
@@ -67,8 +73,9 @@ async function createMeetingRoom(
     data: {
       recipientName: 'E2E Video Guest',
       recipientEmail,
-      title: `E2E Video Room ${unique}`,
+      title: options.title ?? `E2E Video Room ${unique}`,
       meetingType: 'INTERVIEW',
+      ...(options.scheduledInterviewId ? { scheduledInterviewId: options.scheduledInterviewId } : {}),
     },
   });
   if (!createRes.ok()) {
@@ -713,6 +720,8 @@ test.describe('two-user video room', () => {
 
       await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
       await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(host.getByTestId('win95-desktop')).toBeVisible();
+      await expect(guest.getByTestId('win95-desktop')).toBeVisible();
       await expect(host.getByTestId('remote-video')).toBeVisible();
       await expect(guest.getByTestId('remote-video')).toBeVisible();
       await expect(host.getByTestId('local-video')).toBeVisible();
@@ -724,6 +733,72 @@ test.describe('two-user video room', () => {
       expect(sawFrame(guestFrames, 'ANSWER')).toBeTruthy();
       expect(sawFrame(hostFrames, 'ICE_CANDIDATE')).toBeTruthy();
       expect(sawFrame(guestFrames, 'ICE_CANDIDATE')).toBeTruthy();
+    } finally {
+      await hostContext.close();
+      await guestContext.close();
+    }
+  });
+
+  test('syncs shared desktop windows across host and guest', async ({
+    browser,
+    page,
+    request,
+  }) => {
+    const token = await getAuthToken(page);
+    const { hostUrl, guestUrl } = await createMeetingRoom(request, token, {
+      title: 'E2E Shared Desktop Room',
+    });
+
+    const hostContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+    const guestContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+
+    try {
+      const host = await newRoomContext(hostContext);
+      const guest = await newRoomContext(guestContext);
+
+      await Promise.all([
+        host.goto(hostUrl),
+        guest.goto(guestUrl),
+      ]);
+      await Promise.all([
+        expect(host.getByTestId('device-check')).toBeVisible(),
+        expect(guest.getByTestId('device-check')).toBeVisible(),
+      ]);
+      await Promise.all([
+        host.getByTestId('join-room').click(),
+        guest.getByTestId('join-room').click(),
+      ]);
+
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(host.getByTestId('win95-desktop')).toBeVisible();
+      await expect(guest.getByTestId('win95-desktop')).toBeVisible();
+
+      await host.getByTestId('room-desktop-icon-browser').dblclick();
+      await expect(host.getByTestId('room-window-browser')).toBeVisible();
+      await expect(guest.getByTestId('room-window-browser')).toBeVisible({ timeout: 10_000 });
+
+      await host.getByTestId('room-browser-address-input').fill('example.com');
+      await host.getByTestId('room-browser-go').click();
+      await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
+
+      await host.getByTestId('room-desktop-icon-notepad').dblclick();
+      await expect(guest.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
+      await host.getByTestId('room-notepad-textarea').fill('Candidate notes sync in the shared desktop.');
+      await expect(guest.getByTestId('room-notepad-textarea')).toHaveValue(
+        'Candidate notes sync in the shared desktop.',
+        { timeout: 10_000 },
+      );
+
+      await guest.getByTestId('room-window-browser').getByLabel('Close').click();
+      await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });
+      await expect(guest.getByTestId('room-window-browser')).toHaveCount(0);
     } finally {
       await hostContext.close();
       await guestContext.close();

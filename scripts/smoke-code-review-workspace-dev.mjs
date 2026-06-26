@@ -3,6 +3,7 @@ const ROOM_BASE = (process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').re
 const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
 const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
 const REPO_URL = process.env.WORKSPACE_SMOKE_REPO_URL || 'https://github.com/octocat/Hello-World';
+const PR_NUMBER = Number(process.env.WORKSPACE_SMOKE_PR_NUMBER || '1');
 const REMOTE = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
 
 function assertEnv() {
@@ -86,8 +87,9 @@ async function main() {
       recipientName: 'Workspace Smoke',
       recipientEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
-      interviewType: 'CODE_REVIEW',
+      interviewType: 'DEV_CONTAINER_CHALLENGE',
       githubRepoUrl: REPO_URL,
+      githubPrNumber: PR_NUMBER,
     }),
   });
   const interviewId = created?.interview?.id;
@@ -126,6 +128,7 @@ async function main() {
     hostUrl: cleanRoomUrl(invited.room.hostUrl),
     guestUrl: cleanRoomUrl(invited.room.guestUrl),
     repoUrl: workspace.repoUrl,
+    githubPrNumber: PR_NUMBER,
     workspaceStatus: readySession.status,
     proxyPathReady: Boolean(readySession.proxyPath),
   }, null, 2));

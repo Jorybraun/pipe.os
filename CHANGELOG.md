@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 95 Until Infinity shared interview desktop
+
+- The video room now uses the synced Win95 desktop as the durable interview shell, with the standard call layout preserved as a host-switchable fallback surface.
+- Added synced desktop surface/window events through the `VideoRoom` Durable Object, covering shared Edge, Notepad, Paint, terminal, window close/data updates, and host-controlled room-surface changes.
+- Added an append-only desktop activity log in the `VideoRoom` Durable Object so shared desktop interactions can be replayed and promoted into living-context evidence.
+- Added regressions for workspace launch gating, host-controlled desktop surface changes, and shared desktop window sync.
+- Updated the deployed video-room smoke to validate the Win95 desktop surface and recording taskbar state instead of the legacy standard-call badges.
+
 ### Changed — Win95-themed workspace overlay in video room
 
 - Replaced the always-visible workspace panel with a toggleable floating icon button in the video room.

@@ -1,6 +1,16 @@
 import { useCallback, useRef, useState } from 'react';
 
-export type WindowType = 'video' | 'workspace' | 'chat' | 'tasks' | 'snippet' | 'browser' | 'terminal' | 'custom';
+export type WindowType =
+  | 'video'
+  | 'workspace'
+  | 'chat'
+  | 'tasks'
+  | 'snippet'
+  | 'browser'
+  | 'notepad'
+  | 'paint'
+  | 'terminal'
+  | 'custom';
 
 export interface WindowState {
   id: string;
@@ -62,6 +72,8 @@ const DEFAULT_SIZES: Record<WindowType, { width: number; height: number }> = {
   tasks: { width: 420, height: 480 },
   snippet: { width: 480, height: 320 },
   browser: { width: 800, height: 560 },
+  notepad: { width: 520, height: 420 },
+  paint: { width: 640, height: 480 },
   terminal: { width: 640, height: 400 },
   custom: { width: 400, height: 300 },
 };

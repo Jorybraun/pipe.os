@@ -36,15 +36,20 @@ export function useSessionEvents({ token, apiBase }: CaptureOptions) {
   const flush = useCallback(async () => {
     if (queueRef.current.length === 0) return;
     const batch = queueRef.current.splice(0);
-    try {
-      await fetch(`${apiBase}/api/v1/meeting-rooms/${tokenRef.current}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(batch[0]),
-      });
-    } catch {
-      // Re-queue on failure
-      queueRef.current.unshift(...batch);
+    const failed: typeof batch = [];
+    for (const event of batch) {
+      try {
+        await fetch(`${apiBase}/api/v1/meeting-rooms/${tokenRef.current}/session-events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(event),
+        });
+      } catch {
+        failed.push(event);
+      }
+    }
+    if (failed.length > 0) {
+      queueRef.current.unshift(...failed);
     }
   }, [apiBase]);
 

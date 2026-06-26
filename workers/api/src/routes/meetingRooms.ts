@@ -83,12 +83,36 @@ const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
 const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
 const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
 const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
-const WORKSPACE_INTERVIEW_TYPES = new Set(['CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE']);
+const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
+});
+
+const sessionEventSchema = z.object({
+  type: z.enum([
+    'ai_chat_user',
+    'ai_chat_agent',
+    'ai_agent_status',
+    'terminal_command',
+    'terminal_output',
+    'file_change',
+    'browser_navigation',
+    'window_open',
+    'window_close',
+    'window_focus',
+    'participant_join',
+    'participant_leave',
+    'recording_start',
+    'recording_stop',
+    'code_editor_open',
+    'code_editor_save',
+  ]),
+  text: z.string().min(1).max(8000),
+  actor: z.enum(['host', 'guest', 'agent', 'system']).optional(),
+  properties: z.record(z.string(), z.unknown()).optional(),
 });
 
 interface RoomWorkspaceInterview {
@@ -324,7 +348,7 @@ async function buildRoomWorkspacePayload(
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
   return {
     enabled,
-    canLaunch: true,
+    canLaunch: enabled && room.role === 'HOST',
     repoUrl: interview?.github_repo_url ?? null,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
@@ -733,6 +757,9 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   }
 
   const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
+  if (!workspace.enabled) {
+    return apiError(c, 'FORBIDDEN', 'Workspace is only available for dev-container interviews.');
+  }
   let body: z.infer<typeof workspaceLaunchSchema> = {};
   try {
     const raw = await c.req.json().catch(() => null);
@@ -980,15 +1007,11 @@ meetingRooms.all('/:token/agent/:sessionId/auth/*', async (c) => {
 });
 
 // Session context graph — capture events and retrieve the candidate's session brain.
-// POST /:token/events — capture a session event as a candidate_node
-meetingRooms.post('/:token/events', async (c) => {
+// POST /:token/session-events — capture a session event as a candidate_node
+meetingRooms.post('/:token/session-events', async (c) => {
   const token = c.req.param('token');
-  const body = await c.req.json<{
-    type: string;
-    text: string;
-    actor?: string;
-    properties?: Record<string, unknown>;
-  }>();
+  const parsed = sessionEventSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', 'Invalid session event.');
 
   const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
   const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
@@ -996,13 +1019,13 @@ meetingRooms.post('/:token/events', async (c) => {
   if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
 
   const event = {
-    type: body.type as any,
+    type: parsed.data.type,
     sessionId: resolved.sessionId,
     candidateId: resolved.candidateId,
     timestamp: Math.floor(Date.now() / 1000),
-    actor: (body.actor ?? 'system') as 'host' | 'guest' | 'agent' | 'system',
-    text: body.text,
-    properties: body.properties,
+    actor: parsed.data.actor ?? 'system',
+    text: parsed.data.text,
+    properties: parsed.data.properties,
   };
 
   const node = await captureSessionEvent(c.env.DB, event, c.env);

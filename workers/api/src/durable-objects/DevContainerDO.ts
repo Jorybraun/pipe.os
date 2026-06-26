@@ -278,7 +278,7 @@ const server = http.createServer((req, res) => {
       const apiUrl = process.env.PIPE_API_URL || '';
       const roomToken = process.env.ROOM_TOKEN || '';
       if (!apiUrl || !roomToken) { res.writeHead(502); res.end('No API configured.'); return; }
-      const eventReq = http.request(apiUrl + '/api/v1/meeting-rooms/' + roomToken + '/events', {
+      const eventReq = http.request(apiUrl + '/api/v1/meeting-rooms/' + roomToken + '/session-events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       }, (eventRes) => {

@@ -26,6 +26,8 @@ import {
 import type { Env, Variables } from '../../types';
 
 const contactsMigration = readMigration('0075_contacts.sql');
+const candidateNodesMigration = readMigration('0052_candidate_nodes.sql');
+const candidateNodeIdempotencyMigration = readMigration('0085_candidate_node_idempotency.sql');
 const meetingsMigration = readMigration('0076_meetings.sql');
 const meetingParticipantsMigration = readMigration('0077_meeting_participants.sql');
 const meetingRoomsMigration = readMigration('0081_meeting_rooms.sql');
@@ -643,6 +645,10 @@ function seedSchema(sqlite: BetterSqliteDb): void {
     );
     CREATE TABLE scheduled_interviews (
       id TEXT PRIMARY KEY,
+      candidate_id TEXT,
+      owner_id TEXT,
+      recipient_name TEXT,
+      recipient_email TEXT,
       interview_type TEXT,
       github_repo_url TEXT,
       github_pr_number INTEGER,
@@ -680,10 +686,18 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
     );
   `);
+  sqlite.exec(candidateNodesMigration);
+  sqlite.exec(candidateNodeIdempotencyMigration);
   sqlite.exec(contactsMigration);
   sqlite.exec(meetingsMigration);
   sqlite.exec(meetingParticipantsMigration);
   sqlite.exec(meetingRoomsMigration);
+  sqlite.exec(`
+    ALTER TABLE meetings ADD COLUMN video_enabled INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE meetings ADD COLUMN workspace_enabled INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE meetings ADD COLUMN recording_enabled INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE meetings ADD COLUMN clippy_enabled INTEGER NOT NULL DEFAULT 1;
+  `);
   sqlite.exec(livingContextMigration);
   sqlite.exec(repoSemanticGraphMigration);
   sqlite.exec(transcriptProjectionMigration);
@@ -932,6 +946,116 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
+  it('captures validated session events separately from room lifecycle events', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-session-event',
+      'owner-1',
+      'Session Event Candidate',
+      'session-event@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Session Event Candidate',
+        recipientEmail: 'session-event@example.com',
+        title: 'Session event room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-session-event',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+      }),
+    }, env, ctx);
+    expect(lifecycleRes.status).toBe(422);
+
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+        properties: {
+          windowId: 'browser',
+          windowType: 'browser',
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(sessionEventRes.status).toBe(200);
+    await expect(sessionEventRes.json()).resolves.toMatchObject({
+      captured: true,
+      nodeId: expect.any(String),
+    });
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-session-event') as { candidate_id: string } | undefined;
+    expect(linked?.candidate_id).toEqual(expect.any(String));
+
+    const candidate = sqlite.prepare(
+      'SELECT id, owner_id, pipeline_id, name, email FROM candidates WHERE id = ?',
+    ).get(linked?.candidate_id) as {
+      id: string;
+      owner_id: string;
+      pipeline_id: string | null;
+      name: string;
+      email: string;
+    } | undefined;
+    expect(candidate).toMatchObject({
+      owner_id: 'owner-1',
+      pipeline_id: null,
+      name: 'Session Event Candidate',
+      email: 'session-event@example.com',
+    });
+
+    const node = sqlite.prepare(
+      `SELECT candidate_id, node_type, narrative_text, source_type, source_reference, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?`,
+    ).get(linked?.candidate_id) as {
+      candidate_id: string;
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      source_reference: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(node).toMatchObject({
+      candidate_id: linked?.candidate_id,
+      node_type: 'session_window_open',
+      source_type: 'meeting_session',
+    });
+    expect(node?.narrative_text).toContain('Window opened: Microsoft Edge');
+    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      sessionId: node?.source_reference,
+      windowId: 'browser',
+      surface: 'win95',
+    });
+  });
+
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
@@ -1036,7 +1160,7 @@ describe('meeting room recording living-context route', () => {
     sqlite.prepare(
       `INSERT INTO scheduled_interviews (
          id, interview_type, github_repo_url, github_pr_number, status, updated_at
-       ) VALUES (?, 'CODE_REVIEW', ?, ?, 'INVITED', ?)`,
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, ?, 'INVITED', ?)`,
     ).run(
       scheduledInterviewId,
       'https://github.com/pipe/order-recovery',
@@ -1094,6 +1218,43 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
     }));
+  });
+
+  it('keeps standard meeting rooms off the workspace desktop path', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Standard Guest',
+        recipientEmail: 'standard-guest@example.com',
+        title: 'Standard video call',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: { enabled: boolean; canLaunch: boolean };
+    };
+    expect(workspaceBody.workspace.enabled).toBe(false);
+    expect(workspaceBody.workspace.canLaunch).toBe(false);
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl: 'https://github.com/pipe/standard-call' }),
+    }, env, ctx);
+    expect(launchRes.status).toBe(403);
+    const launchBody = await launchRes.json() as { error: { message: string } };
+    expect(launchBody.error.message).toContain('dev-container');
   });
 
   it('routes a recorded meeting transcript into the same graph after roleless candidate convergence', async () => {

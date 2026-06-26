@@ -7,12 +7,85 @@ import type {
   RoomRole,
   SdpPayload,
 } from '../types';
+import type { OpenWindowConfig, WindowType } from './useWindowManager';
+
+const WINDOW_TYPES = new Set<WindowType>([
+  'video',
+  'workspace',
+  'chat',
+  'tasks',
+  'snippet',
+  'browser',
+  'notepad',
+  'paint',
+  'terminal',
+  'custom',
+]);
+
+export interface RoomDesktopWindowConfig extends OpenWindowConfig {
+  id: string;
+}
+
+export type RoomSurface = 'standard' | 'win95';
+
+export type RoomDesktopEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'SET_ROOM_SURFACE';
+      surface: RoomSurface;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'OPEN_WINDOW';
+      window: RoomDesktopWindowConfig;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'CLOSE_WINDOW';
+      windowId: string;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_DATA';
+      windowId: string;
+      data: Record<string, unknown>;
+    };
+
+export type RoomDesktopEventDraft =
+  | {
+      kind: 'SET_ROOM_SURFACE';
+      surface: RoomSurface;
+    }
+  | {
+      kind: 'OPEN_WINDOW';
+      window: RoomDesktopWindowConfig;
+    }
+  | {
+      kind: 'CLOSE_WINDOW';
+      windowId: string;
+    }
+  | {
+      kind: 'UPDATE_WINDOW_DATA';
+      windowId: string;
+      data: Record<string, unknown>;
+    };
 
 interface RoomConnection {
   phase: RoomPhase;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   iceProvider: IceServerProvider;
+  roomSurface: RoomSurface;
+  desktopEvents: RoomDesktopEvent[];
+  desktopSnapshot: RoomDesktopWindowConfig[] | null;
   cameraEnabled: boolean;
   micEnabled: boolean;
   setLocalStream: (stream: MediaStream) => void;
@@ -22,6 +95,8 @@ interface RoomConnection {
   toggleCamera: () => void;
   toggleMic: () => void;
   retryConnection: () => void;
+  publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
+  setRoomSurface: (surface: RoomSurface) => void;
 }
 
 const FALLBACK_ICE: RTCIceServer[] = [
@@ -43,11 +118,119 @@ function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isWindowType(value: unknown): value is WindowType {
+  return typeof value === 'string' && WINDOW_TYPES.has(value as WindowType);
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function isRoomSurface(value: unknown): value is RoomSurface {
+  return value === 'standard' || value === 'win95';
+}
+
+function parseDesktopWindow(value: unknown): RoomDesktopWindowConfig | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || !isWindowType(value.windowType) || typeof value.title !== 'string') {
+    return null;
+  }
+  return {
+    id: value.id,
+    windowType: value.windowType,
+    title: value.title,
+    icon: typeof value.icon === 'string' ? value.icon : undefined,
+    x: numberOrUndefined(value.x),
+    y: numberOrUndefined(value.y),
+    width: numberOrUndefined(value.width),
+    height: numberOrUndefined(value.height),
+    data: recordOrUndefined(value.data),
+  };
+}
+
+function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+  ) {
+    return null;
+  }
+  if (value.kind === 'OPEN_WINDOW') {
+    const windowConfig = parseDesktopWindow(value.window);
+    if (!windowConfig) return null;
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'OPEN_WINDOW',
+      window: windowConfig,
+    };
+  }
+  if (value.kind === 'SET_ROOM_SURFACE' && isRoomSurface(value.surface)) {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'SET_ROOM_SURFACE',
+      surface: value.surface,
+    };
+  }
+  if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'CLOSE_WINDOW',
+      windowId: value.windowId,
+    };
+  }
+  if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && isRecord(value.data)) {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'UPDATE_WINDOW_DATA',
+      windowId: value.windowId,
+      data: value.data,
+    };
+  }
+  return null;
+}
+
+function parseDesktopSnapshot(value: unknown): {
+  windows: RoomDesktopWindowConfig[];
+  surface?: RoomSurface;
+} | null {
+  if (!isRecord(value) || !Array.isArray(value.windows)) return null;
+  const windows: RoomDesktopWindowConfig[] = [];
+  for (const entry of value.windows) {
+    const windowConfig = parseDesktopWindow(entry);
+    if (windowConfig) windows.push(windowConfig);
+  }
+  return {
+    windows,
+    surface: isRoomSurface(value.surface) ? value.surface : undefined,
+  };
+}
+
 export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [iceProvider, setIceProvider] = useState<IceServerProvider>('unknown');
+  const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>('win95');
+  const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
+  const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -65,6 +248,12 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const startingCallRef = useRef(false);
   const startCallRef = useRef<RoomConnection['startCall'] | null>(null);
   const autoStartTimerRef = useRef<number | null>(null);
+  const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
+  const desktopClientIdRef = useRef(
+    typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   phaseRef.current = phase;
 
   const setConnectionPhase = useCallback((nextPhase: RoomPhase): void => {
@@ -91,6 +280,24 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     wsRef.current!.send(JSON.stringify({ type: 'STATUS_UPDATE', status }));
     return true;
   }, [hasOpenSignal]);
+
+  const sendDesktopEvent = useCallback((event: RoomDesktopEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_DESKTOP_EVENT', payload: event }));
+    return true;
+  }, []);
+
+  const flushDesktopOutbox = useCallback((): void => {
+    if (desktopOutboxRef.current.length === 0) return;
+    const pending = desktopOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendDesktopEvent(event)) {
+        desktopOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendDesktopEvent]);
 
   const drainIce = useCallback(async (): Promise<void> => {
     const peer = peerRef.current;
@@ -244,6 +451,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
+        flushDesktopOutbox();
         const peer = peerRef.current;
         if (
           remoteRef.current ||
@@ -330,6 +538,18 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
           else void peerRef.current?.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined);
         } else if (message.type === 'HANGUP') {
           closePeer('ended');
+        } else if (message.type === 'ROOM_DESKTOP_EVENT') {
+          const event = parseDesktopEvent(message.payload);
+          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (event.kind === 'SET_ROOM_SURFACE') {
+            setRoomSurfaceState(event.surface);
+          }
+          setDesktopEvents((prev) => [...prev.slice(-99), event]);
+        } else if (message.type === 'ROOM_DESKTOP_STATE') {
+          const snapshot = parseDesktopSnapshot(message.payload);
+          if (!snapshot) return;
+          if (snapshot.surface) setRoomSurfaceState(snapshot.surface);
+          setDesktopSnapshot(snapshot.windows);
         }
       };
       ws.onerror = () => {
@@ -363,6 +583,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     clearPeerDisconnectTimer,
     closePeer,
     drainIce,
+    flushDesktopOutbox,
     role,
     scheduleHostRenegotiation,
     schedulePeerClose,
@@ -538,6 +759,27 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     setMicEnabled((value) => !value);
   }, []);
 
+  const publishDesktopEvent = useCallback((draft: RoomDesktopEventDraft): void => {
+    const event: RoomDesktopEvent = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `event-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt: Date.now(),
+    };
+    if (event.kind === 'SET_ROOM_SURFACE') {
+      setRoomSurfaceState(event.surface);
+    }
+    if (!sendDesktopEvent(event)) {
+      desktopOutboxRef.current.push(event);
+    }
+  }, [sendDesktopEvent]);
+
+  const setRoomSurface = useCallback((surface: RoomSurface): void => {
+    publishDesktopEvent({ kind: 'SET_ROOM_SURFACE', surface });
+  }, [publishDesktopEvent]);
+
   useEffect(() => {
     if (
       !active ||
@@ -571,6 +813,9 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     localStream,
     remoteStream,
     iceProvider,
+    roomSurface,
+    desktopEvents,
+    desktopSnapshot,
     cameraEnabled,
     micEnabled,
     setLocalStream,
@@ -580,5 +825,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     toggleCamera,
     toggleMic,
     retryConnection,
+    publishDesktopEvent,
+    setRoomSurface,
   };
 }

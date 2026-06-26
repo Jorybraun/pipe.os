@@ -1,5 +1,13 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { Video, SquareTerminal, MessageSquare, ListTodo, Monitor, MonitorSmartphone, Globe } from 'lucide-react';
+import {
+  FileText,
+  Globe,
+  ListTodo,
+  Palette,
+  SquareTerminal,
+  Video,
+  MessageSquare,
+} from 'lucide-react';
 import { Win95Taskbar } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
@@ -15,11 +23,11 @@ const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'workspace', label: 'My Computer', icon: SquareTerminal },
   { windowType: 'chat', label: 'Chat', icon: MessageSquare },
   { windowType: 'tasks', label: 'Tasks', icon: ListTodo },
-  { windowType: 'browser', label: 'Internet', icon: Globe },
-  { windowType: 'terminal', label: 'PuTTY', icon: SquareTerminal },
+  { windowType: 'notepad', label: 'Notepad', icon: FileText },
+  { windowType: 'paint', label: 'Paint', icon: Palette },
+  { windowType: 'browser', label: 'Microsoft Edge', icon: Globe },
+  { windowType: 'terminal', label: 'Terminal', icon: SquareTerminal },
 ];
-
-export type UiMode = 'win95' | 'standard';
 
 interface Win95DesktopProps {
   wm: WindowManagerApi;
@@ -28,8 +36,9 @@ interface Win95DesktopProps {
   recordingLabel?: string;
   recordingActive?: boolean;
   renderWindowContent: (win: WindowState) => ReactNode;
-  uiMode: UiMode;
-  onUiModeChange: (mode: UiMode) => void;
+  onWindowClose?: (id: string) => void;
+  canExitDesktop?: boolean;
+  onExitDesktop?: () => void;
 }
 
 export function Win95Desktop({
@@ -38,11 +47,11 @@ export function Win95Desktop({
   recordingLabel,
   recordingActive,
   renderWindowContent,
-  uiMode,
-  onUiModeChange,
+  onWindowClose,
+  canExitDesktop = false,
+  onExitDesktop,
 }: Win95DesktopProps): JSX.Element {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleStartClick = useCallback((): void => {
     setStartMenuOpen((v) => !v);
@@ -83,6 +92,7 @@ export function Win95Desktop({
             <button
               key={icon.windowType}
               className="win95-desktop-icon"
+              data-testid={`room-desktop-icon-${icon.windowType}`}
               onDoubleClick={() => handleIconDoubleClick(icon.windowType)}
               onClick={(e) => e.stopPropagation()}
               title={icon.label}
@@ -120,19 +130,12 @@ export function Win95Desktop({
             <button
               className="win95-start-menu-item"
               onClick={() => {
-                setSettingsOpen(true);
+                if (canExitDesktop) onExitDesktop?.();
                 setStartMenuOpen(false);
               }}
             >
-              <MonitorSmartphone size={16} />
-              <span>Display Settings...</span>
-            </button>
-            <button
-              className="win95-start-menu-item"
-              onClick={() => setStartMenuOpen(false)}
-            >
-              <Monitor size={16} />
-              <span>Shut Down...</span>
+              <SquareTerminal size={16} />
+              <span>{canExitDesktop ? 'Return to Call' : 'Shut Down...'}</span>
             </button>
           </div>
         </div>
@@ -144,50 +147,21 @@ export function Win95Desktop({
             key={win.id}
             win={win}
             onFocus={wm.focusWindow}
-            onClose={wm.closeWindow}
+            onClose={onWindowClose ?? wm.closeWindow}
             onMinimize={wm.minimizeWindow}
             onMaximize={wm.toggleMaximize}
             onMove={wm.moveWindow}
-            noPadding={win.windowType === 'workspace' || win.windowType === 'video' || win.windowType === 'browser' || win.windowType === 'terminal'}
+            noPadding={win.windowType === 'workspace'
+              || win.windowType === 'video'
+              || win.windowType === 'browser'
+              || win.windowType === 'notepad'
+              || win.windowType === 'paint'
+              || win.windowType === 'terminal'}
           >
             {renderWindowContent(win)}
           </Win95Window>
         ))}
       </div>
-
-      {settingsOpen && (
-        <div className="win95-settings-dialog" onClick={(e) => e.stopPropagation()}>
-          <div className="win95-settings-dialog-title">
-            <span>Display Settings</span>
-            <button onClick={() => setSettingsOpen(false)}>×</button>
-          </div>
-          <div className="win95-settings-dialog-body">
-            <p>Select your preferred interface mode:</p>
-            <label className="win95-settings-option">
-              <input
-                type="radio"
-                name="ui-mode"
-                checked={uiMode === 'win95'}
-                onChange={() => onUiModeChange('win95')}
-              />
-              <span>95 Until Infinity — windowed experience with desktop icons</span>
-            </label>
-            <label className="win95-settings-option">
-              <input
-                type="radio"
-                name="ui-mode"
-                checked={uiMode === 'standard'}
-                onChange={() => onUiModeChange('standard')}
-              />
-              <span>Standard — simplified single-panel layout</span>
-            </label>
-          </div>
-          <div className="win95-settings-dialog-footer">
-            <button onClick={() => setSettingsOpen(false)}>OK</button>
-            <button onClick={() => setSettingsOpen(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
 
       <Win95Taskbar
         windows={wm.windows}

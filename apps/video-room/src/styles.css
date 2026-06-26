@@ -574,6 +574,15 @@ button:focus-visible {
   background: linear-gradient(0deg, rgba(5, 12, 22, .90), rgba(6, 17, 31, .40) 54%, transparent);
 }
 
+.call-stage[data-room-layout="win95"] {
+  background: transparent;
+}
+
+.call-stage[data-room-layout="win95"]::before,
+.call-stage[data-room-layout="win95"]::after {
+  display: none;
+}
+
 .remote-video {
   position: absolute;
   inset: 0;
@@ -2149,95 +2158,6 @@ button:focus-visible {
   box-shadow: 0 1px 0 #dfdfdf;
 }
 
-/* Settings Dialog */
-
-.win95-settings-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 360px;
-  background: #c0c0c0;
-  border: 2px outset #dfdfdf;
-  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.4);
-  z-index: 100000;
-  font-family: 'MS Sans Serif', 'Pixelated MS Sans Serif', Tahoma, sans-serif;
-  font-size: 12px;
-  color: #000;
-}
-
-.win95-settings-dialog-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(90deg, #000080, #1084d0);
-  color: #fff;
-  padding: 3px 4px;
-  font-weight: bold;
-}
-
-.win95-settings-dialog-title button {
-  background: #c0c0c0;
-  border: 1px outset #dfdfdf;
-  width: 18px;
-  height: 18px;
-  font-size: 12px;
-  font-weight: bold;
-  cursor: pointer;
-  padding: 0;
-  color: #000;
-}
-
-.win95-settings-dialog-title button:active {
-  border: 1px inset #dfdfdf;
-}
-
-.win95-settings-dialog-body {
-  padding: 16px 12px;
-}
-
-.win95-settings-dialog-body p {
-  margin: 0 0 12px;
-}
-
-.win95-settings-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 10px;
-  cursor: pointer;
-}
-
-.win95-settings-option input[type="radio"] {
-  margin-top: 2px;
-  cursor: pointer;
-}
-
-.win95-settings-option span {
-  flex: 1;
-}
-
-.win95-settings-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 8px 12px 12px;
-}
-
-.win95-settings-dialog-footer button {
-  background: #c0c0c0;
-  border: 1px outset #dfdfdf;
-  padding: 4px 16px;
-  font-family: 'MS Sans Serif', Tahoma, sans-serif;
-  font-size: 12px;
-  cursor: pointer;
-  min-width: 70px;
-}
-
-.win95-settings-dialog-footer button:active {
-  border: 1px inset #dfdfdf;
-}
-
 /* Terminal Window (PuTTY style) */
 .win95-terminal-container {
   width: 100%;
@@ -2364,6 +2284,129 @@ button:focus-visible {
   font-size: 11px;
   font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
   color: #404040;
+}
+
+/* Notepad */
+
+.win95-notepad {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  color: #000;
+}
+
+.win95-notepad-menu {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 25px;
+  padding: 0 8px;
+  border-bottom: 1px solid #808080;
+  background: #c0c0c0;
+  color: #000;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.win95-notepad-menu span::first-letter {
+  text-decoration: underline;
+}
+
+.win95-notepad-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+  color: #000;
+  padding: 8px;
+  outline: none;
+  font-family: 'Lucida Console', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Paint */
+
+.win95-paint {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  color: #000;
+}
+
+.win95-paint-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 5px 7px;
+  border-bottom: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  background: #c0c0c0;
+  flex-shrink: 0;
+}
+
+.win95-paint-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  cursor: pointer;
+}
+
+.win95-paint-swatch.is-active {
+  outline: 1px dotted #000;
+  outline-offset: -5px;
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.win95-paint-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 12px;
+}
+
+.win95-paint-size input {
+  width: 96px;
+  accent-color: #000080;
+}
+
+.win95-paint-clear {
+  height: 24px;
+  padding: 0 10px;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.win95-paint-clear:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.win95-paint-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
 }
 
 /* Clippy Chat UI */
@@ -2938,5 +2981,279 @@ button:focus-visible {
 
   .win95-start-menu {
     width: 170px;
+  }
+}
+
+/* ─── Standard Layout (mobile-friendly) ───────────────────────────── */
+
+.standard-layout {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #03101d;
+  color: #f4f8ff;
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow: hidden;
+}
+
+.standard-video-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #01050b;
+}
+
+.standard-video-area > * {
+  width: 100%;
+  height: 100%;
+}
+
+.standard-layout .win95-video-content {
+  background: #01050b;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.standard-layout .win95-video-grid {
+  gap: 1px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.standard-layout .win95-video-tile {
+  border: 0;
+  background: #071524;
+}
+
+.standard-layout .win95-video-tile-empty {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(96, 165, 250, 0.18), transparent 62%),
+    #071524;
+  color: rgba(244, 248, 255, 0.72);
+}
+
+.standard-layout .win95-video-tile-label {
+  color: rgba(244, 248, 255, 0.68);
+  font-size: 13px;
+}
+
+.standard-layout .win95-video-tile-btn {
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f8ff;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.standard-layout .win95-video-tile-btn:active {
+  transform: scale(0.98);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+.standard-layout .win95-video-controls {
+  gap: 10px;
+  padding: 12px;
+  background: rgba(6, 22, 37, 0.94);
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.standard-layout .win95-video-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f8ff;
+}
+
+.standard-layout .win95-video-btn:active {
+  transform: scale(0.96);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+.standard-layout .win95-video-btn.is-recording,
+.standard-layout .win95-video-btn.is-hangup {
+  border-color: rgba(248, 113, 113, 0.56);
+  background: #dc2626;
+  color: #fff;
+}
+
+.standard-video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: rgba(244, 248, 255, 0.4);
+}
+
+.standard-controls-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(6, 22, 37, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.standard-controls-spacer {
+  flex: 1;
+}
+
+.standard-control-btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f4f8ff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.standard-control-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.standard-control-btn:active {
+  transform: scale(0.95);
+}
+
+.standard-control-btn.is-active {
+  background: rgba(96, 165, 250, 0.2);
+  border-color: rgba(96, 165, 250, 0.4);
+  color: #60a5fa;
+}
+
+.standard-recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 6px;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.standard-chat-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 62px;
+  width: 340px;
+  max-width: 85vw;
+  background: #061625;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  animation: slideInRight 0.2s ease;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.standard-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.standard-chat-header button {
+  background: none;
+  border: none;
+  color: rgba(244, 248, 255, 0.6);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.standard-chat-header button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.standard-chat-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.standard-chat-body > * {
+  height: 100%;
+}
+
+.standard-workspace-overlay {
+  position: fixed;
+  inset: 0;
+  background: #01050b;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+}
+
+.standard-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(6, 22, 37, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.standard-workspace-header button {
+  background: none;
+  border: none;
+  color: rgba(244, 248, 255, 0.6);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.standard-workspace-header button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.standard-workspace-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.standard-workspace-body > * {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 600px) {
+  .standard-chat-panel {
+    width: 100vw;
+    max-width: 100vw;
+    bottom: 62px;
+  }
+
+  .standard-control-btn {
+    width: 38px;
+    height: 38px;
   }
 }

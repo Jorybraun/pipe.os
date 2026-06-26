@@ -281,6 +281,26 @@ export interface SessionContextNode {
   sessionId: string;
 }
 
+interface RoomResolutionRow {
+  session_id: string;
+  meeting_id: string;
+  meeting_owner_id: string;
+  meeting_contact_id: string | null;
+  scheduled_interview_id: string | null;
+}
+
+interface InterviewResolutionRow {
+  candidate_id: string | null;
+  owner_id: string | null;
+  recipient_name: string | null;
+  recipient_email: string | null;
+}
+
+interface ContactResolutionRow {
+  name: string | null;
+  email: string | null;
+}
+
 function nodeToContextNode(node: CandidateNode): SessionContextNode {
   let properties: Record<string, unknown> | null = null;
   try {
@@ -300,9 +320,85 @@ function nodeToContextNode(node: CandidateNode): SessionContextNode {
   };
 }
 
+function normalizeEmail(value: string | null | undefined): string | null {
+  const email = value?.trim().toLowerCase();
+  return email ? email : null;
+}
+
+async function ensureRolelessCandidateForSession(
+  db: D1Database,
+  input: {
+    ownerId: string;
+    name: string | null;
+    email: string;
+    scheduledInterviewId: string | null;
+  },
+): Promise<string> {
+  const existing = await db
+    .prepare(
+      `SELECT id FROM candidates
+       WHERE owner_id = ?1 AND lower(email) = ?2 AND pipeline_id IS NULL
+       ORDER BY created_at ASC
+       LIMIT 1`,
+    )
+    .bind(input.ownerId, input.email)
+    .first<{ id: string }>();
+
+  const now = new Date().toISOString();
+  if (existing) {
+    if (input.scheduledInterviewId) {
+      await db
+        .prepare(
+          `UPDATE scheduled_interviews
+              SET candidate_id = COALESCE(candidate_id, ?1), updated_at = ?2
+            WHERE id = ?3`,
+        )
+        .bind(existing.id, now, input.scheduledInterviewId)
+        .run();
+    }
+    return existing.id;
+  }
+
+  const candidateId = crypto.randomUUID();
+  const inviteToken = crypto.randomUUID();
+  const fallbackName = input.name?.trim() || input.email.split('@')[0] || 'Candidate';
+  await db
+    .prepare(
+      `INSERT INTO candidates (
+         id, pipeline_id, owner_id, name, email, invite_token, status,
+         current_stage_id, created_at, updated_at
+       ) VALUES (?1, NULL, ?2, ?3, ?4, ?5, 'INVITED', NULL, ?6, ?6)`,
+    )
+    .bind(candidateId, input.ownerId, fallbackName, input.email, inviteToken, now)
+    .run();
+
+  await db
+    .prepare(
+      `INSERT INTO candidate_ingestion (candidate_id, status, created_at, updated_at)
+       VALUES (?1, 'pending', ?2, ?2)
+       ON CONFLICT(candidate_id) DO NOTHING`,
+    )
+    .bind(candidateId, now)
+    .run()
+    .catch(() => undefined);
+
+  if (input.scheduledInterviewId) {
+    await db
+      .prepare(
+        `UPDATE scheduled_interviews
+            SET candidate_id = ?1, updated_at = ?2
+          WHERE id = ?3`,
+      )
+      .bind(candidateId, now, input.scheduledInterviewId)
+      .run();
+  }
+
+  return candidateId;
+}
+
 /**
  * Resolve the candidate_id for a meeting room token.
- * Traces: token → room → meeting → scheduled_interview → candidate_id
+ * Traces: token → room → meeting → scheduled_interview/contact → candidate_id.
  */
 export async function resolveCandidateIdForRoom(
   db: D1Database,
@@ -313,25 +409,57 @@ export async function resolveCandidateIdForRoom(
   const now = new Date().toISOString();
 
   const room = await db.prepare(
-    `SELECT mr.session_id, mr.meeting_id, m.scheduled_interview_id
+    `SELECT mr.session_id, mr.meeting_id, m.owner_id AS meeting_owner_id,
+            m.scheduled_interview_id,
+            (
+              SELECT mp.contact_id
+                FROM meeting_participants mp
+               WHERE mp.meeting_id = m.id
+                 AND mp.role = 'ATTENDEE'
+               ORDER BY mp.created_at DESC
+               LIMIT 1
+            ) AS meeting_contact_id
      FROM meeting_room_tokens mrt
      INNER JOIN meeting_rooms mr ON mr.id = mrt.room_id
      INNER JOIN meetings m ON m.id = mr.meeting_id
      WHERE mrt.token_hash = ? AND mrt.revoked_at IS NULL AND mrt.expires_at > ?`,
-  ).bind(tokenHash, now).first<{
-    session_id: string;
-    meeting_id: string;
-    scheduled_interview_id: string | null;
-  }>();
+  ).bind(tokenHash, now).first<RoomResolutionRow>();
 
   if (!room) return null;
 
   let candidateId: string | null = null;
+  let ownerId = room.meeting_owner_id;
+  let recipientName: string | null = null;
+  let recipientEmail: string | null = null;
+
   if (room.scheduled_interview_id) {
     const interview = await db.prepare(
-      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
-    ).bind(room.scheduled_interview_id).first<{ candidate_id: string | null }>();
+      `SELECT candidate_id, owner_id, recipient_name, recipient_email
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).bind(room.scheduled_interview_id).first<InterviewResolutionRow>();
     candidateId = interview?.candidate_id ?? null;
+    ownerId = interview?.owner_id ?? ownerId;
+    recipientName = interview?.recipient_name ?? null;
+    recipientEmail = normalizeEmail(interview?.recipient_email);
+  }
+
+  if (!candidateId && room.meeting_contact_id) {
+    const contact = await db
+      .prepare('SELECT name, email FROM contacts WHERE id = ?')
+      .bind(room.meeting_contact_id)
+      .first<ContactResolutionRow>();
+    recipientName = recipientName ?? contact?.name ?? null;
+    recipientEmail = recipientEmail ?? normalizeEmail(contact?.email);
+  }
+
+  if (!candidateId && ownerId && recipientEmail) {
+    candidateId = await ensureRolelessCandidateForSession(db, {
+      ownerId,
+      name: recipientName,
+      email: recipientEmail,
+      scheduledInterviewId: room.scheduled_interview_id,
+    });
   }
 
   return {

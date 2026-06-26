@@ -24,12 +24,80 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 type SignalStatus = SessionStatus | 'LEFT';
+type RoomSurface = 'standard' | 'win95';
 
 interface SignalMessage {
-  type: 'OFFER' | 'ANSWER' | 'ICE_CANDIDATE' | 'HANGUP' | 'STATUS_UPDATE';
+  type:
+    | 'OFFER'
+    | 'ANSWER'
+    | 'ICE_CANDIDATE'
+    | 'HANGUP'
+    | 'STATUS_UPDATE'
+    | 'ROOM_DESKTOP_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
   payload?: unknown;
+}
+
+type RoomDesktopWindowType =
+  | 'video'
+  | 'workspace'
+  | 'chat'
+  | 'tasks'
+  | 'snippet'
+  | 'browser'
+  | 'notepad'
+  | 'paint'
+  | 'terminal'
+  | 'custom';
+
+interface RoomDesktopWindow {
+  id: string;
+  windowType: RoomDesktopWindowType;
+  title: string;
+  icon?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  data?: Record<string, unknown>;
+}
+
+type RoomDesktopEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'SET_ROOM_SURFACE';
+      surface: RoomSurface;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'OPEN_WINDOW';
+      window: RoomDesktopWindow;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'CLOSE_WINDOW';
+      windowId: string;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_DATA';
+      windowId: string;
+      data: Record<string, unknown>;
+    };
+
+interface RoomDesktopActivityEntry {
+  event: RoomDesktopEvent;
+  role: VideoRole;
+  recordedAt: number;
 }
 
 interface VideoRoomMetadata {
@@ -44,6 +112,7 @@ interface VideoRoomMetadata {
 export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
+  private roomSurface: RoomSurface = 'win95';
   private metadata: VideoRoomMetadata = {};
 
   constructor(state: DurableObjectState) {
@@ -55,6 +124,8 @@ export class VideoRoom {
       if (this.isSessionStatus(stored)) this.sessionStatus = stored;
       const meta = await state.storage.get<VideoRoomMetadata>('metadata');
       if (meta) this.metadata = meta;
+      const surface = await state.storage.get<unknown>('roomSurface');
+      if (this.isRoomSurface(surface)) this.roomSurface = surface;
       const offer = await state.storage.get<string>('lastOffer');
       if (offer) this._lastOffer = offer;
     });
@@ -95,6 +166,167 @@ export class VideoRoom {
       || status === 'CALLING'
       || status === 'ACTIVE'
       || status === 'ENDED';
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private isRoomDesktopWindowType(value: unknown): value is RoomDesktopWindowType {
+    return typeof value === 'string'
+      && [
+        'video',
+        'workspace',
+        'chat',
+        'tasks',
+        'snippet',
+        'browser',
+        'notepad',
+        'paint',
+        'terminal',
+        'custom',
+      ].includes(value);
+  }
+
+  private isRoomSurface(value: unknown): value is RoomSurface {
+    return value === 'standard' || value === 'win95';
+  }
+
+  private optionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private parseDesktopWindow(value: unknown): RoomDesktopWindow | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || !this.isRoomDesktopWindowType(value.windowType)
+      || typeof value.title !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      windowType: value.windowType,
+      title: value.title,
+      icon: typeof value.icon === 'string' ? value.icon : undefined,
+      x: this.optionalNumber(value.x),
+      y: this.optionalNumber(value.y),
+      width: this.optionalNumber(value.width),
+      height: this.optionalNumber(value.height),
+      data: this.isRecord(value.data) ? value.data : undefined,
+    };
+  }
+
+  private parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || typeof value.clientId !== 'string'
+      || typeof value.createdAt !== 'number'
+    ) {
+      return null;
+    }
+    if (value.kind === 'OPEN_WINDOW') {
+      const windowConfig = this.parseDesktopWindow(value.window);
+      if (!windowConfig) return null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'OPEN_WINDOW',
+        window: windowConfig,
+      };
+    }
+    if (value.kind === 'SET_ROOM_SURFACE' && this.isRoomSurface(value.surface)) {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'SET_ROOM_SURFACE',
+        surface: value.surface,
+      };
+    }
+    if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'CLOSE_WINDOW',
+        windowId: value.windowId,
+      };
+    }
+    if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && this.isRecord(value.data)) {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: value.windowId,
+        data: value.data,
+      };
+    }
+    return null;
+  }
+
+  private parseDesktopWindows(value: unknown): RoomDesktopWindow[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseDesktopWindow(entry))
+      .filter((entry): entry is RoomDesktopWindow => entry !== null);
+  }
+
+  private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
+    return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
+  }
+
+  private async persistRoomSurface(surface: RoomSurface): Promise<void> {
+    this.roomSurface = surface;
+    await this.state.storage.put('roomSurface', surface);
+  }
+
+  private async persistDesktopEvent(event: RoomDesktopEvent): Promise<RoomDesktopWindow[]> {
+    if (event.kind === 'SET_ROOM_SURFACE') {
+      await this.persistRoomSurface(event.surface);
+      return this.getDesktopWindows();
+    }
+    const windows = await this.getDesktopWindows();
+    if (event.kind === 'OPEN_WINDOW') {
+      const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
+      const nextWindows = [...withoutExisting, event.window];
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
+    }
+    if (event.kind === 'CLOSE_WINDOW') {
+      const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
+    }
+    const nextWindows = windows.map((windowConfig) => (
+      windowConfig.id === event.windowId
+        ? { ...windowConfig, data: { ...windowConfig.data, ...event.data } }
+        : windowConfig
+    ));
+    await this.state.storage.put('desktopWindows', nextWindows);
+    return nextWindows;
+  }
+
+  private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
+    const existing = await this.state.storage.get<unknown>('desktopActivityLog');
+    const previous = Array.isArray(existing)
+      ? existing.filter((entry): entry is RoomDesktopActivityEntry => (
+          this.isRecord(entry)
+          && this.parseDesktopEvent(entry.event) !== null
+          && typeof entry.role === 'string'
+          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
+          && typeof entry.recordedAt === 'number'
+        ))
+      : [];
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('desktopActivityLog', next);
   }
 
   /** Get all active WebSockets */
@@ -259,6 +491,12 @@ export class VideoRoom {
         peers: peerCount,
       }));
 
+      const desktopWindows = await this.getDesktopWindows();
+      server.send(JSON.stringify({
+        type: 'ROOM_DESKTOP_STATE',
+        payload: { windows: desktopWindows, surface: this.roomSurface },
+      }));
+
       // Notify other peers that this role has connected
       this.broadcastExcept(server, JSON.stringify({
         type: 'PEER_CONNECTED',
@@ -369,6 +607,39 @@ export class VideoRoom {
         type: 'SIGNAL_REJECTED',
         signalType: message.type,
         reason: 'ONLY_HOST_CAN_END_ROOM',
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_DESKTOP_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_DESKTOP_EVENT_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const event = this.parseDesktopEvent(message.payload);
+      if (!event) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_DESKTOP_EVENT_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (event.kind === 'SET_ROOM_SURFACE' && !this.isHostRole(senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_DESKTOP_EVENT_REJECTED',
+          reason: 'ONLY_HOST_CAN_SET_SURFACE',
+        }));
+        return;
+      }
+      await this.persistDesktopEvent(event);
+      await this.recordDesktopActivity(event, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_DESKTOP_EVENT',
+        role: senderRole,
+        payload: event,
       }));
       return;
     }

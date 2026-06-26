@@ -1,17 +1,35 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, X, Globe } from 'lucide-react';
 
 export interface BrowserWindowProps {
   initialUrl?: string;
+  currentUrl?: string;
   onNavigate?: (url: string) => void;
 }
 
-export function BrowserWindow({ initialUrl = '', onNavigate }: BrowserWindowProps): JSX.Element {
+export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: BrowserWindowProps): JSX.Element {
   const [url, setUrl] = useState(initialUrl);
   const [inputUrl, setInputUrl] = useState(initialUrl);
   const [history, setHistory] = useState<string[]>(initialUrl ? [initialUrl] : []);
   const [historyIdx, setHistoryIdx] = useState(initialUrl ? 0 : -1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (currentUrl === undefined || currentUrl === url) return;
+    setUrl(currentUrl);
+    setInputUrl(currentUrl);
+    if (!currentUrl) {
+      setHistory([]);
+      setHistoryIdx(-1);
+      return;
+    }
+    setHistory((prev) => {
+      if (prev[prev.length - 1] === currentUrl) return prev;
+      const next = [...prev, currentUrl];
+      setHistoryIdx(next.length - 1);
+      return next;
+    });
+  }, [currentUrl, url]);
 
   const navigate = useCallback((target: string) => {
     let normalized = target.trim();
@@ -96,12 +114,14 @@ export function BrowserWindow({ initialUrl = '', onNavigate }: BrowserWindowProp
             onChange={(e) => setInputUrl(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Enter URL..."
+            data-testid="room-browser-address-input"
           />
         </div>
         <button
           className="win95-browser-btn"
           onClick={() => navigate(inputUrl)}
           title="Go"
+          data-testid="room-browser-go"
         >
           <span style={{ fontSize: 11, fontWeight: 'bold' }}>Go</span>
         </button>
@@ -124,7 +144,7 @@ export function BrowserWindow({ initialUrl = '', onNavigate }: BrowserWindowProp
       </div>
       <div className="win95-browser-statusbar">
         <span>{url ? 'Done' : 'Ready'}</span>
-        <span>Internet Zone</span>
+        <span>Edge Zone</span>
       </div>
     </div>
   );

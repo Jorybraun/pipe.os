@@ -31,14 +31,17 @@ import {
 import { useRoomConnection } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useChatMessages } from './hooks/useChatMessages';
-import { Win95Desktop, type UiMode } from './components/Win95Desktop';
+import { StandardLayout } from './components/StandardLayout';
+import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyMessage } from './components/ClippyAssistant';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
+import { NotepadWindow } from './components/NotepadWindow';
+import { PaintWindow, type PaintStroke } from './components/PaintWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
-import type { WindowState, WindowType } from './hooks/useWindowManager';
+import type { OpenWindowConfig, WindowState, WindowType } from './hooks/useWindowManager';
 import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
@@ -161,6 +164,33 @@ function isSyntheticMedia(stream: MediaStream | null): boolean {
   return stream.getTracks().some((track) => /fake|synthetic|virtual/i.test(track.label));
 }
 
+function stringWindowData(win: WindowState, key: string): string {
+  const value = win.data?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function isPaintStroke(value: unknown): value is PaintStroke {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const stroke = value as Partial<PaintStroke>;
+  return (
+    typeof stroke.color === 'string'
+    && typeof stroke.size === 'number'
+    && Array.isArray(stroke.points)
+    && stroke.points.every((point) => (
+      Boolean(point)
+      && typeof point === 'object'
+      && !Array.isArray(point)
+      && typeof (point as { x?: unknown }).x === 'number'
+      && typeof (point as { y?: unknown }).y === 'number'
+    ))
+  );
+}
+
+function paintStrokesWindowData(win: WindowState): PaintStroke[] {
+  const value = win.data?.strokes;
+  return Array.isArray(value) ? value.filter(isPaintStroke) : [];
+}
+
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const room = useRoomConnection(token, metadata.role, enteredRoom);
@@ -169,8 +199,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const wm = useWindowManager();
   const { messages: chatMessages, sendMessage: sendChatMessage } = useChatMessages(metadata.role);
@@ -180,13 +208,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [clippyVisible, setClippyVisible] = useState(true);
-  const [uiMode, setUiMode] = useState<UiMode>('win95');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const transcriptionChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
   const autoAcceptingRef = useRef(false);
+  const processedDesktopEventsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
@@ -247,8 +275,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   useEffect(() => {
     setWorkspace(metadata.workspace ?? null);
-    // Always fetch fresh workspace data on room entry — metadata.workspace
-    // may be null/stale but the API returns canLaunch=true for all rooms.
+    // Always fetch fresh workspace data on room entry; metadata can be stale.
     void getRoomWorkspace(token).then(setWorkspace).catch(() => {});
   }, [metadata.workspace, token]);
 
@@ -274,7 +301,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [token, workspace?.repoUrl, workspaceRepoInput]);
 
   useEffect(() => {
-    if (!workspace?.canLaunch) return undefined;
+    if (!workspace?.enabled || !workspace.canLaunch) return undefined;
     const status = workspace.session?.status;
     if (status !== 'LAUNCHING') return undefined;
     const timer = window.setInterval(() => {
@@ -282,6 +309,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }, 3000);
     return () => window.clearInterval(timer);
   }, [refreshWorkspace, workspace?.canLaunch, workspace?.session?.status]);
+
+  const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
+  const usesWin95Desktop = room.roomSurface === 'win95';
 
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
@@ -310,11 +340,83 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!wm.isWindowOpen('chat')) {
       wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
     }
-    if (showWorkspacePanel && !wm.isWindowOpen('workspace')) {
+    if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
       wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom]);
+  }, [enteredRoom, workspace?.enabled, workspace?.repoUrl]);
+
+  useEffect(() => {
+    if (!enteredRoom || !room.desktopSnapshot) return;
+    for (const windowConfig of room.desktopSnapshot) {
+      wm.openWindow(windowConfig);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enteredRoom, room.desktopSnapshot]);
+
+  useEffect(() => {
+    if (!enteredRoom) return;
+    for (const event of room.desktopEvents) {
+      if (processedDesktopEventsRef.current.has(event.id)) continue;
+      processedDesktopEventsRef.current.add(event.id);
+      if (event.kind === 'SET_ROOM_SURFACE') {
+        continue;
+      } else if (event.kind === 'OPEN_WINDOW') {
+        wm.openWindow(event.window);
+      } else if (event.kind === 'CLOSE_WINDOW') {
+        wm.closeWindow(event.windowId);
+      } else {
+        wm.updateWindowData(event.windowId, event.data);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enteredRoom, room.desktopEvents]);
+
+  const openSharedWindow = useCallback((config: OpenWindowConfig & { id: string }): void => {
+    wm.openWindow(config);
+    if (room.roomSurface === 'win95') {
+      room.publishDesktopEvent({ kind: 'OPEN_WINDOW', window: config });
+    }
+    captureSessionEvent('window_open', config.title, roomActor, {
+      windowId: config.id,
+      windowType: config.windowType,
+      surface: room.roomSurface,
+    });
+  }, [captureSessionEvent, room, roomActor, wm]);
+
+  const closeSharedWindow = useCallback((id: string): void => {
+    const win = wm.windows.find((entry) => entry.id === id);
+    wm.closeWindow(id);
+    if (room.roomSurface === 'win95') {
+      room.publishDesktopEvent({ kind: 'CLOSE_WINDOW', windowId: id });
+    }
+    captureSessionEvent('window_close', win?.title ?? id, roomActor, {
+      windowId: id,
+      windowType: win?.windowType ?? 'custom',
+      surface: room.roomSurface,
+    });
+  }, [captureSessionEvent, room, roomActor, wm]);
+
+  const updateSharedWindowData = useCallback((
+    id: string,
+    data: Partial<Record<string, unknown>>,
+  ): void => {
+    wm.updateWindowData(id, data);
+    if (room.roomSurface === 'win95') {
+      room.publishDesktopEvent({
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: id,
+        data,
+      });
+    }
+    const currentUrl = data.currentUrl;
+    if (typeof currentUrl === 'string') {
+      captureSessionEvent('browser_navigation', currentUrl, roomActor, {
+        windowId: id,
+        surface: room.roomSurface,
+      });
+    }
+  }, [captureSessionEvent, room, roomActor, wm]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (
@@ -490,14 +592,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const workspaceSession = workspace?.session ?? null;
   const workspaceReady = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const hasWorkspaceFeature = Boolean(workspace?.enabled);
   const workspaceUrl = workspaceReady && workspaceSession
     ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
     : null;
   const canLaunchWorkspace = metadata.role === 'HOST'
+    && hasWorkspaceFeature
     && Boolean(workspace?.canLaunch)
     && !workspaceLoading
     && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
-  const showWorkspacePanel = Boolean(workspace?.canLaunch);
+  const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
 
@@ -564,7 +668,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           </button>
           <p className="join-hint">{joinButtonHint}</p>
 
-          {metadata.role === 'HOST' && (
+          {metadata.role === 'HOST' && hasWorkspaceFeature && (
             <div className="prejoin-workspace" data-testid="prejoin-workspace">
               <div className="prejoin-workspace-header">
                 <SquareTerminal size={14} />
@@ -643,6 +747,24 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     failed: 'Retry recording',
   }[recordingState];
 
+  const enterWin95Desktop = (): void => {
+    if (metadata.role !== 'HOST') return;
+    room.setRoomSurface('win95');
+    captureSessionEvent('window_focus', '95 Until Infinity desktop', 'host', {
+      surface: 'win95',
+      action: 'enter_desktop',
+    });
+  };
+
+  const exitWin95Desktop = (): void => {
+    if (metadata.role !== 'HOST') return;
+    room.setRoomSurface('standard');
+    captureSessionEvent('window_focus', 'Standard call surface', 'host', {
+      surface: 'standard',
+      action: 'exit_desktop',
+    });
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -655,26 +777,48 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
     switch (windowType) {
       case 'video':
-        wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+        openSharedWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
         break;
       case 'workspace':
         if (showWorkspacePanel) {
-          wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
+          openSharedWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
         }
         break;
       case 'chat':
-        wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
+        openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
         break;
       case 'tasks':
-        wm.openWindow({ id: 'tasks', windowType: 'tasks', title: 'Tasks', x: 200, y: 120, width: 420, height: 480 });
+        openSharedWindow({ id: 'tasks', windowType: 'tasks', title: 'Tasks', x: 200, y: 120, width: 420, height: 480 });
+        break;
+      case 'notepad':
+        openSharedWindow({
+          id: 'notepad',
+          windowType: 'notepad',
+          title: 'Untitled - Notepad',
+          x: 180,
+          y: 90,
+          width: 520,
+          height: 420,
+          data: { text: '' },
+        });
+        break;
+      case 'paint':
+        openSharedWindow({
+          id: 'paint',
+          windowType: 'paint',
+          title: 'untitled - Paint',
+          x: 220,
+          y: 110,
+          width: 640,
+          height: 480,
+          data: { strokes: [] },
+        });
         break;
       case 'browser':
-        wm.openWindow({ id: 'browser', windowType: 'browser', title: 'Internet Explorer', x: 100, y: 60, width: 800, height: 560 });
-        captureSessionEvent('window_open', 'browser', metadata?.role === 'HOST' ? 'host' : 'guest');
+        openSharedWindow({ id: 'browser', windowType: 'browser', title: 'Microsoft Edge', x: 100, y: 60, width: 800, height: 560, data: { currentUrl: '' } });
         break;
       case 'terminal':
-        wm.openWindow({ id: 'terminal', windowType: 'terminal', title: 'PuTTY — container shell', x: 120, y: 80, width: 640, height: 400 });
-        captureSessionEvent('window_open', 'terminal', metadata?.role === 'HOST' ? 'host' : 'guest');
+        openSharedWindow({ id: 'terminal', windowType: 'terminal', title: 'Container terminal', x: 120, y: 80, width: 640, height: 400 });
         break;
       default:
         break;
@@ -850,7 +994,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'browser':
         return (
           <BrowserWindow
-            initialUrl={(win.data?.initialUrl as string) || ''}
+            initialUrl={stringWindowData(win, 'currentUrl') || stringWindowData(win, 'initialUrl')}
+            currentUrl={stringWindowData(win, 'currentUrl') || stringWindowData(win, 'initialUrl')}
+            onNavigate={(url) => updateSharedWindowData(win.id, { currentUrl: url })}
+          />
+        );
+
+      case 'notepad':
+        return (
+          <NotepadWindow
+            value={stringWindowData(win, 'text')}
+            onChange={(text) => updateSharedWindowData(win.id, { text })}
+          />
+        );
+
+      case 'paint':
+        return (
+          <PaintWindow
+            strokes={paintStrokesWindowData(win)}
+            onChange={(strokes) => updateSharedWindowData(win.id, { strokes })}
           />
         );
 
@@ -893,18 +1055,39 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }
 
+  const roomSurface = usesWin95Desktop ? (
+    <Win95Desktop
+      wm={wm}
+      onIconDoubleClick={handleDesktopIconDoubleClick}
+      recordingLabel={recordingLabel}
+      recordingActive={recordingState === 'recording'}
+      renderWindowContent={renderWindowContent}
+      onWindowClose={closeSharedWindow}
+      canExitDesktop={metadata.role === 'HOST'}
+      onExitDesktop={exitWin95Desktop}
+    />
+  ) : (
+    <StandardLayout
+      wm={wm}
+      renderWindowContent={renderWindowContent}
+      recordingLabel={recordingLabel}
+      recordingActive={recordingState === 'recording'}
+      canEnterDesktop={metadata.role === 'HOST'}
+      onEnterDesktop={enterWin95Desktop}
+    />
+  );
+
   return (
     <>
-      <Win95Desktop
-        wm={wm}
-        onIconDoubleClick={handleDesktopIconDoubleClick}
-        recordingLabel={recordingLabel}
-        recordingActive={recordingState === 'recording'}
-        renderWindowContent={renderWindowContent}
-        uiMode={uiMode}
-        onUiModeChange={setUiMode}
-      />
-      {clippyVisible && enteredRoom && (metadata.features?.clippyEnabled ?? true) && (
+      <div
+        className="call-stage"
+        data-testid="call-stage"
+        data-room-phase={room.phase}
+        data-room-layout={usesWin95Desktop ? 'win95' : 'standard'}
+      >
+        {roomSurface}
+      </div>
+      {clippyVisible && enteredRoom && usesWin95Desktop && (metadata.features?.clippyEnabled ?? true) && (
         <ClippyAssistant
           messages={clippyMessages}
           onDismiss={() => setClippyVisible(false)}
@@ -913,17 +1096,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             : null}
           agentEnabled={hasActiveWorkspace}
           onOpenBrowser={(url) => {
-            wm.openWindow({
+            openSharedWindow({
+              id: 'browser',
               windowType: 'browser',
-              title: 'Internet',
-              data: { initialUrl: url },
+              title: 'Microsoft Edge',
+              x: 100,
+              y: 60,
+              width: 800,
+              height: 560,
+              data: { currentUrl: url },
             });
           }}
           onOpenTerminal={() => {
-            wm.openWindow({
+            openSharedWindow({
               id: 'terminal',
               windowType: 'terminal',
-              title: 'PuTTY — container shell',
+              title: 'Container terminal',
               x: 120,
               y: 80,
               width: 640,

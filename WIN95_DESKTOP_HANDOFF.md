@@ -2,13 +2,15 @@
 
 > **Purpose**: This document gives any AI agent (Kimi, Claude, GPT, etc.) complete context to continue building the Win95 Desktop Room feature for PIPE-OS. Read this entire document before starting work.
 
+> **Current routing rule (June 26, 2026):** "95 Until Infinity" is the candidate interview shell. Participants enter a synced Win95 desktop by default; the standard call layout remains a fallback room surface that the host can switch into/out of through durable room state. Dev containers are one desktop app (`My Computer`/workspace), not the thing that decides whether the room is Win95.
+
 ---
 
 ## 1. Project Vision
 
 ### What We're Building
 
-The video room is being transformed from a traditional video call UI into a **Windows 95 desktop environment**. The core concept: **the room IS the desktop**. When a participant enters the room, they boot into a Win95-style desktop with a teal (`#008080`) background. Everything — video, code editor, chat, tasks — lives in draggable, minimizable, focusable windows on that desktop.
+Interview rooms are being transformed from a traditional video call UI into a **Windows 95 desktop environment**. The core concept: **the room IS the desktop**. When a participant enters a technical interview room, they boot into a Win95-style desktop with a teal (`#008080`) background. Everything — video, code editor, chat, tasks, browser, Notepad, Paint, Clippy/Devin — lives in draggable, minimizable, focusable windows on that desktop. The old standard video-call layout remains available as a fallback surface, but it is no longer the source of truth for shared room behavior.
 
 ### Why Win95?
 
@@ -48,6 +50,8 @@ The ultimate goal is an **AI-proctored interview environment** where:
 - **Prejoin screen** — camera preview, ENTER ROOM button, workspace launch UI for host
 - **Video call** — WebRTC via `useRoomConnection` hook, remote + local streams
 - **Recording** — MediaRecorder-based recording with transcription
+- **Synced Win95 desktop** — `VideoRoom` Durable Object persists the active room surface, open shared windows, window data, and an append-only desktop activity log for later living-context promotion.
+- **Desktop apps** — shared Edge browser, Notepad, Paint, terminal, chat, video, and workspace windows.
 - **Workspace panel** — code-server iframe in a React95 `Window` wrapper
   - Win95-styled window header with title, fullscreen toggle, close button
   - Loading overlay (teal background with spinner) while code-server loads
@@ -83,27 +87,17 @@ The ultimate goal is an **AI-proctored interview environment** where:
 - **`matchCandidateToReviewChallenge`** (`workers/api/src/lib/challengeMatching/d1Matcher.ts`) — aligns candidate evidence to challenge demands
 - **`scheduled_interviews` table** — stores `matched_repo_id`, `github_repo_url`, `github_pr_number` but does NOT yet store `issue_number` or `issue_title`
 
-#### Code Review Components (exist in `src/components/`, NOT yet integrated)
+#### Separate Code Review System (out of scope for 95 Until Infinity)
 
-- `FileTreePanel.tsx` — file tree with changed files
-- `DiffPanel.tsx` — PR diff with inline annotations
-- `ReviewConversationPanel.tsx` — review submission, responses, verdicts
-- `ReviewTabPanel.tsx` — tabbed interface for review
-- `FileViewerPanel.tsx` — single file content viewer
-- `ReviewLeftPanel.tsx` — brief + files tabs
-- `ReviewCenterPanel.tsx` — switches between diff and file viewer
-- `CodeReviewEditor.tsx` — editor integrating PR fetcher, diff panel, annotation editor
+- PIPE has a separate code-review interview product and component set (`DiffPanel`, `FileTreePanel`, `ReviewConversationPanel`, `CodeReviewEditor`, etc.).
+- Do not fold that flow into the 95 desktop by default. It has its own candidate route, agent runtime, scoring, and living-context ingestion.
+- 95 Until Infinity focuses on video/dev-container technical interviews, Clippy/Devin, shared desktop apps, recording/transcript evidence, and dev-container telemetry.
 
-### What's NOT Built Yet
+### What's Still In Progress
 
-- Win95 desktop shell (teal background, taskbar, desktop icons, start menu)
-- Window manager hook
-- Chat window
-- Tasks/goals window
-- MS Paint window
-- Browser (IE-style) window
-- AI agent in container
-- Shared context graph integration
+- Proactive Clippy/Devin behavior during interviews
+- Real-time file-system mirroring from the dev container into room/graph evidence
+- Shared context graph promotion for desktop activity, file changes, drawings, AI observations, and test results
 - Post-meeting review flow
 - Time limit / countdown
 - Pre-room issue picker (host selecting issues from cockpit)
@@ -278,14 +272,14 @@ Or:
 
 | #   | Feature                   | Description                                                                                                                        | Status      |
 | --- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| 3.1 | AI agent in container     | Background process in code-server container. WebSocket connection to room. Watches files, runs tests, sends chat messages.         | Not started |
-| 3.2 | AI window control         | AI can open/close/focus windows, create ad-hoc windows (snippets, quizzes, diagrams). Uses same `useWindowManager` methods.        | Not started |
+| 3.1 | AI agent in container     | Background process in code-server container. WebSocket connection to room. Watches files, runs tests, sends chat messages.         | Partial |
+| 3.2 | AI window control         | AI can open/close/focus windows, create ad-hoc windows (snippets, quizzes, diagrams). Uses same shared desktop event path.        | Partial |
 | 3.3 | AI proctor mode           | When no host is present, AI runs the entire session: instructions, hints, Q&A, time management, review.                            | Not started |
-| 3.4 | MS Paint window           | Canvas-based drawing app. Pencil, eraser, fill, color palette. Both participants can draw. AI can draw diagrams.                   | Not started |
-| 3.5 | Browser window (IE-style) | Embedded browser in Win95 IE chrome. Address bar, back/forward/refresh. For viewing GitHub issues, docs, etc.                      | Not started |
-| 3.6 | Shared context graph      | Meeting is a living context node. Chat, code changes, drawings, AI observations, test results all feed in.                         | Not started |
-| 3.7 | Post-meeting review       | AI/host collects diff, test results, chat history. Opens Review window with inline comments, pass/fail, assessment summary, score. | Not started |
-| 3.8 | Code review integration   | Connect existing code review components (`DiffPanel`, `FileTreePanel`, etc.) into a Review window type.                            | Not started |
+| 3.4 | MS Paint window           | Canvas-based drawing app. Pencil, eraser, color palette, shared stroke state.                                                      | Partial |
+| 3.5 | Browser window (Edge-style) | Embedded browser chrome with address bar and shared navigation state.                                                            | Partial |
+| 3.6 | Shared context graph      | Meeting is a living context node. Recording/transcript ingestion exists; desktop activity now has a durable replay log.            | Partial |
+| 3.7 | Post-meeting review       | AI/host collects recording, transcript, file changes, terminal output, chat history, and Devin observations for assessment summary. | Not started |
+| 3.8 | Code review integration   | Out of scope for 95 Until Infinity. Keep the separate code-review interview flow independent unless product direction changes.       | Out of scope |
 
 ---
 
@@ -655,6 +649,6 @@ Projections (Neo4j, search) are rebuildable from D1.
 - **User**: Hans (jorybraun25 on GitHub)
 - **Project**: PIPE-OS — an AI-powered technical interview platform
 - **Repo**: `/Users/hans/Code/PIPE/PIPE-OS`
-- **Current focus**: Phase 1 — Win95 Desktop Shell
+- **Current focus**: 95 Until Infinity — durable shared desktop state, proactive Clippy/Devin, dev-container telemetry, and living-context promotion
 
-If you're an AI agent picking this up: start with Step 1 in section 8. Build the `useWindowManager` hook first, then the desktop shell, then integrate into `App.tsx`. Deploy and verify visually before moving to the next step.
+If you're an AI agent picking this up: do not restart at the shell. Start from the shared desktop event contract in `VideoRoom`, then wire Clippy/Devin, dev-container file activity, terminal activity, and desktop interactions through that same durable path so the living context graph can preserve exact room evidence.

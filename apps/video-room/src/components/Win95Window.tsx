@@ -112,7 +112,7 @@ export function Win95Window({
       className={`win95-window ${className} ${win.focused ? 'is-focused' : 'is-unfocused'}`}
       style={style}
       onMouseDown={() => onFocus(win.id)}
-      data-testid={`win95-window-${win.windowType}`}
+      data-testid={`room-window-${win.windowType}`}
       data-window-id={win.id}
     >
       <div
