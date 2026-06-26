@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regressions for workspace launch gating, host-controlled desktop surface changes, and shared desktop window sync.
 - Updated the deployed video-room smoke to validate the Win95 desktop surface and recording taskbar state instead of the legacy standard-call badges.
 - Added a proactive Clippy prompt card with room actions for starting recording, launching/opening the workspace, and opening the terminal, with `clippy_action` session evidence capture.
+- Added recruiter room-status SSE updates so guest-waiting/live room state patches the scheduling dashboard without the old 10-second client polling loop.
 
 ### Changed — Win95-themed workspace overlay in video room
 

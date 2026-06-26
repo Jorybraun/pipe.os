@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApiClient } from './useApiClient';
 import type { ApiClient } from '../lib/api/client';
 import type { ScheduledInterview, InterviewStatus } from '../lib/scheduling/types';
+import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
 interface UseScheduledInterviewsResult {
   interviews: ScheduledInterview[];
@@ -26,10 +27,12 @@ interface UseScheduledInterviewsResult {
  */
 export function useScheduledInterviews(): UseScheduledInterviewsResult {
   const api: ApiClient = useApiClient();
+  const { updates: roomStatusUpdates } = useRoomStatusNotifications();
 
   const [interviews, setInterviews] = useState<ScheduledInterview[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const processedRoomStatusKeysRef = useRef<Set<string>>(new Set());
 
   const fetchInterviews = useCallback(async () => {
     try {
@@ -114,7 +117,8 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     }
   }, [api]);
 
-  // Load interviews immediately, then sync with provider in background and refetch
+  // Load interviews immediately, then sync with provider in background and refetch.
+  // Live room presence/status updates arrive through useRoomStatusNotifications.
   useEffect(() => {
     void fetchInterviews();
 
@@ -129,14 +133,42 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       }
     };
     void syncThenRefresh();
-
-    // Poll every 10s for near real-time room status updates (guest waiting, etc.)
-    const pollInterval = setInterval(() => {
-      void fetchInterviews();
-    }, 10_000);
-
-    return () => clearInterval(pollInterval);
   }, [fetchInterviews, api]);
+
+  useEffect(() => {
+    const freshUpdates = roomStatusUpdates.filter((update) => {
+      const key = [
+        update.interviewId,
+        update.meetingId ?? '',
+        update.meetingStatus ?? '',
+        update.roomStatus ?? '',
+        update.guestJoinedAt ?? '',
+        update.guestLeftAt ?? '',
+        update.guestWaiting ? 'waiting' : 'not-waiting',
+        update.updatedAt,
+      ].join('|');
+      if (processedRoomStatusKeysRef.current.has(key)) return false;
+      processedRoomStatusKeysRef.current.add(key);
+      return true;
+    });
+
+    if (freshUpdates.length === 0) return;
+
+    setInterviews((prev) => {
+      const byInterviewId = new Map(freshUpdates.map((update) => [update.interviewId, update]));
+      return prev.map((interview) => {
+        const update = byInterviewId.get(interview.id);
+        if (!update) return interview;
+        return {
+          ...interview,
+          meetingId: update.meetingId ?? interview.meetingId ?? null,
+          roomStatus: update.roomStatus,
+          guestWaiting: update.guestWaiting,
+          updatedAt: update.updatedAt,
+        };
+      });
+    });
+  }, [roomStatusUpdates]);
 
   const updateStatus = useCallback(
     async (

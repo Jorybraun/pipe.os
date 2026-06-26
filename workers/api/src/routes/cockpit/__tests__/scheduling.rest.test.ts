@@ -732,6 +732,58 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns room status snapshots for recruiter real-time room updates', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const initialResponse = await app.request('/room-events');
+    expect(initialResponse.status).toBe(200);
+    const initialBody = await initialResponse.json() as {
+      rooms: Array<{
+        interviewId: string;
+        meetingId: string | null;
+        meetingStatus: string | null;
+        roomStatus: string | null;
+        guestJoinedAt: string | null;
+        guestLeftAt: string | null;
+        guestWaiting: boolean;
+        updatedAt: string;
+      }>;
+    };
+    expect(initialBody.rooms).toContainEqual(expect.objectContaining({
+      interviewId: 'interview-1',
+      meetingId: 'meeting-1',
+      meetingStatus: 'ACTIVE',
+      roomStatus: 'ACTIVE',
+      guestJoinedAt: null,
+      guestLeftAt: null,
+      guestWaiting: false,
+    }));
+
+    sqlite!.prepare(`
+      INSERT INTO meeting_participants (
+        id, meeting_id, contact_id, role, invite_sent_at, joined_at, left_at, created_at, updated_at
+      ) VALUES (
+        'participant-guest-1', 'meeting-1', 'contact-1', 'ATTENDEE', NULL,
+        '2026-06-22T18:04:00.000Z', NULL,
+        '2026-06-22T17:40:00.000Z', '2026-06-22T18:04:00.000Z'
+      )
+    `).run();
+
+    const joinedResponse = await app.request('/room-events');
+    expect(joinedResponse.status).toBe(200);
+    const joinedBody = await joinedResponse.json() as typeof initialBody;
+    expect(joinedBody.rooms).toContainEqual(expect.objectContaining({
+      interviewId: 'interview-1',
+      meetingId: 'meeting-1',
+      roomStatus: 'ACTIVE',
+      guestJoinedAt: '2026-06-22T18:04:00.000Z',
+      guestLeftAt: null,
+      guestWaiting: true,
+      updatedAt: '2026-06-22T18:35:00.000Z',
+    }));
+  });
+
   it('returns source-backed contact graph for a roleless direct-call interview', async () => {
     seedInterviewDetailFixture();
     await seedContactLivingContext();

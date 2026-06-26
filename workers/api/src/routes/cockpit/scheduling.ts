@@ -3012,6 +3012,140 @@ function normalizeWebhookPayload(
 // CANCELLED, or COMPLETED via webhook or poll sync.
 //
 
+interface RoomStatusPayload {
+  interviewId: string;
+  meetingId: string | null;
+  meetingStatus: string | null;
+  roomStatus: string | null;
+  guestJoinedAt: string | null;
+  guestLeftAt: string | null;
+  guestWaiting: boolean;
+  updatedAt: string;
+}
+
+interface RoomStatusRow {
+  interview_id: string;
+  meeting_id: string | null;
+  meeting_status: string | null;
+  meeting_updated_at: string | null;
+  room_status: string | null;
+  room_updated_at: string | null;
+  guest_joined_at: string | null;
+  guest_left_at: string | null;
+  guest_updated_at: string | null;
+  interview_updated_at: string | null;
+}
+
+function latestRoomStatusTimestamp(row: RoomStatusRow): string {
+  const timestamps = [
+    row.guest_updated_at,
+    row.room_updated_at,
+    row.meeting_updated_at,
+    row.interview_updated_at,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+  if (timestamps.length === 0) return new Date(0).toISOString();
+  timestamps.sort();
+  return timestamps[timestamps.length - 1] ?? new Date(0).toISOString();
+}
+
+function roomStatusSignature(payload: RoomStatusPayload): string {
+  return [
+    payload.meetingId ?? '',
+    payload.meetingStatus ?? '',
+    payload.roomStatus ?? '',
+    payload.guestJoinedAt ?? '',
+    payload.guestLeftAt ?? '',
+    payload.guestWaiting ? 'waiting' : 'not-waiting',
+    payload.updatedAt,
+  ].join('|');
+}
+
+async function fetchRoomStatusPayloads(db: Env['DB'], ownerId: string): Promise<RoomStatusPayload[]> {
+  const result = await db
+    .prepare(
+      `SELECT si.id AS interview_id,
+              si.updated_at AS interview_updated_at,
+              m.id AS meeting_id,
+              m.status AS meeting_status,
+              m.updated_at AS meeting_updated_at,
+              mr.status AS room_status,
+              mr.updated_at AS room_updated_at,
+              guest_mp.joined_at AS guest_joined_at,
+              guest_mp.left_at AS guest_left_at,
+              guest_mp.updated_at AS guest_updated_at
+         FROM scheduled_interviews si
+         LEFT JOIN meetings m ON m.scheduled_interview_id = si.id AND m.owner_id = si.owner_id
+         LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+         LEFT JOIN meeting_participants guest_mp ON guest_mp.meeting_id = m.id AND guest_mp.role = 'ATTENDEE'
+        WHERE si.owner_id = ?
+          AND m.id IS NOT NULL
+        ORDER BY COALESCE(guest_mp.updated_at, mr.updated_at, m.updated_at, si.updated_at) ASC`
+    )
+    .bind(ownerId)
+    .all<RoomStatusRow>();
+
+  return (result.results ?? []).map((row) => {
+    const guestWaiting = Boolean(
+      row.guest_joined_at && !row.guest_left_at && row.room_status && row.room_status !== 'ENDED',
+    );
+    return {
+      interviewId: row.interview_id,
+      meetingId: row.meeting_id,
+      meetingStatus: row.meeting_status,
+      roomStatus: row.room_status,
+      guestJoinedAt: row.guest_joined_at,
+      guestLeftAt: row.guest_left_at,
+      guestWaiting,
+      updatedAt: latestRoomStatusTimestamp(row),
+    };
+  });
+}
+
+schedulingAuth.get('/room-events', async (c) => {
+  const userId = c.var.userId;
+  const db = c.env.DB;
+  const acceptHeader = c.req.header('Accept');
+
+  if (acceptHeader !== 'text/event-stream') {
+    return c.json({ rooms: await fetchRoomStatusPayloads(db, userId) });
+  }
+
+  const seenSignatures = new Map<string, string>();
+
+  const response = streamSSE(c, async (stream) => {
+    try {
+      await stream.writeSSE({ event: 'connected', data: JSON.stringify({ ts: Date.now() }) });
+
+      while (true) {
+        const payloads = await fetchRoomStatusPayloads(db, userId);
+        for (const payload of payloads) {
+          const signature = roomStatusSignature(payload);
+          if (seenSignatures.get(payload.interviewId) === signature) continue;
+          seenSignatures.set(payload.interviewId, signature);
+          await stream.writeSSE({
+            event: 'room_status',
+            data: JSON.stringify(payload),
+          });
+        }
+        await stream.sleep(2500);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[scheduling/room-events] SSE error:', msg);
+      await stream.writeSSE({
+        event: 'error',
+        data: JSON.stringify({ code: 'INTERNAL_ERROR', message: msg }),
+      });
+    }
+  });
+
+  response.headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+  response.headers.set('Cache-Control', 'no-cache');
+  response.headers.set('Connection', 'keep-alive');
+  return response;
+});
+
 schedulingAuth.get('/events', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
