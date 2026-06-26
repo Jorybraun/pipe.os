@@ -1054,6 +1054,42 @@ describe('meeting room recording living-context route', () => {
       windowId: 'browser',
       surface: 'win95',
     });
+
+    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: start recording',
+        actor: 'host',
+        properties: {
+          actionId: 'start-recording',
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyActionRes.status).toBe(200);
+
+    const clippyNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_clippy_action'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(clippyNode).toMatchObject({
+      node_type: 'session_clippy_action',
+      source_type: 'meeting_session',
+    });
+    expect(clippyNode?.narrative_text).toContain('Clippy action: start recording');
+    expect(JSON.parse(clippyNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      actionId: 'start-recording',
+      surface: 'win95',
+    });
   });
 
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {

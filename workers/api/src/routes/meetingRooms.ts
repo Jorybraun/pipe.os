@@ -105,6 +105,7 @@ const sessionEventSchema = z.object({
     'window_focus',
     'participant_join',
     'participant_leave',
+    'clippy_action',
     'recording_start',
     'recording_stop',
     'code_editor_open',

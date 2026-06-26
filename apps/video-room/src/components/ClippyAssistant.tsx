@@ -8,6 +8,13 @@ type Agent = Awaited<ReturnType<typeof initAgent>>;
 export interface ClippyMessage {
   text: string;
   hold?: boolean;
+  actions?: ClippyAction[];
+}
+
+export interface ClippyAction {
+  id: string;
+  label: string;
+  disabled?: boolean;
 }
 
 export interface ClippyAssistantProps {
@@ -18,6 +25,7 @@ export interface ClippyAssistantProps {
   agentEnabled?: boolean;
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
+  onAction?: (actionId: string) => void;
 }
 
 export function ClippyAssistant({
@@ -28,10 +36,11 @@ export function ClippyAssistant({
   agentEnabled = false,
   onOpenBrowser,
   onOpenTerminal,
+  onAction,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
-  const processedMessagesRef = useRef(0);
+  const spokenMessagesRef = useRef<Set<string>>(new Set());
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -94,13 +103,11 @@ export function ClippyAssistant({
   useEffect(() => {
     if (!ready || !agentRef.current) return;
 
-    const newMessages = messages.slice(processedMessagesRef.current);
-    if (newMessages.length === 0) return;
-
-    processedMessagesRef.current = messages.length;
-
     const clippyAgent = agentRef.current;
-    newMessages.forEach((msg) => {
+    messages.forEach((msg) => {
+      const signature = `${msg.text}|${msg.actions?.map((action) => action.id).join(',') ?? ''}`;
+      if (spokenMessagesRef.current.has(signature)) return;
+      spokenMessagesRef.current.add(signature);
       clippyAgent.speak(msg.text, msg.hold ?? false);
     });
   }, [messages, ready]);
@@ -167,6 +174,15 @@ export function ClippyAssistant({
     agentConn.startAuth();
   }, [agentConn, onOpenBrowser]);
 
+  const handleActionClick = useCallback((actionId: string) => {
+    if (agentRef.current) {
+      agentRef.current.animate();
+    }
+    onAction?.(actionId);
+  }, [onAction]);
+
+  const currentPrompt = messages.length > 0 ? messages[messages.length - 1] : null;
+
   const statusLabel: Record<string, string> = {
     idle: 'Ready',
     thinking: 'Thinking...',
@@ -182,6 +198,38 @@ export function ClippyAssistant({
         data-clippy-anchor="true"
         onClick={handleClick}
       />
+
+      {currentPrompt && (
+        <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
+          <div className="win95-clippy-prompt-title">
+            <span>Clippy</span>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              aria-label="Dismiss Clippy"
+              data-testid="clippy-dismiss"
+            >
+              ×
+            </button>
+          </div>
+          <p>{currentPrompt.text}</p>
+          {currentPrompt.actions && currentPrompt.actions.length > 0 && (
+            <div className="win95-clippy-prompt-actions">
+              {currentPrompt.actions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  onClick={() => handleActionClick(action.id)}
+                  disabled={action.disabled}
+                  data-testid={`clippy-action-${action.id}`}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {chatOpen && agentEnabled && (
         <div className="win95-clippy-chat">

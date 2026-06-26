@@ -853,8 +853,11 @@ test.describe('two-user video room', () => {
       );
       expect(beforeRecordingDetail.recordingR2Key).toBeNull();
 
-      await host.getByTestId('start-recording').click();
+      await expect(host.getByTestId('clippy-proactive-card')).toContainText('begin recording', { timeout: 10_000 });
+      await expect(host.getByTestId('clippy-action-start-recording')).toBeVisible();
+      await host.getByTestId('clippy-action-start-recording').click();
       await expect(host.getByTestId('recording-state')).toContainText('Recording', { timeout: 10_000 });
+      await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', { timeout: 10_000 });
       const recordingDetail = await waitForMeetingDetail(
         request,
         token,

@@ -2410,6 +2410,99 @@ button:focus-visible {
 }
 
 /* Clippy Chat UI */
+.win95-clippy-prompt {
+  position: fixed;
+  right: 104px;
+  bottom: 92px;
+  width: min(320px, calc(100vw - 32px));
+  background: #ffffe1;
+  border: 2px solid;
+  border-color: #f8f8f8 #0a0a0a #0a0a0a #f8f8f8;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.45);
+  color: #000;
+  z-index: 100001;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 12px;
+}
+
+.win95-clippy-prompt::after {
+  content: '';
+  position: absolute;
+  right: 30px;
+  bottom: -12px;
+  width: 18px;
+  height: 18px;
+  background: #ffffe1;
+  border-right: 2px solid #0a0a0a;
+  border-bottom: 2px solid #0a0a0a;
+  transform: rotate(45deg);
+}
+
+.win95-clippy-prompt-title {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  background: #000080;
+  color: #fff;
+  font-weight: 700;
+}
+
+.win95-clippy-prompt-title button {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  color: #000;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+}
+
+.win95-clippy-prompt p {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 10px 10px 8px;
+  line-height: 1.35;
+}
+
+.win95-clippy-prompt-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.win95-clippy-prompt-actions button {
+  min-height: 24px;
+  padding: 3px 10px;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  color: #000;
+  cursor: pointer;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 12px;
+}
+
+.win95-clippy-prompt-actions button:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.win95-clippy-prompt-actions button:disabled {
+  color: #777;
+  cursor: default;
+}
+
 .win95-clippy-chat {
   position: fixed;
   bottom: 40px;
@@ -2865,6 +2958,28 @@ button:focus-visible {
 .win95-video-btn.is-recording {
   background: #cc0000;
   color: #fff;
+}
+
+.win95-recording-state {
+  min-width: 92px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #e8e8e8;
+  color: #1f1f1f;
+  font-family: 'MS Sans Serif', 'Tahoma', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.win95-recording-state.is-recording {
+  background: #fff0f0;
+  color: #b00000;
 }
 
 .win95-video-btn.is-hangup {

@@ -172,7 +172,10 @@ async function main() {
     await expect(host.getByTestId('start-recording')).toBeEnabled({
       timeout: 10_000,
     });
-    await host.getByTestId('start-recording').click();
+    await expect(host.getByTestId('clippy-proactive-card')).toContainText('begin recording', {
+      timeout: 10_000,
+    });
+    await host.getByTestId('clippy-action-start-recording').click();
     await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', {
       timeout: 10_000,
     });

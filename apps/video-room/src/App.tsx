@@ -34,7 +34,7 @@ import { useChatMessages } from './hooks/useChatMessages';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow } from './components/ChatWindow';
-import { ClippyAssistant, type ClippyMessage } from './components/ClippyAssistant';
+import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
@@ -765,6 +765,77 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const openWorkspaceWindow = (): void => {
+    if (!showWorkspacePanel) return;
+    openSharedWindow({
+      id: 'workspace',
+      windowType: 'workspace',
+      title: workspace?.repoUrl ?? 'My Computer',
+      x: 80,
+      y: 80,
+      width: 800,
+      height: 500,
+    });
+  };
+
+  const openBrowserWindow = (url = ''): void => {
+    openSharedWindow({
+      id: 'browser',
+      windowType: 'browser',
+      title: 'Microsoft Edge',
+      x: 100,
+      y: 60,
+      width: 800,
+      height: 560,
+      data: { currentUrl: url },
+    });
+  };
+
+  const openTerminalWindow = (): void => {
+    openSharedWindow({
+      id: 'terminal',
+      windowType: 'terminal',
+      title: 'Container terminal',
+      x: 120,
+      y: 80,
+      width: 640,
+      height: 400,
+    });
+  };
+
+  const captureClippyAction = (actionId: string, text: string): void => {
+    captureSessionEvent('clippy_action', text, roomActor, {
+      actionId,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+    });
+  };
+
+  const handleClippyAction = (actionId: string): void => {
+    switch (actionId) {
+      case 'start-recording':
+        captureClippyAction(actionId, 'Clippy action: start recording');
+        void startRecording();
+        break;
+      case 'launch-workspace':
+        captureClippyAction(actionId, 'Clippy action: launch workspace');
+        openWorkspaceWindow();
+        void launchWorkspace();
+        break;
+      case 'open-workspace':
+        captureClippyAction(actionId, 'Clippy action: open workspace');
+        openWorkspaceWindow();
+        break;
+      case 'open-terminal':
+        captureClippyAction(actionId, 'Clippy action: open terminal');
+        openTerminalWindow();
+        break;
+      default:
+        break;
+    }
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -780,9 +851,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         openSharedWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
         break;
       case 'workspace':
-        if (showWorkspacePanel) {
-          openSharedWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
-        }
+        openWorkspaceWindow();
         break;
       case 'chat':
         openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
@@ -815,10 +884,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         });
         break;
       case 'browser':
-        openSharedWindow({ id: 'browser', windowType: 'browser', title: 'Microsoft Edge', x: 100, y: 60, width: 800, height: 560, data: { currentUrl: '' } });
+        openBrowserWindow();
         break;
       case 'terminal':
-        openSharedWindow({ id: 'terminal', windowType: 'terminal', title: 'Container terminal', x: 120, y: 80, width: 640, height: 400 });
+        openTerminalWindow();
         break;
       default:
         break;
@@ -895,6 +964,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 >
                   <Circle size={14} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
                 </button>
+              )}
+              {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
+                <span
+                  className={`win95-recording-state${recordingState === 'recording' ? ' is-recording' : ''}`}
+                  data-testid="recording-state"
+                >
+                  {recordingLabel}
+                </span>
               )}
               <button className="win95-video-btn is-hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
                 <PhoneOff size={16} />
@@ -1032,20 +1109,43 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const clippyMessages: ClippyMessage[] = [];
   if (enteredRoom) {
-    if (!room.remoteStream && metadata.role === 'HOST') {
+    const workspaceActions: ClippyAction[] = [];
+    if (showWorkspacePanel) {
+      if (hasActiveWorkspace) {
+        workspaceActions.push({ id: 'open-workspace', label: 'Open workspace' });
+      } else if (canLaunchWorkspace) {
+        workspaceActions.push({ id: 'launch-workspace', label: 'Launch workspace' });
+      }
+    }
+
+    if (!room.remoteStream && metadata.role === 'HOST' && workspaceActions.length > 0) {
       clippyMessages.push({
-        text: "It looks like you're waiting for your guest. Would you like to review the workspace while you wait?",
+        text: "It looks like you're waiting for your guest. Would you like to prepare the dev workspace while you wait?",
+        hold: true,
+        actions: workspaceActions,
+      });
+    } else if (!room.remoteStream && metadata.role === 'HOST') {
+      clippyMessages.push({
+        text: "It looks like you're waiting for your guest. I'll keep the desktop ready while they join.",
         hold: true,
       });
     } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
       clippyMessages.push({
         text: "It looks like you're starting an interview. Would you like to begin recording?",
         hold: true,
+        actions: [{ id: 'start-recording', label: 'Start recording', disabled: !canStartRecording }],
       });
     } else if (recordingState === 'recording') {
+      const actions = hasActiveWorkspace
+        ? [
+            { id: 'open-workspace', label: 'Open workspace' },
+            { id: 'open-terminal', label: 'Open terminal' },
+          ]
+        : undefined;
       clippyMessages.push({
         text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
         hold: true,
+        actions,
       });
     } else if (room.phase === 'ended') {
       clippyMessages.push({
@@ -1095,29 +1195,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
             : null}
           agentEnabled={hasActiveWorkspace}
-          onOpenBrowser={(url) => {
-            openSharedWindow({
-              id: 'browser',
-              windowType: 'browser',
-              title: 'Microsoft Edge',
-              x: 100,
-              y: 60,
-              width: 800,
-              height: 560,
-              data: { currentUrl: url },
-            });
-          }}
-          onOpenTerminal={() => {
-            openSharedWindow({
-              id: 'terminal',
-              windowType: 'terminal',
-              title: 'Container terminal',
-              x: 120,
-              y: 80,
-              width: 640,
-              height: 400,
-            });
-          }}
+          onOpenBrowser={openBrowserWindow}
+          onOpenTerminal={openTerminalWindow}
+          onAction={handleClippyAction}
         />
       )}
       {room.phase === 'ended' && (

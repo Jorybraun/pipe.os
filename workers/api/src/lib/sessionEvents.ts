@@ -29,6 +29,7 @@ export type SessionEventType =
   | 'window_focus'
   | 'participant_join'
   | 'participant_leave'
+  | 'clippy_action'
   | 'recording_start'
   | 'recording_stop'
   | 'code_editor_open'
@@ -84,6 +85,7 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     window_focus: 'session_window_focus',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
+    clippy_action: 'session_clippy_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
     code_editor_open: 'session_code_editor_open',
@@ -119,6 +121,8 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Participant joined: ${event.text}`;
     case 'participant_leave':
       return `[${time}] Participant left: ${event.text}`;
+    case 'clippy_action':
+      return `[${time}] ${event.text}`;
     case 'recording_start':
       return `[${time}] Recording started`;
     case 'recording_stop':
