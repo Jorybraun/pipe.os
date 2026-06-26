@@ -8,6 +8,8 @@ import {
   Loader2,
   Mic,
   MicOff,
+  Maximize2,
+  Minimize2,
   PanelRightClose,
   PhoneOff,
   RefreshCcw,
@@ -186,6 +188,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -607,7 +610,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : <SquareTerminal size={18} />}
           </button>
           {workspaceOpen && (
-            <div className="workspace-window-wrapper" data-testid="workspace-panel">
+            <div className={`workspace-window-wrapper${workspaceFullscreen ? ' is-fullscreen' : ''}`} data-testid="workspace-panel">
               <ThemeProvider theme={pipeWin95Theme}>
                 <Win95GlobalStyles />
                 <Window
@@ -620,13 +623,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                       <SquareTerminal size={14} />
                       {workspace?.repoUrl ?? 'Repository not configured'}
                     </span>
-                    <button
-                      className="workspace-win95-close"
-                      onClick={() => setWorkspaceOpen(false)}
-                      aria-label="Close workspace"
-                    >
-                      <PanelRightClose size={14} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        className="workspace-win95-btn"
+                        onClick={() => setWorkspaceFullscreen((v) => !v)}
+                        aria-label={workspaceFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                      >
+                        {workspaceFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                      </button>
+                      <button
+                        className="workspace-win95-close"
+                        onClick={() => setWorkspaceOpen(false)}
+                        aria-label="Close workspace"
+                      >
+                        <PanelRightClose size={14} />
+                      </button>
+                    </div>
                   </WindowHeader>
                   <WindowContent
                     className="workspace-win95-content"

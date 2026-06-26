@@ -49,14 +49,6 @@
 			"remote": true
 		}
 	],
-	"containers": [
-		{
-			"class_name": "DevContainerDO",
-			"image": "../../infra/containers/code-server/Dockerfile",
-			"max_instances": 50,
-			"instance_type": "standard-1"
-		}
-	],
 	"durable_objects": {
 		"bindings": [
 			{
@@ -70,6 +62,14 @@
 			{ "name": "VOICE_SESSION", "class_name": "VoiceSessionDO" }
 		]
 	},
+	"containers": [
+		{
+			"class_name": "DevContainerDO",
+			"image": "docker.io/codercom/code-server:4.22.1",
+			"max_instances": 50,
+			"instance_type": "standard-1"
+		}
+	],
 	"migrations": [
 		{
 			"tag": "v1",
@@ -147,7 +147,7 @@
 			"containers": [
 				{
 					"class_name": "DevContainerDO",
-					"image": "../../infra/containers/code-server/Dockerfile",
+					"image": "docker.io/codercom/code-server:4.22.1",
 					"max_instances": 50,
 					"instance_type": "standard-1"
 				}

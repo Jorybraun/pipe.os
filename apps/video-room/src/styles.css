@@ -636,6 +636,14 @@ button:focus-visible {
   animation: workspace-slide-in .22s ease-out;
 }
 
+.workspace-window-wrapper.is-fullscreen {
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 9999;
+}
+
 @keyframes workspace-slide-in {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -665,6 +673,21 @@ button:focus-visible {
 }
 
 .workspace-win95-close:hover {
+  background: rgba(127, 199, 255, .20);
+}
+
+.workspace-win95-btn {
+  width: 24px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(214, 232, 255, .20);
+  background: rgba(127, 199, 255, .10);
+  color: var(--cya);
+  cursor: pointer;
+}
+
+.workspace-win95-btn:hover {
   background: rgba(127, 199, 255, .20);
 }
 

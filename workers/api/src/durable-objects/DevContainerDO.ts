@@ -30,6 +30,7 @@ interface InitPayload {
 function buildEnvVars(payload: InitPayload): Record<string, string> {
   const env: Record<string, string> = {
     SESSION_ID: payload.sessionId,
+    PASSWORD: 'pipe',
   };
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
