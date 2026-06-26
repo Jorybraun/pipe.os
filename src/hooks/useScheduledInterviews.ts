@@ -64,6 +64,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           candidateEmail: string | null;
           pipelineTitle: string | null;
           stageTitle: string | null;
+          meetingId?: string | null;
+          roomStatus?: string | null;
+          guestWaiting?: boolean;
         }>;
       }>('/api/v1/scheduling/interviews');
 
@@ -98,6 +101,9 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           candidateEmail: r.candidateEmail,
           pipelineTitle: r.pipelineTitle,
           stageTitle: r.stageTitle,
+          meetingId: r.meetingId ?? null,
+          roomStatus: r.roomStatus ?? null,
+          guestWaiting: r.guestWaiting ?? false,
         })),
       );
     } catch (err) {
@@ -123,6 +129,13 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
       }
     };
     void syncThenRefresh();
+
+    // Poll every 10s for near real-time room status updates (guest waiting, etc.)
+    const pollInterval = setInterval(() => {
+      void fetchInterviews();
+    }, 10_000);
+
+    return () => clearInterval(pollInterval);
   }, [fetchInterviews, api]);
 
   const updateStatus = useCallback(

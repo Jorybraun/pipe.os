@@ -75,6 +75,10 @@ export interface ScheduledInterview {
   githubPrNumber?: number | null;
   submissionJson?: string | null;
   completedAt?: string | null;
+  // Room status (enriched from meeting_rooms join)
+  meetingId?: string | null;
+  roomStatus?: string | null;
+  guestWaiting?: boolean;
   // Transcript artifact
   transcriptArtifact?: TranscriptArtifact | null;
 }

@@ -51,6 +51,10 @@ interface ResolvedRoom {
   ended_at: string | null;
   guest_contact_id: string | null;
   scheduled_interview_id: string | null;
+  video_enabled: number;
+  workspace_enabled: number;
+  recording_enabled: number;
+  clippy_enabled: number;
 }
 
 interface MeetingAnalysis {
@@ -337,6 +341,7 @@ async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom 
             m.owner_id, m.title, m.description, m.scheduled_at,
             m.meeting_type, m.status AS meeting_status,
             m.started_at, m.ended_at, m.scheduled_interview_id,
+            m.video_enabled, m.workspace_enabled, m.recording_enabled, m.clippy_enabled,
             (
               SELECT mp.contact_id
                 FROM meeting_room_tokens guest_token
@@ -688,6 +693,12 @@ meetingRooms.get('/:token', async (c) => {
       meetingType: room.meeting_type,
       participants: participants.results,
       workspace,
+      features: {
+        video: room.video_enabled !== 0,
+        workspace: room.workspace_enabled !== 0,
+        recording: room.recording_enabled !== 0,
+        clippy: room.clippy_enabled !== 0,
+      },
     },
   });
 });
@@ -803,6 +814,8 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl: effectiveRepoUrl,
         challengeBranch,
+        pipeApiUrl: c.env.APP_BASE_URL ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
+        roomToken: token,
       }),
     }).catch((err: unknown) => {
       console.error('[meetingRooms.workspace.launch] DO init failed:', err);
@@ -888,6 +901,142 @@ meetingRooms.all('/:token/workspace/proxy/:sessionId/*', async (c) => {
   }
 });
 
+// Agent bridge WebSocket proxy — connects Clippy UI to the agent bridge inside the container.
+// Path: /:token/agent/:sessionId/ws
+meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const sessionId = c.req.param('sessionId');
+  const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
+
+  if (!WORKSPACE_PROXY_ALLOWED_STATUS.has(session.status)) {
+    return c.json({
+      error: {
+        code: session.status === 'LAUNCHING' ? 'NOT_READY' : 'SESSION_ENDED',
+        message: `Workspace session is ${session.status}.`,
+      },
+    }, session.status === 'LAUNCHING' ? 425 : 410);
+  }
+
+  // Forward WebSocket upgrade to the container's agent bridge on port 8081
+  const incoming = new URL(c.req.url);
+  const innerUrl = new URL(`https://do.internal/ws${incoming.search}`);
+  const forwarded = new Request(innerUrl.toString(), c.req.raw);
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  try {
+    return await doStub.fetch(forwarded);
+  } catch (err) {
+    console.error('[meetingRooms.agent.ws] upstream failed:', err);
+    return c.json({
+      error: { code: 'BAD_GATEWAY', message: 'Agent bridge connection failed.' },
+    }, 502);
+  }
+});
+
+// Agent auth HTTP proxy — proxies auth server requests to the container's port 8082.
+// Path: /:token/agent/:sessionId/auth/*
+meetingRooms.all('/:token/agent/:sessionId/auth/*', async (c) => {
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
+  if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+
+  const sessionId = c.req.param('sessionId');
+  const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
+  if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
+
+  if (!WORKSPACE_PROXY_ALLOWED_STATUS.has(session.status)) {
+    return c.json({
+      error: {
+        code: session.status === 'LAUNCHING' ? 'NOT_READY' : 'SESSION_ENDED',
+        message: `Workspace session is ${session.status}.`,
+      },
+    }, session.status === 'LAUNCHING' ? 425 : 410);
+  }
+
+  // Forward to the container's auth server
+  const incoming = new URL(c.req.url);
+  const marker = `/agent/${sessionId}/auth`;
+  const markerIdx = incoming.pathname.indexOf(marker);
+  const innerPath =
+    markerIdx >= 0 ? incoming.pathname.slice(markerIdx + marker.length) || '/' : '/';
+  const innerUrl = new URL(`https://do.internal${innerPath}${incoming.search}`);
+  const forwarded = new Request(innerUrl.toString(), c.req.raw);
+
+  const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
+  const doStub = c.env.DEV_CONTAINER.get(doId);
+  try {
+    return await doStub.fetch(forwarded);
+  } catch (err) {
+    console.error('[meetingRooms.agent.auth] upstream failed:', err);
+    return c.json({
+      error: { code: 'BAD_GATEWAY', message: 'Agent auth proxy failed.' },
+    }, 502);
+  }
+});
+
+// Session context graph — capture events and retrieve the candidate's session brain.
+// POST /:token/events — capture a session event as a candidate_node
+meetingRooms.post('/:token/events', async (c) => {
+  const token = c.req.param('token');
+  const body = await c.req.json<{
+    type: string;
+    text: string;
+    actor?: string;
+    properties?: Record<string, unknown>;
+  }>();
+
+  const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
+  const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+  if (!resolved) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
+
+  const event = {
+    type: body.type as any,
+    sessionId: resolved.sessionId,
+    candidateId: resolved.candidateId,
+    timestamp: Math.floor(Date.now() / 1000),
+    actor: (body.actor ?? 'system') as 'host' | 'guest' | 'agent' | 'system',
+    text: body.text,
+    properties: body.properties,
+  };
+
+  const node = await captureSessionEvent(c.env.DB, event, c.env);
+  return c.json({ captured: !!node, nodeId: node?.id ?? null });
+});
+
+// GET /:token/context-graph — retrieve all session events for the candidate
+meetingRooms.get('/:token/context-graph', async (c) => {
+  const token = c.req.param('token');
+  const { resolveCandidateIdForRoom, getSessionContextGraph } = await import('../lib/sessionEvents.js');
+  const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+  if (!resolved) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
+
+  const graph = await getSessionContextGraph(c.env.DB, resolved.candidateId, resolved.sessionId);
+  return c.json({
+    candidateId: resolved.candidateId,
+    sessionId: resolved.sessionId,
+    events: graph,
+  });
+});
+
+// GET /:token/context-summary — text summary for agent system prompt
+meetingRooms.get('/:token/context-summary', async (c) => {
+  const token = c.req.param('token');
+  const { resolveCandidateIdForRoom, getSessionContextSummary } = await import('../lib/sessionEvents.js');
+  const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+  if (!resolved) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
+  if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
+
+  const summary = await getSessionContextSummary(c.env.DB, resolved.candidateId, resolved.sessionId);
+  return c.json({ summary });
+});
+
 meetingRooms.get('/:token/ws', async (c) => {
   const room = await resolveRoom(c.env.DB, c.req.param('token'));
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
@@ -960,6 +1109,31 @@ meetingRooms.post('/:token/events', async (c) => {
          WHERE id = ?`,
       ).bind(now, now, room.meeting_id),
     ]);
+  } else if (event === 'JOINED') {
+    // Track participant join for guest waiting detection
+    const participant = await c.env.DB.prepare(
+      `SELECT mp.id FROM meeting_participants mp
+       WHERE mp.meeting_id = ?
+         ${room.role === 'GUEST' ? "AND mp.role = 'ATTENDEE'" : "AND mp.role = 'HOST'"}
+       ORDER BY mp.created_at DESC LIMIT 1`,
+    ).bind(room.meeting_id).first<{ id: string }>();
+    if (participant) {
+      await c.env.DB.prepare(
+        `UPDATE meeting_participants SET joined_at = COALESCE(joined_at, ?), left_at = NULL, updated_at = ? WHERE id = ?`,
+      ).bind(now, now, participant.id).run();
+    }
+  } else if (event === 'LEFT') {
+    const participant = await c.env.DB.prepare(
+      `SELECT mp.id FROM meeting_participants mp
+       WHERE mp.meeting_id = ?
+         ${room.role === 'GUEST' ? "AND mp.role = 'ATTENDEE'" : "AND mp.role = 'HOST'"}
+       ORDER BY mp.created_at DESC LIMIT 1`,
+    ).bind(room.meeting_id).first<{ id: string }>();
+    if (participant) {
+      await c.env.DB.prepare(
+        `UPDATE meeting_participants SET left_at = ?, updated_at = ? WHERE id = ?`,
+      ).bind(now, now, participant.id).run();
+    }
   } else if (event === 'ENDED' && room.role === 'HOST') {
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(

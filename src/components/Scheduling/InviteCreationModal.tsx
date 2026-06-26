@@ -16,6 +16,13 @@ interface InviteCreationModalProps {
     schedulingUrl?: string;
     githubRepoUrl?: string | null;
     githubPrNumber?: number | null;
+    features?: {
+      videoEnabled: boolean;
+      workspaceEnabled: boolean;
+      recordingEnabled: boolean;
+      clippyEnabled: boolean;
+    };
+    agentType?: string | null;
   }) => Promise<{
     id: string;
     meetingUrl?: string | null;
@@ -79,6 +86,11 @@ export function InviteCreationModal({
   const [githubPrNumber, setGithubPrNumber] = useState('');
   const [manualRepoOverride, setManualRepoOverride] = useState(false);
   const [schedulingMode, setSchedulingMode] = useState<'manual' | 'calendly'>('manual');
+  const [videoEnabled, setVideoEnabled] = useState(true);
+  const [workspaceEnabled, setWorkspaceEnabled] = useState(true);
+  const [recordingEnabled, setRecordingEnabled] = useState(true);
+  const [clippyEnabled, setClippyEnabled] = useState(true);
+  const [agentType, setAgentType] = useState<string>('none');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createdInvite, setCreatedInvite] = useState<CreatedInviteState | null>(null);
@@ -173,6 +185,16 @@ export function InviteCreationModal({
         if (parsedPrNumber !== null) {
           inviteData.githubPrNumber = parsedPrNumber;
         }
+      }
+
+      inviteData.features = {
+        videoEnabled,
+        workspaceEnabled,
+        recordingEnabled,
+        clippyEnabled,
+      };
+      if (agentType !== 'none') {
+        inviteData.agentType = agentType;
       }
       
       if (schedulingMode === 'calendly' && canUseCalendly && selectedCalendlyEventType) {
@@ -556,6 +578,47 @@ export function InviteCreationModal({
                     The matcher will select a source-backed PR challenge based on candidate evidence.
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Feature flags */}
+            <div style={{ marginBottom: 28 }}>
+              <label style={labelStyle}>ROOM FEATURES</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={videoEnabled} onChange={(e) => setVideoEnabled(e.target.checked)} />
+                  Video
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={workspaceEnabled} onChange={(e) => setWorkspaceEnabled(e.target.checked)} />
+                  Workspace
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={recordingEnabled} onChange={(e) => setRecordingEnabled(e.target.checked)} />
+                  Recording
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontFamily: '"Space Mono", monospace', color: 'var(--pipe-text)', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={clippyEnabled} onChange={(e) => setClippyEnabled(e.target.checked)} />
+                  Clippy AI
+                </label>
+              </div>
+            </div>
+
+            {/* Agent selection */}
+            {clippyEnabled && usesWorkspace && (
+              <div style={{ marginBottom: 28 }}>
+                <label style={labelStyle}>AI AGENT</label>
+                <select
+                  value={agentType}
+                  onChange={(e) => setAgentType(e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="none">No agent</option>
+                  <option value="devin">Devin CLI</option>
+                </select>
+                <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginTop: 4 }}>
+                  Launches an AI pair programmer inside the dev container.
+                </div>
               </div>
             )}
 

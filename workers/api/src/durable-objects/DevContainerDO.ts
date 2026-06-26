@@ -19,26 +19,367 @@ import { markError, markExpired, markStatus, markWarned } from '../lib/devContai
 
 const DEFAULT_WARN_BEFORE_SECONDS = 60;
 
+/**
+ * Minimal agent bridge script embedded as a string.
+ * Written to /tmp/agent-bridge.js inside the container and run with node.
+ * Uses only Node.js built-ins (http, child_process, fs, path, net, crypto)
+ * — no npm dependencies needed.
+ *
+ * The `ws` package is not available in the base image, so we implement
+ * a minimal WebSocket server using raw `http` + `crypto` for the handshake
+ * and frame encoding/decoding.
+ */
+const AGENT_BRIDGE_SCRIPT = String.raw`
+const http = require('http');
+const net = require('net');
+const crypto = require('crypto');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const BRIDGE_PORT = 8080;  // Bridge listens on 8080 (the DO's defaultPort)
+const CODE_SERVER_PORT = 8083;  // code-server moved to 8083, bridge proxies to it
+const WORKSPACE = process.env.WORKSPACE_DIR || '/home/coder/workspace';
+const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
+let agentAuthed = false;
+
+let agentProcess = null;
+let agentStatus = 'idle';
+const clients = new Set();
+
+// --- Minimal WebSocket implementation ---
+function acceptWebSocket(req, socket) {
+  const key = req.headers['sec-websocket-key'];
+  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+  const ws = { socket, alive: true };
+  clients.add(ws);
+  send(ws, { type: 'AGENT_STATUS', status: agentStatus });
+  send(ws, { type: 'AGENT_READY', agent: 'devin', capabilities: ['read','write','run','browse'] });
+
+  let buf = Buffer.alloc(0);
+  socket.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 2) {
+      const fin = buf[0] & 0x80;
+      const opcode = buf[0] & 0x0f;
+      let payloadLen = buf[1] & 0x7f;
+      let offset = 2;
+      if (payloadLen === 126) { if (buf.length < 4) break; payloadLen = buf.readUInt16BE(2); offset = 4; }
+      else if (payloadLen === 127) { if (buf.length < 10) break; payloadLen = Number(buf.readBigUInt64BE(2)); offset = 10; }
+      if (buf.length < offset + payloadLen) break;
+      const payload = buf.subarray(offset, offset + payloadLen);
+      buf = buf.subarray(offset + payloadLen);
+      if (opcode === 8) { clients.delete(ws); ws.alive = false; socket.destroy(); return; }
+      if (opcode === 1) {
+        try { const msg = JSON.parse(payload.toString()); handleMessage(ws, msg); } catch {}
+      }
+    }
+  });
+  socket.on('close', () => { clients.delete(ws); ws.alive = false; });
+  socket.on('error', () => { clients.delete(ws); ws.alive = false; });
+}
+
+function send(ws, msg) {
+  if (!ws.alive) return;
+  const data = JSON.stringify(msg);
+  const payload = Buffer.from(data);
+  const mask = 0x80; // server-to-client: no mask
+  let header;
+  if (payload.length < 126) {
+    header = Buffer.alloc(2); header[0] = 0x81; header[1] = payload.length;
+  } else if (payload.length < 65536) {
+    header = Buffer.alloc(4); header[0] = 0x81; header[1] = 126; header.writeUInt16BE(payload.length, 2);
+  } else {
+    header = Buffer.alloc(10); header[0] = 0x81; header[1] = 127; header.writeBigUInt64BE(BigInt(payload.length), 2);
+  }
+  try { ws.socket.write(Buffer.concat([header, payload])); } catch {}
+}
+
+function broadcast(msg) { for (const ws of clients) send(ws, msg); }
+
+// --- Terminal over WebSocket (PuTTY-style) ---
+function acceptTerminal(req, socket) {
+  const key = req.headers['sec-websocket-key'];
+  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+
+  const { spawn: spawnPty } = (() => {
+    try { return { spawnPty: require('node-pty').spawn }; } catch { return { spawnPty: null }; }
+  })();
+
+  let shell;
+  if (spawnPty) {
+    shell = spawnPty('bash', [], { name: 'xterm-color', cwd: WORKSPACE, env: process.env });
+  } else {
+    // Fallback: plain bash with pipe stdio (no true PTY but works for basic commands)
+    shell = spawn('bash', ['-l'], { cwd: WORKSPACE, env: process.env, stdio: ['pipe','pipe','pipe'] });
+  }
+
+  let buf = Buffer.alloc(0);
+  const ws = { socket, alive: true };
+
+  function writeWs(data) {
+    if (!ws.alive) return;
+    const payload = Buffer.from(data);
+    let header;
+    if (payload.length < 126) {
+      header = Buffer.alloc(2); header[0] = 0x82; header[1] = payload.length; // binary frame
+    } else if (payload.length < 65536) {
+      header = Buffer.alloc(4); header[0] = 0x82; header[1] = 126; header.writeUInt16BE(payload.length, 2);
+    } else {
+      header = Buffer.alloc(10); header[0] = 0x82; header[1] = 127; header.writeBigUInt64BE(BigInt(payload.length), 2);
+    }
+    try { ws.socket.write(Buffer.concat([header, payload])); } catch {}
+  }
+
+  // Shell output → WebSocket
+  const onData = (d) => writeWs(d);
+  if (shell.stdout) shell.stdout.on('data', onData);
+  if (shell.stderr) shell.stderr.on('data', onData);
+  if (shell.on) shell.on('data', onData); // node-pty emits 'data' directly
+
+  shell.on('exit', () => {
+    writeWs('\r\n[session ended]\r\n');
+    ws.alive = false;
+    try { socket.destroy(); } catch {}
+  });
+
+  // WebSocket → shell input
+  socket.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 2) {
+      const fin = buf[0] & 0x80;
+      const opcode = buf[0] & 0x0f;
+      let payloadLen = buf[1] & 0x7f;
+      let offset = 2;
+      if (payloadLen === 126) { if (buf.length < 4) break; payloadLen = buf.readUInt16BE(2); offset = 4; }
+      else if (payloadLen === 127) { if (buf.length < 10) break; payloadLen = Number(buf.readBigUInt64BE(2)); offset = 10; }
+      // Skip mask (client always masks)
+      if (buf[1] & 0x80) { offset += 4; }
+      if (buf.length < offset + payloadLen) break;
+      let payload = buf.subarray(offset, offset + payloadLen);
+      // Unmask if needed
+      if (buf[1] & 0x80) {
+        const mask = buf.subarray(offset - 4, offset);
+        for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i % 4];
+      }
+      buf = buf.subarray(offset + payloadLen);
+      if (opcode === 8) { ws.alive = false; try { shell.kill('SIGTERM'); } catch {} socket.destroy(); return; }
+      if (opcode === 1 || opcode === 2) {
+        try {
+          if (shell.stdin) shell.stdin.write(payload);
+          else if (shell.write) shell.write(payload); // node-pty
+        } catch {}
+      }
+    }
+  });
+
+  socket.on('close', () => { ws.alive = false; try { shell.kill('SIGTERM'); } catch {} });
+  socket.on('error', () => { ws.alive = false; try { shell.kill('SIGTERM'); } catch {} });
+}
+
+// --- Devin agent management ---
+function startAgent() {
+  if (agentProcess) return;
+  // Devin uses OAuth — if not authed yet, request auth
+  if (!agentAuthed && !DEVIN_API_KEY) {
+    agentStatus = 'auth_needed';
+    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    broadcast({ type: 'AUTH_NEEDED', authUrl: '/start?agent=devin', agent: 'devin' });
+    return;
+  }
+  try {
+    const env = { ...process.env };
+    if (DEVIN_API_KEY) env.DEVIN_API_KEY = DEVIN_API_KEY;
+    const devinBin = path.join(process.env.HOME || '/home/coder', '.local', 'bin', 'devin');
+    const devinCmd = fs.existsSync(devinBin) ? devinBin : 'devin';
+    agentProcess = spawn(devinCmd, [], { cwd: WORKSPACE, env, stdio: ['pipe','pipe','pipe'] });
+    agentStatus = 'idle';
+    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    broadcast({ type: 'AGENT_READY', agent: 'devin', capabilities: ['read','write','run','browse'] });
+    agentProcess.stdout.on('data', (d) => {
+      const text = d.toString().trim();
+      if (text) { agentStatus = 'working'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); broadcast({ type: 'CHAT_RESPONSE', text }); agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); }
+    });
+    agentProcess.stderr.on('data', (d) => { console.error('[agent-bridge] stderr:', d.toString().trim()); });
+    agentProcess.on('exit', () => { agentProcess = null; agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); });
+    agentProcess.on('error', () => { agentProcess = null; agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); broadcast({ type: 'ERROR', message: 'Devin CLI failed to start — is it installed?' }); });
+  } catch (e) { broadcast({ type: 'ERROR', message: 'Failed: ' + e.message }); }
+}
+
+function stopAgent() { if (agentProcess) { try { agentProcess.kill('SIGTERM'); } catch {} agentProcess = null; } agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); }
+
+function handleMessage(ws, msg) {
+  switch (msg.type) {
+    case 'CHAT':
+      if (!msg.text || !msg.text.trim()) return;
+      if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
+      if (agentStatus === 'auth_needed') { send(ws, { type: 'CHAT_RESPONSE', text: 'I need to authenticate first! Click the login button.' }); return; }
+      if (!agentProcess) { send(ws, { type: 'CHAT_RESPONSE', text: 'Agent not running. Try again.' }); return; }
+      agentStatus = 'thinking'; broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      try { agentProcess.stdin.write(msg.text + '\n'); } catch {}
+      break;
+    case 'AUTH_START':
+      agentStatus = 'auth_needed'; broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcast({ type: 'AUTH_NEEDED', authUrl: '/start?agent=devin', agent: 'devin' });
+      break;
+    case 'AUTH_CALLBACK':
+      agentAuthed = true; agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); startAgent();
+      break;
+    case 'AGENT_STOP': stopAgent(); break;
+    case 'GET_STATUS': send(ws, { type: 'AGENT_STATUS', status: agentStatus }); break;
+  }
+}
+
+// --- HTTP server: routes /ws and /start, /callback to itself, proxies everything else to code-server ---
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+
+  // Auth routes handled by bridge
+  if (url.pathname === '/start') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end('<html><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>Authenticating...</h2><script>fetch("/callback?simulated=1").then(()=>{document.body.innerHTML="<h2>OK! Close this window.</h2>"})</script></body></html>');
+    return;
+  }
+  if (url.pathname === '/callback') {
+    if (url.searchParams.get('simulated')) { agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); startAgent(); }
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end('<html><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>Auth OK! Close this window.</h2></body></html>');
+    return;
+  }
+
+  // Context brain — returns candidate's session context summary for the agent
+  if (url.pathname === '/context') {
+    const apiUrl = process.env.PIPE_API_URL || '';
+    const roomToken = process.env.ROOM_TOKEN || '';
+    if (!apiUrl || !roomToken) {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('No context available — API URL or room token not set.');
+      return;
+    }
+    const ctxReq = http.get(apiUrl + '/api/v1/meeting-rooms/' + roomToken + '/context-summary', (ctxRes) => {
+      let body = '';
+      ctxRes.on('data', (d) => body += d);
+      ctxRes.on('end', () => {
+        try { const parsed = JSON.parse(body); res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end(parsed.summary || 'No context yet.'); }
+        catch { res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end(body); }
+      });
+    });
+    ctxReq.on('error', () => { res.writeHead(502); res.end('Failed to fetch context.'); });
+    return;
+  }
+
+  // Event capture — agent can POST events to the candidate's graph
+  if (url.pathname === '/events' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (d) => body += d);
+    req.on('end', () => {
+      const apiUrl = process.env.PIPE_API_URL || '';
+      const roomToken = process.env.ROOM_TOKEN || '';
+      if (!apiUrl || !roomToken) { res.writeHead(502); res.end('No API configured.'); return; }
+      const eventReq = http.request(apiUrl + '/api/v1/meeting-rooms/' + roomToken + '/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }, (eventRes) => {
+        let respBody = '';
+        eventRes.on('data', (d) => respBody += d);
+        eventRes.on('end', () => { res.writeHead(eventRes.statusCode || 200, { 'Content-Type': 'application/json' }); res.end(respBody); });
+      });
+      eventReq.on('error', () => { res.writeHead(502); res.end('Failed to capture event.'); });
+      eventReq.write(body);
+      eventReq.end();
+    });
+    return;
+  }
+
+  // Everything else: proxy to code-server on 8083
+  const proxyReq = http.request({
+    hostname: '127.0.0.1',
+    port: CODE_SERVER_PORT,
+    path: req.url,
+    method: req.method,
+    headers: req.headers,
+  }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', () => { res.writeHead(502); res.end('Bad Gateway'); });
+  req.pipe(proxyReq);
+});
+
+// WebSocket upgrade: /ws goes to agent bridge, /terminal goes to PTY, everything else goes to code-server
+server.on('upgrade', (req, socket) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/ws') {
+    acceptWebSocket(req, socket);
+  } else if (url.pathname === '/terminal') {
+    acceptTerminal(req, socket);
+  } else {
+    // Proxy WebSocket upgrade to code-server on 8083
+    const proxyReq = http.request({
+      hostname: '127.0.0.1',
+      port: CODE_SERVER_PORT,
+      path: req.url,
+      method: 'GET',
+      headers: req.headers,
+    });
+    proxyReq.on('upgrade', (proxyRes, proxySocket) => {
+      socket.write('HTTP/1.1 101 Switching Protocols\r\n' +
+        Object.entries(proxyRes.headers).map(([k,v]) => k + ': ' + v).join('\r\n') + '\r\n\r\n');
+      proxySocket.pipe(socket);
+      socket.pipe(proxySocket);
+    });
+    proxyReq.on('error', () => socket.destroy());
+    proxyReq.end();
+  }
+});
+
+server.listen(BRIDGE_PORT, '0.0.0.0', () => console.log('[agent-bridge] Router listening on ' + BRIDGE_PORT + ', proxying to code-server on ' + CODE_SERVER_PORT));
+
+// --- File watcher ---
+try {
+  fs.watch(WORKSPACE, { recursive: true }, (eventType, filename) => {
+    if (!filename || filename.startsWith('.git/')) return;
+    broadcast({ type: 'FILE_CHANGED', path: filename, action: eventType === 'rename' ? 'created' : 'modified' });
+  });
+} catch (e) { console.error('[agent-bridge] Watch failed:', e.message); }
+
+// --- Startup ---
+if (DEVIN_API_KEY) { agentAuthed = true; setTimeout(() => startAgent(), 1000); } else { agentStatus = 'auth_needed'; }
+process.on('SIGTERM', () => { stopAgent(); server.close(); process.exit(0); });
+process.on('SIGINT', () => { stopAgent(); server.close(); process.exit(0); });
+`;
+
 interface InitPayload {
   sessionId: string;
   expiresAt: string;
   ttlSeconds: number;
   repoGitUrl: string | null;
   challengeBranch: string | null;
+  agentType?: string | null;
+  agentApiKey?: string | null;
+  pipeApiUrl?: string | null;
+  roomToken?: string | null;
 }
 
 function buildEnvVars(payload: InitPayload): Record<string, string> {
   const env: Record<string, string> = {
     SESSION_ID: payload.sessionId,
     PASSWORD: 'pipe',
+    WORKSPACE_DIR: '/home/coder/workspace',
+    AGENT_TYPE: payload.agentType || 'devin',
   };
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
+  if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;
+  if (payload.pipeApiUrl) env.PIPE_API_URL = payload.pipeApiUrl;
+  if (payload.roomToken) env.ROOM_TOKEN = payload.roomToken;
   return env;
 }
 
 export class DevContainerDO extends Container<Env> {
-  // Bind container to port 8080 — the port code-server listens on.
+  // Bind container to port 8080 — agent bridge router proxies to code-server on 8083.
   defaultPort = 8080;
   requiredPorts = [8080];
 
@@ -90,10 +431,35 @@ export class DevContainerDO extends Container<Env> {
     this.envVars = buildEnvVars(payload);
 
     try {
+      // Override the entrypoint to clone the repo into /home/coder/workspace
+      // (writable by the coder user) and start code-server.
+      // The base codercom/code-server image already has git installed.
+      // We use ; (not &&) so code-server starts even if git clone fails.
+      const ws = '/home/coder/workspace';
+      const cloneCmd = payload.repoGitUrl
+        ? payload.challengeBranch
+          ? `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 && cd ${ws} && git fetch origin ${payload.challengeBranch}:challenge-branch 2>&1 && git checkout challenge-branch 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
+          : `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
+        : `mkdir -p ${ws}`;
+      const agentType = payload.agentType || '';
+      const agentInstallCmd = agentType === 'devin'
+        ? 'curl -fsSL https://cli.devin.ai/install.sh | bash 2>/dev/null || true'
+        : 'true';
+      // Bridge listens on 8080 (DO's defaultPort), proxies non-agent traffic to code-server on 8083.
+      // /ws → agent chat, /start + /callback → auth, /terminal → PTY shell, everything else → code-server
+      const startBridge = agentType
+        ? `${agentInstallCmd}; cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js &`
+        : 'true';
+      const entrypoint = ['sh', '-c',
+        `${cloneCmd}; ${startBridge}; `
+        + `exec code-server --auth none --bind-addr 0.0.0.0:8083 ${ws}`
+      ];
+
       await this.startAndWaitForPorts({
         ports: this.requiredPorts,
         startOptions: {
           envVars: this.envVars,
+          entrypoint,
         },
         cancellationOptions: {
           instanceGetTimeoutMS: 15_000,

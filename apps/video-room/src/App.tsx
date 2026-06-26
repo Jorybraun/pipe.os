@@ -1,32 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
-  AlertCircle,
   Camera,
   CameraOff,
   Circle,
   Loader2,
   Mic,
   MicOff,
-  Maximize2,
-  Minimize2,
-  PanelRightClose,
   PhoneOff,
   RefreshCcw,
   ShieldCheck,
   SquareTerminal,
-  Users,
   Video,
 } from 'lucide-react';
-import { Window, WindowHeader, WindowContent, Button as Win95Button } from 'react95';
-import { ThemeProvider, createGlobalStyle } from 'styled-components';
-import original from 'react95/dist/themes/original';
 import {
   getRoomWorkspace,
   launchRoomWorkspace,
   loadRoom,
   postRoomEvent,
   roomWorkspaceProxyUrl,
+  roomAgentWsUrl,
+  roomTerminalWsUrl,
   uploadRecording,
 } from './lib/api';
 import {
@@ -35,32 +29,19 @@ import {
   preferredRecordingOptions,
 } from './lib/recording';
 import { useRoomConnection } from './hooks/useRoomConnection';
+import { useWindowManager } from './hooks/useWindowManager';
+import { useChatMessages } from './hooks/useChatMessages';
+import { Win95Desktop, type UiMode } from './components/Win95Desktop';
+import { ChatWindow } from './components/ChatWindow';
+import { ClippyAssistant, type ClippyMessage } from './components/ClippyAssistant';
+import { BrowserWindow } from './components/BrowserWindow';
+import { TerminalWindow } from './components/TerminalWindow';
+import { useSessionEvents } from './hooks/useSessionEvents';
+import { API_BASE } from './lib/api';
+import type { WindowState, WindowType } from './hooks/useWindowManager';
 import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
-
-const pipeWin95Theme = {
-  ...original,
-  headerBackground: '#0a2135',
-  headerText: '#b9e2ff',
-  headerNotActiveBackground: '#061625',
-  headerNotActiveText: 'rgba(185, 226, 255, 0.5)',
-  desktopBackground: '#008080',
-  canvas: '#03101d',
-  canvasText: '#f4f8ff',
-  material: '#0a2135',
-  materialText: '#f4f8ff',
-  materialDark: '#061625',
-  materialTextInvert: '#b9e2ff',
-  anchor: '#7fc7ff',
-  anchorVisited: '#7fc7ff',
-  progress: '#7fc7ff',
-  hoverBackground: 'rgba(127, 199, 255, 0.12)',
-};
-
-const Win95GlobalStyles = createGlobalStyle`
-  .win95-font { font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif; }
-`;
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -183,17 +164,23 @@ function isSyntheticMedia(stream: MediaStream | null): boolean {
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const room = useRoomConnection(token, metadata.role, enteredRoom);
+  const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceFullscreen, setWorkspaceFullscreen] = useState(false);
+  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const wm = useWindowManager();
+  const { messages: chatMessages, sendMessage: sendChatMessage } = useChatMessages(metadata.role);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [clippyVisible, setClippyVisible] = useState(true);
+  const [uiMode, setUiMode] = useState<UiMode>('win95');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -260,16 +247,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   useEffect(() => {
     setWorkspace(metadata.workspace ?? null);
-  }, [metadata.workspace]);
+    // Always fetch fresh workspace data on room entry — metadata.workspace
+    // may be null/stale but the API returns canLaunch=true for all rooms.
+    void getRoomWorkspace(token).then(setWorkspace).catch(() => {});
+  }, [metadata.workspace, token]);
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
-    if (!workspace?.canLaunch) return;
     try {
       setWorkspace(await getRoomWorkspace(token));
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Workspace status failed.');
     }
-  }, [token, workspace?.canLaunch]);
+  }, [token]);
 
   const launchWorkspace = useCallback(async (): Promise<void> => {
     setWorkspaceLoading(true);
@@ -282,7 +271,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [token]);
+  }, [token, workspace?.repoUrl, workspaceRepoInput]);
 
   useEffect(() => {
     if (!workspace?.canLaunch) return undefined;
@@ -310,7 +299,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setPreview(null);
     setEnteredRoom(true);
     void postRoomEvent(token, 'JOINED');
+    captureSessionEvent('participant_join', metadata.role === 'HOST' ? 'Host' : 'Guest', metadata.role === 'HOST' ? 'host' : 'guest');
   };
+
+  useEffect(() => {
+    if (!enteredRoom) return;
+    if (!wm.isWindowOpen('video')) {
+      wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+    }
+    if (!wm.isWindowOpen('chat')) {
+      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
+    }
+    if (showWorkspacePanel && !wm.isWindowOpen('workspace')) {
+      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enteredRoom]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (
@@ -358,6 +362,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
         setRecordingNotice('Recording started. Status will sync when the call ends.');
       });
+      captureSessionEvent('recording_start', 'Recording started', 'host');
     } catch (error) {
       await dispose?.().catch(() => undefined);
       const message = error instanceof Error ? error.message : 'Recording could not start.';
@@ -483,6 +488,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
+  const workspaceSession = workspace?.session ?? null;
+  const workspaceReady = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const workspaceUrl = workspaceReady && workspaceSession
+    ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
+    : null;
+  const canLaunchWorkspace = metadata.role === 'HOST'
+    && Boolean(workspace?.canLaunch)
+    && !workspaceLoading
+    && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
+  const showWorkspacePanel = Boolean(workspace?.canLaunch);
+  const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
+  const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+
   const inLobby = room.localStream === null;
   const previewIsSynthetic = isSyntheticMedia(preview);
   const localIsSynthetic = isSyntheticMedia(room.localStream);
@@ -545,6 +563,49 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             {joinButtonLabel}
           </button>
           <p className="join-hint">{joinButtonHint}</p>
+
+          {metadata.role === 'HOST' && (
+            <div className="prejoin-workspace" data-testid="prejoin-workspace">
+              <div className="prejoin-workspace-header">
+                <SquareTerminal size={14} />
+                <span>WORKSPACE</span>
+              </div>
+              {workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING' ? (
+                <p className="prejoin-workspace-ready">Container ready — editor will open when you enter.</p>
+              ) : workspaceSession?.status === 'LAUNCHING' ? (
+                <div className="prejoin-workspace-launching">
+                  <Loader2 size={14} className="spin" />
+                  <span>Starting container...</span>
+                  <button className="prejoin-refresh" onClick={() => void refreshWorkspace()}>
+                    <RefreshCcw size={12} /> Refresh
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {needsRepoUrl && (
+                    <input
+                      type="url"
+                      className="workspace-repo-input"
+                      placeholder="https://github.com/org/repo"
+                      value={workspaceRepoInput}
+                      onChange={(e) => setWorkspaceRepoInput(e.target.value)}
+                      data-testid="prejoin-repo-input"
+                    />
+                  )}
+                  <button
+                    className="prejoin-launch-btn"
+                    onClick={() => void launchWorkspace()}
+                    disabled={needsRepoUrl && !workspaceRepoInput.trim() || workspaceLoading}
+                    data-testid="prejoin-launch"
+                  >
+                    {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
+                    Launch workspace
+                  </button>
+                  {workspaceError && <p className="prejoin-workspace-error">{workspaceError}</p>}
+                </>
+              )}
+            </div>
+          )}
         </section>
       </main>
     );
@@ -581,253 +642,298 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     saved: 'Saved',
     failed: 'Retry recording',
   }[recordingState];
-  const workspaceSession = workspace?.session ?? null;
-  const workspaceReady = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
-  const workspaceUrl = workspaceReady && workspaceSession
-    ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
-    : null;
-  const canLaunchWorkspace = metadata.role === 'HOST'
-    && Boolean(workspace?.canLaunch)
-    && !workspaceLoading
-    && (!workspaceSession || ['ERROR', 'STOPPED', 'EXPIRED'].includes(workspaceSession.status));
-  const showWorkspacePanel = Boolean(workspace?.canLaunch);
-  const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
-  const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+
+  const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
+    const existing = wm.getWindowByType(windowType);
+    if (existing) {
+      if (existing.minimized) {
+        wm.restoreWindow(existing.id);
+      } else {
+        wm.focusWindow(existing.id);
+      }
+      return;
+    }
+    switch (windowType) {
+      case 'video':
+        wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+        break;
+      case 'workspace':
+        if (showWorkspacePanel) {
+          wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
+        }
+        break;
+      case 'chat':
+        wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
+        break;
+      case 'tasks':
+        wm.openWindow({ id: 'tasks', windowType: 'tasks', title: 'Tasks', x: 200, y: 120, width: 420, height: 480 });
+        break;
+      case 'browser':
+        wm.openWindow({ id: 'browser', windowType: 'browser', title: 'Internet Explorer', x: 100, y: 60, width: 800, height: 560 });
+        captureSessionEvent('window_open', 'browser', metadata?.role === 'HOST' ? 'host' : 'guest');
+        break;
+      case 'terminal':
+        wm.openWindow({ id: 'terminal', windowType: 'terminal', title: 'PuTTY — container shell', x: 120, y: 80, width: 640, height: 400 });
+        captureSessionEvent('window_open', 'terminal', metadata?.role === 'HOST' ? 'host' : 'guest');
+        break;
+      default:
+        break;
+    }
+  };
+
+  const renderWindowContent = (win: WindowState): JSX.Element => {
+    switch (win.windowType) {
+      case 'video':
+        return (
+          <div className="win95-video-content">
+            <div className="win95-video-grid">
+              {/* Remote participant tile */}
+              <div className="win95-video-tile">
+                {room.remoteStream ? (
+                  <StreamVideo stream={room.remoteStream} className="win95-video-tile-stream" testId="remote-video" />
+                ) : (
+                  <div className="win95-video-tile-empty" data-testid="waiting-state">
+                    <div className="win95-video-tile-avatar">
+                      {metadata.role === 'HOST' ? '👤' : '🏠'}
+                    </div>
+                    <span className="win95-video-tile-label">
+                      {isRoomError ? 'Connection interrupted'
+                        : isRecovering ? 'Reconnecting...'
+                        : isOpening ? 'Opening room...'
+                        : isConnecting ? 'Connecting...'
+                        : metadata.role === 'HOST' ? 'Waiting for guest'
+                        : 'Waiting for host'}
+                    </span>
+                    {canRetry && (
+                      <button onClick={room.retryConnection} data-testid="retry-connection" className="win95-video-tile-btn">Retry</button>
+                    )}
+                    {!canRetry && canStartCall && (
+                      <button onClick={() => void room.startCall()} data-testid="start-call" className="win95-video-tile-btn">Start call</button>
+                    )}
+                    {canAccept && (
+                      <button onClick={() => void room.acceptCall()} data-testid="accept-call" className="win95-video-tile-btn">Join call</button>
+                    )}
+                  </div>
+                )}
+                <span className="win95-video-tile-name">
+                  {metadata.role === 'HOST' ? 'Guest' : 'Host'}
+                </span>
+              </div>
+
+              {/* Local participant tile */}
+              <div className="win95-video-tile">
+                {room.localStream ? (
+                  <StreamVideo stream={room.localStream} muted className="win95-video-tile-stream local-video" testId="local-video" />
+                ) : (
+                  <div className="win95-video-tile-empty">
+                    <div className="win95-video-tile-avatar">📷</div>
+                    <span className="win95-video-tile-label">Camera off</span>
+                  </div>
+                )}
+                <span className="win95-video-tile-name">You</span>
+              </div>
+            </div>
+
+            <div className="win95-video-controls">
+              <button className="win95-video-btn" onClick={room.toggleMic} aria-label="Toggle microphone">
+                {room.micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
+              </button>
+              <button className="win95-video-btn" onClick={room.toggleCamera} aria-label="Toggle camera">
+                {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
+              </button>
+              {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
+                <button
+                  className={`win95-video-btn${recordingState === 'recording' ? ' is-recording' : ''}`}
+                  onClick={() => void startRecording()}
+                  disabled={!canStartRecording}
+                  aria-label={recordingButtonLabel}
+                  data-testid="start-recording"
+                >
+                  <Circle size={14} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
+                </button>
+              )}
+              <button className="win95-video-btn is-hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
+                <PhoneOff size={16} />
+              </button>
+            </div>
+          </div>
+        );
+
+      case 'workspace':
+        return (
+          <div className="win95-workspace-content" style={{ position: 'relative' }}>
+            {workspaceUrl ? (
+              <>
+                {!iframeLoaded && (
+                  <div className="win95-workspace-loader">
+                    <Loader2 size={24} className="spin" />
+                    <span>Loading editor...</span>
+                  </div>
+                )}
+                <iframe
+                  src={workspaceUrl}
+                  title="PIPE live implementation workspace"
+                  className="win95-workspace-iframe"
+                  data-testid="workspace-iframe"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
+                  onLoad={() => setIframeLoaded(true)}
+                />
+              </>
+            ) : (
+              <div className="win95-workspace-empty">
+                <SquareTerminal size={26} />
+                <h3>
+                  {workspaceSession?.status === 'LAUNCHING'
+                    ? 'Starting workspace...'
+                    : workspaceSession?.status === 'ERROR'
+                      ? 'Workspace failed'
+                      : 'Workspace ready to launch'}
+                </h3>
+                <p>
+                  {workspaceSession?.status === 'LAUNCHING'
+                    ? 'The container is warming up. This can take 20-30 seconds.'
+                    : workspaceSession?.errorMessage
+                      ? workspaceSession.errorMessage
+                      : workspaceError
+                        ? workspaceError
+                        : metadata.role === 'HOST'
+                          ? 'Launch a repo into a live code-server workspace for this call.'
+                          : 'The host can launch the live code workspace.'}
+                </p>
+                {needsRepoUrl && canLaunchWorkspace && (
+                  <input
+                    type="url"
+                    className="win95-workspace-repo-input"
+                    placeholder="https://github.com/org/repo"
+                    value={workspaceRepoInput}
+                    onChange={(e) => setWorkspaceRepoInput(e.target.value)}
+                    data-testid="workspace-repo-input"
+                  />
+                )}
+                {canLaunchWorkspace && (
+                  <button
+                    className="win95-workspace-launch-btn"
+                    onClick={() => void launchWorkspace()}
+                    disabled={needsRepoUrl && !workspaceRepoInput.trim()}
+                  >
+                    {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
+                    Launch workspace
+                  </button>
+                )}
+                {workspaceSession?.status === 'LAUNCHING' && (
+                  <button className="win95-workspace-launch-btn" onClick={() => void refreshWorkspace()}>
+                    <RefreshCcw size={14} /> Refresh
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'chat':
+        return (
+          <ChatWindow
+            messages={chatMessages}
+            onSend={(text) => sendChatMessage(text)}
+            currentUserRole={metadata.role}
+          />
+        );
+
+      case 'tasks':
+        return (
+          <div style={{ padding: '16px', color: '#000', fontFamily: "'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif" }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: '14px' }}>Tasks &amp; Goals</h3>
+            <p style={{ fontSize: '12px', color: '#666' }}>Task goals will appear here in Phase 2.</p>
+          </div>
+        );
+
+      case 'browser':
+        return (
+          <BrowserWindow
+            initialUrl={(win.data?.initialUrl as string) || ''}
+          />
+        );
+
+      case 'terminal':
+        return (
+          <TerminalWindow
+            wsUrl={workspaceSession && hasActiveWorkspace
+              ? roomTerminalWsUrl(token, workspaceSession.sessionId)
+              : ''}
+          />
+        );
+
+      default:
+        return <div style={{ padding: '8px', color: '#000' }}>Window content</div>;
+    }
+  };
+
+  const clippyMessages: ClippyMessage[] = [];
+  if (enteredRoom) {
+    if (!room.remoteStream && metadata.role === 'HOST') {
+      clippyMessages.push({
+        text: "It looks like you're waiting for your guest. Would you like to review the workspace while you wait?",
+        hold: true,
+      });
+    } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
+      clippyMessages.push({
+        text: "It looks like you're starting an interview. Would you like to begin recording?",
+        hold: true,
+      });
+    } else if (recordingState === 'recording') {
+      clippyMessages.push({
+        text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
+        hold: true,
+      });
+    } else if (room.phase === 'ended') {
+      clippyMessages.push({
+        text: "It looks like the call has ended. You can close this window now.",
+        hold: true,
+      });
+    }
+  }
 
   return (
-    <main className="call-stage" data-testid="call-stage" data-room-phase={room.phase}>
-      <StreamVideo stream={room.remoteStream} className="remote-video" testId="remote-video" />
-      {showWorkspacePanel && (
-        <>
-          <button
-            className={`workspace-toggle${workspaceOpen ? ' is-open' : ''}${hasActiveWorkspace ? ' is-active' : ''}`}
-            onClick={() => setWorkspaceOpen((v) => !v)}
-            aria-label={workspaceOpen ? 'Close workspace' : 'Open workspace'}
-            data-testid="workspace-toggle"
-          >
-            {workspaceSession?.status === 'LAUNCHING'
-              ? <Loader2 size={18} className="spin" />
-              : <SquareTerminal size={18} />}
-          </button>
-          {workspaceOpen && (
-            <div className={`workspace-window-wrapper${workspaceFullscreen ? ' is-fullscreen' : ''}`} data-testid="workspace-panel">
-              <ThemeProvider theme={pipeWin95Theme}>
-                <Win95GlobalStyles />
-                <Window
-                  className="workspace-win95-window"
-                  shadow
-                  style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
-                >
-                  <WindowHeader className="workspace-win95-header win95-font">
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <SquareTerminal size={14} />
-                      {workspace?.repoUrl ?? 'Repository not configured'}
-                    </span>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button
-                        className="workspace-win95-btn"
-                        onClick={() => setWorkspaceFullscreen((v) => !v)}
-                        aria-label={workspaceFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                      >
-                        {workspaceFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                      </button>
-                      <button
-                        className="workspace-win95-close"
-                        onClick={() => setWorkspaceOpen(false)}
-                        aria-label="Close workspace"
-                      >
-                        <PanelRightClose size={14} />
-                      </button>
-                    </div>
-                  </WindowHeader>
-                  <WindowContent
-                    className="workspace-win95-content"
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}
-                  >
-                    {workspaceUrl ? (
-                      <iframe
-                        src={workspaceUrl}
-                        title="PIPE live implementation workspace"
-                        className="workspace-iframe"
-                        data-testid="workspace-iframe"
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
-                      />
-                    ) : (
-                      <div className="workspace-empty">
-                        <SquareTerminal size={26} />
-                        <h3>
-                          {workspaceSession?.status === 'LAUNCHING'
-                            ? 'Starting workspace...'
-                            : workspaceSession?.status === 'ERROR'
-                              ? 'Workspace failed'
-                              : 'Workspace ready to launch'}
-                        </h3>
-                        <p>
-                          {workspaceSession?.status === 'LAUNCHING'
-                            ? 'The container is warming up. This can take 20-30 seconds.'
-                            : workspaceSession?.errorMessage
-                              ? workspaceSession.errorMessage
-                            : workspaceError
-                              ? workspaceError
-                              : metadata.role === 'HOST'
-                                ? 'Launch a repo into a live code-server workspace for this call.'
-                                : 'The host can launch the live code workspace.'}
-                        </p>
-                        {needsRepoUrl && canLaunchWorkspace && (
-                          <input
-                            type="url"
-                            className="workspace-repo-input"
-                            placeholder="https://github.com/org/repo"
-                            value={workspaceRepoInput}
-                            onChange={(e) => setWorkspaceRepoInput(e.target.value)}
-                            data-testid="workspace-repo-input"
-                          />
-                        )}
-                        {canLaunchWorkspace && (
-                          <Win95Button
-                            className="workspace-launch-btn win95-font"
-                            onClick={() => void launchWorkspace()}
-                            disabled={needsRepoUrl && !workspaceRepoInput.trim()}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}
-                          >
-                            {workspaceLoading ? <Loader2 size={16} className="spin" /> : <SquareTerminal size={16} />}
-                            Launch workspace
-                          </Win95Button>
-                        )}
-                        {workspaceSession?.status === 'LAUNCHING' && (
-                          <Win95Button
-                            className="workspace-refresh-btn win95-font"
-                            onClick={() => void refreshWorkspace()}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}
-                          >
-                            <RefreshCcw size={14} />
-                            Refresh
-                          </Win95Button>
-                        )}
-                      </div>
-                    )}
-                  </WindowContent>
-                </Window>
-              </ThemeProvider>
-            </div>
-          )}
-        </>
+    <>
+      <Win95Desktop
+        wm={wm}
+        onIconDoubleClick={handleDesktopIconDoubleClick}
+        recordingLabel={recordingLabel}
+        recordingActive={recordingState === 'recording'}
+        renderWindowContent={renderWindowContent}
+        uiMode={uiMode}
+        onUiModeChange={setUiMode}
+      />
+      {clippyVisible && enteredRoom && (metadata.features?.clippyEnabled ?? true) && (
+        <ClippyAssistant
+          messages={clippyMessages}
+          onDismiss={() => setClippyVisible(false)}
+          agentWsUrl={workspaceSession && hasActiveWorkspace
+            ? roomAgentWsUrl(token, workspaceSession.sessionId)
+            : null}
+          agentEnabled={hasActiveWorkspace}
+          onOpenBrowser={(url) => {
+            wm.openWindow({
+              windowType: 'browser',
+              title: 'Internet',
+              data: { initialUrl: url },
+            });
+          }}
+          onOpenTerminal={() => {
+            wm.openWindow({
+              id: 'terminal',
+              windowType: 'terminal',
+              title: 'PuTTY — container shell',
+              x: 120,
+              y: 80,
+              width: 640,
+              height: 400,
+            });
+          }}
+        />
       )}
-      {!room.remoteStream && (
-        <div className="waiting-state" data-testid="waiting-state">
-          <RoomStateMark
-            loading={isConnecting}
-            variant={isRoomError ? 'error' : 'default'}
-            icon={!isConnecting ? <Users size={24} /> : undefined}
-          />
-          <h2>
-            {isRoomError
-              ? 'Connection interrupted'
-              : isRecovering
-              ? 'Reconnecting...'
-              : isOpening
-              ? 'Opening room...'
-              : isConnecting
-              ? 'Connecting...'
-              : metadata.role === 'HOST'
-                ? 'Waiting for your guest'
-                : 'Waiting for the host'}
-          </h2>
-          <p>
-            {isRoomError
-              ? 'The room kept your call open. Retry the connection when you are ready.'
-              : isRecovering
-              ? 'The room is trying to recover the connection without ending the call.'
-              : isOpening
-              ? 'Connecting to the private room.'
-              : 'The room stays ready while the other participant joins.'}
-          </p>
-          {canRetry && (
-            <button className="primary" onClick={room.retryConnection} data-testid="retry-connection">
-              <RefreshCcw size={17} /> Retry connection
-            </button>
-          )}
-          {!canRetry && canStartCall && (
-            <button className="primary" onClick={() => void room.startCall()} data-testid="start-call">
-              <Video size={17} /> Start call
-            </button>
-          )}
-          {canAccept && (
-            <button className="primary" onClick={() => void room.acceptCall()} data-testid="accept-call">
-              <Video size={17} /> Join call
-            </button>
-          )}
-        </div>
-      )}
-
-      {room.remoteStream && isRecovering && (
-        <div className="recovery-banner" data-testid="recovery-banner">
-          <span>
-            <RefreshCcw size={14} />
-            Connection recovering
-          </span>
-          <button onClick={room.retryConnection}>Retry</button>
-        </div>
-      )}
-
-      {metadata.role === 'HOST' && visibleRecordingNotice && (recordingState === 'uploading' || recordingState === 'saved' || recordingState === 'failed') && (
-        <div className={`save-banner is-${recordingState}`} data-testid="recording-save-status">
-          <span>
-            {recordingState === 'failed' ? <AlertCircle size={14} /> : <Circle size={9} fill="currentColor" />}
-            {visibleRecordingNotice}
-          </span>
-        </div>
-      )}
-
-      <header className="call-header">
-        <div>
-          <BrandMark compact />
-          <strong>{metadata.title}</strong>
-        </div>
-        <div className="call-badges">
-          <div className={`network is-${room.iceProvider}`} data-testid="network-provider">
-            {relayLabel(room.iceProvider)}
-          </div>
-          <div className={`recording is-${recordingState}`} data-testid="recording-state">
-            <Circle size={9} fill="currentColor" />
-            {recordingLabel}
-          </div>
-        </div>
-      </header>
-
-      <div className="local-tile">
-        <StreamVideo stream={room.localStream} muted className="local-video" testId="local-video" />
-        <span>You</span>
-        {localIsSynthetic && <em>Test camera</em>}
-      </div>
-
-      <div className="controls">
-        <button onClick={room.toggleMic} aria-label="Toggle microphone">
-          {room.micEnabled ? <Mic /> : <MicOff />}
-        </button>
-        {metadata.role === 'HOST' && (
-          <button
-            className={`record-control is-${recordingState}`}
-            onClick={() => void startRecording()}
-            disabled={!canStartRecording}
-            aria-label={recordingButtonLabel}
-            title={hasConnectedMedia ? recordingButtonLabel : 'Recording is available after the guest connects'}
-            data-testid="start-recording"
-          >
-            <Circle size={15} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
-            <span>{recordingButtonLabel}</span>
-          </button>
-        )}
-        <button className="hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
-          <PhoneOff />
-        </button>
-        <button onClick={room.toggleCamera} aria-label="Toggle camera">
-          {room.cameraEnabled ? <Camera /> : <CameraOff />}
-        </button>
-      </div>
-
       {room.phase === 'ended' && (
-        <div className="ended-overlay">
+        <div className="ended-overlay" style={{ zIndex: 99999 }}>
           <RoomStateMark />
           <h2>Call ended</h2>
           <p>
@@ -841,7 +947,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           </p>
         </div>
       )}
-    </main>
+    </>
   );
 }
 

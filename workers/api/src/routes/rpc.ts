@@ -857,9 +857,11 @@ rpcAuth.post('/get-stage-config', async (c) => {
       isComplete: !needsResume && !hasPendingStandalone,
       stageId: 'talent-pool-intake',
       candidateId,
-      stageTitle: hasPendingStandalone
-        ? (standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review Interview')
-        : needsResume ? 'Upload Your CV' : 'Thank You',
+      stageTitle: needsResume
+        ? 'Upload Your CV'
+        : hasPendingStandalone
+          ? (standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review Interview')
+          : 'Thank You',
       mode: 'INTAKE',
       timeLimit: null,
       challenges: needsResume

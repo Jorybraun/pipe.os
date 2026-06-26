@@ -1167,11 +1167,18 @@ schedulingAuth.get('/interviews', async (c) => {
               si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
-              s.title AS stage_title
+              s.title AS stage_title,
+              m.id AS meeting_id,
+              mr.status AS room_status,
+              guest_mp.joined_at AS guest_joined_at,
+              guest_mp.left_at AS guest_left_at
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
        LEFT JOIN stages s ON s.id = si.stage_id
+       LEFT JOIN meetings m ON m.scheduled_interview_id = si.id AND m.owner_id = si.owner_id
+       LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
+       LEFT JOIN meeting_participants guest_mp ON guest_mp.meeting_id = m.id AND guest_mp.role = 'ATTENDEE'
        WHERE si.owner_id = ?
        ORDER BY si.scheduled_at ASC`
     )
@@ -1206,39 +1213,51 @@ schedulingAuth.get('/interviews', async (c) => {
       candidate_email: string | null;
       pipeline_title: string | null;
       stage_title: string | null;
+      meeting_id: string | null;
+      room_status: string | null;
+      guest_joined_at: string | null;
+      guest_left_at: string | null;
     }>();
 
-  const interviews = (result.results ?? []).map((r) => ({
-    id: r.id,
-    candidateId: r.candidate_id,
-    pipelineId: r.pipeline_id,
-    stageId: r.stage_id,
-    interviewType: r.interview_type,
-    meetingType: r.meeting_type,
-    status: r.status,
-    scheduledAt: r.scheduled_at,
-    meetingUrl: buildInternalVideoUrl(c, r),
-    schedulingProvider: r.scheduling_provider,
-    schedulingUrl: r.scheduling_url,
-    externalEventId: r.external_event_id,
-    recruiterNotes: r.recruiter_notes,
-    syncSource: r.sync_source,
-    lastSyncedAt: r.last_synced_at,
-    inviteLinkSentAt: r.invite_link_sent_at,
-    emailSentAt: r.email_sent_at,
-    recipientName: r.recipient_name,
-    recipientEmail: r.recipient_email,
-    matchedRepoId: r.matched_repo_id,
-    githubRepoUrl: r.github_repo_url,
-    githubPrNumber: r.github_pr_number,
-    completedAt: r.completed_at,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    candidateName: r.candidate_name,
-    candidateEmail: r.candidate_email,
-    pipelineTitle: r.pipeline_title,
-    stageTitle: r.stage_title,
-  }));
+  const interviews = (result.results ?? []).map((r) => {
+    const guestWaiting = Boolean(
+      r.guest_joined_at && !r.guest_left_at && r.room_status && r.room_status !== 'ENDED',
+    );
+    return {
+      id: r.id,
+      candidateId: r.candidate_id,
+      pipelineId: r.pipeline_id,
+      stageId: r.stage_id,
+      interviewType: r.interview_type,
+      meetingType: r.meeting_type,
+      status: r.status,
+      scheduledAt: r.scheduled_at,
+      meetingUrl: buildInternalVideoUrl(c, r),
+      schedulingProvider: r.scheduling_provider,
+      schedulingUrl: r.scheduling_url,
+      externalEventId: r.external_event_id,
+      recruiterNotes: r.recruiter_notes,
+      syncSource: r.sync_source,
+      lastSyncedAt: r.last_synced_at,
+      inviteLinkSentAt: r.invite_link_sent_at,
+      emailSentAt: r.email_sent_at,
+      recipientName: r.recipient_name,
+      recipientEmail: r.recipient_email,
+      matchedRepoId: r.matched_repo_id,
+      githubRepoUrl: r.github_repo_url,
+      githubPrNumber: r.github_pr_number,
+      completedAt: r.completed_at,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      candidateName: r.candidate_name,
+      candidateEmail: r.candidate_email,
+      pipelineTitle: r.pipeline_title,
+      stageTitle: r.stage_title,
+      meetingId: r.meeting_id,
+      roomStatus: r.room_status,
+      guestWaiting,
+    };
+  });
 
   return c.json({ interviews });
 });

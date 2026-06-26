@@ -23,6 +23,12 @@ export interface RoomMetadata {
   meetingType: string;
   participants: Array<{ name: string; role: string }>;
   workspace?: RoomWorkspace | null;
+  features?: {
+    videoEnabled: boolean;
+    workspaceEnabled: boolean;
+    recordingEnabled: boolean;
+    clippyEnabled: boolean;
+  };
 }
 
 export interface RoomWorkspaceSession {

@@ -382,6 +382,13 @@ export function SchedulingDashboard(): JSX.Element {
           schedulingUrl?: string;
           githubRepoUrl?: string | null;
           githubPrNumber?: number | null;
+          features?: {
+            videoEnabled: boolean;
+            workspaceEnabled: boolean;
+            recordingEnabled: boolean;
+            clippyEnabled: boolean;
+          };
+          agentType?: string | null;
         }) => {
           const result = await api.post<{ interview: { id: string } }>(
             '/api/v1/scheduling/interviews',

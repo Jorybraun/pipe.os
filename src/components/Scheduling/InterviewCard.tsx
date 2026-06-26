@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Video } from 'lucide-react';
+import { Mail, Video, Loader2, Radio } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type ScheduledInterview } from '../../lib/scheduling/types';
 import { InterviewStatusBadge } from './InterviewStatusBadge';
 import { StatusOverrideModal } from './StatusOverrideModal';
 import { InviteToCallModal } from './InviteToCallModal';
+import { useApiClient } from '../../hooks/useApiClient';
 import type { InterviewStatus } from '../../lib/scheduling/types';
 
 // TODO: Wire candidateName and pipelineTitle via enriched data once we join
@@ -51,10 +52,13 @@ export function InterviewCard({
   sendInvite,
 }: InterviewCardProps): JSX.Element {
   const navigate = useNavigate();
+  const api = useApiClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
 
   const joinable = isJoinable(interview);
+  const guestWaiting = interview.guestWaiting ?? false;
   const now = Date.now();
   const scheduled = interview.scheduledAt ? new Date(interview.scheduledAt).getTime() : null;
 
@@ -68,6 +72,29 @@ export function InterviewCard({
       dotColor = '#f59e0b'; // Amber: upcoming
     }
   }
+
+  const handleJoinRoom = async (event: React.MouseEvent): Promise<void> => {
+    event.stopPropagation();
+    if (!interview.meetingId) {
+      navigate(`/interviews/${interview.id}`);
+      return;
+    }
+    setIsJoining(true);
+    try {
+      const result = await api.post<{ room: { hostUrl: string } }>(
+        `/api/v1/meetings/${interview.meetingId}/room`,
+        {},
+      );
+      if (result.room?.hostUrl) {
+        window.open(result.room.hostUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err) {
+      console.error('[InterviewCard] Failed to join room:', err);
+      navigate(`/interviews/${interview.id}`);
+    } finally {
+      setIsJoining(false);
+    }
+  };
 
   const timeStr = interview.scheduledAt
     ? new Date(interview.scheduledAt).toLocaleString(undefined, {
@@ -131,8 +158,30 @@ export function InterviewCard({
 
         {/* Center: person + interview mode + optional role context */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pipe-text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
             {candidateName}
+            {guestWaiting && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 8px',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  color: '#10b981',
+                  background: 'rgba(16,185,129,0.12)',
+                  border: '1px solid rgba(16,185,129,0.3)',
+                  borderRadius: 4,
+                  fontFamily: '"Space Mono", monospace',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Radio size={10} className="pulse-dot" />
+                GUEST WAITING
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', letterSpacing: '0.05em', fontFamily: '"Space Mono", monospace', marginBottom: 4 }}>
             {roleContext ? `${modeLabel} · ${roleContext}` : modeLabel}
@@ -178,31 +227,31 @@ export function InterviewCard({
             {hasInviteDelivery ? 'RESEND' : 'SEND'}
           </button>
           <button
-            disabled={!joinable}
-            onClick={(event) => {
+            disabled={!joinable && !guestWaiting}
+            onClick={guestWaiting ? handleJoinRoom : (event) => {
               event.stopPropagation();
               navigate(`/interviews/${interview.id}`);
             }}
-            title={joinable ? 'Open room controls' : 'Available 15 min before start'}
+            title={guestWaiting ? 'Join room now — guest is waiting' : joinable ? 'Open room controls' : 'Available 15 min before start'}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 6,
               padding: '8px 16px',
-              background: joinable ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
-              border: `1px solid ${joinable ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
-              color: joinable ? '#60a5fa' : 'var(--pipe-text-dim)',
+              background: guestWaiting ? 'rgba(16,185,129,0.15)' : joinable ? 'rgba(96,165,250,0.15)' : 'var(--pipe-surface)',
+              border: `1px solid ${guestWaiting ? 'rgba(16,185,129,0.4)' : joinable ? 'rgba(96,165,250,0.3)' : 'var(--pipe-border)'}`,
+              color: guestWaiting ? '#10b981' : joinable ? '#60a5fa' : 'var(--pipe-text-dim)',
               fontSize: 10,
               letterSpacing: '0.1em',
               fontFamily: '"Space Mono", monospace',
-              cursor: joinable ? 'pointer' : 'default',
+              cursor: (joinable || guestWaiting) ? 'pointer' : 'default',
               borderRadius: 4,
               transition: 'all 0.2s',
               whiteSpace: 'nowrap',
             }}
           >
-            <Video size={12} />
-            ROOM
+            {isJoining ? <Loader2 size={12} className="spin" /> : <Video size={12} />}
+            {guestWaiting ? 'JOIN' : 'ROOM'}
           </button>
 
           {/* Edit / override status */}

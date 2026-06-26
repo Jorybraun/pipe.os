@@ -3,7 +3,7 @@ import type { IceServerProvider, RoomMetadata, RoomWorkspace } from '../types';
 const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8787'
   : window.location.origin;
-const API_BASE = import.meta.env.VITE_API_BASE_URL || localApiBase;
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || localApiBase;
 const TURN_CREDENTIAL_ATTEMPTS = 3;
 const TURN_RETRY_DELAY_MS = 350;
 
@@ -146,5 +146,25 @@ export async function launchRoomWorkspace(token: string, repoUrl?: string): Prom
 export function roomWorkspaceProxyUrl(token: string, sessionId: string): string {
   return apiUrl(
     `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`,
+  );
+}
+
+export function roomAgentWsUrl(token: string, sessionId: string): string {
+  const httpUrl = apiUrl(
+    `/api/v1/meeting-rooms/${encodeURIComponent(token)}/agent/${encodeURIComponent(sessionId)}/ws`,
+  );
+  return httpUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+}
+
+export function roomTerminalWsUrl(token: string, sessionId: string): string {
+  const httpUrl = apiUrl(
+    `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/terminal`,
+  );
+  return httpUrl.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+}
+
+export function roomAgentAuthUrl(token: string, sessionId: string, path: string = '/start'): string {
+  return apiUrl(
+    `/api/v1/meeting-rooms/${encodeURIComponent(token)}/agent/${encodeURIComponent(sessionId)}/auth${path}`,
   );
 }
