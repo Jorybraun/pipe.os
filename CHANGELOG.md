@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Calendly scheduling sync and confirmations
+
+- Calendly sync now imports unmatched upcoming bookings into scheduled interviews so recruiter scheduling views include meetings created directly in Calendly.
+- Calendly booking webhooks now send the participant a confirmation email with the meeting/event link for contact-first interviews via the shared transactional email path.
+
 ### Added — 95 Until Infinity shared interview desktop
 
 - The video room now uses the synced Win95 desktop as the durable interview shell, with the standard call layout preserved as a host-switchable fallback surface.

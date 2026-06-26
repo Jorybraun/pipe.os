@@ -21,7 +21,6 @@ import { z } from 'zod';
 import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
-import { sendNotificationEmail } from '../../lib/email';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
@@ -714,6 +713,233 @@ async function persistScheduledInterviewInviteDeliveryContext(
       },
     ],
   });
+}
+
+interface BookingConfirmationDetails {
+  id: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+  pipelineTitle: string | null;
+  stageTitle: string | null;
+  scheduledAt: string | null;
+  meetingUrl: string | null;
+  emailSentAt: string | null;
+}
+
+function normalizeEmail(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+function nameFromEmail(email: string): string {
+  return email.split('@')[0] || 'there';
+}
+
+function escapeEmailHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatScheduledTime(value: string | null): string | null {
+  if (!value) return null;
+  return new Date(value).toLocaleString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
+function buildScheduledBookingEmailHtml(input: {
+  recipientName: string;
+  pipelineTitle: string;
+  stageTitle: string | null;
+  scheduledTime: string | null;
+  meetingUrl: string;
+}): string {
+  const recipientName = escapeEmailHtml(input.recipientName);
+  const pipelineTitle = escapeEmailHtml(input.pipelineTitle);
+  const stageTitle = input.stageTitle ? escapeEmailHtml(input.stageTitle) : null;
+  const scheduledTime = input.scheduledTime ? escapeEmailHtml(input.scheduledTime) : null;
+  const safeMeetingUrl = encodeURI(input.meetingUrl);
+
+  return `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
+  <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Interview Confirmed</h1>
+  <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+    Hi ${recipientName}, your interview for <strong>${pipelineTitle}</strong> is confirmed.
+  </p>
+  <div style="padding: 20px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); margin-bottom: 32px;">
+    ${stageTitle ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Stage:</strong> ${stageTitle}</p>` : ''}
+    ${scheduledTime ? `<p style="font-size: 14px; margin: 0 0 8px 0;"><strong style="color: #888;">Time:</strong> ${scheduledTime}</p>` : ''}
+    <p style="font-size: 14px; margin: 0;"><strong style="color: #888;">Link:</strong> <a href="${safeMeetingUrl}" style="color: #60a5fa;">Join Meeting</a></p>
+  </div>
+  <a href="${safeMeetingUrl}" style="display: inline-block; padding: 14px 32px; background: #ffffff; color: #0c0c0e; text-decoration: none; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; border: none;">
+    JOIN INTERVIEW →
+  </a>
+  <p style="font-size: 12px; color: #666; margin-top: 40px;">
+    If the button doesn't work, copy this link:<br/>
+    <a href="${safeMeetingUrl}" style="color: #888;">${escapeEmailHtml(input.meetingUrl)}</a>
+  </p>
+</div>`;
+}
+
+async function loadBookingConfirmationDetails(
+  db: D1Database,
+  ownerId: string,
+  interviewId: string,
+): Promise<BookingConfirmationDetails | null> {
+  return db.prepare(
+    `SELECT si.id,
+            COALESCE(c.name, si.recipient_name) AS recipient_name,
+            COALESCE(c.email, si.recipient_email) AS recipient_email,
+            p.title AS pipeline_title,
+            s.title AS stage_title,
+            si.scheduled_at,
+            si.meeting_url,
+            si.email_sent_at
+       FROM scheduled_interviews si
+       LEFT JOIN candidates c ON c.id = si.candidate_id
+       LEFT JOIN pipelines p ON p.id = si.pipeline_id
+       LEFT JOIN stages s ON s.id = si.stage_id
+      WHERE si.id = ?1
+        AND si.owner_id = ?2`,
+  ).bind(interviewId, ownerId).first<{
+    id: string;
+    recipient_name: string | null;
+    recipient_email: string | null;
+    pipeline_title: string | null;
+    stage_title: string | null;
+    scheduled_at: string | null;
+    meeting_url: string | null;
+    email_sent_at: string | null;
+  }>().then((row) => row ? {
+    id: row.id,
+    recipientName: row.recipient_name,
+    recipientEmail: row.recipient_email,
+    pipelineTitle: row.pipeline_title,
+    stageTitle: row.stage_title,
+    scheduledAt: row.scheduled_at,
+    meetingUrl: row.meeting_url,
+    emailSentAt: row.email_sent_at,
+  } : null);
+}
+
+async function sendScheduledBookingConfirmationEmail(
+  db: D1Database,
+  env: Env,
+  ownerId: string,
+  interviewId: string,
+): Promise<void> {
+  const details = await loadBookingConfirmationDetails(db, ownerId, interviewId);
+  const recipientEmail = normalizeEmail(details?.recipientEmail);
+  const meetingUrl = details?.meetingUrl ? withDevBasicAuth(details.meetingUrl, env) : null;
+
+  if (!details || !recipientEmail || !meetingUrl || details.emailSentAt) return;
+
+  const recipientName = details.recipientName?.trim()
+    || nameFromEmail(recipientEmail);
+  const pipelineTitle = details.pipelineTitle?.trim() || 'Interview';
+  const scheduledTime = formatScheduledTime(details.scheduledAt);
+  const subject = `Interview scheduled — ${pipelineTitle}`;
+  const html = buildScheduledBookingEmailHtml({
+    recipientName,
+    pipelineTitle,
+    stageTitle: details.stageTitle,
+    scheduledTime,
+    meetingUrl,
+  });
+
+  try {
+    const result = await sendTransactionalEmail(env, {
+      to: recipientEmail,
+      subject,
+      html,
+    });
+    if (!result) return;
+
+    const sentAt = new Date().toISOString();
+    await db.prepare(
+      `UPDATE scheduled_interviews
+          SET email_sent_at = COALESCE(email_sent_at, ?1),
+              updated_at = ?1
+        WHERE id = ?2
+          AND owner_id = ?3`,
+    ).bind(sentAt, interviewId, ownerId).run();
+  } catch (err) {
+    console.error('[scheduling/booking-confirmation] Email send failed:', {
+      interviewId,
+      recipientEmail,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+function queueScheduledBookingConfirmation(
+  c: { env: Env; executionCtx: ExecutionContext },
+  db: D1Database,
+  ownerId: string,
+  interviewId: string,
+): void {
+  if (!c.env.EMAIL && !c.env.RESEND_API_KEY) return;
+  c.executionCtx.waitUntil(
+    sendScheduledBookingConfirmationEmail(db, c.env, ownerId, interviewId),
+  );
+}
+
+interface CalendlyScheduledEvent {
+  uri: string;
+  name?: string;
+  start_time: string;
+  end_time?: string;
+  status?: string;
+  location?: {
+    join_url?: string;
+    location?: string;
+  } | null;
+}
+
+interface CalendlyInvitee {
+  uri?: string;
+  name?: string;
+  email?: string;
+  answers?: Array<{
+    position?: number;
+    value?: string;
+  }>;
+  questions_and_answers?: Array<{
+    position?: number;
+    question?: string;
+    answer?: string;
+  }>;
+}
+
+function calendlyLocationUrl(event: CalendlyScheduledEvent): string | null {
+  return event.location?.join_url
+    ?? event.location?.location
+    ?? null;
+}
+
+function calendlyInviteeName(invitee: CalendlyInvitee, email: string): string {
+  return invitee.name?.trim() || nameFromEmail(email);
+}
+
+function calendlyInviteeInterviewId(invitee: CalendlyInvitee): string | null {
+  const answer = invitee.answers?.find((item) => item.position === 1 && item.value?.trim());
+  if (answer?.value) return answer.value.trim();
+
+  const questionAnswer = invitee.questions_and_answers?.find(
+    (item) =>
+      item.position === 1
+      && item.answer?.trim(),
+  );
+  return questionAnswer?.answer?.trim() ?? null;
 }
 
 // ─── Authenticated routes ───────────────────────────────────────────────────
@@ -1511,10 +1737,11 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', 'Could not resolve Calendly user URI.');
   }
 
-  // Fetch recent scheduled events (last 30 days)
-  const minDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Fetch upcoming scheduled events so the recruiter sees Calendly bookings
+  // even when the booking originated outside Pipe.
+  const minDate = new Date().toISOString();
   const eventsRes = await fetch(
-    `https://api.calendly.com/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${minDate}&status=active&count=50`,
+    `https://api.calendly.com/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${encodeURIComponent(minDate)}&status=active&count=100&sort=start_time:asc`,
     { headers: { Authorization: `Bearer ${conn.access_token}` } },
   );
   if (!eventsRes.ok) {
@@ -1523,17 +1750,12 @@ schedulingAuth.post('/interviews/sync', async (c) => {
   }
 
   const eventsData = await eventsRes.json() as {
-    collection?: Array<{
-      uri: string;
-      start_time: string;
-      end_time: string;
-      status: string;
-      location?: { join_url?: string };
-    }>;
+    collection?: CalendlyScheduledEvent[];
   };
 
   const events = eventsData.collection ?? [];
   let synced = 0;
+  let created = 0;
   const now = new Date().toISOString();
 
   // Get all INVITED interviews for this user — include both candidate email
@@ -1541,14 +1763,20 @@ schedulingAuth.post('/interviews/sync', async (c) => {
   // so contact-first interviews without a candidate record can still match.
   const invited = await db
     .prepare(
-      `SELECT si.id, si.candidate_id, si.recipient_email,
+      `SELECT si.id, si.candidate_id, si.recipient_email, si.email_sent_at,
               c.email AS candidate_email
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        WHERE si.owner_id = ? AND si.status = 'INVITED'`
     )
     .bind(userId)
-    .all<{ id: string; candidate_id: string | null; recipient_email: string | null; candidate_email: string | null }>();
+    .all<{
+      id: string;
+      candidate_id: string | null;
+      recipient_email: string | null;
+      email_sent_at: string | null;
+      candidate_email: string | null;
+    }>();
 
   // For each event, fetch invitees and try to match to our interviews
   for (const event of events) {
@@ -1559,40 +1787,124 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     if (!inviteesRes.ok) continue;
 
     const inviteesData = await inviteesRes.json() as {
-      collection?: Array<{ email: string; uri: string; answers?: Array<{ position: number; value: string }> }>;
+      collection?: CalendlyInvitee[];
     };
 
     for (const invitee of inviteesData.collection ?? []) {
+      const inviteeEmail = normalizeEmail(invitee.email);
+      if (!inviteeEmail) continue;
+
       // Try to match by interview ID from custom answer a1 first
-      const a1Answer = invitee.answers?.find((a) => a.position === 1);
-      let match = a1Answer?.value
-        ? invited.results?.find((i) => i.id === a1Answer.value)
+      const answeredInterviewId = calendlyInviteeInterviewId(invitee);
+      let match = answeredInterviewId
+        ? await db
+            .prepare(
+              `SELECT si.id, si.email_sent_at
+                 FROM scheduled_interviews si
+                WHERE si.id = ?1
+                  AND si.owner_id = ?2
+                LIMIT 1`,
+            )
+            .bind(answeredInterviewId, userId)
+            .first<{ id: string; email_sent_at: string | null }>()
         : null;
+
+      if (!match) {
+        match = await db
+          .prepare(
+            `SELECT si.id, si.email_sent_at
+               FROM scheduled_interviews si
+               LEFT JOIN candidates c ON c.id = si.candidate_id
+              WHERE si.owner_id = ?1
+                AND si.external_event_id = ?2
+                AND (
+                  lower(COALESCE(c.email, '')) = ?3
+                  OR lower(COALESCE(si.recipient_email, '')) = ?3
+                )
+              ORDER BY si.updated_at DESC
+              LIMIT 1`,
+          )
+          .bind(userId, event.uri, inviteeEmail)
+          .first<{ id: string; email_sent_at: string | null }>();
+      }
 
       // Fallback: match by candidate email OR recipient email
       if (!match) {
         match = invited.results?.find(
           (i) =>
-            i.candidate_email?.toLowerCase() === invitee.email.toLowerCase() ||
-            i.recipient_email?.toLowerCase() === invitee.email.toLowerCase()
-        );
+            normalizeEmail(i.candidate_email) === inviteeEmail ||
+            normalizeEmail(i.recipient_email) === inviteeEmail
+        ) ?? null;
       }
-      if (!match) continue;
 
-      const meetingUrl = event.location?.join_url ?? null;
+      const meetingUrl = calendlyLocationUrl(event);
+
+      if (match) {
+        await db
+          .prepare(
+            `UPDATE scheduled_interviews
+             SET status = 'SCHEDULED', scheduled_at = ?, meeting_url = ?,
+                 external_event_id = ?, scheduling_provider = 'CALENDLY',
+                 sync_source = 'POLL', last_synced_at = ?, updated_at = ?
+             WHERE id = ?`,
+          )
+          .bind(event.start_time, meetingUrl, event.uri, now, now, match.id)
+          .run();
+
+        synced++;
+        queueScheduledBookingConfirmation(c, db, userId, match.id);
+        continue;
+      }
+
+      const importedInterviewId = crypto.randomUUID();
+      const inviteeName = calendlyInviteeName(invitee, inviteeEmail);
+      const contactId = await ensureRecipientContact(db, userId, {
+        name: inviteeName,
+        email: inviteeEmail,
+      });
 
       await db
         .prepare(
-          `UPDATE scheduled_interviews
-           SET status = 'SCHEDULED', scheduled_at = ?, meeting_url = ?,
-               external_event_id = ?, scheduling_provider = 'CALENDLY',
-               sync_source = 'POLL', last_synced_at = ?, updated_at = ?
-           WHERE id = ?`
+          `INSERT INTO scheduled_interviews
+           (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+            interview_type, meeting_type, scheduled_at, meeting_url,
+            scheduling_provider, external_event_id, recipient_name,
+            recipient_email, sync_source, last_synced_at, created_at, updated_at)
+           VALUES (?, NULL, NULL, NULL, ?, 'SCHEDULED',
+            'VIDEO', 'DIRECT_VIDEO_CALL', ?, ?,
+            'CALENDLY', ?, ?, ?, 'POLL', ?, ?, ?)`,
         )
-        .bind(event.start_time, meetingUrl, event.uri, now, now, match.id)
+        .bind(
+          importedInterviewId,
+          userId,
+          event.start_time,
+          meetingUrl,
+          event.uri,
+          inviteeName,
+          inviteeEmail,
+          now,
+          now,
+          now,
+        )
         .run();
 
+      await persistContactFirstInterviewInviteContext(db, {
+        contactId,
+        ownerId: userId,
+        interviewId: importedInterviewId,
+        recipientName: inviteeName,
+        recipientEmail: inviteeEmail,
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        scheduledAt: event.start_time,
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl: null,
+        createdAt: now,
+      });
+
       synced++;
+      created++;
+      queueScheduledBookingConfirmation(c, db, userId, importedInterviewId);
     }
   }
 
@@ -1602,7 +1914,7 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     .bind(now, now, conn.id)
     .run();
 
-  return c.json({ synced, total: events.length });
+  return c.json({ synced, total: events.length, created });
 });
 
 // POST /interviews — create scheduled interview
@@ -2163,16 +2475,32 @@ schedulingPublic.post('/webhook', async (c) => {
     return c.json({ message: 'Unknown provider' }, 400);
   }
 
-  // Find active connection for this provider
-  const connection = await db
-    .prepare(
-      `SELECT id, owner_id, webhook_secret, access_token
-       FROM scheduling_connections
-       WHERE provider_id = ? AND status = 'ACTIVE'
-       ORDER BY connected_at DESC LIMIT 1`
-    )
-    .bind(providerId)
-    .first<{ id: string; owner_id: string; webhook_secret: string | null; access_token: string }>();
+  // Find active connection for this provider. Webhook registrations include
+  // connectionId, which is required to disambiguate multiple Calendly accounts.
+  const connectionId = c.req.query('connectionId');
+  const connection = connectionId
+    ? await db
+        .prepare(
+          `SELECT id, owner_id, webhook_secret, access_token
+             FROM scheduling_connections
+            WHERE id = ?1
+              AND provider_id = ?2
+              AND status = 'ACTIVE'
+            LIMIT 1`,
+        )
+        .bind(connectionId, providerId)
+        .first<{ id: string; owner_id: string; webhook_secret: string | null; access_token: string }>()
+    : await db
+        .prepare(
+          `SELECT id, owner_id, webhook_secret, access_token
+             FROM scheduling_connections
+            WHERE provider_id = ?1
+              AND status = 'ACTIVE'
+            ORDER BY connected_at DESC
+            LIMIT 1`,
+        )
+        .bind(providerId)
+        .first<{ id: string; owner_id: string; webhook_secret: string | null; access_token: string }>();
 
   if (!connection) {
     return c.json({ message: 'No active connection' }, 404);
@@ -2251,9 +2579,9 @@ schedulingPublic.post('/webhook', async (c) => {
   if (normalized.interviewId) {
     interview = await db
       .prepare(
-        'SELECT id, status FROM scheduled_interviews WHERE id = ?'
+        'SELECT id, status FROM scheduled_interviews WHERE id = ? AND owner_id = ?'
       )
-      .bind(normalized.interviewId)
+      .bind(normalized.interviewId, connection.owner_id)
       .first<{ id: string; status: string }>();
   }
 
@@ -2261,23 +2589,29 @@ schedulingPublic.post('/webhook', async (c) => {
   if (!interview && normalized.externalEventId) {
     interview = await db
       .prepare(
-        'SELECT id, status FROM scheduled_interviews WHERE external_event_id = ?'
+        'SELECT id, status FROM scheduled_interviews WHERE external_event_id = ? AND owner_id = ?'
       )
-      .bind(normalized.externalEventId)
+      .bind(normalized.externalEventId, connection.owner_id)
       .first<{ id: string; status: string }>();
   }
 
   // Fallback: match by candidate email OR recipient_email
   if (!interview && normalized.candidateEmail) {
+    const candidateEmail = normalizeEmail(normalized.candidateEmail);
     interview = await db
       .prepare(
         `SELECT si.id, si.status
          FROM scheduled_interviews si
          LEFT JOIN candidates c ON c.id = si.candidate_id
-         WHERE (c.email = ? OR si.recipient_email = ?) AND si.status = 'INVITED'
+         WHERE si.owner_id = ?
+           AND (
+             lower(COALESCE(c.email, '')) = ?
+             OR lower(COALESCE(si.recipient_email, '')) = ?
+           )
+           AND si.status IN ('INVITED', 'SCHEDULED')
          ORDER BY si.created_at DESC LIMIT 1`
       )
-      .bind(normalized.candidateEmail, normalized.candidateEmail)
+      .bind(connection.owner_id, candidateEmail, candidateEmail)
       .first<{ id: string; status: string }>();
   }
 
@@ -2331,91 +2665,8 @@ schedulingPublic.post('/webhook', async (c) => {
     .bind(now, now, connection.id)
     .run();
 
-  // Send email notification if interview was just scheduled
-  if (normalized.status === 'SCHEDULED' && c.env.RESEND_API_KEY) {
-    const interviewData = await db
-      .prepare(
-        `SELECT si.candidate_id, si.pipeline_id, si.stage_id,
-                c.name, c.email, p.title AS pipeline_title, s.title AS stage_title,
-                s.notification_templates
-         FROM scheduled_interviews si
-         JOIN candidates c ON c.id = si.candidate_id
-         JOIN pipelines p ON p.id = si.pipeline_id
-         JOIN stages s ON s.id = si.stage_id
-         WHERE si.id = ?`
-      )
-      .bind(interview.id)
-      .first<{
-        candidate_id: string;
-        pipeline_id: string;
-        stage_id: string;
-        name: string;
-        email: string;
-        pipeline_title: string;
-        stage_title: string;
-        notification_templates: string | null;
-      }>();
-
-    if (interviewData) {
-      const scheduledTime = normalized.scheduledAt
-        ? new Date(normalized.scheduledAt).toLocaleString('en-US', {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-            hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
-          })
-        : '';
-      const meetingUrl = withDevBasicAuth(normalized.meetingUrl ?? '', c.env);
-
-      // Email the candidate
-      c.executionCtx.waitUntil(
-        sendNotificationEmail({
-          apiKey: c.env.RESEND_API_KEY,
-          trigger: 'SCHEDULED',
-          to: interviewData.email,
-          variables: {
-            name: interviewData.name,
-            email: interviewData.email,
-            pipelineName: interviewData.pipeline_title,
-            stageName: interviewData.stage_title,
-            scheduledTime,
-            bookingUrl: meetingUrl,
-          },
-          stageTemplatesJson: interviewData.notification_templates,
-        }),
-      );
-
-      // Email the recruiter
-      const recruiter = await db
-        .prepare('SELECT email FROM users WHERE id = ?')
-        .bind(connection.owner_id)
-        .first<{ email: string }>();
-
-      // Fallback: try Clerk user metadata or scheduling connection account email
-      const recruiterEmail = recruiter?.email
-        ?? (await db
-            .prepare('SELECT account_email FROM scheduling_connections WHERE id = ?')
-            .bind(connection.id)
-            .first<{ account_email: string | null }>()
-          )?.account_email;
-
-      if (recruiterEmail) {
-        c.executionCtx.waitUntil(
-          sendNotificationEmail({
-            apiKey: c.env.RESEND_API_KEY,
-            trigger: 'SCHEDULED',
-            to: recruiterEmail,
-            variables: {
-              name: interviewData.name,
-              email: interviewData.email,
-              pipelineName: interviewData.pipeline_title,
-              stageName: interviewData.stage_title,
-              scheduledTime,
-              bookingUrl: meetingUrl,
-            },
-            stageTemplatesJson: interviewData.notification_templates,
-          }),
-        );
-      }
-    }
+  if (normalized.status === 'SCHEDULED') {
+    queueScheduledBookingConfirmation(c, db, connection.owner_id, interview.id);
   }
 
   console.log('[scheduling/webhook] Interview updated', {

@@ -55,8 +55,8 @@ export async function sendTransactionalEmail(
         ...(input.html ? { html: input.html } : {}),
         ...(text ? { text } : {}),
         ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-      });
-      return { provider: 'cloudflare', id: response.messageId ?? null };
+      }) as { messageId?: string } | undefined;
+      return { provider: 'cloudflare', id: response?.messageId ?? null };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       failures.push(`cloudflare: ${message}`);

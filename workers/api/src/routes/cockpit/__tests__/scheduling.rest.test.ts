@@ -12,7 +12,7 @@ import Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import {
   ensureCandidateLivingContext,
@@ -23,7 +23,23 @@ import type { Env, Variables } from '../../../types';
 import {
   canInterviewStatusTransition,
   schedulingAuth,
+  schedulingPublic,
 } from '../scheduling';
+
+function buildCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
+}
 
 const livingContextMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
@@ -167,6 +183,7 @@ describe('GET /interviews/:id detail', () => {
   let sqlite: BetterSqliteDb | null = null;
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     sqlite?.close();
     sqlite = null;
   });
@@ -186,6 +203,24 @@ describe('GET /interviews/:id detail', () => {
       await next();
     });
     app.route('/', schedulingAuth);
+    return app;
+  }
+
+  function mountSchedulingPublicApp(envOverrides: Partial<Env> = {}): Hono<{ Bindings: Env }> {
+    if (!sqlite) throw new Error('sqlite fixture not initialized');
+    const app = new Hono<{ Bindings: Env }>();
+    app.use('*', async (c, next) => {
+      c.env = {
+        DB: createMockD1(sqlite!),
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'owner-1',
+        APP_BASE_URL: 'http://localhost:5173',
+        ...envOverrides,
+      } as unknown as Env;
+      await next();
+    });
+    app.route('/', schedulingPublic);
     return app;
   }
 
@@ -256,6 +291,27 @@ describe('GET /interviews/:id detail', () => {
         completed_at TEXT,
         created_at TEXT,
         updated_at TEXT
+      );
+      CREATE TABLE scheduling_connections (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        token_expiry TEXT,
+        account_email TEXT,
+        account_name TEXT,
+        webhook_secret TEXT,
+        webhook_id TEXT,
+        status TEXT NOT NULL,
+        connected_at TEXT NOT NULL,
+        last_sync_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT
       );
       CREATE TABLE transcript_artifacts (
         id TEXT PRIMARY KEY,
@@ -1300,6 +1356,207 @@ describe('GET /interviews/:id detail', () => {
       'Email sent: yes',
       'Provider message id: cf-calendly-message-1',
     ]));
+  });
+
+  it('imports unmatched upcoming Calendly bookings during sync', async () => {
+    seedInterviewDetailFixture();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === 'https://api.calendly.com/users/me') {
+        return Response.json({
+          resource: {
+            uri: 'https://api.calendly.com/users/user-1',
+          },
+        });
+      }
+      if (url.startsWith('https://api.calendly.com/scheduled_events?')) {
+        return Response.json({
+          collection: [{
+            uri: 'https://api.calendly.com/scheduled_events/event-1',
+            name: 'PIPE technical screen',
+            start_time: '2026-07-02T18:00:00.000Z',
+            end_time: '2026-07-02T18:30:00.000Z',
+            status: 'active',
+            location: {
+              join_url: 'https://meet.example.com/calendly-event-1',
+            },
+          }],
+        });
+      }
+      if (url === 'https://api.calendly.com/scheduled_events/event-1/invitees') {
+        return Response.json({
+          collection: [{
+            uri: 'https://api.calendly.com/scheduled_events/event-1/invitees/invitee-1',
+            name: 'New Guest',
+            email: 'newguest@example.com',
+            answers: [],
+          }],
+        });
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    sqlite!.prepare(`
+      INSERT INTO scheduling_connections (
+        id, owner_id, provider_id, access_token, refresh_token, token_expiry,
+        account_email, account_name, webhook_secret, webhook_id, status,
+        connected_at, last_sync_at, created_at, updated_at
+      ) VALUES (
+        'conn-1', 'owner-1', 'CALENDLY', 'cal-token', NULL, '2026-07-01T00:00:00.000Z',
+        'recruiter@example.com', 'Recruiter', NULL, NULL, 'ACTIVE',
+        '2026-06-26T12:00:00.000Z', NULL, '2026-06-26T12:00:00.000Z', '2026-06-26T12:00:00.000Z'
+      )
+    `).run();
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/sync', { method: 'POST' });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      synced: 1,
+      total: 1,
+      created: 1,
+    });
+
+    const imported = sqlite!.prepare(
+      `SELECT candidate_id, pipeline_id, stage_id, status, scheduled_at,
+              meeting_url, scheduling_provider, external_event_id,
+              recipient_name, recipient_email, sync_source, last_synced_at
+         FROM scheduled_interviews
+        WHERE external_event_id = ?`,
+    ).get('https://api.calendly.com/scheduled_events/event-1') as {
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      external_event_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      sync_source: string | null;
+      last_synced_at: string | null;
+    };
+
+    expect(imported).toMatchObject({
+      candidate_id: null,
+      pipeline_id: null,
+      stage_id: null,
+      status: 'SCHEDULED',
+      scheduled_at: '2026-07-02T18:00:00.000Z',
+      meeting_url: 'https://meet.example.com/calendly-event-1',
+      scheduling_provider: 'CALENDLY',
+      external_event_id: 'https://api.calendly.com/scheduled_events/event-1',
+      recipient_name: 'New Guest',
+      recipient_email: 'newguest@example.com',
+      sync_source: 'POLL',
+      last_synced_at: expect.any(String),
+    });
+  });
+
+  it('emails a contact-first participant their meeting link when Calendly books', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+      text?: string;
+    }> = [];
+    sqlite!.prepare(`
+      INSERT INTO scheduling_connections (
+        id, owner_id, provider_id, access_token, refresh_token, token_expiry,
+        account_email, account_name, webhook_secret, webhook_id, status,
+        connected_at, last_sync_at, created_at, updated_at
+      ) VALUES (
+        'conn-1', 'owner-1', 'CALENDLY', 'cal-token', NULL, '2026-07-01T00:00:00.000Z',
+        'recruiter@example.com', 'Recruiter', NULL, NULL, 'ACTIVE',
+        '2026-06-26T12:00:00.000Z', NULL, '2026-06-26T12:00:00.000Z', '2026-06-26T12:00:00.000Z'
+      )
+    `).run();
+
+    const authApp = mountSchedulingApp();
+    const createResponse = await authApp.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl: 'https://calendly.com/pipe/video',
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as { interview: { id: string } };
+
+    const publicApp = mountSchedulingPublicApp({
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          return { messageId: 'cf-scheduled-message-1' };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+    } as Partial<Env>);
+    const { ctx, waitUntilAll } = buildCtx();
+    const meetingUrl = 'https://meet.example.com/calendly-katherine';
+    const response = await publicApp.request('/webhook?connectionId=conn-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Calendly Webhook',
+      },
+      body: JSON.stringify({
+        event: 'invitee.created',
+        payload: {
+          name: 'Katherine Johnson',
+          email: 'katherine@example.com',
+          scheduled_event: {
+            uri: 'https://api.calendly.com/scheduled_events/event-katherine',
+            start_time: '2026-07-03T19:00:00.000Z',
+            location: {
+              join_url: meetingUrl,
+            },
+          },
+        },
+      }),
+    }, undefined, ctx);
+    expect(response.status).toBe(200);
+    await waitUntilAll();
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      to: 'katherine@example.com',
+      from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
+      subject: 'Interview scheduled — Interview',
+    });
+    expect(sentMessages[0]?.html).toContain(meetingUrl);
+    expect(sentMessages[0]?.text).toContain(meetingUrl);
+
+    const scheduled = sqlite!.prepare(
+      `SELECT status, scheduled_at, meeting_url, external_event_id,
+              sync_source, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      external_event_id: string | null;
+      sync_source: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduled).toMatchObject({
+      status: 'SCHEDULED',
+      scheduled_at: '2026-07-03T19:00:00.000Z',
+      meeting_url: meetingUrl,
+      external_event_id: 'https://api.calendly.com/scheduled_events/event-katherine',
+      sync_source: 'WEBHOOK',
+      email_sent_at: expect.any(String),
+    });
   });
 });
 

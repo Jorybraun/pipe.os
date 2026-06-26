@@ -3,27 +3,29 @@ import { X, Copy, Check, Video, Calendar, Code2, GitBranch } from 'lucide-react'
 import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
+interface InviteCreationData {
+  recipientName: string;
+  recipientEmail: string;
+  meetingType: MeetingType;
+  interviewType: InterviewType;
+  scheduledAt?: string;
+  schedulingProvider?: SchedulingProvider;
+  schedulingUrl?: string;
+  githubRepoUrl?: string | null;
+  githubPrNumber?: number | null;
+  features?: {
+    videoEnabled: boolean;
+    workspaceEnabled: boolean;
+    recordingEnabled: boolean;
+    clippyEnabled: boolean;
+  };
+  agentType?: string | null;
+}
+
 interface InviteCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateInvite: (data: {
-    recipientName: string;
-    recipientEmail: string;
-    meetingType: MeetingType;
-    interviewType: InterviewType;
-    scheduledAt?: string;
-    schedulingProvider?: SchedulingProvider;
-    schedulingUrl?: string;
-    githubRepoUrl?: string | null;
-    githubPrNumber?: number | null;
-    features?: {
-      videoEnabled: boolean;
-      workspaceEnabled: boolean;
-      recordingEnabled: boolean;
-      clippyEnabled: boolean;
-    };
-    agentType?: string | null;
-  }) => Promise<{
+  onCreateInvite: (data: InviteCreationData) => Promise<{
     id: string;
     meetingUrl?: string | null;
     emailSent?: boolean;
@@ -160,17 +162,7 @@ export function InviteCreationModal({
     setIsCreating(true);
     setCreateError(null);
     try {
-      const inviteData: {
-        recipientName: string;
-        recipientEmail: string;
-        meetingType: MeetingType;
-        interviewType: InterviewType;
-        scheduledAt?: string;
-        schedulingProvider?: SchedulingProvider;
-        schedulingUrl?: string;
-        githubRepoUrl?: string | null;
-        githubPrNumber?: number | null;
-      } = {
+      const inviteData: InviteCreationData = {
         recipientName: recipientName.trim(),
         recipientEmail: recipientEmail.trim(),
         meetingType: meetingTypeForInterviewType(interviewType),
