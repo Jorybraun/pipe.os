@@ -38,6 +38,7 @@ export type SessionEventType =
   | 'window_close'
   | 'window_update'
   | 'window_focus'
+  | 'cursor_presence'
   | 'room_surface_change'
   | 'workspace_state'
   | 'participant_join'
@@ -509,6 +510,7 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     window_close: 'session_window_close',
     window_update: 'session_window_update',
     window_focus: 'session_window_focus',
+    cursor_presence: 'session_cursor_presence',
     room_surface_change: 'session_room_surface_change',
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
@@ -550,6 +552,8 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Window updated: ${event.text}`;
     case 'window_focus':
       return `[${time}] Window focused: ${event.text}`;
+    case 'cursor_presence':
+      return `[${time}] ${event.text}`;
     case 'room_surface_change':
       return `[${time}] ${event.text}`;
     case 'workspace_state':

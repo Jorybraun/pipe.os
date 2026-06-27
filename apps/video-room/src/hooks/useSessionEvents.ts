@@ -13,6 +13,7 @@ export type SessionEventType =
   | 'window_close'
   | 'window_update'
   | 'window_focus'
+  | 'cursor_presence'
   | 'room_surface_change'
   | 'workspace_state'
   | 'participant_join'

@@ -119,6 +119,7 @@ const sessionEventSchema = z.object({
     'window_close',
     'window_update',
     'window_focus',
+    'cursor_presence',
     'room_surface_change',
     'workspace_state',
     'participant_join',
@@ -134,18 +135,34 @@ const sessionEventSchema = z.object({
   actor: z.enum(['host', 'guest', 'agent', 'system']).optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
 }).superRefine((event, ctx) => {
-  if (event.type !== 'ai_chat_agent') return;
   const properties = event.properties ?? {};
-  const hasBridgeSource = properties.source === 'clippy_agent_bridge';
-  const hasChatResponseType = properties.bridgeEventType === 'CHAT_RESPONSE';
-  const observedAt = properties.observedAt;
-  const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
-  if (hasBridgeSource && hasChatResponseType && hasObservedAt) return;
-  ctx.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE.',
-    path: ['properties'],
-  });
+  if (event.type === 'ai_chat_agent') {
+    const hasBridgeSource = properties.source === 'clippy_agent_bridge';
+    const hasChatResponseType = properties.bridgeEventType === 'CHAT_RESPONSE';
+    const observedAt = properties.observedAt;
+    const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
+    if (hasBridgeSource && hasChatResponseType && hasObservedAt) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'cursor_presence') {
+    const sourceOk = properties.source === 'win95_cursor_presence_client_sample';
+    const surfaceOk = properties.surface === 'win95';
+    const x = properties.normalizedX;
+    const y = properties.normalizedY;
+    const xOk = typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
+    const yOk = typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1;
+    if (sourceOk && surfaceOk && xOk && yOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Cursor presence evidence must be a sampled Win95 browser cursor event with normalized coordinates.',
+      path: ['properties'],
+    });
+  }
 });
 
 async function readJsonRequestBody(c: Context<{ Bindings: Env }>): Promise<unknown> {

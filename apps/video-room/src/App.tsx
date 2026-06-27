@@ -44,6 +44,10 @@ import {
 } from './lib/workspaceEvidence';
 import { buildWindowStateUpdateEvidence } from './lib/windowEvidence';
 import {
+  buildCursorPresenceEvidence,
+  type CursorPresenceEvidenceState,
+} from './lib/cursorEvidence';
+import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
@@ -311,6 +315,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const terminalCommandSequenceRef = useRef(0);
   const terminalOutputSequenceRef = useRef(0);
   const activeTerminalCommandIdRef = useRef<string | null>(null);
+  const cursorPresenceEvidenceRef = useRef<CursorPresenceEvidenceState | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -1283,6 +1288,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
+  const handleCursorMove = useCallback((position: { x: number; y: number }): void => {
+    room.publishCursorPresence(position);
+    if (room.roomSurface !== 'win95') return;
+    const evidence = buildCursorPresenceEvidence({
+      actor: roomActor,
+      position,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      capturedAtMs: Date.now(),
+      previous: cursorPresenceEvidenceRef.current,
+    });
+    if (!evidence) return;
+    cursorPresenceEvidenceRef.current = evidence.state;
+    captureSessionEvent('cursor_presence', evidence.text, roomActor, evidence.properties);
+  }, [captureSessionEvent, room, roomActor]);
+
   const openWorkspaceWindow = (): void => {
     if (!showWorkspacePanel) return;
     openSharedWindow({
@@ -1906,7 +1927,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       canExitDesktop={canControlRoomSurface}
       onExitDesktop={exitWin95Desktop}
       peerCursors={room.peerCursors}
-      onCursorMove={room.publishCursorPresence}
+      onCursorMove={handleCursorMove}
     />
   ) : (
     <StandardLayout

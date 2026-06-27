@@ -1356,6 +1356,67 @@ describe('meeting room recording living-context route', () => {
       surface: 'win95',
     });
 
+    const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_cursor_claim',
+          surface: 'standard',
+          normalizedX: 1.2,
+          normalizedY: 0.5,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCursorPresenceRes.status).toBe(422);
+
+    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'win95_cursor_presence_client_sample',
+          surface: 'win95',
+          roomPhase: 'connected',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+          evidenceSampling: 'presence_sample',
+          rawCursorMovesPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(cursorPresenceRes.status).toBe(200);
+
+    const cursorNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_cursor_presence'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(cursorNode).toMatchObject({
+      node_type: 'session_cursor_presence',
+      source_type: 'meeting_session',
+    });
+    expect(cursorNode?.narrative_text).toContain('Guest cursor presence sampled');
+    expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_cursor_presence_client_sample',
+      surface: 'win95',
+      normalizedX: 0.42,
+      normalizedY: 0.61,
+      rawCursorMovesPersisted: false,
+    });
+
     const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
