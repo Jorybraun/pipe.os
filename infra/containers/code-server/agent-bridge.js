@@ -24,6 +24,7 @@ const WORKSPACE_SCAN_INTERVAL_MS = positiveIntEnv('WORKSPACE_SCAN_INTERVAL_MS', 
 const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500, 100);
 const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
+const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
 const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
 const agentAuthed = Boolean(DEVIN_API_KEY);
@@ -31,6 +32,7 @@ let agentProcess = null;
 let agentReady = false;
 let agentStatus = agentAuthed ? 'disconnected' : 'auth_needed';
 const clients = new Set();
+let agentStartReadyTimer = null;
 let workspaceBaselineReady = false;
 let workspaceScanInFlight = false;
 let workspaceWatcherTimer = null;
@@ -448,7 +450,56 @@ function devinAuthDiagnosticMessage() {
   });
 }
 
+function clearAgentStartReadyTimer() {
+  if (!agentStartReadyTimer) return;
+  clearTimeout(agentStartReadyTimer);
+  agentStartReadyTimer = null;
+}
+
+function broadcastAgentReady() {
+  broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
+}
+
+function markAgentReady() {
+  if (agentReady) return;
+  clearAgentStartReadyTimer();
+  agentReady = true;
+  agentStatus = 'idle';
+  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcastAgentReady();
+}
+
+function markAgentDisconnected(message, diagnosticSource, processToStop = agentProcess) {
+  clearAgentStartReadyTimer();
+  agentReady = false;
+  agentStatus = 'disconnected';
+  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcastAgentDiagnostic(agentDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: 'disconnected',
+    message,
+    diagnosticSource,
+  }));
+  if (processToStop && agentProcess === processToStop) {
+    agentProcess = null;
+    processToStop.kill('SIGTERM');
+  }
+}
+
+function scheduleAgentStartReadyTimeout(targetProcess) {
+  clearAgentStartReadyTimer();
+  agentStartReadyTimer = setTimeout(() => {
+    if (agentProcess !== targetProcess || agentReady || agentStatus !== 'starting') return;
+    markAgentDisconnected(
+      'Devin process did not produce a readiness response after context-primer handoff.',
+      'agent_start_timeout',
+      targetProcess,
+    );
+  }, AGENT_START_READY_TIMEOUT_MS);
+}
+
 function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
+  clearAgentStartReadyTimer();
   agentReady = false;
   agentStatus = 'auth_needed';
   broadcast({ type: 'AGENT_STATUS', status: agentStatus });
@@ -679,39 +730,27 @@ function startAgent() {
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     agentProcess = spawn(devinCommand(), [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
     const startedProcess = agentProcess;
+    scheduleAgentStartReadyTimeout(startedProcess);
     void primeAgentWithRoomContext(startedProcess)
       .then((delivered) => {
         if (agentProcess !== startedProcess) return;
         if (!delivered) {
-          agentReady = false;
-          agentStatus = 'disconnected';
-          broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-          broadcastAgentDiagnostic(agentDiagnosticMessage({
-            agent: AGENT_NAME,
-            status: 'disconnected',
-            message: 'Devin process started but did not accept the room-context primer.',
-            diagnosticSource: 'context_primer_not_delivered',
-          }));
-          return;
+          markAgentDisconnected(
+            'Devin process started but did not accept the room-context primer.',
+            'context_primer_not_delivered',
+            startedProcess,
+          );
         }
-        agentReady = true;
-        agentStatus = 'idle';
-        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-        broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.error('[agent-bridge] room context primer failed:', message);
         if (agentProcess !== startedProcess) return;
-        agentReady = false;
-        agentStatus = 'disconnected';
-        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-        broadcastAgentDiagnostic(agentDiagnosticMessage({
-          agent: AGENT_NAME,
-          status: 'disconnected',
-          message: `Room context primer failed: ${message}`,
-          diagnosticSource: 'context_primer_error',
-        }));
+        markAgentDisconnected(
+          `Room context primer failed: ${message}`,
+          'context_primer_error',
+          startedProcess,
+        );
       });
     agentProcess.stdout.on('data', (chunk) => {
       const rawText = chunk.toString();
@@ -719,6 +758,7 @@ function startAgent() {
         markAgentAuthNeeded(rawText, 'agent_stdout_auth_required');
         return;
       }
+      if (rawText.trim()) markAgentReady();
       const parsed = extractTaggedRoomActions(rawText);
       agentStatus = 'working';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
@@ -751,6 +791,8 @@ function startAgent() {
       }));
     });
     agentProcess.on('exit', (code, signal) => {
+      if (agentProcess !== startedProcess && agentProcess !== null) return;
+      clearAgentStartReadyTimer();
       const wasAuthNeeded = agentStatus === 'auth_needed';
       agentProcess = null;
       agentReady = false;
@@ -766,6 +808,8 @@ function startAgent() {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
     agentProcess.on('error', (error) => {
+      if (agentProcess !== startedProcess && agentProcess !== null) return;
+      clearAgentStartReadyTimer();
       agentProcess = null;
       agentReady = false;
       agentStatus = 'disconnected';
@@ -778,6 +822,10 @@ function startAgent() {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
   } catch (error) {
+    clearAgentStartReadyTimer();
+    agentReady = false;
+    agentStatus = 'disconnected';
+    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'disconnected',
@@ -936,7 +984,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, agent: AGENT_NAME, status: agentStatus }));
+    res.end(JSON.stringify({ ok: true, agent: AGENT_NAME, status: agentStatus, ready: agentReady }));
     return;
   }
   if (url.pathname === '/start') {
