@@ -481,6 +481,7 @@ export function useRoomConnection(
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
+  const surfaceEventSeenRef = useRef(false);
   const desktopClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -489,7 +490,10 @@ export function useRoomConnection(
   phaseRef.current = phase;
 
   useEffect(() => {
-    if (!active) setRoomSurfaceState(initialSurface);
+    if (!active) {
+      surfaceEventSeenRef.current = false;
+      setRoomSurfaceState(initialSurface);
+    }
   }, [active, initialSurface]);
 
   const setConnectionPhase = useCallback((nextPhase: RoomPhase): void => {
@@ -816,13 +820,16 @@ export function useRoomConnection(
           const event = parseDesktopEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
           if (event.kind === 'SET_ROOM_SURFACE') {
+            surfaceEventSeenRef.current = true;
             setRoomSurfaceState(event.surface);
           }
           setDesktopEvents((prev) => [...prev.slice(-99), event]);
         } else if (message.type === 'ROOM_DESKTOP_STATE') {
           const snapshot = parseDesktopSnapshot(message.payload);
           if (!snapshot) return;
-          if (snapshot.surface) setRoomSurfaceState(snapshot.surface);
+          if (snapshot.surface && !surfaceEventSeenRef.current) {
+            setRoomSurfaceState(snapshot.surface);
+          }
           setDesktopSnapshot(snapshot.windows);
         } else if (message.type === 'ROOM_CLIPPY_PROMPT') {
           const prompt = parseClippyPrompt(message.payload);
@@ -1061,6 +1068,7 @@ export function useRoomConnection(
       createdAt: Date.now(),
     };
     if (event.kind === 'SET_ROOM_SURFACE') {
+      surfaceEventSeenRef.current = true;
       setRoomSurfaceState(event.surface);
     }
     if (!sendDesktopEvent(event)) {

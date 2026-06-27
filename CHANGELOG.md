@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a shared Win95 room filesystem with durable file snapshots, activity logging, Notepad/Paint autosave, and a synced Files window for opening or deleting shared desktop files.
 - Added a safe Clippy/Devin room-action protocol so the dev-container agent bridge can suggest or execute allow-listed desktop actions such as opening Terminal, Files, Notepad, Paint, Browser, and Workspace.
 - Standard video rooms now initialize on the modern call surface, while dev-container challenge rooms initialize directly into the synced 95 desktop and hosts can still switch surfaces during the call.
+- Fixed a room-surface sync race so a host-triggered switch into 95 mode is not overwritten by an older standard-room snapshot.
 
 ### Changed — Win95-themed workspace overlay in video room
 
