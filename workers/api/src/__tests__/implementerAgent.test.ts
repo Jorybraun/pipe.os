@@ -183,6 +183,56 @@ describe('callImplementerAgent', () => {
     expect(results[0]!.move).toBe('pushback');
   });
 
+  it('unwraps model responses that incorrectly wrap the array in a responses object', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(JSON.stringify({
+      responses: [
+        { to_comment_id: 1, content: 'I will add the missing regression test.', move: 'change', updated_code: 'it("covers encoding", () => {});' },
+      ],
+    })));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      to_comment_id: 1,
+      move: 'change',
+      updated_code: 'it("covers encoding", () => {});',
+    });
+  });
+
+  it('accepts a single structured response object without fabricating content', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(JSON.stringify({
+      to_comment_id: 1,
+      content: 'I need a failing case before changing the implementation.',
+      move: 'pushback',
+    })));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toEqual([{
+      to_comment_id: 1,
+      content: 'I need a failing case before changing the implementation.',
+      move: 'pushback',
+    }]);
+  });
+
+  it('repairs raw newlines inside model string fields', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(`[
+      {
+        "to_comment_id": 1,
+        "content": "I agree with the test gap.
+I will add a regression before merge.",
+        "move": "change",
+        "updated_code": "test('encodes urls', () => {
+  expect(encode('a b')).toBe('a%20b');
+});"
+      }
+    ]`));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.content).toContain('I will add a regression');
+    expect(results[0]!.updated_code).toContain("expect(encode('a b')).toBe('a%20b');");
+  });
+
   it('reads nested Workers AI text response objects', async () => {
     mockAiRun.mockResolvedValueOnce({
       response: {

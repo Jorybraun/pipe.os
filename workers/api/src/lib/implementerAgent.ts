@@ -212,24 +212,114 @@ function textFromProviderResponse(value: unknown): string {
   return '';
 }
 
-function extractJsonArrayText(raw: string): string | null {
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+function jsonPayloadCandidates(raw: string): string[] {
   const trimmed = raw.trim();
   const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const unfenced = fenceMatch?.[1]?.trim() ?? trimmed;
-  if (unfenced.startsWith('[') && unfenced.endsWith(']')) return unfenced;
+  const candidates = [unfenced];
 
   const start = unfenced.indexOf('[');
   const end = unfenced.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return unfenced.slice(start, end + 1).trim();
+  if (start !== -1 && end !== -1 && end > start) {
+    candidates.push(unfenced.slice(start, end + 1).trim());
+  }
+
+  const objectStart = unfenced.indexOf('{');
+  const objectEnd = unfenced.lastIndexOf('}');
+  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+    candidates.push(unfenced.slice(objectStart, objectEnd + 1).trim());
+  }
+
+  return uniqueStrings(candidates);
+}
+
+function escapeRawNewlinesInsideStrings(value: string): string {
+  let output = '';
+  let inString = false;
+  let escaped = false;
+  for (const char of value) {
+    if (!inString) {
+      output += char;
+      if (char === '"') inString = true;
+      continue;
+    }
+
+    if (escaped) {
+      output += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      output += char;
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      output += char;
+      inString = false;
+      continue;
+    }
+
+    if (char === '\n') {
+      output += '\\n';
+      continue;
+    }
+    if (char === '\r') {
+      output += '\\r';
+      continue;
+    }
+
+    output += char;
+  }
+  return output;
+}
+
+function stripTrailingCommas(value: string): string {
+  return value.replace(/,\s*([}\]])/g, '$1');
+}
+
+function parseModelJson(candidate: string): unknown {
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return JSON.parse(stripTrailingCommas(escapeRawNewlinesInsideStrings(candidate)));
+  }
+}
+
+function unwrapImplementerResponses(parsed: unknown): unknown {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== 'object') return parsed;
+  const record = parsed as Record<string, unknown>;
+  for (const key of ['responses', 'response', 'author_responses', 'implementer_responses', 'replies']) {
+    const value = record[key];
+    if (Array.isArray(value)) return value;
+  }
+  if (
+    typeof record.to_comment_id === 'number'
+    && typeof record.content === 'string'
+  ) {
+    return [record];
+  }
+  return parsed;
 }
 
 function parseImplementerResponseJson(raw: string): unknown {
-  const jsonText = extractJsonArrayText(raw);
-  if (!jsonText) {
-    throw new Error('No JSON array found');
+  const candidates = jsonPayloadCandidates(raw);
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      return unwrapImplementerResponses(parseModelJson(candidate));
+    } catch (error) {
+      lastError = error;
+    }
   }
-  return JSON.parse(jsonText);
+  throw lastError instanceof Error ? lastError : new Error('No JSON payload found');
 }
 
 // ─── Prompt builder for user message ────────────────────────────────────────
