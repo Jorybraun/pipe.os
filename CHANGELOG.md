@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 95 Until Infinity repo-task assessment contract
+
+- Added the proposed source-backed repo-task assessment contract for `DEV_CONTAINER_REPO_TASK` and `OPEN_SOURCE_BUG_FIX`, including candidate evidence packets, repo task packets, match diagnostics, AI usage evidence, and final evaluation output types.
+- Documented the 95 Until Infinity repo-task matching plan, preserving the Evidence Hypergraph requirements that no positive match or evaluation claim can exist without source refs.
+
 ### Fixed — Calendly scheduling sync and confirmations
 
 - Calendly scheduling links now load event types from both user-owned and organization-owned Calendly event types, normalize them for the invite modal, and fall back to the user's Calendly scheduling page when no discrete event type is returned.
