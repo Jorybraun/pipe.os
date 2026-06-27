@@ -175,19 +175,23 @@ function roomSessionEventsUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN)
 async function captureWorkspaceFileChangeEvidence(change) {
   const endpoint = roomSessionEventsUrl();
   if (!endpoint) return false;
+  const eventType = change.action === 'deleted' ? 'file_change' : 'code_editor_save';
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        type: 'file_change',
+        type: eventType,
         text: change.path,
         actor: 'system',
         properties: {
           source: 'code_server_workspace',
           observedBy: 'agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
           workspaceRoot: WORKSPACE,
+          path: change.path,
           action: change.action,
           observedAt: change.observedAt,
           contentHash: change.contentHash ?? null,
@@ -339,6 +343,16 @@ function boundedTextPreview(buffer) {
   return buffer.subarray(0, WORKSPACE_PREVIEW_BYTES).toString('utf8');
 }
 
+function hashWorkspaceFile(absolutePath) {
+  return new Promise((resolve) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(absolutePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', () => resolve(null));
+    stream.on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
 async function readWorkspaceFileFact(file) {
   const stat = await fs.promises.stat(file.absolutePath).catch(() => null);
   if (!stat || !stat.isFile()) return null;
@@ -351,6 +365,8 @@ async function readWorkspaceFileFact(file) {
       contentHash = crypto.createHash('sha256').update(buffer).digest('hex');
       contentPreview = boundedTextPreview(buffer);
     }
+  } else {
+    contentHash = await hashWorkspaceFile(file.absolutePath);
   }
 
   return {

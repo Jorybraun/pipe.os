@@ -1613,15 +1613,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const captureClippyFileChange = (event: AgentFileChangeEvent): void => {
     if (event.persisted) return;
-    captureSessionEvent('file_change', event.filePath, 'system', {
+    const eventType = event.actionName === 'deleted' ? 'file_change' : 'code_editor_save';
+    captureSessionEvent(eventType, event.filePath, 'system', {
       source: event.source ?? 'code_server_workspace',
       observedBy: 'clippy_agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
       action: event.actionName,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       repoUrl: workspace?.repoUrl ?? null,
+      path: event.filePath,
       observedAt: event.observedAt ?? null,
       contentHash: event.contentHash ?? null,
       sizeBytes: event.sizeBytes ?? null,

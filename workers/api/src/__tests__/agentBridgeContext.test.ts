@@ -36,7 +36,7 @@ describe('dev-container agent bridge context endpoint', () => {
   it('persists missing-Devin-auth as a bridge diagnostic before any fake agent chat can occur', () => {
     expect(bridgeSource).toContain('function devinAuthDiagnosticMessage()');
     expect(bridgeSource).toContain("diagnosticSource: 'auth_required'");
-    expect(bridgeSource).toContain('broadcastAgentDiagnostic(devinAuthDiagnosticMessage());');
+    expect(bridgeSource).toContain('broadcastAgentDiagnostic(agentDiagnosticMessage({');
     expect(bridgeSource).toContain('sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());');
   });
 
@@ -44,6 +44,8 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).toContain('scanWorkspaceSnapshot');
     expect(bridgeSource).toContain('FILE_CHANGED');
     expect(bridgeSource).toContain('/session-events');
+    expect(bridgeSource).toContain("type: eventType");
+    expect(bridgeSource).toContain("'code_editor_save'");
     expect(bridgeSource).toContain('code_server_workspace');
     expect(bridgeSource).toContain('sha256');
   });

@@ -4,6 +4,7 @@ import { chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const bridgeProcesses = new Set();
@@ -100,7 +101,41 @@ async function startBridge(scriptBody, extraEnv = {}) {
   bridgeProcesses.add(child);
   child.on('exit', () => bridgeProcesses.delete(child));
   await waitForHealth(port, output);
-  return { child, port };
+  return { child, port, workspaceDir };
+}
+
+async function startSessionEventCaptureServer() {
+  const events = [];
+  const port = await freePort();
+  const server = createServer((req, res) => {
+    if (req.method !== 'POST' || !req.url?.includes('/session-events')) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      events.push(JSON.parse(body));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ captured: true }));
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+
+  return {
+    events,
+    url: `http://127.0.0.1:${port}`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
 }
 
 async function connectAgent(port) {
@@ -186,5 +221,61 @@ setInterval(() => {}, 1000);
 
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
     ws.close();
+  });
+
+  it('persists code-server workspace creates as code editor save evidence before broadcasting', async () => {
+    const captureServer = await startSessionEventCaptureServer();
+    try {
+      const { port, workspaceDir } = await startBridge(`
+process.stdin.setEncoding('utf8');
+process.stdin.once('data', () => process.stdout.write('Primer accepted by real Devin\\n'));
+setInterval(() => {}, 1000);
+`, {
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+        WORKSPACE_SCAN_INTERVAL_MS: '1000',
+      });
+
+      const { ws, messages } = await connectAgent(port);
+      await delay(1200);
+      writeFileSync(path.join(workspaceDir, 'src-example.ts'), 'export const value = 42;\n');
+
+      const fileMessage = await waitForMessage(messages, (message) => (
+        message.type === 'FILE_CHANGED'
+        && message.path === 'src-example.ts'
+        && message.persisted === true
+      ), 3000);
+
+      expect(fileMessage).toMatchObject({
+        type: 'FILE_CHANGED',
+        source: 'code_server_workspace',
+        action: 'created',
+        path: 'src-example.ts',
+        sizeBytes: 25,
+        contentPreview: 'export const value = 42;\n',
+      });
+      expect(fileMessage.contentHash).toMatch(/^[a-f0-9]{64}$/);
+
+      const saveEvent = captureServer.events.find((event) => event.type === 'code_editor_save');
+      expect(saveEvent).toMatchObject({
+        type: 'code_editor_save',
+        text: 'src-example.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          path: 'src-example.ts',
+          action: 'created',
+          contentPreview: 'export const value = 42;\n',
+          bridgePersisted: true,
+        },
+      });
+      expect(saveEvent.properties.contentHash).toMatch(/^[a-f0-9]{64}$/);
+      ws.close();
+    } finally {
+      await captureServer.close();
+    }
   });
 });

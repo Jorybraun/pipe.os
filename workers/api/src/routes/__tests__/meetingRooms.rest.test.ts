@@ -1417,6 +1417,72 @@ describe('meeting room recording living-context route', () => {
       rawCursorMovesPersisted: false,
     });
 
+    const fakeCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'browser_guess',
+          path: 'src/orders.ts',
+          observedAt: '2026-06-27T21:06:00.000Z',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCodeEditorSaveRes.status).toBe(422);
+
+    const codeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          path: 'src/orders.ts',
+          action: 'modified',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          sizeBytes: 128,
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(codeEditorSaveRes.status).toBe(200);
+
+    const codeEditorSaveNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_code_editor_save'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(codeEditorSaveNode).toMatchObject({
+      node_type: 'session_code_editor_save',
+      source_type: 'meeting_session',
+    });
+    expect(codeEditorSaveNode?.narrative_text).toContain('Saved in editor: src/orders.ts');
+    expect(JSON.parse(codeEditorSaveNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'system',
+      source: 'code_server_workspace',
+      observedBy: 'agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      path: 'src/orders.ts',
+      action: 'modified',
+      contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      bridgePersisted: true,
+    });
+
     const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -163,6 +163,22 @@ const sessionEventSchema = z.object({
       path: ['properties'],
     });
   }
+  if (event.type === 'code_editor_save') {
+    const sourceOk = properties.source === 'code_server_workspace';
+    const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';
+    const pathValue = properties.path;
+    const pathOk = typeof pathValue === 'string' && pathValue.trim().length > 0;
+    const hashValue = properties.contentHash;
+    const hashOk = typeof hashValue === 'string' && /^[a-f0-9]{64}$/.test(hashValue);
+    const observedAt = properties.observedAt;
+    const observedAtOk = typeof observedAt === 'string' && observedAt.trim().length > 0;
+    if (sourceOk && observedByOk && pathOk && hashOk && observedAtOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Code editor save evidence must come from the code-server workspace bridge with path, content hash, and observation time.',
+      path: ['properties'],
+    });
+  }
 });
 
 async function readJsonRequestBody(c: Context<{ Bindings: Env }>): Promise<unknown> {
