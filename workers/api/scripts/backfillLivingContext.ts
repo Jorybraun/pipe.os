@@ -78,7 +78,7 @@ interface SqliteDatabase {
   close(): void;
 }
 
-interface Options {
+export interface Options {
   target: 'local' | 'remote';
   databasePath?: string;
   batchSize: number;
@@ -152,11 +152,11 @@ interface PreparedStatementLike {
   run(): Promise<QueryResult<never>>;
 }
 
-interface D1Like {
+export interface D1Like {
   prepare(sql: string): PreparedStatementLike;
 }
 
-interface EntityStats {
+export interface EntityStats {
   discovered: number;
   processed: number;
   skipped: number;
@@ -174,7 +174,7 @@ interface BackfillStats {
   codeReviewSessions: EntityStats;
 }
 
-function emptyEntityStats(): EntityStats {
+export function emptyEntityStats(): EntityStats {
   return { discovered: 0, processed: 0, skipped: 0, failed: 0, partial: 0 };
 }
 
@@ -801,7 +801,7 @@ async function backfillPhoneCalls(
   }
 }
 
-async function backfillCodeReviewSessions(
+export async function backfillCodeReviewSessions(
   db: D1Like,
   options: Options,
   stats: EntityStats,
@@ -991,10 +991,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(
-    '[living-context] fatal:',
-    error instanceof Error ? error.message : String(error),
-  );
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(
+      '[living-context] fatal:',
+      error instanceof Error ? error.message : String(error),
+    );
+    process.exit(1);
+  });
+}
