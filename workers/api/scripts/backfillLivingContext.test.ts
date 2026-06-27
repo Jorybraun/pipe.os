@@ -76,6 +76,12 @@ function options(): Options {
   };
 }
 
+function count(sqlite: BetterSqliteDb, table: string, where = ''): number {
+  return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`).get() as {
+    count: number;
+  }).count;
+}
+
 describe('backfillLivingContext', () => {
   let sqlite: BetterSqliteDb;
   let db: D1Like;
@@ -319,5 +325,26 @@ describe('backfillLivingContext', () => {
         relationship: 'candidate_verdict',
       },
     ]));
+  });
+
+  it('is idempotent for completed CODE_REVIEW session context rebuilds', async () => {
+    await backfillCodeReviewSessions(db, options(), emptyEntityStats());
+    const firstCounts = {
+      artifactVersions: count(sqlite, 'artifact_versions'),
+      sourceSpans: count(sqlite, 'source_spans'),
+      contextRecords: count(sqlite, 'context_records', "WHERE record_type = 'code_review_transcript'"),
+      contextSourceRefs: count(sqlite, 'context_record_source_refs'),
+      contextEntities: count(sqlite, 'context_record_entities'),
+    };
+
+    await backfillCodeReviewSessions(db, options(), emptyEntityStats());
+
+    expect({
+      artifactVersions: count(sqlite, 'artifact_versions'),
+      sourceSpans: count(sqlite, 'source_spans'),
+      contextRecords: count(sqlite, 'context_records', "WHERE record_type = 'code_review_transcript'"),
+      contextSourceRefs: count(sqlite, 'context_record_source_refs'),
+      contextEntities: count(sqlite, 'context_record_entities'),
+    }).toEqual(firstCounts);
   });
 });
