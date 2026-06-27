@@ -945,6 +945,10 @@ test.describe('two-user video room', () => {
       await host.getByTestId('room-browser-address-input').fill('example.com');
       await host.getByTestId('room-browser-go').click();
       await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
+      await host.getByTestId('room-browser-address-input').fill('https://www.google.com');
+      await host.getByTestId('room-browser-go').click();
+      await expect(host.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing');
+      await expect(guest.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing', { timeout: 10_000 });
 
       await guest.getByTestId('room-desktop-icon-notepad').dblclick();
       await expect(host.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
@@ -953,6 +957,32 @@ test.describe('two-user video room', () => {
         'Candidate notes sync in the shared desktop.',
         { timeout: 10_000 },
       );
+
+      await host.getByTestId('room-desktop-icon-paint').dblclick();
+      await expect(host.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
+      await expect(guest.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
+      await expect(host.getByRole('button', { name: 'Rectangle' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Diamond' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Arrow' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Pan' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Zoom in' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Zoom out' })).toBeVisible();
+
+      const guestPaintCanvas = guest.getByTestId('room-paint-canvas');
+      const guestPaintBefore = await guestPaintCanvas.evaluate((canvas) => (
+        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
+      ));
+      const hostPaintCanvas = host.getByTestId('room-paint-canvas');
+      const hostPaintBox = await hostPaintCanvas.boundingBox();
+      expect(hostPaintBox).toBeTruthy();
+      await host.getByRole('button', { name: 'Rectangle' }).click();
+      await host.mouse.move(hostPaintBox!.x + 120, hostPaintBox!.y + 120);
+      await host.mouse.down();
+      await host.mouse.move(hostPaintBox!.x + 340, hostPaintBox!.y + 240, { steps: 8 });
+      await host.mouse.up();
+      await expect.poll(async () => guestPaintCanvas.evaluate((canvas) => (
+        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
+      )), { timeout: 10_000 }).not.toBe(guestPaintBefore);
 
       await guest.getByTestId('room-window-browser').getByLabel('Close').click();
       await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });

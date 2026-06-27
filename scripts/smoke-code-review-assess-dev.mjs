@@ -226,6 +226,8 @@ function isDeletionLine(line) {
 function isDiffMetadataContent(content) {
   const trimmed = typeof content === 'string' ? content.trim() : '';
   return !trimmed
+    || trimmed === '---'
+    || trimmed === '+++'
     || trimmed.startsWith('@@')
     || trimmed.startsWith('diff --git')
     || trimmed.startsWith('--- ')

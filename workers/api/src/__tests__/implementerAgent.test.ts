@@ -167,6 +167,65 @@ describe('callImplementerAgent', () => {
     expect(results[0]!.updated_code).toBe('const x = 1;');
   });
 
+  it('extracts a JSON array from provider prose around the response', async () => {
+    const wrappedResponse = [
+      'Here is the author response:',
+      JSON.stringify([
+        { to_comment_id: 1, content: 'Please justify why this blocks the PR.', move: 'pushback' },
+      ]),
+      'Let me know if you need another round.',
+    ].join('\n');
+
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(wrappedResponse));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('pushback');
+  });
+
+  it('reads nested Workers AI text response objects', async () => {
+    mockAiRun.mockResolvedValueOnce({
+      response: {
+        text: JSON.stringify([
+          { to_comment_id: 1, content: 'I will add the missing regression.', move: 'change', updated_code: 'expect(encoded).toBe(true);' },
+        ]),
+      },
+    });
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('change');
+    expect(results[0]!.updated_code).toBe('expect(encoded).toBe(true);');
+  });
+
+  it('retries the Workers AI fallback model when the primary response is empty', async () => {
+    mockAiRun
+      .mockResolvedValueOnce(workersAiResponse(''))
+      .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
+        { to_comment_id: 1, content: 'I need a concrete failing case before changing this.', move: 'pushback' },
+      ])));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('pushback');
+  });
+
+  it('retries the Workers AI fallback model when the primary response is prose without JSON', async () => {
+    mockAiRun
+      .mockResolvedValueOnce(workersAiResponse('I agree with the reviewer.'))
+      .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
+        { to_comment_id: 1, content: 'I will add the regression coverage.', move: 'change', updated_code: 'test(\"encodes urls\", () => {});' },
+      ])));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(results[0]!.move).toBe('change');
+    expect(results[0]!.updated_code).toBe('test("encodes urls", () => {});');
+  });
+
   it('returns an AI_DEVELOPER_UNAVAILABLE diagnostic instead of a fake author response', async () => {
     await expect(callImplementerAgent({
       ...BASE_INPUT,

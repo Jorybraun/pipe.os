@@ -47,12 +47,33 @@ async function startWelcomeScreenIfPresent(page: Page): Promise<void> {
   await startButton.waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => undefined);
 }
 
-async function submitBrowserReviewRound(page: Page, codeReview: Locator): Promise<void> {
+function isReviewableDiffLineText(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  if (trimmed === '---' || trimmed === '+++' || trimmed.startsWith('@@')) return false;
+  if (/^["'][^"']+["']:\s/.test(trimmed)) return false;
+  return /[A-Za-z0-9_]/.test(trimmed);
+}
+
+async function pickReviewableDiffLine(codeReview: Locator): Promise<Locator> {
   const commentableLines = codeReview.locator('[aria-label^="Comment on diff line"]');
   const commentableCount = await commentableLines.count();
   expect(commentableCount).toBeGreaterThan(0);
 
-  await commentableLines.nth(0).click();
+  for (let index = 0; index < commentableCount; index += 1) {
+    const candidate = commentableLines.nth(index);
+    const text = await candidate.textContent();
+    if (isReviewableDiffLineText(text ?? '')) {
+      return candidate;
+    }
+  }
+
+  throw new Error('No reviewable non-metadata diff line was available for the browser smoke.');
+}
+
+async function submitBrowserReviewRound(page: Page, codeReview: Locator): Promise<void> {
+  const reviewableLine = await pickReviewableDiffLine(codeReview);
+  await reviewableLine.click();
   await expect(page.getByTestId('annotation-editor-form')).toBeVisible();
   await page.getByTestId('annotation-input').fill(
     'This browser-submitted review comment flags the interaction timing risk and asks for regression coverage before merge.',
@@ -60,6 +81,7 @@ async function submitBrowserReviewRound(page: Page, codeReview: Locator): Promis
   await page.getByTestId('severity-major').click();
   await page.getByTestId('save-annotation-btn').click();
   await expect(page.getByTestId('annotation-editor-form')).toBeHidden({ timeout: 10_000 });
+  await expect(codeReview.locator('[data-testid^="annotation-badge-"]')).toBeVisible({ timeout: 10_000 });
 
   const conversationPanel = page.getByTestId('conversation-panel');
   await expect(conversationPanel).toBeVisible();

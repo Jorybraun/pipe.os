@@ -231,6 +231,32 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     });
   }
 
+  if (event.kind === 'UPDATE_WINDOW_STATE') {
+    const windowId = stringOrNull(event.windowId);
+    if (!windowId) return null;
+    const statePatch: Record<string, unknown> = {};
+    for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']) {
+      const valueAtKey = event[key];
+      if (typeof valueAtKey === 'number' || typeof valueAtKey === 'boolean') {
+        statePatch[key] = valueAtKey;
+      }
+    }
+    const stateKeys = Object.keys(statePatch).sort();
+    if (stateKeys.length === 0) return null;
+    return createSessionEvent(input, {
+      type: 'window_update',
+      timestamp,
+      actor,
+      text: windowId,
+      properties: {
+        ...base,
+        windowId,
+        statePatch,
+        stateKeys,
+      },
+    });
+  }
+
   return null;
 }
 

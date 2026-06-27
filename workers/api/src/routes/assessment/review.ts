@@ -145,6 +145,65 @@ function resolveReviewAuthorProvider(env: Env): ReviewAuthorProviderConfig {
   };
 }
 
+function asDispositionalWeights(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.every(([, entryValue]) => typeof entryValue === 'number' && Number.isFinite(entryValue))) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+async function callReviewAuthorAgentWithFallback(input: {
+  env: Env;
+  provider: ReviewAuthorProviderConfig;
+  persona: 'junior' | 'senior';
+  prBrief: string;
+  prDiff: string;
+  previousRounds: ReviewRound[];
+  newComments: ReviewComment[];
+  dispositionalWeights?: Record<string, number>;
+}): Promise<ImplementerResponse[]> {
+  const baseInput = {
+    persona: input.persona,
+    prBrief: input.prBrief,
+    prDiff: input.prDiff,
+    previousRounds: input.previousRounds,
+    newComments: input.newComments,
+    ...(input.dispositionalWeights ? { dispositionalWeights: input.dispositionalWeights } : {}),
+  };
+
+  try {
+    return await callImplementerAgent({
+      apiKey: input.provider.apiKey,
+      provider: input.provider.provider,
+      ...(input.provider.kimiBaseUrl ? { kimiBaseUrl: input.provider.kimiBaseUrl } : {}),
+      ...(input.provider.kimiModel ? { kimiModel: input.provider.kimiModel } : {}),
+      ai: input.env.AI,
+      ...baseInput,
+    });
+  } catch (error) {
+    if (
+      input.provider.provider !== 'kimi'
+      || !isAiDeveloperUnavailableError(error)
+      || !input.env.AI
+    ) {
+      throw error;
+    }
+
+    console.error(
+      '[review] Kimi author agent unavailable; retrying with Workers AI:',
+      error.diagnostic.reason,
+    );
+    return callImplementerAgent({
+      apiKey: '',
+      provider: 'workers-ai',
+      ai: input.env.AI,
+      ...baseInput,
+    });
+  }
+}
+
 /** Shape of transcript stored in D1 — review rounds + optional explainer exchanges */
 type StoredTranscript = CodeReviewTranscript;
 
@@ -553,16 +612,13 @@ async function executeReviewRound(
   const persona = (session.implementer_persona === 'senior' ? 'senior' : 'junior') as 'junior' | 'senior';
 
   const rcd = await loadRcdForAssessment(db, session.assessment_id);
-  const dispositionalWeights = rcd?.technical_context?.dispositional_weights;
+  const dispositionalWeights = asDispositionalWeights(rcd?.technical_context?.dispositional_weights);
 
   const transcript = parseJsonColumn<StoredTranscript>(session.transcript) ?? { rounds: [] };
 
-  const agentResponses = await callImplementerAgent({
-    apiKey: llmProvider.apiKey,
-    provider: llmProvider.provider,
-    ...(llmProvider.kimiBaseUrl ? { kimiBaseUrl: llmProvider.kimiBaseUrl } : {}),
-    ...(llmProvider.kimiModel ? { kimiModel: llmProvider.kimiModel } : {}),
-    ai: env.AI,
+  const agentResponses = await callReviewAuthorAgentWithFallback({
+    env,
+    provider: llmProvider,
     persona,
     prBrief,
     prDiff,

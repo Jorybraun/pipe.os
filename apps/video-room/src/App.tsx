@@ -49,7 +49,7 @@ import {
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
-import { PaintWindow, type PaintStroke } from './components/PaintWindow';
+import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
@@ -190,44 +190,65 @@ function stringWindowData(win: WindowState, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+function isPaintPoint(value: unknown): value is { x: number; y: number } {
+  return (
+    Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as { x?: unknown }).x === 'number'
+    && typeof (value as { y?: unknown }).y === 'number'
+  );
+}
+
 function isPaintStroke(value: unknown): value is PaintStroke {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const stroke = value as Partial<PaintStroke>;
   return (
-    typeof stroke.color === 'string'
+    (stroke.kind === undefined || stroke.kind === 'stroke')
+    && typeof stroke.color === 'string'
     && typeof stroke.size === 'number'
     && Array.isArray(stroke.points)
-    && stroke.points.every((point) => (
-      Boolean(point)
-      && typeof point === 'object'
-      && !Array.isArray(point)
-      && typeof (point as { x?: unknown }).x === 'number'
-      && typeof (point as { y?: unknown }).y === 'number'
-    ))
+    && stroke.points.every(isPaintPoint)
   );
 }
 
-function paintStrokesWindowData(win: WindowState): PaintStroke[] {
-  const value = win.data?.strokes;
-  return Array.isArray(value) ? value.filter(isPaintStroke) : [];
+function isPaintShape(value: unknown): value is PaintShape {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const shape = value as Partial<PaintShape>;
+  return (
+    (shape.kind === 'rectangle' || shape.kind === 'diamond' || shape.kind === 'arrow')
+    && typeof shape.color === 'string'
+    && typeof shape.size === 'number'
+    && isPaintPoint(shape.start)
+    && isPaintPoint(shape.end)
+  );
 }
 
-function parsePaintFileContent(content: string): PaintStroke[] {
+function isPaintCanvasItem(value: unknown): value is PaintCanvasItem {
+  return isPaintStroke(value) || isPaintShape(value);
+}
+
+function paintItemsWindowData(win: WindowState): PaintCanvasItem[] {
+  const value = win.data?.strokes;
+  return Array.isArray(value) ? value.filter(isPaintCanvasItem) : [];
+}
+
+function parsePaintFileContent(content: string): PaintCanvasItem[] {
   if (!content) return [];
   try {
     const parsed = JSON.parse(content) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isPaintStroke) : [];
+    return Array.isArray(parsed) ? parsed.filter(isPaintCanvasItem) : [];
   } catch {
     return [];
   }
 }
 
-function serializePaintStrokes(strokes: PaintStroke[]): string {
-  return JSON.stringify(strokes.filter(isPaintStroke));
+function serializePaintItems(items: PaintCanvasItem[]): string {
+  return JSON.stringify(items.filter(isPaintCanvasItem));
 }
 
-function paintStrokesEqual(a: PaintStroke[], b: PaintStroke[]): boolean {
-  return serializePaintStrokes(a) === serializePaintStrokes(b);
+function paintItemsEqual(a: PaintCanvasItem[], b: PaintCanvasItem[]): boolean {
+  return serializePaintItems(a) === serializePaintItems(b);
 }
 
 function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
@@ -472,7 +493,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const win = wm.windows.find((entry) => entry.id === 'paint');
     if (!file || !win) return;
     const nextStrokes = parsePaintFileContent(file.content);
-    if (!paintStrokesEqual(paintStrokesWindowData(win), nextStrokes)) {
+    if (!paintItemsEqual(paintItemsWindowData(win), nextStrokes)) {
       wm.updateWindowData('paint', { strokes: nextStrokes });
     }
   }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
@@ -1161,7 +1182,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const openPaintWindow = (strokes?: PaintStroke[]): void => {
+  const openPaintWindow = (strokes?: PaintCanvasItem[]): void => {
     const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     openSharedWindow({
       id: 'paint',
@@ -1194,7 +1215,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const savePaintStrokes = (strokes: PaintStroke[]): void => {
+  const savePaintItems = (strokes: PaintCanvasItem[]): void => {
     updateSharedWindowData('paint', { strokes });
     const existing = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     const now = Date.now();
@@ -1204,7 +1225,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         id: PAINT_FILE_ID,
         name: PAINT_FILE_NAME,
         kind: 'paint',
-        content: serializePaintStrokes(strokes),
+        content: serializePaintItems(strokes),
         mimeType: 'application/json',
         metadata: { app: 'paint', path: `Desktop/${PAINT_FILE_NAME}` },
         createdAt: existing?.createdAt ?? now,
@@ -1213,7 +1234,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const previewPaintStrokes = (strokes: PaintStroke[]): void => {
+  const previewPaintItems = (strokes: PaintCanvasItem[]): void => {
     updateSharedWindowData('paint', { strokes });
   };
 
@@ -1613,9 +1634,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'paint':
         return (
           <PaintWindow
-            strokes={paintStrokesWindowData(win)}
-            onChange={savePaintStrokes}
-            onPreview={previewPaintStrokes}
+            strokes={paintItemsWindowData(win)}
+            onChange={savePaintItems}
+            onPreview={previewPaintItems}
             saveStatus={`Desktop/${PAINT_FILE_NAME}`}
           />
         );

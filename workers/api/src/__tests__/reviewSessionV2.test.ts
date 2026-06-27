@@ -1223,6 +1223,69 @@ describe('POST /rpc/review/session/:id/message', () => {
     );
   });
 
+  it('falls back to Workers AI author pushback when configured Kimi is unavailable', async () => {
+    vi.mocked(callImplementerAgent)
+      .mockRejectedValueOnce(new AiDeveloperUnavailableError({
+        provider: 'kimi',
+        reason: 'Review author agent provider failed: Kimi API error 401',
+        retryable: true,
+      }))
+      .mockResolvedValueOnce([{
+        to_comment_id: 1,
+        move: 'pushback',
+        content: 'Can you explain the concrete production failure this review comment prevents?',
+      }]);
+
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'implementer_persona', value: SESSION_PENDING },
+        { match: 'FROM challenges', value: CHALLENGE_ROW },
+      ],
+    });
+    const env = buildEnv({
+      DB: db,
+      KIMI_API_KEY: 'bad-kimi-key',
+      AI: { run: vi.fn() } as unknown as Env['AI'],
+    });
+
+    const res = await rpcAuth.request(
+      '/review/session/sess_1/message',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({
+          annotations: [{ content: 'Missing edge-case handling', file: 'src/index.ts', line: 5 }],
+          summary: 'Initial review round',
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(callImplementerAgent)).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        apiKey: 'bad-kimi-key',
+        provider: 'kimi',
+      }),
+    );
+    expect(vi.mocked(callImplementerAgent)).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        apiKey: '',
+        provider: 'workers-ai',
+        ai: env.AI,
+      }),
+    );
+    const body = await res.json() as {
+      agentResponse: Array<{ move: string; content: string }>;
+    };
+    expect(body.agentResponse[0]?.move).toBe('pushback');
+  });
+
   it('returns AI_DEVELOPER_UNAVAILABLE instead of a fake author round when the author agent is unavailable', async () => {
     vi.mocked(callImplementerAgent).mockRejectedValueOnce(new AiDeveloperUnavailableError({
       provider: 'workers-ai',

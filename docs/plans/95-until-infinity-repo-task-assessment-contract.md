@@ -105,6 +105,9 @@ The controlling product rule remains:
   and file activity logs into source-backed `meeting_session_event` evidence,
   so Win95 room interactions are captured as part of the interview lifecycle
   instead of only when a graph read is requested later.
+- Durable Object replay now includes synced window state changes as
+  source-backed `window_update` evidence, preserving focus, minimize, maximize,
+  and move patches from the shared Win95 desktop activity log.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

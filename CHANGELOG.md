@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — 95 Until Infinity desktop tools
+
+- Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
+- Microsoft Edge now detects common sites that block iframe embedding, including Google, and shows an external-open fallback instead of a blank white page.
+
 ### Added — 95 Until Infinity repo-task assessment contract
 
 - Added the proposed source-backed repo-task assessment contract for `DEV_CONTAINER_REPO_TASK` and `OPEN_SOURCE_BUG_FIX`, including candidate evidence packets, repo task packets, match diagnostics, AI usage evidence, and final evaluation output types.
@@ -19,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Assessment evaluation reports now reject positive claims whose cited source refs were not previously captured as immutable evidence events in the same assessment session.
 - Completed scored CODE_REVIEW sessions now write exact-source transcript and score-report events plus an evaluated assessment report into the assessment evidence spine with idempotent state transitions.
 - 95 Until Infinity room lifecycle now replays Durable Object desktop/chat/file activity into source-backed meeting-session evidence when the host ends the room, instead of waiting for a later context-graph read.
+- 95 Until Infinity room activity replay now captures synced window state changes such as focus, minimize, maximize, and movement as source-backed `window_update` meeting-session evidence.
 - 95 Until Infinity room lifecycle now captures accepted guest join/leave and recording start/stop events as source-backed meeting-session evidence, without fabricating a recording stop when no recording was active.
 - 95 Until Infinity terminal windows now capture completed container commands and bounded terminal output chunks as source-backed meeting-session evidence with workspace/session metadata.
 - Clippy/Devin bridge status transitions now persist as source-backed meeting-session evidence, including real auth-required/disconnected states instead of simulated agent availability.
@@ -48,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone CODE_REVIEW repo matching now persists and returns a candidate-safe deterministic validator-agent decision, including source-backed gate checks for candidate evidence, role alignment, repo spans, provenance, stretch bounds, and eligible PR selection.
 - Candidate assessment session caching is now scoped to the invite token in the URL, preventing stale browser tabs from rendering one candidate's challenge while showing another invite URL.
 - Multi-turn CODE_REVIEW round submissions now send the Worker `summary`/`newAnnotations` payload contract and provide a default first-round summary when candidates submit inline comments without separate prose.
+- The CODE_REVIEW assess-link browser smoke now selects a substantive diff line and verifies the rendered annotation badge before submitting the AI-developer pushback round.
 - Completed multi-turn CODE_REVIEW sessions can now advance idempotently after the review-session endpoint has already written the submission row, preventing candidates from getting stuck on a duplicate-submission loop.
 - Multi-turn CODE_REVIEW completion rows now expose normalized verdict, summary, and flattened candidate annotations alongside the full transcript, so recruiter review pages do not lose v2 review details.
 - Candidate CODE_REVIEW diffs now render through the real `@pierre/diffs` `PatchDiff` component, with AI author pushback/change/comment threads displayed inline under the candidate's source comment.
@@ -72,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recruiter CODE_REVIEW score overrides now label the corresponding `code_review_judge_examples` row with the human score report, giving the judge/feedback loop replayable calibration targets from human corrections.
 - Recruiter review-session APIs now expose an owner-scoped CODE_REVIEW judge-example queue, giving the judge/feedback loop a deterministic replay surface for ready and labelled calibration examples.
 - CODE_REVIEW author pushback and automated scoring now honor the configured Kimi provider before falling back to Workers AI, preventing local/prod scorer runs from silently using the wrong LLM path.
+- CODE_REVIEW author pushback now falls back from an unavailable configured Kimi provider to real Workers AI before returning `AI_DEVELOPER_UNAVAILABLE`, preserving the no-simulated-author rule while avoiding bad-key dead ends.
+- CODE_REVIEW author pushback now accepts real-provider responses that wrap the required JSON array in prose or common Workers AI response objects, while still rejecting non-JSON simulated replies.
+- CODE_REVIEW author pushback now retries a secondary Workers AI model when the primary Workers AI response is empty or unparsable, reducing flaky `AI_DEVELOPER_UNAVAILABLE` outcomes without fabricating author behavior.
 - Candidate-facing CODE_REVIEW match proof now renders readable quality-gate labels instead of raw internal check IDs while keeping the audit IDs in the server payload.
 - Candidate-facing CODE_REVIEW match proof now includes candidate-safe evidence hyperedges that connect person evidence, role context, and repo source spans for the selected PR.
 - Recruiter interview detail pages now render CODE_REVIEW evidence hyperedges from stored match runs, so reviewers can inspect the person-role-repo justification behind the selected PR.

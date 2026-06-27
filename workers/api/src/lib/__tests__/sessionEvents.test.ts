@@ -203,6 +203,21 @@ describe('sessionEvents', () => {
               status: 'READY',
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000001500,
+            event: {
+              id: 'evt-browser-moved',
+              clientId: 'guest-client',
+              createdAt: 1700000001500,
+              kind: 'UPDATE_WINDOW_STATE',
+              windowId: 'browser',
+              x: 220,
+              y: 140,
+              focused: true,
+              minimized: false,
+            },
+          },
         ],
         chatActivityLog: [
           {
@@ -267,6 +282,11 @@ describe('sessionEvents', () => {
           timestamp: 1700000000,
         }),
         expect.objectContaining({
+          type: 'window_update',
+          actor: 'guest',
+          text: 'browser',
+        }),
+        expect.objectContaining({
           type: 'workspace_state',
           actor: 'host',
           text: 'Workspace state changed to READY',
@@ -287,7 +307,18 @@ describe('sessionEvents', () => {
           text: 'notes.txt',
         }),
       ]);
-      expect(events[4]!.properties).toMatchObject({
+      expect(events[1]!.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        windowId: 'browser',
+        stateKeys: ['focused', 'minimized', 'x', 'y'],
+        statePatch: {
+          focused: true,
+          minimized: false,
+          x: 220,
+          y: 140,
+        },
+      });
+      expect(events[5]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'upsert',
         fileId: 'notepad',

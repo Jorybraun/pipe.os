@@ -95,6 +95,8 @@ export interface CallImplementerAgentInput {
 }
 
 const VALID_MOVES: ImplementerMove[] = ['comment', 'change', 'pushback'];
+const IMPLEMENTER_WORKERS_AI_MODEL = '@cf/qwen/qwen2.5-coder-32b-instruct';
+const IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL = '@cf/qwen/qwen3-30b-a3b-fp8';
 
 // ─── Kimi (Moonshot AI) ────────────────────────────────────────────────────
 
@@ -136,9 +138,14 @@ async function callKimi(
 
 // ─── Workers AI (Cloudflare) ───────────────────────────────────────────────
 
-async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string): Promise<string> {
+async function callWorkersAI(
+  ai: Ai,
+  systemPrompt: string,
+  userMessage: string,
+  model = IMPLEMENTER_WORKERS_AI_MODEL,
+): Promise<string> {
   const response = await ai.run(
-    '@cf/qwen/qwen2.5-coder-32b-instruct',
+    model as Parameters<Ai['run']>[0],
     {
       messages: [
         { role: 'system', content: systemPrompt },
@@ -161,13 +168,68 @@ async function callWorkersAI(ai: Ai, systemPrompt: string, userMessage: string):
   }
 
   const raw = (response as { response?: unknown }).response;
-  if (typeof raw === 'string') return raw.trim();
-  if (raw != null) {
-    // Some Workers AI models return nested objects — coerce to string
-    console.warn('[implementerAgent] Workers AI response.response is not a string:', typeof raw, JSON.stringify(raw).slice(0, 200));
-    return String(raw).trim();
+  return textFromProviderResponse(raw ?? response).trim();
+}
+
+function textFromProviderResponse(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+
+  const record = value as Record<string, unknown>;
+  const directKeys = ['response', 'text', 'content', 'generated_text', 'output_text', 'result'];
+  for (const key of directKeys) {
+    const candidate = record[key];
+    if (typeof candidate === 'string') return candidate;
   }
+
+  const choices = record.choices;
+  if (Array.isArray(choices)) {
+    const first = choices[0] as Record<string, unknown> | undefined;
+    const message = first?.message as Record<string, unknown> | undefined;
+    const content = message?.content ?? first?.text;
+    if (typeof content === 'string') return content;
+  }
+
+  const output = record.output;
+  if (Array.isArray(output)) {
+    const chunks = output
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const outputItem = item as Record<string, unknown>;
+        if (typeof outputItem.text === 'string') return outputItem.text;
+        if (typeof outputItem.content === 'string') return outputItem.content;
+        return '';
+      })
+      .filter(Boolean);
+    if (chunks.length > 0) return chunks.join('\n');
+  }
+
+  console.warn(
+    '[implementerAgent] Provider response did not expose a known text field:',
+    JSON.stringify(value).slice(0, 200),
+  );
   return '';
+}
+
+function extractJsonArrayText(raw: string): string | null {
+  const trimmed = raw.trim();
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const unfenced = fenceMatch?.[1]?.trim() ?? trimmed;
+  if (unfenced.startsWith('[') && unfenced.endsWith(']')) return unfenced;
+
+  const start = unfenced.indexOf('[');
+  const end = unfenced.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) return null;
+  return unfenced.slice(start, end + 1).trim();
+}
+
+function parseImplementerResponseJson(raw: string): unknown {
+  const jsonText = extractJsonArrayText(raw);
+  if (!jsonText) {
+    throw new Error('No JSON array found');
+  }
+  return JSON.parse(jsonText);
 }
 
 // ─── Prompt builder for user message ────────────────────────────────────────
@@ -250,6 +312,7 @@ export async function callImplementerAgent(
   const userMessage = buildUserMessage(previousRounds, newComments);
 
   let raw: string;
+  let usedWorkersAiFallback = false;
   try {
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
@@ -268,30 +331,79 @@ export async function callImplementerAgent(
     });
   }
 
-  if (!raw) {
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider returned an empty response.',
-      retryable: true,
-    });
+  if (!raw && provider === 'workers-ai') {
+    console.warn('[implementerAgent] Workers AI primary author model returned empty response; retrying fallback model.');
+    usedWorkersAiFallback = true;
+    try {
+      raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[implementerAgent] workers-ai fallback call failed:', message);
+      throw new AiDeveloperUnavailableError({
+        provider,
+        reason: `Review author agent fallback provider failed: ${message}`,
+        retryable: true,
+      });
+    }
   }
 
   // Parse JSON array from response — handle fenced code blocks
   let parsed: unknown;
   try {
-    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    parsed = JSON.parse(jsonText);
-  } catch {
-    console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider returned invalid JSON.',
-      retryable: true,
-    });
+    if (!raw) {
+      throw new Error('Empty response');
+    }
+    parsed = parseImplementerResponseJson(raw);
+  } catch (parseError) {
+    if (provider === 'workers-ai' && !usedWorkersAiFallback) {
+      console.warn(
+        '[implementerAgent] Workers AI primary author model returned unparsable response; retrying fallback model:',
+        parseError instanceof Error ? parseError.message : String(parseError),
+      );
+      usedWorkersAiFallback = true;
+      try {
+        raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
+        parsed = parseImplementerResponseJson(raw);
+      } catch (fallbackError) {
+        console.error(
+          '[implementerAgent] Workers AI fallback failed to produce valid JSON:',
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        );
+        throw new AiDeveloperUnavailableError({
+          provider,
+          reason: 'Review author agent provider returned invalid JSON.',
+          retryable: true,
+        });
+      }
+    } else {
+      console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
+      throw new AiDeveloperUnavailableError({
+        provider,
+        reason: raw
+          ? 'Review author agent provider returned invalid JSON.'
+          : 'Review author agent provider returned an empty response.',
+        retryable: true,
+      });
+    }
   }
 
   if (!Array.isArray(parsed)) {
-    console.error('[implementerAgent] Response is not an array:', typeof parsed);
+    if (provider === 'workers-ai' && !usedWorkersAiFallback) {
+      console.warn('[implementerAgent] Workers AI primary author model returned non-array JSON; retrying fallback model.');
+      try {
+        raw = await callWorkersAI(ai!, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
+        parsed = parseImplementerResponseJson(raw);
+      } catch (fallbackError) {
+        console.error(
+          '[implementerAgent] Workers AI fallback failed after non-array response:',
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        );
+      }
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
     throw new AiDeveloperUnavailableError({
       provider,
       reason: 'Review author agent provider response was not an array.',
