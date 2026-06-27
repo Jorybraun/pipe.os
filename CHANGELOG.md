@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a safe Clippy/Devin room-action protocol so the dev-container agent bridge can suggest or execute allow-listed desktop actions such as opening Terminal, Files, Notepad, Paint, Browser, and Workspace.
 - Standard video rooms now initialize on the modern call surface, while dev-container challenge rooms initialize directly into the synced 95 desktop and hosts can still switch surfaces during the call.
 - Fixed a room-surface sync race so a host-triggered switch into 95 mode is not overwritten by an older standard-room snapshot.
+- Renamed the Win95 code workspace affordance from "My Computer" to "VS Code" so candidates see the actual container editor.
+- Added durable synced room chat and live peer cursors to the shared 95 desktop so host and guest can see each other's messages, pointer presence, and desktop actions.
+- Fixed dev-container workspace startup by initializing the Devin bridge by default and deploying dev with the custom code-server image that includes the bridge runtime.
 
 ### Changed — Win95-themed workspace overlay in video room
 

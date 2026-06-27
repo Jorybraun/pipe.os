@@ -720,8 +720,8 @@ test.describe('two-user video room', () => {
 
       await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
       await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
-      await expect(host.getByTestId('win95-desktop')).toBeVisible();
-      await expect(guest.getByTestId('win95-desktop')).toBeVisible();
+      await expect(host.getByTestId('standard-layout')).toBeVisible();
+      await expect(guest.getByTestId('standard-layout')).toBeVisible();
       await expect(host.getByTestId('remote-video')).toBeVisible();
       await expect(guest.getByTestId('remote-video')).toBeVisible();
       await expect(host.getByTestId('local-video')).toBeVisible();
@@ -777,8 +777,42 @@ test.describe('two-user video room', () => {
 
       await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
       await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', { timeout: 30_000 });
+      await expect(host.getByTestId('standard-layout')).toBeVisible();
+      await expect(guest.getByTestId('standard-layout')).toBeVisible();
+
+      await host.getByTestId('enter-win95-desktop').click();
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
       await expect(host.getByTestId('win95-desktop')).toBeVisible();
       await expect(guest.getByTestId('win95-desktop')).toBeVisible();
+      await expect(host.getByTestId('room-window-chat')).toBeVisible();
+      await expect(guest.getByTestId('room-window-chat')).toBeVisible();
+
+      await host.getByTestId('chat-input').fill('Host can send messages inside the shared room.');
+      await host.getByTestId('chat-send').click();
+      await expect(guest.getByTestId('chat-window')).toContainText(
+        'Host can send messages inside the shared room.',
+        { timeout: 10_000 },
+      );
+
+      await guest.getByTestId('chat-input').fill('Guest can reply from the same desktop.');
+      await guest.getByTestId('chat-send').click();
+      await expect(host.getByTestId('chat-window')).toContainText(
+        'Guest can reply from the same desktop.',
+        { timeout: 10_000 },
+      );
+
+      const hostDesktopBox = await host.getByTestId('win95-desktop').boundingBox();
+      expect(hostDesktopBox).toBeTruthy();
+      await host.mouse.move(hostDesktopBox!.x + 260, hostDesktopBox!.y + 180);
+      await expect(guest.getByTestId('room-peer-cursor-host')).toBeVisible({ timeout: 10_000 });
+      await expect(guest.getByTestId('room-peer-cursor-host')).toContainText('Host');
+
+      const guestDesktopBox = await guest.getByTestId('win95-desktop').boundingBox();
+      expect(guestDesktopBox).toBeTruthy();
+      await guest.mouse.move(guestDesktopBox!.x + 420, guestDesktopBox!.y + 220);
+      await expect(host.getByTestId('room-peer-cursor-guest')).toBeVisible({ timeout: 10_000 });
+      await expect(host.getByTestId('room-peer-cursor-guest')).toContainText('Guest');
 
       await host.getByTestId('room-desktop-icon-browser').dblclick();
       await expect(host.getByTestId('room-window-browser')).toBeVisible();
@@ -788,10 +822,10 @@ test.describe('two-user video room', () => {
       await host.getByTestId('room-browser-go').click();
       await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
 
-      await host.getByTestId('room-desktop-icon-notepad').dblclick();
-      await expect(guest.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
-      await host.getByTestId('room-notepad-textarea').fill('Candidate notes sync in the shared desktop.');
-      await expect(guest.getByTestId('room-notepad-textarea')).toHaveValue(
+      await guest.getByTestId('room-desktop-icon-notepad').dblclick();
+      await expect(host.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
+      await guest.getByTestId('room-notepad-textarea').fill('Candidate notes sync in the shared desktop.');
+      await expect(host.getByTestId('room-notepad-textarea')).toHaveValue(
         'Candidate notes sync in the shared desktop.',
         { timeout: 10_000 },
       );

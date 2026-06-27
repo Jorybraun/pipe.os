@@ -527,14 +527,14 @@ export class DevContainerDO extends Container<Env> {
           ? `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 && cd ${ws} && git fetch origin ${payload.challengeBranch}:challenge-branch 2>&1 && git checkout challenge-branch 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
           : `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
         : `mkdir -p ${ws}`;
-      const agentType = payload.agentType || '';
+      const agentType = payload.agentType || 'devin';
       const agentInstallCmd = agentType === 'devin'
-        ? 'curl -fsSL https://cli.devin.ai/install.sh | bash 2>/dev/null || true'
+        ? '(curl -fsSL https://cli.devin.ai/install.sh | bash 2>/dev/null || true) &'
         : 'true';
       // Bridge listens on 8080 (DO's defaultPort), proxies non-agent traffic to code-server on 8083.
       // /ws → agent chat, /start + /callback → auth, /terminal → PTY shell, everything else → code-server
       const startBridge = agentType
-        ? `${agentInstallCmd}; cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js &`
+        ? `cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js & ${agentInstallCmd}`
         : 'true';
       const entrypoint = ['sh', '-c',
         `${cloneCmd}; ${startBridge}; `

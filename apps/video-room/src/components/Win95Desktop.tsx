@@ -11,6 +11,7 @@ import {
 import { Win95Taskbar } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
+import type { RoomCursorPresence } from '../hooks/useRoomConnection';
 
 interface DesktopIcon {
   windowType: WindowType;
@@ -20,7 +21,7 @@ interface DesktopIcon {
 
 const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'video', label: 'Video Call', icon: Video },
-  { windowType: 'workspace', label: 'My Computer', icon: SquareTerminal },
+  { windowType: 'workspace', label: 'VS Code', icon: SquareTerminal },
   { windowType: 'chat', label: 'Chat', icon: MessageSquare },
   { windowType: 'tasks', label: 'Files', icon: FolderOpen },
   { windowType: 'notepad', label: 'Notepad', icon: FileText },
@@ -39,6 +40,8 @@ interface Win95DesktopProps {
   onWindowClose?: (id: string) => void;
   canExitDesktop?: boolean;
   onExitDesktop?: () => void;
+  peerCursors?: RoomCursorPresence[];
+  onCursorMove?: (position: { x: number; y: number }) => void;
 }
 
 export function Win95Desktop({
@@ -50,6 +53,8 @@ export function Win95Desktop({
   onWindowClose,
   canExitDesktop = false,
   onExitDesktop,
+  peerCursors = [],
+  onCursorMove,
 }: Win95DesktopProps): JSX.Element {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
 
@@ -83,8 +88,35 @@ export function Win95Desktop({
     <div
       className="win95-desktop"
       data-testid="win95-desktop"
+      onMouseMove={(event) => {
+        if (!onCursorMove) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        onCursorMove({
+          x: (event.clientX - rect.left) / rect.width,
+          y: (event.clientY - rect.top) / rect.height,
+        });
+      }}
       onClick={() => startMenuOpen && setStartMenuOpen(false)}
     >
+      <div className="win95-peer-cursors" aria-hidden="true">
+        {peerCursors.map((cursor) => {
+          const label = cursor.role === 'HOST' ? 'Host' : 'Guest';
+          return (
+            <div
+              key={cursor.clientId}
+              className={`win95-peer-cursor win95-peer-cursor-${cursor.role.toLowerCase()}`}
+              data-testid={`room-peer-cursor-${cursor.role.toLowerCase()}`}
+              style={{
+                left: `${cursor.x * 100}%`,
+                top: `${cursor.y * 100}%`,
+              }}
+            >
+              <span className="win95-peer-cursor-pointer" />
+              <span className="win95-peer-cursor-label">{label}</span>
+            </div>
+          );
+        })}
+      </div>
       <div className="win95-desktop-icons">
         {DESKTOP_ICONS.map((icon) => {
           const Icon = icon.icon;

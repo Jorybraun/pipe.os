@@ -269,6 +269,87 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('broadcasts live room cursor presence without persisting activity', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CURSOR',
+      payload: {
+        clientId: 'host-client',
+        x: 0.25,
+        y: 0.4,
+        updatedAt: 123,
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR',
+      role: 'HOST',
+      payload: {
+        clientId: 'host-client',
+        x: 0.25,
+        y: 0.4,
+        updatedAt: 123,
+      },
+    }));
+    expect(storage.get('desktopActivityLog')).toBeUndefined();
+  });
+
+  it('stores and broadcasts room chat messages for participant replay', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-1',
+        clientId: 'host-client',
+        createdAt: 42,
+        role: 'HOST',
+        text: 'Can you see this message?',
+      },
+    }));
+
+    expect(storage.get('chatMessages')).toEqual([
+      {
+        id: 'chat-1',
+        clientId: 'host-client',
+        createdAt: 42,
+        role: 'HOST',
+        text: 'Can you see this message?',
+      },
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'chat-1',
+        role: 'HOST',
+        text: 'Can you see this message?',
+      }),
+    }));
+    expect(storage.get('chatActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        message: expect.objectContaining({
+          id: 'chat-1',
+          text: 'Can you see this message?',
+        }),
+      }),
+    ]);
+  });
+
   it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

@@ -1253,6 +1253,7 @@ describe('meeting room recording living-context route', () => {
     expect(initBodies).toContainEqual(expect.objectContaining({
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
+      agentType: 'devin',
     }));
   });
 

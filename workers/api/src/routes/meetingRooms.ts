@@ -846,6 +846,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl: effectiveRepoUrl,
         challengeBranch,
+        agentType: 'devin',
         pipeApiUrl: c.env.APP_BASE_URL ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
         roomToken: token,
       }),

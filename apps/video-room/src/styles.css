@@ -1741,6 +1741,46 @@ button:focus-visible {
   user-select: none;
 }
 
+.win95-peer-cursors {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.win95-peer-cursor {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  transform: translate(0, 0);
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, .65));
+}
+
+.win95-peer-cursor-pointer {
+  width: 0;
+  height: 0;
+  border-left: 11px solid #fff;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  transform: rotate(225deg);
+}
+
+.win95-peer-cursor-label {
+  margin-top: 10px;
+  padding: 2px 5px;
+  border: 1px solid #000;
+  background: #ffffcc;
+  color: #000;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.win95-peer-cursor-guest .win95-peer-cursor-label {
+  background: #dff7ff;
+}
+
 /* Desktop Icons */
 
 .win95-desktop-icons {

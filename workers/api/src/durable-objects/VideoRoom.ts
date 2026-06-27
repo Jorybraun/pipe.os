@@ -35,6 +35,8 @@ interface SignalMessage {
     | 'STATUS_UPDATE'
     | 'ROOM_DESKTOP_EVENT'
     | 'ROOM_CLIPPY_PROMPT'
+    | 'ROOM_CHAT_MESSAGE'
+    | 'ROOM_CURSOR'
     | 'ROOM_FILE_SYSTEM_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
@@ -123,6 +125,20 @@ interface RoomClippyPrompt {
 
 interface RoomClippyPromptActivityEntry {
   prompt: RoomClippyPrompt;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+interface RoomChatMessage {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: VideoRole;
+  text: string;
+}
+
+interface RoomChatActivityEntry {
+  message: RoomChatMessage;
   role: VideoRole;
   recordedAt: number;
 }
@@ -412,6 +428,40 @@ export class VideoRoom {
     return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
   }
 
+  private parseChatMessage(value: unknown): RoomChatMessage | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 120)
+      || !this.isSafeFileText(value.clientId, 120)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !this.isVideoRole(value.role)
+      || typeof value.text !== 'string'
+      || value.text.trim().length === 0
+      || value.text.length > 2000
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      role: value.role,
+      text: value.text.trim(),
+    };
+  }
+
+  private parseChatMessages(value: unknown): RoomChatMessage[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseChatMessage(entry))
+      .filter((entry): entry is RoomChatMessage => entry !== null);
+  }
+
+  private async getChatMessages(): Promise<RoomChatMessage[]> {
+    return this.parseChatMessages(await this.state.storage.get<unknown>('chatMessages'));
+  }
+
   private isRoomFileKind(value: unknown): value is RoomFileKind {
     return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
   }
@@ -569,6 +619,34 @@ export class VideoRoom {
       { prompt, role, recordedAt: Date.now() },
     ];
     await this.state.storage.put('clippyPromptActivityLog', next);
+  }
+
+  private async persistChatMessage(message: RoomChatMessage, role: VideoRole): Promise<RoomChatMessage[]> {
+    const previous = await this.getChatMessages();
+    const next = [
+      ...previous.filter((entry) => entry.id !== message.id).slice(-199),
+      { ...message, role },
+    ];
+    await this.state.storage.put('chatMessages', next);
+    return next;
+  }
+
+  private async recordChatActivity(message: RoomChatMessage, role: VideoRole): Promise<void> {
+    const existing = await this.state.storage.get<unknown>('chatActivityLog');
+    const previous = Array.isArray(existing)
+      ? existing.filter((entry): entry is RoomChatActivityEntry => (
+          this.isRecord(entry)
+          && this.parseChatMessage(entry.message) !== null
+          && typeof entry.role === 'string'
+          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
+          && typeof entry.recordedAt === 'number'
+        ))
+      : [];
+    const next = [
+      ...previous.slice(-249),
+      { message: { ...message, role }, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('chatActivityLog', next);
   }
 
   private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
@@ -790,6 +868,12 @@ export class VideoRoom {
         payload: { prompt: currentClippyPrompt },
       }));
 
+      const chatMessages = await this.getChatMessages();
+      server.send(JSON.stringify({
+        type: 'ROOM_CHAT_STATE',
+        payload: { messages: chatMessages },
+      }));
+
       const roomFileSystem = await this.getRoomFileSystem();
       server.send(JSON.stringify({
         type: 'ROOM_FILE_SYSTEM_STATE',
@@ -972,6 +1056,33 @@ export class VideoRoom {
         type: 'ROOM_CLIPPY_PROMPT',
         role: senderRole,
         payload: prompt,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_CHAT_MESSAGE') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CHAT_MESSAGE_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const chatMessage = this.parseChatMessage(message.payload);
+      if (!chatMessage) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CHAT_MESSAGE_REJECTED',
+          reason: 'INVALID_MESSAGE',
+        }));
+        return;
+      }
+      const persistedMessage = { ...chatMessage, role: senderRole };
+      await this.persistChatMessage(persistedMessage, senderRole);
+      await this.recordChatActivity(persistedMessage, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_CHAT_MESSAGE',
+        role: senderRole,
+        payload: persistedMessage,
       }));
       return;
     }

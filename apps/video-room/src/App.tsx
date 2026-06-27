@@ -34,10 +34,9 @@ import {
   type RoomFile,
 } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
-import { useChatMessages } from './hooks/useChatMessages';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
-import { ChatWindow } from './components/ChatWindow';
+import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
 import type { AgentRoomAction } from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
@@ -234,7 +233,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const wm = useWindowManager();
-  const { messages: chatMessages, sendMessage: sendChatMessage } = useChatMessages(metadata.role);
   const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
@@ -346,6 +344,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
+  const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({
+    id: message.id,
+    role: message.role === 'HOST' ? 'host' : 'candidate',
+    text: message.text,
+    timestamp: message.createdAt,
+  }));
+  const sendChatMessage = (text: string): void => {
+    room.publishChatMessage(text);
+    captureSessionEvent('ai_chat_user', text, roomActor, {
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+    });
+  };
 
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
@@ -375,7 +386,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
     }
     if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
-      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'My Computer', x: 80, y: 80, width: 800, height: 500 });
+      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'VS Code', x: 80, y: 80, width: 800, height: 500 });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enteredRoom, workspace?.enabled, workspace?.repoUrl]);
@@ -930,7 +941,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     openSharedWindow({
       id: 'workspace',
       windowType: 'workspace',
-      title: workspace?.repoUrl ?? 'My Computer',
+      title: workspace?.repoUrl ?? 'VS Code',
       x: 80,
       y: 80,
       width: 800,
@@ -1266,7 +1277,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 )}
                 <iframe
                   src={workspaceUrl}
-                  title="PIPE live implementation workspace"
+                  title="VS Code workspace"
                   className="win95-workspace-iframe"
                   data-testid="workspace-iframe"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
@@ -1393,6 +1404,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onWindowClose={closeSharedWindow}
       canExitDesktop={metadata.role === 'HOST'}
       onExitDesktop={exitWin95Desktop}
+      peerCursors={room.peerCursors}
+      onCursorMove={room.publishCursorPresence}
     />
   ) : (
     <StandardLayout

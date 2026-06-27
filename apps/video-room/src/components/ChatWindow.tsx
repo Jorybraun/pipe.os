@@ -22,11 +22,17 @@ function nextMsgId(): string {
   return `msg-${msgCounter}`;
 }
 
-const ROLE_STYLES: Record<ChatRole, { label: string; icon: typeof User; className: string }> = {
-  host: { label: 'Host', icon: User, className: 'chat-msg-host' },
-  candidate: { label: 'You', icon: User, className: 'chat-msg-candidate' },
-  ai: { label: 'AI', icon: Cpu, className: 'chat-msg-ai' },
+const ROLE_STYLES: Record<ChatRole, { icon: typeof User; className: string }> = {
+  host: { icon: User, className: 'chat-msg-host' },
+  candidate: { icon: User, className: 'chat-msg-candidate' },
+  ai: { icon: Cpu, className: 'chat-msg-ai' },
 };
+
+function roleLabel(role: ChatRole, currentUserRole: 'HOST' | 'GUEST'): string {
+  if (role === 'ai') return 'AI';
+  if (role === 'host') return currentUserRole === 'HOST' ? 'You' : 'Host';
+  return currentUserRole === 'GUEST' ? 'You' : 'Guest';
+}
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
@@ -81,7 +87,7 @@ export function ChatWindow({ messages, onSend, currentUserRole }: ChatWindowProp
               </div>
               <div className="chat-msg-body">
                 <div className="chat-msg-header">
-                  <span className="chat-msg-author">{style.label}</span>
+                  <span className="chat-msg-author">{roleLabel(msg.role, currentUserRole)}</span>
                   <span className="chat-msg-time">{formatTime(msg.timestamp)}</span>
                 </div>
                 <div className="chat-msg-text">{msg.text}</div>
@@ -112,4 +118,3 @@ export function ChatWindow({ messages, onSend, currentUserRole }: ChatWindowProp
     </div>
   );
 }
-

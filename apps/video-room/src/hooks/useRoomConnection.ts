@@ -55,6 +55,22 @@ export interface RoomClippyPromptDraft {
   actions?: RoomClippyAction[];
 }
 
+export interface RoomChatMessage {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: RoomRole;
+  text: string;
+}
+
+export interface RoomCursorPresence {
+  clientId: string;
+  role: RoomRole;
+  x: number;
+  y: number;
+  updatedAt: number;
+}
+
 export interface RoomFile {
   id: string;
   name: string;
@@ -163,6 +179,8 @@ interface RoomConnection {
   desktopEvents: RoomDesktopEvent[];
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
   clippyPrompt: RoomClippyPrompt | null;
+  chatMessages: RoomChatMessage[];
+  peerCursors: RoomCursorPresence[];
   fileSystem: RoomFile[];
   cameraEnabled: boolean;
   micEnabled: boolean;
@@ -175,6 +193,8 @@ interface RoomConnection {
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
+  publishChatMessage: (text: string) => void;
+  publishCursorPresence: (position: { x: number; y: number }) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface) => void;
 }
@@ -359,6 +379,59 @@ function parseClippySnapshot(value: unknown): { prompt: RoomClippyPrompt | null 
   return { prompt: value.prompt === null ? null : parseClippyPrompt(value.prompt) };
 }
 
+function parseChatMessage(value: unknown): RoomChatMessage | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || !Number.isFinite(value.createdAt)
+    || !isRoomRole(value.role)
+    || typeof value.text !== 'string'
+    || value.text.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    role: value.role,
+    text: value.text,
+  };
+}
+
+function parseChatSnapshot(value: unknown): { messages: RoomChatMessage[] } | null {
+  if (!isRecord(value) || !Array.isArray(value.messages)) return null;
+  return {
+    messages: value.messages
+      .map(parseChatMessage)
+      .filter((entry): entry is RoomChatMessage => entry !== null),
+  };
+}
+
+function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence | null {
+  if (!isRecord(value) || !isRoomRole(role)) return null;
+  if (
+    typeof value.clientId !== 'string'
+    || typeof value.x !== 'number'
+    || typeof value.y !== 'number'
+    || typeof value.updatedAt !== 'number'
+    || !Number.isFinite(value.x)
+    || !Number.isFinite(value.y)
+    || !Number.isFinite(value.updatedAt)
+  ) {
+    return null;
+  }
+  return {
+    clientId: value.clientId,
+    role,
+    x: Math.min(1, Math.max(0, value.x)),
+    y: Math.min(1, Math.max(0, value.y)),
+    updatedAt: value.updatedAt,
+  };
+}
+
 function isRoomFileKind(value: unknown): value is RoomFileKind {
   return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
 }
@@ -436,6 +509,10 @@ function sortRoomFiles(files: RoomFile[]): RoomFile[] {
   return [...files].sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
 }
 
+function sortChatMessages(messages: RoomChatMessage[]): RoomChatMessage[] {
+  return [...messages].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+}
+
 function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): RoomFile[] {
   if (event.kind === 'DELETE_FILE') {
     return files.filter((file) => file.id !== event.fileId);
@@ -460,6 +537,8 @@ export function useRoomConnection(
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
   const [fileSystem, setFileSystem] = useState<RoomFile[]>([]);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
@@ -480,8 +559,10 @@ export function useRoomConnection(
   const autoStartTimerRef = useRef<number | null>(null);
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
+  const chatOutboxRef = useRef<RoomChatMessage[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
   const surfaceEventSeenRef = useRef(false);
+  const lastCursorSentAtRef = useRef(0);
   const desktopClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -535,6 +616,20 @@ export function useRoomConnection(
     return true;
   }, []);
 
+  const sendChatMessage = useCallback((message: RoomChatMessage): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_CHAT_MESSAGE', payload: message }));
+    return true;
+  }, []);
+
+  const sendCursorPresence = useCallback((cursor: RoomCursorPresence): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_CURSOR', payload: cursor }));
+    return true;
+  }, []);
+
   const sendFileSystemEvent = useCallback((event: RoomFileSystemEvent): boolean => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -563,6 +658,17 @@ export function useRoomConnection(
       }
     }
   }, [sendClippyPrompt]);
+
+  const flushChatOutbox = useCallback((): void => {
+    if (chatOutboxRef.current.length === 0) return;
+    const pending = chatOutboxRef.current.splice(0);
+    for (const message of pending) {
+      if (!sendChatMessage(message)) {
+        chatOutboxRef.current.unshift(message, ...pending.slice(pending.indexOf(message) + 1));
+        return;
+      }
+    }
+  }, [sendChatMessage]);
 
   const flushFileSystemOutbox = useCallback((): void => {
     if (fileSystemOutboxRef.current.length === 0) return;
@@ -729,6 +835,7 @@ export function useRoomConnection(
         reconnectAttemptRef.current = 0;
         flushDesktopOutbox();
         flushClippyOutbox();
+        flushChatOutbox();
         flushFileSystemOutbox();
         const peer = peerRef.current;
         if (
@@ -839,6 +946,24 @@ export function useRoomConnection(
           const snapshot = parseClippySnapshot(message.payload);
           if (!snapshot) return;
           setClippyPrompt(snapshot.prompt);
+        } else if (message.type === 'ROOM_CHAT_MESSAGE') {
+          const chatMessage = parseChatMessage(message.payload);
+          if (!chatMessage || chatMessage.clientId === desktopClientIdRef.current) return;
+          setChatMessages((prev) => sortChatMessages([
+            ...prev.filter((entry) => entry.id !== chatMessage.id),
+            chatMessage,
+          ]));
+        } else if (message.type === 'ROOM_CHAT_STATE') {
+          const snapshot = parseChatSnapshot(message.payload);
+          if (!snapshot) return;
+          setChatMessages(sortChatMessages(snapshot.messages));
+        } else if (message.type === 'ROOM_CURSOR') {
+          const cursor = parseCursorPresence(message.payload, message.role);
+          if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
+          setPeerCursors((prev) => [
+            ...prev.filter((entry) => entry.clientId !== cursor.clientId),
+            cursor,
+          ]);
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
           const event = parseFileSystemEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
@@ -880,6 +1005,7 @@ export function useRoomConnection(
     clearPeerDisconnectTimer,
     closePeer,
     drainIce,
+    flushChatOutbox,
     flushClippyOutbox,
     flushDesktopOutbox,
     flushFileSystemOutbox,
@@ -1092,6 +1218,41 @@ export function useRoomConnection(
     }
   }, [sendClippyPrompt]);
 
+  const publishChatMessage = useCallback((text: string): void => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const message: RoomChatMessage = {
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt: Date.now(),
+      role,
+      text: trimmed,
+    };
+    setChatMessages((prev) => sortChatMessages([
+      ...prev.filter((entry) => entry.id !== message.id),
+      message,
+    ]));
+    if (!sendChatMessage(message)) {
+      chatOutboxRef.current.push(message);
+    }
+  }, [role, sendChatMessage]);
+
+  const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
+    const now = Date.now();
+    if (now - lastCursorSentAtRef.current < 50) return;
+    lastCursorSentAtRef.current = now;
+    const cursor: RoomCursorPresence = {
+      clientId: desktopClientIdRef.current,
+      role,
+      x: Math.min(1, Math.max(0, position.x)),
+      y: Math.min(1, Math.max(0, position.y)),
+      updatedAt: now,
+    };
+    sendCursorPresence(cursor);
+  }, [role, sendCursorPresence]);
+
   const setRoomSurface = useCallback((surface: RoomSurface): void => {
     publishDesktopEvent({ kind: 'SET_ROOM_SURFACE', surface });
   }, [publishDesktopEvent]);
@@ -1161,6 +1322,8 @@ export function useRoomConnection(
     desktopEvents,
     desktopSnapshot,
     clippyPrompt,
+    chatMessages,
+    peerCursors,
     fileSystem,
     cameraEnabled,
     micEnabled,
@@ -1173,6 +1336,8 @@ export function useRoomConnection(
     retryConnection,
     publishDesktopEvent,
     publishClippyPrompt,
+    publishChatMessage,
+    publishCursorPresence,
     publishFileSystemEvent,
     setRoomSurface,
   };

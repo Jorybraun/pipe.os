@@ -65,7 +65,7 @@
 	"containers": [
 		{
 			"class_name": "DevContainerDO",
-			"image": "docker.io/codercom/code-server:4.22.1",
+			"image": "../../infra/containers/code-server/Dockerfile",
 			"max_instances": 50,
 			"instance_type": "standard-1"
 		}
@@ -147,7 +147,7 @@
 			"containers": [
 				{
 					"class_name": "DevContainerDO",
-					"image": "docker.io/codercom/code-server:4.22.1",
+					"image": "../../infra/containers/code-server/Dockerfile",
 					"max_instances": 50,
 					"instance_type": "standard-1"
 				}
