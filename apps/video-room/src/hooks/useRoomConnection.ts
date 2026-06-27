@@ -207,6 +207,7 @@ const FALLBACK_ICE: RTCIceServer[] = [
 const PEER_DISCONNECT_GRACE_MS = 15000;
 const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
+const PEER_CURSOR_TTL_MS = 4000;
 
 function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
   return {
@@ -586,6 +587,15 @@ export function useRoomConnection(
     remoteRef.current = remoteStream;
   }, [remoteStream]);
 
+  useEffect(() => {
+    if (peerCursors.length === 0) return undefined;
+    const intervalId = window.setInterval(() => {
+      const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
+      setPeerCursors((prev) => prev.filter((cursor) => cursor.updatedAt >= cutoff));
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [peerCursors.length]);
+
   const hasOpenSignal = useCallback((): boolean => (
     wsRef.current?.readyState === WebSocket.OPEN
   ), []);
@@ -960,8 +970,13 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
           if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
+          const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
           setPeerCursors((prev) => [
-            ...prev.filter((entry) => entry.clientId !== cursor.clientId),
+            ...prev.filter((entry) => (
+              entry.clientId !== cursor.clientId
+              && entry.role !== cursor.role
+              && entry.updatedAt >= cutoff
+            )),
             cursor,
           ]);
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
@@ -1241,7 +1256,7 @@ export function useRoomConnection(
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
     const now = Date.now();
-    if (now - lastCursorSentAtRef.current < 50) return;
+    if (now - lastCursorSentAtRef.current < 90) return;
     lastCursorSentAtRef.current = now;
     const cursor: RoomCursorPresence = {
       clientId: desktopClientIdRef.current,

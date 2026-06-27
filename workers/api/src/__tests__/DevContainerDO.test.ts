@@ -164,7 +164,7 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     const [startArg] = instance.__startCalls[0] as [
       {
         ports: number[];
-        startOptions: { envVars: Record<string, string>; entrypoint: string[] };
+        startOptions: { envVars: Record<string, string>; entrypoint?: string[] };
       },
     ];
     expect(startArg.ports).toEqual([8080]);
@@ -176,12 +176,7 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
       REPO_GIT_URL: 'https://github.com/example/repo.git',
       CHALLENGE_BRANCH: 'challenge/fix',
     });
-    expect(startArg.startOptions.entrypoint).toEqual([
-      'sh',
-      '-c',
-      expect.stringContaining('code-server --auth none --bind-addr 0.0.0.0:8080 /workspace'),
-    ]);
-    expect(startArg.startOptions.entrypoint[2]).toContain('node /tmp/agent-bridge.js > /tmp/agent-bridge.log 2>&1 &');
+    expect(startArg.startOptions).not.toHaveProperty('entrypoint');
 
     const updates = db.__calls.filter(
       (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,

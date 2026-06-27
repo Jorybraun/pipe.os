@@ -833,6 +833,13 @@ test.describe('two-user video room', () => {
       await guest.getByTestId('room-window-browser').getByLabel('Close').click();
       await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });
       await expect(guest.getByTestId('room-window-browser')).toHaveCount(0);
+
+      await host.getByTestId('win95-start-btn').click();
+      await host.getByText('Return to Call').click();
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(host.getByTestId('standard-layout')).toBeVisible();
+      await expect(guest.getByTestId('standard-layout')).toBeVisible();
     } finally {
       await hostContext.close();
       await guestContext.close();

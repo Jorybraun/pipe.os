@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed the Win95 code workspace affordance from "My Computer" to "VS Code" so candidates see the actual container editor.
 - Added durable synced room chat and live peer cursors to the shared 95 desktop so host and guest can see each other's messages, pointer presence, and desktop actions.
 - Restored dev-container workspace startup by keeping VS Code/code-server on port 8080 and routing the Devin/Clippy bridge through sidecar port 8081.
+- Fixed peer cursor trails by rendering one expiring cursor per remote role with a composited SVG pointer.
+- Added a shared-surface regression so host "Return to Call" moves both host and guest back to the standard call layout.
+- Removed the oversized dynamic Devin bridge script from container startup so VS Code/code-server can boot through the image entrypoint without hitting Cloudflare runtime value limits.
 
 ### Changed — Win95-themed workspace overlay in video room
 

@@ -528,36 +528,13 @@ export class DevContainerDO extends Container<Env> {
     this.envVars = buildEnvVars(payload);
 
     try {
-      // Override the entrypoint to clone the repo into /workspace and start
-      // code-server directly on the default container port. The Clippy/Devin
-      // bridge is a sidecar so editor readiness does not depend on it.
-      // The base codercom/code-server image already has git installed.
-      // We use ; (not &&) so code-server starts even if git clone fails.
-      const ws = '/workspace';
-      const cloneCmd = payload.repoGitUrl
-        ? payload.challengeBranch
-          ? `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 && cd ${ws} && git fetch origin ${payload.challengeBranch}:challenge-branch 2>&1 && git checkout challenge-branch 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
-          : `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
-        : `mkdir -p ${ws}`;
-      const agentType = payload.agentType || 'devin';
-      const agentInstallCmd = agentType === 'devin'
-        ? '(curl -fsSL https://cli.devin.ai/install.sh | bash 2>/dev/null || true) &'
-        : 'true';
-      // Bridge listens on 8081 for /ws, /start, /callback, /context, /events,
-      // and /terminal. The editor stays on 8080 for container health/proxy.
-      const startBridge = agentType
-        ? `cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js > /tmp/agent-bridge.log 2>&1 & ${agentInstallCmd}`
-        : 'true';
-      const entrypoint = ['sh', '-c',
-        `${cloneCmd}; ${startBridge}; `
-        + `exec code-server --auth none --bind-addr 0.0.0.0:8080 ${ws}`
-      ];
-
+      // Use the Docker image entrypoint for repo cloning and code-server startup.
+      // Passing the full bridge script through Container.start() exceeded the
+      // runtime value limit and caused the VM to exit before port 8080 opened.
       await this.startAndWaitForPorts({
         ports: this.requiredPorts,
         startOptions: {
           envVars: this.envVars,
-          entrypoint,
         },
         cancellationOptions: {
           instanceGetTimeoutMS: 15_000,

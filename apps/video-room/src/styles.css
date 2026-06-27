@@ -1739,13 +1739,15 @@ button:focus-visible {
   background: #008080;
   font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
   user-select: none;
+  isolation: isolate;
 }
 
 .win95-peer-cursors {
   position: absolute;
   inset: 0;
-  z-index: 20;
+  z-index: 30;
   pointer-events: none;
+  contain: layout paint style;
 }
 
 .win95-peer-cursor {
@@ -1753,17 +1755,19 @@ button:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  transform: translate(0, 0);
-  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, .65));
+  transform: translate3d(0, 0, 0);
+  will-change: left, top;
 }
 
 .win95-peer-cursor-pointer {
-  width: 0;
-  height: 0;
-  border-left: 11px solid #fff;
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
-  transform: rotate(225deg);
+  width: 18px;
+  height: 24px;
+  flex: 0 0 auto;
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 1.4px;
+  paint-order: stroke fill;
+  shape-rendering: geometricPrecision;
 }
 
 .win95-peer-cursor-label {
@@ -1775,6 +1779,7 @@ button:focus-visible {
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, .45);
 }
 
 .win95-peer-cursor-guest .win95-peer-cursor-label {
