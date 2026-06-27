@@ -1238,13 +1238,6 @@ export class VideoRoom {
         }));
         return;
       }
-      if (event.kind === 'SET_ROOM_SURFACE' && !this.isHostRole(senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_DESKTOP_EVENT_REJECTED',
-          reason: 'ONLY_HOST_CAN_SET_SURFACE',
-        }));
-        return;
-      }
       await this.persistDesktopEvent(event);
       await this.recordDesktopActivity(event, senderRole);
       this.broadcastExcept(ws, JSON.stringify({

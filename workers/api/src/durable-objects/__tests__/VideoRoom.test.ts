@@ -278,7 +278,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
-  it('persists host-controlled desktop surface changes and records activity', async () => {
+  it('persists participant-controlled desktop surface changes and records activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -298,10 +298,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(storage.get('roomSurface')).toBeUndefined();
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_DESKTOP_EVENT_REJECTED',
-      reason: 'ONLY_HOST_CAN_SET_SURFACE',
+    expect(storage.get('roomSurface')).toBe('standard');
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        kind: 'SET_ROOM_SURFACE',
+        surface: 'standard',
+      }),
     }));
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
@@ -325,6 +329,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'evt-guest-surface',
+          kind: 'SET_ROOM_SURFACE',
+          surface: 'standard',
+        }),
+      }),
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
