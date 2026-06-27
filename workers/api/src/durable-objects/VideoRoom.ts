@@ -34,7 +34,8 @@ interface SignalMessage {
     | 'HANGUP'
     | 'STATUS_UPDATE'
     | 'ROOM_DESKTOP_EVENT'
-    | 'ROOM_CLIPPY_PROMPT';
+    | 'ROOM_CLIPPY_PROMPT'
+    | 'ROOM_FILE_SYSTEM_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
   payload?: unknown;
@@ -122,6 +123,42 @@ interface RoomClippyPrompt {
 
 interface RoomClippyPromptActivityEntry {
   prompt: RoomClippyPrompt;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+
+interface RoomFile {
+  id: string;
+  name: string;
+  kind: RoomFileKind;
+  content: string;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy?: VideoRole;
+}
+
+type RoomFileSystemEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPSERT_FILE';
+      file: RoomFile;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'DELETE_FILE';
+      fileId: string;
+    };
+
+interface RoomFileSystemActivityEntry {
+  event: RoomFileSystemEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -375,6 +412,94 @@ export class VideoRoom {
     return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
   }
 
+  private isRoomFileKind(value: unknown): value is RoomFileKind {
+    return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+  }
+
+  private isSafeFileText(value: unknown, maxLength: number): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+  }
+
+  private parseRoomFile(value: unknown): RoomFile | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 120)
+      || !this.isSafeFileText(value.name, 160)
+      || !this.isRoomFileKind(value.kind)
+      || typeof value.content !== 'string'
+      || value.content.length > 512_000
+      || typeof value.createdAt !== 'number'
+      || typeof value.updatedAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !Number.isFinite(value.updatedAt)
+    ) {
+      return null;
+    }
+    const metadata = this.isRecord(value.metadata) ? value.metadata : undefined;
+    if (metadata) {
+      try {
+        if (JSON.stringify(metadata).length > 8192) return null;
+      } catch {
+        return null;
+      }
+    }
+    return {
+      id: value.id,
+      name: value.name,
+      kind: value.kind,
+      content: value.content,
+      mimeType: this.isSafeFileText(value.mimeType, 160) ? value.mimeType : undefined,
+      metadata,
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      updatedBy: this.isVideoRole(value.updatedBy) ? value.updatedBy : undefined,
+    };
+  }
+
+  private parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 120)
+      || !this.isSafeFileText(value.clientId, 120)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+    ) {
+      return null;
+    }
+    if (value.kind === 'UPSERT_FILE') {
+      const file = this.parseRoomFile(value.file);
+      if (!file) return null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPSERT_FILE',
+        file,
+      };
+    }
+    if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'DELETE_FILE',
+        fileId: value.fileId,
+      };
+    }
+    return null;
+  }
+
+  private parseRoomFiles(value: unknown): RoomFile[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseRoomFile(entry))
+      .filter((entry): entry is RoomFile => entry !== null);
+  }
+
+  private async getRoomFileSystem(): Promise<RoomFile[]> {
+    return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
+  }
+
   private async persistRoomSurface(surface: RoomSurface): Promise<void> {
     this.roomSurface = surface;
     await this.state.storage.put('roomSurface', surface);
@@ -444,6 +569,43 @@ export class VideoRoom {
       { prompt, role, recordedAt: Date.now() },
     ];
     await this.state.storage.put('clippyPromptActivityLog', next);
+  }
+
+  private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
+    const files = await this.getRoomFileSystem();
+    if (event.kind === 'DELETE_FILE') {
+      const nextFiles = files.filter((file) => file.id !== event.fileId);
+      await this.state.storage.put('roomFileSystem', nextFiles);
+      return nextFiles;
+    }
+    const nextFile = {
+      ...event.file,
+      updatedBy: role,
+    };
+    const nextFiles = [
+      ...files.filter((file) => file.id !== event.file.id),
+      nextFile,
+    ];
+    await this.state.storage.put('roomFileSystem', nextFiles);
+    return nextFiles;
+  }
+
+  private async recordFileSystemActivity(event: RoomFileSystemEvent, role: VideoRole): Promise<void> {
+    const existing = await this.state.storage.get<unknown>('fileSystemActivityLog');
+    const previous = Array.isArray(existing)
+      ? existing.filter((entry): entry is RoomFileSystemActivityEntry => (
+          this.isRecord(entry)
+          && this.parseFileSystemEvent(entry.event) !== null
+          && typeof entry.role === 'string'
+          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
+          && typeof entry.recordedAt === 'number'
+        ))
+      : [];
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('fileSystemActivityLog', next);
   }
 
   /** Get all active WebSockets */
@@ -618,6 +780,12 @@ export class VideoRoom {
       server.send(JSON.stringify({
         type: 'ROOM_CLIPPY_STATE',
         payload: { prompt: currentClippyPrompt },
+      }));
+
+      const roomFileSystem = await this.getRoomFileSystem();
+      server.send(JSON.stringify({
+        type: 'ROOM_FILE_SYSTEM_STATE',
+        payload: { files: roomFileSystem },
       }));
 
       // Notify other peers that this role has connected
@@ -796,6 +964,32 @@ export class VideoRoom {
         type: 'ROOM_CLIPPY_PROMPT',
         role: senderRole,
         payload: prompt,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const event = this.parseFileSystemEvent(message.payload);
+      if (!event) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      await this.persistFileSystemEvent(event, senderRole);
+      await this.recordFileSystemActivity(event, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_FILE_SYSTEM_EVENT',
+        role: senderRole,
+        payload: event,
       }));
       return;
     }

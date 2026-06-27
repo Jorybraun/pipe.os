@@ -14,6 +14,7 @@ export interface PaintStroke {
 interface PaintWindowProps {
   strokes: PaintStroke[];
   onChange: (strokes: PaintStroke[]) => void;
+  saveStatus?: string;
 }
 
 const COLORS = ['#111111', '#e11d48', '#2563eb', '#16a34a', '#facc15', '#ffffff'];
@@ -40,7 +41,7 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: PaintStroke): void {
   ctx.stroke();
 }
 
-export function PaintWindow({ strokes, onChange }: PaintWindowProps): JSX.Element {
+export function PaintWindow({ strokes, onChange, saveStatus }: PaintWindowProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [color, setColor] = useState(COLORS[0]);
   const [size, setSize] = useState(4);
@@ -118,6 +119,7 @@ export function PaintWindow({ strokes, onChange }: PaintWindowProps): JSX.Elemen
         >
           Clear
         </button>
+        {saveStatus && <span className="win95-paint-save-status">{saveStatus}</span>}
       </div>
       <canvas
         ref={canvasRef}

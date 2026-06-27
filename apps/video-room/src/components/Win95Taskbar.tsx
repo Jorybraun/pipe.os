@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, Globe, ListTodo, Monitor, MessageSquare, Palette, Video, SquareTerminal } from 'lucide-react';
+import { FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Video, SquareTerminal } from 'lucide-react';
 import type { WindowState, WindowType } from '../hooks/useWindowManager';
 
 interface Win95TaskbarProps {
@@ -15,7 +15,7 @@ const WINDOW_ICONS: Record<WindowType, typeof Video> = {
   video: Video,
   workspace: SquareTerminal,
   chat: MessageSquare,
-  tasks: ListTodo,
+  tasks: FolderOpen,
   snippet: Monitor,
   browser: Globe,
   notepad: FileText,

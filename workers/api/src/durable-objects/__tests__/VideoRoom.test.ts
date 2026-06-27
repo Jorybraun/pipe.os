@@ -321,4 +321,86 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     ]);
   });
+
+  it('stores, broadcasts, and records shared room filesystem edits', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      payload: {
+        id: 'fs-save-notes',
+        clientId: 'host-client',
+        createdAt: 4,
+        kind: 'UPSERT_FILE',
+        file: {
+          id: 'desktop-notes',
+          name: 'notes.txt',
+          kind: 'text',
+          content: 'Candidate asked about testing strategy.',
+          mimeType: 'text/plain',
+          metadata: { app: 'notepad' },
+          createdAt: 4,
+          updatedAt: 4,
+        },
+      },
+    }));
+
+    expect(storage.get('roomFileSystem')).toEqual([
+      expect.objectContaining({
+        id: 'desktop-notes',
+        name: 'notes.txt',
+        kind: 'text',
+        content: 'Candidate asked about testing strategy.',
+        mimeType: 'text/plain',
+        metadata: { app: 'notepad' },
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'UPSERT_FILE',
+        file: expect.objectContaining({
+          id: 'desktop-notes',
+          name: 'notes.txt',
+        }),
+      }),
+    }));
+    expect(storage.get('fileSystemActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'fs-save-notes',
+          kind: 'UPSERT_FILE',
+        }),
+      }),
+    ]);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      payload: {
+        id: 'fs-delete-notes',
+        clientId: 'guest-client',
+        createdAt: 5,
+        kind: 'DELETE_FILE',
+        fileId: 'desktop-notes',
+      },
+    }));
+
+    expect(storage.get('roomFileSystem')).toEqual([]);
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        kind: 'DELETE_FILE',
+        fileId: 'desktop-notes',
+      }),
+    }));
+  });
 });

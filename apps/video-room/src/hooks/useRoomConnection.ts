@@ -28,6 +28,7 @@ export interface RoomDesktopWindowConfig extends OpenWindowConfig {
 
 export type RoomSurface = 'standard' | 'win95';
 export type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
 
 export interface RoomClippyAction {
   id: string;
@@ -52,6 +53,29 @@ export interface RoomClippyPromptDraft {
   hold?: boolean;
   targetRoles?: RoomRole[];
   actions?: RoomClippyAction[];
+}
+
+export interface RoomFile {
+  id: string;
+  name: string;
+  kind: RoomFileKind;
+  content: string;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  updatedBy?: RoomRole;
+}
+
+export interface RoomFileDraft {
+  id: string;
+  name: string;
+  kind: RoomFileKind;
+  content: string;
+  mimeType?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export type RoomDesktopEvent =
@@ -104,6 +128,32 @@ export type RoomDesktopEventDraft =
       data: Record<string, unknown>;
     };
 
+export type RoomFileSystemEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPSERT_FILE';
+      file: RoomFile;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'DELETE_FILE';
+      fileId: string;
+    };
+
+export type RoomFileSystemEventDraft =
+  | {
+      kind: 'UPSERT_FILE';
+      file: RoomFileDraft;
+    }
+  | {
+      kind: 'DELETE_FILE';
+      fileId: string;
+    };
+
 interface RoomConnection {
   phase: RoomPhase;
   localStream: MediaStream | null;
@@ -113,6 +163,7 @@ interface RoomConnection {
   desktopEvents: RoomDesktopEvent[];
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
   clippyPrompt: RoomClippyPrompt | null;
+  fileSystem: RoomFile[];
   cameraEnabled: boolean;
   micEnabled: boolean;
   setLocalStream: (stream: MediaStream) => void;
@@ -124,6 +175,7 @@ interface RoomConnection {
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
+  publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface) => void;
 }
 
@@ -307,6 +359,93 @@ function parseClippySnapshot(value: unknown): { prompt: RoomClippyPrompt | null 
   return { prompt: value.prompt === null ? null : parseClippyPrompt(value.prompt) };
 }
 
+function isRoomFileKind(value: unknown): value is RoomFileKind {
+  return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
+}
+
+function parseRoomFile(value: unknown): RoomFile | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || value.id.length === 0
+    || typeof value.name !== 'string'
+    || value.name.length === 0
+    || !isRoomFileKind(value.kind)
+    || typeof value.content !== 'string'
+    || typeof value.createdAt !== 'number'
+    || typeof value.updatedAt !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    name: value.name,
+    kind: value.kind,
+    content: value.content,
+    mimeType: typeof value.mimeType === 'string' ? value.mimeType : undefined,
+    metadata: recordOrUndefined(value.metadata),
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+    updatedBy: isRoomRole(value.updatedBy) ? value.updatedBy : undefined,
+  };
+}
+
+function parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+  ) {
+    return null;
+  }
+  if (value.kind === 'UPSERT_FILE') {
+    const file = parseRoomFile(value.file);
+    if (!file) return null;
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'UPSERT_FILE',
+      file,
+    };
+  }
+  if (value.kind === 'DELETE_FILE' && typeof value.fileId === 'string') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'DELETE_FILE',
+      fileId: value.fileId,
+    };
+  }
+  return null;
+}
+
+function parseFileSystemSnapshot(value: unknown): { files: RoomFile[] } | null {
+  if (!isRecord(value) || !Array.isArray(value.files)) return null;
+  const files: RoomFile[] = [];
+  for (const entry of value.files) {
+    const file = parseRoomFile(entry);
+    if (file) files.push(file);
+  }
+  return { files };
+}
+
+function sortRoomFiles(files: RoomFile[]): RoomFile[] {
+  return [...files].sort((a, b) => b.updatedAt - a.updatedAt || a.name.localeCompare(b.name));
+}
+
+function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): RoomFile[] {
+  if (event.kind === 'DELETE_FILE') {
+    return files.filter((file) => file.id !== event.fileId);
+  }
+  return sortRoomFiles([
+    ...files.filter((file) => file.id !== event.file.id),
+    event.file,
+  ]);
+}
+
 export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
@@ -316,6 +455,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
+  const [fileSystem, setFileSystem] = useState<RoomFile[]>([]);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -335,6 +475,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const autoStartTimerRef = useRef<number | null>(null);
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
+  const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
   const desktopClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -381,6 +522,13 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     return true;
   }, []);
 
+  const sendFileSystemEvent = useCallback((event: RoomFileSystemEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_FILE_SYSTEM_EVENT', payload: event }));
+    return true;
+  }, []);
+
   const flushDesktopOutbox = useCallback((): void => {
     if (desktopOutboxRef.current.length === 0) return;
     const pending = desktopOutboxRef.current.splice(0);
@@ -402,6 +550,17 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       }
     }
   }, [sendClippyPrompt]);
+
+  const flushFileSystemOutbox = useCallback((): void => {
+    if (fileSystemOutboxRef.current.length === 0) return;
+    const pending = fileSystemOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendFileSystemEvent(event)) {
+        fileSystemOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendFileSystemEvent]);
 
   const drainIce = useCallback(async (): Promise<void> => {
     const peer = peerRef.current;
@@ -557,6 +716,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
         reconnectAttemptRef.current = 0;
         flushDesktopOutbox();
         flushClippyOutbox();
+        flushFileSystemOutbox();
         const peer = peerRef.current;
         if (
           remoteRef.current ||
@@ -663,6 +823,14 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
           const snapshot = parseClippySnapshot(message.payload);
           if (!snapshot) return;
           setClippyPrompt(snapshot.prompt);
+        } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
+          const event = parseFileSystemEvent(message.payload);
+          if (!event || event.clientId === desktopClientIdRef.current) return;
+          setFileSystem((prev) => applyFileSystemEvent(prev, event));
+        } else if (message.type === 'ROOM_FILE_SYSTEM_STATE') {
+          const snapshot = parseFileSystemSnapshot(message.payload);
+          if (!snapshot) return;
+          setFileSystem(sortRoomFiles(snapshot.files));
         }
       };
       ws.onerror = () => {
@@ -698,6 +866,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     drainIce,
     flushClippyOutbox,
     flushDesktopOutbox,
+    flushFileSystemOutbox,
     role,
     scheduleHostRenegotiation,
     schedulePeerClose,
@@ -910,6 +1079,34 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     publishDesktopEvent({ kind: 'SET_ROOM_SURFACE', surface });
   }, [publishDesktopEvent]);
 
+  const publishFileSystemEvent = useCallback((draft: RoomFileSystemEventDraft): void => {
+    const createdAt = Date.now();
+    const event: RoomFileSystemEvent = draft.kind === 'UPSERT_FILE'
+      ? {
+          id: `fs-${createdAt}-${Math.random().toString(36).slice(2)}`,
+          clientId: desktopClientIdRef.current,
+          createdAt,
+          kind: 'UPSERT_FILE',
+          file: {
+            ...draft.file,
+            createdAt: draft.file.createdAt ?? createdAt,
+            updatedAt: draft.file.updatedAt ?? createdAt,
+            updatedBy: role,
+          },
+        }
+      : {
+          id: `fs-${createdAt}-${Math.random().toString(36).slice(2)}`,
+          clientId: desktopClientIdRef.current,
+          createdAt,
+          kind: 'DELETE_FILE',
+          fileId: draft.fileId,
+        };
+    setFileSystem((prev) => applyFileSystemEvent(prev, event));
+    if (!sendFileSystemEvent(event)) {
+      fileSystemOutboxRef.current.push(event);
+    }
+  }, [role, sendFileSystemEvent]);
+
   useEffect(() => {
     if (
       !active ||
@@ -947,6 +1144,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     desktopEvents,
     desktopSnapshot,
     clippyPrompt,
+    fileSystem,
     cameraEnabled,
     micEnabled,
     setLocalStream,
@@ -958,6 +1156,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     retryConnection,
     publishDesktopEvent,
     publishClippyPrompt,
+    publishFileSystemEvent,
     setRoomSurface,
   };
 }

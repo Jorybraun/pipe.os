@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a proactive Clippy prompt card with room actions for starting recording, launching/opening the workspace, and opening the terminal, with `clippy_action` session evidence capture.
 - Added recruiter room-status SSE updates so guest-waiting/live room state patches the scheduling dashboard without the old 10-second client polling loop.
 - Added shared Clippy prompt events to the video-room Durable Object so proactive assistant guidance is persisted, replayable, and synced across host/guest desktops.
+- Added a shared Win95 room filesystem with durable file snapshots, activity logging, Notepad/Paint autosave, and a synced Files window for opening or deleting shared desktop files.
 
 ### Changed — Win95-themed workspace overlay in video room
 

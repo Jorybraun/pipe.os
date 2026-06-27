@@ -2286,6 +2286,135 @@ button:focus-visible {
   color: #404040;
 }
 
+/* Room files */
+
+.win95-files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  color: #000;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+}
+
+.win95-files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 8px;
+  border-bottom: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.win95-files-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 4px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+}
+
+.win95-files-empty {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 14px;
+  color: #555;
+  font-size: 12px;
+}
+
+.win95-files-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 58px 66px 28px 28px;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #dfdfdf;
+  font-size: 12px;
+}
+
+.win95-files-row:hover {
+  background: #000080;
+  color: #fff;
+}
+
+.win95-files-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000080;
+}
+
+.win95-files-row:hover .win95-files-icon {
+  color: #fff;
+}
+
+.win95-files-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.win95-files-main strong,
+.win95-files-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win95-files-main strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.win95-files-main span,
+.win95-files-kind,
+.win95-files-time {
+  color: #555;
+  font-size: 11px;
+}
+
+.win95-files-row:hover .win95-files-main span,
+.win95-files-row:hover .win95-files-kind,
+.win95-files-row:hover .win95-files-time {
+  color: #fff;
+}
+
+.win95-files-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+}
+
+.win95-files-action:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.win95-files-status {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border-top: 1px solid #808080;
+  font-size: 11px;
+  color: #404040;
+  flex-shrink: 0;
+}
+
 /* Notepad */
 
 .win95-notepad {
@@ -2312,6 +2441,16 @@ button:focus-visible {
 
 .win95-notepad-menu span::first-letter {
   text-decoration: underline;
+}
+
+.win95-notepad-save-status {
+  margin-left: auto;
+  color: #404040;
+  font-size: 11px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .win95-notepad-textarea {
@@ -2395,6 +2534,17 @@ button:focus-visible {
 
 .win95-paint-clear:active {
   border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.win95-paint-save-status {
+  margin-left: auto;
+  color: #404040;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  font-size: 11px;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .win95-paint-canvas {

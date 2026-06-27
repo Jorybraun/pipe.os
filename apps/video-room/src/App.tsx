@@ -28,7 +28,7 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
-import { useRoomConnection, type RoomClippyPromptDraft } from './hooks/useRoomConnection';
+import { useRoomConnection, type RoomClippyPromptDraft, type RoomFile } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useChatMessages } from './hooks/useChatMessages';
 import { StandardLayout } from './components/StandardLayout';
@@ -39,12 +39,17 @@ import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
 import { PaintWindow, type PaintStroke } from './components/PaintWindow';
+import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowType } from './hooks/useWindowManager';
 import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
+const NOTEPAD_FILE_ID = 'desktop-notes';
+const PAINT_FILE_ID = 'desktop-paint';
+const NOTEPAD_FILE_NAME = 'notes.txt';
+const PAINT_FILE_NAME = 'drawing.pipe-paint';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -189,6 +194,28 @@ function isPaintStroke(value: unknown): value is PaintStroke {
 function paintStrokesWindowData(win: WindowState): PaintStroke[] {
   const value = win.data?.strokes;
   return Array.isArray(value) ? value.filter(isPaintStroke) : [];
+}
+
+function parsePaintFileContent(content: string): PaintStroke[] {
+  if (!content) return [];
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return Array.isArray(parsed) ? parsed.filter(isPaintStroke) : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializePaintStrokes(strokes: PaintStroke[]): string {
+  return JSON.stringify(strokes.filter(isPaintStroke));
+}
+
+function paintStrokesEqual(a: PaintStroke[], b: PaintStroke[]): boolean {
+  return serializePaintStrokes(a) === serializePaintStrokes(b);
+}
+
+function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
+  return files.find((file) => file.id === id);
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
@@ -372,6 +399,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enteredRoom, room.desktopEvents]);
+
+  useEffect(() => {
+    if (!enteredRoom) return;
+    const file = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
+    const win = wm.windows.find((entry) => entry.id === 'notepad');
+    if (!file || !win) return;
+    if (stringWindowData(win, 'text') !== file.content) {
+      wm.updateWindowData('notepad', { text: file.content });
+    }
+  }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
+
+  useEffect(() => {
+    if (!enteredRoom) return;
+    const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
+    const win = wm.windows.find((entry) => entry.id === 'paint');
+    if (!file || !win) return;
+    const nextStrokes = parsePaintFileContent(file.content);
+    if (!paintStrokesEqual(paintStrokesWindowData(win), nextStrokes)) {
+      wm.updateWindowData('paint', { strokes: nextStrokes });
+    }
+  }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
 
   const openSharedWindow = useCallback((config: OpenWindowConfig & { id: string }): void => {
     wm.openWindow(config);
@@ -909,6 +957,100 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const openNotepadWindow = (text?: string): void => {
+    const file = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
+    openSharedWindow({
+      id: 'notepad',
+      windowType: 'notepad',
+      title: `${NOTEPAD_FILE_NAME} - Notepad`,
+      x: 180,
+      y: 90,
+      width: 520,
+      height: 420,
+      data: { text: text ?? file?.content ?? '' },
+    });
+  };
+
+  const openPaintWindow = (strokes?: PaintStroke[]): void => {
+    const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
+    openSharedWindow({
+      id: 'paint',
+      windowType: 'paint',
+      title: `${PAINT_FILE_NAME} - Paint`,
+      x: 220,
+      y: 110,
+      width: 640,
+      height: 480,
+      data: { strokes: strokes ?? (file ? parsePaintFileContent(file.content) : []) },
+    });
+  };
+
+  const saveNotepadText = (text: string): void => {
+    updateSharedWindowData('notepad', { text });
+    const existing = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
+    const now = Date.now();
+    room.publishFileSystemEvent({
+      kind: 'UPSERT_FILE',
+      file: {
+        id: NOTEPAD_FILE_ID,
+        name: NOTEPAD_FILE_NAME,
+        kind: 'text',
+        content: text,
+        mimeType: 'text/plain',
+        metadata: { app: 'notepad', path: `Desktop/${NOTEPAD_FILE_NAME}` },
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+    });
+  };
+
+  const savePaintStrokes = (strokes: PaintStroke[]): void => {
+    updateSharedWindowData('paint', { strokes });
+    const existing = findRoomFile(room.fileSystem, PAINT_FILE_ID);
+    const now = Date.now();
+    room.publishFileSystemEvent({
+      kind: 'UPSERT_FILE',
+      file: {
+        id: PAINT_FILE_ID,
+        name: PAINT_FILE_NAME,
+        kind: 'paint',
+        content: serializePaintStrokes(strokes),
+        mimeType: 'application/json',
+        metadata: { app: 'paint', path: `Desktop/${PAINT_FILE_NAME}` },
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+    });
+  };
+
+  const openRoomFile = (file: RoomFile): void => {
+    if (file.kind === 'paint') {
+      openPaintWindow(parsePaintFileContent(file.content));
+      return;
+    }
+    if (file.kind === 'link') {
+      openBrowserWindow(file.content);
+      return;
+    }
+    openNotepadWindow(file.content);
+  };
+
+  const deleteRoomFile = (file: RoomFile): void => {
+    room.publishFileSystemEvent({ kind: 'DELETE_FILE', fileId: file.id });
+    if (file.id === NOTEPAD_FILE_ID) {
+      wm.updateWindowData('notepad', { text: '' });
+    }
+    if (file.id === PAINT_FILE_ID) {
+      wm.updateWindowData('paint', { strokes: [] });
+    }
+    captureSessionEvent('file_change', file.name, roomActor, {
+      fileId: file.id,
+      fileKind: file.kind,
+      operation: 'delete',
+      surface: room.roomSurface,
+    });
+  };
+
   const captureClippyAction = (actionId: string, text: string): void => {
     captureSessionEvent('clippy_action', text, roomActor, {
       actionId,
@@ -963,31 +1105,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
         break;
       case 'tasks':
-        openSharedWindow({ id: 'tasks', windowType: 'tasks', title: 'Tasks', x: 200, y: 120, width: 420, height: 480 });
+        openSharedWindow({ id: 'tasks', windowType: 'tasks', title: 'Files', x: 200, y: 120, width: 520, height: 420 });
         break;
       case 'notepad':
-        openSharedWindow({
-          id: 'notepad',
-          windowType: 'notepad',
-          title: 'Untitled - Notepad',
-          x: 180,
-          y: 90,
-          width: 520,
-          height: 420,
-          data: { text: '' },
-        });
+        openNotepadWindow();
         break;
       case 'paint':
-        openSharedWindow({
-          id: 'paint',
-          windowType: 'paint',
-          title: 'untitled - Paint',
-          x: 220,
-          y: 110,
-          width: 640,
-          height: 480,
-          data: { strokes: [] },
-        });
+        openPaintWindow();
         break;
       case 'browser':
         openBrowserWindow();
@@ -1168,10 +1292,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
       case 'tasks':
         return (
-          <div style={{ padding: '16px', color: '#000', fontFamily: "'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif" }}>
-            <h3 style={{ margin: '0 0 12px', fontSize: '14px' }}>Tasks &amp; Goals</h3>
-            <p style={{ fontSize: '12px', color: '#666' }}>Task goals will appear here in Phase 2.</p>
-          </div>
+          <RoomFileSystemWindow
+            files={room.fileSystem}
+            onOpenFile={openRoomFile}
+            onDeleteFile={deleteRoomFile}
+          />
         );
 
       case 'browser':
@@ -1187,7 +1312,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         return (
           <NotepadWindow
             value={stringWindowData(win, 'text')}
-            onChange={(text) => updateSharedWindowData(win.id, { text })}
+            onChange={saveNotepadText}
+            saveStatus={`Desktop/${NOTEPAD_FILE_NAME}`}
           />
         );
 
@@ -1195,7 +1321,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         return (
           <PaintWindow
             strokes={paintStrokesWindowData(win)}
-            onChange={(strokes) => updateSharedWindowData(win.id, { strokes })}
+            onChange={savePaintStrokes}
+            saveStatus={`Desktop/${PAINT_FILE_NAME}`}
           />
         );
 

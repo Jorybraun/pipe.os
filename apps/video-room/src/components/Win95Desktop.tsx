@@ -1,8 +1,8 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import {
   FileText,
+  FolderOpen,
   Globe,
-  ListTodo,
   Palette,
   SquareTerminal,
   Video,
@@ -22,7 +22,7 @@ const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'video', label: 'Video Call', icon: Video },
   { windowType: 'workspace', label: 'My Computer', icon: SquareTerminal },
   { windowType: 'chat', label: 'Chat', icon: MessageSquare },
-  { windowType: 'tasks', label: 'Tasks', icon: ListTodo },
+  { windowType: 'tasks', label: 'Files', icon: FolderOpen },
   { windowType: 'notepad', label: 'Notepad', icon: FileText },
   { windowType: 'paint', label: 'Paint', icon: Palette },
   { windowType: 'browser', label: 'Microsoft Edge', icon: Globe },
@@ -153,6 +153,7 @@ export function Win95Desktop({
             onMove={wm.moveWindow}
             noPadding={win.windowType === 'workspace'
               || win.windowType === 'video'
+              || win.windowType === 'tasks'
               || win.windowType === 'browser'
               || win.windowType === 'notepad'
               || win.windowType === 'paint'
