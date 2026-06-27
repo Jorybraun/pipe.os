@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recording uploads now include validated speaker-channel metadata, persist it with transcript artifacts, and use it for Deepgram segment attribution before promoting transcript evidence into the living context graph.
 - Tightened standalone CODE_REVIEW RPC coverage so malformed source-backed packet diffs stay in `WAITING_FOR_MATCH` instead of falling through the dev-container challenge branch.
 - The Devin/Clippy container bridge `/context` endpoint now fetches the source-backed room context summary through a token-scoped API route so the assistant can read captured interview evidence without browser dev-auth cookies.
+- Devin is now primed with the latest source-backed room context and the safe shared-desktop `[[room_action:*]]` protocol when Clippy starts or forwards chat into the dev-container agent.
 
 ### Changed — Win95-themed workspace overlay in video room
 

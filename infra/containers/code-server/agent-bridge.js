@@ -10,6 +10,7 @@ const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
 const AGENT_NAME = process.env.AGENT_TYPE || 'devin';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
+const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
 
 let agentAuthed = Boolean(DEVIN_API_KEY);
 let agentProcess = null;
@@ -181,6 +182,58 @@ async function fetchRoomContextSummary(fetchImpl = fetch) {
   }
 }
 
+function compactAgentContext(value, maxLength = AGENT_CONTEXT_MAX_LENGTH) {
+  const text = String(value || '').trim();
+  if (!text) return 'No PIPE room context has been captured yet.';
+  if (!Number.isFinite(maxLength) || maxLength <= 0 || text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}\n[PIPE room context truncated]`;
+}
+
+function roomActionProtocolGuide() {
+  return Object.entries(ROOM_ACTIONS)
+    .map(([id, config]) => `- ${id}: ${config.label}`)
+    .join('\n');
+}
+
+function buildAgentContextPrompt(roomContext, userMessage = '') {
+  const parts = [
+    'PIPE room context',
+    'You are Devin running as Clippy inside a PIPE-OS "95 Until Infinity" technical interview dev container.',
+    'Use the source-backed room context below to help the candidate without inventing facts.',
+    'When you want the shared interview desktop to do something, include one allow-listed tag in your response.',
+    'Example: [[room_action:open-workspace|Open VS Code]]',
+    'Allowed shared desktop actions:',
+    roomActionProtocolGuide(),
+    'Current source-backed room context:',
+    compactAgentContext(roomContext),
+  ];
+  const message = String(userMessage || '').trim();
+  if (message) {
+    parts.push('Current Clippy chat message:', message);
+  }
+  return `${parts.join('\n')}\n`;
+}
+
+function writeToCurrentAgentProcess(targetProcess, prompt) {
+  if (!agentProcess || targetProcess !== agentProcess) return false;
+  if (!agentProcess.stdin || agentProcess.stdin.destroyed || agentProcess.stdin.writableEnded) return false;
+  agentProcess.stdin.write(`${prompt}\n`);
+  return true;
+}
+
+async function primeAgentWithRoomContext(targetProcess = agentProcess) {
+  if (!targetProcess) return false;
+  const context = await fetchRoomContextSummary();
+  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text));
+}
+
+async function writeAgentChatPrompt(text) {
+  const targetProcess = agentProcess;
+  if (!targetProcess) return false;
+  const context = await fetchRoomContextSummary();
+  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text, text));
+}
+
 function decodeFrames(buffer, onFrame) {
   let remaining = buffer;
   while (remaining.length >= 2) {
@@ -269,6 +322,9 @@ function startAgent() {
     agentStatus = 'idle';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
+    void primeAgentWithRoomContext(agentProcess).catch((error) => {
+      console.error('[agent-bridge] room context primer failed:', error instanceof Error ? error.message : String(error));
+    });
     agentProcess.stdout.on('data', (chunk) => {
       const parsed = extractTaggedRoomActions(chunk.toString());
       agentStatus = 'working';
@@ -297,7 +353,7 @@ function startAgent() {
   }
 }
 
-function handleAgentMessage(ws, msg) {
+async function handleAgentMessage(ws, msg) {
   if (msg.type === 'CHAT') {
     const text = String(msg.text || '').trim();
     if (!text) return;
@@ -318,7 +374,12 @@ function handleAgentMessage(ws, msg) {
     }
     agentStatus = 'thinking';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    agentProcess.stdin.write(`${text}\n`);
+    const sent = await writeAgentChatPrompt(text);
+    if (!sent) {
+      send(ws, { type: 'ERROR', message: 'Agent is not ready to receive messages.' });
+      agentStatus = 'idle';
+      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    }
   } else if (msg.type === 'AUTH_START') {
     agentStatus = 'auth_needed';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
@@ -339,7 +400,9 @@ function acceptAgent(req, socket) {
   const ws = acceptWebSocket(req, socket, (client, opcode, payload) => {
     if (opcode !== 1) return;
     try {
-      handleAgentMessage(client, JSON.parse(payload.toString()));
+      void handleAgentMessage(client, JSON.parse(payload.toString())).catch((error) => {
+        send(client, { type: 'ERROR', message: error instanceof Error ? error.message : 'Agent bridge message failed.' });
+      });
     } catch {
       send(client, { type: 'ERROR', message: 'Invalid agent bridge message.' });
     }
