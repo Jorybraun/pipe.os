@@ -61,6 +61,7 @@ export interface ScheduledInterview {
   lastSyncedAt?: string | null;
   inviteLinkSentAt?: string | null;
   emailSentAt?: string | null;
+  bookingConfirmationSentAt?: string | null;
   owner?: string | null;
   // Contact-first fields
   recipientName?: string | null;

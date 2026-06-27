@@ -282,6 +282,7 @@ describe('GET /interviews/:id detail', () => {
         last_synced_at TEXT,
         invite_link_sent_at TEXT,
         email_sent_at TEXT,
+        booking_confirmation_sent_at TEXT,
         recipient_name TEXT,
         recipient_email TEXT,
         matched_repo_id INTEGER,
@@ -1360,13 +1361,18 @@ describe('GET /interviews/:id detail', () => {
       deliveredUrl: string;
       room: { hostUrl: string; guestUrl: string };
     };
+    const personalizedSchedulingUrl = new URL(schedulingUrl);
+    personalizedSchedulingUrl.searchParams.set('name', 'Grace Hopper');
+    personalizedSchedulingUrl.searchParams.set('email', 'grace@example.com');
+    personalizedSchedulingUrl.searchParams.set('a1', created.interview.id);
+    const expectedSchedulingUrl = personalizedSchedulingUrl.toString();
 
     expect(inviteBody).toMatchObject({
       success: true,
       emailSent: true,
       provider: 'cloudflare',
-      schedulingUrl,
-      deliveredUrl: schedulingUrl,
+      schedulingUrl: expectedSchedulingUrl,
+      deliveredUrl: expectedSchedulingUrl,
     });
     expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
     expect(inviteBody.room.guestUrl).toBe(inviteBody.meetingUrl);
@@ -1377,7 +1383,9 @@ describe('GET /interviews/:id detail', () => {
       from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
       subject: 'Schedule interview — Interview',
     });
-    expect(sentMessages[0]?.html).toContain(schedulingUrl);
+    expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
+    expect(sentMessages[0]?.html).toContain('email=grace%40example.com');
+    expect(sentMessages[0]?.html).not.toContain('email=grace%2540example.com');
     expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
@@ -1411,11 +1419,179 @@ describe('GET /interviews/:id detail', () => {
     expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: grace@example.com',
       'Subject: Schedule interview — Interview',
-      `Delivered URL: ${schedulingUrl}`,
+      `Delivered URL: ${expectedSchedulingUrl}`,
       `Room URL: ${inviteBody.meetingUrl}`,
       'Email sent: yes',
       'Provider message id: cf-calendly-message-1',
     ]));
+  });
+
+  it('sends a distinct confirmation email after a Calendly invite email is booked', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+      text?: string;
+    }> = [];
+    let messageCounter = 0;
+    const emailEnv = {
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          messageCounter += 1;
+          return { messageId: `cf-calendly-message-${messageCounter}` };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+      VIDEO_ROOM_APP_URL: 'https://room.example.com',
+      PUBLIC_EMAIL_LOGO_URL: 'https://api-dev.hire-pipe.com/assets/email/pipe-logo.png',
+    } as Partial<Env>;
+    sqlite!.prepare(`
+      INSERT INTO scheduling_connections (
+        id, owner_id, provider_id, access_token, refresh_token, token_expiry,
+        account_email, account_name, webhook_secret, webhook_id, status,
+        connected_at, last_sync_at, created_at, updated_at
+      ) VALUES (
+        'conn-1', 'owner-1', 'CALENDLY', 'cal-token', NULL, '2026-07-01T00:00:00.000Z',
+        'recruiter@example.com', 'Recruiter', NULL, NULL, 'ACTIVE',
+        '2026-06-26T12:00:00.000Z', NULL, '2026-06-26T12:00:00.000Z', '2026-06-26T12:00:00.000Z'
+      )
+    `).run();
+
+    const authApp = mountSchedulingApp(emailEnv);
+    const schedulingUrl = 'https://calendly.com/pipe/video';
+    const createResponse = await authApp.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as { interview: { id: string } };
+
+    const inviteResponse = await authApp.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'katherine@example.com' }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      emailSent: boolean;
+      meetingUrl: string;
+      schedulingUrl: string;
+      deliveredUrl: string;
+    };
+    expect(inviteBody.emailSent).toBe(true);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]?.subject).toBe('Schedule interview — Interview');
+    expect(inviteBody.deliveredUrl).toContain(`a1=${encodeURIComponent(created.interview.id)}`);
+    expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
+
+    const inviteeUri = 'https://api.calendly.com/scheduled_events/event-katherine/invitees/invitee-katherine';
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === inviteeUri) {
+        return new Response(JSON.stringify({
+          resource: {
+            name: 'Katherine Johnson',
+            email: 'katherine@example.com',
+            answers: [{ position: 1, value: created.interview.id }],
+          },
+        }));
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const publicApp = mountSchedulingPublicApp(emailEnv);
+    const { ctx, waitUntilAll } = buildCtx();
+    const calendlyMeetingUrl = 'https://meet.example.com/calendly-katherine';
+    const webhookPayload = {
+      event: 'invitee.created',
+      payload: {
+        uri: inviteeUri,
+        name: 'Katherine Johnson',
+        email: 'katherine@example.com',
+        scheduled_event: {
+          uri: 'https://api.calendly.com/scheduled_events/event-katherine',
+          start_time: '2026-07-03T19:00:00.000Z',
+          location: {
+            join_url: calendlyMeetingUrl,
+          },
+        },
+      },
+    };
+
+    const response = await publicApp.request('/webhook?connectionId=conn-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Calendly Webhook',
+      },
+      body: JSON.stringify(webhookPayload),
+    }, undefined, ctx);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      message: 'Interview updated',
+      interviewId: created.interview.id,
+      created: false,
+    });
+    await waitUntilAll();
+
+    expect(sentMessages).toHaveLength(2);
+    expect(sentMessages[1]).toMatchObject({
+      to: 'katherine@example.com',
+      from: { email: 'no-reply@hire-pipe.com', name: 'PIPE' },
+      subject: 'Interview scheduled — Interview',
+    });
+    expect(sentMessages[1]?.html).toContain('https://room.example.com/room/');
+    expect(sentMessages[1]?.text).toContain('https://room.example.com/room/');
+    expect(sentMessages[1]?.html).toContain('https://api-dev.hire-pipe.com/assets/email/pipe-logo.png');
+    expect(sentMessages[1]?.html).not.toContain(calendlyMeetingUrl);
+
+    const scheduled = sqlite!.prepare(
+      `SELECT status, scheduled_at, meeting_url, external_event_id,
+              sync_source, email_sent_at
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      external_event_id: string | null;
+      sync_source: string | null;
+      email_sent_at: string | null;
+    };
+    expect(scheduled).toMatchObject({
+      status: 'SCHEDULED',
+      scheduled_at: '2026-07-03T19:00:00.000Z',
+      meeting_url: expect.stringMatching(/^https:\/\/room\.example\.com\/room\/.+/),
+      external_event_id: 'https://api.calendly.com/scheduled_events/event-katherine',
+      sync_source: 'WEBHOOK',
+      email_sent_at: expect.any(String),
+    });
+
+    const replayResponse = await publicApp.request('/webhook?connectionId=conn-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Calendly Webhook',
+      },
+      body: JSON.stringify(webhookPayload),
+    }, undefined, ctx);
+    expect(replayResponse.status).toBe(200);
+    await waitUntilAll();
+    expect(sentMessages).toHaveLength(2);
+    expect(sqlite!.prepare(
+      'SELECT COUNT(*) AS count FROM meetings WHERE scheduled_interview_id = ?',
+    ).get(created.interview.id)).toEqual({ count: 1 });
   });
 
   it('does not poll Calendly bookings during sync; webhooks are the source of truth', async () => {
@@ -1918,6 +2094,7 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         last_synced_at TEXT,
         invite_link_sent_at TEXT,
         email_sent_at TEXT,
+        booking_confirmation_sent_at TEXT,
         recipient_name TEXT,
         recipient_email TEXT,
         matched_repo_id INTEGER,

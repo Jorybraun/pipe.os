@@ -227,6 +227,34 @@ function emailLogoImgForRequest(c: { req: { url: string }; env: Env }): string {
   );
 }
 
+function buildProviderSchedulingInviteUrl(input: {
+  schedulingUrl: string;
+  provider: string | null;
+  env: Env;
+  interviewId: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+}): string {
+  const authenticatedUrl = withDevBasicAuth(input.schedulingUrl, input.env);
+  if (input.provider !== 'CALENDLY' && input.provider !== 'CAL_COM') {
+    return authenticatedUrl;
+  }
+
+  try {
+    const url = new URL(authenticatedUrl);
+    if (input.recipientName?.trim()) {
+      url.searchParams.set('name', input.recipientName.trim());
+    }
+    if (input.recipientEmail?.trim()) {
+      url.searchParams.set('email', input.recipientEmail.trim().toLowerCase());
+    }
+    url.searchParams.set('a1', input.interviewId);
+    return url.toString();
+  } catch {
+    return authenticatedUrl;
+  }
+}
+
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
 
 async function loadScheduledInterviewLivingContext(
@@ -773,7 +801,7 @@ interface BookingConfirmationDetails {
   stageTitle: string | null;
   scheduledAt: string | null;
   meetingUrl: string | null;
-  emailSentAt: string | null;
+  bookingConfirmationSentAt: string | null;
 }
 
 function normalizeEmail(value: string | null | undefined): string | null {
@@ -855,7 +883,7 @@ async function loadBookingConfirmationDetails(
             s.title AS stage_title,
             si.scheduled_at,
             si.meeting_url,
-            si.email_sent_at
+            si.booking_confirmation_sent_at
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
@@ -870,7 +898,7 @@ async function loadBookingConfirmationDetails(
     stage_title: string | null;
     scheduled_at: string | null;
     meeting_url: string | null;
-    email_sent_at: string | null;
+    booking_confirmation_sent_at: string | null;
   }>().then((row) => row ? {
     id: row.id,
     recipientName: row.recipient_name,
@@ -879,7 +907,7 @@ async function loadBookingConfirmationDetails(
     stageTitle: row.stage_title,
     scheduledAt: row.scheduled_at,
     meetingUrl: row.meeting_url,
-    emailSentAt: row.email_sent_at,
+    bookingConfirmationSentAt: row.booking_confirmation_sent_at,
   } : null);
 }
 
@@ -893,7 +921,7 @@ async function sendScheduledBookingConfirmationEmail(
   const recipientEmail = normalizeEmail(details?.recipientEmail);
   const meetingUrl = details?.meetingUrl ? withDevBasicAuth(details.meetingUrl, env) : null;
 
-  if (!details || !recipientEmail || !meetingUrl || details.emailSentAt) return;
+  if (!details || !recipientEmail || !meetingUrl || details.bookingConfirmationSentAt) return;
 
   const recipientName = details.recipientName?.trim()
     || nameFromEmail(recipientEmail);
@@ -920,7 +948,8 @@ async function sendScheduledBookingConfirmationEmail(
     const sentAt = new Date().toISOString();
     await db.prepare(
       `UPDATE scheduled_interviews
-          SET email_sent_at = COALESCE(email_sent_at, ?1),
+          SET booking_confirmation_sent_at = COALESCE(booking_confirmation_sent_at, ?1),
+              email_sent_at = COALESCE(email_sent_at, ?1),
               updated_at = ?1
         WHERE id = ?2
           AND owner_id = ?3`,
@@ -1390,7 +1419,8 @@ schedulingAuth.get('/interviews', async (c) => {
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
               si.sync_source, si.last_synced_at, si.invite_link_sent_at,
-              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.email_sent_at, si.booking_confirmation_sent_at,
+              si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
               si.completed_at, si.created_at, si.updated_at,
               c.name AS candidate_name, c.email AS candidate_email,
@@ -1444,6 +1474,7 @@ schedulingAuth.get('/interviews', async (c) => {
       last_synced_at: string | null;
       invite_link_sent_at: string | null;
       email_sent_at: string | null;
+      booking_confirmation_sent_at: string | null;
       recipient_name: string | null;
       recipient_email: string | null;
       matched_repo_id: number | null;
@@ -1482,6 +1513,7 @@ schedulingAuth.get('/interviews', async (c) => {
       lastSyncedAt: r.last_synced_at,
       inviteLinkSentAt: r.invite_link_sent_at,
       emailSentAt: r.email_sent_at,
+      bookingConfirmationSentAt: r.booking_confirmation_sent_at,
       recipientName: r.recipient_name,
       recipientEmail: r.recipient_email,
       matchedRepoId: r.matched_repo_id,
@@ -1518,7 +1550,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
               si.scheduled_at, si.meeting_url, si.scheduling_provider,
               si.scheduling_url, si.external_event_id, si.recruiter_notes,
               si.sync_source, si.last_synced_at, si.invite_link_sent_at,
-              si.email_sent_at, si.recipient_name, si.recipient_email,
+              si.email_sent_at, si.booking_confirmation_sent_at,
+              si.recipient_name, si.recipient_email,
               si.matched_repo_id, si.github_repo_url, si.github_pr_number,
               si.submission_json, si.completed_at, si.created_at, si.updated_at,
               (
@@ -1558,6 +1591,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       last_synced_at: string | null;
       invite_link_sent_at: string | null;
       email_sent_at: string | null;
+      booking_confirmation_sent_at: string | null;
       recipient_name: string | null;
       recipient_email: string | null;
       matched_repo_id: number | null;
@@ -1660,6 +1694,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       lastSyncedAt: interview.last_synced_at,
       inviteLinkSentAt: interview.invite_link_sent_at,
       emailSentAt: interview.email_sent_at,
+      bookingConfirmationSentAt: interview.booking_confirmation_sent_at,
       recipientName: interview.recipient_name,
       recipientEmail: interview.recipient_email,
       candidateName: interview.candidate_name,
@@ -2016,9 +2051,22 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     email,
   );
   const meetingUrl = roomLinks.guestUrl;
+  const recipientNameForScheduling = interview.candidate_name
+    ?? interview.recipient_name
+    ?? null;
+  const recipientEmailForScheduling = normalizeEmail(
+    interview.candidate_email ?? interview.recipient_email ?? email,
+  );
   const schedulingInviteUrl = interview.scheduling_url
     && (interview.scheduling_provider === 'CALENDLY' || interview.scheduling_provider === 'CAL_COM')
-    ? withDevBasicAuth(interview.scheduling_url, c.env)
+    ? buildProviderSchedulingInviteUrl({
+        schedulingUrl: interview.scheduling_url,
+        provider: interview.scheduling_provider,
+        env: c.env,
+        interviewId: id,
+        recipientName: recipientNameForScheduling,
+        recipientEmail: recipientEmailForScheduling,
+      })
     : null;
 
   // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
@@ -2077,7 +2125,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
   );
   const pipelineTitle = escapeHtml(interview.pipeline_title ?? 'Interview');
   const stageTitle = escapeHtml(interview.stage_title ?? '');
-  const safeDeliveredUrl = encodeURI(deliveredUrl);
+  const safeDeliveredUrl = escapeHtml(deliveredUrl);
 
   // Build HTML email
   const customBlock = customMessage
