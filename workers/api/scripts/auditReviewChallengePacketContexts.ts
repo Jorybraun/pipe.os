@@ -67,6 +67,11 @@ export interface PacketAuditRow {
   contextRecordId: string | null;
   repoSourceRefCount: number;
   conceptLinkCount: number;
+  hasReviewProfile: boolean;
+  reviewDifficultyBand: string | null;
+  reviewExpectedSeniority: string | null;
+  reviewExpectedTimeMinutes: number | null;
+  reviewProfileReady: boolean;
   overlayReady: boolean;
 }
 
@@ -78,8 +83,10 @@ export interface AuditStats {
   withContextRecords: number;
   withRepoSourceRefs: number;
   withConceptLinks: number;
+  withReviewProfiles: number;
   overlayReadyPackets: number;
   realOverlayReadyPackets: number;
+  realOverlayReadyWithReviewProfiles: number;
 }
 
 export interface SourceStats {
@@ -99,6 +106,10 @@ export interface AuditResult {
   missingConceptLinkPacketIds: string[];
 }
 
+export function hasContrastReadyPacketCorpus(result: AuditResult): boolean {
+  return result.stats.realOverlayReadyPackets >= 2;
+}
+
 interface PacketRow {
   packet_id: string;
   repo_id: number;
@@ -106,6 +117,7 @@ interface PacketRow {
   pr_number: number;
   production_ready: number;
   test_framework: string | null;
+  packet_json: string | null;
   context_record_id: string | null;
 }
 
@@ -118,6 +130,69 @@ function bool(value: number | null | undefined): boolean {
   return Number(value ?? 0) !== 0;
 }
 
+function emptyReviewProfileAudit(): Pick<
+  PacketAuditRow,
+  | 'hasReviewProfile'
+  | 'reviewDifficultyBand'
+  | 'reviewExpectedSeniority'
+  | 'reviewExpectedTimeMinutes'
+  | 'reviewProfileReady'
+> {
+  return {
+    hasReviewProfile: false,
+    reviewDifficultyBand: null,
+    reviewExpectedSeniority: null,
+    reviewExpectedTimeMinutes: null,
+    reviewProfileReady: false,
+  };
+}
+
+function parseReviewProfile(packetJson: string | null): Pick<
+  PacketAuditRow,
+  | 'hasReviewProfile'
+  | 'reviewDifficultyBand'
+  | 'reviewExpectedSeniority'
+  | 'reviewExpectedTimeMinutes'
+  | 'reviewProfileReady'
+> {
+  if (!packetJson?.trim()) return emptyReviewProfileAudit();
+  try {
+    const parsed = JSON.parse(packetJson) as { reviewProfile?: unknown };
+    const profile = parsed.reviewProfile;
+    if (typeof profile !== 'object' || profile === null || Array.isArray(profile)) {
+      return emptyReviewProfileAudit();
+    }
+    const record = profile as Record<string, unknown>;
+    const reviewDifficultyBand = typeof record.difficultyBand === 'string'
+      ? record.difficultyBand
+      : null;
+    const reviewExpectedSeniority = typeof record.expectedSeniority === 'string'
+      ? record.expectedSeniority
+      : null;
+    const reviewExpectedTimeMinutes = typeof record.expectedTimeMinutes === 'number'
+      ? record.expectedTimeMinutes
+      : null;
+    return {
+      hasReviewProfile: true,
+      reviewDifficultyBand,
+      reviewExpectedSeniority,
+      reviewExpectedTimeMinutes,
+      reviewProfileReady: [
+        'introductory',
+        'focused',
+        'advanced',
+        'oversized',
+      ].includes(reviewDifficultyBand ?? '')
+        && ['mid', 'senior', 'staff'].includes(reviewExpectedSeniority ?? '')
+        && reviewExpectedTimeMinutes !== null
+        && Number.isFinite(reviewExpectedTimeMinutes)
+        && reviewExpectedTimeMinutes > 0,
+    };
+  } catch {
+    return emptyReviewProfileAudit();
+  }
+}
+
 const emptyStats: AuditStats = {
   totalPackets: 0,
   productionReadyPackets: 0,
@@ -126,8 +201,10 @@ const emptyStats: AuditStats = {
   withContextRecords: 0,
   withRepoSourceRefs: 0,
   withConceptLinks: 0,
+  withReviewProfiles: 0,
   overlayReadyPackets: 0,
   realOverlayReadyPackets: 0,
+  realOverlayReadyWithReviewProfiles: 0,
 };
 
 async function tableExists(client: QueryClient, tableName: string): Promise<boolean> {
@@ -242,6 +319,7 @@ export async function auditReviewChallengePacketContexts(
        qr.full_name,
        rcp.pr_number,
        rcp.production_ready,
+       rcp.packet_json,
        qr.test_framework,
        cr.id AS context_record_id
      FROM review_challenge_packets rcp
@@ -273,6 +351,7 @@ export async function auditReviewChallengePacketContexts(
       : null;
     const repoSourceRefCount = Number(coverage?.repo_source_ref_count ?? 0);
     const conceptLinkCount = Number(coverage?.concept_link_count ?? 0);
+    const reviewProfile = parseReviewProfile(packet.packet_json);
     rows.push({
       packetId: packet.packet_id,
       repoId: packet.repo_id,
@@ -283,6 +362,7 @@ export async function auditReviewChallengePacketContexts(
       contextRecordId: packet.context_record_id,
       repoSourceRefCount,
       conceptLinkCount,
+      ...reviewProfile,
       overlayReady: bool(packet.production_ready)
         && packet.context_record_id !== null
         && repoSourceRefCount > 0
@@ -298,8 +378,12 @@ export async function auditReviewChallengePacketContexts(
     withContextRecords: rows.filter((row) => row.contextRecordId !== null).length,
     withRepoSourceRefs: rows.filter((row) => row.repoSourceRefCount > 0).length,
     withConceptLinks: rows.filter((row) => row.conceptLinkCount > 0).length,
+    withReviewProfiles: rows.filter((row) => row.reviewProfileReady).length,
     overlayReadyPackets: rows.filter((row) => row.overlayReady).length,
     realOverlayReadyPackets: rows.filter((row) => !row.isFixture && row.overlayReady).length,
+    realOverlayReadyWithReviewProfiles: rows.filter((row) =>
+      !row.isFixture && row.overlayReady && row.reviewProfileReady
+    ).length,
   };
   const productionReadyRows = rows.filter((row) => row.productionReady);
   const missingContextRecordPacketIds = productionReadyRows
@@ -365,6 +449,7 @@ function usage(): string {
     '  --database-path PATH  Override local SQLite discovery',
     '  --json                Print machine-readable JSON',
     '  --require-real        Exit non-zero unless at least one real overlay-ready packet exists',
+    '  --require-contrast    Exit non-zero unless at least two real overlay-ready packets exist',
     '  --help, -h            Show this help',
   ].join('\n');
 }
@@ -374,6 +459,7 @@ interface CliOptions {
   databasePath?: string;
   json: boolean;
   requireReal: boolean;
+  requireContrast: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -381,6 +467,7 @@ function parseArgs(argv: string[]): CliOptions {
     target: 'local',
     json: false,
     requireReal: false,
+    requireContrast: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
@@ -392,6 +479,8 @@ function parseArgs(argv: string[]): CliOptions {
       options.json = true;
     } else if (arg === '--require-real') {
       options.requireReal = true;
+    } else if (arg === '--require-contrast') {
+      options.requireContrast = true;
     } else if (arg === '--database-path' || arg.startsWith('--database-path=')) {
       const inline = arg.match(/^--database-path=(.+)$/)?.[1];
       const value = inline ?? argv[index + 1];
@@ -421,8 +510,11 @@ function printHuman(result: AuditResult, source: string): void {
   console.log(`  with context records:   ${result.stats.withContextRecords}`);
   console.log(`  with repo source refs:  ${result.stats.withRepoSourceRefs}`);
   console.log(`  with concept links:     ${result.stats.withConceptLinks}`);
+  console.log(`  with review profiles:   ${result.stats.withReviewProfiles}`);
   console.log(`  overlay-ready packets:  ${result.stats.overlayReadyPackets}`);
   console.log(`  real overlay-ready:     ${result.stats.realOverlayReadyPackets}`);
+  console.log(`  real calibrated:        ${result.stats.realOverlayReadyWithReviewProfiles}`);
+  console.log(`  contrast ready:         ${hasContrastReadyPacketCorpus(result) ? 'YES' : 'NO'}`);
   if (result.missingTables.length > 0) {
     console.log(`  missing tables:         ${result.missingTables.join(', ')}`);
   }
@@ -468,6 +560,9 @@ async function main(): Promise<void> {
       printHuman(result, source);
     }
     if (options.requireReal && result.stats.realOverlayReadyPackets === 0) {
+      process.exitCode = 1;
+    }
+    if (options.requireContrast && !hasContrastReadyPacketCorpus(result)) {
       process.exitCode = 1;
     }
   } finally {

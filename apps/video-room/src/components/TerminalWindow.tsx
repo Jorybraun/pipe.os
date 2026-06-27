@@ -2,15 +2,24 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import {
+  collectTerminalCommands,
+  terminalInputMessage,
+  terminalOutputEvidenceText,
+  terminalResizeMessage,
+} from '../lib/terminalProtocol';
 
 export interface TerminalWindowProps {
   wsUrl: string;
+  onCommand?: (command: string) => void;
+  onOutput?: (output: string) => void;
 }
 
-export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
+export function TerminalWindow({ wsUrl, onCommand, onOutput }: TerminalWindowProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const commandBufferRef = useRef('');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -60,15 +69,22 @@ export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
 
       ws.onopen = () => {
         term.write('\r\x1b[2KConnected!\r\n');
-        // Send initial terminal size
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        ws.send(terminalResizeMessage(term.cols, term.rows));
       };
 
       ws.onmessage = (event) => {
+        let outputText: string;
         if (event.data instanceof ArrayBuffer) {
-          term.write(new Uint8Array(event.data));
+          const bytes = new Uint8Array(event.data);
+          term.write(bytes);
+          outputText = new TextDecoder().decode(bytes);
         } else {
-          term.write(event.data);
+          outputText = String(event.data);
+          term.write(outputText);
+        }
+        const evidenceText = terminalOutputEvidenceText(outputText);
+        if (evidenceText) {
+          onOutput?.(evidenceText);
         }
       };
 
@@ -86,14 +102,17 @@ export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
     // Terminal input → WebSocket
     const inputDisposable = term.onData((data) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(data);
+        wsRef.current.send(terminalInputMessage(data));
+        const result = collectTerminalCommands(commandBufferRef.current, data);
+        commandBufferRef.current = result.buffer;
+        result.commands.forEach((command) => onCommand?.(command));
       }
     });
 
     // Resize handling
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
+        wsRef.current.send(terminalResizeMessage(cols, rows));
       }
     });
 
@@ -116,8 +135,9 @@ export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
       }
       term.dispose();
       termRef.current = null;
+      commandBufferRef.current = '';
     };
-  }, [wsUrl]);
+  }, [onCommand, onOutput, wsUrl]);
 
   return (
     <div className="win95-terminal-container" ref={containerRef} />

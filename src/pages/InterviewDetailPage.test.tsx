@@ -234,6 +234,292 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByText('meeting-katherine')).toBeTruthy();
   });
 
+  it('shows code-review evidence hyperedges for recruiter match justification', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-1',
+          packetId: 'packet-1',
+          summary: 'Matched 2 source-backed demands.',
+          score: 0.82,
+          assessmentQuality: null,
+          reviewProfile: {
+            source: 'deterministic_engineering_prior',
+            difficultyBand: 'advanced',
+            expectedSeniority: 'staff',
+            expectedTimeMinutes: 75,
+            basis: {
+              changedFileCount: 3,
+              changedLineCount: 443,
+              sourceHunkCount: 28,
+              testChangeCount: 1,
+              demandFamilyCount: 6,
+              hasIssueContext: false,
+            },
+            rationale: 'advanced review calibrated for staff candidates; 75 minute target; 3 files; 443 changed lines; 28 source hunks; 6 demand families; 1 test change; no issue context.',
+          },
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [
+            {
+              relation: 'candidate_role_repo_alignment',
+              label: 'Evidence bridge 1',
+              pairScore: 0.91,
+              nodes: [
+                {
+                  kind: 'person_evidence',
+                  label: 'Person evidence',
+                  sourceRef: {
+                    exactText: 'Implemented React TypeScript popover click handling',
+                    locator: 'resume:span-1',
+                  },
+                },
+                {
+                  kind: 'role_source',
+                  label: 'Role source',
+                  sourceRef: {
+                    exactText: 'Review React TypeScript popover pull requests',
+                    locator: 'job_description_md',
+                    conceptKeys: ['term:react', 'term:popover'],
+                  },
+                },
+                {
+                  kind: 'repo_challenge',
+                  label: 'Repo challenge',
+                  sourceRef: {
+                    exactText: 'click = useClick(context, { enabled: clickEnabled })',
+                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                  },
+                },
+              ],
+            },
+          ],
+          gaps: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const reviewProfile = screen.getByTestId('code-review-review-profile');
+    expect(reviewProfile).toHaveTextContent('ASSESSMENT_FIT');
+    expect(reviewProfile).toHaveTextContent('ADVANCED');
+    expect(reviewProfile).toHaveTextContent('STAFF');
+    expect(reviewProfile).toHaveTextContent('75 min');
+    expect(reviewProfile).toHaveTextContent('443');
+    expect(reviewProfile).toHaveTextContent('28');
+
+    const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
+    expect(hyperedges).toHaveTextContent('Evidence hyperedges');
+    expect(hyperedges).toHaveTextContent('Person evidence');
+    expect(hyperedges).toHaveTextContent('Role source');
+    expect(hyperedges).toHaveTextContent('Repo challenge');
+    expect(hyperedges).toHaveTextContent('Implemented React TypeScript popover click handling');
+    expect(hyperedges).toHaveTextContent('Review React TypeScript popover pull requests');
+    expect(hyperedges).toHaveTextContent('click = useClick');
+  });
+
+  it('labels roleless code-review hyperedges as candidate-to-repo evidence', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: 973,
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-roleless-1',
+          packetId: 'packet-roleless-1',
+          summary: 'Matched roleless candidate evidence to a reviewable PR.',
+          score: 0.68,
+          assessmentQuality: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [
+            {
+              atomId: 'candidate-atom-1',
+              demandId: 'repo-demand-1',
+              sharedConcepts: ['term:popover', 'term:trigger'],
+              roleSourceRefs: [],
+              candidateSourceRefs: [{
+                exactText: 'Implemented popover trigger click handling in usePopoverRoot',
+                locator: 'resume:span-1',
+              }],
+              challengeSourceRefs: [{
+                exactText: 'Ignore impatient trigger clicks within 500ms',
+                locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              }],
+            },
+          ],
+          evidenceHyperedges: [
+            {
+              relation: 'candidate_repo_evidence_alignment',
+              label: 'Candidate evidence bridge 1',
+              pairScore: 0.74,
+              nodes: [
+                {
+                  kind: 'person_evidence',
+                  label: 'Person evidence',
+                  sourceRef: {
+                    exactText: 'Implemented popover trigger click handling in usePopoverRoot',
+                    locator: 'resume:span-1',
+                  },
+                },
+                {
+                  kind: 'repo_challenge',
+                  label: 'Repo challenge',
+                  sourceRef: {
+                    exactText: 'Ignore impatient trigger clicks within 500ms',
+                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                  },
+                },
+              ],
+            },
+          ],
+          gaps: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
+    expect(hyperedges).toHaveTextContent('candidate evidence -> repo challenge');
+    expect(hyperedges).toHaveTextContent('CANDIDATE_REPO');
+    expect(hyperedges).not.toHaveTextContent('PERSON_ROLE_REPO');
+    expect(hyperedges).toHaveTextContent('Implemented popover trigger click handling');
+    expect(hyperedges).toHaveTextContent('Ignore impatient trigger clicks');
+    const bridge = screen.getByTestId('interview-code-review-evidence-bridge');
+    expect(bridge).toHaveTextContent('candidate evidence -> repo challenge');
+    expect(bridge).toHaveTextContent('Match concepts');
+    expect(bridge).not.toHaveTextContent('Role requirement');
+  });
+
+  it('shows submitted code-review verdict, summary, and annotations to recruiters', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'The click timing behavior needs a regression test before this should merge.',
+          annotations: [
+            {
+              file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              line: 66,
+              severity: 'major',
+              comment: 'This threshold changes click semantics and needs a focused impatient-click regression.',
+            },
+          ],
+          reviewSessionId: 'sess-review-1',
+        }),
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const result = screen.getByTestId('interview-code-review-result');
+    expect(result).toHaveTextContent('Request Changes');
+    expect(result).toHaveTextContent('The click timing behavior needs a regression test before this should merge.');
+    expect(result).toHaveTextContent('1 annotation');
+    expect(result).toHaveTextContent('packages/react/src/popover/root/usePopoverRoot.ts');
+    expect(result).toHaveTextContent('line 66');
+    expect(result).toHaveTextContent('major');
+    expect(result).toHaveTextContent('This threshold changes click semantics and needs a focused impatient-click regression.');
+  });
+
+  it('shows AI developer pushback threads from submitted code-review transcripts', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'The impatient click behavior needs a stronger regression test.',
+          annotations: [
+            {
+              file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              line: 66,
+              severity: 'major',
+              comment: 'This timing threshold can hide a real click and should have direct coverage.',
+            },
+          ],
+          reviewSessionId: 'sess-review-defense',
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  {
+                    id: 1,
+                    file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                    line: 66,
+                    severity: 'major',
+                    what: 'This timing threshold can hide a real click and should have direct coverage.',
+                  },
+                ],
+                reviewer_summary: 'Initial review',
+                implementer_responses: [
+                  {
+                    to_comment_id: 1,
+                    move: 'pushback',
+                    content: 'Can you point to a user-visible failure? The threshold only applies immediately after hover opens.',
+                  },
+                ],
+              },
+              {
+                round: 2,
+                reviewer_comments: [
+                  {
+                    id: 1,
+                    what: 'Yes: keyboard and pointer users can issue the click while the hover-open transition is still settling, so we need a targeted impatient-click regression.',
+                  },
+                ],
+                implementer_responses: [
+                  {
+                    to_comment_id: 1,
+                    move: 'comment',
+                    content: 'That makes sense; I will add coverage around the impatient click path.',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
+    expect(defenseThreads).toHaveTextContent('AI developer defense');
+    expect(defenseThreads).toHaveTextContent('Candidate comment');
+    expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
+    expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');
+    expect(defenseThreads).toHaveTextContent('Candidate defense · round 2');
+    expect(defenseThreads).toHaveTextContent('keyboard and pointer users can issue the click');
+    expect(defenseThreads).toHaveTextContent('AI developer · comment · round 2');
+    expect(defenseThreads).toHaveTextContent('I will add coverage around the impatient click path.');
+  });
+
   it('does not poll forever for stale recording state after a disconnected call', async () => {
     vi.setSystemTime(new Date('2026-06-23T12:00:00.000Z'));
     mocks.api.get.mockResolvedValueOnce({

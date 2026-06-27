@@ -32,6 +32,7 @@ import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/vide
 import { meetingRooms, meetingsAuth } from './routes/meetingRooms';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
+import { repoTaskSessions } from './routes/assessment/repoTaskSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
 import { voiceSessions } from './routes/voice/voiceSessions';
 // TTS — Google Cloud Text-to-Speech proxy
@@ -59,9 +60,18 @@ import agents from './routes/agents';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-function isDevContainerRoomContextRequest(pathname: string, method: string): boolean {
-  if (method !== 'GET') return false;
-  return /^\/api\/v1\/meeting-rooms\/[^/]+\/context-summary$/.test(pathname);
+function isDevContainerRoomRuntimeRequest(pathname: string, method: string): boolean {
+  if (
+    method === 'GET'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/context-summary$/.test(pathname)
+  ) return true;
+
+  if (
+    method === 'POST'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/session-events$/.test(pathname)
+  ) return true;
+
+  return false;
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -119,9 +129,10 @@ app.use('*', async (c, next) => {
   if (pathname === PIPE_EMAIL_LOGO_PATH) return next();
   // RPC routes use candidate JWT auth, not the dev proxy secret
   if (pathname.startsWith('/rpc/')) return next();
-  // Containers need room context without browser Basic-auth cookies. The room
-  // token remains the bearer credential and is validated by the route.
-  if (isDevContainerRoomContextRequest(pathname, c.req.method)) return next();
+  // Containers need token-scoped room context and event capture without browser
+  // Basic-auth cookies. The room token remains the bearer credential and is
+  // validated by the route.
+  if (isDevContainerRoomRuntimeRequest(pathname, c.req.method)) return next();
 
   if (!c.env.DEV_PROXY_SECRET) {
     return c.json(
@@ -219,6 +230,8 @@ app.route('/api/v1/meetings', meetingsAuth);
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
 app.route('/api/v1/review-sessions', reviewSessions);
+// Repo-task assessment evidence spine: sessions/events/evaluation reports
+app.route('/api/v1/assessment/repo-task', repoTaskSessions);
 
 // Role Discovery Agent: AI-powered role context extraction (ADR-027)
 app.route('/api/v1/role-contexts', roleContexts);

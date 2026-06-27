@@ -87,8 +87,10 @@ describe('loadSourceBackedReviewDiff', () => {
         body: 'Source-backed PR body',
       },
       demands: [
-        { sourceSpanIds: ['span-1'] },
+        { family: 'artifact:source', sourceSpanIds: ['span-1'] },
       ],
+      demandFamilies: ['artifact:source'],
+      testChanges: [],
     };
 
     const result = await loadSourceBackedReviewDiff(
@@ -107,13 +109,27 @@ describe('loadSourceBackedReviewDiff', () => {
     );
 
     expect(result?.metadata.title).toBe('Retry order publishing');
+    expect(result?.metadata.reviewProfile).toMatchObject({
+      source: 'deterministic_engineering_prior',
+      difficultyBand: 'introductory',
+      expectedSeniority: 'mid',
+      expectedTimeMinutes: 30,
+      basis: {
+        changedFileCount: 1,
+        changedLineCount: 1,
+        sourceHunkCount: 1,
+        testChangeCount: 0,
+        demandFamilyCount: 1,
+        hasIssueContext: false,
+      },
+    });
     expect(result?.diff.files).toEqual([
       expect.objectContaining({
         filename: 'src/orders/retry.ts',
         headContent: 'publishWithRetry(order)',
         hunks: [
           expect.objectContaining({
-            header: '@@ source-backed src/orders/retry.ts:18-18 @@',
+            header: '@@ -17,0 +18,1 @@',
           }),
         ],
       }),

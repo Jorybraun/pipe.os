@@ -27,10 +27,19 @@ import {
 } from '../../repoSemanticGraph';
 import { ingestMeetingTranscriptToLivingContext } from '../../livingContext/meetingTranscript';
 import { ensureCandidateLivingContext } from '../../livingContext/compatibility';
+import { insertCandidateNode } from '../../candidateDiscovery/candidateNodes';
 
 
 const livingMigration = readFileSync(
   new URL('../../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodesMigration = readFileSync(
+  new URL('../../../../migrations/0052_candidate_nodes.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodeIdempotencyMigration = readFileSync(
+  new URL('../../../../migrations/0085_candidate_node_idempotency.sql', import.meta.url),
   'utf8',
 );
 const matchingMigration = readFileSync(
@@ -1241,6 +1250,75 @@ async function seedMuiBaseUiMeetingTranscriptCandidateEvidence(
   return { transcriptText };
 }
 
+async function seedMuiBaseUiResumeCandidateEvidence(
+  sqlite: NodeSqliteDatabase,
+): Promise<{ resumeText: string }> {
+  const db = createNodeSqliteD1(sqlite);
+  const resumeText = [
+    'Senior frontend platform engineer with deep React and TypeScript experience.',
+    'Recently implemented popover trigger click handling in usePopoverRoot for a large component library.',
+    'Designed a patient click threshold so impatient trigger clicks do not immediately close hover-open popovers.',
+    'Validated the behavior with JavaScript test runner coverage and defended review decisions to implementation authors.',
+  ].join(' ');
+  const capturedAt = Math.floor(new Date(OBSERVED_AT).getTime() / 1000);
+  const terms = [
+    { surface: 'popover', canonical_key: 'term:popover', evidence_level: 'demonstrated' },
+    { surface: 'click', canonical_key: 'term:click', evidence_level: 'demonstrated' },
+    { surface: 'patient click threshold', canonical_key: 'term:patient-click-threshold', evidence_level: 'demonstrated' },
+    { surface: 'React', canonical_key: 'term:react', evidence_level: 'demonstrated' },
+    { surface: 'TypeScript', canonical_key: 'term:typescript', evidence_level: 'demonstrated' },
+    { surface: 'JavaScript test runner', canonical_key: 'term:javascript-test-runner', evidence_level: 'validated' },
+  ];
+  const nodeInputs = [
+    {
+      type: 'Experience',
+      narrative: 'Implemented React TypeScript popover trigger click handling in usePopoverRoot.',
+      terms,
+      confidence: 0.98,
+    },
+    {
+      type: 'Project',
+      narrative: 'Designed patient click threshold behavior for impatient trigger clicks.',
+      terms,
+      confidence: 0.97,
+    },
+    {
+      type: 'Skill',
+      narrative: 'Validated popover trigger behavior with a JavaScript test runner.',
+      terms,
+      confidence: 0.96,
+    },
+  ];
+
+  for (const [index, node] of nodeInputs.entries()) {
+    await insertCandidateNode(db, {
+      candidate_id: 'candidate-1',
+      node_type: node.type,
+      narrative_text: node.narrative,
+      extracted_properties_json: JSON.stringify({
+        semantic_terms: node.terms,
+        source_quote: resumeText,
+        source_quote_validated: true,
+        source_quote_char_start: 0,
+        source_quote_char_end: resumeText.length,
+        index,
+      }),
+      embedding_json: null,
+      source_type: 'resume',
+      source_reference: 'resume-smoke',
+      captured_at: capturedAt,
+      confidence: node.confidence,
+      supersedes: null,
+      superseded_at: null,
+      decomposition_version: 'test-resume-v1',
+    });
+  }
+
+  const identity = await ensureCandidateLivingContext(db, 'candidate-1');
+  expect(identity).not.toBeNull();
+  return { resumeText };
+}
+
 function moveCandidateMeaningToContextRecords(sqlite: NodeSqliteDatabase): void {
   const now = OBSERVED_AT;
   sqlite.exec(`
@@ -1589,6 +1667,8 @@ describe('matchCandidateToReviewChallenge', () => {
       INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
       VALUES ('candidate-1', 'workspace-1', NULL, 'Candidate One', 'candidate@example.com', 'active');
     `);
+    sqlite.exec(candidateNodesMigration);
+    sqlite.exec(candidateNodeIdempotencyMigration);
     sqlite.exec(livingMigration);
     sqlite.exec(matchingMigration);
     sqlite.exec(contextRecordMigration);
@@ -2174,6 +2254,88 @@ describe('matchCandidateToReviewChallenge', () => {
     const matchConceptKeys = matchConcepts.map((row) => row.canonical_key);
     expect(matchConceptKeys).toContain('term:patient-click-threshold');
     expect(matchConceptKeys.some((key) => key === 'term:popover' || key === 'term:popover-trigger')).toBe(true);
+  });
+
+  it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {
+    const { resumeText } = await seedMuiBaseUiResumeCandidateEvidence(sqlite);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(result.status).toBe('MATCHED');
+    expect(result.repoId).toBe(973);
+    expect(result.prNumber).toBe(973);
+    expect(result.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(result.explanation?.roleSources).toEqual([]);
+    expect(result.explanation?.validatorAgent).toEqual(expect.objectContaining({
+      agentName: 'source_backed_match_validator',
+      verdict: 'PASSED',
+      sourceBridge: expect.objectContaining({
+        candidateSourceCount: expect.any(Number),
+        repoSourceCount: expect.any(Number),
+        roleSourceCount: 0,
+        provenanceComplete: true,
+      }),
+    }));
+    expect(result.explanation?.validatorAgent?.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'role_context_alignment',
+        passed: true,
+        reason: 'No role source was supplied for this standalone match.',
+      }),
+    ]));
+    expect(result.explanation?.assessmentQuality?.verdict).toMatch(/^(STRONG|USABLE)$/);
+    expect(result.explanation?.missingEvidence).toEqual([]);
+    expect(result.explanation?.rejectedPackets).toEqual([]);
+    expect(result.explanation?.evidence.every((entry) => entry.roleSourceRefs.length === 0)).toBe(true);
+    expect(result.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(resumeText);
+    expect(result.explanation?.evidence.length ?? 0).toBeGreaterThanOrEqual(4);
+
+    const matchRun = sqlite.prepare(
+      `SELECT role_context_id, role_snapshot_id, selected_packet_id, ranked_results_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(result.matchRunId) as {
+      role_context_id: string | null;
+      role_snapshot_id: string;
+      selected_packet_id: string;
+      ranked_results_json: string;
+    };
+    expect(matchRun.role_context_id).toBeNull();
+    expect(matchRun.role_snapshot_id).toBe('standalone-code-review-v1');
+    expect(matchRun.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(matchRun.ranked_results_json) as Array<{
+      validatorAgent: { verdict: string; sourceBridge: { roleSourceCount: number } };
+      alignments: Array<{
+        sharedConcepts: string[];
+        roleSourceRefs: unknown[];
+      }>;
+    }>;
+    expect(rankedResult.validatorAgent).toEqual(expect.objectContaining({
+      verdict: 'PASSED',
+      sourceBridge: expect.objectContaining({ roleSourceCount: 0 }),
+    }));
+    const sharedConcepts = new Set(rankedResult.alignments.flatMap((alignment) => alignment.sharedConcepts));
+    expect(sharedConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect(sharedConcepts.has('term:popover')).toBe(true);
+    expect(sharedConcepts.has('term:javascript-test-runner')).toBe(true);
+    expect(rankedResult.alignments.every((alignment) => alignment.roleSourceRefs.length === 0)).toBe(true);
   });
 
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {

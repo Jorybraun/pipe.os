@@ -56,6 +56,39 @@ const bodySchema = z.object({
   selected_stages: selectedStagesSchema,
 });
 
+export type AutoBuiltChallengeConfig = {
+  autoBuilt: true;
+  repoId: number | null;
+  issueNumber: number | null;
+  matchDeferred: boolean;
+  isMultiTurn?: true;
+  maxRounds?: number;
+};
+
+export function buildAutoBuiltChallengeConfig(input: {
+  challengeType: 'CODE_REVIEW' | 'CODE_IMPLEMENTATION';
+  repoId: number | null;
+  issueNumber: number | null;
+  matchDeferred: boolean;
+}): AutoBuiltChallengeConfig {
+  const base: AutoBuiltChallengeConfig = {
+    autoBuilt: true,
+    repoId: input.repoId,
+    issueNumber: input.issueNumber,
+    matchDeferred: input.matchDeferred,
+  };
+
+  if (input.challengeType === 'CODE_REVIEW') {
+    return {
+      ...base,
+      isMultiTurn: true,
+      maxRounds: 4,
+    };
+  }
+
+  return base;
+}
+
 autoBuild.post('/auto-build', async (c) => {
   const userId = c.var.userId;
 
@@ -359,12 +392,12 @@ autoBuild.post('/auto-build', async (c) => {
   }
 
   for (const rec of stageRecords) {
-    const config = JSON.stringify({
-      autoBuilt: true,
+    const config = JSON.stringify(buildAutoBuiltChallengeConfig({
+      challengeType: rec.challengeType,
       repoId: rec.repoId,
       issueNumber: rec.issueNumber,
       matchDeferred: !shouldMatchNow,
-    });
+    }));
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO challenges (

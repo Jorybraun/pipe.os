@@ -2,6 +2,11 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+const {
+  agentDiagnosticMessage,
+  agentPromptHandoffDiagnosticMessage,
+} = require('./agent-diagnostics.js');
 
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
@@ -11,12 +16,35 @@ const AGENT_NAME = process.env.AGENT_TYPE || 'devin';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
+const WORKSPACE_SCAN_INTERVAL_MS = positiveIntEnv('WORKSPACE_SCAN_INTERVAL_MS', 2000, 1000);
+const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500, 100);
+const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
+const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
 const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
 const agentAuthed = Boolean(DEVIN_API_KEY);
 let agentProcess = null;
 let agentStatus = agentAuthed ? 'idle' : 'auth_needed';
 const clients = new Set();
+let workspaceBaselineReady = false;
+let workspaceScanInFlight = false;
+let workspaceWatcherTimer = null;
+let workspaceSnapshot = new Map();
+
+const WORKSPACE_IGNORED_DIRS = new Set([
+  '.git',
+  '.hg',
+  '.svn',
+  'node_modules',
+  'vendor',
+  'dist',
+  'build',
+  'coverage',
+  '.next',
+  '.turbo',
+  '.cache',
+  '.pnpm-store',
+]);
 
 const ROOM_ACTIONS = {
   'open-browser': { label: 'Open Browser', aliases: ['open browser', 'browser', 'open edge', 'edge'] },
@@ -31,6 +59,12 @@ const ROOM_ACTIONS = {
 
 function roomActionName(value) {
   return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+}
+
+function positiveIntEnv(name, fallback, minimum = 1) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(Math.floor(value), minimum);
 }
 
 function normalizeRoomAction(value) {
@@ -51,8 +85,11 @@ function extractTaggedRoomActions(text) {
       if (action) {
         actions.push({
           action,
+          agent: AGENT_NAME,
           label: rawLabel || ROOM_ACTIONS[action].label,
           text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
+          source: 'agent_stdout',
+          protocol: 'clippy_room_action_tag',
         });
       }
       return '';
@@ -113,6 +150,218 @@ function broadcast(msg) {
   for (const ws of clients) send(ws, msg);
 }
 
+function roomSessionEventsUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
+  const base = String(pipeApiUrl || '').trim();
+  const token = String(roomToken || '').trim();
+  if (!base || !token) return null;
+
+  try {
+    return new URL(
+      `/api/v1/meeting-rooms/${encodeURIComponent(token)}/session-events`,
+      base,
+    ).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function captureWorkspaceFileChangeEvidence(change) {
+  const endpoint = roomSessionEventsUrl();
+  if (!endpoint) return false;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: change.path,
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          workspaceRoot: WORKSPACE,
+          action: change.action,
+          observedAt: change.observedAt,
+          contentHash: change.contentHash ?? null,
+          sizeBytes: change.sizeBytes ?? null,
+          contentPreview: change.contentPreview ?? null,
+          bridgePersisted: true,
+        },
+      }),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error('[agent-bridge] workspace file evidence capture failed:', error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+function workspaceEventPayload(action, fact, observedAt, persisted) {
+  return {
+    type: 'FILE_CHANGED',
+    source: 'code_server_workspace',
+    path: fact.path,
+    action,
+    observedAt,
+    sizeBytes: fact.sizeBytes,
+    contentHash: fact.contentHash || undefined,
+    contentPreview: fact.contentPreview || undefined,
+    persisted,
+  };
+}
+
+function normalizeWorkspacePath(value) {
+  return String(value || '').split(path.sep).join('/');
+}
+
+function relativeWorkspacePath(absolutePath) {
+  const relativePath = path.relative(WORKSPACE, absolutePath);
+  if (!relativePath || relativePath.startsWith('..') || path.isAbsolute(relativePath)) return null;
+  return normalizeWorkspacePath(relativePath);
+}
+
+function shouldIgnoreWorkspacePath(relativePath) {
+  return normalizeWorkspacePath(relativePath)
+    .split('/')
+    .some((segment) => WORKSPACE_IGNORED_DIRS.has(segment));
+}
+
+async function walkWorkspaceFiles(directory, files) {
+  if (files.length >= WORKSPACE_MAX_SCAN_FILES) return;
+  let dir;
+  try {
+    dir = await fs.promises.opendir(directory);
+  } catch {
+    return;
+  }
+
+  const entries = [];
+  for await (const entry of dir) entries.push(entry);
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+
+  for (const entry of entries) {
+    if (files.length >= WORKSPACE_MAX_SCAN_FILES) return;
+    const absolutePath = path.join(directory, entry.name);
+    const relativePath = relativeWorkspacePath(absolutePath);
+    if (!relativePath || shouldIgnoreWorkspacePath(relativePath)) continue;
+    if (entry.isDirectory()) {
+      await walkWorkspaceFiles(absolutePath, files);
+    } else if (entry.isFile()) {
+      files.push({ absolutePath, relativePath });
+    }
+  }
+}
+
+function looksLikeText(buffer) {
+  if (buffer.length === 0) return true;
+  const sample = buffer.subarray(0, Math.min(buffer.length, WORKSPACE_PREVIEW_BYTES || 512));
+  if (sample.includes(0)) return false;
+  let suspicious = 0;
+  for (const byte of sample) {
+    if (byte < 7 || (byte > 14 && byte < 32)) suspicious += 1;
+  }
+  return suspicious / sample.length < 0.05;
+}
+
+function boundedTextPreview(buffer) {
+  if (WORKSPACE_PREVIEW_BYTES <= 0 || !looksLikeText(buffer)) return null;
+  return buffer.subarray(0, WORKSPACE_PREVIEW_BYTES).toString('utf8');
+}
+
+async function readWorkspaceFileFact(file) {
+  const stat = await fs.promises.stat(file.absolutePath).catch(() => null);
+  if (!stat || !stat.isFile()) return null;
+
+  let contentHash = null;
+  let contentPreview = null;
+  if (stat.size <= WORKSPACE_MAX_HASH_BYTES) {
+    const buffer = await fs.promises.readFile(file.absolutePath).catch(() => null);
+    if (buffer) {
+      contentHash = crypto.createHash('sha256').update(buffer).digest('hex');
+      contentPreview = boundedTextPreview(buffer);
+    }
+  }
+
+  return {
+    path: file.relativePath,
+    sizeBytes: stat.size,
+    mtimeMs: Math.floor(stat.mtimeMs),
+    contentHash,
+    contentPreview,
+    fingerprint: contentHash || `${stat.size}:${Math.floor(stat.mtimeMs)}`,
+  };
+}
+
+async function scanWorkspaceSnapshot() {
+  const files = [];
+  await walkWorkspaceFiles(WORKSPACE, files);
+
+  const snapshot = new Map();
+  for (const file of files) {
+    const fact = await readWorkspaceFileFact(file);
+    if (fact) snapshot.set(fact.path, fact);
+  }
+  return snapshot;
+}
+
+function workspaceFileChanged(previous, next) {
+  return previous.fingerprint !== next.fingerprint
+    || previous.sizeBytes !== next.sizeBytes
+    || previous.contentHash !== next.contentHash;
+}
+
+async function emitWorkspaceFileChange(action, fact) {
+  const observedAt = new Date().toISOString();
+  const change = {
+    action,
+    path: fact.path,
+    observedAt,
+    sizeBytes: fact.sizeBytes,
+    contentHash: fact.contentHash,
+    contentPreview: fact.contentPreview,
+  };
+  const persisted = await captureWorkspaceFileChangeEvidence(change);
+  broadcast(workspaceEventPayload(action, fact, observedAt, persisted));
+}
+
+async function pollWorkspaceChanges() {
+  if (workspaceScanInFlight) return;
+  workspaceScanInFlight = true;
+  try {
+    const nextSnapshot = await scanWorkspaceSnapshot();
+    if (workspaceBaselineReady) {
+      for (const [filePath, fact] of nextSnapshot.entries()) {
+        const previous = workspaceSnapshot.get(filePath);
+        if (!previous) {
+          await emitWorkspaceFileChange('created', fact);
+        } else if (workspaceFileChanged(previous, fact)) {
+          await emitWorkspaceFileChange('modified', fact);
+        }
+      }
+      for (const [filePath, previous] of workspaceSnapshot.entries()) {
+        if (!nextSnapshot.has(filePath)) {
+          await emitWorkspaceFileChange('deleted', previous);
+        }
+      }
+    }
+    workspaceSnapshot = nextSnapshot;
+    workspaceBaselineReady = true;
+  } catch (error) {
+    console.error('[agent-bridge] workspace scan failed:', error instanceof Error ? error.message : String(error));
+  } finally {
+    workspaceScanInFlight = false;
+  }
+}
+
+function startWorkspaceWatcher() {
+  if (workspaceWatcherTimer) return;
+  void pollWorkspaceChanges();
+  workspaceWatcherTimer = setInterval(() => {
+    void pollWorkspaceChanges();
+  }, WORKSPACE_SCAN_INTERVAL_MS);
+}
+
 function devinAuthNeededMessage() {
   return {
     type: 'AUTH_NEEDED',
@@ -120,6 +369,15 @@ function devinAuthNeededMessage() {
     agent: AGENT_NAME,
     message: DEVIN_AUTH_MESSAGE,
   };
+}
+
+function devinAuthDiagnosticMessage() {
+  return agentDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: 'auth_needed',
+    message: DEVIN_AUTH_MESSAGE,
+    diagnosticSource: 'auth_required',
+  });
 }
 
 function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
@@ -213,14 +471,39 @@ function writeToCurrentAgentProcess(targetProcess, prompt) {
 async function primeAgentWithRoomContext(targetProcess = agentProcess) {
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
-  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text));
+  const roomContextText = compactAgentContext(context.text);
+  const prompt = buildAgentContextPrompt(context.text);
+  const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
+  broadcast(agentPromptHandoffDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: agentStatus,
+    promptType: 'context_primer',
+    deliveredToAgent,
+    roomContextStatus: context.status,
+    roomContextText,
+    promptText: prompt,
+  }));
+  return deliveredToAgent;
 }
 
 async function writeAgentChatPrompt(text) {
   const targetProcess = agentProcess;
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
-  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text, text));
+  const roomContextText = compactAgentContext(context.text);
+  const prompt = buildAgentContextPrompt(context.text, text);
+  const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
+  broadcast(agentPromptHandoffDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: agentStatus,
+    promptType: 'chat_prompt',
+    deliveredToAgent,
+    roomContextStatus: context.status,
+    roomContextText,
+    promptText: prompt,
+    userMessage: text,
+  }));
+  return deliveredToAgent;
 }
 
 function decodeFrames(buffer, onFrame) {
@@ -312,7 +595,14 @@ function startAgent() {
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
     void primeAgentWithRoomContext(agentProcess).catch((error) => {
-      console.error('[agent-bridge] room context primer failed:', error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[agent-bridge] room context primer failed:', message);
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: 'idle',
+        message: `Room context primer failed: ${message}`,
+        diagnosticSource: 'context_primer_error',
+      }));
     });
     agentProcess.stdout.on('data', (chunk) => {
       const parsed = extractTaggedRoomActions(chunk.toString());
@@ -324,21 +614,47 @@ function startAgent() {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
     agentProcess.stderr.on('data', (chunk) => {
-      console.error('[agent-bridge] devin stderr:', chunk.toString().trim());
+      const message = chunk.toString().trim();
+      if (!message) return;
+      console.error('[agent-bridge] devin stderr:', message);
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: agentStatus,
+        message,
+        diagnosticSource: 'agent_stderr',
+      }));
     });
-    agentProcess.on('exit', () => {
+    agentProcess.on('exit', (code, signal) => {
       agentProcess = null;
       agentStatus = 'idle';
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: code === 0 && !signal ? 'idle' : 'disconnected',
+        message: `Devin process exited with code ${code === null ? 'null' : code}${signal ? ` and signal ${signal}` : ''}.`,
+        diagnosticSource: 'agent_exit',
+        exitCode: code,
+        signal,
+      }));
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
-    agentProcess.on('error', () => {
+    agentProcess.on('error', (error) => {
       agentProcess = null;
       agentStatus = 'idle';
-      broadcast({ type: 'ERROR', message: 'Devin CLI failed to start inside the container.' });
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: 'disconnected',
+        message: `Devin CLI failed to start inside the container: ${error instanceof Error ? error.message : String(error)}`,
+        diagnosticSource: 'agent_process_error',
+      }));
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
   } catch (error) {
-    broadcast({ type: 'ERROR', message: error instanceof Error ? error.message : String(error) });
+    broadcast(agentDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: 'disconnected',
+      message: error instanceof Error ? error.message : String(error),
+      diagnosticSource: 'agent_start_exception',
+    }));
   }
 }
 
@@ -350,13 +666,13 @@ async function handleAgentMessage(ws, msg) {
       agentStatus = 'auth_needed';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
       send(ws, devinAuthNeededMessage());
-      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
+      send(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
     if (agentStatus === 'auth_needed') {
       send(ws, devinAuthNeededMessage());
-      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
+      send(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess) {
@@ -522,10 +838,12 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.listen(BRIDGE_PORT, '0.0.0.0', () => {
+  startWorkspaceWatcher();
   console.log(`[agent-bridge] ${AGENT_NAME} bridge listening on ${BRIDGE_PORT}, code-server on ${CODE_SERVER_PORT}`);
 });
 
 process.on('SIGTERM', () => {
+  if (workspaceWatcherTimer) clearInterval(workspaceWatcherTimer);
   if (agentProcess) agentProcess.kill('SIGTERM');
   server.close(() => process.exit(0));
 });

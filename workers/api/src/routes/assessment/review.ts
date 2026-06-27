@@ -25,7 +25,9 @@ import type { Context } from 'hono';
 import type { Env } from '../../types';
 import type { CandidateVariables } from '../../middleware/candidateAuth';
 import {
+  AiDeveloperUnavailableError,
   callImplementerAgent,
+  type LLMProvider as ImplementerLLMProvider,
   type ReviewComment,
   type ImplementerResponse,
   type ReviewRound,
@@ -41,6 +43,7 @@ import { loadRcdForAssessment } from '../../lib/rcd';
 import { fetchGitHubDiff } from '../../lib/fetchGitHubDiff';
 import { scoreAndPropagate } from '../../lib/review/scoreAndPropagate';
 import { loadSourceBackedReviewDiff } from '../../lib/review/sourceBackedReviewDiff';
+import { persistCodeReviewJudgeExample } from '../../lib/review/judgeImprovementExamples';
 import { recordSessionEvent } from '../../lib/telemetry/sessionEvents';
 import {
   ingestCodeReviewTranscriptToLivingContext,
@@ -84,6 +87,120 @@ interface ChallengeConfigRow {
 class SourceBackedReviewNotReadyError extends Error {
   constructor() {
     super('SOURCE_BACKED_REVIEW_NOT_READY');
+  }
+}
+
+interface AiDeveloperUnavailableLike {
+  diagnostic: AiDeveloperUnavailableError['diagnostic'];
+}
+
+function isAiDeveloperUnavailableError(error: unknown): error is AiDeveloperUnavailableLike {
+  if (error instanceof AiDeveloperUnavailableError) return true;
+  if (!error || typeof error !== 'object') return false;
+  const diagnostic = (error as { diagnostic?: unknown }).diagnostic;
+  if (!diagnostic || typeof diagnostic !== 'object') return false;
+  const record = diagnostic as Record<string, unknown>;
+  return record.mode === 'AI_DEVELOPER_UNAVAILABLE'
+    && record.verdict === 'AI_DEVELOPER_UNAVAILABLE'
+    && typeof record.reason === 'string';
+}
+
+function aiDeveloperUnavailableResponse(error: AiDeveloperUnavailableLike): {
+  error: {
+    code: 'AI_DEVELOPER_UNAVAILABLE';
+    message: string;
+    diagnostic: AiDeveloperUnavailableError['diagnostic'];
+  };
+} {
+  return {
+    error: {
+      code: 'AI_DEVELOPER_UNAVAILABLE',
+      message: error.diagnostic.reason,
+      diagnostic: error.diagnostic,
+    },
+  };
+}
+
+interface ReviewAuthorProviderConfig {
+  provider: Extract<ImplementerLLMProvider, 'workers-ai' | 'kimi'>;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+}
+
+function resolveReviewAuthorProvider(env: Env): ReviewAuthorProviderConfig {
+  if (env.KIMI_API_KEY) {
+    const config: ReviewAuthorProviderConfig = {
+      provider: 'kimi',
+      apiKey: env.KIMI_API_KEY,
+    };
+    if (env.KIMI_BASE_URL) config.kimiBaseUrl = env.KIMI_BASE_URL;
+    if (env.KIMI_MODEL) config.kimiModel = env.KIMI_MODEL;
+    return config;
+  }
+
+  return {
+    provider: 'workers-ai',
+    apiKey: '',
+  };
+}
+
+function asDispositionalWeights(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.every(([, entryValue]) => typeof entryValue === 'number' && Number.isFinite(entryValue))) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+async function callReviewAuthorAgentWithFallback(input: {
+  env: Env;
+  provider: ReviewAuthorProviderConfig;
+  persona: 'junior' | 'senior';
+  prBrief: string;
+  prDiff: string;
+  previousRounds: ReviewRound[];
+  newComments: ReviewComment[];
+  dispositionalWeights?: Record<string, number>;
+}): Promise<ImplementerResponse[]> {
+  const baseInput = {
+    persona: input.persona,
+    prBrief: input.prBrief,
+    prDiff: input.prDiff,
+    previousRounds: input.previousRounds,
+    newComments: input.newComments,
+    ...(input.dispositionalWeights ? { dispositionalWeights: input.dispositionalWeights } : {}),
+  };
+
+  try {
+    return await callImplementerAgent({
+      apiKey: input.provider.apiKey,
+      provider: input.provider.provider,
+      ...(input.provider.kimiBaseUrl ? { kimiBaseUrl: input.provider.kimiBaseUrl } : {}),
+      ...(input.provider.kimiModel ? { kimiModel: input.provider.kimiModel } : {}),
+      ai: input.env.AI,
+      ...baseInput,
+    });
+  } catch (error) {
+    if (
+      input.provider.provider !== 'kimi'
+      || !isAiDeveloperUnavailableError(error)
+      || !input.env.AI
+    ) {
+      throw error;
+    }
+
+    console.error(
+      '[review] Kimi author agent unavailable; retrying with Workers AI:',
+      error.diagnostic.reason,
+    );
+    return callImplementerAgent({
+      apiKey: '',
+      provider: 'workers-ai',
+      ai: input.env.AI,
+      ...baseInput,
+    });
   }
 }
 
@@ -298,6 +415,27 @@ function buildThreadsForResponse(rounds: ReviewRound[]): Array<{
   return Array.from(threadMap.values());
 }
 
+function flattenTranscriptAnnotations(transcript: StoredTranscript): Array<{
+  id: string;
+  file: string | null;
+  line: number | null;
+  severity: string | null;
+  comment: string;
+}> {
+  return transcript.rounds.flatMap((round) =>
+    round.reviewer_comments.flatMap((comment) => {
+      if (!comment.what.trim()) return [];
+      return [{
+        id: String(comment.id),
+        file: typeof comment.file === 'string' ? comment.file : null,
+        line: typeof comment.line === 'number' ? comment.line : null,
+        severity: comment.severity,
+        comment: comment.what,
+      }];
+    })
+  );
+}
+
 // ─── Shared helpers (new + legacy shim support) ──────────────────────────────
 
 /**
@@ -469,20 +607,18 @@ async function executeReviewRound(
     session.challenge_id,
   );
   const prBrief = rawPrBrief || 'Implement the described feature.';
-  const llmProvider = 'workers-ai' as const;
-  const apiKey = '';
+  const llmProvider = resolveReviewAuthorProvider(env);
 
   const persona = (session.implementer_persona === 'senior' ? 'senior' : 'junior') as 'junior' | 'senior';
 
   const rcd = await loadRcdForAssessment(db, session.assessment_id);
-  const dispositionalWeights = rcd?.technical_context?.dispositional_weights;
+  const dispositionalWeights = asDispositionalWeights(rcd?.technical_context?.dispositional_weights);
 
   const transcript = parseJsonColumn<StoredTranscript>(session.transcript) ?? { rounds: [] };
 
-  const agentResponses = await callImplementerAgent({
-    apiKey,
+  const agentResponses = await callReviewAuthorAgentWithFallback({
+    env,
     provider: llmProvider,
-    ai: env.AI,
     persona,
     prBrief,
     prDiff,
@@ -572,9 +708,46 @@ async function finalizeReviewSession(
     endedAt: now,
     observedAt: now,
   });
+  try {
+    await persistCodeReviewJudgeExample({
+      db: c.env.DB,
+      sessionId: session.id,
+      candidateId: session.candidate_id,
+      challengeId: session.challenge_id,
+      assessmentId: session.assessment_id,
+      transcript,
+      observedAt: now,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `[review] judge-example persistence failed for session ${session.id}:`,
+      message,
+    );
+    await recordSessionEvent(c.env.DB, {
+      sessionId: session.id,
+      sessionType: 'code_review',
+      candidateId: session.candidate_id,
+      eventType: 'error',
+      payload: {
+        operation: 'judge_example_persistence',
+        message,
+        recoverableBy: 'backfillCodeReviewJudgeExamples',
+      },
+    });
+  }
 
   // Write challenge_submissions row
   const submissionId = crypto.randomUUID();
+  const responseJson = JSON.stringify({
+    type: 'CODE_REVIEW',
+    verdict,
+    summary,
+    annotations: flattenTranscriptAnnotations(transcript),
+    transcript,
+    reviewSessionId: session.id,
+  });
+
   await c.env.DB.prepare(`
     INSERT INTO challenge_submissions
       (id, assessment_id, challenge_id, candidate_id, response_json, submitted_at, created_at, updated_at)
@@ -582,12 +755,12 @@ async function finalizeReviewSession(
   `)
     .bind(
       submissionId,
-      session.assessment_id,
-      session.challenge_id,
-      session.candidate_id,
-      JSON.stringify({ verdict, summary, transcript }),
-      now,
-    )
+	      session.assessment_id,
+	      session.challenge_id,
+	      session.candidate_id,
+	      responseJson,
+	      now,
+	    )
     .run();
 
   // Update assessment status
@@ -599,9 +772,16 @@ async function finalizeReviewSession(
     .bind(now, session.assessment_id)
     .run();
 
-  const scorerApiKey = c.env.GOOGLE_AI_API_KEY ?? '';
-  const hasAI = !!c.env.AI;
-  if (hasAI || scorerApiKey) {
+  await completeStandaloneReviewInterview(c.env.DB, {
+    assessmentId: session.assessment_id,
+    candidateId: session.candidate_id,
+    challengeId: session.challenge_id,
+    responseJson,
+    completedAt: now,
+  });
+
+  const hasScorerProvider = !!c.env.AI || !!c.env.GOOGLE_AI_API_KEY || !!c.env.KIMI_API_KEY;
+  if (hasScorerProvider) {
     c.executionCtx.waitUntil(
       scoreAndPropagate({
         env: c.env,
@@ -617,6 +797,91 @@ async function finalizeReviewSession(
   }
 
   return { status: 'verdict_submitted', sessionId: session.id };
+}
+
+function standaloneReviewInterviewIdFromAssessment(assessmentId: string): string | null {
+  const prefix = 'standalone-review-assessment-';
+  return assessmentId.startsWith(prefix) ? assessmentId.slice(prefix.length) : null;
+}
+
+async function completeStandaloneReviewInterview(
+  db: D1Database,
+  input: {
+    assessmentId: string;
+    candidateId: string;
+    challengeId: string;
+    responseJson: string;
+    completedAt: string;
+  },
+): Promise<void> {
+  const interviewId = standaloneReviewInterviewIdFromAssessment(input.assessmentId);
+  if (interviewId) {
+    await db.prepare(
+      `UPDATE scheduled_interviews
+          SET submission_json = ?1,
+              status = 'COMPLETED',
+              completed_at = COALESCE(completed_at, ?2),
+              updated_at = ?2
+        WHERE id = ?3
+          AND candidate_id = ?4
+          AND interview_type = 'CODE_REVIEW'
+          AND status != 'CANCELLED'`,
+    )
+      .bind(input.responseJson, input.completedAt, interviewId, input.candidateId)
+      .run();
+    return;
+  }
+
+  const assessment = await db.prepare(
+    `SELECT stage_id FROM assessments WHERE id = ?1 AND candidate_id = ?2 LIMIT 1`,
+  )
+    .bind(input.assessmentId, input.candidateId)
+    .first<{ stage_id: string | null }>();
+  if (!assessment?.stage_id) return;
+
+  const assignment = await db.prepare(
+    `SELECT repo_id, github_repo_url, github_pr_number
+       FROM candidate_challenge_assignment
+      WHERE candidate_id = ?1
+        AND stage_id = ?2
+        AND challenge_id = ?3
+      ORDER BY assigned_at DESC, id DESC
+      LIMIT 1`,
+  )
+    .bind(input.candidateId, assessment.stage_id, input.challengeId)
+    .first<{
+      repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    }>();
+
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET submission_json = ?1,
+            status = 'COMPLETED',
+            completed_at = COALESCE(completed_at, ?2),
+            updated_at = ?2,
+            matched_repo_id = COALESCE(matched_repo_id, ?5),
+            github_repo_url = COALESCE(github_repo_url, ?6),
+            github_pr_number = COALESCE(github_pr_number, ?7)
+      WHERE candidate_id = ?3
+        AND interview_type = 'CODE_REVIEW'
+        AND status != 'CANCELLED'
+        AND (
+          stage_id = ?4
+          OR (stage_id IS NULL AND pipeline_id IS NOT NULL)
+        )`,
+  )
+    .bind(
+      input.responseJson,
+      input.completedAt,
+      input.candidateId,
+      assessment.stage_id,
+      assignment?.repo_id ?? null,
+      assignment?.github_repo_url ?? null,
+      assignment?.github_pr_number ?? null,
+    )
+    .run();
 }
 
 // ─── POST /rpc/review/session/init ───────────────────────────────────────────
@@ -716,6 +981,7 @@ review.post('/session/init', async (c) => {
       next_comment_id: number;
       max_rounds: number;
   }>();
+  const sessionId = existingSession?.id ?? crypto.randomUUID();
 
   if (existingSession) {
     let pr: Awaited<ReturnType<typeof buildPrContext>>;
@@ -725,14 +991,34 @@ review.post('/session/init', async (c) => {
       if (err instanceof SourceBackedReviewNotReadyError) {
         return c.json(sourceBackedReviewNotReadyResponse(), 409);
       }
+      if (isAiDeveloperUnavailableError(err)) {
+        await recordSessionEvent(c.env.DB, {
+          sessionId,
+          sessionType: 'code_review',
+          candidateId,
+          eventType: 'error',
+          payload: {
+            operation: 'review_author_agent',
+            diagnostic: err.diagnostic,
+          },
+        });
+        return c.json(aiDeveloperUnavailableResponse(err), 503);
+      }
       throw err;
     }
+    const existingTranscript = parseJsonColumn<StoredTranscript>(existingSession.transcript) ?? { rounds: [] };
+    const terminalStatuses = new Set(['verdict_submitted', 'scoring', 'scored', 'scoring_failed']);
+    const completed = terminalStatuses.has(existingSession.status);
     return c.json({
-      sessionId: existingSession.id,
+      sessionId,
       status: existingSession.status,
+      completed,
       pr,
+      rounds: existingTranscript.rounds,
       maxRounds: existingSession.max_rounds,
-      currentRound: existingSession.current_round,
+      currentRound: completed
+        ? existingSession.max_rounds
+        : Math.min(existingSession.current_round + 1, existingSession.max_rounds),
     });
   }
 
@@ -743,11 +1029,23 @@ review.post('/session/init', async (c) => {
     if (err instanceof SourceBackedReviewNotReadyError) {
       return c.json(sourceBackedReviewNotReadyResponse(), 409);
     }
+    if (isAiDeveloperUnavailableError(err)) {
+      await recordSessionEvent(c.env.DB, {
+        sessionId,
+        sessionType: 'code_review',
+        candidateId,
+        eventType: 'error',
+        payload: {
+          operation: 'review_author_agent',
+          diagnostic: err.diagnostic,
+        },
+      });
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     throw err;
   }
 
   // Create new pending session
-  const sessionId = crypto.randomUUID();
   const transcript: StoredTranscript = { rounds: [] };
   const persona = (config?.implementerPersona === 'senior' ? 'senior' : 'junior') as 'junior' | 'senior';
   const now = new Date().toISOString();
@@ -773,8 +1071,9 @@ review.post('/session/init', async (c) => {
     sessionId,
     status: 'pending',
     pr,
+    rounds: [],
     maxRounds,
-    currentRound: 0,
+    currentRound: 1,
   });
 });
 
@@ -862,6 +1161,19 @@ review.post('/session/:id/message', async (c) => {
       if (err instanceof SourceBackedReviewNotReadyError) {
         return c.json(sourceBackedReviewNotReadyResponse(), 409);
       }
+      if (isAiDeveloperUnavailableError(err)) {
+        await recordSessionEvent(c.env.DB, {
+          sessionId,
+          sessionType: 'code_review',
+          candidateId,
+          eventType: 'error',
+          payload: {
+            operation: 'review_author_agent',
+            diagnostic: err.diagnostic,
+          },
+        });
+        return c.json(aiDeveloperUnavailableResponse(err), 503);
+      }
       throw err;
     }
 
@@ -875,6 +1187,9 @@ review.post('/session/:id/message', async (c) => {
 
     return c.json({
       round: result.round,
+      rounds: result.transcript.rounds,
+      currentRound: Math.min(result.round + 1, session.max_rounds),
+      maxRounds: session.max_rounds,
       agentResponse: result.agentResponse,
       threads: result.threads,
     });
@@ -937,6 +1252,19 @@ review.post('/session/:id/message', async (c) => {
     if (err instanceof SourceBackedReviewNotReadyError) {
       return c.json(sourceBackedReviewNotReadyResponse(), 409);
     }
+    if (isAiDeveloperUnavailableError(err)) {
+      await recordSessionEvent(c.env.DB, {
+        sessionId,
+        sessionType: 'code_review',
+        candidateId,
+        eventType: 'error',
+        payload: {
+          operation: 'review_author_agent',
+          diagnostic: err.diagnostic,
+        },
+      });
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     throw err;
   }
 
@@ -950,6 +1278,9 @@ review.post('/session/:id/message', async (c) => {
 
   return c.json({
     round: result.round,
+    rounds: result.transcript.rounds,
+    currentRound: Math.min(result.round + 1, session.max_rounds),
+    maxRounds: session.max_rounds,
     agentResponse: result.agentResponse,
     threads: result.threads,
   });
@@ -1202,6 +1533,19 @@ review.post('/submit', async (c) => {
     if (err instanceof SourceBackedReviewNotReadyError) {
       return c.json(sourceBackedReviewNotReadyResponse(), 409);
     }
+    if (isAiDeveloperUnavailableError(err)) {
+      await recordSessionEvent(c.env.DB, {
+        sessionId,
+        sessionType: 'code_review',
+        candidateId,
+        eventType: 'error',
+        payload: {
+          operation: 'review_author_agent',
+          diagnostic: err.diagnostic,
+        },
+      });
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     throw err;
   }
 
@@ -1309,6 +1653,19 @@ review.post('/:sessionId/respond', async (c) => {
   } catch (err) {
     if (err instanceof SourceBackedReviewNotReadyError) {
       return c.json(sourceBackedReviewNotReadyResponse(), 409);
+    }
+    if (isAiDeveloperUnavailableError(err)) {
+      await recordSessionEvent(c.env.DB, {
+        sessionId,
+        sessionType: 'code_review',
+        candidateId,
+        eventType: 'error',
+        payload: {
+          operation: 'review_author_agent',
+          diagnostic: err.diagnostic,
+        },
+      });
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
     }
     throw err;
   }

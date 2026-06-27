@@ -1,22 +1,23 @@
 /**
  * CodeReviewDetailTab — default tab for CODE_REVIEW stages.
  *
- * Replaces the generic "Challenges" tab entirely. This keeps code review as
- * a video interview: one conversation, optional PR context, source-backed
- * evidence after the call.
+ * Replaces the generic "Challenges" tab entirely. Code review is an async
+ * assessment: candidates review a source-backed PR, defend comments against an
+ * AI implementer, and leave evidence recruiters can inspect later.
  */
 
 import { useState, useCallback } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import {
   GitPullRequest,
-  MessageSquare,
   Clock,
   ChevronRight,
   Target,
   Search,
   CheckCircle2,
-  Video,
+  Bot,
+  ShieldCheck,
+  Network,
 } from 'lucide-react';
 import { SectionCard } from '../../components';
 import { useChallengeMutations } from '../../hooks/useChallengeMutations';
@@ -84,7 +85,7 @@ export default function CodeReviewDetailTab(): JSX.Element {
     >
       {/* Hero — what this stage is */}
       <SectionCard
-        label="VIDEO_INTERVIEW"
+        label="ASYNC_CODE_REVIEW"
         icon={<GitPullRequest size={16} color="var(--pipe-text-dim)" />}
         meta="CODE_REVIEW"
       >
@@ -98,10 +99,10 @@ export default function CodeReviewDetailTab(): JSX.Element {
               fontFamily: mono,
             }}
           >
-            This is a video interview centered on a real GitHub PR. The person
-            joins the room, reviews the code, explains trade-offs, and leaves
-            source-backed evidence that can become person context after the
-            call.
+            Candidates open an assessment link, review a real pull request,
+            leave inline comments, choose a verdict, and write a summary.
+            PIPE selects the PR from source-backed person, role, and repository
+            evidence, or from a recruiter-provided repo/PR override.
           </p>
 
           {/* Candidate flow */}
@@ -116,10 +117,10 @@ export default function CodeReviewDetailTab(): JSX.Element {
             }}
           >
             {[
-              { label: 'JOIN ROOM', icon: Video },
+              { label: 'ASSESS LINK', icon: GitPullRequest },
               { label: 'REVIEW PR', icon: Search },
-              { label: 'DISCUSS', icon: MessageSquare },
-              { label: 'SUMMARY', icon: CheckCircle2 },
+              { label: 'AI PUSHBACK', icon: Bot },
+              { label: 'RESULT', icon: CheckCircle2 },
             ].map((step, i, arr) => (
               <div
                 key={step.label}
@@ -168,25 +169,25 @@ export default function CodeReviewDetailTab(): JSX.Element {
           </div>
 
           {/* Key stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
             {[
               {
                 icon: Clock,
                 label: 'DURATION',
-                value: '30-60 min',
-                sub: 'live video call',
+                value: 'ASYNC',
+                sub: 'candidate-paced review',
               },
               {
                 icon: GitPullRequest,
                 label: 'CONTEXT',
                 value: 'REAL PR',
-                sub: 'selected or evidence-matched',
+                sub: 'matched or manually selected',
               },
               {
                 icon: Target,
                 label: 'EVIDENCE',
-                value: 'RECORDED',
-                sub: 'transcript becomes context',
+                value: 'SOURCE-BACKED',
+                sub: 'comments, verdict, and rationale',
               },
             ].map((stat) => (
               <div
@@ -213,6 +214,53 @@ export default function CodeReviewDetailTab(): JSX.Element {
               </div>
             ))}
           </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        label="QUALITY_GATE"
+        icon={<ShieldCheck size={16} color="var(--pipe-text-dim)" />}
+        meta="MATCH + JUDGE LOOP"
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+          {[
+            {
+              icon: Network,
+              label: 'HYPERGRAPH MATCH',
+              text: 'Match decisions connect role terms, person evidence, and repo source spans through source-backed context records.',
+            },
+            {
+              icon: ShieldCheck,
+              label: 'VALIDATOR AGENT',
+              text: 'The selected PR must pass deterministic gates for provenance, role alignment, repo spans, stretch bounds, and eligibility.',
+            },
+            {
+              icon: Bot,
+              label: 'AI DEVELOPER',
+              text: 'Candidate comments can trigger implementer pushback so reviewers must defend engineering decisions, not just spot syntax.',
+            },
+          ].map((item) => (
+            <div
+              key={item.label}
+              style={{
+                padding: '14px 16px',
+                background: 'var(--pipe-surface)',
+                border: '1px solid var(--pipe-border)',
+                borderRadius: 10,
+                minWidth: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <item.icon size={12} color="var(--pipe-text-dim)" />
+                <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.16em', color: 'var(--pipe-text-dim)', fontFamily: mono }}>
+                  {item.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pipe-text-muted)', lineHeight: 1.6, fontFamily: mono }}>
+                {item.text}
+              </div>
+            </div>
+          ))}
         </div>
       </SectionCard>
 

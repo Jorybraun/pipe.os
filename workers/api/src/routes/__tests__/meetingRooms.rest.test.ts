@@ -1064,10 +1064,11 @@ describe('meeting room recording living-context route', () => {
     });
 
     const node = sqlite.prepare(
-      `SELECT candidate_id, node_type, narrative_text, source_type, source_reference, extracted_properties_json
+      `SELECT id, candidate_id, node_type, narrative_text, source_type, source_reference, extracted_properties_json
          FROM candidate_nodes
         WHERE candidate_id = ?`,
     ).get(linked?.candidate_id) as {
+      id: string;
       candidate_id: string;
       node_type: string;
       narrative_text: string;
@@ -1087,6 +1088,104 @@ describe('meeting room recording living-context route', () => {
       windowId: 'browser',
       surface: 'win95',
     });
+
+    const sessionContextRecord = sqlite.prepare(
+      `SELECT id, workspace_person_id, interaction_id, record_type, predicate,
+              narrative, qualifiers_json, confidence
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:window_open'`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string;
+      interaction_id: string;
+      record_type: string;
+      predicate: string;
+      narrative: string;
+      qualifiers_json: string;
+      confidence: number;
+    } | undefined;
+    expect(sessionContextRecord).toMatchObject({
+      record_type: 'meeting_session_event',
+      predicate: 'session_event:window_open',
+      confidence: 1,
+    });
+    expect(sessionContextRecord?.narrative).toContain('Window opened: Microsoft Edge');
+    expect(JSON.parse(sessionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'window_open',
+      actor: 'guest',
+      sessionId: node?.source_reference,
+      surface: 'win95',
+    });
+
+    const contextSources = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role,
+              exact_text, content_hash, locator_json
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY source_ref_type`,
+    ).all(sessionContextRecord?.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      source_span_id: string | null;
+      evidence_role: string;
+      exact_text: string | null;
+      content_hash: string | null;
+      locator_json: string;
+    }>;
+    expect(contextSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'meeting_session_event',
+        source_ref_id: node?.id,
+        evidence_role: 'source_event',
+        exact_text: 'Microsoft Edge',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        evidence_role: 'source_text',
+        exact_text: expect.stringContaining('Window opened: Microsoft Edge'),
+        source_span_id: expect.any(String),
+      }),
+    ]));
+    const eventSource = contextSources.find(
+      (source) => source.source_ref_type === 'meeting_session_event',
+    );
+    expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
+    expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
+      sessionId: node?.source_reference,
+      eventType: 'window_open',
+      actor: 'guest',
+      candidateNodeId: node?.id,
+    });
+
+    const contextEntities = sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship, value_json, metadata_json
+         FROM context_record_entities
+        WHERE context_record_id = ?
+        ORDER BY entity_type, relationship`,
+    ).all(sessionContextRecord?.id) as Array<{
+      entity_type: string;
+      entity_id: string | null;
+      relationship: string;
+      value_json: string | null;
+      metadata_json: string;
+    }>;
+    expect(contextEntities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entity_type: 'meeting_session',
+        entity_id: node?.source_reference,
+        relationship: 'source_session',
+      }),
+      expect.objectContaining({
+        entity_type: 'session_event',
+        relationship: 'source_event',
+      }),
+      expect.objectContaining({
+        entity_type: 'workspace_person',
+        entity_id: sessionContextRecord?.workspace_person_id,
+        relationship: 'subject',
+      }),
+    ]));
 
     const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -1323,7 +1422,7 @@ describe('meeting room recording living-context route', () => {
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
       'session_room_surface_change',
       'session_workspace_state',
-      'session_chat_user',
+      'session_chat_message',
       'session_clippy_prompt',
       'session_file_change',
     ]);
@@ -1357,6 +1456,306 @@ describe('meeting room recording living-context route', () => {
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
+  });
+
+  it('syncs durable room activity into source-backed evidence when the host ends the room', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const activitySnapshot = {
+      desktopActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000100000,
+          event: {
+            id: 'evt-enter-95-on-end',
+            clientId: 'host-client',
+            createdAt: 1700000100000,
+            kind: 'SET_ROOM_SURFACE',
+            surface: 'win95',
+          },
+        },
+      ],
+      chatActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000101000,
+          message: {
+            id: 'chat-end-1',
+            clientId: 'guest-client',
+            createdAt: 1700000101000,
+            role: 'GUEST',
+            text: 'I would test the retry branch before touching the queue worker.',
+          },
+        },
+      ],
+      clippyPromptActivityLog: [],
+      fileSystemActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000102000,
+          event: {
+            id: 'fs-end-notes-save',
+            clientId: 'guest-client',
+            createdAt: 1700000102000,
+            kind: 'UPSERT_FILE',
+            file: {
+              id: 'end-notes',
+              name: 'review-notes.txt',
+              kind: 'text',
+              content: 'Candidate plans a focused retry test.',
+              mimeType: 'text/plain',
+              createdAt: 1700000102000,
+              updatedAt: 1700000102000,
+            },
+          },
+        },
+      ],
+    };
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify(activitySnapshot), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INVITED', ?)`,
+    ).run(
+      'scheduled-end-sync',
+      'owner-1',
+      'End Sync Candidate',
+      'end-sync@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'End Sync Candidate',
+        recipientEmail: 'end-sync@example.com',
+        title: 'End sync room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-end-sync',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const endedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-end-sync') as { candidate_id: string } | undefined;
+    expect(linked?.candidate_id).toEqual(expect.any(String));
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'
+        ORDER BY captured_at ASC`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string | null;
+    }>;
+    expect(evidenceRows.map((row) => row.node_type)).toEqual([
+      'session_room_surface_change',
+      'session_chat_message',
+      'session_file_change',
+    ]);
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'I would test the retry branch before touching the queue worker.',
+    );
+    const fileEvidence = evidenceRows.find((row) => row.node_type === 'session_file_change');
+    expect(JSON.parse(fileEvidence?.extracted_properties_json ?? '{}')).toMatchObject({
+      roomActivitySource: 'durable_object',
+      operation: 'upsert',
+      fileId: 'end-notes',
+      contentPreview: 'Candidate plans a focused retry test.',
+    });
+
+    const contextRows = sqlite.prepare(
+      `SELECT predicate
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+        ORDER BY observed_at ASC`,
+    ).all() as Array<{ predicate: string }>;
+    expect(contextRows.map((row) => row.predicate)).toEqual([
+      'session_event:room_surface_change',
+      'session_event:chat_message',
+      'session_event:file_change',
+    ]);
+    expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://do/activity-log',
+    }));
+  });
+
+  it('captures real room lifecycle events as source-backed session evidence', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify({
+          desktopActivityLog: [],
+          chatActivityLog: [],
+          clippyPromptActivityLog: [],
+          fileSystemActivityLog: [],
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INVITED', ?)`,
+    ).run(
+      'scheduled-lifecycle-evidence',
+      'owner-1',
+      'Lifecycle Evidence Candidate',
+      'lifecycle-evidence@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Lifecycle Evidence Candidate',
+        recipientEmail: 'lifecycle-evidence@example.com',
+        title: 'Lifecycle evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-lifecycle-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string };
+      hostToken: string;
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'lifecycle-evidence@example.com' }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+    const invite = await inviteRes.json() as { guestToken: string };
+
+    const guestJoinedRes = await app.request(`/meeting/${invite.guestToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'JOINED' }),
+    }, env, ctx);
+    expect(guestJoinedRes.status).toBe(200);
+
+    const recordingStartedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+    expect(recordingStartedRes.status).toBe(200);
+
+    const guestLeftRes = await app.request(`/meeting/${invite.guestToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'LEFT' }),
+    }, env, ctx);
+    expect(guestLeftRes.status).toBe(200);
+
+    const endedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-lifecycle-evidence') as { candidate_id: string } | undefined;
+    expect(linked?.candidate_id).toEqual(expect.any(String));
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string | null;
+    }>;
+    expect(evidenceRows.map((row) => row.node_type).sort()).toEqual([
+      'session_participant_join',
+      'session_participant_leave',
+      'session_recording_start',
+      'session_recording_stop',
+    ]);
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'Participant joined: Guest joined the 95 Until Infinity room',
+    );
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'Recording started',
+    );
+    const guestJoin = evidenceRows.find((row) => row.node_type === 'session_participant_join');
+    expect(JSON.parse(guestJoin?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'meeting_room_lifecycle',
+      lifecycleEvent: 'JOINED',
+      participantRole: 'GUEST',
+    });
+
+    const contextRows = sqlite.prepare(
+      `SELECT predicate
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+        ORDER BY predicate`,
+    ).all() as Array<{ predicate: string }>;
+    expect(contextRows.map((row) => row.predicate)).toEqual([
+      'session_event:participant_join',
+      'session_event:participant_leave',
+      'session_event:recording_start',
+      'session_event:recording_stop',
+    ]);
+
+    const contextSources = sqlite.prepare(
+      `SELECT csr.exact_text
+         FROM context_record_source_refs csr
+         INNER JOIN context_records cr ON cr.id = csr.context_record_id
+        WHERE cr.record_type = 'meeting_session_event'
+          AND csr.source_ref_type = 'meeting_session_event'
+        ORDER BY csr.exact_text`,
+    ).all() as Array<{ exact_text: string | null }>;
+    expect(contextSources.map((source) => source.exact_text)).toEqual([
+      'Guest joined the 95 Until Infinity room',
+      'Guest left the 95 Until Infinity room',
+      'Recording started for the 95 Until Infinity room',
+      'Recording stopped for the 95 Until Infinity room',
+    ]);
   });
 
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
@@ -1950,6 +2349,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: string | null;
       channel: number | null;
       text: string;
+      metadata: {
+        providerSegmentId?: string | null;
+        speakerMetadataRole?: string | null;
+        speakerMetadataSource?: string | null;
+      } | null;
     }>;
     expect(transcriptSegments).toContainEqual(expect.objectContaining({
       stable_segment_id: 'utterance-0001',
@@ -1957,6 +2361,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: null,
       channel: 1,
       text: 'What system did you improve?',
+      metadata: expect.objectContaining({
+        providerSegmentId: 'dg-host-1',
+        speakerMetadataRole: 'host',
+        speakerMetadataSource: 'local',
+      }),
     }));
     expect(transcriptSegments).toContainEqual(expect.objectContaining({
       stable_segment_id: 'utterance-0002',
@@ -1964,6 +2373,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: created.meeting.contactId,
       channel: 0,
       text: 'I implemented lattice replay buffers for ecommerce order recovery.',
+      metadata: expect.objectContaining({
+        providerSegmentId: 'dg-guest-1',
+        speakerMetadataRole: 'guest',
+        speakerMetadataSource: 'remote',
+      }),
     }));
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
       personContextMode: 'attributed',
@@ -1979,6 +2393,32 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
       speakerMetadata,
       provider: 'deepgram-multichannel',
+    });
+
+    const guestSpan = sqlite.prepare(
+      `SELECT ss.metadata_json AS span_metadata_json,
+              ssa.metadata_json AS attribution_metadata_json
+         FROM source_spans ss
+         JOIN source_span_attributions ssa ON ssa.source_span_id = ss.id
+        WHERE ss.stable_segment_id = 'utterance-0002'`,
+    ).get() as {
+      span_metadata_json: string;
+      attribution_metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(guestSpan?.span_metadata_json ?? '{}')).toMatchObject({
+      speakerRole: 'guest',
+      channel: 0,
+      providerSegmentId: 'dg-guest-1',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
+    });
+    expect(JSON.parse(guestSpan?.attribution_metadata_json ?? '{}')).toMatchObject({
+      contactId: created.meeting.contactId,
+      speakerRole: 'guest',
+      channel: 0,
+      providerSegmentId: 'dg-guest-1',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
     });
 
     const contactGraphRes = await app.request(

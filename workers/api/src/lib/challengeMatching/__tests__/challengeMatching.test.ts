@@ -218,6 +218,46 @@ describe('compileCandidateMatchQuery', () => {
     expect(result.excludedSignalIds).toEqual([]);
   });
 
+  it('expands source-backed compound terms into atomic recall keys', () => {
+    const result = compile([
+      signal('compound-popover', {
+        concepts: ['term:trigger-click-handling-use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('compound-typescript', {
+        concepts: ['term:react-type-script-experience'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+
+    const popoverAtom = result.query.validationAtoms.find((atom) => atom.id === 'compound-popover');
+    expect(popoverAtom?.concepts).toEqual(expect.arrayContaining([
+      'term:trigger-click-handling-use-popover-root',
+      'term:trigger',
+      'term:click',
+      'term:popover',
+      'term:use-popover-root',
+    ]));
+    expect(popoverAtom?.concepts).not.toContain('term:handling');
+
+    const typescriptAtom = result.query.validationAtoms.find((atom) => atom.id === 'compound-typescript');
+    expect(typescriptAtom?.concepts).toEqual(expect.arrayContaining([
+      'term:react-type-script-experience',
+      'term:react',
+      'term:typescript',
+    ]));
+    expect(typescriptAtom?.concepts).not.toContain('term:type');
+    expect(typescriptAtom?.concepts).not.toContain('term:script');
+  });
+
   it('applies episode diminishing returns and excludes a third episode atom', () => {
     const result = compile([
       signal('a', { episodeId: 'same', concepts: ['domain:a'] }),
@@ -331,6 +371,77 @@ describe('recallReviewChallenges', () => {
 
     expect(result.status).toBe('NO_ROLE_SAFE_CHALLENGE');
     expect(result.excludedChallengeIds).toEqual(['unsafe']);
+  });
+
+  it('recalls concept-near popup PRs from compound popover trigger evidence', () => {
+    const compiled = compile([
+      signal('compound-popover', {
+        narrative: 'Implemented popover trigger click handling in usePopoverRoot.',
+        concepts: ['term:trigger-click-handling-use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const exactPopover = challenge('popover-pr', [
+      demand('popover', 1, {
+        concepts: ['term:popover', 'term:click', 'term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+    const nearbyPopup = challenge('popup-trigger-pr', [
+      demand('popup-trigger', 1, {
+        concepts: ['term:popup', 'term:trigger'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+    const unrelatedProgress = challenge('progress-pr', [
+      demand('progress', 1, {
+        concepts: ['term:progress', 'term:aria'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ]);
+
+    const recalled = recallReviewChallenges({
+      query: compiled.query,
+      challenges: [unrelatedProgress, nearbyPopup, exactPopover],
+    });
+    const ranked = rankReviewChallenges(compiled.query, [
+      alignCandidateToChallenge({ query: compiled.query, challenge: nearbyPopup }),
+      alignCandidateToChallenge({ query: compiled.query, challenge: exactPopover }),
+    ]);
+
+    expect(recalled.status).toBe('READY');
+    expect(recalled.challenges.map((item) => item.challenge.id)).toEqual([
+      'popover-pr',
+      'popup-trigger-pr',
+    ]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(ranked.matches.map((match) => match.alignment.challenge.id)).toEqual([
+      'popover-pr',
+      'popup-trigger-pr',
+    ]);
+    expect(ranked.matches[1]?.alignment.eligible).toBe(true);
   });
 });
 
@@ -570,6 +681,115 @@ describe('ranking and explanations', () => {
     expect(explanation.rejectedPackets).toEqual([]);
     expect(explanation.missingEvidence).toEqual([]);
     expect(explanation.stretchAreas).toEqual([]);
+    expect(explanation.assessmentQuality).toEqual(expect.objectContaining({
+      verdict: 'STRONG',
+      score: 10,
+      maxScore: 12,
+      metrics: expect.arrayContaining([
+        expect.objectContaining({ id: 'skill_stack_overlap', score: 2 }),
+        expect.objectContaining({ id: 'pr_reviewability', score: 2 }),
+        expect.objectContaining({ id: 'source_coverage', score: 2 }),
+      ]),
+    }));
+  });
+
+  it('downgrades assessment quality when eligible matches are nearly tied', () => {
+    const { compiled, packet } = directEligibleFixture('deepening');
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const explanation = explainChallengeMatch(alignment, { scoreSeparation: 0.01 });
+
+    const contrastMetric = explanation.assessmentQuality?.metrics.find((metric) =>
+      metric.id === 'contrast_separation'
+    );
+    expect(contrastMetric).toEqual(expect.objectContaining({
+      score: 0,
+      reason: expect.stringContaining('1%'),
+    }));
+    expect(explanation.assessmentQuality?.verdict).toBe('USABLE');
+  });
+
+  it('separates opposing candidate profiles across different review packets', () => {
+    const kafkaCompiled = compile([
+      signal('kafka-one'),
+      signal('kafka-two', {
+        concepts: ['architecture:event-driven'],
+        problems: ['backpressure'],
+        mechanisms: ['bounded-queue'],
+        ownershipActions: ['reviewed'],
+      }),
+    ]);
+    const reactCompiled = compile([
+      signal('react-one', {
+        narrative: 'Reviewed React hooks for stale UI state and component data flow.',
+        concepts: ['technology:react', 'architecture:frontend-state'],
+        problems: ['stale-ui-state'],
+        mechanisms: ['react-hooks'],
+        domains: ['frontend'],
+        businessObjects: ['component'],
+        ownershipActions: ['reviewed'],
+        embedding: [0, 1],
+      }),
+      signal('react-two', {
+        narrative: 'Validated component render behavior and state reset coverage.',
+        concepts: ['technology:react'],
+        problems: ['render-regression'],
+        mechanisms: ['component-tests'],
+        domains: ['frontend'],
+        businessObjects: ['component'],
+        ownershipActions: ['validated'],
+        embedding: [0, 1],
+      }),
+    ]);
+    const kafkaPacket = challenge('kafka-review', [
+      demand('kafka-one', 0.5),
+      demand('kafka-two', 0.5, {
+        concepts: ['architecture:event-driven'],
+        problems: ['backpressure'],
+        mechanisms: ['bounded-queue'],
+        ownershipActions: ['reviewed'],
+      }),
+    ]);
+    const reactPacket = challenge('react-review', [
+      demand('react-one', 0.55, {
+        narrative: 'Review React hook state flow for stale UI state.',
+        concepts: ['technology:react', 'architecture:frontend-state'],
+        problems: ['stale-ui-state'],
+        mechanisms: ['react-hooks'],
+        domains: ['frontend'],
+        businessObjects: ['component'],
+        ownershipActions: ['reviewed'],
+        embedding: [0, 1],
+      }),
+      demand('react-two', 0.45, {
+        narrative: 'Review component test coverage for render regressions.',
+        concepts: ['technology:react'],
+        problems: ['render-regression'],
+        mechanisms: ['component-tests'],
+        domains: ['frontend'],
+        businessObjects: ['component'],
+        ownershipActions: ['validated'],
+        embedding: [0, 1],
+      }),
+    ], {
+      concepts: ['technology:react', 'architecture:frontend-state'],
+    });
+
+    const kafkaRanked = rankReviewChallenges(kafkaCompiled.query, [
+      alignCandidateToChallenge({ query: kafkaCompiled.query, challenge: reactPacket }),
+      alignCandidateToChallenge({ query: kafkaCompiled.query, challenge: kafkaPacket }),
+    ]);
+    const reactRanked = rankReviewChallenges(reactCompiled.query, [
+      alignCandidateToChallenge({ query: reactCompiled.query, challenge: kafkaPacket }),
+      alignCandidateToChallenge({ query: reactCompiled.query, challenge: reactPacket }),
+    ]);
+
+    expect(kafkaRanked.status).toBe('MATCHED');
+    expect(reactRanked.status).toBe('MATCHED');
+    expect(kafkaRanked.matches[0]?.alignment.challenge.id).toBe('kafka-review');
+    expect(reactRanked.matches[0]?.alignment.challenge.id).toBe('react-review');
+    expect(kafkaRanked.matches[0]?.alignment.challenge.id).not.toBe(
+      reactRanked.matches[0]?.alignment.challenge.id,
+    );
   });
 
   it('keeps an eligible source-backed match selected while explaining rejected packets, missing evidence, and stretch areas', () => {
@@ -754,6 +974,8 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
         businessObjects: [],
         ownershipActions: [],
         embedding: undefined,
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
       }),
     ], { concepts: ['term:lattice-replay-buffers'] });
 
@@ -802,6 +1024,231 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(result.eligible).toBe(true);
     expect(result.rejectionReasons).not.toContain('ROLE_RELEVANCE_BELOW_THRESHOLD');
     expect(result.rejectionReasons).not.toContain('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
+  });
+
+  it('accepts moderate source-backed coverage for roleless standalone review matches', () => {
+    const compiled = compile([
+      signal('use-popover-root', {
+        concepts: ['term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('patient-click-threshold', {
+        concepts: ['term:patient-click-threshold'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('javascript-test-runner', {
+        concepts: ['term:javascript-test-runner'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('roleless-moderate', [
+      demand('source', 1 / 6, {
+        concepts: ['term:use-popover-root'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('threshold', 1 / 6, {
+        concepts: ['term:patient-click-threshold'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('test', 1 / 6, {
+        concepts: ['term:javascript-test-runner'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('calls', 1 / 6, {
+        concepts: ['term:click-enabled-timeout-ref'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('imports', 1 / 6, {
+        concepts: ['term:constants'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('contains', 1 / 6, {
+        concepts: ['term:popover-trigger'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      concepts: [
+        'term:use-popover-root',
+        'term:patient-click-threshold',
+        'term:javascript-test-runner',
+        'term:click-enabled-timeout-ref',
+        'term:constants',
+        'term:popover-trigger',
+      ],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment, { scoreSeparation: 0.09 });
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.45);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.60);
+    expect(alignment.eligible).toBe(true);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
+  });
+
+  it('accepts moderate candidate coverage when role-backed source terms align to a reviewable subset', () => {
+    const compiled = compile([
+      signal('use-popover-root', {
+        concepts: ['term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('patient-click-threshold', {
+        concepts: ['term:patient-click-threshold'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('typescript', {
+        concepts: ['term:typescript'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('role-backed-moderate', [
+      demand('source', 1 / 6, {
+        concepts: ['term:use-popover-root'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('threshold', 1 / 6, {
+        concepts: ['term:patient-click-threshold'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('typescript', 1 / 6, {
+        concepts: ['term:typescript'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('test', 1 / 6, {
+        concepts: ['term:javascript-test-runner'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('calls', 1 / 6, {
+        concepts: ['term:click-enabled-timeout-ref'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('contains', 1 / 6, {
+        concepts: ['term:popover-trigger'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      concepts: [
+        'term:use-popover-root',
+        'term:patient-click-threshold',
+        'term:typescript',
+        'term:javascript-test-runner',
+        'term:click-enabled-timeout-ref',
+        'term:popover-trigger',
+      ],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const explanation = explainChallengeMatch(alignment, { scoreSeparation: 0.03 });
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.50);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.60);
+    expect(alignment.roleRelevance).toBe(1);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
+  });
+
+  it('accepts exact source-backed symbol evidence for roleless standalone review when corpus has one strong packet', () => {
+    const compiled = compile([
+      signal('use-popover-root', {
+        concepts: ['term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('roleless-exact-symbol', [
+      demand('source', 1 / 6, {
+        concepts: ['term:use-popover-root'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('threshold', 1 / 6, {
+        concepts: ['term:patient-click-threshold'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('test', 1 / 6, {
+        concepts: ['term:javascript-test-runner'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('calls', 1 / 6, {
+        concepts: ['term:click-enabled-timeout-ref'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('imports', 1 / 6, {
+        concepts: ['term:constants'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('contains', 1 / 6, {
+        concepts: ['term:popover-trigger'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      concepts: [
+        'term:use-popover-root',
+        'term:patient-click-threshold',
+        'term:javascript-test-runner',
+        'term:click-enabled-timeout-ref',
+        'term:constants',
+        'term:popover-trigger',
+      ],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment);
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.10);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.45);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
   });
 
   it('still enforces role relevance when role requirements are present', () => {

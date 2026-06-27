@@ -120,6 +120,17 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 interface RoomDesktopActivityEntry {
@@ -195,6 +206,7 @@ type RoomFileSystemEvent =
       createdAt: number;
       kind: 'DELETE_FILE';
       fileId: string;
+      file?: RoomFile;
     };
 
 interface RoomFileSystemActivityEntry {
@@ -410,6 +422,17 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'WORKSPACE_STATE_CHANGED',
         status,
+        workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
+        errorMessage: this.safeTextOrNull(value.errorMessage, 500),
+        repoUrl: this.safeTextOrNull(value.repoUrl, 500),
+        githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
+        matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
+        canLaunch: this.safeBoolean(value.canLaunch),
+        ttlSeconds: this.safeNumberOrNull(value.ttlSeconds),
+        ttlSource: this.safeTextOrNull(value.ttlSource, 80),
+        expiresAt: this.safeTextOrNull(value.expiresAt, 80),
+        expiringSoon: this.safeBoolean(value.expiringSoon),
+        source: this.safeTextOrNull(value.source, 80) ?? undefined,
       };
     }
     return null;
@@ -560,6 +583,11 @@ export class VideoRoom {
     };
   }
 
+  private chatClientMessageId(value: unknown): string | null {
+    if (!this.isRecord(value)) return null;
+    return this.isSafeFileText(value.id, 120) ? value.id : null;
+  }
+
   private parseChatMessages(value: unknown): RoomChatMessage[] {
     if (!Array.isArray(value)) return [];
     return value
@@ -598,6 +626,20 @@ export class VideoRoom {
 
   private isSafeFileText(value: unknown, maxLength: number): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+  }
+
+  private safeTextOrNull(value: unknown, maxLength: number): string | null | undefined {
+    if (value === null) return null;
+    return this.isSafeFileText(value, maxLength) ? value : undefined;
+  }
+
+  private safeNumberOrNull(value: unknown): number | null | undefined {
+    if (value === null) return null;
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private safeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
   }
 
   private parseRoomFile(value: unknown): RoomFile | null {
@@ -658,12 +700,14 @@ export class VideoRoom {
       };
     }
     if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
+      const file = this.parseRoomFile(value.file);
       return {
         id: value.id,
         clientId: value.clientId,
         createdAt: value.createdAt,
         kind: 'DELETE_FILE',
         fileId: value.fileId,
+        file: file ?? undefined,
       };
     }
     return null;
@@ -678,6 +722,22 @@ export class VideoRoom {
 
   private async getRoomFileSystem(): Promise<RoomFile[]> {
     return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
+  }
+
+  private async enrichFileSystemEvent(event: RoomFileSystemEvent): Promise<RoomFileSystemEvent> {
+    if (event.kind !== 'DELETE_FILE') return event;
+    const files = await this.getRoomFileSystem();
+    const deletedFile = files.find((file) => file.id === event.fileId);
+    if (!deletedFile) {
+      return {
+        id: event.id,
+        clientId: event.clientId,
+        createdAt: event.createdAt,
+        kind: 'DELETE_FILE',
+        fileId: event.fileId,
+      };
+    }
+    return { ...event, file: deletedFile };
   }
 
   private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
@@ -1225,6 +1285,7 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_CHAT_MESSAGE_REJECTED',
           reason: 'ROOM_ENDED',
+          payload: { clientMessageId: this.chatClientMessageId(message.payload) },
         }));
         return;
       }
@@ -1233,12 +1294,18 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_CHAT_MESSAGE_REJECTED',
           reason: 'INVALID_MESSAGE',
+          payload: { clientMessageId: this.chatClientMessageId(message.payload) },
         }));
         return;
       }
       const persistedMessage = { ...chatMessage, role: senderRole };
       await this.persistChatMessage(persistedMessage, senderRole);
       await this.recordChatActivity(persistedMessage, senderRole);
+      ws.send(JSON.stringify({
+        type: 'ROOM_CHAT_MESSAGE_ACK',
+        role: senderRole,
+        payload: persistedMessage,
+      }));
       this.broadcastExcept(ws, JSON.stringify({
         type: 'ROOM_CHAT_MESSAGE',
         role: senderRole,
@@ -1263,12 +1330,13 @@ export class VideoRoom {
         }));
         return;
       }
-      await this.persistFileSystemEvent(event, senderRole);
-      await this.recordFileSystemActivity(event, senderRole);
+      const enrichedEvent = await this.enrichFileSystemEvent(event);
+      await this.persistFileSystemEvent(enrichedEvent, senderRole);
+      await this.recordFileSystemActivity(enrichedEvent, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
         type: 'ROOM_FILE_SYSTEM_EVENT',
         role: senderRole,
-        payload: event,
+        payload: enrichedEvent,
       }));
       return;
     }

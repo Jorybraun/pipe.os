@@ -9,6 +9,8 @@ import {
   type ChallengePacket,
   type ChallengeQuality,
   type ChallengeQualityMetrics,
+  type ChallengeReviewProfile,
+  type ChallengeReviewProfileBasis,
   type ExtractionDiagnostic,
   type NormalizedPullRequestFile,
   type NormalizedPullRequestInput,
@@ -605,6 +607,93 @@ export function scoreChallengeQuality(input: {
   return { score, metrics, gates, eligible: gates.every((result) => result.passed) };
 }
 
+function reviewProfileRationale(input: {
+  basis: ChallengeReviewProfileBasis;
+  difficultyBand: ChallengeReviewProfile['difficultyBand'];
+  expectedSeniority: ChallengeReviewProfile['expectedSeniority'];
+  expectedTimeMinutes: number;
+}): string {
+  const { basis, difficultyBand, expectedSeniority, expectedTimeMinutes } = input;
+  const issueContext = basis.hasIssueContext ? 'issue context' : 'no issue context';
+  const testContext = basis.testChangeCount > 0
+    ? `${basis.testChangeCount} test change${basis.testChangeCount === 1 ? '' : 's'}`
+    : 'no test changes';
+  return [
+    `${difficultyBand} review calibrated for ${expectedSeniority} candidates`,
+    `${expectedTimeMinutes} minute target`,
+    `${basis.changedFileCount} file${basis.changedFileCount === 1 ? '' : 's'}`,
+    `${basis.changedLineCount} changed line${basis.changedLineCount === 1 ? '' : 's'}`,
+    `${basis.sourceHunkCount} source hunk${basis.sourceHunkCount === 1 ? '' : 's'}`,
+    `${basis.demandFamilyCount} demand famil${basis.demandFamilyCount === 1 ? 'y' : 'ies'}`,
+    testContext,
+    issueContext,
+  ].join('; ');
+}
+
+export function buildChallengeReviewProfileFromFacts(
+  basis: ChallengeReviewProfileBasis,
+): ChallengeReviewProfile {
+  let difficultyBand: ChallengeReviewProfile['difficultyBand'] = 'introductory';
+  let expectedSeniority: ChallengeReviewProfile['expectedSeniority'] = 'mid';
+  let expectedTimeMinutes = 30;
+
+  if (
+    basis.changedFileCount > MAX_CHANGED_FILES
+    || basis.changedLineCount > MAX_CHANGED_LINES
+  ) {
+    difficultyBand = 'oversized';
+    expectedSeniority = 'staff';
+    expectedTimeMinutes = 90;
+  } else if (
+    basis.changedLineCount >= 500
+    || basis.changedFileCount >= 15
+    || basis.sourceHunkCount >= 20
+    || basis.demandFamilyCount >= 6
+  ) {
+    difficultyBand = 'advanced';
+    expectedSeniority = 'staff';
+    expectedTimeMinutes = 75;
+  } else if (
+    basis.changedLineCount >= 120
+    || basis.changedFileCount >= 6
+    || basis.sourceHunkCount >= 8
+    || basis.demandFamilyCount >= 4
+  ) {
+    difficultyBand = 'focused';
+    expectedSeniority = 'senior';
+    expectedTimeMinutes = 45;
+  }
+
+  return {
+    source: 'deterministic_engineering_prior',
+    difficultyBand,
+    expectedSeniority,
+    expectedTimeMinutes,
+    basis,
+    rationale: reviewProfileRationale({
+      basis,
+      difficultyBand,
+      expectedSeniority,
+      expectedTimeMinutes,
+    }),
+  };
+}
+
+export function buildChallengeReviewProfile(input: {
+  pr: NormalizedPullRequestInput;
+  demands: ChallengeDemand[];
+}): ChallengeReviewProfile {
+  const { pr, demands } = input;
+  return buildChallengeReviewProfileFromFacts({
+    changedFileCount: pr.changedFiles.length,
+    changedLineCount: pr.changedFiles.reduce((sum, file) => sum + file.additions + file.deletions, 0),
+    sourceHunkCount: pr.changedFiles.reduce((sum, file) => sum + file.hunks.length, 0),
+    testChangeCount: pr.tests.length,
+    demandFamilyCount: new Set(demands.map((demand) => demand.family)).size,
+    hasIssueContext: Boolean(pr.issue?.body?.trim() || (pr.issue?.labels.length ?? 0) > 0),
+  });
+}
+
 export async function buildChallengePacket(
   input: NormalizedPullRequestInput,
 ): Promise<ChallengePacket> {
@@ -612,6 +701,7 @@ export async function buildChallengePacket(
   const demands = await extractChallengeDemands(input);
   const languageSupport = getLanguageSupport(input.primaryLanguage);
   const quality = scoreChallengeQuality({ pr: input, demands, provenanceValid: true });
+  const reviewProfile = buildChallengeReviewProfile({ pr: input, demands });
   const sourceSpanIds = sortedUnique([
     ...input.metadataSourceSpanIds,
     ...input.changedFiles.flatMap((file) => file.hunks.map((hunk) => hunk.sourceSpan.id)),
@@ -656,6 +746,7 @@ export async function buildChallengePacket(
     demands,
     demandFamilies: demands.map((demand) => demand.family).sort(),
     quality,
+    reviewProfile,
   };
   return {
     schemaVersion: REPO_SEMANTIC_GRAPH_SCHEMA_VERSION,

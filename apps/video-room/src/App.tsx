@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Camera,
@@ -10,6 +10,7 @@ import {
   PhoneOff,
   RefreshCcw,
   ShieldCheck,
+  Square,
   SquareTerminal,
   Video,
 } from 'lucide-react';
@@ -28,21 +29,42 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
+import { buildRecordingLifecycleEvidence } from './lib/recordingEvidence';
+import {
+  buildRoomSurfaceChangeEvidence,
+  canControlSharedRoomSurface,
+} from './lib/roomSurfaceEvidence';
+import {
+  buildCodeEditorOpenEvidence,
+  buildWorkspaceStateDesktopEvent,
+} from './lib/workspaceEvidence';
 import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
+  type RoomSurface,
 } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
-import type { AgentChatMessage, AgentRoomAction } from './hooks/useAgentConnection';
+import {
+  agentStatusEvidenceText,
+  type AgentChatMessage,
+  type AgentFileChangeEvent,
+  type AgentRoomAction,
+  type AgentStatus,
+} from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
+import {
+  buildTerminalCommandEvidence,
+  buildTerminalOutputEvidence,
+  type TerminalEvidenceContext,
+} from './lib/terminalProtocol';
 import { NotepadWindow } from './components/NotepadWindow';
-import { PaintWindow, type PaintStroke } from './components/PaintWindow';
+import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
@@ -183,44 +205,65 @@ function stringWindowData(win: WindowState, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+function isPaintPoint(value: unknown): value is { x: number; y: number } {
+  return (
+    Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as { x?: unknown }).x === 'number'
+    && typeof (value as { y?: unknown }).y === 'number'
+  );
+}
+
 function isPaintStroke(value: unknown): value is PaintStroke {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const stroke = value as Partial<PaintStroke>;
   return (
-    typeof stroke.color === 'string'
+    (stroke.kind === undefined || stroke.kind === 'stroke')
+    && typeof stroke.color === 'string'
     && typeof stroke.size === 'number'
     && Array.isArray(stroke.points)
-    && stroke.points.every((point) => (
-      Boolean(point)
-      && typeof point === 'object'
-      && !Array.isArray(point)
-      && typeof (point as { x?: unknown }).x === 'number'
-      && typeof (point as { y?: unknown }).y === 'number'
-    ))
+    && stroke.points.every(isPaintPoint)
   );
 }
 
-function paintStrokesWindowData(win: WindowState): PaintStroke[] {
-  const value = win.data?.strokes;
-  return Array.isArray(value) ? value.filter(isPaintStroke) : [];
+function isPaintShape(value: unknown): value is PaintShape {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const shape = value as Partial<PaintShape>;
+  return (
+    (shape.kind === 'rectangle' || shape.kind === 'diamond' || shape.kind === 'arrow')
+    && typeof shape.color === 'string'
+    && typeof shape.size === 'number'
+    && isPaintPoint(shape.start)
+    && isPaintPoint(shape.end)
+  );
 }
 
-function parsePaintFileContent(content: string): PaintStroke[] {
+function isPaintCanvasItem(value: unknown): value is PaintCanvasItem {
+  return isPaintStroke(value) || isPaintShape(value);
+}
+
+function paintItemsWindowData(win: WindowState): PaintCanvasItem[] {
+  const value = win.data?.strokes;
+  return Array.isArray(value) ? value.filter(isPaintCanvasItem) : [];
+}
+
+function parsePaintFileContent(content: string): PaintCanvasItem[] {
   if (!content) return [];
   try {
     const parsed = JSON.parse(content) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isPaintStroke) : [];
+    return Array.isArray(parsed) ? parsed.filter(isPaintCanvasItem) : [];
   } catch {
     return [];
   }
 }
 
-function serializePaintStrokes(strokes: PaintStroke[]): string {
-  return JSON.stringify(strokes.filter(isPaintStroke));
+function serializePaintItems(items: PaintCanvasItem[]): string {
+  return JSON.stringify(items.filter(isPaintCanvasItem));
 }
 
-function paintStrokesEqual(a: PaintStroke[], b: PaintStroke[]): boolean {
-  return serializePaintStrokes(a) === serializePaintStrokes(b);
+function paintItemsEqual(a: PaintCanvasItem[], b: PaintCanvasItem[]): boolean {
+  return serializePaintItems(a) === serializePaintItems(b);
 }
 
 function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
@@ -257,6 +300,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const callStartedRef = useRef(false);
   const recordingStartedRef = useRef(false);
   const publishedClippyPromptSignatureRef = useRef<string | null>(null);
+  const workspaceEditorOpenEvidenceKeysRef = useRef<Set<string>>(new Set());
+  const publishedWorkspaceStateSignatureRef = useRef<string | null>(null);
+  const terminalCommandSequenceRef = useRef(0);
+  const terminalOutputSequenceRef = useRef(0);
+  const activeTerminalCommandIdRef = useRef<string | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -311,19 +359,51 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     void postRoomEvent(token, 'STARTED');
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
+  const publishWorkspaceStateEvent = useCallback((
+    nextWorkspace: RoomWorkspace | null,
+    source: 'initial_load' | 'launch' | 'refresh' | 'error',
+    options: { errorMessage?: string | null; fallbackRepoUrl?: string | null } = {},
+  ): void => {
+    if (metadata.role !== 'HOST') return;
+    if (!nextWorkspace && !options.errorMessage) return;
+    const event = buildWorkspaceStateDesktopEvent({
+      workspace: nextWorkspace,
+      source,
+      fallbackRepoUrl: options.fallbackRepoUrl,
+      errorMessage: options.errorMessage,
+    });
+    const signature = JSON.stringify(event);
+    if (publishedWorkspaceStateSignatureRef.current === signature) return;
+    publishedWorkspaceStateSignatureRef.current = signature;
+    room.publishDesktopEvent(event);
+  }, [metadata.role, room.publishDesktopEvent]);
+
   useEffect(() => {
-    setWorkspace(metadata.workspace ?? null);
+    const initialWorkspace = metadata.workspace ?? null;
+    setWorkspace(initialWorkspace);
+    publishWorkspaceStateEvent(initialWorkspace, 'initial_load');
     // Always fetch fresh workspace data on room entry; metadata can be stale.
-    void getRoomWorkspace(token).then(setWorkspace).catch(() => {});
-  }, [metadata.workspace, token]);
+    void getRoomWorkspace(token).then((freshWorkspace) => {
+      setWorkspace(freshWorkspace);
+      publishWorkspaceStateEvent(freshWorkspace, 'refresh');
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Workspace status failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(initialWorkspace, 'error', { errorMessage: message });
+    });
+  }, [metadata.workspace, publishWorkspaceStateEvent, token]);
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
     try {
-      setWorkspace(await getRoomWorkspace(token));
+      const nextWorkspace = await getRoomWorkspace(token);
+      setWorkspace(nextWorkspace);
+      publishWorkspaceStateEvent(nextWorkspace, 'refresh');
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Workspace status failed.');
+      const message = error instanceof Error ? error.message : 'Workspace status failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(workspace, 'error', { errorMessage: message });
     }
-  }, [token]);
+  }, [publishWorkspaceStateEvent, token, workspace]);
 
   const launchWorkspace = useCallback(async (): Promise<void> => {
     setWorkspaceLoading(true);
@@ -332,16 +412,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
       const nextWorkspace = await launchRoomWorkspace(token, repoUrl);
       setWorkspace(nextWorkspace);
-      room.publishDesktopEvent({
-        kind: 'WORKSPACE_STATE_CHANGED',
-        status: nextWorkspace.session?.status ?? null,
-      });
+      publishWorkspaceStateEvent(nextWorkspace, 'launch', { fallbackRepoUrl: repoUrl ?? null });
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
+      const message = error instanceof Error ? error.message : 'Workspace launch failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(workspace, 'error', {
+        errorMessage: message,
+        fallbackRepoUrl: workspace?.repoUrl ?? (workspaceRepoInput.trim() || null),
+      });
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [room, token, workspace?.repoUrl, workspaceRepoInput]);
+  }, [publishWorkspaceStateEvent, token, workspace, workspaceRepoInput]);
 
   useEffect(() => {
     if (!workspace?.enabled) return undefined;
@@ -355,17 +437,24 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
+  const canControlRoomSurface = canControlSharedRoomSurface(metadata.role);
   const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({
     id: message.id,
     role: message.role === 'HOST' ? 'host' : 'candidate',
     text: message.text,
     timestamp: message.createdAt,
+    deliveryStatus: message.deliveryStatus,
   }));
   const sendChatMessage = (text: string): void => {
-    room.publishChatMessage(text);
-    captureSessionEvent('ai_chat_user', text, roomActor, {
+    const message = room.publishChatMessage(text);
+    if (!message) return;
+    captureSessionEvent('chat_message', message.text, roomActor, {
+      source: 'room_chat_client_submit',
       surface: room.roomSurface,
       roomPhase: room.phase,
+      roomMessageId: message.id,
+      clientId: message.clientId,
+      deliveryStatus: message.deliveryStatus ?? 'pending',
     });
   };
 
@@ -465,7 +554,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const win = wm.windows.find((entry) => entry.id === 'paint');
     if (!file || !win) return;
     const nextStrokes = parsePaintFileContent(file.content);
-    if (!paintStrokesEqual(paintStrokesWindowData(win), nextStrokes)) {
+    if (!paintItemsEqual(paintItemsWindowData(win), nextStrokes)) {
       wm.updateWindowData('paint', { strokes: nextStrokes });
     }
   }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
@@ -617,14 +706,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
         setRecordingNotice('Recording started. Status will sync when the call ends.');
       });
-      captureSessionEvent('recording_start', 'Recording started', 'host');
+      captureSessionEvent('recording_start', 'Recording started', 'host', buildRecordingLifecycleEvidence({
+        speakerMetadata: composite.speakerMetadata,
+        iceProvider: room.iceProvider,
+        hasTranscriptionAudio: transcriptionTracks.length > 0,
+      }));
     } catch (error) {
       await dispose?.().catch(() => undefined);
       const message = error instanceof Error ? error.message : 'Recording could not start.';
       setRecordingState('failed');
       setRecordingError(message);
     }
-  }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
+  }, [captureSessionEvent, metadata.role, room.iceProvider, room.localStream, room.phase, room.remoteStream, token]);
 
   const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
     if (!recorder || recorder.state === 'inactive') return;
@@ -674,6 +767,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         iceProvider: room.iceProvider,
       });
+      captureSessionEvent('recording_stop', 'Recording stopped', 'host', buildRecordingLifecycleEvidence({
+        speakerMetadata: recordingSpeakerMetadataRef.current,
+        iceProvider: room.iceProvider,
+        hasTranscriptionAudio: Boolean(transcriptionAudio),
+        recordingBytes: blob.size,
+        recordingMimeType: blob.type || null,
+        transcriptionBytes: transcriptionAudio?.size ?? 0,
+        transcriptionMimeType: transcriptionAudio?.type ?? null,
+        uploadStatus: 'attempting',
+      }));
       const result = await uploadRecording(
         token,
         blob,
@@ -714,6 +817,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
+  const stopRecording = async (): Promise<void> => {
+    if (metadata.role !== 'HOST' || recordingState !== 'recording' || !recorderRef.current) return;
+    try {
+      await stopAndUploadRecording();
+    } catch {
+      // stopAndUploadRecording already surfaced the error in state.
+    }
+  };
+
   const endCall = async (): Promise<void> => {
     if (endingRef.current) return;
     endingRef.current = true;
@@ -734,8 +846,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         failed = true;
       }
       try {
-        if (recordingStartedRef.current) {
+        if (recordingStartedRef.current && recorderRef.current) {
           await stopAndUploadRecording();
+        } else if (recordingStartedRef.current && recordingState === 'saved') {
+          setRecordingNotice((notice) => notice ?? 'Recording saved. Transcript processing has started.');
         } else {
           setRecordingNotice('Call ended without a recording.');
         }
@@ -756,6 +870,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const workspaceUrl = workspaceReady && workspaceSession
     ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
     : null;
+  useEffect(() => {
+    setIframeLoaded(false);
+  }, [workspaceUrl]);
   const canLaunchWorkspace = metadata.role === 'HOST'
     && hasWorkspaceFeature
     && Boolean(workspace?.canLaunch)
@@ -764,6 +881,75 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
+  const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
+    surface: room.roomSurface,
+    roomPhase: room.phase,
+    workspaceStatus: workspaceSession?.status ?? null,
+    workspaceSessionId: workspaceSession?.sessionId ?? null,
+    repoUrl: workspace?.repoUrl ?? null,
+  }), [
+    room.phase,
+    room.roomSurface,
+    workspace?.repoUrl,
+    workspaceSession?.sessionId,
+    workspaceSession?.status,
+  ]);
+  const captureTerminalCommand = useCallback((command: string): void => {
+    terminalCommandSequenceRef.current += 1;
+    const evidence = buildTerminalCommandEvidence({
+      command,
+      terminalSessionId,
+      commandSequence: terminalCommandSequenceRef.current,
+      context: terminalEvidenceContext,
+    });
+    activeTerminalCommandIdRef.current = evidence.properties.terminalCommandId;
+    captureSessionEvent('terminal_command', evidence.text, roomActor, evidence.properties);
+  }, [
+    terminalEvidenceContext,
+    terminalSessionId,
+    captureSessionEvent,
+    roomActor,
+  ]);
+  const captureTerminalOutput = useCallback((output: string): void => {
+    terminalOutputSequenceRef.current += 1;
+    const evidence = buildTerminalOutputEvidence({
+      output,
+      terminalSessionId,
+      outputSequence: terminalOutputSequenceRef.current,
+      activeCommandId: activeTerminalCommandIdRef.current,
+      context: terminalEvidenceContext,
+    });
+    captureSessionEvent('terminal_output', evidence.text, 'system', evidence.properties);
+  }, [
+    terminalEvidenceContext,
+    terminalSessionId,
+    captureSessionEvent,
+  ]);
+
+  const captureWorkspaceEditorOpen = useCallback((): void => {
+    setIframeLoaded(true);
+    const evidence = buildCodeEditorOpenEvidence({
+      workspace,
+      actor: roomActor,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+    });
+    if (!evidence) return;
+    const sessionId = typeof evidence.properties.workspaceSessionId === 'string'
+      ? evidence.properties.workspaceSessionId
+      : 'unknown-workspace-session';
+    const evidenceKey = `${sessionId}:${roomActor}`;
+    if (workspaceEditorOpenEvidenceKeysRef.current.has(evidenceKey)) return;
+    workspaceEditorOpenEvidenceKeysRef.current.add(evidenceKey);
+    captureSessionEvent('code_editor_open', evidence.text, roomActor, evidence.properties);
+  }, [
+    captureSessionEvent,
+    room.phase,
+    room.roomSurface,
+    roomActor,
+    workspace,
+  ]);
 
   const canStartCall = metadata.role === 'HOST' && (
     room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
@@ -773,6 +959,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     && hasConnectedMedia
     && !recorderRef.current
     && (recordingState === 'idle' || recordingState === 'failed');
+  const canStopRecording = metadata.role === 'HOST'
+    && recordingState === 'recording'
+    && Boolean(recorderRef.current);
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
   const isConnecting = room.phase === 'connecting';
   const isOpening = room.phase === 'disconnected';
@@ -788,6 +977,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     failed: 'Save failed',
   }[recordingState];
   const visibleRecordingNotice = recordingError ?? recordingNotice;
+  const inlineRecordingNotice = (
+    recordingState === 'uploading'
+    || recordingState === 'saved'
+    || recordingState === 'failed'
+  )
+    ? visibleRecordingNotice
+    : null;
   const recordingButtonLabel = {
     idle: 'Start recording',
     starting: 'Starting',
@@ -841,9 +1037,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       proactiveClippyPrompt = {
         source: 'system',
         targetRoles: ['HOST'],
-        text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
+        text: "It looks like you're recording the session. You can stop recording when you're done.",
         hold: true,
-        actions,
+        actions: [
+          { id: 'stop-recording', label: 'Stop recording', disabled: !canStopRecording },
+          ...(actions ?? []),
+        ],
       };
     } else if (room.phase === 'ended') {
       proactiveClippyPrompt = {
@@ -1012,23 +1211,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     );
   }
 
-  const enterWin95Desktop = (): void => {
-    if (metadata.role !== 'HOST') return;
-    room.setRoomSurface('win95');
-    captureSessionEvent('window_focus', '95 Until Infinity desktop', 'host', {
-      surface: 'win95',
-      action: 'enter_desktop',
+  const setSharedRoomSurface = (surface: RoomSurface): void => {
+    if (!canControlRoomSurface || room.roomSurface === surface) return;
+    const evidence = buildRoomSurfaceChangeEvidence({
+      actor: roomActor,
+      previousSurface: room.roomSurface,
+      nextSurface: surface,
+      roomPhase: room.phase,
     });
+    room.setRoomSurface(surface);
+    captureSessionEvent('room_surface_change', evidence.text, roomActor, evidence.properties);
   };
 
-  const exitWin95Desktop = (): void => {
-    if (metadata.role !== 'HOST') return;
-    room.setRoomSurface('standard');
-    captureSessionEvent('window_focus', 'Standard call surface', 'host', {
-      surface: 'standard',
-      action: 'exit_desktop',
-    });
-  };
+  const enterWin95Desktop = (): void => setSharedRoomSurface('win95');
+
+  const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
   const openWorkspaceWindow = (): void => {
     if (!showWorkspacePanel) return;
@@ -1094,7 +1291,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const openPaintWindow = (strokes?: PaintStroke[]): void => {
+  const openPaintWindow = (strokes?: PaintCanvasItem[]): void => {
     const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     openSharedWindow({
       id: 'paint',
@@ -1127,7 +1324,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const savePaintStrokes = (strokes: PaintStroke[]): void => {
+  const savePaintItems = (strokes: PaintCanvasItem[]): void => {
     updateSharedWindowData('paint', { strokes });
     const existing = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     const now = Date.now();
@@ -1137,13 +1334,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         id: PAINT_FILE_ID,
         name: PAINT_FILE_NAME,
         kind: 'paint',
-        content: serializePaintStrokes(strokes),
+        content: serializePaintItems(strokes),
         mimeType: 'application/json',
         metadata: { app: 'paint', path: `Desktop/${PAINT_FILE_NAME}` },
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       },
     });
+  };
+
+  const previewPaintItems = (strokes: PaintCanvasItem[]): void => {
+    updateSharedWindowData('paint', { strokes });
   };
 
   const openRoomFile = (file: RoomFile): void => {
@@ -1174,49 +1375,73 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyAction = (actionId: string, text: string): void => {
+  const captureClippyAction = (
+    actionId: string,
+    text: string,
+    options: {
+      origin: 'prompt' | 'agent';
+      agentAction?: AgentRoomAction;
+    },
+  ): void => {
     captureSessionEvent('clippy_action', text, roomActor, {
       actionId,
+      origin: options.origin,
+      executedBy: roomActor,
+      actionSource: options.origin === 'agent'
+        ? options.agentAction?.source ?? 'agent_stdout_action'
+        : 'clippy_prompt_ui',
+      agent: options.agentAction?.agentName ?? null,
+      agentActionLabel: options.agentAction?.label ?? null,
+      agentActionText: options.agentAction?.text ?? null,
+      bridgeEventType: options.agentAction?.bridgeEventType ?? null,
+      actionProtocol: options.agentAction?.protocol ?? null,
+      autoExecute: options.agentAction?.autoExecute ?? null,
+      url: options.agentAction?.url ?? null,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
     });
   };
 
-  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent' } = {}): void => {
+  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
     const source = options.source ?? 'prompt';
+    const actionEvidence = { origin: source, agentAction: options.agentAction } as const;
     switch (actionId) {
       case 'start-recording':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`, actionEvidence);
         void startRecording();
         break;
+      case 'stop-recording':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: stop recording`, actionEvidence);
+        void stopRecording();
+        break;
       case 'launch-workspace':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`, actionEvidence);
         openWorkspaceWindow();
         void launchWorkspace();
         break;
       case 'open-workspace':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`, actionEvidence);
         openWorkspaceWindow();
         break;
       case 'open-terminal':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`, actionEvidence);
         openTerminalWindow();
         break;
       case 'open-browser':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`, actionEvidence);
         openBrowserWindow(options.url ?? '');
         break;
       case 'open-files':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`, actionEvidence);
         openFilesWindow();
         break;
       case 'open-notepad':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`, actionEvidence);
         openNotepadWindow();
         break;
       case 'open-paint':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`, actionEvidence);
         openPaintWindow();
         break;
       default:
@@ -1229,12 +1454,68 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const handleAgentRoomAction = (action: AgentRoomAction): void => {
-    executeRoomAction(action.id, { url: action.url, source: 'agent' });
+    executeRoomAction(action.id, { url: action.url, source: 'agent', agentAction: action });
   };
 
-  const captureClippyUserChatMessage = (text: string): void => {
-    captureSessionEvent('ai_chat_user', text, roomActor, {
-      source: 'clippy_agent_chat',
+  const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
+    captureSessionEvent('ai_chat_user', message.text, roomActor, {
+      source: 'clippy_agent_chat_client_submit',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      deliveryStatus: 'sent_to_bridge',
+      messageTimestamp: message.timestamp,
+    });
+  };
+
+  const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
+    const isAgentResponse = message.source === 'agent_stdout' || message.source === undefined;
+    if (isAgentResponse) {
+      captureSessionEvent('ai_chat_agent', message.text, 'agent', {
+        source: 'clippy_agent_chat',
+        agent: message.agentName ?? 'devin',
+        surface: room.roomSurface,
+        roomPhase: room.phase,
+        workspaceStatus: workspaceSession?.status ?? null,
+        workspaceSessionId: workspaceSession?.sessionId ?? null,
+        messageTimestamp: message.timestamp,
+      });
+      return;
+    }
+    captureSessionEvent('ai_agent_status', message.text, 'agent', {
+      source: 'clippy_agent_bridge',
+      agent: message.agentName ?? 'devin',
+      status: message.agentStatus ?? null,
+      diagnosticSource: message.diagnosticSource ?? message.source,
+      bridgeMessageSource: message.source,
+      observedAt: message.observedAt ?? null,
+      exitCode: message.exitCode ?? null,
+      signal: message.signal ?? null,
+      truncated: message.truncated ?? null,
+      promptType: message.promptType ?? null,
+      deliveredToAgent: message.deliveredToAgent ?? null,
+      promptLength: message.promptLength ?? null,
+      promptFingerprint: message.promptFingerprint ?? null,
+      roomContextStatus: message.roomContextStatus ?? null,
+      roomContextLength: message.roomContextLength ?? null,
+      roomContextFingerprint: message.roomContextFingerprint ?? null,
+      userMessageLength: message.userMessageLength ?? null,
+      userMessageFingerprint: message.userMessageFingerprint ?? null,
+      contextTruncated: message.contextTruncated ?? null,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      messageTimestamp: message.timestamp,
+    });
+  };
+
+  const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
+    captureSessionEvent('ai_agent_status', agentStatusEvidenceText(status, agentName), 'agent', {
+      source: 'clippy_agent_bridge',
+      agent: agentName,
+      status,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
@@ -1242,15 +1523,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
-    captureSessionEvent('ai_chat_agent', message.text, 'agent', {
-      source: 'clippy_agent_chat',
-      agent: 'devin',
+  const captureClippyFileChange = (event: AgentFileChangeEvent): void => {
+    if (event.persisted) return;
+    captureSessionEvent('file_change', event.filePath, 'system', {
+      source: event.source ?? 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      action: event.actionName,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
-      messageTimestamp: message.timestamp,
+      repoUrl: workspace?.repoUrl ?? null,
+      observedAt: event.observedAt ?? null,
+      contentHash: event.contentHash ?? null,
+      sizeBytes: event.sizeBytes ?? null,
+      contentPreview: event.contentPreview ?? null,
+      bridgePersisted: false,
     });
   };
 
@@ -1355,15 +1643,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
-                <button
-                  className={`win95-video-btn${recordingState === 'recording' ? ' is-recording' : ''}`}
-                  onClick={() => void startRecording()}
-                  disabled={!canStartRecording}
-                  aria-label={recordingButtonLabel}
-                  data-testid="start-recording"
-                >
-                  <Circle size={14} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
-                </button>
+                recordingState === 'recording' ? (
+                  <button
+                    className="win95-video-btn is-recording"
+                    onClick={() => void stopRecording()}
+                    disabled={!canStopRecording}
+                    aria-label="Stop recording"
+                    data-testid="stop-recording"
+                  >
+                    <Square size={14} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    className="win95-video-btn"
+                    onClick={() => void startRecording()}
+                    disabled={!canStartRecording}
+                    aria-label={recordingButtonLabel}
+                    data-testid="start-recording"
+                  >
+                    <Circle size={14} fill="none" />
+                  </button>
+                )
               )}
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
                 <span
@@ -1371,6 +1671,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   data-testid="recording-state"
                 >
                   {recordingLabel}
+                </span>
+              )}
+              {metadata.role === 'HOST' && inlineRecordingNotice && (
+                <span className="win95-recording-state" data-testid="recording-save-status">
+                  {inlineRecordingNotice}
                 </span>
               )}
               <button className="win95-video-btn is-hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
@@ -1397,7 +1702,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   className="win95-workspace-iframe"
                   data-testid="workspace-iframe"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
-                  onLoad={() => setIframeLoaded(true)}
+                  onLoad={captureWorkspaceEditorOpen}
                 />
               </>
             ) : (
@@ -1490,8 +1795,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'paint':
         return (
           <PaintWindow
-            strokes={paintStrokesWindowData(win)}
-            onChange={savePaintStrokes}
+            strokes={paintItemsWindowData(win)}
+            onChange={savePaintItems}
+            onPreview={previewPaintItems}
             saveStatus={`Desktop/${PAINT_FILE_NAME}`}
           />
         );
@@ -1502,6 +1808,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             wsUrl={workspaceSession && hasActiveWorkspace
               ? roomTerminalWsUrl(token, workspaceSession.sessionId)
               : ''}
+            onCommand={captureTerminalCommand}
+            onOutput={captureTerminalOutput}
           />
         );
 
@@ -1524,7 +1832,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onWindowMaximize={maximizeSharedWindow}
       onWindowMove={moveSharedWindow}
       onWindowMoveEnd={publishSharedWindowMove}
-      canExitDesktop={metadata.role === 'HOST'}
+      canExitDesktop={canControlRoomSurface}
       onExitDesktop={exitWin95Desktop}
       peerCursors={room.peerCursors}
       onCursorMove={room.publishCursorPresence}
@@ -1535,7 +1843,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       renderWindowContent={renderWindowContent}
       recordingLabel={recordingLabel}
       recordingActive={recordingState === 'recording'}
-      canEnterDesktop={metadata.role === 'HOST'}
+      canEnterDesktop={canControlRoomSurface}
       onEnterDesktop={enterWin95Desktop}
     />
   );
@@ -1564,6 +1872,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onAgentRoomAction={handleAgentRoomAction}
           onUserChatMessage={captureClippyUserChatMessage}
           onAgentChatMessage={captureClippyAgentChatMessage}
+          onAgentStatus={captureClippyAgentStatus}
+          onAgentFileChange={captureClippyFileChange}
         />
       )}
       {room.phase === 'ended' && (

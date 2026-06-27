@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, X, Globe } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from 'lucide-react';
 
 export interface BrowserWindowProps {
   initialUrl?: string;
@@ -7,17 +7,52 @@ export interface BrowserWindowProps {
   onNavigate?: (url: string) => void;
 }
 
+const EMBED_BLOCKED_HOSTS = [
+  'accounts.google.com',
+  'docs.google.com',
+  'github.com',
+  'google.com',
+  'linkedin.com',
+  'mail.google.com',
+  'notion.so',
+  'stackoverflow.com',
+  'twitter.com',
+  'x.com',
+  'youtube.com',
+];
+
+function normalizeUrl(target: string): string | null {
+  let normalized = target.trim();
+  if (!normalized) return null;
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = 'https://' + normalized;
+  }
+  return normalized;
+}
+
+function isKnownEmbedBlockedUrl(target: string): boolean {
+  try {
+    const host = new URL(target).hostname.replace(/^www\./, '').toLowerCase();
+    return EMBED_BLOCKED_HOSTS.some((blockedHost) => host === blockedHost || host.endsWith(`.${blockedHost}`));
+  } catch {
+    return false;
+  }
+}
+
 export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: BrowserWindowProps): JSX.Element {
   const [url, setUrl] = useState(initialUrl);
   const [inputUrl, setInputUrl] = useState(initialUrl);
   const [history, setHistory] = useState<string[]>(initialUrl ? [initialUrl] : []);
   const [historyIdx, setHistoryIdx] = useState(initialUrl ? 0 : -1);
+  const [iframeFailed, setIframeFailed] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const embedBlocked = Boolean(url) && (isKnownEmbedBlockedUrl(url) || iframeFailed);
 
   useEffect(() => {
     if (currentUrl === undefined || currentUrl === url) return;
     setUrl(currentUrl);
     setInputUrl(currentUrl);
+    setIframeFailed(false);
     if (!currentUrl) {
       setHistory([]);
       setHistoryIdx(-1);
@@ -32,13 +67,11 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
   }, [currentUrl, url]);
 
   const navigate = useCallback((target: string) => {
-    let normalized = target.trim();
+    const normalized = normalizeUrl(target);
     if (!normalized) return;
-    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-      normalized = 'https://' + normalized;
-    }
     setUrl(normalized);
     setInputUrl(normalized);
+    setIframeFailed(false);
     const newHistory = history.slice(0, historyIdx + 1);
     newHistory.push(normalized);
     setHistory(newHistory);
@@ -49,20 +82,26 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
   const goBack = useCallback(() => {
     if (historyIdx > 0) {
       const idx = historyIdx - 1;
+      const nextUrl = history[idx];
       setHistoryIdx(idx);
-      setUrl(history[idx]);
-      setInputUrl(history[idx]);
+      setUrl(nextUrl);
+      setInputUrl(nextUrl);
+      setIframeFailed(false);
+      onNavigate?.(nextUrl);
     }
-  }, [history, historyIdx]);
+  }, [history, historyIdx, onNavigate]);
 
   const goForward = useCallback(() => {
     if (historyIdx < history.length - 1) {
       const idx = historyIdx + 1;
+      const nextUrl = history[idx];
       setHistoryIdx(idx);
-      setUrl(history[idx]);
-      setInputUrl(history[idx]);
+      setUrl(nextUrl);
+      setInputUrl(nextUrl);
+      setIframeFailed(false);
+      onNavigate?.(nextUrl);
     }
-  }, [history, historyIdx]);
+  }, [history, historyIdx, onNavigate]);
 
   const reload = useCallback(() => {
     if (iframeRef.current && url) {
@@ -77,6 +116,11 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
       navigate(inputUrl);
     }
   }, [inputUrl, navigate]);
+
+  const openExternally = useCallback((): void => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [url]);
 
   return (
     <div className="win95-browser">
@@ -127,13 +171,24 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
         </button>
       </div>
       <div className="win95-browser-content">
-        {url ? (
+        {embedBlocked ? (
+          <div className="win95-browser-blocked" data-testid="room-browser-embed-blocked">
+            <Globe size={46} />
+            <strong>This site blocks embedded browsing.</strong>
+            <p>{url}</p>
+            <button type="button" className="win95-browser-open-external" onClick={openExternally}>
+              <ExternalLink size={14} />
+              Open site
+            </button>
+          </div>
+        ) : url ? (
           <iframe
             ref={iframeRef}
             src={url}
             className="win95-browser-iframe"
             title="Browser"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+            onError={() => setIframeFailed(true)}
           />
         ) : (
           <div className="win95-browser-empty">
@@ -143,7 +198,7 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
         )}
       </div>
       <div className="win95-browser-statusbar">
-        <span>{url ? 'Done' : 'Ready'}</span>
+        <span>{embedBlocked ? 'Blocked by site' : url ? 'Done' : 'Ready'}</span>
         <span>Edge Zone</span>
       </div>
     </div>

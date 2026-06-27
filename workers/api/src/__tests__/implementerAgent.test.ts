@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callImplementerAgent, type CallImplementerAgentInput } from '../lib/implementerAgent';
+import {
+  AiDeveloperUnavailableError,
+  callImplementerAgent,
+  type CallImplementerAgentInput,
+} from '../lib/implementerAgent';
 
 // ─── Mock Workers AI binding ────────────────────────────────────────────────
 
@@ -161,5 +165,144 @@ describe('callImplementerAgent', () => {
     const results = await callImplementerAgent(BASE_INPUT);
     expect(results).toHaveLength(1);
     expect(results[0]!.updated_code).toBe('const x = 1;');
+  });
+
+  it('extracts a JSON array from provider prose around the response', async () => {
+    const wrappedResponse = [
+      'Here is the author response:',
+      JSON.stringify([
+        { to_comment_id: 1, content: 'Please justify why this blocks the PR.', move: 'pushback' },
+      ]),
+      'Let me know if you need another round.',
+    ].join('\n');
+
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(wrappedResponse));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('pushback');
+  });
+
+  it('unwraps model responses that incorrectly wrap the array in a responses object', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(JSON.stringify({
+      responses: [
+        { to_comment_id: 1, content: 'I will add the missing regression test.', move: 'change', updated_code: 'it("covers encoding", () => {});' },
+      ],
+    })));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      to_comment_id: 1,
+      move: 'change',
+      updated_code: 'it("covers encoding", () => {});',
+    });
+  });
+
+  it('accepts a single structured response object without fabricating content', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(JSON.stringify({
+      to_comment_id: 1,
+      content: 'I need a failing case before changing the implementation.',
+      move: 'pushback',
+    })));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toEqual([{
+      to_comment_id: 1,
+      content: 'I need a failing case before changing the implementation.',
+      move: 'pushback',
+    }]);
+  });
+
+  it('repairs raw newlines inside model string fields', async () => {
+    mockAiRun.mockResolvedValueOnce(workersAiResponse(`[
+      {
+        "to_comment_id": 1,
+        "content": "I agree with the test gap.
+I will add a regression before merge.",
+        "move": "change",
+        "updated_code": "test('encodes urls', () => {
+  expect(encode('a b')).toBe('a%20b');
+});"
+      }
+    ]`));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.content).toContain('I will add a regression');
+    expect(results[0]!.updated_code).toContain("expect(encode('a b')).toBe('a%20b');");
+  });
+
+  it('reads nested Workers AI text response objects', async () => {
+    mockAiRun.mockResolvedValueOnce({
+      response: {
+        text: JSON.stringify([
+          { to_comment_id: 1, content: 'I will add the missing regression.', move: 'change', updated_code: 'expect(encoded).toBe(true);' },
+        ]),
+      },
+    });
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('change');
+    expect(results[0]!.updated_code).toBe('expect(encoded).toBe(true);');
+  });
+
+  it('retries the Workers AI fallback model when the primary response is empty', async () => {
+    mockAiRun
+      .mockResolvedValueOnce(workersAiResponse(''))
+      .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
+        { to_comment_id: 1, content: 'I need a concrete failing case before changing this.', move: 'pushback' },
+      ])));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
+    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.move).toBe('pushback');
+  });
+
+  it('retries the Workers AI fallback model when the primary response is prose without JSON', async () => {
+    mockAiRun
+      .mockResolvedValueOnce(workersAiResponse('I agree with the reviewer.'))
+      .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
+        { to_comment_id: 1, content: 'I will add the regression coverage.', move: 'change', updated_code: 'test(\"encodes urls\", () => {});' },
+      ])));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(results[0]!.move).toBe('change');
+    expect(results[0]!.updated_code).toBe('test("encodes urls", () => {});');
+  });
+
+  it('returns an AI_DEVELOPER_UNAVAILABLE diagnostic instead of a fake author response', async () => {
+    await expect(callImplementerAgent({
+      ...BASE_INPUT,
+      ai: undefined,
+      provider: 'workers-ai',
+    })).rejects.toMatchObject({
+      name: 'AiDeveloperUnavailableError',
+      diagnostic: {
+        mode: 'AI_DEVELOPER_UNAVAILABLE',
+        verdict: 'AI_DEVELOPER_UNAVAILABLE',
+        provider: 'workers-ai',
+        retryable: true,
+      },
+    } satisfies Partial<AiDeveloperUnavailableError>);
+  });
+
+  it('does not fall back to fake author responses when the provider call fails', async () => {
+    mockAiRun.mockRejectedValueOnce(new Error('provider unavailable'));
+
+    await expect(callImplementerAgent(BASE_INPUT)).rejects.toMatchObject({
+      name: 'AiDeveloperUnavailableError',
+      diagnostic: {
+        mode: 'AI_DEVELOPER_UNAVAILABLE',
+        verdict: 'AI_DEVELOPER_UNAVAILABLE',
+        provider: 'workers-ai',
+        retryable: true,
+      },
+    } satisfies Partial<AiDeveloperUnavailableError>);
   });
 });

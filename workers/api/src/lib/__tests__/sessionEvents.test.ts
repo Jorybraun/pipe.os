@@ -178,8 +178,8 @@ describe('sessionEvents', () => {
   });
 
   describe('roomActivitySnapshotToSessionEvents', () => {
-    it('converts durable room activity logs into source-backed session events', () => {
-      const events = roomActivitySnapshotToSessionEvents({
+    it('converts durable room activity logs into source-backed session events', async () => {
+      const events = await roomActivitySnapshotToSessionEvents({
         desktopActivityLog: [
           {
             role: 'HOST',
@@ -201,6 +201,29 @@ describe('sessionEvents', () => {
               createdAt: 1700000001000,
               kind: 'WORKSPACE_STATE_CHANGED',
               status: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              githubPrNumber: 14435,
+              matchedRepoId: 42,
+              ttlSeconds: 3600,
+              ttlSource: 'default',
+              expiringSoon: false,
+              source: 'launch',
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000001500,
+            event: {
+              id: 'evt-browser-moved',
+              clientId: 'guest-client',
+              createdAt: 1700000001500,
+              kind: 'UPDATE_WINDOW_STATE',
+              windowId: 'browser',
+              x: 220,
+              y: 140,
+              focused: true,
+              minimized: false,
             },
           },
         ],
@@ -251,6 +274,26 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000005000,
+            event: {
+              id: 'fs-notes-delete',
+              clientId: 'guest-client',
+              createdAt: 1700000005000,
+              kind: 'DELETE_FILE',
+              fileId: 'notepad',
+              file: {
+                id: 'notepad',
+                name: 'notes.txt',
+                kind: 'text',
+                content: 'Candidate identified retry bug evidence.',
+                mimeType: 'text/plain',
+                createdAt: 1700000004000,
+                updatedAt: 1700000004000,
+              },
+            },
+          },
         ],
       }, {
         candidateId: 'cand-room',
@@ -267,12 +310,28 @@ describe('sessionEvents', () => {
           timestamp: 1700000000,
         }),
         expect.objectContaining({
+          type: 'window_update',
+          actor: 'guest',
+          text: 'browser',
+        }),
+        expect.objectContaining({
           type: 'workspace_state',
           actor: 'host',
           text: 'Workspace state changed to READY',
+          properties: expect.objectContaining({
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+            githubPrNumber: 14435,
+            matchedRepoId: 42,
+            ttlSeconds: 3600,
+            ttlSource: 'default',
+            expiringSoon: false,
+            source: 'launch',
+          }),
         }),
         expect.objectContaining({
-          type: 'ai_chat_user',
+          type: 'chat_message',
           actor: 'guest',
           text: 'I found the retry bug in the queue worker.',
         }),
@@ -286,14 +345,41 @@ describe('sessionEvents', () => {
           actor: 'guest',
           text: 'notes.txt',
         }),
+        expect.objectContaining({
+          type: 'file_change',
+          actor: 'guest',
+          text: 'notes.txt',
+        }),
       ]);
-      expect(events[4]!.properties).toMatchObject({
+      expect(events[1]!.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        windowId: 'browser',
+        stateKeys: ['focused', 'minimized', 'x', 'y'],
+        statePatch: {
+          focused: true,
+          minimized: false,
+          x: 220,
+          y: 140,
+        },
+      });
+      expect(events[5]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'upsert',
         fileId: 'notepad',
         fileKind: 'text',
         contentPreview: 'Candidate identified retry bug evidence.',
       });
+      expect(events[5]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[6]!.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        operation: 'delete',
+        fileId: 'notepad',
+        fileName: 'notes.txt',
+        fileKind: 'text',
+        deletedContentLength: 'Candidate identified retry bug evidence.'.length,
+        deletedContentPreview: 'Candidate identified retry bug evidence.',
+      });
+      expect(events[6]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
     });
   });
 

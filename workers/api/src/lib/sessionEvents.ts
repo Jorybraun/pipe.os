@@ -1,11 +1,10 @@
 /**
- * sessionEvents.ts — Capture meeting session events as candidate_nodes.
+ * sessionEvents.ts — Capture meeting session events as source-backed evidence.
  *
  * Every event during a meeting (AI chat, terminal I/O, file changes,
- * browser navigation, window state) becomes a CandidateNode with
- * source_type = 'meeting_session', linked to the candidate being
- * interviewed. These nodes are written to D1 and mirrored to Neo4j,
- * becoming part of the candidate's knowledge graph ("brain").
+ * browser navigation, window state) is preserved as both the legacy
+ * candidate_node compatibility projection and a first-class
+ * meeting_session_event context_record for the evidence hypergraph.
  *
  * The agent (Devin) can query this brain via the /context endpoint
  * on the agent bridge, giving it full context about the person
@@ -14,9 +13,20 @@
 
 import type { CandidateNode } from '../types';
 import { insertCandidateNode } from './candidateDiscovery/candidateNodes';
+import {
+  deterministicEntityId,
+  ensureCandidateLivingContext,
+  LivingContextStore,
+  stableJson,
+  type ContextRecordEntityInput,
+  type ContextRecordSourceInput,
+  type JsonObject,
+  type JsonValue,
+} from './livingContext';
 import { writeCandidateGraphFireAndForget } from './neo4j/writeCandidateGraph';
 
 export type SessionEventType =
+  | 'chat_message'
   | 'ai_chat_user'
   | 'ai_chat_agent'
   | 'ai_agent_status'
@@ -165,12 +175,33 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
 
   if (event.kind === 'WORKSPACE_STATE_CHANGED') {
     const status = stringOrNull(event.status) ?? 'unknown';
+    const properties: Record<string, unknown> = { ...base, workspaceStatus: status };
+    const workspaceSessionId = stringOrNull(event.workspaceSessionId);
+    const errorMessage = stringOrNull(event.errorMessage);
+    const repoUrl = stringOrNull(event.repoUrl);
+    const githubPrNumber = numberOrNull(event.githubPrNumber);
+    const matchedRepoId = numberOrNull(event.matchedRepoId);
+    const ttlSeconds = numberOrNull(event.ttlSeconds);
+    const ttlSource = stringOrNull(event.ttlSource);
+    const expiresAt = stringOrNull(event.expiresAt);
+    const source = stringOrNull(event.source);
+    if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
+    if (errorMessage) properties.errorMessage = errorMessage;
+    if (repoUrl) properties.repoUrl = repoUrl;
+    if (githubPrNumber !== null) properties.githubPrNumber = githubPrNumber;
+    if (matchedRepoId !== null) properties.matchedRepoId = matchedRepoId;
+    if (typeof event.canLaunch === 'boolean') properties.canLaunch = event.canLaunch;
+    if (ttlSeconds !== null) properties.ttlSeconds = ttlSeconds;
+    if (ttlSource) properties.ttlSource = ttlSource;
+    if (expiresAt) properties.expiresAt = expiresAt;
+    if (typeof event.expiringSoon === 'boolean') properties.expiringSoon = event.expiringSoon;
+    if (source) properties.source = source;
     return createSessionEvent(input, {
       type: 'workspace_state',
       timestamp,
       actor,
       text: `Workspace state changed to ${status}`,
-      properties: { ...base, workspaceStatus: status },
+      properties,
     });
   }
 
@@ -222,6 +253,32 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     });
   }
 
+  if (event.kind === 'UPDATE_WINDOW_STATE') {
+    const windowId = stringOrNull(event.windowId);
+    if (!windowId) return null;
+    const statePatch: Record<string, unknown> = {};
+    for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']) {
+      const valueAtKey = event[key];
+      if (typeof valueAtKey === 'number' || typeof valueAtKey === 'boolean') {
+        statePatch[key] = valueAtKey;
+      }
+    }
+    const stateKeys = Object.keys(statePatch).sort();
+    if (stateKeys.length === 0) return null;
+    return createSessionEvent(input, {
+      type: 'window_update',
+      timestamp,
+      actor,
+      text: windowId,
+      properties: {
+        ...base,
+        windowId,
+        statePatch,
+        stateKeys,
+      },
+    });
+  }
+
   return null;
 }
 
@@ -241,7 +298,7 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   if (messageId) properties.roomMessageId = messageId;
   if (clientId) properties.clientId = clientId;
   return createSessionEvent(input, {
-    type: 'ai_chat_user',
+    type: 'chat_message',
     timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),
     actor: actorFromRoomRole(role),
     text,
@@ -282,7 +339,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   });
 }
 
-function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): Promise<SessionEvent | null> {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const role = isRoomActivityRole(value.role) ? value.role : null;
@@ -306,6 +363,7 @@ function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: u
     if (mimeType) properties.mimeType = mimeType;
     if (typeof file.content === 'string') {
       properties.contentLength = file.content.length;
+      properties.contentHash = await deterministicEntityId('content', file.content);
       const preview = compactPreview(file.content);
       if (preview && fileKind !== 'paint') properties.contentPreview = preview;
     }
@@ -323,11 +381,34 @@ function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: u
     if (!fileId) return null;
     properties.operation = 'delete';
     properties.fileId = fileId;
+    let text = fileId;
+    if (isRecord(event.file)) {
+      const file = event.file;
+      const name = stringOrNull(file.name);
+      const fileKind = stringOrNull(file.kind);
+      const mimeType = stringOrNull(file.mimeType);
+      if (name) {
+        properties.fileName = name;
+        text = name;
+      }
+      if (fileKind) properties.fileKind = fileKind;
+      if (mimeType) properties.mimeType = mimeType;
+      if (typeof file.content === 'string') {
+        properties.deletedContentLength = file.content.length;
+        properties.deletedContentHash = await deterministicEntityId('content', file.content);
+        const preview = compactPreview(file.content);
+        if (preview && fileKind !== 'paint') properties.deletedContentPreview = preview;
+      }
+      const createdAt = numberOrNull(file.createdAt);
+      const updatedAt = numberOrNull(file.updatedAt);
+      if (createdAt !== null) properties.deletedFileCreatedAt = createdAt;
+      if (updatedAt !== null) properties.deletedFileUpdatedAt = updatedAt;
+    }
     return createSessionEvent(input, {
       type: 'file_change',
       timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
       actor: actorFromRoomRole(role),
-      text: fileId,
+      text,
       properties,
     });
   }
@@ -335,10 +416,10 @@ function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: u
   return null;
 }
 
-export function roomActivitySnapshotToSessionEvents(
+export async function roomActivitySnapshotToSessionEvents(
   snapshot: unknown,
   input: RoomActivitySyncInput,
-): SessionEvent[] {
+): Promise<SessionEvent[]> {
   if (!isRecord(snapshot)) return [];
   const events: SessionEvent[] = [];
   const pushMapped = (event: SessionEvent | null): void => {
@@ -355,7 +436,9 @@ export function roomActivitySnapshotToSessionEvents(
   desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
-  fileSystemActivityLog.forEach((entry) => pushMapped(fileSystemActivityToSessionEvent(input, entry)));
+  for (const entry of fileSystemActivityLog) {
+    pushMapped(await fileSystemActivityToSessionEvent(input, entry));
+  }
 
   return events.sort((a, b) => (
     a.timestamp - b.timestamp
@@ -392,6 +475,7 @@ function eventToNodePayload(event: SessionEvent): Omit<CandidateNode, 'id' | 'cr
 
 function mapEventTypeToNodeType(type: SessionEventType): string {
   const mapping: Record<SessionEventType, string> = {
+    chat_message: 'session_chat_message',
     ai_chat_user: 'session_chat_user',
     ai_chat_agent: 'session_chat_agent',
     ai_agent_status: 'session_agent_status',
@@ -420,6 +504,8 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
 function formatEventNarrative(event: SessionEvent): string {
   const time = new Date(event.timestamp * 1000).toISOString();
   switch (event.type) {
+    case 'chat_message':
+      return `[${time}] Room chat message from ${event.actor}: "${event.text}"`;
     case 'ai_chat_user':
       return `[${time}] User asked: "${event.text}"`;
     case 'ai_chat_agent':
@@ -467,8 +553,234 @@ function formatEventNarrative(event: SessionEvent): string {
   }
 }
 
+function jsonValue(value: unknown): JsonValue | undefined {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => {
+      const parsed = jsonValue(entry);
+      return parsed === undefined ? [] : [parsed];
+    });
+  }
+  if (typeof value === 'object') {
+    const record: JsonObject = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const parsed = jsonValue(entry);
+      if (parsed !== undefined) record[key] = parsed;
+    }
+    return record;
+  }
+  return undefined;
+}
+
+function jsonObject(value: Record<string, unknown> | undefined): JsonObject {
+  const parsed = jsonValue(value ?? {});
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+}
+
+function stringProperty(record: JsonObject, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function observedAtFromTimestamp(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp < 0) return new Date(0).toISOString();
+  return new Date(Math.round(timestamp) * 1000).toISOString();
+}
+
+async function findCandidateNodeSourceSpanId(
+  db: D1Database,
+  nodeId: string,
+): Promise<string | null> {
+  const row = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+      WHERE a.artifact_type = 'legacy_candidate_node'
+        AND a.logical_key = ?1
+        AND ss.stable_segment_id = ?1
+      LIMIT 1`,
+  ).bind(nodeId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+function sessionEventEntities(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  workspacePersonId: string;
+  properties: JsonObject;
+}): ContextRecordEntityInput[] {
+  const { event, node, workspacePersonId, properties } = input;
+  const entities: ContextRecordEntityInput[] = [
+    {
+      entityType: 'workspace_person',
+      entityId: workspacePersonId,
+      relationship: 'subject',
+    },
+    {
+      entityType: 'candidate',
+      entityId: event.candidateId,
+      relationship: 'legacy_candidate',
+    },
+    {
+      entityType: 'meeting_session',
+      entityId: event.sessionId,
+      relationship: 'source_session',
+    },
+    {
+      entityType: 'session_event',
+      entityId: node.id,
+      relationship: 'source_event',
+      metadata: {
+        eventType: event.type,
+        actor: event.actor,
+        nodeType: node.node_type,
+      },
+    },
+    {
+      entityType: 'session_actor',
+      relationship: 'actor',
+      value: { role: event.actor },
+    },
+  ];
+
+  const surface = stringProperty(properties, 'surface');
+  if (surface) {
+    entities.push({
+      entityType: 'room_surface',
+      relationship: 'event_surface',
+      value: { surface },
+    });
+  }
+
+  const windowId = stringProperty(properties, 'windowId');
+  if (windowId) {
+    entities.push({
+      entityType: 'room_window',
+      entityId: windowId,
+      relationship: 'affected_window',
+      metadata: {
+        windowType: stringProperty(properties, 'windowType'),
+      },
+    });
+  }
+
+  const actionId = stringProperty(properties, 'actionId');
+  if (actionId) {
+    entities.push({
+      entityType: 'room_action',
+      entityId: actionId,
+      relationship: 'requested_action',
+    });
+  }
+
+  return entities;
+}
+
+async function persistSessionEventContextRecord(
+  db: D1Database,
+  event: SessionEvent,
+  node: CandidateNode,
+): Promise<void> {
+  const identity = await ensureCandidateLivingContext(db, event.candidateId);
+  if (!identity) throw new Error(`Candidate "${event.candidateId}" could not be resolved`);
+
+  const store = new LivingContextStore(db);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `legacy-source:${event.candidateId}:meeting_session:${event.sessionId}`,
+    workspacePersonId: identity.workspacePersonId,
+    applicationId: identity.applicationId,
+    interactionType: 'meeting_session',
+    externalReference: event.sessionId,
+    metadata: {
+      compatibilityProjection: true,
+      sessionEventProjection: true,
+    },
+  });
+
+  const narrative = formatEventNarrative(event);
+  const properties = jsonObject(event.properties);
+  const sourcePayload: JsonObject = {
+    type: event.type,
+    sessionId: event.sessionId,
+    candidateId: event.candidateId,
+    timestamp: event.timestamp,
+    actor: event.actor,
+    text: event.text,
+    properties,
+    candidateNodeId: node.id,
+  };
+  const contentHash = await deterministicEntityId('content', stableJson(sourcePayload));
+  const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
+  const sources: ContextRecordSourceInput[] = [
+    {
+      sourceRefType: 'meeting_session_event',
+      sourceRefId: node.id,
+      evidenceRole: 'source_event',
+      locator: {
+        sessionId: event.sessionId,
+        candidateId: event.candidateId,
+        candidateNodeId: node.id,
+        eventType: event.type,
+        actor: event.actor,
+        timestamp: event.timestamp,
+      },
+      exactText: event.text,
+      contentHash,
+      metadata: {
+        nodeType: node.node_type,
+        sourceType: node.source_type,
+        sourceReference: node.source_reference ?? null,
+      },
+    },
+  ];
+  if (sourceSpanId) {
+    sources.push({
+      sourceSpanId,
+      evidenceRole: 'source_text',
+      exactText: narrative,
+      metadata: {
+        source: 'legacy_candidate_node_span',
+        candidateNodeId: node.id,
+      },
+    });
+  }
+
+  await store.upsertContextRecord({
+    ingestionKey: `meeting-session-event:${node.id}:context-record`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    applicationId: identity.applicationId,
+    recordType: 'meeting_session_event',
+    predicate: `session_event:${event.type}`,
+    narrative,
+    qualifiers: {
+      eventType: event.type,
+      actor: event.actor,
+      sessionId: event.sessionId,
+      candidateId: event.candidateId,
+      properties,
+      surface: stringProperty(properties, 'surface'),
+      source: 'meeting_room_session_events',
+    },
+    confidence: node.confidence,
+    polarity: 1,
+    extractionVersion: 'meeting-session-event-v1',
+    observedAt: observedAtFromTimestamp(event.timestamp),
+    sources,
+    entities: sessionEventEntities({
+      event,
+      node,
+      workspacePersonId: identity.workspacePersonId,
+      properties,
+    }),
+  });
+}
+
 /**
- * Persist a session event as a candidate_node in D1 and mirror to Neo4j.
+ * Persist a session event into D1 as both compatibility candidate_node data and
+ * a source-backed meeting_session_event context record, then mirror to Neo4j.
  */
 export async function captureSessionEvent(
   db: D1Database,
@@ -478,6 +790,7 @@ export async function captureSessionEvent(
   try {
     const payload = eventToNodePayload(event);
     const node = await insertCandidateNode(db, payload);
+    await persistSessionEventContextRecord(db, event, node);
 
     // Fire-and-forget write to Neo4j graph
     if (env?.NEO4J_URI && env?.NEO4J_PASSWORD) {
@@ -512,6 +825,7 @@ export async function captureSessionEvents(
     try {
       const payload = eventToNodePayload(event);
       const node = await insertCandidateNode(db, payload);
+      await persistSessionEventContextRecord(db, event, node);
       nodes.push(node);
       captured++;
     } catch {
@@ -558,7 +872,7 @@ export async function syncRoomActivityToSessionEvents(
     const response = await room.fetch(new Request('https://do/activity-log'));
     if (!response.ok) return { captured: 0, failed: 0, events: 0 };
     const snapshot = await response.json().catch(() => null);
-    const events = roomActivitySnapshotToSessionEvents(snapshot, input);
+    const events = await roomActivitySnapshotToSessionEvents(snapshot, input);
     if (events.length === 0) return { captured: 0, failed: 0, events: 0 };
     const result = await captureSessionEvents(db, events, env);
     return {

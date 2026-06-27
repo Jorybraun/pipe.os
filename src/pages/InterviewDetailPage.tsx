@@ -16,7 +16,12 @@ import {
   Video,
 } from 'lucide-react';
 import { useApiClient } from '../hooks/useApiClient';
+import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import type {
+  CodeReviewMatchAlignment,
+  CodeReviewMatchHyperedge,
+  CodeReviewMatchHyperedgeNode,
+  CodeReviewMatchSourceRef,
   ScheduledInterviewDetail,
   TranscriptArtifact,
   TranscriptEntry,
@@ -57,6 +62,37 @@ interface InviteResponse {
   room?: PreparedRoomLinks;
 }
 
+interface CodeReviewAnnotationDetail {
+  file: string;
+  line: number | null;
+  severity: string | null;
+  comment: string;
+}
+
+interface CodeReviewDefenseExchange {
+  actor: 'candidate' | 'ai_developer';
+  round: number | null;
+  move: string | null;
+  content: string;
+  updatedCode: string | null;
+}
+
+interface CodeReviewDefenseThread {
+  commentId: string;
+  file: string;
+  line: number | null;
+  severity: string | null;
+  comment: string;
+  exchanges: CodeReviewDefenseExchange[];
+}
+
+interface CodeReviewSubmissionDetail {
+  verdict: string | null;
+  summary: string | null;
+  annotations: CodeReviewAnnotationDetail[];
+  defenseThreads: CodeReviewDefenseThread[];
+}
+
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
   if (!value) return fallback;
   return new Date(value).toLocaleString(undefined, {
@@ -76,12 +112,194 @@ function formatDurationMs(value: number | null | undefined): string | null {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function titleCaseToken(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatMatchScore(score: number | null | undefined): string | null {
+  if (typeof score !== 'number' || !Number.isFinite(score)) return null;
+  return score.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
+  if (!ref) return null;
+  return ref.exactText
+    ?? ref.locator
+    ?? ref.sourceSpanId
+    ?? ref.sourceRefId
+    ?? null;
+}
+
+function firstSourceRefText(refs: CodeReviewMatchSourceRef[]): string | null {
+  for (const ref of refs) {
+    const text = sourceRefText(ref);
+    if (text) return text;
+  }
+  return null;
+}
+
+function alignmentLabel(alignment: CodeReviewMatchAlignment): string {
+  if (alignment.sharedConcepts.length > 0) {
+    return alignment.sharedConcepts.slice(0, 3).join(', ');
+  }
+  return `${alignment.atomId} -> ${alignment.demandId}`;
+}
+
+function hyperedgeNodeTitle(node: CodeReviewMatchHyperedgeNode): string {
+  return node.label || titleCaseToken(node.kind);
+}
+
+function hyperedgeHasRoleSource(edge: CodeReviewMatchHyperedge): boolean {
+  return edge.relation === 'candidate_role_repo_alignment'
+    || edge.nodes.some((node) => node.kind === 'role_source');
+}
+
+function hyperedgePathLabel(edges: CodeReviewMatchHyperedge[]): string {
+  return edges.some(hyperedgeHasRoleSource)
+    ? 'person evidence -> role context -> repo challenge'
+    : 'candidate evidence -> repo challenge';
+}
+
+function hyperedgeRelationBadge(edge: CodeReviewMatchHyperedge): string {
+  return hyperedgeHasRoleSource(edge) ? 'PERSON_ROLE_REPO' : 'CANDIDATE_REPO';
+}
+
 function providerEventLabel(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   const parts = trimmed.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? trimmed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function reviewCommentContent(record: Record<string, unknown>): string | null {
+  return optionalText(record.what)
+    ?? optionalText(record.comment)
+    ?? optionalText(record.content)
+    ?? null;
+}
+
+function parseCodeReviewDefenseThreads(record: Record<string, unknown>): CodeReviewDefenseThread[] {
+  const transcript = isRecord(record.transcript) ? record.transcript : null;
+  const rounds = transcript && Array.isArray(transcript.rounds) ? transcript.rounds : [];
+  const threads = new Map<string, CodeReviewDefenseThread>();
+
+  rounds.forEach((roundValue, roundIndex) => {
+    if (!isRecord(roundValue)) return;
+    const roundNumber = optionalNumber(roundValue.round) ?? roundIndex + 1;
+    const reviewerComments = Array.isArray(roundValue.reviewer_comments) ? roundValue.reviewer_comments : [];
+
+    reviewerComments.forEach((commentValue, commentIndex) => {
+      if (!isRecord(commentValue)) return;
+      const content = reviewCommentContent(commentValue);
+      if (!content) return;
+      const rawId = typeof commentValue.id === 'number' || typeof commentValue.id === 'string'
+        ? commentValue.id
+        : `${roundNumber}:${commentIndex}`;
+      const commentId = String(rawId);
+      const existing = threads.get(commentId);
+
+      if (!existing) {
+        threads.set(commentId, {
+          commentId,
+          file: optionalText(commentValue.file) ?? 'Unknown file',
+          line: optionalNumber(commentValue.line),
+          severity: optionalText(commentValue.severity),
+          comment: content,
+          exchanges: [],
+        });
+        return;
+      }
+
+      existing.exchanges.push({
+        actor: 'candidate',
+        round: roundNumber,
+        move: null,
+        content,
+        updatedCode: null,
+      });
+    });
+
+    const implementerResponses = Array.isArray(roundValue.implementer_responses)
+      ? roundValue.implementer_responses
+      : [];
+    implementerResponses.forEach((responseValue) => {
+      if (!isRecord(responseValue)) return;
+      const content = optionalText(responseValue.content);
+      if (!content) return;
+      const rawTarget = typeof responseValue.to_comment_id === 'number' || typeof responseValue.to_comment_id === 'string'
+        ? responseValue.to_comment_id
+        : null;
+      if (rawTarget === null) return;
+      const commentId = String(rawTarget);
+      const thread = threads.get(commentId);
+      if (!thread) return;
+      thread.exchanges.push({
+        actor: 'ai_developer',
+        round: roundNumber,
+        move: optionalText(responseValue.move),
+        content,
+        updatedCode: optionalText(responseValue.updated_code),
+      });
+    });
+  });
+
+  return [...threads.values()].filter((thread) => thread.exchanges.length > 0);
+}
+
+function parseCodeReviewSubmission(raw: string | null | undefined): CodeReviewSubmissionDetail | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return null;
+    const record = parsed;
+    const type = typeof record.type === 'string' ? record.type : null;
+    const verdict = typeof record.verdict === 'string' && record.verdict.trim().length > 0
+      ? record.verdict.trim()
+      : null;
+    const summary = typeof record.summary === 'string' && record.summary.trim().length > 0
+      ? record.summary.trim()
+      : null;
+    const annotations = Array.isArray(record.annotations)
+      ? record.annotations.flatMap((entry): CodeReviewAnnotationDetail[] => {
+          if (!entry || typeof entry !== 'object') return [];
+          const annotation = entry as Record<string, unknown>;
+          const comment = typeof annotation.comment === 'string' ? annotation.comment.trim() : '';
+          if (!comment) return [];
+          return [{
+            file: typeof annotation.file === 'string' && annotation.file.trim().length > 0
+              ? annotation.file.trim()
+              : 'Unknown file',
+            line: typeof annotation.line === 'number' && Number.isFinite(annotation.line)
+              ? annotation.line
+              : null,
+            severity: typeof annotation.severity === 'string' && annotation.severity.trim().length > 0
+              ? annotation.severity.trim()
+              : null,
+            comment,
+          }];
+        })
+      : [];
+    const defenseThreads = parseCodeReviewDefenseThreads(record);
+    if (type !== 'CODE_REVIEW' && !verdict && !summary && annotations.length === 0 && defenseThreads.length === 0) return null;
+    return { verdict, summary, annotations, defenseThreads };
+  } catch {
+    return null;
+  }
 }
 
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
@@ -303,6 +521,10 @@ export default function InterviewDetailPage(): JSX.Element {
   const personContextReason = useMemo(
     () => parseAnalysisString(interview?.linkedMeeting?.transcriptAnalysisJson, 'personContextReason'),
     [interview?.linkedMeeting?.transcriptAnalysisJson],
+  );
+  const codeReviewSubmission = useMemo(
+    () => parseCodeReviewSubmission(interview?.submissionJson),
+    [interview?.submissionJson],
   );
 
   const ensureRoomLinks = useCallback(async (): Promise<PreparedRoomLinks | null> => {
@@ -535,7 +757,23 @@ export default function InterviewDetailPage(): JSX.Element {
     ),
   );
   const hasCodeReviewEvidence = Boolean(interview.githubRepoUrl || interview.githubPrNumber || interview.matchedRepoId);
-  const usesWorkspaceInterview = interview.interviewType === 'CODE_REVIEW' || interview.interviewType === 'DEV_CONTAINER_CHALLENGE';
+  const codeReviewMatch = interview.codeReviewMatch ?? null;
+  const primaryMatchEvidence = codeReviewMatch?.evidence[0] ?? null;
+  const primaryMatchHasRoleContext = Boolean(
+    primaryMatchEvidence && (
+      primaryMatchEvidence.roleSourceRefs.length > 0
+      || (codeReviewMatch?.roleSources.length ?? 0) > 0
+      || (codeReviewMatch?.validatorAgent?.sourceBridge?.roleSourceCount ?? 0) > 0
+    ),
+  );
+  const matchHyperedges = codeReviewMatch?.evidenceHyperedges ?? [];
+  const matchScore = formatMatchScore(codeReviewMatch?.score);
+  const codeReviewProfile = asCodeReviewReviewProfile(codeReviewMatch?.reviewProfile);
+  const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
+  const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
+  const showsRoomPanel = !isCodeReviewInterview;
+  const showsCallRecord = !isCodeReviewInterview || Boolean(interview.linkedMeeting || interview.transcriptArtifact);
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'
     ? 'Transcription is processing. Context will update when source-backed transcript spans are ready.'
     : isStaleRecording
@@ -574,66 +812,68 @@ export default function InterviewDetailPage(): JSX.Element {
         </div>
       </header>
 
-      <section style={ROOM_PANEL}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
-            <Video size={15} />
-            Room
-          </div>
-          <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
-          <div style={ROOM_LINK_TEXT}>
-            {guestRoomUrl
-              ? 'Guest and host join the same meeting with different secure links.'
-              : 'Send an invite or open the host room to create the guest link.'}
-          </div>
-          {roomLinks?.expiresAt && (
-            <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
-              Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
+      {showsRoomPanel && (
+        <section style={ROOM_PANEL}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
+              <Video size={15} />
+              Room
             </div>
-          )}
-        </div>
-        <div style={ROOM_ACTIONS}>
-          {personEmail && (
+            <h2 style={ROOM_TITLE}>{interview.linkedMeeting?.title ?? `${personName} interview`}</h2>
+            <div style={ROOM_LINK_TEXT}>
+              {guestRoomUrl
+                ? 'Guest and host join the same meeting with different secure links.'
+                : 'Send an invite or open the host room to create the guest link.'}
+            </div>
+            {roomLinks?.expiresAt && (
+              <div style={{ ...ROOM_LINK_TEXT, marginTop: 8 }}>
+                Links expire {formatDate(roomLinks.expiresAt, 'after token expiry')}
+              </div>
+            )}
+          </div>
+          <div style={ROOM_ACTIONS}>
+            {personEmail && (
+              <button
+                onClick={() => void sendInvite()}
+                disabled={isSendingInvite}
+                style={{ ...PRIMARY_BUTTON, ...ROOM_PRIMARY_BUTTON }}
+              >
+                {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+                {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
+              </button>
+            )}
             <button
-              onClick={() => void sendInvite()}
-              disabled={isSendingInvite}
-              style={{ ...PRIMARY_BUTTON, ...ROOM_PRIMARY_BUTTON }}
+              onClick={() => void copyGuestLink()}
+              disabled={isPreparingRoom}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
             >
-              {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
-              {hasInviteDelivery ? 'RESEND INVITE' : 'SEND INVITE'}
+              <Copy size={14} />
+              COPY GUEST LINK
             </button>
-          )}
-          <button
-            onClick={() => void copyGuestLink()}
-            disabled={isPreparingRoom}
-            style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
-          >
-            <Copy size={14} />
-            COPY GUEST LINK
-          </button>
-          <button
-            onClick={() => void openHostRoom()}
-            disabled={isPreparingRoom}
-            style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
-          >
-            {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
-            OPEN HOST ROOM
-          </button>
-          {guestRoomUrl && (
-            <label style={ROOM_GUEST_LINK_LABEL}>
-              <span style={ROOM_GUEST_LINK_TEXT}>GUEST LINK</span>
-              <input
-                readOnly
-                value={guestRoomUrl}
-                onFocus={(event) => event.currentTarget.select()}
-                style={ROOM_GUEST_LINK_INPUT}
-              />
-            </label>
-          )}
-          {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
-          {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
-        </div>
-      </section>
+            <button
+              onClick={() => void openHostRoom()}
+              disabled={isPreparingRoom}
+              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+            >
+              {isPreparingRoom ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Video size={14} />}
+              OPEN HOST ROOM
+            </button>
+            {guestRoomUrl && (
+              <label style={ROOM_GUEST_LINK_LABEL}>
+                <span style={ROOM_GUEST_LINK_TEXT}>GUEST LINK</span>
+                <input
+                  readOnly
+                  value={guestRoomUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                  style={ROOM_GUEST_LINK_INPUT}
+                />
+              </label>
+            )}
+            {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
+            {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
+          </div>
+        </section>
+      )}
 
       {usesWorkspaceInterview && (
         <section style={WORKSPACE_CONFIG_PANEL}>
@@ -710,66 +950,68 @@ export default function InterviewDetailPage(): JSX.Element {
           </div>
         </Section>
 
-        <Section title="Call record" icon={<FileText size={15} />}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
-              ? <CheckCircle size={14} color="#4ade80" />
-              : transcriptStatus === 'FAILED'
-                ? <AlertCircle size={14} color="#f87171" />
-                : <Clock size={14} color="var(--pipe-text-dim)" />}
-            <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatusLabel(transcriptStatus)}</span>
-          </div>
-          {interview.linkedMeeting?.transcriptSummary && (
-            <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
-          )}
-          {interview.linkedMeeting?.recordingR2Key && (
-            <div style={SMALL_NOTE}>Recording stored. Transcript and person context rebuild from this call.</div>
-          )}
-          {transcriptContextText && (
-            <div style={SMALL_NOTE}>{transcriptContextText}</div>
-          )}
-          {transcriptTopics.length > 0 && (
-            <div style={ANALYSIS_GROUP}>
-              <div style={FIELD_LABEL}>Topics</div>
-              <div style={TAG_ROW}>
-                {transcriptTopics.map((topic) => <span key={topic} style={TAG}>{topic}</span>)}
+        {showsCallRecord && (
+          <Section title="Call record" icon={<FileText size={15} />}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
+                ? <CheckCircle size={14} color="#4ade80" />
+                : transcriptStatus === 'FAILED'
+                  ? <AlertCircle size={14} color="#f87171" />
+                  : <Clock size={14} color="var(--pipe-text-dim)" />}
+              <span style={{ ...FIELD_VALUE, color: 'var(--pipe-text)' }}>{transcriptStatusLabel(transcriptStatus)}</span>
+            </div>
+            {interview.linkedMeeting?.transcriptSummary && (
+              <div style={NOTE}>{interview.linkedMeeting.transcriptSummary}</div>
+            )}
+            {interview.linkedMeeting?.recordingR2Key && (
+              <div style={SMALL_NOTE}>Recording stored. Transcript and person context rebuild from this call.</div>
+            )}
+            {transcriptContextText && (
+              <div style={SMALL_NOTE}>{transcriptContextText}</div>
+            )}
+            {transcriptTopics.length > 0 && (
+              <div style={ANALYSIS_GROUP}>
+                <div style={FIELD_LABEL}>Topics</div>
+                <div style={TAG_ROW}>
+                  {transcriptTopics.map((topic) => <span key={topic} style={TAG}>{topic}</span>)}
+                </div>
               </div>
-            </div>
-          )}
-          {transcriptDecisions.length > 0 && (
-            <div style={ANALYSIS_GROUP}>
-              <div style={FIELD_LABEL}>Decisions</div>
-              <div style={TAG_ROW}>
-                {transcriptDecisions.map((decision) => <span key={decision} style={TAG}>{decision}</span>)}
+            )}
+            {transcriptDecisions.length > 0 && (
+              <div style={ANALYSIS_GROUP}>
+                <div style={FIELD_LABEL}>Decisions</div>
+                <div style={TAG_ROW}>
+                  {transcriptDecisions.map((decision) => <span key={decision} style={TAG}>{decision}</span>)}
+                </div>
               </div>
-            </div>
-          )}
-          {transcriptError && (
-            <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
-              {transcriptError}
-            </div>
-          )}
-          {transcriptEntries.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {transcriptEntries.map((entry, index) => {
-                const timeLabel = transcriptTimeLabel(entry);
-                return (
-                  <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
-                    <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
-                      {timeLabel && (
-                        <div style={TRANSCRIPT_TIME}>{timeLabel}</div>
-                      )}
+            )}
+            {transcriptError && (
+              <div style={{ ...NOTE, borderColor: 'rgba(248,113,113,0.35)', color: '#fca5a5' }}>
+                {transcriptError}
+              </div>
+            )}
+            {transcriptEntries.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {transcriptEntries.map((entry, index) => {
+                  const timeLabel = transcriptTimeLabel(entry);
+                  return (
+                    <div key={`${entry.role}-${index}`} style={TRANSCRIPT_ROW}>
+                      <div style={TRANSCRIPT_ROLE}>{entry.role}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={TRANSCRIPT_TEXT}>{entry.text}</div>
+                        {timeLabel && (
+                          <div style={TRANSCRIPT_TIME}>{timeLabel}</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div style={EMPTY_TEXT}>{transcriptEmptyText}</div>
-          )}
-        </Section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={EMPTY_TEXT}>{transcriptEmptyText}</div>
+            )}
+          </Section>
+        )}
 
         <Section title="Person context" icon={<Network size={15} />}>
           {hasLivingContextEvidence && contextSummary ? (
@@ -839,6 +1081,298 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Repo id</span>
                   <span style={FIELD_VALUE}>{interview.matchedRepoId}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+
+        {codeReviewMatch && (
+          <Section title="Code-review match" icon={<Network size={15} />}>
+            <div data-testid="interview-code-review-match" style={EVIDENCE_LIST}>
+              <div style={EVIDENCE_ROW}>
+                <span style={FIELD_LABEL}>Status</span>
+                <span style={FIELD_VALUE}>{titleCaseToken(codeReviewMatch.status)}</span>
+              </div>
+              {matchScore && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Score</span>
+                  <span style={FIELD_VALUE}>{matchScore}</span>
+                </div>
+              )}
+              <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                <span style={FIELD_LABEL}>Summary</span>
+                <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewMatch.summary}</span>
+              </div>
+
+              {codeReviewMatch.assessmentQuality && (
+                <div data-testid="interview-code-review-match-quality" style={CONTEXT_RECORD}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <div style={FIELD_LABEL}>Assessment quality</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={MATCH_BADGE}>{codeReviewMatch.assessmentQuality.verdict}</span>
+                      <span style={FIELD_VALUE}>
+                        {codeReviewMatch.assessmentQuality.score}/{codeReviewMatch.assessmentQuality.maxScore}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {codeReviewMatch.assessmentQuality.metrics.map((metric) => (
+                      <div key={metric.id} style={MATCH_METRIC_ROW}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={TRANSCRIPT_ROLE}>{metric.label}</div>
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{metric.reason}</div>
+                        </div>
+                        <div style={MATCH_SCORE}>{metric.score}/{metric.maxScore}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {codeReviewProfile && (
+                <ReviewProfileCard profile={codeReviewProfile} />
+              )}
+
+              {codeReviewMatch.validatorAgent && (
+                <div data-testid="interview-code-review-match-validator" style={CONTEXT_RECORD}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <div style={FIELD_LABEL}>Validator agent</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={MATCH_BADGE}>{codeReviewMatch.validatorAgent.mode}</span>
+                      <span style={MATCH_BADGE}>{codeReviewMatch.validatorAgent.verdict}</span>
+                    </div>
+                  </div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewMatch.validatorAgent.rationale}</div>
+                  {codeReviewMatch.validatorAgent.sourceBridge && (
+                    <div style={MATCH_BRIDGE_GRID}>
+                      <div style={MATCH_BRIDGE_CARD}>
+                        <div style={TRANSCRIPT_ROLE}>Person sources</div>
+                        <div style={TRANSCRIPT_TEXT}>{codeReviewMatch.validatorAgent.sourceBridge.candidateSourceCount}</div>
+                      </div>
+                      <div style={MATCH_BRIDGE_CARD}>
+                        <div style={TRANSCRIPT_ROLE}>Role sources</div>
+                        <div style={TRANSCRIPT_TEXT}>{codeReviewMatch.validatorAgent.sourceBridge.roleSourceCount}</div>
+                      </div>
+                      <div style={MATCH_BRIDGE_CARD}>
+                        <div style={TRANSCRIPT_ROLE}>Repo sources</div>
+                        <div style={TRANSCRIPT_TEXT}>{codeReviewMatch.validatorAgent.sourceBridge.repoSourceCount}</div>
+                      </div>
+                    </div>
+                  )}
+                  {codeReviewMatch.validatorAgent.checks.length > 0 && (
+                    <div style={TAG_ROW}>
+                      {codeReviewMatch.validatorAgent.checks
+                        .filter((check) => check.passed)
+                        .slice(0, 6)
+                        .map((check) => (
+                          <span key={check.id} title={check.reason} style={TAG}>
+                            {titleCaseToken(check.id)}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {matchHyperedges.length > 0 && (
+                <div data-testid="interview-code-review-match-hyperedges" style={CONTEXT_RECORD}>
+                  <div style={{ display: 'grid', gap: 5 }}>
+                    <div style={FIELD_LABEL}>Evidence hyperedges</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>
+                      {hyperedgePathLabel(matchHyperedges)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {matchHyperedges.slice(0, 3).map((edge: CodeReviewMatchHyperedge, index) => (
+                      <div
+                        key={`${edge.relation}:${edge.label}:${index}`}
+                        style={{
+                          display: 'grid',
+                          gap: 10,
+                          paddingTop: index === 0 ? 0 : 12,
+                          borderTop: index === 0 ? 'none' : '1px solid var(--pipe-border)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                          <div style={TRANSCRIPT_ROLE}>
+                            {edge.label}
+                            <span style={{ ...TAG, marginLeft: 8 }}>{hyperedgeRelationBadge(edge)}</span>
+                          </div>
+                          {formatMatchScore(edge.pairScore) && (
+                            <span style={MATCH_SCORE}>{formatMatchScore(edge.pairScore)}</span>
+                          )}
+                        </div>
+                        <div style={MATCH_BRIDGE_GRID}>
+                          {edge.nodes.map((node, nodeIndex) => (
+                            <div key={`${node.kind}:${nodeIndex}`} style={MATCH_BRIDGE_CARD}>
+                              <div style={TRANSCRIPT_ROLE}>{hyperedgeNodeTitle(node)}</div>
+                              <div style={TRANSCRIPT_TEXT}>
+                                {sourceRefText(node.sourceRef) ?? node.kind}
+                              </div>
+                              {node.sourceRef.conceptKeys && node.sourceRef.conceptKeys.length > 0 && (
+                                <div style={TAG_ROW}>
+                                  {node.sourceRef.conceptKeys.slice(0, 4).map((concept) => (
+                                    <span key={concept} style={TAG}>{concept}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {primaryMatchEvidence && (
+                <div data-testid="interview-code-review-evidence-bridge" style={CONTEXT_RECORD}>
+                  <div style={{ display: 'grid', gap: 5 }}>
+                    <div style={FIELD_LABEL}>Evidence bridge</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>
+                      {primaryMatchHasRoleContext
+                        ? 'role context -> person context -> repo challenge'
+                        : 'candidate evidence -> repo challenge'}
+                    </div>
+                    {primaryMatchEvidence.sharedConcepts.length > 0 && (
+                      <div style={TAG_ROW}>
+                        {primaryMatchEvidence.sharedConcepts.map((concept) => (
+                          <span key={concept} style={TAG}>{concept}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={MATCH_BRIDGE_GRID}>
+                    <div style={MATCH_BRIDGE_CARD}>
+                      <div style={TRANSCRIPT_ROLE}>
+                        {primaryMatchHasRoleContext ? 'Role requirement' : 'Match concepts'}
+                      </div>
+                      <div style={TRANSCRIPT_TEXT}>
+                        {sourceRefText(primaryMatchEvidence.roleSourceRefs[0])
+                          ?? sourceRefText(codeReviewMatch.roleSources[0])
+                          ?? alignmentLabel(primaryMatchEvidence)}
+                      </div>
+                      {(primaryMatchEvidence.roleSourceRefs[0]?.conceptKeys.length
+                        ?? codeReviewMatch.roleSources[0]?.conceptKeys.length
+                        ?? 0) > 0 && (
+                        <div style={TAG_ROW}>
+                          {(primaryMatchEvidence.roleSourceRefs[0]?.conceptKeys
+                            ?? codeReviewMatch.roleSources[0]?.conceptKeys
+                            ?? []).slice(0, 4).map((concept) => (
+                            <span key={concept} style={TAG}>{concept}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={MATCH_BRIDGE_CARD}>
+                      <div style={TRANSCRIPT_ROLE}>Person evidence</div>
+                      <div style={TRANSCRIPT_TEXT}>
+                        {firstSourceRefText(primaryMatchEvidence.candidateSourceRefs)
+                          ?? primaryMatchEvidence.atomId}
+                      </div>
+                    </div>
+
+                    <div style={MATCH_BRIDGE_CARD}>
+                      <div style={TRANSCRIPT_ROLE}>Repo challenge</div>
+                      <div style={TRANSCRIPT_TEXT}>
+                        {firstSourceRefText(primaryMatchEvidence.challengeSourceRefs)
+                          ?? primaryMatchEvidence.demandId}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {codeReviewMatch.gaps.length > 0 && (
+                <div style={CONTEXT_RECORD}>
+                  <div style={FIELD_LABEL}>Gaps</div>
+                  {codeReviewMatch.gaps.slice(0, 3).map((gap) => (
+                    <div key={gap} style={CONTEXT_RECORD_NARRATIVE}>{gap}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Section>
+        )}
+
+        {codeReviewSubmission && (
+          <Section title="Candidate review result" icon={<CheckCircle size={15} />}>
+            <div data-testid="interview-code-review-result" style={EVIDENCE_LIST}>
+              {codeReviewSubmission.verdict && (
+                <div style={EVIDENCE_ROW}>
+                  <span style={FIELD_LABEL}>Verdict</span>
+                  <span style={FIELD_VALUE}>{titleCaseToken(codeReviewSubmission.verdict)}</span>
+                </div>
+              )}
+              {codeReviewSubmission.summary && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Summary</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewSubmission.summary}</span>
+                </div>
+              )}
+              <div style={EVIDENCE_ROW}>
+                <span style={FIELD_LABEL}>Annotations</span>
+                <span style={FIELD_VALUE}>
+                  {codeReviewSubmission.annotations.length} {codeReviewSubmission.annotations.length === 1 ? 'annotation' : 'annotations'}
+                </span>
+              </div>
+              {codeReviewSubmission.annotations.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {codeReviewSubmission.annotations.map((annotation, index) => (
+                    <div key={`${annotation.file}:${annotation.line ?? 'x'}:${index}`} style={CONTEXT_RECORD}>
+                      <div style={TRANSCRIPT_ROLE}>
+                        {annotation.file}
+                        {annotation.line !== null ? ` · line ${annotation.line}` : ''}
+                        {annotation.severity ? ` · ${annotation.severity}` : ''}
+                      </div>
+                      <div style={TRANSCRIPT_TEXT}>{annotation.comment}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {codeReviewSubmission.defenseThreads.length > 0 && (
+                <div data-testid="interview-code-review-defense-threads" style={CONTEXT_RECORD}>
+                  <div style={FIELD_LABEL}>AI developer defense</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>
+                    Candidate comments paired with the developer pushback and follow-up reasoning captured during the async review.
+                  </div>
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    {codeReviewSubmission.defenseThreads.slice(0, 4).map((thread) => (
+                      <div key={thread.commentId} style={DEFENSE_THREAD}>
+                        <div style={TRANSCRIPT_ROLE}>
+                          Candidate comment
+                          {thread.line !== null ? ` · line ${thread.line}` : ''}
+                          {thread.severity ? ` · ${thread.severity}` : ''}
+                        </div>
+                        <div style={TRANSCRIPT_TEXT}>{thread.comment}</div>
+                        {thread.file && (
+                          <div style={TRANSCRIPT_TIME}>{thread.file}</div>
+                        )}
+                        <div style={DEFENSE_EXCHANGE_LIST}>
+                          {thread.exchanges.map((exchange, index) => (
+                            <div
+                              key={`${thread.commentId}:${exchange.actor}:${exchange.round ?? 'x'}:${index}`}
+                              style={exchange.actor === 'ai_developer' ? DEFENSE_EXCHANGE_AI : DEFENSE_EXCHANGE_CANDIDATE}
+                            >
+                              <div style={TRANSCRIPT_ROLE}>
+                                {exchange.actor === 'ai_developer' ? 'AI developer' : 'Candidate defense'}
+                                {exchange.move ? ` · ${exchange.move}` : ''}
+                                {exchange.round !== null ? ` · round ${exchange.round}` : ''}
+                              </div>
+                              <div style={TRANSCRIPT_TEXT}>{exchange.content}</div>
+                              {exchange.updatedCode && (
+                                <pre style={DEFENSE_CODE}>{exchange.updatedCode}</pre>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1269,6 +1803,101 @@ const CONTEXT_RECORD_NARRATIVE: CSSProperties = {
   color: 'var(--pipe-text-dim)',
   fontSize: 12,
   lineHeight: 1.55,
+};
+
+const MATCH_BADGE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '4px 7px',
+  borderRadius: 5,
+  border: '1px solid rgba(74,222,128,0.3)',
+  background: 'rgba(74,222,128,0.08)',
+  color: '#86efac',
+  fontFamily: FONT,
+  fontSize: 9,
+  fontWeight: 800,
+  letterSpacing: '0.1em',
+};
+
+const MATCH_METRIC_ROW: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  gap: 10,
+  alignItems: 'center',
+  padding: '10px 0',
+  borderTop: '1px solid var(--pipe-border)',
+};
+
+const MATCH_SCORE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 800,
+  whiteSpace: 'nowrap',
+};
+
+const MATCH_BRIDGE_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+  gap: 10,
+};
+
+const MATCH_BRIDGE_CARD: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface-solid)',
+};
+
+const DEFENSE_THREAD: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface-solid)',
+};
+
+const DEFENSE_EXCHANGE_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  paddingTop: 4,
+};
+
+const DEFENSE_EXCHANGE_AI: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  padding: 10,
+  border: '1px solid rgba(96,165,250,0.28)',
+  borderRadius: 6,
+  background: 'rgba(96,165,250,0.08)',
+};
+
+const DEFENSE_EXCHANGE_CANDIDATE: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  padding: 10,
+  border: '1px solid rgba(74,222,128,0.28)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.07)',
+};
+
+const DEFENSE_CODE: CSSProperties = {
+  margin: 0,
+  padding: 10,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'rgba(0,0,0,0.24)',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  lineHeight: 1.5,
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
 };
 
 const CENTERED: CSSProperties = {

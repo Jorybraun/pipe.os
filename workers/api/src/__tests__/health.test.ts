@@ -39,6 +39,42 @@ describe('worker health routes', () => {
     expect(body.error?.message).toBe('Room link is invalid or expired.');
   });
 
+  it('lets the dev-container bridge post token-scoped room evidence without the dev proxy secret', async () => {
+    const first = vi.fn(async () => null);
+    const bind = vi.fn(() => ({ first }));
+    const prepare = vi.fn(() => ({ bind }));
+
+    const res = await worker.fetch(
+      new Request('http://pipe.test/api/v1/meeting-rooms/not-a-real-token/session-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'file_change',
+          text: 'src/app.ts',
+          actor: 'system',
+          properties: {
+            source: 'code_server_workspace',
+            observedBy: 'agent_bridge',
+            action: 'modified',
+            contentHash: 'sha256-source-hash',
+          },
+        }),
+      }),
+      {
+        ENV: 'dev',
+        DEV_PROXY_SECRET: 'dev-secret',
+        DB: { prepare },
+      } as never,
+      {} as never,
+    );
+
+    expect(res.status).toBe(404);
+    expect(prepare).toHaveBeenCalled();
+    const body = await res.json() as { error?: { code?: string; message?: string } };
+    expect(body.error?.code).toBe('NOT_FOUND');
+    expect(body.error?.message).toBe('Room link is invalid or expired.');
+  });
+
   it('still requires the dev proxy secret for non-public api routes in dev', async () => {
     const res = await worker.fetch(
       new Request('http://pipe.test/api/v1/search/candidates', {

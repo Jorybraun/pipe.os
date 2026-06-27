@@ -518,6 +518,252 @@ function safeParseJson<T>(text: string | null | undefined): T | null {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function boundedConfidence(value: unknown, fallback = 0.6): number {
+  const numeric = optionalNumber(value) ?? fallback;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    .map((entry) => entry.trim());
+}
+
+type DecompositionExperience = DecompositionResult['experiences'][number];
+type DecompositionProject = DecompositionResult['projects'][number];
+type DecompositionSkill = DecompositionResult['skills'][number];
+type DecompositionEducation = DecompositionResult['education'][number];
+type DecompositionCredential = DecompositionResult['credentials'][number];
+type DecompositionCareerArc = DecompositionResult['career_arc'];
+type SemanticTermRecord = NonNullable<DecompositionSkill['semantic_terms']>[number];
+
+function normalizeSemanticTerms(value: unknown): SemanticTermRecord[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const terms = value.flatMap((entry): SemanticTermRecord[] => {
+    if (!isRecord(entry)) return [];
+    const surface = optionalString(entry.surface);
+    const canonicalKey = optionalString(entry.canonical_key);
+    if (!surface || !canonicalKey) return [];
+    return [{
+      surface,
+      canonical_key: canonicalKey,
+      ...(optionalString(entry.evidence_level) ? { evidence_level: optionalString(entry.evidence_level) } : {}),
+    }];
+  });
+  return terms.length > 0 ? terms : undefined;
+}
+
+function normalizeScope(value: unknown): DecompositionExperience['scope'] | undefined {
+  return value === 'feature' || value === 'service' || value === 'platform' || value === 'org'
+    ? value
+    : undefined;
+}
+
+function normalizeExperience(value: unknown): DecompositionExperience | null {
+  if (!isRecord(value)) return null;
+  const company = optionalString(value.company);
+  const role = optionalString(value.role);
+  const narrative = optionalString(value.narrative);
+  if (!company || !role || !narrative) return null;
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  return {
+    company,
+    role,
+    duration_months: optionalNumber(value.duration_months) ?? 0,
+    narrative,
+    skills_demonstrated: stringArray(value.skills_demonstrated),
+    confidence: boundedConfidence(value.confidence),
+    ...(optionalString(value.team_size) ? { team_size: optionalString(value.team_size) } : {}),
+    ...(normalizeScope(value.scope) ? { scope: normalizeScope(value.scope) } : {}),
+    ...(optionalString(value.domain) ? { domain: optionalString(value.domain) } : {}),
+    ...(optionalString(value.company_stage) ? { company_stage: optionalString(value.company_stage) } : {}),
+    ...(optionalString(value.impact_summary) ? { impact_summary: optionalString(value.impact_summary) } : {}),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function normalizeProject(value: unknown): DecompositionProject | null {
+  if (!isRecord(value)) return null;
+  const name = optionalString(value.name);
+  const description = optionalString(value.description);
+  if (!name || !description) return null;
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  return {
+    name,
+    description,
+    skills_demonstrated: stringArray(value.skills_demonstrated),
+    confidence: boundedConfidence(value.confidence),
+    ...(optionalString(value.url) ? { url: optionalString(value.url) } : {}),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function normalizeSkill(value: unknown): DecompositionSkill | null {
+  if (!isRecord(value)) return null;
+  const name = optionalString(value.name);
+  if (!name) return null;
+  const proficiency = value.proficiency === 'expert'
+    || value.proficiency === 'proficient'
+    || value.proficiency === 'familiar'
+    || value.proficiency === 'exposure'
+    ? value.proficiency
+    : 'exposure';
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  return {
+    name: name.toLowerCase(),
+    proficiency,
+    confidence: boundedConfidence(value.confidence),
+    ...(optionalNumber(value.years_exposure) !== undefined ? { years_exposure: optionalNumber(value.years_exposure) } : {}),
+    ...(optionalString(value.evidence_source) ? { evidence_source: optionalString(value.evidence_source) } : {}),
+    ...(optionalString(value.depth_pattern) ? { depth_pattern: optionalString(value.depth_pattern) } : {}),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function normalizeEducation(value: unknown): DecompositionEducation | null {
+  if (!isRecord(value)) return null;
+  const institution = optionalString(value.institution);
+  const degree = optionalString(value.degree);
+  if (!institution || !degree) return null;
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  return {
+    institution,
+    degree,
+    confidence: boundedConfidence(value.confidence),
+    ...(optionalString(value.field) ? { field: optionalString(value.field) } : {}),
+    ...(optionalString(value.year) ? { year: optionalString(value.year) } : {}),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function normalizeCredential(value: unknown): DecompositionCredential | null {
+  if (!isRecord(value)) return null;
+  const name = optionalString(value.name);
+  if (!name) return null;
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  return {
+    name,
+    confidence: boundedConfidence(value.confidence),
+    ...(optionalString(value.issuer) ? { issuer: optionalString(value.issuer) } : {}),
+    ...(optionalString(value.year) ? { year: optionalString(value.year) } : {}),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function normalizeGrowthVelocity(value: unknown): DecompositionCareerArc['growth_velocity'] {
+  return value === 'fast' || value === 'normal' || value === 'slow' ? value : 'normal';
+}
+
+function normalizeCareerArc(value: unknown): DecompositionCareerArc | null {
+  if (!isRecord(value)) return null;
+  const narrative = optionalString(value.narrative);
+  if (!narrative) return null;
+  const semanticTerms = normalizeSemanticTerms(value.semantic_terms);
+  const transitions = Array.isArray(value.transitions)
+    ? value.transitions.flatMap((entry): DecompositionCareerArc['transitions'] => {
+        if (!isRecord(entry)) return [];
+        const from = optionalString(entry.from);
+        const to = optionalString(entry.to);
+        const atCompany = optionalString(entry.at_company);
+        return from && to && atCompany ? [{ from, to, at_company: atCompany }] : [];
+      })
+    : [];
+  return {
+    narrative,
+    growth_velocity: normalizeGrowthVelocity(value.growth_velocity),
+    transitions,
+    confidence: boundedConfidence(value.confidence),
+    ...(semanticTerms ? { semantic_terms: semanticTerms } : {}),
+    ...(optionalString(value.source_quote) ? { source_quote: optionalString(value.source_quote) } : {}),
+  };
+}
+
+function buildFallbackCareerArc(
+  experiences: DecompositionExperience[],
+  projects: DecompositionProject[],
+  skills: DecompositionSkill[],
+): DecompositionCareerArc {
+  const narrative =
+    experiences[0]?.narrative
+    ?? projects[0]?.description
+    ?? (skills.length > 0 ? `Candidate evidence mentions ${skills.slice(0, 5).map((skill) => skill.name).join(', ')}.` : 'Candidate supplied resume evidence.');
+  return {
+    narrative,
+    growth_velocity: 'normal',
+    transitions: [],
+    confidence: 0.5,
+  };
+}
+
+function normalizeDecompositionResult(value: unknown): DecompositionResult | null {
+  if (!isRecord(value)) return null;
+
+  const experiences = Array.isArray(value.experiences) ? value.experiences.flatMap((entry) => {
+    const normalized = normalizeExperience(entry);
+    return normalized ? [normalized] : [];
+  }) : [];
+  const projects = Array.isArray(value.projects) ? value.projects.flatMap((entry) => {
+    const normalized = normalizeProject(entry);
+    return normalized ? [normalized] : [];
+  }) : [];
+  const skills = Array.isArray(value.skills) ? value.skills.flatMap((entry) => {
+    const normalized = normalizeSkill(entry);
+    return normalized ? [normalized] : [];
+  }) : [];
+  const education = Array.isArray(value.education) ? value.education.flatMap((entry) => {
+    const normalized = normalizeEducation(entry);
+    return normalized ? [normalized] : [];
+  }) : [];
+  const credentials = Array.isArray(value.credentials) ? value.credentials.flatMap((entry) => {
+    const normalized = normalizeCredential(entry);
+    return normalized ? [normalized] : [];
+  }) : [];
+  const careerArc = normalizeCareerArc(value.career_arc);
+
+  if (
+    experiences.length === 0
+    && projects.length === 0
+    && skills.length === 0
+    && education.length === 0
+    && credentials.length === 0
+    && !careerArc
+  ) {
+    return null;
+  }
+
+  return {
+    ...(optionalString(value.candidate_name) ? { candidate_name: optionalString(value.candidate_name) } : {}),
+    experiences,
+    projects,
+    skills,
+    education,
+    credentials,
+    career_arc: careerArc ?? buildFallbackCareerArc(experiences, projects, skills),
+    ...(optionalString(value.domain_specialization) ? { domain_specialization: optionalString(value.domain_specialization) } : {}),
+    ...(stringArray(value.company_stage_pattern).length > 0 ? { company_stage_pattern: stringArray(value.company_stage_pattern) } : {}),
+    ...(optionalString(value.ownership_progression) ? { ownership_progression: optionalString(value.ownership_progression) } : {}),
+    ...(stringArray(value.impact_themes).length > 0 ? { impact_themes: stringArray(value.impact_themes) } : {}),
+  };
+}
+
 async function callDecompositionLLM(
   env: ProviderEnv,
   parsedCV: ParsedCV,
@@ -554,24 +800,25 @@ async function callDecompositionLLM(
     .replace(/\n?```$/m, '')
     .trim();
 
-  const parsed = safeParseJson<DecompositionResult>(cleaned);
-  if (!parsed) {
+  const parsed = safeParseJson<unknown>(cleaned);
+  const normalized = normalizeDecompositionResult(parsed);
+  if (!normalized) {
     console.warn('[cvParser] Decomposition JSON parse failed. Raw output length:', outputText.length);
     console.warn('[cvParser] First 500 chars:', outputText.slice(0, 500));
     return null;
   }
 
   console.log('[cvParser] Decomposition parsed OK:', {
-    experiences: parsed.experiences?.length ?? 0,
-    skills: parsed.skills?.length ?? 0,
-    education: parsed.education?.length ?? 0,
-    projects: parsed.projects?.length ?? 0,
-    credentials: parsed.credentials?.length ?? 0,
-    careerArc: parsed.career_arc ? 'yes' : 'no',
-    candidateName: parsed.candidate_name ? 'yes' : 'no',
+    experiences: normalized.experiences.length,
+    skills: normalized.skills.length,
+    education: normalized.education.length,
+    projects: normalized.projects.length,
+    credentials: normalized.credentials.length,
+    careerArc: normalized.career_arc ? 'yes' : 'no',
+    candidateName: normalized.candidate_name ? 'yes' : 'no',
   });
 
-  return parsed;
+  return normalized;
 }
 
 // ─── Derive ParsedCV from DecompositionResult ───────────────────────────────
@@ -648,6 +895,74 @@ export interface ParseResumeInput {
   mock?: boolean;
 }
 
+export interface ParseResumeTextInput {
+  /** Plain text resume/intake evidence. */
+  resumeText: string;
+  /** Worker env / bindings — used to create the AI provider. */
+  env: ProviderEnv;
+  /** When true, return mock data instead of calling LLM. */
+  mock?: boolean;
+}
+
+function buildRuleBasedParsedCV(text: string): ParsedCV {
+  return {
+    skills: [],
+    experiences: extractExperiences(text),
+    educationBlocks: extractEducationBlocks(text),
+    credentials: extractCredentials(text),
+    projects: extractProjects(text),
+  };
+}
+
+export async function parseResumeText(input: ParseResumeTextInput): Promise<ParseResumeResult | null> {
+  if (input.mock) {
+    return {
+      parsedCV: getMockParsedCV(),
+      decompositionResult: getMockDecompositionResult(),
+    };
+  }
+
+  const text = input.resumeText.trim();
+  if (text.length < 20) {
+    console.warn('[cvParser] Insufficient resume text:', text.length, 'chars');
+    return null;
+  }
+
+  let decomposition: DecompositionResult | null = null;
+  try {
+    decomposition = await callDecompositionLLM(
+      input.env,
+      { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
+      text,
+    );
+    if (decomposition) {
+      console.log('[cvParser] Decomposition LLM succeeded');
+    }
+  } catch (llmErr) {
+    console.warn('[cvParser] Decomposition LLM failed:', llmErr);
+  }
+
+  const parsedCV = decomposition
+    ? deriveParsedCVFromDecomposition(decomposition, {
+        experiences: [],
+        educationBlocks: [],
+        credentials: [],
+        projects: [],
+      })
+    : buildRuleBasedParsedCV(text);
+
+  console.log('[cvParser] Final ParsedCV:', {
+    name: parsedCV.name,
+    skillsCount: parsedCV.skills.length,
+    yearsOfExperience: parsedCV.yearsOfExperience,
+    currentRole: parsedCV.currentRole,
+    educationCount: parsedCV.education?.length ?? 0,
+    experiencesCount: parsedCV.experiences.length,
+  });
+
+  return { parsedCV, decompositionResult: decomposition };
+}
+
 /**
  * Parse a resume file and return structured candidate data.
  * Returns null if parsing is unavailable (no provider) or fails gracefully.
@@ -674,46 +989,10 @@ export async function parseResume(input: ParseResumeInput): Promise<ParseResumeR
       return null;
     }
 
-    // Send raw text to the LLM with an empty skeleton. The model extracts
-    // structured data directly from the resume text — far more reliable than
-    // brittle regex heuristics that break on every new resume format.
-    let decomposition: DecompositionResult | null = null;
-    try {
-      decomposition = await callDecompositionLLM(input.env, { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] }, text);
-      console.log('[cvParser] Decomposition LLM succeeded');
-    } catch (llmErr) {
-      console.warn('[cvParser] Decomposition LLM failed:', llmErr);
-    }
-
-    // Derive final ParsedCV from decomposition. Rule-based extraction is only
-    // used as a fallback when the LLM is unavailable.
-    let parsedCV: ParsedCV;
-    if (decomposition) {
-      parsedCV = deriveParsedCVFromDecomposition(decomposition, {
-        experiences: [],
-        educationBlocks: [],
-        credentials: [],
-        projects: [],
-      });
-    } else {
-      // LLM fallback: run rule-based extraction only when the model is down
-      const experiences = extractExperiences(text);
-      const educationBlocks = extractEducationBlocks(text);
-      const credentials = extractCredentials(text);
-      const projects = extractProjects(text);
-      parsedCV = { skills: [], experiences, educationBlocks, credentials, projects };
-    }
-
-    console.log('[cvParser] Final ParsedCV:', {
-      name: parsedCV.name,
-      skillsCount: parsedCV.skills.length,
-      yearsOfExperience: parsedCV.yearsOfExperience,
-      currentRole: parsedCV.currentRole,
-      educationCount: parsedCV.education?.length ?? 0,
-      experiencesCount: parsedCV.experiences.length,
+    return await parseResumeText({
+      resumeText: text,
+      env: input.env,
     });
-
-    return { parsedCV, decompositionResult: decomposition };
   } catch (err) {
     console.error('[cvParser] Parsing failed:', err instanceof Error ? err.message : err);
     return null;

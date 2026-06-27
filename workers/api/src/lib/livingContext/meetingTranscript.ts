@@ -266,6 +266,21 @@ function storedNumber(
   return null;
 }
 
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true;
+  if (typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  if (typeof value !== 'object') return false;
+  return Object.values(value as Record<string, unknown>).every(isJsonValue);
+}
+
+function storedJsonObject(record: Record<string, unknown>, key: string): JsonObject | null {
+  const value = record[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return isJsonValue(value) ? value as JsonObject : null;
+}
+
 export function parseStoredMeetingTranscript(
   transcriptJson: string,
 ): { transcript: string; segments: MeetingTranscriptSegmentInput[] } {
@@ -302,6 +317,7 @@ export function parseStoredMeetingTranscript(
     const start = storedNumber(record, 'timestamp_start_ms', 'timestampStartMs');
     const end = storedNumber(record, 'timestamp_end_ms', 'timestampEndMs');
     const [timestampStartMs, timestampEndMs] = pairedTimestamps(start, end);
+    const metadata = storedJsonObject(record, 'metadata') ?? {};
     return [{
       stableSegmentId: storedString(
         record,
@@ -318,6 +334,7 @@ export function parseStoredMeetingTranscript(
       timestampEndMs,
       confidence: boundedScore(record.confidence),
       metadata: {
+        ...metadata,
         legacyTimestamp: storedString(record, 'timestamp'),
         legacyTimestampMs: storedNumber(record, 'timestamp_ms', 'timestampMs'),
       },
@@ -648,6 +665,9 @@ export async function ingestMeetingTranscriptToLivingContext(
           speakerLabel: segment.speakerLabel ?? null,
           speakerRole: segment.speakerRole ?? null,
           channel: segment.channel ?? null,
+          speakerMetadataRole: segment.metadata?.speakerMetadataRole ?? null,
+          speakerMetadataSource: segment.metadata?.speakerMetadataSource ?? null,
+          providerSegmentId: segment.metadata?.providerSegmentId ?? null,
         }),
         now,
       ).run();

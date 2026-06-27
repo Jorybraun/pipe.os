@@ -163,6 +163,14 @@ async function main() {
     await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected', {
       timeout: 30_000,
     });
+    await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard');
+    await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard');
+    await expect(host.getByTestId('standard-layout')).toBeVisible();
+    await expect(guest.getByTestId('standard-layout')).toBeVisible();
+    await expect(host.getByTestId('remote-video')).toBeVisible();
+    await expect(guest.getByTestId('remote-video')).toBeVisible();
+
+    await host.getByTestId('enter-win95-desktop').click();
     await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95');
     await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95');
     await expect(host.getByTestId('win95-desktop')).toBeVisible();

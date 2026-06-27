@@ -19,6 +19,8 @@ export interface RawChallenge {
   githubPrNumber?: number | null;
   githubPrDescription?: string | null;
   devContainerRepoUrl?: string | null;
+  matchExplanation?: unknown;
+  reviewProfile?: unknown;
   issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
 }
 
@@ -269,6 +271,8 @@ function resolveChallengeNode(raw: RawChallenge, stageTimeLimit?: number | null)
     ...(raw.githubPrNumber != null ? { githubPrNumber: raw.githubPrNumber } : {}),
     ...(raw.githubPrDescription != null ? { githubPrDescription: raw.githubPrDescription } : {}),
     ...(raw.devContainerRepoUrl != null ? { devContainerRepoUrl: raw.devContainerRepoUrl } : {}),
+    ...(raw.matchExplanation != null ? { matchExplanation: raw.matchExplanation } : {}),
+    ...(raw.reviewProfile != null ? { reviewProfile: raw.reviewProfile } : {}),
     ...(raw.issueBody != null ? { issueBody: raw.issueBody } : {}),
   };
 

@@ -4,6 +4,7 @@ import {
   extractEducationBlocks,
   extractCredentials,
   extractProjects,
+  parseResumeText,
   parseResume,
   type ParsedCV,
 } from '../../cvParser';
@@ -170,6 +171,59 @@ describe('ParsedCV structure', () => {
 });
 
 describe('parseResume', () => {
+  it('parses plain text intake through the same decomposition contract', async () => {
+    const result = await parseResumeText({
+      resumeText: 'Jane Doe\nSenior Frontend Engineer with TypeScript and React experience.',
+      env: {},
+      mock: true,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.parsedCV.skills.map((skill) => skill.toLowerCase())).toContain('typescript');
+    expect(result!.decompositionResult).not.toBeNull();
+    expect(result!.decompositionResult!.experiences.length).toBeGreaterThan(0);
+  });
+
+  it('normalizes partial LLM decomposition responses for text intake', async () => {
+    const ai = {
+      async run(): Promise<{ response: string }> {
+        return {
+          response: JSON.stringify({
+            candidate_name: 'Riley Retry',
+            experiences: [
+              {
+                company: 'Queue Labs',
+                role: 'Backend Engineer',
+                narrative: 'Implemented idempotent retry handling for webhook delivery workers.',
+                skills_demonstrated: ['TypeScript', 'queues'],
+                confidence: 0.82,
+              },
+            ],
+            skills: [
+              {
+                name: 'TypeScript',
+                proficiency: 'proficient',
+                confidence: 0.8,
+              },
+            ],
+          }),
+        };
+      },
+    };
+
+    const result = await parseResumeText({
+      resumeText: 'Riley Retry implemented idempotent retry handling for webhook delivery workers using TypeScript.',
+      env: { AI: ai as unknown as Ai },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.parsedCV.skills).toEqual(['typescript']);
+    expect(result!.decompositionResult!.projects).toEqual([]);
+    expect(result!.decompositionResult!.education).toEqual([]);
+    expect(result!.decompositionResult!.credentials).toEqual([]);
+    expect(result!.decompositionResult!.career_arc.narrative).toContain('idempotent retry');
+  });
+
   it('returns mock data when mock flag is set', async () => {
     const result = await parseResume({
       fileBuffer: new ArrayBuffer(0),

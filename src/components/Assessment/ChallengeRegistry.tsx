@@ -7,7 +7,7 @@ import { resolveShells } from '../../lib/challenge/resolveShells';
 import { WorkspaceLayout } from './WorkspaceLayout';
 import { ChallengeWorkspace } from './ChallengeWorkspace';
 import { TimerShell } from '../Shells/TimerShell';
-import { ProblemPanel } from '../Panels/ProblemPanel';
+import { ProblemPanel, type CodeReviewMatchExplanation } from '../Panels/ProblemPanel';
 import { MonacoPanel } from '../Panels/MonacoPanel';
 import { OptionsPanel } from '../Panels/OptionsPanel';
 import { TextareaPanel } from '../Panels/TextareaPanel';
@@ -43,6 +43,8 @@ interface ChallengeRegistryProps {
     githubPrNumber?: number | null;
     githubPrDescription?: string | null;
     cachedMetadata?: unknown;
+    matchExplanation?: unknown;
+    reviewProfile?: unknown;
   };
   stageTimeLimit?: number | null;
   onSubmissionChange: (submission: unknown) => void;
@@ -105,6 +107,12 @@ function parseDiffJson(raw: unknown): DiffJson | null {
       deletions: r.files.reduce((s, f) => s + f.deletions, 0),
     },
   };
+}
+
+function asCodeReviewMatchExplanation(value: unknown): CodeReviewMatchExplanation | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as CodeReviewMatchExplanation
+    : null;
 }
 
 // ============================================================================
@@ -218,7 +226,10 @@ export function ChallengeRegistry({
   if (challenge.type === 'CODE_REVIEW') {
     const codeReviewContent = (
       <CodeReviewChallenge
-        challenge={challenge}
+        challenge={{
+          ...challenge,
+          matchExplanation: asCodeReviewMatchExplanation(challenge.matchExplanation),
+        }}
         diff={localDiff}
         isFetchingDiff={isFetchingDiff}
         submission={

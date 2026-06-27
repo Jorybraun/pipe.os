@@ -945,6 +945,10 @@ test.describe('two-user video room', () => {
       await host.getByTestId('room-browser-address-input').fill('example.com');
       await host.getByTestId('room-browser-go').click();
       await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
+      await host.getByTestId('room-browser-address-input').fill('https://www.google.com');
+      await host.getByTestId('room-browser-go').click();
+      await expect(host.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing');
+      await expect(guest.getByTestId('room-browser-embed-blocked')).toContainText('blocks embedded browsing', { timeout: 10_000 });
 
       await guest.getByTestId('room-desktop-icon-notepad').dblclick();
       await expect(host.getByTestId('room-window-notepad')).toBeVisible({ timeout: 10_000 });
@@ -953,6 +957,32 @@ test.describe('two-user video room', () => {
         'Candidate notes sync in the shared desktop.',
         { timeout: 10_000 },
       );
+
+      await host.getByTestId('room-desktop-icon-paint').dblclick();
+      await expect(host.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
+      await expect(guest.getByTestId('room-window-paint')).toBeVisible({ timeout: 10_000 });
+      await expect(host.getByRole('button', { name: 'Rectangle' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Diamond' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Arrow' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Pan' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Zoom in' })).toBeVisible();
+      await expect(host.getByRole('button', { name: 'Zoom out' })).toBeVisible();
+
+      const guestPaintCanvas = guest.getByTestId('room-paint-canvas');
+      const guestPaintBefore = await guestPaintCanvas.evaluate((canvas) => (
+        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
+      ));
+      const hostPaintCanvas = host.getByTestId('room-paint-canvas');
+      const hostPaintBox = await hostPaintCanvas.boundingBox();
+      expect(hostPaintBox).toBeTruthy();
+      await host.getByRole('button', { name: 'Rectangle' }).click();
+      await host.mouse.move(hostPaintBox!.x + 120, hostPaintBox!.y + 120);
+      await host.mouse.down();
+      await host.mouse.move(hostPaintBox!.x + 340, hostPaintBox!.y + 240, { steps: 8 });
+      await host.mouse.up();
+      await expect.poll(async () => guestPaintCanvas.evaluate((canvas) => (
+        canvas instanceof HTMLCanvasElement ? canvas.toDataURL() : ''
+      )), { timeout: 10_000 }).not.toBe(guestPaintBefore);
 
       await guest.getByTestId('room-window-browser').getByLabel('Close').click();
       await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });
@@ -1080,6 +1110,7 @@ test.describe('two-user video room', () => {
       await host.getByTestId('clippy-action-start-recording').click();
       await expect(host.getByTestId('recording-state')).toContainText('Recording', { timeout: 10_000 });
       await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', { timeout: 10_000 });
+      await expect(host.getByTestId('stop-recording')).toBeEnabled();
       const recordingDetail = await waitForMeetingDetail(
         request,
         token,
@@ -1097,13 +1128,14 @@ test.describe('two-user video room', () => {
         res.url().includes(`/api/v1/meeting-rooms/`) && res.url().endsWith('/recording') && res.status() === 202,
         { timeout: 30_000 },
       );
-      await host.getByTestId('end-call').click();
+      await host.getByTestId('stop-recording').click();
       const uploadRequest = await uploadRequestPromise;
       const contentType = uploadRequest.headers()['content-type'] ?? '';
       expect(contentType).toContain('multipart/form-data');
       await uploadResponsePromise;
 
       await expect(host.getByTestId('recording-save-status')).toContainText('Recording saved', { timeout: 30_000 });
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected');
       const savedDetail = await waitForMeetingDetail(
         request,
         token,
@@ -1166,6 +1198,8 @@ test.describe('two-user video room', () => {
         )
         && entry.sharedConcepts?.includes(scenario.conceptKey)
       )).toBe(true);
+
+      await host.getByTestId('end-call').click();
 
       await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
       const contextTab = page.locator('button').filter({ hasText: /^CONTEXT$/ });

@@ -15,6 +15,24 @@ export interface AgentChatMessage {
   role: 'user' | 'agent';
   text: string;
   timestamp: number;
+  source?: 'user_submit' | 'agent_stdout' | 'bridge_diagnostic' | 'bridge_observation';
+  agentName?: string;
+  agentStatus?: AgentStatus;
+  diagnosticSource?: string;
+  observedAt?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  truncated?: boolean;
+  promptType?: string;
+  deliveredToAgent?: boolean;
+  promptLength?: number;
+  promptFingerprint?: string;
+  roomContextStatus?: number | null;
+  roomContextLength?: number;
+  roomContextFingerprint?: string;
+  userMessageLength?: number;
+  userMessageFingerprint?: string;
+  contextTruncated?: boolean;
 }
 
 export interface AgentRoomAction {
@@ -23,6 +41,22 @@ export interface AgentRoomAction {
   text?: string;
   url?: string;
   autoExecute?: boolean;
+  source?: 'agent_stdout_action' | 'bridge_observation';
+  agentName?: string;
+  bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
+  protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
+}
+
+export interface AgentFileChangeEvent {
+  filePath: string;
+  actionName: string;
+  timestamp: number;
+  observedAt?: string;
+  source?: string;
+  sizeBytes?: number;
+  contentHash?: string;
+  contentPreview?: string;
+  persisted?: boolean;
 }
 
 export type ParsedAgentBridgeMessage =
@@ -50,6 +84,7 @@ export type ParsedAgentBridgeMessage =
       kind: 'file_changed';
       message: Omit<AgentChatMessage, 'timestamp'>;
       action: AgentRoomAction;
+      fileChange: Omit<AgentFileChangeEvent, 'timestamp'>;
     }
   | {
       kind: 'room_action';
@@ -58,6 +93,12 @@ export type ParsedAgentBridgeMessage =
   | {
       kind: 'error';
       message: Omit<AgentChatMessage, 'timestamp'>;
+    }
+  | {
+      kind: 'diagnostic';
+      message: Omit<AgentChatMessage, 'timestamp'>;
+      status: AgentStatus;
+      agentName: string;
     }
   | {
       kind: 'ignored';
@@ -72,6 +113,7 @@ export interface AgentConnectionState {
   agentName: string;
   capabilities: string[];
   roomActions: AgentRoomAction[];
+  fileChanges: AgentFileChangeEvent[];
 }
 
 export interface UseAgentConnectionOptions {
@@ -130,6 +172,14 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function numberOrNullValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function normalizeActionName(value: string): string {
   return value.trim().toLowerCase().replace(/[_\s]+/g, '-');
 }
@@ -156,7 +206,14 @@ function parseActionUrl(value: unknown): string | undefined {
   return undefined;
 }
 
-function parseRoomAction(value: unknown): AgentRoomAction | null {
+interface RoomActionParseContext {
+  source: AgentRoomAction['source'];
+  bridgeEventType: NonNullable<AgentRoomAction['bridgeEventType']>;
+  protocol: NonNullable<AgentRoomAction['protocol']>;
+  agentName?: string;
+}
+
+function parseRoomAction(value: unknown, context: RoomActionParseContext): AgentRoomAction | null {
   if (!isRecord(value)) return null;
   const id = findRoomActionId(value.action ?? value.id ?? value.name);
   if (!id) return null;
@@ -168,14 +225,36 @@ function parseRoomAction(value: unknown): AgentRoomAction | null {
     text,
     url: parseActionUrl(value.url ?? value.href),
     autoExecute: typeof value.autoExecute === 'boolean' ? value.autoExecute : undefined,
+    source: context.source,
+    agentName: stringOrNull(value.agent) ?? context.agentName,
+    bridgeEventType: context.bridgeEventType,
+    protocol: context.protocol,
   };
 }
 
-function parseRoomActions(value: unknown): AgentRoomAction[] {
+function parseRoomActions(value: unknown, context: RoomActionParseContext): AgentRoomAction[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map(parseRoomAction)
+    .map((entry) => parseRoomAction(entry, context))
     .filter((entry): entry is AgentRoomAction => entry !== null);
+}
+
+export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
+  const name = agentName.trim() || 'devin';
+  switch (status) {
+    case 'auth_needed':
+      return `${name} requires real authentication before it can assist.`;
+    case 'thinking':
+      return `${name} is thinking about the candidate request.`;
+    case 'working':
+      return `${name} is working on the candidate request.`;
+    case 'idle':
+      return `${name} is ready.`;
+    case 'disconnected':
+      return `${name} bridge is disconnected.`;
+    default:
+      return `${name} status: ${status}`;
+  }
 }
 
 export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessage {
@@ -186,10 +265,15 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'CHAT_RESPONSE') {
     const text = stringOrNull(value.text);
     if (!text) return { kind: 'ignored' };
-    const actions = parseRoomActions(value.actions);
+    const actions = parseRoomActions(value.actions, {
+      source: 'agent_stdout_action',
+      bridgeEventType: 'CHAT_RESPONSE',
+      protocol: 'bridge_actions_field',
+      agentName: stringOrNull(value.agent) ?? 'devin',
+    });
     return {
       kind: 'chat',
-      message: { role: 'agent', text },
+      message: { role: 'agent', text, source: 'agent_stdout' },
       actions: actions.length > 0 ? actions : undefined,
     };
   }
@@ -211,26 +295,103 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'FILE_CHANGED') {
-    const filePath = stringOrNull(value.path) ?? 'a workspace file';
-    const action = stringOrNull(value.action) ?? 'changed';
-    const text = `I noticed ${filePath} was ${action} in the workspace.`;
+    const filePath = stringOrNull(value.path ?? value.filePath) ?? 'a workspace file';
+    const actionName = stringOrNull(value.action ?? value.operation) ?? 'changed';
+    const text = `I noticed ${filePath} was ${actionName} in the workspace.`;
+    const contentPreview = stringOrNull(value.contentPreview);
     return {
       kind: 'file_changed',
-      message: { role: 'agent', text },
+      message: { role: 'agent', text, source: 'bridge_observation' },
       action: {
         id: 'open-workspace',
         label: ROOM_ACTIONS['open-workspace'].label,
         text,
+        source: 'bridge_observation',
+        bridgeEventType: 'FILE_CHANGED',
+        protocol: 'workspace_file_observation',
+      },
+      fileChange: {
+        filePath,
+        actionName,
+        observedAt: stringOrNull(value.observedAt) ?? undefined,
+        source: stringOrNull(value.source) ?? undefined,
+        sizeBytes: numberOrUndefined(value.sizeBytes),
+        contentHash: stringOrNull(value.contentHash) ?? undefined,
+        contentPreview: contentPreview && contentPreview.length <= 4000
+          ? contentPreview
+          : contentPreview?.slice(0, 4000),
+        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
       },
     };
   }
   if (value.type === 'ROOM_ACTION') {
-    const action = parseRoomAction(value);
+    const action = parseRoomAction(value, {
+      source: 'agent_stdout_action',
+      bridgeEventType: 'ROOM_ACTION',
+      protocol: 'clippy_room_action_tag',
+      agentName: stringOrNull(value.agent) ?? 'devin',
+    });
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
   }
   if (value.type === 'ERROR') {
     const text = stringOrNull(value.message) ?? 'Unknown agent error';
-    return { kind: 'error', message: { role: 'agent', text: `Error: ${text}` } };
+    return {
+      kind: 'error',
+      message: {
+        role: 'agent',
+        text: `Error: ${text}`,
+        source: 'bridge_diagnostic',
+      },
+    };
+  }
+  if (value.type === 'AGENT_DIAGNOSTIC') {
+    const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
+    const status = isAgentStatus(value.status) ? value.status : 'disconnected';
+    const agentName = stringOrNull(value.agent) ?? 'devin';
+    const message: Omit<AgentChatMessage, 'timestamp'> = {
+      role: 'agent',
+      text,
+      source: 'bridge_diagnostic',
+      agentName,
+      agentStatus: status,
+    };
+    const diagnosticSource = stringOrNull(value.diagnosticSource);
+    const observedAt = stringOrNull(value.observedAt);
+    const signal = stringOrNull(value.signal);
+    if (diagnosticSource) message.diagnosticSource = diagnosticSource;
+    if (observedAt) message.observedAt = observedAt;
+    if ('exitCode' in value) message.exitCode = numberOrNullValue(value.exitCode);
+    if ('signal' in value) message.signal = signal;
+    if (typeof value.truncated === 'boolean') message.truncated = value.truncated;
+    const promptType = stringOrNull(value.promptType);
+    const promptFingerprint = stringOrNull(value.promptFingerprint);
+    const roomContextFingerprint = stringOrNull(value.roomContextFingerprint);
+    const userMessageFingerprint = stringOrNull(value.userMessageFingerprint);
+    if (promptType) message.promptType = promptType;
+    if (typeof value.deliveredToAgent === 'boolean') message.deliveredToAgent = value.deliveredToAgent;
+    if ('promptLength' in value) {
+      const promptLength = numberOrUndefined(value.promptLength);
+      if (promptLength !== undefined) message.promptLength = promptLength;
+    }
+    if (promptFingerprint) message.promptFingerprint = promptFingerprint;
+    if ('roomContextStatus' in value) message.roomContextStatus = numberOrNullValue(value.roomContextStatus);
+    if ('roomContextLength' in value) {
+      const roomContextLength = numberOrUndefined(value.roomContextLength);
+      if (roomContextLength !== undefined) message.roomContextLength = roomContextLength;
+    }
+    if (roomContextFingerprint) message.roomContextFingerprint = roomContextFingerprint;
+    if ('userMessageLength' in value) {
+      const userMessageLength = numberOrUndefined(value.userMessageLength);
+      if (userMessageLength !== undefined) message.userMessageLength = userMessageLength;
+    }
+    if (userMessageFingerprint) message.userMessageFingerprint = userMessageFingerprint;
+    if (typeof value.contextTruncated === 'boolean') message.contextTruncated = value.contextTruncated;
+    return {
+      kind: 'diagnostic',
+      status,
+      agentName,
+      message,
+    };
   }
   return { kind: 'ignored' };
 }
@@ -245,6 +406,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const [agentName, setAgentName] = useState('devin');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [roomActions, setRoomActions] = useState<AgentRoomAction[]>([]);
+  const [fileChanges, setFileChanges] = useState<AgentFileChangeEvent[]>([]);
 
   useEffect(() => {
     if (!enabled || !wsUrl) return;
@@ -302,10 +464,17 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
               setAuthMessage(null);
               break;
             case 'file_changed':
-              setMessages((prev) => [...prev, {
-                ...parsed.message,
-                timestamp: Date.now(),
-              }]);
+              {
+                const timestamp = Date.now();
+                setMessages((prev) => [...prev, {
+                  ...parsed.message,
+                  timestamp,
+                }]);
+                setFileChanges((prev) => [...prev.slice(-49), {
+                  ...parsed.fileChange,
+                  timestamp,
+                }]);
+              }
               setRoomActions((prev) => [...prev.slice(-19), parsed.action]);
               break;
             case 'room_action':
@@ -319,6 +488,14 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
               setRoomActions((prev) => [...prev.slice(-19), parsed.action]);
               break;
             case 'error':
+              setMessages((prev) => [...prev, {
+                ...parsed.message,
+                timestamp: Date.now(),
+              }]);
+              break;
+            case 'diagnostic':
+              setAgentName(parsed.agentName);
+              setStatus(parsed.status);
               setMessages((prev) => [...prev, {
                 ...parsed.message,
                 timestamp: Date.now(),
@@ -358,14 +535,18 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
     };
   }, [wsUrl, enabled]);
 
-  const sendMessage = useCallback((text: string) => {
-    if (!text.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    setMessages((prev) => [...prev, {
+  const sendMessage = useCallback((text: string): AgentChatMessage | null => {
+    const trimmed = text.trim();
+    if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
+    const message: AgentChatMessage = {
       role: 'user',
-      text,
+      text: trimmed,
       timestamp: Date.now(),
-    }]);
-    wsRef.current.send(JSON.stringify({ type: 'CHAT', text }));
+      source: 'user_submit',
+    };
+    setMessages((prev) => [...prev, message]);
+    wsRef.current.send(JSON.stringify({ type: 'CHAT', text: trimmed }));
+    return message;
   }, []);
 
   const startAuth = useCallback(() => {
@@ -387,6 +568,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
     agentName,
     capabilities,
     roomActions,
+    fileChanges,
     sendMessage,
     startAuth,
     stopAgent,

@@ -225,6 +225,8 @@ export interface Env {
   KIMI_API_KEY?: string;
   /** Kimi base URL override. Default: https://api.kimi.com/coding/v1 */
   KIMI_BASE_URL?: string;
+  /** Default Kimi model override for agents. */
+  KIMI_MODEL?: string;
   /** Kimi model override for scorer. Default: kimi-for-coding */
   KIMI_SCORER_MODEL?: string;
   // ─── Neo4j Graph+Vector Store (ADR-043 through ADR-047) ─────────────────────

@@ -1,5 +1,9 @@
 import type { GitHubDiffResult } from '../fetchGitHubDiff';
-import type { ChallengePacket as RepoChallengePacket } from '../repoSemanticGraph';
+import {
+  buildChallengeReviewProfileFromFacts,
+  type ChallengePacket as RepoChallengePacket,
+  type ChallengeReviewProfile,
+} from '../repoSemanticGraph';
 
 export interface SourceBackedReviewPacketRow {
   repo_id: number | null;
@@ -96,7 +100,8 @@ export async function loadSourceBackedReviewDiff(
     return null;
   }
 
-  const sourceSpanIds = [...new Set(packet.demands.flatMap((demand) => demand.sourceSpanIds))];
+  const packetDemands = Array.isArray(packet.demands) ? packet.demands : [];
+  const sourceSpanIds = [...new Set(packetDemands.flatMap((demand) => demand.sourceSpanIds))];
   if (sourceSpanIds.length === 0) return null;
 
   const placeholders = sourceSpanIds.map(() => '?').join(',');
@@ -129,9 +134,10 @@ export async function loadSourceBackedReviewDiff(
     };
     const lineStart = span.line_start ?? 1;
     const lines = span.exact_text.split('\n');
+    const oldStart = Math.max(0, lineStart - 1);
     file.additions += lines.length;
     file.hunks.push({
-      header: `@@ source-backed ${filename}:${lineStart}-${span.line_end ?? lineStart + lines.length - 1} @@`,
+      header: `@@ -${oldStart},0 +${lineStart},${lines.length} @@`,
       lines: lines.map((line, index) => ({
         type: 'added' as const,
         content: line,
@@ -141,8 +147,23 @@ export async function loadSourceBackedReviewDiff(
     files.set(filename, file);
   }
 
+  const diffFiles = [...files.values()].sort((left, right) => left.filename.localeCompare(right.filename));
+  const demandFamilies = new Set(
+    (packet.demandFamilies ?? packetDemands.map((demand) => demand.family))
+      .filter((family): family is string => typeof family === 'string' && family.trim().length > 0),
+  );
+  const reviewProfile: ChallengeReviewProfile = packet.reviewProfile
+    ?? buildChallengeReviewProfileFromFacts({
+      changedFileCount: diffFiles.length,
+      changedLineCount: diffFiles.reduce((sum, file) => sum + file.additions + file.deletions, 0),
+      sourceHunkCount: diffFiles.reduce((sum, file) => sum + file.hunks.length, 0),
+      testChangeCount: packet.testChanges?.length ?? 0,
+      demandFamilyCount: demandFamilies.size,
+      hasIssueContext: Boolean(packet.issue?.body?.trim() || (packet.issue?.labels.length ?? 0) > 0),
+    });
+
   return {
-    diff: { files: [...files.values()].sort((left, right) => left.filename.localeCompare(right.filename)) },
+    diff: { files: diffFiles },
     metadata: {
       title: packet.pullRequest.title,
       author: packet.pullRequest.author,
@@ -154,6 +175,7 @@ export async function loadSourceBackedReviewDiff(
       head_sha: packet.pullRequest.headSha,
       merged_at: packet.pullRequest.mergedAt,
       description: packet.pullRequest.body ?? 'Source-backed review packet reconstructed from persisted repo spans.',
+      reviewProfile,
     },
   };
 }

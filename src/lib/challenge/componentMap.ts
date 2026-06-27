@@ -10,7 +10,7 @@ import { TimerShell } from '../../components/Shells/TimerShell';
 import { VideoShell } from '../../components/Shells/VideoShell';
 
 // Pure panels (props-only, reusable, testable)
-import { ProblemPanel } from '../../components/Panels/ProblemPanel';
+import { ProblemPanel, type CodeReviewMatchExplanation } from '../../components/Panels/ProblemPanel';
 import { MonacoPanel } from '../../components/Panels/MonacoPanel';
 import { OptionsPanel } from '../../components/Panels/OptionsPanel';
 import { SmartTextareaPanel } from '../../components/Panels/SmartTextareaPanel';
@@ -44,6 +44,9 @@ const ConnectedProblemPanel = connectInterview(ProblemPanel, (ctx) => ({
   markdown: ctx.currentChallenge.instructions || 'No instructions provided.',
   ...(typeof ctx.currentChallenge.data.prDescription === 'string'
     ? { prDescription: ctx.currentChallenge.data.prDescription }
+    : {}),
+  ...(ctx.currentChallenge.data.matchExplanation
+    ? { matchExplanation: ctx.currentChallenge.data.matchExplanation as CodeReviewMatchExplanation }
     : {}),
   ...(ctx.currentChallenge.data.issueBody
     ? { issueBody: ctx.currentChallenge.data.issueBody as { title?: string | null; body?: string | null; labels?: string[] } }

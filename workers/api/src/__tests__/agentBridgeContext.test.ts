@@ -32,4 +32,12 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).toContain('DEVIN_API_KEY');
     expect(bridgeSource).toContain('authUrl: null');
   });
+
+  it('observes real code-server workspace file changes as source-backed room events', () => {
+    expect(bridgeSource).toContain('scanWorkspaceSnapshot');
+    expect(bridgeSource).toContain('FILE_CHANGED');
+    expect(bridgeSource).toContain('/session-events');
+    expect(bridgeSource).toContain('code_server_workspace');
+    expect(bridgeSource).toContain('sha256');
+  });
 });

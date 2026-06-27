@@ -103,6 +103,30 @@ interface LocalSqliteDatabase {
   close(): void;
 }
 
+function rewriteNumberedParams(
+  sql: string,
+  params: Array<string | number | null>,
+): { sql: string; args: Array<string | number | null> } {
+  const numbered = /\?(\d+)/g;
+  let match = numbered.exec(sql);
+  if (!match) return { sql, args: params };
+
+  const args: Array<string | number | null> = [];
+  let rewritten = '';
+  let lastIndex = 0;
+
+  numbered.lastIndex = 0;
+  while ((match = numbered.exec(sql)) !== null) {
+    rewritten += sql.slice(lastIndex, match.index) + '?';
+    const paramIndex = Number.parseInt(match[1]!, 10) - 1;
+    args.push(params[paramIndex] ?? null);
+    lastIndex = numbered.lastIndex;
+  }
+  rewritten += sql.slice(lastIndex);
+
+  return { sql: rewritten, args };
+}
+
 class LocalQueryClient implements QueryClient {
   constructor(private readonly database: LocalSqliteDatabase) {}
 
@@ -110,11 +134,12 @@ class LocalQueryClient implements QueryClient {
     sql: string,
     params: Array<string | number | null> = [],
   ): Promise<T[]> {
-    const statement = this.database.prepare(sql);
-    if (/^\s*(SELECT|WITH|PRAGMA)/i.test(sql)) {
-      return statement.all(...params) as T[];
+    const rewritten = rewriteNumberedParams(sql, params);
+    const statement = this.database.prepare(rewritten.sql);
+    if (/^\s*(SELECT|WITH|PRAGMA)/i.test(rewritten.sql)) {
+      return statement.all(...rewritten.args) as T[];
     }
-    statement.run(...params);
+    statement.run(...rewritten.args);
     return [];
   }
 }
@@ -890,8 +915,20 @@ export function d1DatabaseAdapter(client: QueryClient): D1Database {
           const rows = await client.query<T>(sql, params);
           return { success: true, results: rows, meta: {} };
         },
+        __runBatch() {
+          return client.query(sql, params);
+        },
       };
       return statement;
+    },
+    async batch(statements: D1PreparedStatement[]) {
+      await Promise.all(statements.map((statement) => {
+        const adapted = statement as D1PreparedStatement & {
+          __runBatch?: () => Promise<unknown>;
+        };
+        return adapted.__runBatch ? adapted.__runBatch() : statement.run();
+      }));
+      return statements.map(() => ({ success: true, meta: {}, results: [] }));
     },
   } as unknown as D1Database;
 }

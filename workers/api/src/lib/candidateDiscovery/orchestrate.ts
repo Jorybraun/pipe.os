@@ -92,45 +92,10 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
     await setEstimatedCompletion(db, candidateId, new Date(Date.now() + estimatedMs));
   }
 
-  // Step 2: Discover rich candidate profile
-  let discoveryResult: CandidateDiscoveryResult;
-  try {
-    const provider = createCandidateAgentProvider(env);
-    if (!provider) {
-      await markIngestionFailedWithStep(
-        db,
-        candidateId,
-        'Candidate agent provider unavailable (MOCK_AI or missing config)',
-        'discover_profile',
-      );
-      return;
-    }
-
-    discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
-      discoverCandidateProfile({ provider, parsed, resumeText }),
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] discoverCandidateProfile failed:', msg);
-    await markIngestionFailedWithStep(db, candidateId, `Discovery failed: ${msg}`, 'discover_profile');
-    return;
-  }
-
-  // Step 3: Persist rich profile
-  try {
-    await trackStep(db, candidateId, 'persist_profile', () =>
-      persistCandidateProfile(db, candidateId, discoveryResult),
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[ingestion] persistCandidateProfile failed:', msg);
-    await markIngestionFailedWithStep(db, candidateId, `Persist failed: ${msg}`, 'persist_profile');
-    return;
-  }
-
-  // Step 3.5: Decompose resume into candidate_nodes (ADR-041 Phase 1)
-  // This runs after profile persistence but before embedding.
-  // Failures are logged but do not block the pipeline.
+  // Step 1.5: Decompose resume into candidate_nodes (ADR-041 Phase 1).
+  // This must run before LLM-only discovery so standalone CODE_REVIEW matching
+  // still has source-backed candidate evidence when a profile/model provider is
+  // unavailable or slow.
   let decompositionEmbeddings: number[][] = [];
   try {
     await recordSessionEvent(db, {
@@ -168,6 +133,42 @@ export async function runCandidateIngestion(input: IngestionInput): Promise<void
       eventType: 'error',
       payload: { step: 'decompose_resume', error: msg },
     });
+  }
+
+  // Step 2: Discover rich candidate profile
+  let discoveryResult: CandidateDiscoveryResult;
+  try {
+    const provider = createCandidateAgentProvider(env);
+    if (!provider) {
+      await markIngestionFailedWithStep(
+        db,
+        candidateId,
+        'Candidate agent provider unavailable (MOCK_AI or missing config)',
+        'discover_profile',
+      );
+      return;
+    }
+
+    discoveryResult = await trackStep(db, candidateId, 'discover_profile', () =>
+      discoverCandidateProfile({ provider, parsed, resumeText }),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[ingestion] discoverCandidateProfile failed:', msg);
+    await markIngestionFailedWithStep(db, candidateId, `Discovery failed: ${msg}`, 'discover_profile');
+    return;
+  }
+
+  // Step 3: Persist rich profile
+  try {
+    await trackStep(db, candidateId, 'persist_profile', () =>
+      persistCandidateProfile(db, candidateId, discoveryResult),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[ingestion] persistCandidateProfile failed:', msg);
+    await markIngestionFailedWithStep(db, candidateId, `Persist failed: ${msg}`, 'persist_profile');
+    return;
   }
 
   // Step 4: Embed into CANDIDATE_INDEX

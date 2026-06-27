@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 
 export type SessionEventType =
+  | 'chat_message'
   | 'ai_chat_user'
   | 'ai_chat_agent'
   | 'ai_agent_status'

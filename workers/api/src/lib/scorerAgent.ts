@@ -43,6 +43,8 @@ export type LLMProvider = 'workers-ai' | 'vertex-ai' | 'google-ai' | 'kimi';
 export interface ScorerInput {
   apiKey: string;
   provider?: LLMProvider;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
   /** Workers AI binding — required when provider is 'workers-ai' */
   ai?: Ai;
   /** Full transcript JSON (rounds + verdict) */
@@ -338,9 +340,10 @@ async function callKimi(
   systemPrompt: string,
   userMessage: string,
   maxTokens = 2048,
+  baseUrl = 'https://api.kimi.com/coding/v1',
+  model = 'kimi-for-coding',
 ): Promise<string> {
-  const model = 'kimi-for-coding';
-  const url = 'https://api.kimi.com/coding/v1/chat/completions';
+  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -379,6 +382,7 @@ async function callLLM(
   systemPrompt: string,
   userMessage: string,
   maxTokens = 2048,
+  options: { kimiBaseUrl?: string; kimiModel?: string } = {},
 ): Promise<string> {
   if (provider === 'workers-ai') {
     if (!ai) throw new Error('[scorerAgent] Workers AI binding not available.');
@@ -391,7 +395,7 @@ async function callLLM(
     return callGoogleAI(apiKey, systemPrompt, userMessage, maxTokens);
   }
   if (provider === 'kimi') {
-    return callKimi(apiKey, systemPrompt, userMessage, maxTokens);
+    return callKimi(apiKey, systemPrompt, userMessage, maxTokens, options.kimiBaseUrl, options.kimiModel);
   }
   throw new Error(`[scorerAgent] Unknown provider: ${provider}`);
 }
@@ -518,7 +522,7 @@ Write the hiring assessment narrative. Return JSON with: { "narrative": "...", "
  */
 export async function scoreReviewSession(input: ScorerInput): Promise<ScoreReport> {
   const {
-    apiKey, provider = 'workers-ai', ai, transcript, groundTruth,
+    apiKey, provider = 'workers-ai', kimiBaseUrl, kimiModel, ai, transcript, groundTruth,
     diff, prTitle, prDescription, instructions, level = 'mid',
     dispositionalWeights,
   } = input;
@@ -538,8 +542,8 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
 
   // Run Scorer A + Scorer B in parallel
   const [scorerARaw, scorerBRaw] = await Promise.all([
-    callLLM(apiKey, provider, ai, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000),
-    callLLM(apiKey, provider, ai, SCORER_B_PROMPT, buildScorerBUserMessage(transcript), 2048),
+    callLLM(apiKey, provider, ai, SCORER_A_PROMPT, buildScorerAUserMessage(transcript, groundTruth, prContext, diff), 3000, { kimiBaseUrl, kimiModel }),
+    callLLM(apiKey, provider, ai, SCORER_B_PROMPT, buildScorerBUserMessage(transcript), 2048, { kimiBaseUrl, kimiModel }),
   ]);
 
   // Debug: log raw LLM output before parsing (helps diagnose truncation)
@@ -609,6 +613,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
     apiKey, provider, ai, SYNTHESIZER_PROMPT,
     buildSynthesizerUserMessage(dimensions, effectiveness, scorerASummary, scorerBSummary),
     1024,
+    { kimiBaseUrl, kimiModel },
   );
 
   let narrative = `Overall score: ${overallScore}/100 (${band})`;

@@ -4,6 +4,7 @@ import type {
   SourceRef,
   StretchMatch,
 } from '../types';
+import type { ChallengeReviewProfile } from '../../repoSemanticGraph';
 
 /**
  * Schema version for frozen evaluation corpora.
@@ -163,6 +164,7 @@ export interface PersistedRankedChallenge {
   contextualSpecificity: number;
   challengeQuality: number;
   validationDeepeningValue: number;
+  reviewProfile?: ChallengeReviewProfile;
   alignedDemandCount: number;
   stretchCount: number;
   stretchDemandWeightRatio: number;

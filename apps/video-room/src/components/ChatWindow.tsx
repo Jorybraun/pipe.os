@@ -8,6 +8,7 @@ export interface ChatMessage {
   role: ChatRole;
   text: string;
   timestamp: number;
+  deliveryStatus?: 'pending' | 'accepted' | 'rejected';
 }
 
 interface ChatWindowProps {
@@ -81,7 +82,10 @@ export function ChatWindow({ messages, onSend, currentUserRole }: ChatWindowProp
           const style = ROLE_STYLES[msg.role];
           const Icon = style.icon;
           return (
-            <div key={msg.id} className={`chat-msg ${style.className}`}>
+            <div
+              key={msg.id}
+              className={`chat-msg ${style.className}${msg.deliveryStatus ? ` chat-msg-${msg.deliveryStatus}` : ''}`}
+            >
               <div className="chat-msg-avatar">
                 <Icon size={14} />
               </div>
@@ -89,6 +93,12 @@ export function ChatWindow({ messages, onSend, currentUserRole }: ChatWindowProp
                 <div className="chat-msg-header">
                   <span className="chat-msg-author">{roleLabel(msg.role, currentUserRole)}</span>
                   <span className="chat-msg-time">{formatTime(msg.timestamp)}</span>
+                  {msg.deliveryStatus === 'pending' && (
+                    <span className="chat-msg-status">Sending</span>
+                  )}
+                  {msg.deliveryStatus === 'rejected' && (
+                    <span className="chat-msg-status chat-msg-status-error">Not sent</span>
+                  )}
                 </div>
                 <div className="chat-msg-text">{msg.text}</div>
               </div>

@@ -31,13 +31,19 @@ export type SyncSource = 'MANUAL' | 'WEBHOOK' | 'POLL';
  * ScheduledInterview — local TypeScript interface.
  * Matches the D1 schema (see workers/api/migrations/).
  */
-export type InterviewType = 'VIDEO' | 'SCREENING' | 'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE';
+export type InterviewType =
+  | 'VIDEO'
+  | 'SCREENING'
+  | 'CODE_REVIEW'
+  | 'DEV_CONTAINER_CHALLENGE'
+  | 'OPEN_SOURCE_BUG_FIX';
 
 export const INTERVIEW_TYPE_LABELS = {
   VIDEO: 'Video interview',
   CODE_REVIEW: 'Code-review interview',
   SCREENING: 'Video interview',
   DEV_CONTAINER_CHALLENGE: 'Dev-container challenge',
+  OPEN_SOURCE_BUG_FIX: 'Open-source bug fix',
 } satisfies Record<InterviewType, string>;
 
 export interface ScheduledInterview {
@@ -85,6 +91,116 @@ export interface ScheduledInterview {
   transcriptArtifact?: TranscriptArtifact | null;
 }
 
+export interface CodeReviewMatchSourceRef {
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  locator?: string;
+  exactText?: string;
+  contentHash?: string;
+}
+
+export interface CodeReviewMatchRoleSource extends CodeReviewMatchSourceRef {
+  entityId: string;
+  conceptKeys: string[];
+}
+
+export interface CodeReviewMatchQualityMetric {
+  id: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  reason: string;
+}
+
+export interface CodeReviewMatchAssessmentQuality {
+  verdict: string;
+  score: number;
+  maxScore: number;
+  metrics: CodeReviewMatchQualityMetric[];
+}
+
+export interface CodeReviewMatchReviewProfile {
+  source: 'deterministic_engineering_prior';
+  difficultyBand: 'introductory' | 'focused' | 'advanced' | 'oversized';
+  expectedSeniority: 'mid' | 'senior' | 'staff';
+  expectedTimeMinutes: number;
+  basis: {
+    changedFileCount: number;
+    changedLineCount: number;
+    sourceHunkCount: number;
+    testChangeCount: number;
+    demandFamilyCount: number;
+    hasIssueContext: boolean;
+  };
+  rationale: string;
+}
+
+export interface CodeReviewMatchValidatorCheck {
+  id: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface CodeReviewMatchValidatorSourceBridge {
+  prNumber: number | null;
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  provenanceComplete: boolean;
+}
+
+export interface CodeReviewMatchValidatorAgent {
+  agentName: string;
+  agentVersion: string;
+  mode: string;
+  verdict: string;
+  rationale: string;
+  checks: CodeReviewMatchValidatorCheck[];
+  sourceBridge: CodeReviewMatchValidatorSourceBridge | null;
+}
+
+export interface CodeReviewMatchAlignment {
+  atomId: string;
+  demandId: string;
+  sharedConcepts: string[];
+  roleSourceRefs: CodeReviewMatchRoleSource[];
+  candidateSourceRefs: CodeReviewMatchSourceRef[];
+  challengeSourceRefs: CodeReviewMatchSourceRef[];
+}
+
+export interface CodeReviewMatchHyperedgeNode {
+  kind: 'person_evidence' | 'role_source' | 'repo_challenge';
+  label: string;
+  sourceRef: CodeReviewMatchSourceRef & {
+    conceptKeys?: string[];
+  };
+}
+
+export interface CodeReviewMatchHyperedge {
+  relation: 'candidate_role_repo_alignment' | 'candidate_repo_evidence_alignment';
+  label: string;
+  pairScore: number | null;
+  nodes: CodeReviewMatchHyperedgeNode[];
+}
+
+export interface CodeReviewMatchDetail {
+  status: string;
+  matchRunId: string | null;
+  packetId: string | null;
+  summary: string;
+  score: number | null;
+  assessmentQuality: CodeReviewMatchAssessmentQuality | null;
+  reviewProfile?: CodeReviewMatchReviewProfile | null;
+  validatorAgent: CodeReviewMatchValidatorAgent | null;
+  roleSources: CodeReviewMatchRoleSource[];
+  evidence: CodeReviewMatchAlignment[];
+  evidenceHyperedges: CodeReviewMatchHyperedge[];
+  gaps: string[];
+}
+
 export interface LinkedMeetingSummary {
   id: string;
   title: string;
@@ -121,6 +237,7 @@ export interface ScheduledInterviewDetail extends ScheduledInterview {
   stageTitle?: string | null;
   linkedMeeting: LinkedMeetingSummary | null;
   livingContext?: LivingContextReadModel | null;
+  codeReviewMatch?: CodeReviewMatchDetail | null;
 }
 
 /**

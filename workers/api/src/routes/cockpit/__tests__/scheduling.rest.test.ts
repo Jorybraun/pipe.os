@@ -375,6 +375,30 @@ describe('GET /interviews/:id detail', () => {
         revoked_at TEXT,
         created_at TEXT NOT NULL
       );
+      CREATE TABLE review_challenge_packets (
+        id TEXT PRIMARY KEY,
+        repo_snapshot_id TEXT,
+        repo_id INTEGER,
+        pr_number INTEGER,
+        production_ready INTEGER,
+        quality_score REAL,
+        packet_json TEXT,
+        updated_at INTEGER
+      );
+      CREATE TABLE qualified_repos (
+        id INTEGER PRIMARY KEY,
+        github_url TEXT
+      );
+      CREATE TABLE match_runs (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        role_snapshot_id TEXT,
+        status TEXT,
+        ranked_results_json TEXT,
+        selected_packet_id TEXT,
+        query_json TEXT,
+        created_at TEXT
+      );
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
@@ -734,6 +758,561 @@ describe('GET /interviews/:id detail', () => {
         exactText: 'I built idempotent Kafka consumers.',
       }],
     });
+  });
+
+  it('returns source-backed CODE_REVIEW match hyperedges for recruiter detail', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-1', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'MATCHED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, '2026-06-22T17:40:00.000Z', '2026-06-22T17:40:00.000Z',
+        NULL, NULL, 77, 'https://github.com/pipe-labs/orders', 314,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-314', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+
+    const rankedResults = [{
+      rank: 1,
+      challengeId: 'packet-code-review-314',
+      repoId: '77',
+      prNumber: 314,
+      score: 0.88,
+      alignedDemandCount: 2,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'usable',
+        score: 9,
+        maxScore: 12,
+        metrics: [
+          {
+            id: 'skill_stack_overlap',
+            label: 'Skill/stack overlap',
+            score: 2,
+            maxScore: 2,
+            reason: 'Candidate and PR both center on TypeScript retry logic.',
+          },
+          {
+            id: 'contrast_separation',
+            label: 'Contrast separation',
+            score: 1,
+            maxScore: 2,
+            reason: 'The selected PR separated from the nearest eligible comparator.',
+          },
+        ],
+      },
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'advanced',
+        expectedSeniority: 'staff',
+        expectedTimeMinutes: 75,
+        basis: {
+          changedFileCount: 3,
+          changedLineCount: 443,
+          sourceHunkCount: 28,
+          testChangeCount: 1,
+          demandFamilyCount: 6,
+          hasIssueContext: false,
+        },
+        rationale: 'advanced review calibrated for staff candidates; 75 minute target; 3 files; 443 changed lines; 28 source hunks; 6 demand families; 1 test change; no issue context.',
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'test-v1',
+        mode: 'deterministic',
+        verdict: 'passed',
+        rationale: 'Selected PR #314 because candidate, role, and repo spans align on retry idempotency.',
+        checks: [{
+          id: 'provenance_complete',
+          passed: true,
+          reason: 'Candidate, role, and repo source refs are present.',
+        }],
+        sourceBridge: {
+          prNumber: 314,
+          candidateSourceCount: 1,
+          repoSourceCount: 1,
+          roleSourceCount: 1,
+          alignedDemandCount: 2,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [{
+        atomId: 'candidate-atom-retry',
+        demandId: 'repo-demand-retry',
+        pairScore: 0.92,
+        sharedConcepts: ['term:typescript', 'term:retry-idempotency'],
+        roleSourceRefs: [{
+          entityId: 'role-source-1',
+          sourceRefType: 'source_span',
+          sourceRefId: 'role-span-1',
+          sourceSpanId: 'role-span-1',
+          locator: 'job_description.md:12',
+          exactText: 'Needs TypeScript engineers who can review retry and idempotency risks.',
+          conceptKeys: ['term:typescript', 'term:retry-idempotency'],
+        }],
+        candidateSourceRefs: [{
+          sourceRefType: 'source_span',
+          sourceRefId: 'candidate-span-1',
+          sourceSpanId: 'candidate-span-1',
+          locator: 'resume.pdf:4',
+          exactText: 'Built TypeScript retry middleware with idempotent job processing.',
+          contentHash: 'candidate-hash',
+        }],
+        challengeSourceRefs: [{
+          sourceRefType: 'repo_source_span',
+          sourceRefId: 'repo-span-1',
+          locator: 'src/orders/retry.ts:18',
+          exactText: 'Retry path can publish duplicate order events if the idempotency key is missing.',
+          contentHash: 'repo-hash',
+        }],
+      }],
+      rejectionReasons: [],
+    }];
+    const roleSources = [{
+      entityId: 'role-source-1',
+      sourceRefType: 'source_span',
+      sourceRefId: 'role-span-1',
+      sourceSpanId: 'role-span-1',
+      locator: 'job_description.md:12',
+      exactText: 'Needs TypeScript engineers who can review retry and idempotency risks.',
+      conceptKeys: ['term:typescript', 'term:retry-idempotency'],
+    }];
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-1', 'candidate-1', 'role-context:role-1:source-backed:simple-jd-v1',
+        'MATCHED', ?, 'packet-code-review-314', ?, '2026-06-22T17:46:00.000Z'
+      )
+    `).run(
+      JSON.stringify(rankedResults),
+      JSON.stringify({ roleGuardrails: { sourceReferences: roleSources } }),
+    );
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-1');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        meetingUrl: string | null;
+        codeReviewMatch: {
+          status: string;
+          matchRunId: string | null;
+          packetId: string | null;
+          summary: string;
+          score: number | null;
+          reviewProfile: {
+            difficultyBand: string;
+            expectedSeniority: string;
+            expectedTimeMinutes: number;
+            basis: {
+              changedLineCount: number;
+              sourceHunkCount: number;
+            };
+          } | null;
+          validatorAgent: { verdict: string; rationale: string } | null;
+          evidenceHyperedges: Array<{
+            relation: string;
+            pairScore: number | null;
+            nodes: Array<{
+              kind: string;
+              sourceRef: {
+                locator?: string;
+                exactText?: string;
+                conceptKeys?: string[];
+              };
+            }>;
+          }>;
+        } | null;
+      };
+    };
+
+    expect(body.interview.meetingUrl).toBeNull();
+    expect(body.interview.codeReviewMatch).toMatchObject({
+      status: 'MATCHED',
+      matchRunId: 'match-run-code-review-1',
+      packetId: 'packet-code-review-314',
+      summary: 'Matched 2 source-backed demands (0 stretch).',
+      score: 0.88,
+      reviewProfile: {
+        difficultyBand: 'advanced',
+        expectedSeniority: 'staff',
+        expectedTimeMinutes: 75,
+        basis: {
+          changedLineCount: 443,
+          sourceHunkCount: 28,
+        },
+      },
+      validatorAgent: {
+        verdict: 'passed',
+        rationale: 'Selected PR #314 because candidate, role, and repo spans align on retry idempotency.',
+      },
+    });
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges).toHaveLength(1);
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges[0]).toMatchObject({
+      relation: 'candidate_role_repo_alignment',
+      pairScore: 0.92,
+      nodes: [
+        {
+          kind: 'person_evidence',
+          sourceRef: {
+            locator: 'resume.pdf:4',
+            exactText: 'Built TypeScript retry middleware with idempotent job processing.',
+          },
+        },
+        {
+          kind: 'role_source',
+          sourceRef: {
+            locator: 'job_description.md:12',
+            conceptKeys: ['term:retry-idempotency', 'term:typescript'],
+          },
+        },
+        {
+          kind: 'repo_challenge',
+          sourceRef: {
+            locator: 'src/orders/retry.ts:18',
+            exactText: 'Retry path can publish duplicate order events if the idempotency key is missing.',
+          },
+        },
+      ],
+    });
+  });
+
+  it('downgrades stale role-backed CODE_REVIEW validator proof when contrast was unmeasured', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-stale-gate', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'MATCHED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, 77, 'https://github.com/pipe-labs/orders', 314,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-stale-gate', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+
+    const contrastReason = 'No second eligible challenge was available in this explanation context, so score separation was not measured.';
+    const rankedResults = [{
+      rank: 1,
+      challengeId: 'packet-code-review-stale-gate',
+      repoId: '77',
+      prNumber: 314,
+      score: 0.88,
+      alignedDemandCount: 2,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      assessmentQuality: {
+        verdict: 'USABLE',
+        score: 9,
+        maxScore: 12,
+        metrics: [{
+          id: 'contrast_separation',
+          label: 'Contrast separation',
+          score: 0,
+          maxScore: 2,
+          reason: contrastReason,
+        }],
+      },
+      validatorAgent: {
+        agentName: 'deterministic-code-review-match-gate',
+        agentVersion: 'legacy-test-v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: 'Selected PR #314 because candidate, role, and repo spans align.',
+        checks: [{
+          id: 'provenance_complete',
+          passed: true,
+          reason: 'Candidate, role, and repo source refs are present.',
+        }],
+        sourceBridge: {
+          prNumber: 314,
+          candidateSourceCount: 1,
+          repoSourceCount: 1,
+          roleSourceCount: 1,
+          alignedDemandCount: 2,
+          stretchCount: 0,
+          provenanceComplete: true,
+        },
+      },
+      alignments: [],
+      rejectionReasons: [],
+    }];
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-stale-gate', 'candidate-1', 'role-context:role-1:source-backed:simple-jd-v1',
+        'MATCHED', ?, 'packet-code-review-stale-gate', '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run(JSON.stringify(rankedResults));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-stale-gate');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          status: string;
+          packetId: string | null;
+          assessmentQuality: { verdict: string } | null;
+          validatorAgent: {
+            verdict: string;
+            rationale: string;
+            checks: Array<{ id: string; passed: boolean; reason: string }>;
+          } | null;
+          gaps: string[];
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch).toMatchObject({
+      status: 'MATCHED',
+      packetId: 'packet-code-review-stale-gate',
+      assessmentQuality: { verdict: 'NEEDS_REVIEW' },
+      validatorAgent: {
+        verdict: 'NEEDS_REVIEW',
+      },
+    });
+    expect(body.interview.codeReviewMatch?.validatorAgent?.rationale).toContain('Needs recruiter review');
+    expect(body.interview.codeReviewMatch?.validatorAgent?.checks).toEqual(expect.arrayContaining([
+      {
+        id: 'contrast_separation_verified',
+        passed: false,
+        reason: contrastReason,
+      },
+    ]));
+    expect(body.interview.codeReviewMatch?.gaps).toContain(contrastReason);
+  });
+
+  it('keeps roleless CODE_REVIEW evidence as candidate-repo hyperedges', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-pairwise', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'MATCHED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, 88, 'https://github.com/pipe-labs/cache', 22,
+        NULL, NULL, '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-code-review-pairwise', 'snapshot-cache', 88, 22, 1,
+        0.89, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-code-review-pairwise', 'candidate-1', 'standalone-code-review-v1',
+        'MATCHED', ?, 'packet-code-review-pairwise', '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run(JSON.stringify([{
+      rank: 1,
+      challengeId: 'packet-code-review-pairwise',
+      repoId: '88',
+      prNumber: 22,
+      score: 0.74,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: true,
+      eligible: true,
+      alignments: [{
+        atomId: 'candidate-atom-cache',
+        demandId: 'repo-demand-cache',
+        pairScore: 0.74,
+        sharedConcepts: ['term:cache-invalidation'],
+        roleSourceRefs: [],
+        candidateSourceRefs: [{
+          sourceRefType: 'source_span',
+          sourceRefId: 'candidate-span-cache',
+          sourceSpanId: 'candidate-span-cache',
+          locator: 'resume.pdf:8',
+          exactText: 'Reviewed cache invalidation fixes in TypeScript services.',
+        }],
+        challengeSourceRefs: [{
+          sourceRefType: 'repo_source_span',
+          sourceRefId: 'repo-span-cache',
+          locator: 'src/cache/invalidate.ts:22',
+          exactText: 'Cache invalidation can race when two writes arrive together.',
+        }],
+      }],
+      rejectionReasons: [],
+    }]));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-pairwise');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          evidence: Array<{ atomId: string; demandId: string }>;
+          evidenceHyperedges: Array<{ relation: string; nodes: Array<{ kind: string }> }>;
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch?.evidence).toHaveLength(1);
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges).toEqual([
+      expect.objectContaining({
+        relation: 'candidate_repo_evidence_alignment',
+        nodes: [
+          expect.objectContaining({ kind: 'person_evidence' }),
+          expect.objectContaining({ kind: 'repo_challenge' }),
+        ],
+      }),
+    ]);
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges[0]?.nodes.some((node) =>
+      node.kind === 'role_source'
+    )).toBe(false);
+  });
+
+  it('returns manual CODE_REVIEW source-backed proof without an automatic match run', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO qualified_repos (id, github_url)
+      VALUES (973, 'https://github.com/mui/base-ui')
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-manual', 'candidate-1', NULL, NULL, 'owner-1',
+        'CODE_REVIEW', NULL, 'COMPLETED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Manual async review.',
+        'MANUAL', NULL, NULL, NULL,
+        'Ada Lovelace', 'ada@example.com', NULL, 'https://github.com/mui/base-ui', 973,
+        NULL, '2026-06-22T18:15:00.000Z', '2026-06-22T18:00:00.000Z', '2026-06-22T18:15:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-mui-base-ui-973', 'snapshot-mui-base-ui', 973, 973, 1,
+        0.9, ?, 1
+      )
+    `).run(JSON.stringify({
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+        basis: {
+          changedFileCount: 2,
+          changedLineCount: 128,
+          sourceHunkCount: 9,
+          testChangeCount: 1,
+          demandFamilyCount: 4,
+          hasIssueContext: true,
+        },
+        rationale: 'focused review calibrated for senior candidates; 45 minute target; issue context is available.',
+      },
+    }));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-manual');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          status: string;
+          matchRunId: string | null;
+          packetId: string | null;
+          summary: string;
+          score: number | null;
+          reviewProfile: {
+            difficultyBand: string;
+            expectedSeniority: string;
+            expectedTimeMinutes: number;
+          } | null;
+          validatorAgent: {
+            verdict: string;
+            sourceBridge: { repoSourceCount: number; candidateSourceCount: number } | null;
+          } | null;
+          evidenceHyperedges: unknown[];
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch).toMatchObject({
+      status: 'MATCHED',
+      matchRunId: null,
+      packetId: 'packet-mui-base-ui-973',
+      summary: expect.stringContaining('Manual override'),
+      score: 0.9,
+      reviewProfile: {
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+      },
+    });
+    expect(body.interview.codeReviewMatch?.validatorAgent).toMatchObject({
+      verdict: 'PASSED',
+      sourceBridge: {
+        candidateSourceCount: 0,
+        repoSourceCount: 1,
+      },
+    });
+    expect(body.interview.codeReviewMatch?.evidenceHyperedges).toEqual([]);
   });
 
   it('returns room status snapshots for recruiter real-time room updates', async () => {
@@ -1102,6 +1681,9 @@ describe('GET /interviews/:id detail', () => {
       success: true,
       emailSent: false,
     });
+    expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
+    expect(inviteBody.deliveredUrl).not.toContain('/room/');
+    expect(inviteBody.deliveredUrl).not.toContain('/video/');
     expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
     expect(inviteBody.room).toMatchObject({
       id: expect.any(String),
@@ -1183,7 +1765,7 @@ describe('GET /interviews/:id detail', () => {
     });
     expect(deliveryRecord?.exact_text.split('\n')).toEqual(expect.arrayContaining([
       'Recipient email: barbara@example.com',
-      expect.stringMatching(/^Subject: Video call invitation — Interview \(.+\)$/),
+      expect.stringMatching(/^Subject: Assessment invitation — Interview \(.+\)$/),
       `Delivered URL: ${inviteBody.deliveredUrl}`,
       `Room URL: ${inviteBody.meetingUrl}`,
       'Custom message: Please join prepared code review discussion.',
@@ -1951,6 +2533,129 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(response.status).toBe(201);
     const body = await response.json() as { interview: { id: string } };
     expect(body.interview.id).toBeDefined();
+  });
+
+  it('creates a person-first OPEN_SOURCE_BUG_FIX with explicit repo url + PR', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Margaret Hamilton',
+        recipientEmail: 'margaret@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        pipelineId: string | null;
+        candidateId: string | null;
+        contactId: string | null;
+      };
+    };
+    expect(body.interview.interviewType).toBe('OPEN_SOURCE_BUG_FIX');
+    expect(body.interview.githubRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
+    expect(body.interview.githubPrNumber).toBe(101);
+    expect(body.interview.matchedRepoId).toBeNull();
+    expect(body.interview.pipelineId).toBeNull();
+    expect(body.interview.candidateId).toBeNull();
+    expect(body.interview.contactId).not.toBeNull();
+
+    const row = sqlite!.prepare(
+      `SELECT interview_type, matched_repo_id, github_repo_url, github_pr_number,
+              pipeline_id, candidate_id, recipient_name, recipient_email
+         FROM scheduled_interviews WHERE id = ?`,
+    ).get(body.interview.id) as {
+      interview_type: string;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      pipeline_id: string | null;
+      candidate_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+    };
+    expect(row.interview_type).toBe('OPEN_SOURCE_BUG_FIX');
+    expect(row.github_repo_url).toBe('https://github.com/hash-pipe/open-source-task');
+    expect(row.github_pr_number).toBe(101);
+    expect(row.matched_repo_id).toBeNull();
+    expect(row.pipeline_id).toBeNull();
+    expect(row.candidate_id).toBeNull();
+    expect(row.recipient_name).toBe('Margaret Hamilton');
+    expect(row.recipient_email).toBe('margaret@example.com');
+  });
+
+  it('rejects CODE_REVIEW with partial manual repo (url without PR number)', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        githubRepoUrl: 'https://github.com/owner/repo',
+      }),
+    });
+    expect(response.status).toBe(422);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain('Manual repo override requires both githubRepoUrl and githubPrNumber');
+  });
+
+  it('creates a person-first CODE_REVIEW with explicit repo url + PR', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Grace Hopper',
+        recipientEmail: 'grace@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        githubRepoUrl: 'https://github.com/hash-pipe/review-challenge',
+        githubPrNumber: 17,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+      };
+    };
+    expect(body.interview.interviewType).toBe('CODE_REVIEW');
+    expect(body.interview.githubRepoUrl).toBe('https://github.com/hash-pipe/review-challenge');
+    expect(body.interview.githubPrNumber).toBe(17);
+
+    const row = sqlite!.prepare(
+      `SELECT interview_type, github_repo_url, github_pr_number
+         FROM scheduled_interviews WHERE id = ?`,
+    ).get(body.interview.id) as {
+      interview_type: string;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    };
+    expect(row.interview_type).toBe('CODE_REVIEW');
+    expect(row.github_repo_url).toBe('https://github.com/hash-pipe/review-challenge');
+    expect(row.github_pr_number).toBe(17);
   });
 
   it('rejects DEV_CONTAINER_CHALLENGE with partial manual repo (url without PR number)', async () => {

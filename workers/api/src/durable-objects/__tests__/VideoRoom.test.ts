@@ -360,6 +360,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 3,
         kind: 'WORKSPACE_STATE_CHANGED',
         status: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        githubPrNumber: 14435,
+        matchedRepoId: 42,
+        ttlSeconds: 3600,
+        ttlSource: 'default',
+        expiringSoon: false,
+        source: 'launch',
       },
     }));
 
@@ -376,6 +384,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'WORKSPACE_STATE_CHANGED',
         status: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        githubPrNumber: 14435,
+        matchedRepoId: 42,
+        source: 'launch',
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
@@ -385,6 +398,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-workspace-ready',
           kind: 'WORKSPACE_STATE_CHANGED',
           status: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          githubPrNumber: 14435,
+          matchedRepoId: 42,
+          ttlSeconds: 3600,
+          ttlSource: 'default',
+          expiringSoon: false,
+          source: 'launch',
         }),
       }),
     ]);
@@ -460,6 +481,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'Can you see this message?',
       }),
     }));
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE_ACK',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'chat-1',
+        role: 'HOST',
+        text: 'Can you see this message?',
+      }),
+    }));
     expect(storage.get('chatActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
@@ -469,6 +499,30 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     ]);
+  });
+
+  it('rejects invalid room chat messages with the client message id for reconciliation', async () => {
+    const host = new FakeSocket();
+    const { state, storage } = makeState([[host, 'HOST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-too-large',
+        clientId: 'host-client',
+        createdAt: 42,
+        role: 'HOST',
+        text: 'x'.repeat(2001),
+      },
+    }));
+
+    expect(storage.get('chatMessages')).toBeUndefined();
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE_REJECTED',
+      reason: 'INVALID_MESSAGE',
+      payload: { clientMessageId: 'chat-too-large' },
+    }));
   });
 
   it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
@@ -602,8 +656,35 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'DELETE_FILE',
         fileId: 'desktop-notes',
+        file: expect.objectContaining({
+          id: 'desktop-notes',
+          name: 'notes.txt',
+          content: 'Candidate asked about testing strategy.',
+        }),
       }),
     }));
+    expect(storage.get('fileSystemActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'fs-save-notes',
+          kind: 'UPSERT_FILE',
+        }),
+      }),
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'fs-delete-notes',
+          kind: 'DELETE_FILE',
+          fileId: 'desktop-notes',
+          file: expect.objectContaining({
+            id: 'desktop-notes',
+            name: 'notes.txt',
+            content: 'Candidate asked about testing strategy.',
+          }),
+        }),
+      }),
+    ]);
   });
 
   it('exposes replayable room activity logs for server-side evidence sync', async () => {

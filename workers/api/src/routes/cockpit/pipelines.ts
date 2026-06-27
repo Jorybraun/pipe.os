@@ -13,6 +13,24 @@ const pipelines = new Hono<{ Bindings: Env; Variables: Variables }>();
 // All pipeline routes require a valid Clerk JWT.
 pipelines.use('*', authMiddleware);
 
+const matchConfigSchema = z.object({
+  match_philosophy: z.enum(['tailored', 'hybrid', 'validate']).nullable().optional(),
+  tolerance: z.enum(['strict', 'moderate', 'lenient']).nullable().optional(),
+  stage_linkage: z.enum(['shared-repo', 'per-stage']).nullable().optional(),
+  automation_granularity: z.enum(['per-pipeline', 'per-candidate', 'per-stage', 'recruiter-override']).nullable().optional(),
+  hybrid_mix_ratio: z.number().min(0).max(1).nullable().optional(),
+});
+
+type MatchConfigPatch = z.infer<typeof matchConfigSchema>;
+
+function patchValue<K extends keyof MatchConfigPatch>(
+  input: MatchConfigPatch,
+  key: K,
+  fallback: NonNullable<MatchConfigPatch[K]> | null,
+): MatchConfigPatch[K] | null {
+  return Object.prototype.hasOwnProperty.call(input, key) ? (input[key] ?? null) : fallback;
+}
+
 // ─── GET /api/v1/pipelines ────────────────────────────────────────────────────
 
 /**
@@ -387,6 +405,104 @@ pipelines.patch('/:id', async (c) => {
     creationMode: updated!.creation_mode as string | null,
     createdAt: updated!.created_at as string,
     updatedAt: updated!.updated_at as string,
+  });
+});
+
+// ─── PATCH /api/v1/pipelines/:id/match-config ───────────────────────────────
+
+/**
+ * Upsert the per-pipeline matching policy used by candidate code-stage gates.
+ */
+pipelines.patch('/:id/match-config', async (c) => {
+  const userId = c.var.userId;
+  const pipelineId = c.req.param('id');
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return apiError(c, 'VALIDATION_ERROR', 'Request body must be valid JSON.');
+  }
+
+  const parsed = matchConfigSchema.safeParse(body);
+  if (!parsed.success) {
+    const message = parsed.error.errors.map((e) => e.message).join('; ');
+    return apiError(c, 'VALIDATION_ERROR', message);
+  }
+
+  const input = parsed.data;
+  if (Object.keys(input).length === 0) {
+    return apiError(c, 'VALIDATION_ERROR', 'At least one match config field must be provided.');
+  }
+
+  const pipeline = await c.env.DB.prepare(
+    'SELECT owner_id FROM pipelines WHERE id = ?1',
+  )
+    .bind(pipelineId)
+    .first<{ owner_id: string }>();
+
+  if (!pipeline) {
+    return apiError(c, 'NOT_FOUND', 'Pipeline not found.');
+  }
+  if (pipeline.owner_id !== userId) {
+    return apiError(c, 'FORBIDDEN', 'You do not own this pipeline.');
+  }
+
+  const existing = await c.env.DB.prepare(
+    `SELECT match_philosophy, tolerance, stage_linkage, automation_granularity, hybrid_mix_ratio
+       FROM pipeline_match_config
+      WHERE pipeline_id = ?1`,
+  )
+    .bind(pipelineId)
+    .first<{
+      match_philosophy: 'tailored' | 'hybrid' | 'validate' | null;
+      tolerance: 'strict' | 'moderate' | 'lenient' | null;
+      stage_linkage: 'shared-repo' | 'per-stage' | null;
+      automation_granularity: 'per-pipeline' | 'per-candidate' | 'per-stage' | 'recruiter-override' | null;
+      hybrid_mix_ratio: number | null;
+    }>();
+
+  const next = {
+    matchPhilosophy: patchValue(input, 'match_philosophy', existing?.match_philosophy ?? null),
+    tolerance: patchValue(input, 'tolerance', existing?.tolerance ?? null),
+    stageLinkage: patchValue(input, 'stage_linkage', existing?.stage_linkage ?? 'shared-repo'),
+    automationGranularity: patchValue(input, 'automation_granularity', existing?.automation_granularity ?? 'per-candidate'),
+    hybridMixRatio: patchValue(input, 'hybrid_mix_ratio', existing?.hybrid_mix_ratio ?? 0.6),
+  };
+
+  await c.env.DB.prepare(
+    `INSERT INTO pipeline_match_config (
+       pipeline_id, match_philosophy, tolerance, stage_linkage,
+       automation_granularity, hybrid_mix_ratio, recruiter_override_audit_json, updated_at
+     )
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, unixepoch())
+     ON CONFLICT(pipeline_id) DO UPDATE SET
+       match_philosophy = excluded.match_philosophy,
+       tolerance = excluded.tolerance,
+       stage_linkage = excluded.stage_linkage,
+       automation_granularity = excluded.automation_granularity,
+       hybrid_mix_ratio = excluded.hybrid_mix_ratio,
+       recruiter_override_audit_json = excluded.recruiter_override_audit_json,
+       updated_at = unixepoch()`,
+  )
+    .bind(
+      pipelineId,
+      next.matchPhilosophy,
+      next.tolerance,
+      next.stageLinkage,
+      next.automationGranularity,
+      next.hybridMixRatio,
+      JSON.stringify({ updatedBy: userId, patch: input }),
+    )
+    .run();
+
+  return c.json({
+    pipelineId,
+    matchPhilosophy: next.matchPhilosophy,
+    tolerance: next.tolerance,
+    stageLinkage: next.stageLinkage,
+    automationGranularity: next.automationGranularity,
+    hybridMixRatio: next.hybridMixRatio,
   });
 });
 

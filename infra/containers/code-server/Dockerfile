@@ -20,6 +20,7 @@ RUN curl -fsSL https://cli.devin.ai/install.sh | bash || test -x /root/.local/bi
 ENV PATH="/root/.local/bin:${PATH}"
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY agent-diagnostics.js /usr/local/bin/agent-diagnostics.js
 COPY agent-bridge.js /usr/local/bin/agent-bridge.js
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN mkdir -p /workspace && chown -R coder:coder /workspace

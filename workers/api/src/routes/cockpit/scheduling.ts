@@ -117,7 +117,19 @@ export const INTERVIEW_TYPE_VALUES = [
   'SCREENING',
   'CODE_REVIEW',
   'DEV_CONTAINER_CHALLENGE',
+  'OPEN_SOURCE_BUG_FIX',
 ] as const;
+
+type InterviewTypeValue = typeof INTERVIEW_TYPE_VALUES[number];
+
+function isWorkspaceAssessmentInterviewType(value: string | null | undefined): value is Extract<
+  InterviewTypeValue,
+  'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'
+> {
+  return value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX';
+}
 
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
@@ -150,10 +162,10 @@ const createInterviewSchema = z.object({
       path: ['candidateId'],
     });
   }
-  // DEV_CONTAINER_CHALLENGE interviews can attach a source-backed repo/PR task
-  // as a manual override. When no repo is specified, the matcher will select
-  // a source-backed PR challenge based on candidate evidence at runtime.
-  if (value.interviewType === 'DEV_CONTAINER_CHALLENGE') {
+  // Workspace-backed assessments can attach a source-backed repo/PR task as a
+  // manual override. When no repo is specified, matching selects a source-backed
+  // challenge from candidate evidence at runtime.
+  if (isWorkspaceAssessmentInterviewType(value.interviewType)) {
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
     const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
     const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
@@ -273,6 +285,798 @@ async function loadScheduledInterviewLivingContext(
   return loadContactLivingContext(db, contactId);
 }
 
+interface ScheduledCodeReviewSourceRef {
+  sourceRefType?: string;
+  sourceRefId?: string;
+  sourceSpanId?: string;
+  locator?: string;
+  exactText?: string;
+  contentHash?: string;
+}
+
+interface ScheduledCodeReviewRoleSource extends ScheduledCodeReviewSourceRef {
+  entityId: string;
+  conceptKeys: string[];
+}
+
+interface ScheduledCodeReviewQualityMetric {
+  id: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  reason: string;
+}
+
+interface ScheduledCodeReviewAssessmentQuality {
+  verdict: string;
+  score: number;
+  maxScore: number;
+  metrics: ScheduledCodeReviewQualityMetric[];
+}
+
+type ScheduledCodeReviewDifficultyBand = 'introductory' | 'focused' | 'advanced' | 'oversized';
+type ScheduledCodeReviewExpectedSeniority = 'mid' | 'senior' | 'staff';
+
+interface ScheduledCodeReviewReviewProfileBasis {
+  changedFileCount: number;
+  changedLineCount: number;
+  sourceHunkCount: number;
+  testChangeCount: number;
+  demandFamilyCount: number;
+  hasIssueContext: boolean;
+}
+
+interface ScheduledCodeReviewReviewProfile {
+  source: 'deterministic_engineering_prior';
+  difficultyBand: ScheduledCodeReviewDifficultyBand;
+  expectedSeniority: ScheduledCodeReviewExpectedSeniority;
+  expectedTimeMinutes: number;
+  basis: ScheduledCodeReviewReviewProfileBasis;
+  rationale: string;
+}
+
+interface ScheduledCodeReviewValidatorCheck {
+  id: string;
+  passed: boolean;
+  reason: string;
+}
+
+interface ScheduledCodeReviewValidatorSourceBridge {
+  prNumber: number | null;
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  provenanceComplete: boolean;
+}
+
+interface ScheduledCodeReviewValidatorAgent {
+  agentName: string;
+  agentVersion: string;
+  mode: string;
+  verdict: string;
+  rationale: string;
+  checks: ScheduledCodeReviewValidatorCheck[];
+  sourceBridge: ScheduledCodeReviewValidatorSourceBridge | null;
+}
+
+interface ScheduledCodeReviewAlignment {
+  atomId: string;
+  demandId: string;
+  sharedConcepts: string[];
+  pairScore: number | null;
+  roleSourceRefs: ScheduledCodeReviewRoleSource[];
+  candidateSourceRefs: ScheduledCodeReviewSourceRef[];
+  challengeSourceRefs: ScheduledCodeReviewSourceRef[];
+}
+
+interface ScheduledCodeReviewHyperedgeNode {
+  kind: 'person_evidence' | 'role_source' | 'repo_challenge';
+  label: string;
+  sourceRef: ScheduledCodeReviewSourceRef & { conceptKeys?: string[] };
+}
+
+interface ScheduledCodeReviewHyperedge {
+  relation: 'candidate_role_repo_alignment' | 'candidate_repo_evidence_alignment';
+  label: string;
+  pairScore: number | null;
+  nodes: ScheduledCodeReviewHyperedgeNode[];
+}
+
+interface ScheduledCodeReviewRankedResult {
+  rank: number | null;
+  challengeId: string;
+  repoId: string;
+  prNumber: number;
+  score: number | null;
+  alignedDemandCount: number;
+  stretchCount: number;
+  provenanceComplete: boolean;
+  eligible: boolean;
+  assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  reviewProfile: ScheduledCodeReviewReviewProfile | null;
+  validatorAgent: ScheduledCodeReviewValidatorAgent | null;
+  alignments: ScheduledCodeReviewAlignment[];
+  rejectionReasons: string[];
+}
+
+interface ScheduledCodeReviewMatchDetail {
+  status: string;
+  matchRunId: string | null;
+  packetId: string | null;
+  summary: string;
+  score: number | null;
+  assessmentQuality: ScheduledCodeReviewAssessmentQuality | null;
+  reviewProfile: ScheduledCodeReviewReviewProfile | null;
+  validatorAgent: ScheduledCodeReviewValidatorAgent | null;
+  roleSources: ScheduledCodeReviewRoleSource[];
+  evidence: ScheduledCodeReviewAlignment[];
+  evidenceHyperedges: ScheduledCodeReviewHyperedge[];
+  gaps: string[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReviewSourceRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): ScheduledCodeReviewSourceRef[] => {
+    if (!isRecord(item)) return [];
+    const sourceRef: ScheduledCodeReviewSourceRef = {};
+    const sourceRefType = optionalString(item.sourceRefType);
+    const sourceRefId = optionalString(item.sourceRefId);
+    const sourceSpanId = optionalString(item.sourceSpanId);
+    const locator = optionalString(item.locator);
+    const exactText = optionalString(item.exactText);
+    const contentHash = optionalString(item.contentHash);
+    if (sourceRefType) sourceRef.sourceRefType = sourceRefType;
+    if (sourceRefId) sourceRef.sourceRefId = sourceRefId;
+    if (sourceSpanId) sourceRef.sourceSpanId = sourceSpanId;
+    if (locator) sourceRef.locator = locator;
+    if (exactText) sourceRef.exactText = exactText;
+    if (contentHash) sourceRef.contentHash = contentHash;
+    return Object.keys(sourceRef).length > 0 ? [sourceRef] : [];
+  });
+}
+
+function parseScheduledCodeReviewRoleSources(value: unknown): ScheduledCodeReviewRoleSource[] {
+  if (!Array.isArray(value)) return [];
+  const deduped = new Map<string, ScheduledCodeReviewRoleSource>();
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const entityId = optionalString(item.entityId);
+    if (!entityId) continue;
+    const roleSource: ScheduledCodeReviewRoleSource = {
+      entityId,
+      conceptKeys: [...new Set(stringArray(item.conceptKeys))].sort(),
+    };
+    const sourceRefType = optionalString(item.sourceRefType);
+    const sourceRefId = optionalString(item.sourceRefId);
+    const sourceSpanId = optionalString(item.sourceSpanId);
+    const locator = optionalString(item.locator);
+    const exactText = optionalString(item.exactText);
+    const contentHash = optionalString(item.contentHash);
+    if (sourceRefType) roleSource.sourceRefType = sourceRefType;
+    if (sourceRefId) roleSource.sourceRefId = sourceRefId;
+    if (sourceSpanId) roleSource.sourceSpanId = sourceSpanId;
+    if (locator) roleSource.locator = locator;
+    if (exactText) roleSource.exactText = exactText;
+    if (contentHash) roleSource.contentHash = contentHash;
+    deduped.set(JSON.stringify(roleSource), roleSource);
+  }
+  return [...deduped.values()];
+}
+
+function parseScheduledCodeReviewRoleSourcesFromQuery(value: string | null): ScheduledCodeReviewRoleSource[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!isRecord(parsed) || !isRecord(parsed.roleGuardrails)) return [];
+    return parseScheduledCodeReviewRoleSources(parsed.roleGuardrails.sourceReferences);
+  } catch {
+    return [];
+  }
+}
+
+function parseScheduledCodeReviewAssessmentQuality(value: unknown): ScheduledCodeReviewAssessmentQuality | null {
+  if (!isRecord(value)) return null;
+  const verdict = optionalString(value.verdict);
+  const score = numberOrNull(value.score);
+  const maxScore = numberOrNull(value.maxScore);
+  const metrics = Array.isArray(value.metrics)
+    ? value.metrics.flatMap((item): ScheduledCodeReviewQualityMetric[] => {
+        if (!isRecord(item)) return [];
+        const id = optionalString(item.id);
+        const label = optionalString(item.label);
+        const metricScore = numberOrNull(item.score);
+        const metricMax = numberOrNull(item.maxScore);
+        const reason = optionalString(item.reason);
+        if (!id || !label || metricScore === null || metricMax === null || !reason) return [];
+        return [{ id, label, score: metricScore, maxScore: metricMax, reason }];
+      })
+    : [];
+  if (!verdict || score === null || maxScore === null) return null;
+  return { verdict, score, maxScore, metrics };
+}
+
+const SCHEDULED_CODE_REVIEW_DIFFICULTY_BANDS: readonly ScheduledCodeReviewDifficultyBand[] = [
+  'introductory',
+  'focused',
+  'advanced',
+  'oversized',
+];
+
+const SCHEDULED_CODE_REVIEW_EXPECTED_SENIORITIES: readonly ScheduledCodeReviewExpectedSeniority[] = [
+  'mid',
+  'senior',
+  'staff',
+];
+
+function isScheduledCodeReviewDifficultyBand(value: unknown): value is ScheduledCodeReviewDifficultyBand {
+  return typeof value === 'string'
+    && (SCHEDULED_CODE_REVIEW_DIFFICULTY_BANDS as readonly string[]).includes(value);
+}
+
+function isScheduledCodeReviewExpectedSeniority(value: unknown): value is ScheduledCodeReviewExpectedSeniority {
+  return typeof value === 'string'
+    && (SCHEDULED_CODE_REVIEW_EXPECTED_SENIORITIES as readonly string[]).includes(value);
+}
+
+function parseScheduledCodeReviewReviewProfile(value: unknown): ScheduledCodeReviewReviewProfile | null {
+  if (!isRecord(value)) return null;
+  if (value.source !== 'deterministic_engineering_prior') return null;
+  if (!isScheduledCodeReviewDifficultyBand(value.difficultyBand)) return null;
+  if (!isScheduledCodeReviewExpectedSeniority(value.expectedSeniority)) return null;
+  const expectedTimeMinutes = numberOrNull(value.expectedTimeMinutes);
+  const rationale = optionalString(value.rationale);
+  if (expectedTimeMinutes === null || !rationale) return null;
+
+  if (!isRecord(value.basis)) return null;
+  const changedFileCount = numberOrNull(value.basis.changedFileCount);
+  const changedLineCount = numberOrNull(value.basis.changedLineCount);
+  const sourceHunkCount = numberOrNull(value.basis.sourceHunkCount);
+  const testChangeCount = numberOrNull(value.basis.testChangeCount);
+  const demandFamilyCount = numberOrNull(value.basis.demandFamilyCount);
+  if (
+    changedFileCount === null
+    || changedLineCount === null
+    || sourceHunkCount === null
+    || testChangeCount === null
+    || demandFamilyCount === null
+    || typeof value.basis.hasIssueContext !== 'boolean'
+  ) {
+    return null;
+  }
+
+  return {
+    source: 'deterministic_engineering_prior',
+    difficultyBand: value.difficultyBand,
+    expectedSeniority: value.expectedSeniority,
+    expectedTimeMinutes,
+    basis: {
+      changedFileCount,
+      changedLineCount,
+      sourceHunkCount,
+      testChangeCount,
+      demandFamilyCount,
+      hasIssueContext: value.basis.hasIssueContext,
+    },
+    rationale,
+  };
+}
+
+function parseScheduledCodeReviewPacketReviewProfile(packetJson: string | null): ScheduledCodeReviewReviewProfile | null {
+  if (!packetJson) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(packetJson);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  return parseScheduledCodeReviewReviewProfile(parsed.reviewProfile);
+}
+
+async function loadScheduledCodeReviewPacketReviewProfile(
+  db: D1Database,
+  packetId: string | null | undefined,
+): Promise<ScheduledCodeReviewReviewProfile | null> {
+  if (!packetId) return null;
+  const packet = await db.prepare(
+    `SELECT packet_json
+       FROM review_challenge_packets
+      WHERE id = ?1
+      LIMIT 1`,
+  ).bind(packetId).first<{ packet_json: string | null }>();
+  return parseScheduledCodeReviewPacketReviewProfile(packet?.packet_json ?? null);
+}
+
+function parseScheduledCodeReviewValidatorAgent(value: unknown): ScheduledCodeReviewValidatorAgent | null {
+  if (!isRecord(value)) return null;
+  const agentName = optionalString(value.agentName);
+  const agentVersion = optionalString(value.agentVersion);
+  const mode = optionalString(value.mode);
+  const verdict = optionalString(value.verdict);
+  const rationale = optionalString(value.rationale);
+  if (!agentName || !agentVersion || !mode || !verdict || !rationale) return null;
+
+  const checks = Array.isArray(value.checks)
+    ? value.checks.flatMap((item): ScheduledCodeReviewValidatorCheck[] => {
+        if (!isRecord(item)) return [];
+        const id = optionalString(item.id);
+        const reason = optionalString(item.reason);
+        if (!id || !reason) return [];
+        return [{ id, passed: item.passed === true, reason }];
+      })
+    : [];
+
+  let sourceBridge: ScheduledCodeReviewValidatorSourceBridge | null = null;
+  if (isRecord(value.sourceBridge)) {
+    const candidateSourceCount = numberOrNull(value.sourceBridge.candidateSourceCount);
+    const repoSourceCount = numberOrNull(value.sourceBridge.repoSourceCount);
+    const roleSourceCount = numberOrNull(value.sourceBridge.roleSourceCount);
+    const alignedDemandCount = numberOrNull(value.sourceBridge.alignedDemandCount);
+    const stretchCount = numberOrNull(value.sourceBridge.stretchCount);
+    if (
+      candidateSourceCount !== null
+      && repoSourceCount !== null
+      && roleSourceCount !== null
+      && alignedDemandCount !== null
+      && stretchCount !== null
+    ) {
+      sourceBridge = {
+        prNumber: numberOrNull(value.sourceBridge.prNumber),
+        candidateSourceCount,
+        repoSourceCount,
+        roleSourceCount,
+        alignedDemandCount,
+        stretchCount,
+        provenanceComplete: value.sourceBridge.provenanceComplete === true,
+      };
+    }
+  }
+
+  return {
+    agentName,
+    agentVersion,
+    mode,
+    verdict,
+    rationale,
+    checks,
+    sourceBridge,
+  };
+}
+
+function parseScheduledCodeReviewRankedResults(
+  value: string | null,
+): ScheduledCodeReviewRankedResult[] {
+  if (!value) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.flatMap((item): ScheduledCodeReviewRankedResult[] => {
+    if (!isRecord(item)) return [];
+    const challengeId = optionalString(item.challengeId);
+    const repoId = optionalString(item.repoId);
+    const prNumber = numberOrNull(item.prNumber);
+    const alignedDemandCount = numberOrNull(item.alignedDemandCount);
+    const stretchCount = numberOrNull(item.stretchCount);
+    if (!challengeId || !repoId || prNumber === null || alignedDemandCount === null || stretchCount === null) {
+      return [];
+    }
+    const alignments = Array.isArray(item.alignments)
+      ? item.alignments.flatMap((alignment): ScheduledCodeReviewAlignment[] => {
+          if (!isRecord(alignment)) return [];
+          const atomId = optionalString(alignment.atomId);
+          const demandId = optionalString(alignment.demandId);
+          if (!atomId || !demandId) return [];
+          return [{
+            atomId,
+            demandId,
+            sharedConcepts: stringArray(alignment.sharedConcepts),
+            pairScore: numberOrNull(alignment.pairScore),
+            roleSourceRefs: parseScheduledCodeReviewRoleSources(alignment.roleSourceRefs),
+            candidateSourceRefs: parseScheduledCodeReviewSourceRefs(alignment.candidateSourceRefs),
+            challengeSourceRefs: parseScheduledCodeReviewSourceRefs(alignment.challengeSourceRefs),
+          }];
+        })
+      : [];
+    return [{
+      rank: numberOrNull(item.rank),
+      challengeId,
+      repoId,
+      prNumber,
+      score: numberOrNull(item.score),
+      alignedDemandCount,
+      stretchCount,
+      provenanceComplete: item.provenanceComplete === true,
+      eligible: item.eligible === true,
+      assessmentQuality: parseScheduledCodeReviewAssessmentQuality(item.assessmentQuality),
+      reviewProfile: parseScheduledCodeReviewReviewProfile(item.reviewProfile),
+      validatorAgent: parseScheduledCodeReviewValidatorAgent(item.validatorAgent),
+      alignments,
+      rejectionReasons: stringArray(item.rejectionReasons),
+    }];
+  });
+}
+
+function scheduledCodeReviewMatchSummary(
+  status: string,
+  selected: ScheduledCodeReviewRankedResult | null,
+): { summary: string; gaps: string[] } {
+  if (!selected) {
+    if (status === 'PENDING_INTAKE') {
+      return {
+        summary: 'Waiting for candidate resume/profile evidence before matching to a PR.',
+        gaps: ['Candidate has not submitted source evidence yet.'],
+      };
+    }
+    return {
+      summary: 'No source-backed code review match is available for this interview yet.',
+      gaps: [],
+    };
+  }
+  if (status === 'NO_ROLE_SAFE_CHALLENGE') {
+    return {
+      summary: 'Matcher found candidate evidence, but no reviewable PR passed guardrails.',
+      gaps: selected.rejectionReasons.length
+        ? selected.rejectionReasons
+        : ['No eligible challenge had complete provenance and non-generic alignment.'],
+    };
+  }
+  return {
+    summary: `Matched ${selected.alignedDemandCount} source-backed demand${selected.alignedDemandCount === 1 ? '' : 's'} (${selected.stretchCount} stretch).`,
+    gaps: selected.rejectionReasons,
+  };
+}
+
+function isPassedCodeReviewVerdict(verdict: string | null | undefined): boolean {
+  return (verdict ?? '').trim().toUpperCase() === 'PASSED';
+}
+
+function roleBackedContrastGapReason(
+  selected: ScheduledCodeReviewRankedResult | null,
+  roleSources: ScheduledCodeReviewRoleSource[],
+): string | null {
+  if (!selected) return null;
+  const roleSourceCount = selected.validatorAgent?.sourceBridge?.roleSourceCount
+    ?? roleSources.length
+    ?? 0;
+  const hasRoleEvidence = roleSourceCount > 0
+    || selected.alignments.some((alignment) => alignment.roleSourceRefs.length > 0);
+  if (!hasRoleEvidence) return null;
+
+  const contrastMetric = selected.assessmentQuality?.metrics.find((metric) =>
+    metric.id === 'contrast_separation'
+  );
+  if (contrastMetric && contrastMetric.score > 0) return null;
+
+  return contrastMetric?.reason
+    ?? 'Role-backed automatic matching did not measure positive separation from another eligible PR.';
+}
+
+function normalizeScheduledCodeReviewAssessmentQuality(
+  selected: ScheduledCodeReviewRankedResult | null,
+  roleSources: ScheduledCodeReviewRoleSource[],
+): ScheduledCodeReviewAssessmentQuality | null {
+  const assessmentQuality = selected?.assessmentQuality ?? null;
+  const contrastGap = roleBackedContrastGapReason(selected, roleSources);
+  if (!assessmentQuality || !contrastGap) return assessmentQuality;
+  if (assessmentQuality.verdict.toUpperCase() === 'NEEDS_REVIEW') return assessmentQuality;
+  return {
+    ...assessmentQuality,
+    verdict: 'NEEDS_REVIEW',
+  };
+}
+
+function normalizeScheduledCodeReviewValidatorAgent(
+  selected: ScheduledCodeReviewRankedResult | null,
+  roleSources: ScheduledCodeReviewRoleSource[],
+): ScheduledCodeReviewValidatorAgent | null {
+  const validatorAgent = selected?.validatorAgent ?? null;
+  const contrastGap = roleBackedContrastGapReason(selected, roleSources);
+  if (!validatorAgent || !contrastGap || !isPassedCodeReviewVerdict(validatorAgent.verdict)) {
+    return validatorAgent;
+  }
+
+  const hasContrastCheck = validatorAgent.checks.some((check) =>
+    check.id === 'contrast_separation_verified'
+  );
+  return {
+    ...validatorAgent,
+    verdict: 'NEEDS_REVIEW',
+    rationale: `${validatorAgent.rationale} Needs recruiter review: ${contrastGap}`,
+    checks: [
+      ...validatorAgent.checks,
+      ...(hasContrastCheck
+        ? []
+        : [{
+            id: 'contrast_separation_verified',
+            passed: false,
+            reason: contrastGap,
+          }]),
+    ],
+  };
+}
+
+function buildScheduledCodeReviewHyperedges(
+  alignments: ScheduledCodeReviewAlignment[],
+  roleSources: ScheduledCodeReviewRoleSource[],
+): ScheduledCodeReviewHyperedge[] {
+  return alignments.flatMap((alignment, index) => {
+    const roleRef = alignment.roleSourceRefs[0] ?? roleSources[0];
+    const candidateRef = alignment.candidateSourceRefs[0];
+    const challengeRef = alignment.challengeSourceRefs[0];
+    const nodes: ScheduledCodeReviewHyperedgeNode[] = [
+      ...(candidateRef
+        ? [{
+            kind: 'person_evidence' as const,
+            label: 'Person evidence',
+            sourceRef: candidateRef,
+          }]
+        : []),
+      ...(roleRef
+        ? [{
+            kind: 'role_source' as const,
+            label: 'Role source',
+            sourceRef: roleRef,
+          }]
+        : []),
+      ...(challengeRef
+        ? [{
+            kind: 'repo_challenge' as const,
+            label: 'Repo challenge',
+            sourceRef: challengeRef,
+          }]
+        : []),
+    ];
+    const hasPersonEvidence = nodes.some((node) => node.kind === 'person_evidence');
+    const hasRoleSource = nodes.some((node) => node.kind === 'role_source');
+    const hasRepoChallenge = nodes.some((node) => node.kind === 'repo_challenge');
+    if (!hasPersonEvidence || !hasRepoChallenge) return [];
+    return [{
+      relation: hasRoleSource ? 'candidate_role_repo_alignment' : 'candidate_repo_evidence_alignment',
+      label: hasRoleSource ? `Evidence bridge ${index + 1}` : `Candidate evidence bridge ${index + 1}`,
+      pairScore: alignment.pairScore,
+      nodes,
+    }];
+  });
+}
+
+function scheduledManualCodeReviewAssessmentQuality(): ScheduledCodeReviewAssessmentQuality {
+  return {
+    verdict: 'USABLE',
+    score: 8,
+    maxScore: 12,
+    metrics: [
+      {
+        id: 'skill_stack_overlap',
+        label: 'Skill/stack overlap',
+        score: 1,
+        maxScore: 2,
+        reason: 'Manual override does not infer candidate-specific CV alignment; the candidate still reviewed a source-backed PR.',
+      },
+      {
+        id: 'role_demand_overlap',
+        label: 'Role/JD overlap',
+        score: 1,
+        maxScore: 2,
+        reason: 'No role/JD source was supplied for this standalone manual override.',
+      },
+      {
+        id: 'pr_reviewability',
+        label: 'PR reviewability',
+        score: 2,
+        maxScore: 2,
+        reason: 'The selected PR has a production-ready review packet.',
+      },
+      {
+        id: 'match_specificity',
+        label: 'Match specificity',
+        score: 2,
+        maxScore: 2,
+        reason: 'The challenge targets one concrete repository, PR, and review packet.',
+      },
+      {
+        id: 'source_coverage',
+        label: 'Source coverage',
+        score: 2,
+        maxScore: 2,
+        reason: 'Repository-side provenance is complete; candidate-side fit was intentionally not inferred.',
+      },
+      {
+        id: 'contrast_separation',
+        label: 'Contrast separation',
+        score: 0,
+        maxScore: 2,
+        reason: 'Manual override bypasses automatic candidate-to-PR ranking, so score separation was not measured.',
+      },
+    ],
+  };
+}
+
+function scheduledManualCodeReviewValidator(prNumber: number): ScheduledCodeReviewValidatorAgent {
+  return {
+    agentName: 'deterministic-code-review-match-gate',
+    agentVersion: 'manual-source-backed-v1',
+    mode: 'deterministic',
+    verdict: 'PASSED',
+    rationale: `Recruiter-selected PR #${prNumber} is accepted as a manual CODE_REVIEW override because it has a production-ready source-backed review packet. Candidate-specific CV alignment is not inferred on this path.`,
+    checks: [
+      {
+        id: 'repo_source_spans',
+        passed: true,
+        reason: 'The selected PR has a persisted production-ready review packet.',
+      },
+      {
+        id: 'source_backed_manual_override',
+        passed: true,
+        reason: 'The recruiter explicitly selected this PR, so PIPE validates reviewability and provenance instead of claiming an automatic CV match.',
+      },
+      {
+        id: 'agent_validated_match',
+        passed: true,
+        reason: 'The deterministic gate accepted the selected PR for manual assessment delivery.',
+      },
+    ],
+    sourceBridge: {
+      prNumber,
+      candidateSourceCount: 0,
+      repoSourceCount: 1,
+      roleSourceCount: 0,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: true,
+    },
+  };
+}
+
+async function loadManualCodeReviewMatchDetail(
+  db: D1Database,
+  interview: {
+    matched_repo_id: number | null;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  },
+): Promise<ScheduledCodeReviewMatchDetail | null> {
+  if (!interview.github_pr_number || (!interview.matched_repo_id && !interview.github_repo_url)) {
+    return null;
+  }
+
+  const packet = await db.prepare(
+    `SELECT rcp.id, rcp.quality_score, rcp.packet_json
+       FROM review_challenge_packets rcp
+       LEFT JOIN qualified_repos qr ON qr.id = rcp.repo_id
+      WHERE rcp.pr_number = ?1
+        AND rcp.production_ready = 1
+        AND (
+          (?2 IS NOT NULL AND rcp.repo_id = ?2)
+          OR (?3 IS NOT NULL AND qr.github_url = ?3)
+        )
+      ORDER BY rcp.quality_score DESC, rcp.updated_at DESC
+      LIMIT 1`,
+  ).bind(
+    interview.github_pr_number,
+    interview.matched_repo_id,
+    interview.github_repo_url,
+  ).first<{ id: string; quality_score: number | null; packet_json: string | null }>();
+
+  if (!packet) return null;
+
+  return {
+    status: 'MATCHED',
+    matchRunId: null,
+    packetId: packet.id,
+    summary: 'Manual override: recruiter-selected source-backed review challenge. PIPE validated that the PR is reviewable and source-backed, but did not infer candidate-specific CV alignment.',
+    score: numberOrNull(packet.quality_score),
+    assessmentQuality: scheduledManualCodeReviewAssessmentQuality(),
+    reviewProfile: parseScheduledCodeReviewPacketReviewProfile(packet.packet_json),
+    validatorAgent: scheduledManualCodeReviewValidator(interview.github_pr_number),
+    roleSources: [],
+    evidence: [],
+    evidenceHyperedges: [],
+    gaps: ['Manual override did not run automatic candidate-to-PR contrast ranking.'],
+  };
+}
+
+async function loadScheduledCodeReviewMatchDetail(
+  db: D1Database,
+  interview: {
+    candidate_id: string | null;
+    interview_type: string | null;
+    matched_repo_id: number | null;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  },
+): Promise<ScheduledCodeReviewMatchDetail | null> {
+  if (interview.interview_type !== 'CODE_REVIEW' || !interview.candidate_id) return null;
+
+  const run = await db.prepare(
+    `SELECT id, status, ranked_results_json, selected_packet_id, query_json
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY
+        CASE
+          WHEN ?2 IS NOT NULL
+           AND ?3 IS NOT NULL
+           AND selected_packet_id IN (
+             SELECT id FROM review_challenge_packets
+              WHERE repo_id = ?2 AND pr_number = ?3
+           )
+          THEN 0
+          ELSE 1
+        END,
+        created_at DESC,
+        id DESC
+      LIMIT 1`,
+  ).bind(
+    interview.candidate_id,
+    interview.matched_repo_id,
+    interview.github_pr_number,
+  ).first<{
+    id: string;
+    status: string;
+    ranked_results_json: string | null;
+    selected_packet_id: string | null;
+    query_json: string | null;
+  }>();
+
+  if (!run) return loadManualCodeReviewMatchDetail(db, interview);
+
+  const rankedResults = parseScheduledCodeReviewRankedResults(run.ranked_results_json);
+  const selected = rankedResults.find((result) => result.challengeId === run.selected_packet_id)
+    ?? rankedResults.find((result) => result.rank === 1)
+    ?? rankedResults.find((result) => result.eligible)
+    ?? rankedResults[0]
+    ?? null;
+  const summary = scheduledCodeReviewMatchSummary(run.status, selected);
+  const roleSources = parseScheduledCodeReviewRoleSourcesFromQuery(run.query_json);
+  const evidence = selected?.alignments.slice(0, 4) ?? [];
+  const selectedPacketId = selected?.challengeId ?? run.selected_packet_id;
+  const reviewProfile = selected?.reviewProfile
+    ?? await loadScheduledCodeReviewPacketReviewProfile(db, selectedPacketId);
+  const contrastGap = roleBackedContrastGapReason(selected, roleSources);
+  const gaps = [
+    ...summary.gaps,
+    ...(contrastGap ? [contrastGap] : []),
+  ];
+
+  return {
+    status: run.status,
+    matchRunId: run.id,
+    packetId: selectedPacketId,
+    summary: summary.summary,
+    score: selected?.score ?? null,
+    assessmentQuality: normalizeScheduledCodeReviewAssessmentQuality(selected, roleSources),
+    reviewProfile,
+    validatorAgent: normalizeScheduledCodeReviewValidatorAgent(selected, roleSources),
+    roleSources,
+    evidence,
+    evidenceHyperedges: buildScheduledCodeReviewHyperedges(evidence, roleSources),
+    gaps: [...new Set(gaps)],
+  };
+}
+
 async function ensureRecipientContact(
   db: D1Database,
   ownerId: string,
@@ -313,9 +1117,9 @@ async function ensureRecipientContact(
 
 /**
  * Ensure a standalone (pipeline-free) candidate exists for the given email,
- * returning the candidate id + invite token. Used for CODE_REVIEW and
- * DEV_CONTAINER_CHALLENGE interviews so the email can include an assessment
- * link that authenticates the candidate through /assess/:token.
+ * returning the candidate id + invite token. Used for workspace-backed
+ * assessments so the email can include an assessment link that authenticates
+ * the candidate through /assess/:token.
  */
 async function ensureStandaloneCandidateForInterview(
   db: D1Database,
@@ -1639,6 +2443,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     }>();
 
   const livingContext = await loadScheduledInterviewLivingContext(db, userId, interview);
+  const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
 
   return c.json({
     interview: {
@@ -1710,6 +2515,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         updatedAt: linkedMeeting.updated_at,
       } : null,
       livingContext,
+      codeReviewMatch,
       createdAt: interview.created_at,
       updatedAt: interview.updated_at,
     },
@@ -2021,11 +2827,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     ? withDevBasicAuth(interview.scheduling_url, c.env)
     : null;
 
-  // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
+  // For workspace-backed assessments, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
   // the candidate and routes them to the code review / dev container challenge.
-  const needsAssessmentLink = interview.interview_type === 'CODE_REVIEW'
-    || interview.interview_type === 'DEV_CONTAINER_CHALLENGE';
+  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
   let assessUrl: string | null = null;
   if (needsAssessmentLink && !interview.candidate_id) {
     const recipientName = interview.candidate_name
@@ -2110,7 +2915,11 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 </div>`;
 
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
-  const subjectPrefix = schedulingInviteUrl ? 'Schedule interview' : 'Video call invitation';
+  const subjectPrefix = schedulingInviteUrl
+    ? 'Schedule interview'
+    : needsAssessmentLink
+      ? 'Assessment invitation'
+      : 'Video call invitation';
   const subject = scheduledTime
     ? `${subjectPrefix} — ${rawPipelineTitle} (${scheduledTime})`
     : `${subjectPrefix} — ${rawPipelineTitle}`;

@@ -10,6 +10,7 @@ import type {
   ChallengePacket,
   EvidenceLevel,
   MatchExplanation,
+  MatchValidatorDecision,
   QueryPurpose,
   RoleSourceReference,
   SourceRef,
@@ -406,6 +407,7 @@ async function challengePacketIntegrityFailures(
     demands: packet.demands,
     demandFamilies: packet.demandFamilies,
     quality: packet.quality,
+    reviewProfile: packet.reviewProfile,
   };
   const expectedPacketHash = await hashObject(content);
 
@@ -532,6 +534,7 @@ export function materializeChallengePacketForMatching(
       challengeReady: packet.quality.eligible,
       languages: [packet.languageSupport.normalizedLanguage],
       seniority: undefined,
+      reviewProfile: packet.reviewProfile,
       concepts: [...new Set(packet.demands.flatMap((demand) => demand.conceptKeys))],
       demands: packet.demands.map((demand) => {
         const concepts = demand.conceptKeys;
@@ -853,6 +856,7 @@ function buildMatchContextRecordInput(input: {
   diagnostics: ChallengeMatchDiagnostics;
   conceptResolverVersion: string | null;
   roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
+  validatorAgent: MatchValidatorDecision;
   concepts: ContextRecordConceptInput[];
 }): ContextRecordInput {
   const selectedPacketId = input.selected?.challenge.id ?? null;
@@ -1055,6 +1059,7 @@ function buildMatchContextRecordInput(input: {
       recalledPacketIds: input.diagnostics.recalledPacketIds,
       excludedPackets: input.diagnostics.excludedPackets as unknown as JsonValue,
       evaluatedChallenges: input.diagnostics.evaluatedChallenges as unknown as JsonValue,
+      validatorAgent: input.validatorAgent as unknown as JsonValue,
       alignmentScores: input.evaluated.map((alignment) => ({
         challengeId: alignment.challenge.id,
         score: alignment.finalScore,
@@ -1137,6 +1142,157 @@ function roleSourcesForSharedConcepts(
   );
 }
 
+function sourceRefFingerprint(ref: SourceRef): string {
+  return [
+    ref.sourceRefType ?? '',
+    ref.sourceRefId ?? '',
+    ref.sourceSpanId ?? '',
+    ref.contentHash ?? '',
+    ref.locator ?? '',
+    ref.exactText ?? '',
+  ].join('|');
+}
+
+function roleSourceFingerprint(ref: RoleSourceReference): string {
+  return [
+    ref.sourceRefType ?? '',
+    ref.sourceRefId ?? '',
+    ref.sourceSpanId ?? '',
+    ref.contentHash ?? '',
+    ref.locator,
+    ref.exactText ?? '',
+    ref.conceptKeys.join(','),
+  ].join('|');
+}
+
+function uniqueSourceCount(refs: SourceRef[]): number {
+  return new Set(refs.map(sourceRefFingerprint)).size;
+}
+
+function uniqueRoleSourceCount(refs: RoleSourceReference[]): number {
+  return new Set(refs.map(roleSourceFingerprint)).size;
+}
+
+function selectedRoleSourcesForAlignment(
+  alignment: ReturnType<typeof alignCandidateToChallenge>,
+  roleSources: RoleSourceReference[],
+): RoleSourceReference[] {
+  const sharedConcepts = new Set(
+    alignment.alignments.flatMap((entry) =>
+      entry.atom.concepts.filter((concept) => entry.demand.concepts.includes(concept))
+    ),
+  );
+  if (sharedConcepts.size === 0) return [];
+  return roleSources.filter((source) =>
+    source.conceptKeys.some((conceptKey) => sharedConcepts.has(conceptKey))
+  );
+}
+
+function buildMatchValidatorDecision(input: {
+  matchRunId: string;
+  status: CandidateReviewChallengeMatch['status'];
+  selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  roleSources: RoleSourceReference[];
+}): MatchValidatorDecision {
+  const candidateSourceCount = input.selected
+    ? uniqueSourceCount(input.selected.alignments.flatMap((entry) => entry.atom.sourceRefs))
+    : 0;
+  const repoSourceCount = input.selected
+    ? uniqueSourceCount(input.selected.alignments.flatMap((entry) => entry.demand.sourceRefs))
+    : 0;
+  const roleSourceCount = input.selected
+    ? uniqueRoleSourceCount(selectedRoleSourcesForAlignment(input.selected, input.roleSources))
+    : 0;
+  const alignedDemandCount = input.selected?.alignments.length ?? 0;
+  const stretchCount = input.selected?.stretchCount ?? 0;
+  const provenanceComplete = input.selected?.provenanceComplete ?? false;
+  const hasRoleSources = input.roleSources.length > 0;
+  const checks: MatchValidatorDecision['checks'] = [
+    {
+      id: 'candidate_source_evidence',
+      passed: candidateSourceCount > 0,
+      reason: candidateSourceCount > 0
+        ? `${candidateSourceCount} distinct candidate source span(s) support the match.`
+        : 'No candidate source evidence supports this match.',
+    },
+    {
+      id: 'repo_source_spans',
+      passed: repoSourceCount > 0,
+      reason: repoSourceCount > 0
+        ? `${repoSourceCount} distinct repository source span(s) support the challenge.`
+        : 'No repository source spans support this challenge.',
+    },
+    {
+      id: 'role_context_alignment',
+      passed: hasRoleSources ? roleSourceCount > 0 : true,
+      reason: hasRoleSources
+        ? `${roleSourceCount} role source span(s) share concepts with the selected challenge.`
+        : 'No role source was supplied for this standalone match.',
+    },
+    {
+      id: 'provenance_complete',
+      passed: provenanceComplete,
+      reason: provenanceComplete
+        ? 'Candidate and repository evidence both carry complete source provenance.'
+        : 'Candidate or repository evidence is missing complete source provenance.',
+    },
+    {
+      id: 'bounded_stretch',
+      passed: Boolean(input.selected) && stretchCount <= 1,
+      reason: input.selected
+        ? `${stretchCount} adjacent stretch match(es) used; maximum allowed is 1.`
+        : 'No selected challenge exists to evaluate stretch bounds.',
+    },
+    {
+      id: 'eligible_match',
+      passed: input.status === 'MATCHED' && input.selected?.eligible === true,
+      reason: input.status === 'MATCHED' && input.selected?.eligible === true
+        ? 'The selected challenge passed all deterministic ranking gates.'
+        : 'No selected challenge passed every deterministic ranking gate.',
+    },
+  ];
+  const hardGateIds = new Set([
+    'candidate_source_evidence',
+    'repo_source_spans',
+    'role_context_alignment',
+    'provenance_complete',
+    'bounded_stretch',
+    'eligible_match',
+  ]);
+  const hardGateFailed = checks.some((check) => hardGateIds.has(check.id) && !check.passed);
+  const verdict: MatchValidatorDecision['verdict'] = input.selected
+    ? hardGateFailed ? 'REJECTED' : 'PASSED'
+    : input.status === 'NEEDS_MORE_EVIDENCE' ? 'NEEDS_REVIEW' : 'REJECTED';
+  const rationale = input.selected
+    ? `Selected PR #${input.selected.challenge.prNumber} because candidate evidence, role context, and repository source spans align across ${alignedDemandCount} source-backed demand${alignedDemandCount === 1 ? '' : 's'}.`
+    : input.status === 'NEEDS_MORE_EVIDENCE'
+      ? 'No PR was selected because the candidate needs more source-backed evidence before matching.'
+      : 'No PR was selected because no role-safe source-backed review challenge passed the validator.';
+
+  return {
+    agentName: 'source_backed_match_validator',
+    agentVersion: 'v1',
+    mode: 'deterministic',
+    verdict,
+    rationale,
+    checks,
+    sourceBridge: {
+      matchRunId: input.matchRunId,
+      ...(input.selected ? {
+        challengeId: input.selected.challenge.id,
+        repoId: input.selected.challenge.repoId,
+        prNumber: input.selected.challenge.prNumber,
+      } : {}),
+      candidateSourceCount,
+      repoSourceCount,
+      roleSourceCount,
+      alignedDemandCount,
+      stretchCount,
+      provenanceComplete,
+    },
+  };
+}
+
 function diagnosticMissingEvidence(input: {
   status: CandidateReviewChallengeMatch['status'];
   compiledStatus: ReturnType<typeof compileCandidateMatchQuery>['status'];
@@ -1150,7 +1306,7 @@ function diagnosticMissingEvidence(input: {
       reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
     });
   }
-  if (input.excludedSignalIds.length > 0) {
+  if (input.status !== 'MATCHED' && input.excludedSignalIds.length > 0) {
     missing.push({
       scope: 'candidate',
       reason: 'CANDIDATE_SIGNALS_EXCLUDED_FOR_MISSING_OR_NULL_EVIDENCE',
@@ -1198,8 +1354,10 @@ function buildRunExplanation(input: {
   matchRunId: string;
   compiled: ReturnType<typeof compileCandidateMatchQuery>;
   selected: ReturnType<typeof alignCandidateToChallenge> | undefined;
+  scoreSeparation: number | null;
   diagnostics: ChallengeMatchDiagnostics;
   roleSourceReferences: NonNullable<CandidateReviewChallengeOptions['roleSourceReferences']>;
+  validatorAgent: MatchValidatorDecision;
 }): MatchExplanation {
   const rejectedPackets = rejectedPacketExplanations(input.diagnostics);
   const missingEvidence = diagnosticMissingEvidence({
@@ -1210,9 +1368,15 @@ function buildRunExplanation(input: {
   });
   const roleSources = normalizeRoleSourcesForExplanation(input.roleSourceReferences);
   if (input.selected) {
-    const explanation = explainChallengeMatch(input.selected, { rejectedPackets, missingEvidence, roleSources });
+    const explanation = explainChallengeMatch(input.selected, {
+      rejectedPackets,
+      missingEvidence,
+      roleSources,
+      scoreSeparation: input.scoreSeparation,
+    });
     return {
       ...explanation,
+      validatorAgent: input.validatorAgent,
       evidence: explanation.evidence.map((entry) => {
         const alignment = input.selected?.alignments.find((candidate) =>
           candidate.atom.id === entry.atomId && candidate.demand.id === entry.demandId
@@ -1233,6 +1397,7 @@ function buildRunExplanation(input: {
     summary: input.status === 'NEEDS_MORE_EVIDENCE'
       ? `Match run ${input.matchRunId} needs more source-backed candidate evidence.`
       : `Match run ${input.matchRunId} found no role-safe source-backed review challenge.`,
+    validatorAgent: input.validatorAgent,
     evidence: [],
     candidateSpans: [],
     repoSpans: [],
@@ -1296,6 +1461,17 @@ export async function matchCandidateToReviewChallenge(
     || left.challenge.prNumber - right.challenge.prNumber
     || left.challenge.id.localeCompare(right.challenge.id)
   );
+  const scoreSeparationByChallengeId = new Map<string, number | null>();
+  evaluated.forEach((alignment, index) => {
+    const next = evaluated[index + 1];
+    scoreSeparationByChallengeId.set(
+      alignment.challenge.id,
+      next ? Math.max(0, alignment.finalScore - next.finalScore) : null,
+    );
+  });
+  const selectedScoreSeparation = selected
+    ? scoreSeparationByChallengeId.get(selected.challenge.id) ?? null
+    : null;
   const status = compiled.status === 'NEEDS_MORE_EVIDENCE'
     ? 'NEEDS_MORE_EVIDENCE'
     : ranked.status;
@@ -1342,6 +1518,23 @@ export async function matchCandidateToReviewChallenge(
     `SELECT id FROM applications WHERE legacy_candidate_id = ?1`,
   ).bind(candidateId).first<{ id: string }>();
   const roleSourcesForRun = normalizeRoleSourcesForExplanation(options.roleSourceReferences ?? []);
+  const selectedValidatorAgent = buildMatchValidatorDecision({
+    matchRunId,
+    status,
+    selected,
+    roleSources: roleSourcesForRun,
+  });
+  const validatorAgentByChallengeId = new Map(
+    evaluated.map((alignment) => [
+      alignment.challenge.id,
+      buildMatchValidatorDecision({
+        matchRunId,
+        status: alignment.eligible ? 'MATCHED' : 'NO_ROLE_SAFE_CHALLENGE',
+        selected: alignment,
+        roleSources: roleSourcesForRun,
+      }),
+    ]),
+  );
 
   await db.prepare(
     `INSERT INTO match_runs (
@@ -1376,11 +1569,16 @@ export async function matchCandidateToReviewChallenge(
       contextualSpecificity: alignment.contextualSpecificity,
       challengeQuality: alignment.challengeQuality,
       validationDeepeningValue: alignment.validationDeepeningValue,
+      reviewProfile: alignment.challenge.reviewProfile,
+      assessmentQuality: explainChallengeMatch(alignment, {
+        scoreSeparation: scoreSeparationByChallengeId.get(alignment.challenge.id) ?? null,
+      }).assessmentQuality,
       alignedDemandCount: alignment.alignments.length,
       stretchCount: alignment.stretchCount,
       stretchDemandWeightRatio: alignment.stretchDemandWeightRatio,
       provenanceComplete: alignment.provenanceComplete,
       eligible: alignment.eligible,
+      validatorAgent: validatorAgentByChallengeId.get(alignment.challenge.id),
       alignments: alignment.alignments.map((entry) => {
         const sharedConcepts = entry.atom.concepts.filter((concept) =>
           entry.demand.concepts.includes(concept)
@@ -1421,6 +1619,7 @@ export async function matchCandidateToReviewChallenge(
     diagnostics,
     conceptResolverVersion: options.conceptResolverVersion ?? null,
     roleSourceReferences: options.roleSourceReferences ?? [],
+    validatorAgent: selectedValidatorAgent,
     concepts: matchConcepts,
   }));
 
@@ -1429,8 +1628,10 @@ export async function matchCandidateToReviewChallenge(
     matchRunId,
     compiled,
     selected,
+    scoreSeparation: selectedScoreSeparation,
     diagnostics,
     roleSourceReferences: options.roleSourceReferences ?? [],
+    validatorAgent: selectedValidatorAgent,
   });
 
   if (!selected) return { status, matchRunId, explanation, diagnostics };

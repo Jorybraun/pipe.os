@@ -32,6 +32,7 @@ import type {
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
+import type { SessionEventType } from '../lib/sessionEvents';
 import type { Env, Variables } from '../types';
 
 type RoomRole = 'HOST' | 'GUEST';
@@ -76,6 +77,18 @@ interface ResolvedMeetingRecording {
   recordingKey: string | null;
 }
 
+interface RoomActivityEvidenceSyncResult {
+  captured: number;
+  failed: number;
+  events: number;
+}
+
+interface RoomLifecycleEvidenceCaptureResult {
+  captured: boolean;
+  nodeId: string | null;
+  type: SessionEventType;
+}
+
 const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
 const MEETING_ANALYSIS_TIMEOUT_MS = 30_000;
 const E2E_DEEPGRAM_RESPONSE_HEADER = 'X-Pipe-E2E-Deepgram-Response';
@@ -84,7 +97,7 @@ const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
 const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
 const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
 const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
-const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE']);
+const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
 
@@ -94,6 +107,7 @@ const roomEventSchema = z.object({
 
 const sessionEventSchema = z.object({
   type: z.enum([
+    'chat_message',
     'ai_chat_user',
     'ai_chat_agent',
     'ai_agent_status',
@@ -126,6 +140,135 @@ interface RoomWorkspaceInterview {
   github_repo_url: string | null;
   github_pr_number: number | null;
   matched_repo_id: number | null;
+}
+
+async function syncRoomActivityEvidenceForToken(
+  c: Context<{ Bindings: Env }>,
+  token: string,
+): Promise<RoomActivityEvidenceSyncResult | null> {
+  if (!c.env.VIDEO_ROOM) return null;
+
+  try {
+    const {
+      resolveCandidateIdForRoom,
+      syncRoomActivityToSessionEvents,
+    } = await import('../lib/sessionEvents.js');
+    const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+    if (!resolved?.candidateId) return null;
+    return await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
+      candidateId: resolved.candidateId,
+      sessionId: resolved.sessionId,
+    });
+  } catch (error) {
+    console.error('[meetingRooms] Failed to sync room activity evidence:', {
+      tokenHashPrefix: (await hashRoomToken(token)).slice(0, 12),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+function roomLifecycleEvidencePayload(
+  room: ResolvedRoom,
+  event: z.infer<typeof roomEventSchema>['event'],
+  options: { recordingWasActive: boolean },
+): { type: SessionEventType; text: string; properties: Record<string, unknown> } | null {
+  const roleLabel = room.role === 'GUEST' ? 'Guest' : 'Host';
+  const sharedProperties = {
+    source: 'meeting_room_lifecycle',
+    lifecycleEvent: event,
+    participantRole: room.role,
+    roomId: room.room_id,
+    meetingId: room.meeting_id,
+  };
+
+  if (event === 'JOINED') {
+    return {
+      type: 'participant_join',
+      text: `${roleLabel} joined the 95 Until Infinity room`,
+      properties: sharedProperties,
+    };
+  }
+  if (event === 'LEFT') {
+    return {
+      type: 'participant_leave',
+      text: `${roleLabel} left the 95 Until Infinity room`,
+      properties: sharedProperties,
+    };
+  }
+  if (event === 'RECORDING_STARTED' && room.role === 'HOST') {
+    return {
+      type: 'recording_start',
+      text: 'Recording started for the 95 Until Infinity room',
+      properties: {
+        ...sharedProperties,
+        recordingStatus: 'started',
+      },
+    };
+  }
+  if (event === 'ENDED' && room.role === 'HOST' && options.recordingWasActive) {
+    return {
+      type: 'recording_stop',
+      text: 'Recording stopped for the 95 Until Infinity room',
+      properties: {
+        ...sharedProperties,
+        recordingStatus: 'stopped',
+      },
+    };
+  }
+
+  return null;
+}
+
+async function captureRoomLifecycleEvidenceForToken(
+  c: Context<{ Bindings: Env }>,
+  token: string,
+  room: ResolvedRoom,
+  event: z.infer<typeof roomEventSchema>['event'],
+  timestamp: number,
+  options: { recordingWasActive: boolean },
+): Promise<RoomLifecycleEvidenceCaptureResult | null> {
+  if (!c.env.VIDEO_ROOM) return null;
+
+  const payload = roomLifecycleEvidencePayload(room, event, options);
+  if (!payload) return null;
+
+  try {
+    const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
+    const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+    if (!resolved?.candidateId) return null;
+    const node = await captureSessionEvent(c.env.DB, {
+      type: payload.type,
+      sessionId: resolved.sessionId,
+      candidateId: resolved.candidateId,
+      timestamp,
+      actor: room.role === 'GUEST' ? 'guest' : 'host',
+      text: payload.text,
+      properties: payload.properties,
+    }, c.env);
+    return {
+      captured: !!node,
+      nodeId: node?.id ?? null,
+      type: payload.type,
+    };
+  } catch (error) {
+    console.error('[meetingRooms] Failed to capture room lifecycle evidence:', {
+      tokenHashPrefix: (await hashRoomToken(token)).slice(0, 12),
+      event,
+      role: room.role,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function meetingHasActiveRecordingEvidence(db: D1Database, meetingId: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT transcript_status, recording_r2_key
+       FROM meetings
+      WHERE id = ?`,
+  ).bind(meetingId).first<{ transcript_status: string | null; recording_r2_key: string | null }>();
+  return row?.transcript_status === 'RECORDING' || !!row?.recording_r2_key;
 }
 
 interface RoomWorkspacePayload {
@@ -756,6 +899,7 @@ async function processRecording(
       timestamp_start_ms: segment.timestampStartMs ?? null,
       timestamp_end_ms: segment.timestampEndMs ?? null,
       confidence: segment.confidence ?? null,
+      metadata: segment.metadata ?? null,
     })));
     const now = new Date().toISOString();
     await env.DB.prepare(
@@ -1250,13 +1394,19 @@ meetingRooms.get('/:token/ws', async (c) => {
 });
 
 meetingRooms.post('/:token/events', async (c) => {
-  const room = await resolveRoom(c.env.DB, c.req.param('token'));
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   const parsed = roomEventSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', 'Invalid room event.');
 
   const now = new Date().toISOString();
   const event = parsed.data.event;
+  const recordingWasActive = event === 'ENDED' && room.role === 'HOST'
+    ? await meetingHasActiveRecordingEvidence(c.env.DB, room.meeting_id)
+    : false;
+  let sessionEvidence: RoomActivityEvidenceSyncResult | null = null;
+  let lifecycleEvidence: RoomLifecycleEvidenceCaptureResult | null = null;
   if (event === 'STARTED' && room.role === 'HOST') {
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
@@ -1353,9 +1503,19 @@ meetingRooms.post('/:token/events', async (c) => {
       );
     }
     await c.env.DB.batch(statements);
+    sessionEvidence = await syncRoomActivityEvidenceForToken(c, token);
   }
 
-  return c.json({ accepted: true });
+  lifecycleEvidence = await captureRoomLifecycleEvidenceForToken(
+    c,
+    token,
+    room,
+    event,
+    Math.floor(new Date(now).getTime() / 1000),
+    { recordingWasActive },
+  );
+
+  return c.json({ accepted: true, sessionEvidence, lifecycleEvidence });
 });
 
 meetingRooms.post('/:token/recording', async (c) => {

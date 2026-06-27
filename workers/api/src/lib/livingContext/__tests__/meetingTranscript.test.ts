@@ -179,6 +179,11 @@ describe('meeting transcript living-context ingestion', () => {
         text: 'Structured guest text.',
         timestamp_start_ms: 1200,
         timestamp_end_ms: 2800,
+        metadata: {
+          providerSegmentId: 'dg-guest-turn',
+          speakerMetadataRole: 'guest',
+          speakerMetadataSource: 'remote',
+        },
       },
     ]));
 
@@ -202,6 +207,13 @@ describe('meeting transcript living-context ingestion', () => {
         contactId: 'contact-1',
         timestampStartMs: 1200,
         timestampEndMs: 2800,
+        metadata: {
+          providerSegmentId: 'dg-guest-turn',
+          speakerMetadataRole: 'guest',
+          speakerMetadataSource: 'remote',
+          legacyTimestamp: null,
+          legacyTimestampMs: null,
+        },
       }),
     ]);
   });

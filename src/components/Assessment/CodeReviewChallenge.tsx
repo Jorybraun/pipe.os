@@ -7,9 +7,11 @@ import {
   XCircle,
   MessageSquare,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { DiffPanel, type DiffJson, type Annotation } from './DiffPanel';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
+import { MatchProofPanel, type CodeReviewMatchExplanation } from '../Panels/ProblemPanel';
 
 // ============================================================================
 // Types
@@ -24,6 +26,23 @@ interface CachedMeta {
   deletions?: number;
   filesChanged?: number;
   title?: string;
+  reviewProfile?: unknown;
+}
+
+export interface CodeReviewReviewProfile {
+  source: 'deterministic_engineering_prior';
+  difficultyBand: 'introductory' | 'focused' | 'advanced' | 'oversized';
+  expectedSeniority: 'mid' | 'senior' | 'staff';
+  expectedTimeMinutes: number;
+  basis: {
+    changedFileCount: number;
+    changedLineCount: number;
+    sourceHunkCount: number;
+    testChangeCount: number;
+    demandFamilyCount: number;
+    hasIssueContext: boolean;
+  };
+  rationale: string;
 }
 
 export interface CodeReviewChallengeProps {
@@ -36,6 +55,8 @@ export interface CodeReviewChallengeProps {
     githubPrTitle?: string | null;
     githubPrDescription?: string | null;
     cachedMetadata?: unknown;
+    matchExplanation?: CodeReviewMatchExplanation | null;
+    reviewProfile?: unknown;
   };
   diff: DiffJson | null;
   isFetchingDiff: boolean;
@@ -80,6 +101,170 @@ const VERDICT_OPTIONS = [
     description: 'Informational review only',
   },
 ];
+
+const BRAND_SURFACE = 'rgba(6, 16, 27, 0.74)';
+const BRAND_SURFACE_SOFT = 'rgba(244, 248, 255, 0.045)';
+const BRAND_BORDER = 'rgba(178, 214, 255, 0.14)';
+const BRAND_BORDER_STRONG = 'rgba(178, 214, 255, 0.24)';
+const BRAND_MUTED = 'rgba(244,248,255,0.62)';
+const BRAND_DIM = 'rgba(244,248,255,0.38)';
+const BRAND_SHADOW = '0 18px 60px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.055)';
+const LABEL_FONT = '"Space Mono", monospace';
+const BODY_FONT = '"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+function repoLabelFromUrl(repoUrl: string | null | undefined): string {
+  if (!repoUrl) return 'Repository pending';
+  try {
+    const parsed = new URL(repoUrl);
+    const [owner, repo] = parsed.pathname.split('/').filter(Boolean);
+    return owner && repo ? `${owner}/${repo.replace(/\.git$/, '')}` : repoUrl;
+  } catch {
+    return repoUrl;
+  }
+}
+
+export function asCodeReviewReviewProfile(value: unknown): CodeReviewReviewProfile | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const basis = record.basis;
+  if (typeof basis !== 'object' || basis === null || Array.isArray(basis)) return null;
+  const basisRecord = basis as Record<string, unknown>;
+  if (
+    record.source !== 'deterministic_engineering_prior'
+    || !['introductory', 'focused', 'advanced', 'oversized'].includes(String(record.difficultyBand))
+    || !['mid', 'senior', 'staff'].includes(String(record.expectedSeniority))
+    || typeof record.expectedTimeMinutes !== 'number'
+    || typeof record.rationale !== 'string'
+    || typeof basisRecord.changedFileCount !== 'number'
+    || typeof basisRecord.changedLineCount !== 'number'
+    || typeof basisRecord.sourceHunkCount !== 'number'
+    || typeof basisRecord.testChangeCount !== 'number'
+    || typeof basisRecord.demandFamilyCount !== 'number'
+    || typeof basisRecord.hasIssueContext !== 'boolean'
+  ) {
+    return null;
+  }
+  return record as unknown as CodeReviewReviewProfile;
+}
+
+function reviewProfileTone(profile: CodeReviewReviewProfile): {
+  label: string;
+  color: string;
+  background: string;
+  border: string;
+} {
+  if (profile.difficultyBand === 'oversized') {
+    return {
+      label: 'CALIBRATION_RISK',
+      color: '#f87171',
+      background: 'rgba(248,113,113,0.08)',
+      border: 'rgba(248,113,113,0.22)',
+    };
+  }
+  if (profile.difficultyBand === 'advanced') {
+    return {
+      label: 'ADVANCED',
+      color: '#fbbf24',
+      background: 'rgba(251,191,36,0.08)',
+      border: 'rgba(251,191,36,0.22)',
+    };
+  }
+  return {
+    label: profile.difficultyBand.toUpperCase(),
+    color: '#34d399',
+    background: 'rgba(52,211,153,0.08)',
+    border: 'rgba(52,211,153,0.2)',
+  };
+}
+
+export function ReviewProfileCard({ profile }: { profile: CodeReviewReviewProfile }): JSX.Element {
+  const tone = reviewProfileTone(profile);
+  const basisRows = [
+    ['Files', profile.basis.changedFileCount],
+    ['Lines', profile.basis.changedLineCount],
+    ['Hunks', profile.basis.sourceHunkCount],
+    ['Demands', profile.basis.demandFamilyCount],
+    ['Tests', profile.basis.testChangeCount],
+    ['Issue', profile.basis.hasIssueContext ? 'yes' : 'no'],
+  ] as const;
+
+  return (
+    <div
+      data-testid="code-review-review-profile"
+      style={{
+        padding: 16,
+        borderRadius: 6,
+        background: 'linear-gradient(180deg, rgba(244,248,255,0.052), rgba(98,143,185,0.045))',
+        border: `1px solid ${BRAND_BORDER_STRONG}`,
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.07)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 8, letterSpacing: '0.16em', color: BRAND_DIM, fontFamily: LABEL_FONT }}>
+          ASSESSMENT_FIT
+        </span>
+        <span
+          style={{
+            fontSize: 8,
+            fontWeight: 800,
+            letterSpacing: '0.12em',
+            padding: '3px 7px',
+            borderRadius: 4,
+            color: tone.color,
+            background: tone.background,
+            border: `1px solid ${tone.border}`,
+            fontFamily: LABEL_FONT,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tone.label}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
+            TARGET_TIME
+          </div>
+          <div style={{ fontSize: 13, color: '#f4f8ff', fontWeight: 800 }}>
+            {profile.expectedTimeMinutes} min
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
+            LEVEL
+          </div>
+          <div style={{ fontSize: 13, color: '#f4f8ff', fontWeight: 800 }}>
+            {profile.expectedSeniority.toUpperCase()}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, marginBottom: 12 }}>
+        {basisRows.map(([label, value]) => (
+          <div
+            key={label}
+            style={{
+              padding: '7px 6px',
+              borderRadius: 4,
+              background: 'rgba(244,248,255,0.035)',
+              border: `1px solid ${BRAND_BORDER}`,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ fontSize: 8, color: BRAND_DIM, fontFamily: LABEL_FONT, marginBottom: 3 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 10, color: BRAND_MUTED, fontWeight: 700, overflowWrap: 'anywhere' }}>
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p style={{ margin: 0, color: BRAND_DIM, fontSize: 10, lineHeight: 1.55 }}>
+        {profile.rationale}
+      </p>
+    </div>
+  );
+}
 
 // ============================================================================
 // Component
@@ -144,6 +329,7 @@ export function CodeReviewChallenge({
   const meta = (typeof challenge.cachedMetadata === 'object' && challenge.cachedMetadata !== null
     ? challenge.cachedMetadata
     : {}) as CachedMeta;
+  const reviewProfile = asCodeReviewReviewProfile(challenge.reviewProfile) ?? asCodeReviewReviewProfile(meta.reviewProfile);
 
   const prNumber = meta.prNumber ?? challenge.githubPrNumber;
   const branch = meta.branch ?? 'feature-branch';
@@ -153,39 +339,51 @@ export function CodeReviewChallenge({
   const filesChanged = meta.filesChanged ?? diff?.stats.filesChanged ?? 0;
 
   const hasPrAssigned = prNumber != null && prNumber > 0;
+  const repoUrl = challenge.githubRepoUrl ?? null;
+  const repoLabel = repoLabelFromUrl(repoUrl);
+  const prUrl = repoUrl && hasPrAssigned ? `${repoUrl.replace(/\/$/, '')}/pull/${prNumber}` : null;
   const isPlaceholderInstructions =
     challenge.instructions?.includes('when your profile is ingested') ?? false;
 
   return (
     <div
+      className="pipe-code-review-challenge"
+      data-testid="code-review-challenge"
       style={{
         display: 'flex',
         flex: 1,
         minHeight: 0,
         overflow: 'hidden',
-        fontFamily: '"Space Mono", monospace',
+        fontFamily: BODY_FONT,
+        background:
+          'linear-gradient(180deg, rgba(8,22,35,0.9) 0%, rgba(12,12,14,0.98) 100%), linear-gradient(rgba(185,221,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(185,221,255,0.035) 1px, transparent 1px)',
+        backgroundSize: 'auto, 88px 88px, 88px 88px',
       }}
     >
       {/* ── Left Panel: Instructions + PR Context ─────────────── */}
       <div
+        className="pipe-code-review-left"
         style={{
           width: 'clamp(280px, 28vw, 380px)',
           flexShrink: 0,
-          borderRight: '1px solid rgba(255,255,255,0.06)',
+          borderRight: `1px solid ${BRAND_BORDER}`,
           display: 'flex',
           flexDirection: 'column',
-          background: 'rgba(12, 12, 14, 0.5)',
+          background: BRAND_SURFACE,
+          boxShadow: BRAND_SHADOW,
+          backdropFilter: 'blur(18px)',
           overflowY: 'auto',
         }}
       >
         {/* Instructions */}
-        <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
+        <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
           <div
             style={{
               fontSize: 9,
               letterSpacing: '0.2em',
-              color: 'var(--pipe-text-dim)',
+              color: BRAND_DIM,
               marginBottom: 12,
+              fontFamily: LABEL_FONT,
             }}
           >
             INSTRUCTIONS
@@ -194,7 +392,7 @@ export function CodeReviewChallenge({
             style={{
               fontSize: 14,
               fontWeight: 700,
-              color: 'var(--pipe-text, #fff)',
+              color: '#f4f8ff',
               margin: 0,
               marginBottom: 12,
               lineHeight: 1.5,
@@ -208,7 +406,7 @@ export function CodeReviewChallenge({
             <p
               style={{
                 fontSize: 11,
-                color: 'var(--pipe-text-muted)',
+                color: BRAND_MUTED,
                 lineHeight: 1.7,
                 margin: 0,
                 whiteSpace: 'pre-wrap',
@@ -224,7 +422,7 @@ export function CodeReviewChallenge({
             <p
               style={{
                 fontSize: 11,
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
                 lineHeight: 1.7,
                 margin: 0,
                 marginTop: 12,
@@ -252,14 +450,67 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
+                fontFamily: LABEL_FONT,
               }}
             >
               PULL_REQUEST
             </span>
           </div>
 
-          <LiquidMetalCard variant="default" style={{ padding: 16, borderRadius: 6 }}>
+          <LiquidMetalCard
+            variant="default"
+            style={{
+              padding: 16,
+              borderRadius: 6,
+              background: 'linear-gradient(180deg, rgba(244,248,255,0.06), rgba(98,143,185,0.055))',
+              border: `1px solid ${BRAND_BORDER_STRONG}`,
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                marginBottom: 14,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 8,
+                  letterSpacing: '0.16em',
+                  color: BRAND_DIM,
+                  fontFamily: LABEL_FONT,
+                }}
+              >
+                REPOSITORY
+              </span>
+              {repoUrl ? (
+                <a
+                  data-testid="code-review-repo-link"
+                  href={repoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    color: '#b9ddff',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {repoLabel}
+                  <ExternalLink size={11} />
+                </a>
+              ) : (
+                <span style={{ color: BRAND_MUTED, fontSize: 12 }}>{repoLabel}</span>
+              )}
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <span
                 style={{
@@ -271,28 +522,50 @@ export function CodeReviewChallenge({
                   border: '1px solid rgba(52, 211, 153, 0.2)',
                   color: '#34d399',
                   borderRadius: 4,
+                  fontFamily: LABEL_FONT,
                 }}
               >
                 OPEN
               </span>
-              {prNumber != null && (
+              {prNumber != null && (prUrl ? (
+                <a
+                  data-testid="code-review-pr-link"
+                  href={prUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontSize: 11,
+                    color: BRAND_MUTED,
+                    fontWeight: 700,
+                    fontFamily: LABEL_FONT,
+                    textDecoration: 'none',
+                  }}
+                >
+                  #{prNumber}
+                  <ExternalLink size={10} />
+                </a>
+              ) : (
                 <span
                   style={{
                     fontSize: 11,
-                    color: 'var(--pipe-text-muted)',
+                    color: BRAND_MUTED,
                     fontWeight: 700,
+                    fontFamily: LABEL_FONT,
                   }}
                 >
                   #{prNumber}
                 </span>
-              )}
+              ))}
             </div>
 
             {challenge.githubPrTitle && (
               <p
                 style={{
                   fontSize: 11,
-                  color: 'var(--pipe-text-muted)',
+                  color: 'rgba(244,248,255,0.76)',
                   lineHeight: 1.5,
                   margin: 0,
                   marginBottom: 10,
@@ -303,28 +576,41 @@ export function CodeReviewChallenge({
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <GitBranch size={10} color="var(--pipe-text-dim)" />
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>{branch}</span>
-              <ChevronRight size={10} color="var(--pipe-text-dim)" />
-              <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>{base}</span>
+              <GitBranch size={10} color={BRAND_DIM} />
+              <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>{branch}</span>
+              <ChevronRight size={10} color={BRAND_DIM} />
+              <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>{base}</span>
             </div>
 
             <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+              <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>
                 <span style={{ color: '#4ade80', fontWeight: 700 }}>+{additions}</span>
                 {' / '}
                 <span style={{ color: '#f87171', fontWeight: 700 }}>-{deletions}</span>
               </span>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
+              <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>
                 {filesChanged} {filesChanged === 1 ? 'file' : 'files'}
               </span>
             </div>
           </LiquidMetalCard>
         </div>
+
+        {reviewProfile && (
+          <div style={{ padding: '0 24px 24px' }}>
+            <ReviewProfileCard profile={reviewProfile} />
+          </div>
+        )}
+
+        {challenge.matchExplanation && (
+          <div style={{ padding: '0 24px 24px' }}>
+            <MatchProofPanel matchExplanation={challenge.matchExplanation} />
+          </div>
+        )}
       </div>
 
       {/* ── Center Panel: Diff ─────────────────────────────────── */}
       <div
+        className="pipe-code-review-main"
         style={{
           flex: 1,
           display: 'flex',
@@ -389,24 +675,28 @@ export function CodeReviewChallenge({
 
       {/* ── Right Panel: Verdict + Submit ─────────────────────── */}
       <div
+        className="pipe-code-review-right"
         style={{
           width: 'clamp(260px, 22vw, 340px)',
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          background: 'rgba(12, 12, 14, 0.5)',
-          borderLeft: '1px solid rgba(255,255,255,0.06)',
+          background: BRAND_SURFACE,
+          borderLeft: `1px solid ${BRAND_BORDER}`,
+          boxShadow: BRAND_SHADOW,
+          backdropFilter: 'blur(18px)',
         }}
       >
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {/* Verdict */}
-          <div style={{ padding: 24, borderBottom: '1px solid var(--pipe-border)' }}>
+          <div style={{ padding: 24, borderBottom: `1px solid ${BRAND_BORDER}` }}>
             <div
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
                 marginBottom: 16,
+                fontFamily: LABEL_FONT,
               }}
             >
               REVIEW_VERDICT
@@ -422,8 +712,8 @@ export function CodeReviewChallenge({
                     onClick={() => handleVerdictChange(opt.key)}
                     style={{
                       padding: '14px 16px',
-                      background: isActive ? opt.bg : 'var(--pipe-surface)',
-                      border: `1px solid ${isActive ? opt.border : 'rgba(255,255,255,0.06)'}`,
+                      background: isActive ? opt.bg : BRAND_SURFACE_SOFT,
+                      border: `1px solid ${isActive ? opt.border : BRAND_BORDER}`,
                       borderRadius: 4,
                       display: 'flex',
                       alignItems: 'flex-start',
@@ -452,6 +742,7 @@ export function CodeReviewChallenge({
                             fontWeight: 700,
                             letterSpacing: '0.05em',
                             color: isActive ? opt.color : 'rgba(255,255,255,0.35)',
+                            fontFamily: LABEL_FONT,
                           }}
                         >
                           {opt.label}
@@ -460,7 +751,7 @@ export function CodeReviewChallenge({
                       <span
                         style={{
                           fontSize: 9,
-                          color: isActive ? 'rgba(255,255,255,0.5)' : 'var(--pipe-text-dim)',
+                          color: isActive ? 'rgba(244,248,255,0.64)' : BRAND_DIM,
                           marginLeft: 22,
                           marginTop: 4,
                         }}
@@ -478,7 +769,7 @@ export function CodeReviewChallenge({
           <div
             style={{
               padding: 24,
-              borderBottom: '1px solid var(--pipe-border)',
+              borderBottom: `1px solid ${BRAND_BORDER}`,
               display: 'flex',
               flexDirection: 'column',
             }}
@@ -487,8 +778,9 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
                 marginBottom: 12,
+                fontFamily: LABEL_FONT,
               }}
             >
               REVIEW_SUMMARY
@@ -500,13 +792,13 @@ export function CodeReviewChallenge({
               placeholder="Summarize your code review findings..."
               style={{
                 minHeight: 120,
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border)',
+                background: BRAND_SURFACE_SOFT,
+                border: `1px solid ${BRAND_BORDER}`,
                 borderRadius: 4,
-                color: 'var(--pipe-text, #fff)',
+                color: '#f4f8ff',
                 fontSize: 11,
                 padding: 12,
-                fontFamily: '"Space Mono", monospace',
+                fontFamily: BODY_FONT,
                 outline: 'none',
                 resize: 'vertical',
                 lineHeight: 1.6,
@@ -519,7 +811,8 @@ export function CodeReviewChallenge({
                 justifyContent: 'space-between',
                 marginTop: 8,
                 fontSize: 9,
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
+                fontFamily: LABEL_FONT,
               }}
             >
               <span>MAX 1000 CHARACTERS</span>
@@ -535,8 +828,9 @@ export function CodeReviewChallenge({
               style={{
                 fontSize: 9,
                 letterSpacing: '0.2em',
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
                 marginBottom: 12,
+                fontFamily: LABEL_FONT,
               }}
             >
               SUBMISSION_STATS
@@ -548,13 +842,13 @@ export function CodeReviewChallenge({
                 flexDirection: 'column',
                 gap: 8,
                 padding: 12,
-                background: 'var(--pipe-surface)',
-                border: '1px solid var(--pipe-border)',
+                background: BRAND_SURFACE_SOFT,
+                border: `1px solid ${BRAND_BORDER}`,
                 borderRadius: 4,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Annotations</span>
+                <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>Annotations</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -567,7 +861,7 @@ export function CodeReviewChallenge({
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Verdict</span>
+                <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>Verdict</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -581,7 +875,7 @@ export function CodeReviewChallenge({
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 10, color: 'var(--pipe-text-dim)' }}>Summary</span>
+                <span style={{ fontSize: 10, color: BRAND_DIM, fontFamily: LABEL_FONT }}>Summary</span>
                 <span
                   style={{
                     fontSize: 10,
@@ -600,7 +894,7 @@ export function CodeReviewChallenge({
         <div
           style={{
             padding: '16px 24px',
-            borderTop: '1px solid var(--pipe-border)',
+            borderTop: `1px solid ${BRAND_BORDER}`,
           }}
         >
           {isReady ? (
@@ -617,7 +911,7 @@ export function CodeReviewChallenge({
                 fontSize: 10,
                 fontWeight: 700,
                 letterSpacing: '0.12em',
-                fontFamily: '"Space Mono", monospace',
+                fontFamily: LABEL_FONT,
                 color: '#34d399',
               }}
             >
@@ -629,10 +923,10 @@ export function CodeReviewChallenge({
               style={{
                 padding: '10px 16px',
                 fontSize: 9,
-                color: 'var(--pipe-text-dim)',
+                color: BRAND_DIM,
                 textAlign: 'center',
                 letterSpacing: '0.08em',
-                fontFamily: '"Space Mono", monospace',
+                fontFamily: LABEL_FONT,
               }}
             >
               SELECT VERDICT + ADD SUMMARY TO ENABLE SUBMIT
@@ -645,6 +939,28 @@ export function CodeReviewChallenge({
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 980px) {
+          .pipe-code-review-challenge {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr);
+            grid-template-rows: auto minmax(560px, 1fr) auto;
+            overflow: auto !important;
+          }
+
+          .pipe-code-review-left,
+          .pipe-code-review-right {
+            width: auto !important;
+            border-left: 0 !important;
+            border-right: 0 !important;
+          }
+
+          .pipe-code-review-main {
+            min-height: 560px;
+            border-top: 1px solid ${BRAND_BORDER};
+            border-bottom: 1px solid ${BRAND_BORDER};
+          }
         }
       `}</style>
     </div>

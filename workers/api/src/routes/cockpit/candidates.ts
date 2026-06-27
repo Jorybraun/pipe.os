@@ -323,6 +323,37 @@ function asOptionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function parseReviewAnnotations(value: unknown): StandaloneReviewSubmissionSummary['annotations'] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((annotation) => {
+    if (!isRecord(annotation)) return [];
+    const comment = asOptionalString(annotation.comment) ?? asOptionalString(annotation.what);
+    if (!comment) return [];
+    return [{
+      file: asOptionalString(annotation.file),
+      line: typeof annotation.line === 'number' ? annotation.line : null,
+      severity: asOptionalString(annotation.severity),
+      comment,
+    }];
+  });
+}
+
+function parseReviewTranscriptAnnotations(value: unknown): StandaloneReviewSubmissionSummary['annotations'] {
+  if (!isRecord(value) || !Array.isArray(value.rounds)) return [];
+  return value.rounds.flatMap((round) => {
+    if (!isRecord(round)) return [];
+    return parseReviewAnnotations(round.reviewer_comments);
+  });
+}
+
+function parseReviewVerdict(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (isRecord(value)) {
+    return asOptionalString(value.decision);
+  }
+  return null;
+}
+
 export function parseStandaloneReviewSubmissionSummary(
   value: string | null,
 ): StandaloneReviewSubmissionSummary | null {
@@ -337,26 +368,62 @@ export function parseStandaloneReviewSubmissionSummary(
   }
   if (!isRecord(parsed)) return null;
 
-  const annotations = Array.isArray(parsed.annotations)
-    ? parsed.annotations.flatMap((annotation) => {
-        if (!isRecord(annotation)) return [];
-        const comment = asOptionalString(annotation.comment);
-        if (!comment) return [];
-        return [{
-          file: asOptionalString(annotation.file),
-          line: typeof annotation.line === 'number' ? annotation.line : null,
-          severity: asOptionalString(annotation.severity),
-          comment,
-        }];
-      })
-    : [];
+  const transcript = isRecord(parsed.transcript) ? parsed.transcript : parsed;
+  const transcriptVerdict = isRecord(transcript) ? transcript.verdict : null;
+  const annotations = parseReviewAnnotations(parsed.annotations);
+  const transcriptAnnotations = annotations.length > 0
+    ? annotations
+    : parseReviewTranscriptAnnotations(transcript);
 
   return {
-    verdict: asOptionalString(parsed.verdict),
-    summary: asOptionalString(parsed.summary),
-    annotationCount: annotations.length,
-    annotations: annotations.slice(0, 3),
+    verdict: asOptionalString(parsed.verdict) ?? parseReviewVerdict(transcriptVerdict),
+    summary: asOptionalString(parsed.summary)
+      ?? (isRecord(transcriptVerdict) ? asOptionalString(transcriptVerdict.summary) : null),
+    annotationCount: transcriptAnnotations.length,
+    annotations: transcriptAnnotations.slice(0, 3),
   };
+}
+
+function parseStandaloneReviewSessionId(value: string | null): string | null {
+  if (!value) return null;
+  let parsed: unknown = value;
+  for (let depth = 0; depth < 2 && typeof parsed === 'string'; depth += 1) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return isRecord(parsed) ? asOptionalString(parsed.reviewSessionId) : null;
+}
+
+async function loadStandaloneReviewSubmissionSummary(
+  db: D1Database,
+  candidateId: string,
+  submissionJson: string | null,
+): Promise<StandaloneReviewSubmissionSummary | null> {
+  const directSummary = parseStandaloneReviewSubmissionSummary(submissionJson);
+  if (
+    directSummary
+    && (directSummary.verdict || directSummary.summary || directSummary.annotationCount > 0)
+  ) {
+    return directSummary;
+  }
+
+  const reviewSessionId = parseStandaloneReviewSessionId(submissionJson);
+  if (!reviewSessionId) {
+    return directSummary;
+  }
+
+  const session = await db.prepare(
+    `SELECT transcript
+       FROM review_sessions
+      WHERE id = ?1
+        AND candidate_id = ?2
+      LIMIT 1`,
+  ).bind(reviewSessionId, candidateId).first<{ transcript: string | null }>();
+
+  return parseStandaloneReviewSubmissionSummary(session?.transcript ?? null) ?? directSummary;
 }
 
 function parseStandaloneReviewSourceRefs(value: unknown): StandaloneReviewSourceRef[] {
@@ -1052,8 +1119,30 @@ const createStandaloneCandidateSchema = z.object({
   scheduledAt: z.string().optional(),
   schedulingProvider: z.enum(['CALENDLY', 'CAL_COM', 'MANUAL']).optional(),
   schedulingUrl: z.string().optional(),
+  githubRepoUrl: z.string().trim().url().nullable().optional(),
+  githubPrNumber: z.number().int().positive().nullable().optional(),
   message: z.string().max(2000).optional(),
   skipEmail: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  const hasRepoUrl = Boolean(value.githubRepoUrl);
+  const hasPrNumber = Boolean(value.githubPrNumber);
+  const supportsRepoOverride = value.interviewType === 'CODE_REVIEW'
+    || value.interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || value.interviewType === 'OPEN_SOURCE_BUG_FIX';
+  if (hasRepoUrl !== hasPrNumber) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Manual repo override requires both githubRepoUrl and githubPrNumber, or omit both for auto-match.',
+      path: ['githubRepoUrl'],
+    });
+  }
+  if ((hasRepoUrl || hasPrNumber) && !supportsRepoOverride) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Manual repo override is only supported for workspace-backed assessment interviews.',
+      path: ['interviewType'],
+    });
+  }
 });
 
 async function sha256Hex(text: string): Promise<string> {
@@ -1194,7 +1283,16 @@ candidateOps.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
 
-  let { name, email, interviewType, scheduledAt, message: customMessage, skipEmail } = parsed.data;
+  let {
+    name,
+    email,
+    interviewType,
+    scheduledAt,
+    message: customMessage,
+    skipEmail,
+    githubRepoUrl,
+    githubPrNumber,
+  } = parsed.data;
   try {
     name = sanitizeCandidateName(name);
     email = normalizeCandidateEmail(email);
@@ -1273,9 +1371,10 @@ candidateOps.post('/', async (c) => {
         `INSERT INTO scheduled_interviews (
            id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
            status, scheduled_at, scheduling_provider, scheduling_url, sync_source,
+           github_repo_url, github_pr_number,
            created_at, updated_at
          )
-         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?)`
+         VALUES (?, ?, NULL, NULL, ?, ?, 'INVITED', ?, ?, ?, 'MANUAL', ?, ?, ?, ?)`
       )
       .bind(
         interviewId,
@@ -1285,6 +1384,8 @@ candidateOps.post('/', async (c) => {
         scheduledAt ?? null,
         parsed.data.schedulingProvider ?? null,
         parsed.data.schedulingUrl ?? null,
+        githubRepoUrl ?? null,
+        githubPrNumber ?? null,
         now,
         now,
       )
@@ -1895,7 +1996,9 @@ candidateOps.get('/:candidateId', async (c) => {
       const selectedPacketDetail = parseStandaloneReviewPacketDetail(selectedPacketId, selectedPacketRow);
       const selectedPacketContextMissing = !!(selectedPacketId && !selectedPacketMetadata);
       const selectedResultForDisplay = selectedPacketContextMissing ? null : selectedResult;
-      const matchStatus: StandaloneReviewMatchStatus = latestRun?.status === 'MATCHED'
+      const matchStatus: StandaloneReviewMatchStatus = cachedInterviewIsSourceBacked && !latestRun
+        ? 'MATCHED'
+        : latestRun?.status === 'MATCHED'
         || latestRun?.status === 'NEEDS_MORE_EVIDENCE'
         || latestRun?.status === 'NO_ROLE_SAFE_CHALLENGE'
         ? selectedPacketContextMissing && latestRun.status === 'MATCHED'
@@ -1932,7 +2035,11 @@ candidateOps.get('/:candidateId', async (c) => {
       const graphContextGaps = selectedPacketContextMissing
         ? [`Selected review packet ${selectedPacketId} is missing source-backed graph context.`]
         : [];
-      const submission = parseStandaloneReviewSubmissionSummary(standaloneInterview.submission_json);
+      const submission = await loadStandaloneReviewSubmissionSummary(
+        db,
+        candidateId,
+        standaloneInterview.submission_json,
+      );
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
         interviewStatus: standaloneInterview.status,

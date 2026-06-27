@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { initAgent } from 'clippyjs';
 import ClippyLoaders from 'clippyjs/agents/clippy';
-import { useAgentConnection, type AgentChatMessage, type AgentRoomAction } from '../hooks/useAgentConnection';
+import {
+  useAgentConnection,
+  type AgentChatMessage,
+  type AgentFileChangeEvent,
+  type AgentRoomAction,
+  type AgentStatus,
+} from '../hooks/useAgentConnection';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
 
@@ -27,8 +33,10 @@ export interface ClippyAssistantProps {
   onOpenTerminal?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
-  onUserChatMessage?: (text: string) => void;
+  onUserChatMessage?: (message: AgentChatMessage) => void;
   onAgentChatMessage?: (message: AgentChatMessage) => void;
+  onAgentStatus?: (status: AgentStatus, agentName: string) => void;
+  onAgentFileChange?: (event: AgentFileChangeEvent) => void;
 }
 
 export function ClippyAssistant({
@@ -43,6 +51,8 @@ export function ClippyAssistant({
   onAgentRoomAction,
   onUserChatMessage,
   onAgentChatMessage,
+  onAgentStatus,
+  onAgentFileChange,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
@@ -52,6 +62,8 @@ export function ClippyAssistant({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
+  const capturedAgentStatusRef = useRef<string | null>(null);
+  const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -144,6 +156,29 @@ export function ClippyAssistant({
     }
   }, [agentConn.messages, onAgentChatMessage]);
 
+  useEffect(() => {
+    if (!agentEnabled) return;
+    const signature = `${agentConn.agentName}|${agentConn.status}`;
+    if (capturedAgentStatusRef.current === signature) return;
+    capturedAgentStatusRef.current = signature;
+    onAgentStatus?.(agentConn.status, agentConn.agentName);
+  }, [agentConn.agentName, agentConn.status, agentEnabled, onAgentStatus]);
+
+  useEffect(() => {
+    for (const event of agentConn.fileChanges) {
+      const signature = [
+        event.timestamp,
+        event.filePath,
+        event.actionName,
+        event.contentHash ?? '',
+        event.sizeBytes ?? '',
+      ].join('|');
+      if (capturedAgentFileChangesRef.current.has(signature)) continue;
+      capturedAgentFileChangesRef.current.add(signature);
+      onAgentFileChange?.(event);
+    }
+  }, [agentConn.fileChanges, onAgentFileChange]);
+
   const latestAgentRoomAction = agentConn.roomActions[agentConn.roomActions.length - 1] ?? null;
   const latestAgentRoomActionSignature = latestAgentRoomAction
     ? `${latestAgentRoomAction.id}|${latestAgentRoomAction.text ?? ''}|${latestAgentRoomAction.url ?? ''}`
@@ -206,8 +241,9 @@ export function ClippyAssistant({
   const handleSendChat = useCallback(() => {
     const text = chatInput.trim();
     if (!text) return;
-    onUserChatMessage?.(text);
-    agentConn.sendMessage(text);
+    const message = agentConn.sendMessage(text);
+    if (!message) return;
+    onUserChatMessage?.(message);
     setChatInput('');
   }, [chatInput, agentConn, onUserChatMessage]);
 

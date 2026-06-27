@@ -1,0 +1,121 @@
+const crypto = require('crypto');
+
+const DEFAULT_MAX_CHARS = 1200;
+const PROMPT_TYPES = new Set(['context_primer', 'chat_prompt']);
+
+function redactDiagnosticText(value) {
+  return String(value || '')
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]');
+}
+
+function boundedDiagnosticText(value, maxChars = DEFAULT_MAX_CHARS) {
+  const redacted = redactDiagnosticText(value).trim();
+  const limit = Number.isFinite(maxChars) && maxChars > 0
+    ? Math.floor(maxChars)
+    : DEFAULT_MAX_CHARS;
+  if (redacted.length <= limit) {
+    return { text: redacted, truncated: false };
+  }
+  return {
+    text: `${redacted.slice(0, limit)}\n[diagnostic truncated]`,
+    truncated: true,
+  };
+}
+
+function diagnosticTextMetrics(value) {
+  const text = redactDiagnosticText(value).trim();
+  if (!text) {
+    return {
+      length: 0,
+      fingerprint: null,
+    };
+  }
+  return {
+    length: text.length,
+    fingerprint: `sha256:${crypto.createHash('sha256').update(text).digest('hex')}`,
+  };
+}
+
+function normalizedPromptType(value) {
+  return PROMPT_TYPES.has(value) ? value : 'chat_prompt';
+}
+
+function agentDiagnosticMessage({
+  agent = 'devin',
+  status = 'disconnected',
+  message,
+  diagnosticSource,
+  observedAt = new Date().toISOString(),
+  exitCode = null,
+  signal = null,
+  maxChars = DEFAULT_MAX_CHARS,
+}) {
+  const bounded = boundedDiagnosticText(message, maxChars);
+  return {
+    type: 'AGENT_DIAGNOSTIC',
+    agent,
+    status,
+    message: bounded.text || 'Agent bridge diagnostic.',
+    diagnosticSource,
+    observedAt,
+    exitCode,
+    signal,
+    truncated: bounded.truncated,
+  };
+}
+
+function agentPromptHandoffDiagnosticMessage({
+  agent = 'devin',
+  status = 'thinking',
+  promptType = 'chat_prompt',
+  deliveredToAgent = false,
+  roomContextStatus = null,
+  roomContextText = '',
+  promptText = '',
+  userMessage = '',
+  observedAt = new Date().toISOString(),
+  maxChars = DEFAULT_MAX_CHARS,
+}) {
+  const safeAgent = String(agent || 'devin').trim() || 'devin';
+  const safePromptType = normalizedPromptType(promptType);
+  const promptLabel = safePromptType === 'context_primer' ? 'context primer' : 'chat prompt';
+  const delivered = deliveredToAgent === true;
+  const promptMetrics = diagnosticTextMetrics(promptText);
+  const roomContextMetrics = diagnosticTextMetrics(roomContextText);
+  const userMessageMetrics = diagnosticTextMetrics(userMessage);
+  const baseMessage = agentDiagnosticMessage({
+    agent: safeAgent,
+    status,
+    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to process stdin.`,
+    diagnosticSource: safePromptType === 'context_primer'
+      ? 'agent_context_primer_sent'
+      : 'agent_prompt_sent',
+    observedAt,
+    maxChars,
+  });
+
+  return {
+    ...baseMessage,
+    promptType: safePromptType,
+    deliveredToAgent: delivered,
+    promptLength: promptMetrics.length,
+    promptFingerprint: promptMetrics.fingerprint,
+    roomContextStatus: Number.isFinite(roomContextStatus) ? Math.floor(roomContextStatus) : null,
+    roomContextLength: roomContextMetrics.length,
+    roomContextFingerprint: roomContextMetrics.fingerprint,
+    userMessageLength: userMessageMetrics.length,
+    userMessageFingerprint: userMessageMetrics.fingerprint,
+    contextTruncated: String(roomContextText || '').includes('[PIPE room context truncated]'),
+  };
+}
+
+module.exports = {
+  agentDiagnosticMessage,
+  agentPromptHandoffDiagnosticMessage,
+  boundedDiagnosticText,
+  diagnosticTextMetrics,
+  redactDiagnosticText,
+};

@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   FileText,
   FolderOpen,
@@ -115,15 +115,16 @@ export function Win95Desktop({
           const label = cursor.role === 'HOST' ? 'Host' : 'Guest';
           const x = Math.min(0.985, Math.max(0.015, cursor.x));
           const y = Math.min(0.96, Math.max(0.015, cursor.y));
+          const cursorStyle = {
+            '--room-cursor-x': `${x * 100}vw`,
+            '--room-cursor-y': `${y * 100}dvh`,
+          } as CSSProperties;
           return (
             <div
-              key={cursor.clientId}
+              key={cursor.role}
               className={`win95-peer-cursor win95-peer-cursor-${cursor.role.toLowerCase()}`}
               data-testid={`room-peer-cursor-${cursor.role.toLowerCase()}`}
-              style={{
-                left: `${x * 100}%`,
-                top: `${y * 100}%`,
-              }}
+              style={cursorStyle}
             >
               <svg
                 className="win95-peer-cursor-pointer"

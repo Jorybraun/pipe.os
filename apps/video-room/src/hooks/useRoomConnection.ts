@@ -64,6 +64,7 @@ export interface RoomChatMessage {
   createdAt: number;
   role: RoomRole;
   text: string;
+  deliveryStatus?: 'pending' | 'accepted' | 'rejected';
 }
 
 export interface RoomCursorPresence {
@@ -147,6 +148,17 @@ export type RoomDesktopEvent =
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 export type RoomDesktopEventDraft =
@@ -181,6 +193,17 @@ export type RoomDesktopEventDraft =
   | {
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 export type RoomFileSystemEvent =
@@ -197,6 +220,7 @@ export type RoomFileSystemEvent =
       createdAt: number;
       kind: 'DELETE_FILE';
       fileId: string;
+      file?: RoomFile;
     };
 
 export type RoomFileSystemEventDraft =
@@ -232,7 +256,7 @@ interface RoomConnection {
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
-  publishChatMessage: (text: string) => void;
+  publishChatMessage: (text: string) => RoomChatMessage | null;
   publishCursorPresence: (position: { x: number; y: number }) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface) => void;
@@ -268,6 +292,20 @@ function isWindowType(value: unknown): value is WindowType {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function stringOrNull(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function numberOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
@@ -382,6 +420,17 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'WORKSPACE_STATE_CHANGED',
       status: typeof value.status === 'string' ? value.status : null,
+      workspaceSessionId: stringOrNull(value.workspaceSessionId),
+      errorMessage: stringOrNull(value.errorMessage),
+      repoUrl: stringOrNull(value.repoUrl),
+      githubPrNumber: numberOrNull(value.githubPrNumber),
+      matchedRepoId: numberOrNull(value.matchedRepoId),
+      canLaunch: booleanOrUndefined(value.canLaunch),
+      ttlSeconds: numberOrNull(value.ttlSeconds),
+      ttlSource: stringOrNull(value.ttlSource),
+      expiresAt: stringOrNull(value.expiresAt),
+      expiringSoon: booleanOrUndefined(value.expiringSoon),
+      source: typeof value.source === 'string' && value.source.length <= 80 ? value.source : undefined,
     };
   }
   return null;
@@ -478,6 +527,7 @@ function parseChatMessage(value: unknown): RoomChatMessage | null {
     createdAt: value.createdAt,
     role: value.role,
     text: value.text,
+    deliveryStatus: 'accepted',
   };
 }
 
@@ -488,6 +538,23 @@ function parseChatSnapshot(value: unknown): { messages: RoomChatMessage[] } | nu
       .map(parseChatMessage)
       .filter((entry): entry is RoomChatMessage => entry !== null),
   };
+}
+
+function parseChatRejection(value: unknown): { clientMessageId: string | null } {
+  if (!isRecord(value)) return { clientMessageId: null };
+  return {
+    clientMessageId: typeof value.clientMessageId === 'string' ? value.clientMessageId : null,
+  };
+}
+
+export function mergeRoomChatMessage(
+  previous: RoomChatMessage[],
+  message: RoomChatMessage,
+): RoomChatMessage[] {
+  return sortChatMessages([
+    ...previous.filter((entry) => entry.id !== message.id),
+    message,
+  ]);
 }
 
 function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence | null {
@@ -564,12 +631,14 @@ function parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
     };
   }
   if (value.kind === 'DELETE_FILE' && typeof value.fileId === 'string') {
+    const file = parseRoomFile(value.file);
     return {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
       kind: 'DELETE_FILE',
       fileId: value.fileId,
+      file: file ?? undefined,
     };
   }
   return null;
@@ -601,6 +670,26 @@ function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): Ro
     ...files.filter((file) => file.id !== event.file.id),
     event.file,
   ]);
+}
+
+export function mergePeerCursorPresence(
+  previous: RoomCursorPresence[],
+  cursor: RoomCursorPresence,
+  now = Date.now(),
+  ttlMs = PEER_CURSOR_TTL_MS,
+): RoomCursorPresence[] {
+  const cutoff = now - ttlMs;
+  const receivedCursor: RoomCursorPresence = {
+    ...cursor,
+    updatedAt: now,
+  };
+  return [
+    ...previous.filter((entry) => (
+      entry.role !== cursor.role
+      && entry.updatedAt >= cutoff
+    )),
+    receivedCursor,
+  ];
 }
 
 export function useRoomConnection(
@@ -1038,10 +1127,19 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CHAT_MESSAGE') {
           const chatMessage = parseChatMessage(message.payload);
           if (!chatMessage || chatMessage.clientId === desktopClientIdRef.current) return;
-          setChatMessages((prev) => sortChatMessages([
-            ...prev.filter((entry) => entry.id !== chatMessage.id),
-            chatMessage,
-          ]));
+          setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
+        } else if (message.type === 'ROOM_CHAT_MESSAGE_ACK') {
+          const chatMessage = parseChatMessage(message.payload);
+          if (!chatMessage) return;
+          setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
+        } else if (message.type === 'ROOM_CHAT_MESSAGE_REJECTED') {
+          const rejection = parseChatRejection(message.payload);
+          if (!rejection.clientMessageId) return;
+          setChatMessages((prev) => prev.map((entry) => (
+            entry.id === rejection.clientMessageId
+              ? { ...entry, deliveryStatus: 'rejected' }
+              : entry
+          )));
         } else if (message.type === 'ROOM_CHAT_STATE') {
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;
@@ -1049,15 +1147,7 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
           if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
-          const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
-          setPeerCursors((prev) => [
-            ...prev.filter((entry) => (
-              entry.clientId !== cursor.clientId
-              && entry.role !== cursor.role
-              && entry.updatedAt >= cutoff
-            )),
-            cursor,
-          ]);
+          setPeerCursors((prev) => mergePeerCursorPresence(prev, cursor));
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
           const event = parseFileSystemEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
@@ -1312,9 +1402,9 @@ export function useRoomConnection(
     }
   }, [sendClippyPrompt]);
 
-  const publishChatMessage = useCallback((text: string): void => {
+  const publishChatMessage = useCallback((text: string): RoomChatMessage | null => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     const message: RoomChatMessage = {
       id: typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
@@ -1323,14 +1413,13 @@ export function useRoomConnection(
       createdAt: Date.now(),
       role,
       text: trimmed,
+      deliveryStatus: 'pending',
     };
-    setChatMessages((prev) => sortChatMessages([
-      ...prev.filter((entry) => entry.id !== message.id),
-      message,
-    ]));
+    setChatMessages((prev) => mergeRoomChatMessage(prev, message));
     if (!sendChatMessage(message)) {
       chatOutboxRef.current.push(message);
     }
+    return message;
   }, [role, sendChatMessage]);
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {

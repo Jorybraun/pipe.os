@@ -2,7 +2,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { decomposeResumeToGraph } from '../resumeDecomposition';
 import type { ParsedCV } from '../../cvParser';
 import type { DecompositionResult } from '../candidateDecompositionPrompt';
-import { insertCandidateNode } from '../candidateNodes';
+import { embedCandidateNode, insertCandidateNode } from '../candidateNodes';
 
 vi.mock('../candidateNodes', () => ({
   insertCandidateNode: vi.fn(async (_db, node) => ({
@@ -139,6 +139,100 @@ describe('decomposeResumeToGraph', () => {
       source_quote_char_start: 'Jane Doe\n'.length,
       source_quote_char_end: 'Jane Doe\nLed backend migration to microservices using Kafka.'.length,
     });
+  });
+
+  it('persists source-backed nodes even when embedding is unavailable', async () => {
+    vi.mocked(embedCandidateNode).mockRejectedValueOnce(new Error('embedding unavailable'));
+    const db = mockDb();
+    const parsedCV: ParsedCV = {
+      name: 'Jane Doe',
+      skills: ['TypeScript'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    const result = await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-embed-down',
+      resumeText: 'Jane Doe\nLed backend migration to microservices using Kafka.',
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: {
+        ...mockDecomposition,
+        projects: [],
+        skills: [],
+        education: [],
+        credentials: [],
+        career_arc: {
+          narrative: 'Steady progression.',
+          growth_velocity: 'normal',
+          transitions: [],
+          confidence: 0.7,
+        },
+      },
+    });
+
+    expect(result.nodesInserted).toBeGreaterThan(0);
+    expect(result.errors.some((error) => error.includes('Embed failed'))).toBe(true);
+    const experienceCall = vi.mocked(insertCandidateNode).mock.calls.find((call) =>
+      call[1].node_type === 'Experience'
+    );
+    expect(experienceCall).toBeDefined();
+    expect(experienceCall![1].embedding_json).toBeNull();
+  });
+
+  it('preserves exact raw review evidence as source-backed phrase nodes', async () => {
+    const db = mockDb();
+    const resumeText = [
+      'Recently implemented popover trigger click handling in usePopoverRoot for a large component library.',
+      'Designed a patient click threshold so impatient trigger clicks do not immediately close hover-open popovers.',
+      'Comfortable assessing accessibility state, user interaction timing, JavaScript test runner regression tests, and maintainability trade-offs.',
+    ].join(' ');
+    const parsedCV: ParsedCV = {
+      name: 'Jane Doe',
+      skills: ['TypeScript', 'React'],
+      experiences: [],
+      educationBlocks: [],
+      credentials: [],
+      projects: [],
+    };
+
+    await decomposeResumeToGraph({
+      db,
+      candidateId: 'candidate-review-evidence',
+      resumeText,
+      parsedCV,
+      env: mockEnv,
+      decompositionResult: {
+        ...mockDecomposition,
+        experiences: [],
+        projects: [],
+        skills: [],
+        education: [],
+        credentials: [],
+      },
+    });
+
+    const reviewEvidenceCalls = vi.mocked(insertCandidateNode).mock.calls.filter((call) =>
+      call[1].node_type === 'ReviewEvidence'
+    );
+    expect(reviewEvidenceCalls.length).toBeGreaterThanOrEqual(3);
+
+    const canonicalTerms = reviewEvidenceCalls.flatMap((call) => {
+      const properties = JSON.parse(String(call[1].extracted_properties_json)) as {
+        semantic_terms?: Array<{ canonical_key?: string; evidence_level?: string }>;
+        source_quote_validated?: boolean;
+      };
+      expect(properties.source_quote_validated).toBe(true);
+      expect(properties.semantic_terms?.[0]?.evidence_level).toMatch(/implemented|validated|used|explained/);
+      return properties.semantic_terms?.map((term) => term.canonical_key ?? '') ?? [];
+    });
+
+    expect(canonicalTerms).toContain('term:use-popover-root');
+    expect(canonicalTerms).toContain('term:patient-click-threshold');
+    expect(canonicalTerms).toContain('term:javascript-test-runner');
   });
 
   it('falls back to parser-only nodes when decompositionResult is null', async () => {

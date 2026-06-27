@@ -21,6 +21,7 @@ import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
+import { parseResumeText, persistParsedCV } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
@@ -38,6 +39,12 @@ import {
   loadRoleChallengeSemantics,
   matchCandidateToReviewChallenge,
 } from '../lib/challengeMatching';
+import {
+  candidateSafeQualityGateFor,
+  type CandidateSafeQualityGateVerdict,
+  type CandidateSafeMatchStatus,
+} from '../lib/challengeMatching/candidateSafeQualityGate';
+import type { MatchExplanation, RoleSourceReference, SourceRef } from '../lib/challengeMatching';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -353,7 +360,7 @@ async function checkMatchingGate(
   return { blocked: false };
 }
 
-// ─── Standalone CV intake & code review (no pipeline / no stage rows) ───────
+// ─── Standalone CV intake & code review ─────────────────────────────────────
 
 const INTAKE_CHALLENGE_CONTENT = {
   id: 'intake-upload',
@@ -374,6 +381,14 @@ const STANDALONE_WAITING_CHALLENGE = {
   },
 };
 
+const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
+  isMultiTurn: true,
+  enableExplainer: false,
+  enableFollowUp: true,
+  implementerPersona: 'junior',
+  maxRounds: 4,
+};
+
 interface StandaloneReviewRow {
   id: string;
   status: string;
@@ -386,10 +401,735 @@ interface StandaloneReviewRow {
 interface StandaloneDevContainerRow {
   id: string;
   status: string;
+  interview_type: 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
   matched_repo_id: number | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
   submission_json: string | null;
+}
+
+type CandidateSafeValidatorVerdict = CandidateSafeQualityGateVerdict | 'REJECTED';
+
+interface CandidateSafeSourceRef {
+  sourceRefType?: string;
+  locator?: string;
+  exactText?: string;
+}
+
+interface CandidateSafeRoleSourceRef {
+  sourceRefType?: string;
+  locator?: string;
+  exactText?: string;
+  conceptKeys: string[];
+}
+
+interface CandidateSafeMatchEvidence {
+  purpose?: string;
+  pairScore?: number;
+  stretch?: {
+    atomConcept: string;
+    demandConcept: string;
+    dimension: string;
+  };
+  roleSourceRefs: CandidateSafeRoleSourceRef[];
+  candidateSourceRefs: CandidateSafeSourceRef[];
+  challengeSourceRefs: CandidateSafeSourceRef[];
+}
+
+type CandidateSafeMatchHyperedgeNodeKind = 'person_evidence' | 'role_source' | 'repo_challenge';
+
+interface CandidateSafeMatchHyperedgeNode {
+  kind: CandidateSafeMatchHyperedgeNodeKind;
+  label: string;
+  sourceRef: CandidateSafeSourceRef & { conceptKeys?: string[] };
+}
+
+interface CandidateSafeMatchHyperedge {
+  relation: 'candidate_role_repo_alignment' | 'candidate_repo_evidence_alignment';
+  label: string;
+  pairScore?: number;
+  stretch?: CandidateSafeMatchEvidence['stretch'];
+  nodes: CandidateSafeMatchHyperedgeNode[];
+}
+
+interface CandidateSafeMatchValidator {
+  agentName: string;
+  agentVersion: string;
+  mode: 'deterministic';
+  verdict: CandidateSafeValidatorVerdict;
+  rationale: string;
+  checks: Array<{
+    id: string;
+    passed: boolean;
+    reason: string;
+  }>;
+  sourceBridge: {
+    prNumber?: number;
+    candidateSourceCount: number;
+    repoSourceCount: number;
+    roleSourceCount: number;
+    alignedDemandCount: number;
+    stretchCount: number;
+    provenanceComplete: boolean;
+  };
+}
+
+interface CandidateSafeAssessmentQualityMetric {
+  id: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  reason: string;
+}
+
+interface CandidateSafeAssessmentQuality {
+  verdict: string;
+  score: number;
+  maxScore: number;
+  metrics: CandidateSafeAssessmentQualityMetric[];
+}
+
+interface CandidateSafeMatchExplanation {
+  status: CandidateSafeMatchStatus;
+  summary: string;
+  score: number | null;
+  assessmentQuality?: CandidateSafeAssessmentQuality;
+  qualityGate: {
+    verdict: CandidateSafeQualityGateVerdict;
+    checks: string[];
+  };
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  evidence: CandidateSafeMatchEvidence[];
+  evidenceHyperedges: CandidateSafeMatchHyperedge[];
+  validatorAgent?: CandidateSafeMatchValidator;
+}
+
+interface StandaloneReviewMatchResult {
+  repoUrl: string;
+  prNumber: number;
+  matchExplanation: CandidateSafeMatchExplanation | null;
+}
+
+interface StandaloneReviewEvidenceReadiness {
+  ready: boolean;
+  reason: string | null;
+  status: string | null;
+  nodeCount: number;
+}
+
+interface PersistedMatchRunRow {
+  status: string;
+  ranked_results_json: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) =>
+    typeof entry === 'string' && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalPersistedNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function standaloneReviewBackingIds(interviewId: string): {
+  pipelineId: string;
+  stageId: string;
+  challengeId: string;
+} {
+  return {
+    pipelineId: `standalone-review-backing-pipeline-${interviewId}`,
+    stageId: `standalone-review-backing-stage-${interviewId}`,
+    challengeId: `standalone-review-backing-challenge-${interviewId}`,
+  };
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function safeValidatorVerdict(value: unknown): CandidateSafeValidatorVerdict | undefined {
+  return value === 'PASSED' || value === 'NEEDS_REVIEW' || value === 'REJECTED'
+    ? value
+    : undefined;
+}
+
+function boundedExactText(value: unknown): string | undefined {
+  const text = optionalString(value);
+  if (!text) return undefined;
+  return text.length > 1200 ? `${text.slice(0, 1197)}...` : text;
+}
+
+function safeSourceRef(ref: SourceRef): CandidateSafeSourceRef | null {
+  const safe: CandidateSafeSourceRef = {
+    ...(optionalString(ref.sourceRefType) ? { sourceRefType: optionalString(ref.sourceRefType) } : {}),
+    ...(optionalString(ref.locator) ? { locator: optionalString(ref.locator) } : {}),
+    ...(boundedExactText(ref.exactText) ? { exactText: boundedExactText(ref.exactText) } : {}),
+  };
+  return Object.keys(safe).length > 0 ? safe : null;
+}
+
+function safeSourceRefFromUnknown(value: unknown): CandidateSafeSourceRef | null {
+  if (!isRecord(value)) return null;
+  const safe: CandidateSafeSourceRef = {
+    ...(optionalString(value.sourceRefType) ? { sourceRefType: optionalString(value.sourceRefType) } : {}),
+    ...(optionalString(value.locator) ? { locator: optionalString(value.locator) } : {}),
+    ...(boundedExactText(value.exactText) ? { exactText: boundedExactText(value.exactText) } : {}),
+  };
+  return Object.keys(safe).length > 0 ? safe : null;
+}
+
+function safeRoleSourceRef(ref: RoleSourceReference): CandidateSafeRoleSourceRef | null {
+  const safe: CandidateSafeRoleSourceRef = {
+    conceptKeys: ref.conceptKeys.filter((concept) => concept.trim().length > 0),
+    ...(optionalString(ref.sourceRefType) ? { sourceRefType: optionalString(ref.sourceRefType) } : {}),
+    ...(optionalString(ref.locator) ? { locator: optionalString(ref.locator) } : {}),
+    ...(boundedExactText(ref.exactText) ? { exactText: boundedExactText(ref.exactText) } : {}),
+  };
+  return safe.conceptKeys.length > 0 || safe.locator || safe.exactText ? safe : null;
+}
+
+function safeRoleSourceRefFromUnknown(value: unknown): CandidateSafeRoleSourceRef | null {
+  if (!isRecord(value)) return null;
+  const safe: CandidateSafeRoleSourceRef = {
+    conceptKeys: stringArray(value.conceptKeys),
+    ...(optionalString(value.sourceRefType) ? { sourceRefType: optionalString(value.sourceRefType) } : {}),
+    ...(optionalString(value.locator) ? { locator: optionalString(value.locator) } : {}),
+    ...(boundedExactText(value.exactText) ? { exactText: boundedExactText(value.exactText) } : {}),
+  };
+  return safe.conceptKeys.length > 0 || safe.locator || safe.exactText ? safe : null;
+}
+
+function safeStretchFromUnknown(value: unknown): CandidateSafeMatchEvidence['stretch'] | undefined {
+  if (!isRecord(value)) return undefined;
+  const atomConcept = optionalString(value.atomConcept);
+  const demandConcept = optionalString(value.demandConcept);
+  const dimension = optionalString(value.dimension);
+  if (!atomConcept || !demandConcept || !dimension) return undefined;
+  return { atomConcept, demandConcept, dimension };
+}
+
+function safeValidatorChecksFromUnknown(value: unknown): CandidateSafeMatchValidator['checks'] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const id = optionalString(entry.id);
+    const passed = optionalBoolean(entry.passed);
+    const reason = optionalString(entry.reason);
+    if (!id || passed === undefined || !reason) return [];
+    return [{ id, passed, reason }];
+  });
+}
+
+function safeValidatorAgentFromUnknown(value: unknown): CandidateSafeMatchValidator | undefined {
+  if (!isRecord(value)) return undefined;
+  const agentName = optionalString(value.agentName);
+  const agentVersion = optionalString(value.agentVersion);
+  const mode = value.mode === 'deterministic' ? 'deterministic' : undefined;
+  const verdict = safeValidatorVerdict(value.verdict);
+  const rationale = optionalString(value.rationale);
+  const bridge = isRecord(value.sourceBridge) ? value.sourceBridge : null;
+  const candidateSourceCount = bridge ? optionalNumber(bridge.candidateSourceCount) : undefined;
+  const repoSourceCount = bridge ? optionalNumber(bridge.repoSourceCount) : undefined;
+  const roleSourceCount = bridge ? optionalNumber(bridge.roleSourceCount) : undefined;
+  const alignedDemandCount = bridge ? optionalNumber(bridge.alignedDemandCount) : undefined;
+  const stretchCount = bridge ? optionalNumber(bridge.stretchCount) : undefined;
+  const provenanceComplete = bridge ? optionalBoolean(bridge.provenanceComplete) : undefined;
+  if (
+    !agentName
+    || !agentVersion
+    || !mode
+    || !verdict
+    || !rationale
+    || candidateSourceCount === undefined
+    || repoSourceCount === undefined
+    || roleSourceCount === undefined
+    || alignedDemandCount === undefined
+    || stretchCount === undefined
+    || provenanceComplete === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    agentName,
+    agentVersion,
+    mode,
+    verdict,
+    rationale,
+    checks: safeValidatorChecksFromUnknown(value.checks),
+    sourceBridge: {
+      ...(bridge && optionalNumber(bridge.prNumber) ? { prNumber: optionalNumber(bridge.prNumber) } : {}),
+      candidateSourceCount,
+      repoSourceCount,
+      roleSourceCount,
+      alignedDemandCount,
+      stretchCount,
+      provenanceComplete,
+    },
+  };
+}
+
+function safeAssessmentQualityFromUnknown(value: unknown): CandidateSafeAssessmentQuality | undefined {
+  if (!isRecord(value)) return undefined;
+  const verdict = optionalString(value.verdict);
+  const score = optionalNumber(value.score);
+  const maxScore = optionalNumber(value.maxScore);
+  const metrics = Array.isArray(value.metrics)
+    ? value.metrics.flatMap((entry) => {
+        if (!isRecord(entry)) return [];
+        const id = optionalString(entry.id);
+        const label = optionalString(entry.label);
+        const metricScore = optionalNumber(entry.score);
+        const metricMaxScore = optionalNumber(entry.maxScore);
+        const reason = optionalString(entry.reason);
+        if (!id || !label || metricScore === undefined || metricMaxScore === undefined || !reason) {
+          return [];
+        }
+        return [{
+          id,
+          label,
+          score: metricScore,
+          maxScore: metricMaxScore,
+          reason,
+        }];
+      })
+    : [];
+  if (!verdict || score === undefined || maxScore === undefined || metrics.length === 0) {
+    return undefined;
+  }
+  return {
+    verdict,
+    score,
+    maxScore,
+    metrics,
+  };
+}
+
+function dedupeSafeRefs<T>(refs: T[], keyOf: (ref: T) => string): T[] {
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = keyOf(ref);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sourceRefKey(ref: CandidateSafeSourceRef): string {
+  return [ref.sourceRefType ?? '', ref.locator ?? '', ref.exactText ?? ''].join('|');
+}
+
+function roleSourceRefKey(ref: CandidateSafeRoleSourceRef): string {
+  return [
+    ref.sourceRefType ?? '',
+    ref.locator ?? '',
+    ref.exactText ?? '',
+    ref.conceptKeys.join(','),
+  ].join('|');
+}
+
+function buildMatchHyperedgeNodes(
+  entry: CandidateSafeMatchEvidence,
+): CandidateSafeMatchHyperedgeNode[] {
+  return [
+    ...entry.candidateSourceRefs.slice(0, 1).map((sourceRef): CandidateSafeMatchHyperedgeNode => ({
+      kind: 'person_evidence',
+      label: 'Person evidence',
+      sourceRef,
+    })),
+    ...entry.roleSourceRefs.slice(0, 1).map((sourceRef): CandidateSafeMatchHyperedgeNode => ({
+      kind: 'role_source',
+      label: 'Role source',
+      sourceRef,
+    })),
+    ...entry.challengeSourceRefs.slice(0, 1).map((sourceRef): CandidateSafeMatchHyperedgeNode => ({
+      kind: 'repo_challenge',
+      label: 'Repo challenge',
+      sourceRef,
+    })),
+  ];
+}
+
+function buildMatchHyperedges(
+  evidence: CandidateSafeMatchEvidence[],
+): CandidateSafeMatchHyperedge[] {
+  return evidence.flatMap((entry, index) => {
+    const nodes = buildMatchHyperedgeNodes(entry);
+    const hasPersonEvidence = nodes.some((node) => node.kind === 'person_evidence');
+    const hasRoleSource = nodes.some((node) => node.kind === 'role_source');
+    const hasRepoChallenge = nodes.some((node) => node.kind === 'repo_challenge');
+    if (!hasPersonEvidence || !hasRepoChallenge) return [];
+    return [{
+      relation: hasRoleSource ? 'candidate_role_repo_alignment' : 'candidate_repo_evidence_alignment',
+      label: hasRoleSource ? `Evidence bridge ${index + 1}` : `Candidate evidence bridge ${index + 1}`,
+      ...(entry.pairScore !== undefined ? { pairScore: entry.pairScore } : {}),
+      ...(entry.stretch ? { stretch: entry.stretch } : {}),
+      nodes,
+    }];
+  });
+}
+
+export function qualityGateFor(
+  status: CandidateSafeMatchStatus,
+  candidateSourceCount: number,
+  repoSourceCount: number,
+  roleSourceCount: number,
+  validatorAgent?: CandidateSafeMatchValidator,
+  assessmentQuality?: CandidateSafeAssessmentQuality,
+): CandidateSafeMatchExplanation['qualityGate'] {
+  return candidateSafeQualityGateFor({
+    status,
+    candidateSourceCount,
+    repoSourceCount,
+    roleSourceCount,
+    validatorVerdict: validatorAgent?.verdict,
+    assessmentQualityVerdict: assessmentQuality?.verdict,
+    assessmentQualityMetrics: assessmentQuality?.metrics,
+    requireContrastSeparation: roleSourceCount > 0,
+  });
+}
+
+function buildCandidateSafeMatchExplanation(input: {
+  status: CandidateSafeMatchStatus;
+  summary: string;
+  score: number | null;
+  assessmentQuality?: CandidateSafeAssessmentQuality;
+  evidence: CandidateSafeMatchEvidence[];
+  roleSources?: CandidateSafeRoleSourceRef[];
+  validatorAgent?: CandidateSafeMatchValidator;
+}): CandidateSafeMatchExplanation {
+  const candidateRefs = dedupeSafeRefs(
+    input.evidence.flatMap((entry) => entry.candidateSourceRefs),
+    sourceRefKey,
+  );
+  const repoRefs = dedupeSafeRefs(
+    input.evidence.flatMap((entry) => entry.challengeSourceRefs),
+    sourceRefKey,
+  );
+  const roleRefs = dedupeSafeRefs(
+    [
+      ...input.evidence.flatMap((entry) => entry.roleSourceRefs),
+      ...(input.roleSources ?? []),
+    ],
+    roleSourceRefKey,
+  );
+  return {
+    status: input.status,
+    summary: input.summary,
+    score: input.score,
+    qualityGate: qualityGateFor(
+      input.status,
+      candidateRefs.length,
+      repoRefs.length,
+      roleRefs.length,
+      input.validatorAgent,
+      input.assessmentQuality,
+    ),
+    candidateSourceCount: candidateRefs.length,
+    repoSourceCount: repoRefs.length,
+    roleSourceCount: roleRefs.length,
+    evidence: input.evidence,
+    evidenceHyperedges: buildMatchHyperedges(input.evidence),
+    ...(input.assessmentQuality ? { assessmentQuality: input.assessmentQuality } : {}),
+    ...(input.validatorAgent ? { validatorAgent: input.validatorAgent } : {}),
+  };
+}
+
+function contrastSeparationScore(
+  explanation: CandidateSafeMatchExplanation | null | undefined,
+): number | null {
+  const metric = explanation?.assessmentQuality?.metrics.find((entry) =>
+    entry.id === 'contrast_separation'
+  );
+  return typeof metric?.score === 'number' && Number.isFinite(metric.score) ? metric.score : null;
+}
+
+function standaloneAutomaticMatchPasses(
+  explanation: CandidateSafeMatchExplanation | null | undefined,
+): boolean {
+  return explanation?.status === 'MATCHED'
+    && explanation.qualityGate.verdict === 'PASSED'
+    && (contrastSeparationScore(explanation) ?? 0) > 0;
+}
+
+function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {
+  if (!explanation) return null;
+  const evidence = explanation.evidence.flatMap((entry) => {
+    const roleSourceRefs = entry.roleSourceRefs.flatMap((ref) => {
+      const safe = safeRoleSourceRef(ref);
+      return safe ? [safe] : [];
+    });
+    const candidateSourceRefs = entry.candidateSourceRefs.flatMap((ref) => {
+      const safe = safeSourceRef(ref);
+      return safe ? [safe] : [];
+    });
+    const challengeSourceRefs = entry.challengeSourceRefs.flatMap((ref) => {
+      const safe = safeSourceRef(ref);
+      return safe ? [safe] : [];
+    });
+    if (!roleSourceRefs.length && !candidateSourceRefs.length && !challengeSourceRefs.length) {
+      return [];
+    }
+    return [{
+      purpose: entry.purpose,
+      pairScore: entry.pairScore,
+      ...(entry.stretch ? { stretch: entry.stretch } : {}),
+      roleSourceRefs,
+      candidateSourceRefs,
+      challengeSourceRefs,
+    }];
+  });
+  const roleSources = explanation.roleSources.flatMap((ref) => {
+    const safe = safeRoleSourceRef(ref);
+    return safe ? [safe] : [];
+  });
+  return buildCandidateSafeMatchExplanation({
+    status: explanation.status,
+    summary: explanation.summary,
+    score: explanation.score,
+    assessmentQuality: safeAssessmentQualityFromUnknown(explanation.assessmentQuality),
+    evidence,
+    roleSources,
+    validatorAgent: safeValidatorAgentFromUnknown(explanation.validatorAgent),
+  });
+}
+
+function parseJsonArray(raw: string | null): unknown[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistedMatchStatus(value: string): CandidateSafeMatchStatus | null {
+  if (value === 'MATCHED' || value === 'NEEDS_MORE_EVIDENCE' || value === 'NO_ROLE_SAFE_CHALLENGE') {
+    return value;
+  }
+  return null;
+}
+
+function buildPersistedMatchRunExplanation(
+  row: PersistedMatchRunRow,
+  expectedRepoId: number | null,
+  expectedPrNumber: number,
+): CandidateSafeMatchExplanation | null {
+  const status = persistedMatchStatus(row.status);
+  if (!status) return null;
+  const ranked = parseJsonArray(row.ranked_results_json);
+  const selected = ranked.find((entry) => {
+    if (!isRecord(entry)) return false;
+    const repoId = optionalPersistedNumber(entry.repoId);
+    const prNumber = optionalPersistedNumber(entry.prNumber);
+    const repoMatches = expectedRepoId === null || repoId === expectedRepoId;
+    return repoMatches && prNumber === expectedPrNumber && entry.eligible !== false;
+  });
+  if (!isRecord(selected)) return null;
+
+  const alignments = Array.isArray(selected.alignments) ? selected.alignments : [];
+  const evidence = alignments.flatMap((alignment) => {
+    if (!isRecord(alignment)) return [];
+    const roleSourceRefs = Array.isArray(alignment.roleSourceRefs)
+      ? alignment.roleSourceRefs.flatMap((ref) => {
+          const safe = safeRoleSourceRefFromUnknown(ref);
+          return safe ? [safe] : [];
+        })
+      : [];
+    const candidateSourceRefs = Array.isArray(alignment.candidateSourceRefs)
+      ? alignment.candidateSourceRefs.flatMap((ref) => {
+          const safe = safeSourceRefFromUnknown(ref);
+          return safe ? [safe] : [];
+        })
+      : [];
+    const challengeSourceRefs = Array.isArray(alignment.challengeSourceRefs)
+      ? alignment.challengeSourceRefs.flatMap((ref) => {
+          const safe = safeSourceRefFromUnknown(ref);
+          return safe ? [safe] : [];
+        })
+      : [];
+    if (!roleSourceRefs.length && !candidateSourceRefs.length && !challengeSourceRefs.length) {
+      return [];
+    }
+    return [{
+      ...(optionalString(alignment.purpose) ? { purpose: optionalString(alignment.purpose) } : {}),
+      ...(optionalNumber(alignment.pairScore) ? { pairScore: optionalNumber(alignment.pairScore) } : {}),
+      ...(safeStretchFromUnknown(alignment.stretch) ? { stretch: safeStretchFromUnknown(alignment.stretch) } : {}),
+      roleSourceRefs,
+      candidateSourceRefs,
+      challengeSourceRefs,
+    }];
+  });
+
+  const alignedDemandCount = optionalNumber(selected.alignedDemandCount) ?? evidence.length;
+  const stretchCount = optionalNumber(selected.stretchCount) ?? 0;
+  return buildCandidateSafeMatchExplanation({
+    status,
+    summary: status === 'MATCHED'
+      ? `Matched ${alignedDemandCount} source-backed demand${alignedDemandCount === 1 ? '' : 's'} (${stretchCount} stretch).`
+      : 'No source-backed review challenge passed the quality gate.',
+    score: optionalNumber(selected.score) ?? null,
+    assessmentQuality: safeAssessmentQualityFromUnknown(selected.assessmentQuality),
+    evidence,
+    validatorAgent: safeValidatorAgentFromUnknown(selected.validatorAgent),
+  });
+}
+
+export function selectPreferredMatchExplanation(
+  explanations: Array<CandidateSafeMatchExplanation | null | undefined>,
+): CandidateSafeMatchExplanation | null {
+  let fallback: CandidateSafeMatchExplanation | null = null;
+  for (const explanation of explanations) {
+    if (!explanation) continue;
+    if (explanation.qualityGate.verdict === 'PASSED') return explanation;
+    fallback ??= explanation;
+  }
+  return fallback;
+}
+
+async function loadCachedStandaloneReviewMatchExplanation(
+  db: D1Database,
+  candidateId: string,
+  expectedRepoId: number | null,
+  expectedPrNumber: number,
+): Promise<CandidateSafeMatchExplanation | null> {
+  const rows = await db.prepare(
+    `SELECT status, ranked_results_json
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC
+      LIMIT 5`,
+  ).bind(candidateId).all<PersistedMatchRunRow>();
+  const explanations: CandidateSafeMatchExplanation[] = [];
+  for (const row of rows.results ?? []) {
+    const explanation = buildPersistedMatchRunExplanation(row, expectedRepoId, expectedPrNumber);
+    if (explanation) explanations.push(explanation);
+  }
+  return selectPreferredMatchExplanation(explanations);
+}
+
+function sourceBackedManualReviewValidator(prNumber: number): CandidateSafeMatchValidator {
+  return {
+    agentName: 'source_backed_match_validator',
+    agentVersion: 'v1',
+    mode: 'deterministic',
+    verdict: 'PASSED',
+    rationale: `Recruiter-selected PR #${prNumber} is accepted as a manual CODE_REVIEW override because it has a production-ready source-backed review packet. Candidate-specific CV alignment is not inferred on this path.`,
+    checks: [
+      {
+        id: 'repo_source_spans',
+        passed: true,
+        reason: 'The selected PR has persisted repository source spans and a production-ready review packet.',
+      },
+      {
+        id: 'source_backed_manual_override',
+        passed: true,
+        reason: 'The recruiter explicitly selected this PR, so PIPE validates reviewability and provenance instead of claiming an automatic CV match.',
+      },
+      {
+        id: 'provenance_complete',
+        passed: true,
+        reason: 'The manual override is backed by the same persisted packet/source-span contract used for automatic matching.',
+      },
+    ],
+    sourceBridge: {
+      prNumber,
+      candidateSourceCount: 0,
+      repoSourceCount: 1,
+      roleSourceCount: 0,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: true,
+    },
+  };
+}
+
+function sourceBackedManualReviewExplanation(prNumber: number): CandidateSafeMatchExplanation {
+  const validatorAgent = sourceBackedManualReviewValidator(prNumber);
+  const explanation = buildCandidateSafeMatchExplanation({
+    status: 'MATCHED',
+    summary: 'Manual override: recruiter-selected source-backed review challenge. PIPE validated that the PR is reviewable and source-backed, but did not infer candidate-specific CV alignment.',
+    score: null,
+    assessmentQuality: {
+      verdict: 'USABLE',
+      score: 8,
+      maxScore: 12,
+      metrics: [
+        {
+          id: 'skill_stack_overlap',
+          label: 'Skill/stack overlap',
+          score: 1,
+          maxScore: 2,
+          reason: 'Manual override does not infer candidate-specific CV alignment; the candidate still reviews a source-backed PR.',
+        },
+        {
+          id: 'role_demand_overlap',
+          label: 'Role/JD overlap',
+          score: 1,
+          maxScore: 2,
+          reason: 'No role/JD source was supplied for this standalone manual override.',
+        },
+        {
+          id: 'pr_reviewability',
+          label: 'PR reviewability',
+          score: 2,
+          maxScore: 2,
+          reason: 'The selected PR has a production-ready review packet and persisted source spans.',
+        },
+        {
+          id: 'match_specificity',
+          label: 'Match specificity',
+          score: 2,
+          maxScore: 2,
+          reason: 'The challenge targets one concrete repository, PR, and set of changed source spans.',
+        },
+        {
+          id: 'source_coverage',
+          label: 'Source coverage',
+          score: 2,
+          maxScore: 2,
+          reason: 'Repository-side provenance is complete; candidate-side fit was intentionally not inferred.',
+        },
+        {
+          id: 'contrast_separation',
+          label: 'Contrast separation',
+          score: 0,
+          maxScore: 2,
+          reason: 'Manual override bypasses automatic candidate-to-PR ranking, so score separation was not measured.',
+        },
+      ],
+    },
+    evidence: [],
+    validatorAgent,
+  });
+  return {
+    ...explanation,
+    qualityGate: {
+      verdict: 'PASSED',
+      checks: ['repo_source_spans', 'source_backed_manual_override', 'agent_validated_match'],
+    },
+    repoSourceCount: 1,
+    validatorAgent,
+  };
 }
 
 async function getPendingStandaloneReview(
@@ -416,9 +1156,11 @@ async function getPendingDevContainerChallenge(
 ): Promise<StandaloneDevContainerRow | null> {
   try {
     return await db.prepare(
-      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number, submission_json
+      `SELECT id, status, interview_type, matched_repo_id, github_repo_url, github_pr_number, submission_json
        FROM scheduled_interviews
-       WHERE candidate_id = ?1 AND interview_type = 'DEV_CONTAINER_CHALLENGE' AND stage_id IS NULL
+       WHERE candidate_id = ?1
+         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+         AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
        ORDER BY created_at DESC LIMIT 1`,
     ).bind(candidateId).first<StandaloneDevContainerRow>();
@@ -439,6 +1181,77 @@ async function candidateNeedsCvIntake(db: D1Database, candidateId: string): Prom
   return !row.resume_s3_key && (row.node_count ?? 0) === 0;
 }
 
+async function standaloneReviewEvidenceReadiness(
+  db: D1Database,
+  candidateId: string,
+): Promise<StandaloneReviewEvidenceReadiness> {
+  const row = await db.prepare(
+    `SELECT c.resume_s3_key,
+            ci.status,
+            ci.current_step,
+            ci.error_text,
+            (SELECT COUNT(*)
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = c.id AND cn.superseded_at IS NULL) AS node_count
+       FROM candidates c
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
+      WHERE c.id = ?1`,
+  ).bind(candidateId).first<{
+    resume_s3_key: string | null;
+    status: string | null;
+    current_step: string | null;
+    error_text: string | null;
+    node_count: number;
+  }>();
+
+  if (!row) {
+    return {
+      ready: false,
+      reason: 'candidate not found',
+      status: null,
+      nodeCount: 0,
+    };
+  }
+
+  const nodeCount = row.node_count ?? 0;
+  if (nodeCount <= 0) {
+    return {
+      ready: false,
+      reason: row.resume_s3_key
+        ? 'candidate evidence graph is still being built'
+        : 'candidate CV intake has not completed',
+      status: row.status ?? null,
+      nodeCount,
+    };
+  }
+
+  const status = row.status ?? null;
+  if (status === 'pending' || status === 'profile_generated' || status === 'enriching') {
+    return {
+      ready: false,
+      reason: `candidate ingestion is still ${status}`,
+      status,
+      nodeCount,
+    };
+  }
+
+  if (status === 'failed' && nodeCount <= 0) {
+    return {
+      ready: false,
+      reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
+      status,
+      nodeCount,
+    };
+  }
+
+  return {
+    ready: true,
+    reason: null,
+    status,
+    nodeCount,
+  };
+}
+
 /** True when a pipeline code stage should be gated behind CV intake for this candidate. */
 async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageId: string): Promise<boolean> {
   const assignment = await db.prepare(
@@ -446,6 +1259,20 @@ async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageI
   ).bind(candidateId, stageId).first<{ id: string }>();
   if (assignment) return false;
   return candidateNeedsCvIntake(db, candidateId);
+}
+
+async function clearStandaloneReviewCachedMatch(
+  db: D1Database,
+  interviewId: string,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET matched_repo_id = NULL,
+            github_repo_url = NULL,
+            github_pr_number = NULL,
+            updated_at = ?1
+      WHERE id = ?2`,
+  ).bind(new Date().toISOString(), interviewId).run();
 }
 
 /**
@@ -458,7 +1285,7 @@ async function matchStandaloneReview(
   db: D1Database,
   candidateId: string,
   interview: StandaloneReviewRow,
-): Promise<{ repoUrl: string; prNumber: number } | null> {
+): Promise<StandaloneReviewMatchResult | null> {
   if (interview.github_repo_url && interview.github_pr_number) {
     const isSourceBacked = await hasSourceBackedReviewPacket(
       db,
@@ -466,16 +1293,57 @@ async function matchStandaloneReview(
       interview.github_pr_number,
     );
     if (isSourceBacked) {
-      return { repoUrl: interview.github_repo_url, prNumber: interview.github_pr_number };
+      const cachedExplanation = await loadCachedStandaloneReviewMatchExplanation(
+        db,
+        candidateId,
+        interview.matched_repo_id,
+        interview.github_pr_number,
+      );
+      if (cachedExplanation) {
+        if (standaloneAutomaticMatchPasses(cachedExplanation)) {
+          return {
+            repoUrl: interview.github_repo_url,
+            prNumber: interview.github_pr_number,
+            matchExplanation: cachedExplanation,
+          };
+        }
+        console.warn(
+          `[standaloneReview] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict} and contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
+        );
+        await clearStandaloneReviewCachedMatch(db, interview.id);
+      } else {
+        return {
+          repoUrl: interview.github_repo_url,
+          prNumber: interview.github_pr_number,
+          matchExplanation: sourceBackedManualReviewExplanation(interview.github_pr_number),
+        };
+      }
+    } else {
+      console.warn(
+        `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+      );
+      await clearStandaloneReviewCachedMatch(db, interview.id);
     }
-    console.warn(
-      `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+  }
+
+  const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+  if (!readiness.ready) {
+    console.log(
+      `[standaloneReview] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, nodes=${readiness.nodeCount})`,
     );
+    return null;
   }
 
   const match = await matchCandidateToReviewChallenge(db, candidateId);
   if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
     console.log(`[standaloneReview] deterministic matcher returned ${match.status} for ${candidateId}`);
+    return null;
+  }
+  const matchExplanation = sanitizeMatchExplanation(match.explanation);
+  if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+    console.warn(
+      `[standaloneReview] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
+    );
     return null;
   }
   const repo = await db.prepare(
@@ -488,26 +1356,151 @@ async function matchStandaloneReview(
      SET matched_repo_id = ?1, github_repo_url = ?2, github_pr_number = ?3, updated_at = ?4
      WHERE id = ?5`,
   ).bind(match.repoId, repo.github_url, match.prNumber, new Date().toISOString(), interview.id).run();
-  return { repoUrl: repo.github_url, prNumber: match.prNumber };
+  return {
+    repoUrl: repo.github_url,
+    prNumber: match.prNumber,
+    matchExplanation,
+  };
+}
+
+type SourceBackedReviewDiffResult = NonNullable<Awaited<ReturnType<typeof loadSourceBackedReviewDiff>>>;
+
+async function ensureStandaloneReviewBackingChallenge(
+  db: D1Database,
+  candidateId: string,
+  interviewId: string,
+  match: {
+    repoUrl: string;
+    prNumber: number;
+  },
+  sourceBackedDiff: SourceBackedReviewDiffResult,
+): Promise<{ stageId: string; challengeId: string }> {
+  const candidate = await db.prepare(
+    `SELECT owner_id FROM candidates WHERE id = ?1`,
+  ).bind(candidateId).first<{ owner_id: string | null }>();
+  if (!candidate?.owner_id) {
+    throw new Error(`Standalone CODE_REVIEW candidate ${candidateId} is missing owner_id`);
+  }
+
+  const { pipelineId, stageId, challengeId } = standaloneReviewBackingIds(interviewId);
+  const now = new Date().toISOString();
+  const title = sourceBackedDiff.metadata.title ?? 'Code Review';
+  const description = sourceBackedDiff.metadata.description
+    ?? 'Source-backed pull request selected for async code review.';
+
+  await db.prepare(
+    `INSERT INTO pipelines (id, owner_id, title, status, creation_mode, created_at, updated_at)
+     VALUES (?1, ?2, ?3, 'ACTIVE', 'BLANK', ?4, ?4)
+     ON CONFLICT(id) DO UPDATE SET
+       owner_id = excluded.owner_id,
+       title = excluded.title,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    pipelineId,
+    candidate.owner_id,
+    'Standalone Code Review Backing',
+    now,
+  ).run();
+
+  await db.prepare(
+    `INSERT INTO stages
+       (id, pipeline_id, title, description, sort_order, time_limit, mode, owner_id, created_at, updated_at)
+     VALUES (?1, ?2, 'Code Review', 'Hidden backing stage for standalone code review sessions.', 0, NULL, 'ASYNC', ?3, ?4, ?4)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       description = excluded.description,
+       mode = excluded.mode,
+       owner_id = excluded.owner_id,
+       updated_at = excluded.updated_at`,
+  ).bind(stageId, pipelineId, candidate.owner_id, now).run();
+
+  await db.prepare(
+    `INSERT INTO challenges
+       (id, stage_id, type, sort_order, title, instructions, config, server_config,
+        owner_id, github_repo_url, github_pr_number, github_pr_title, github_pr_description,
+        cached_diff_json, cached_metadata, diff_cached_at, created_at, updated_at)
+     VALUES (?1, ?2, 'CODE_REVIEW', 0, ?3, ?4, ?5, ?6,
+             ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?14)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title,
+       instructions = excluded.instructions,
+       config = excluded.config,
+       server_config = excluded.server_config,
+       owner_id = excluded.owner_id,
+       github_repo_url = excluded.github_repo_url,
+       github_pr_number = excluded.github_pr_number,
+       github_pr_title = excluded.github_pr_title,
+       github_pr_description = excluded.github_pr_description,
+       cached_diff_json = excluded.cached_diff_json,
+       cached_metadata = excluded.cached_metadata,
+       diff_cached_at = excluded.diff_cached_at,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    challengeId,
+    stageId,
+    title,
+    'Review this pull request as if a teammate opened it: leave inline comments, respond to the AI developer, choose a verdict, and explain your reasoning.',
+    JSON.stringify(STANDALONE_REVIEW_CHALLENGE_CONFIG),
+    JSON.stringify({
+      source: 'standalone_code_review',
+      repoUrl: match.repoUrl,
+      prNumber: match.prNumber,
+    }),
+    candidate.owner_id,
+    match.repoUrl,
+    match.prNumber,
+    sourceBackedDiff.metadata.title ?? null,
+    description,
+    JSON.stringify(sourceBackedDiff.diff),
+    JSON.stringify(sourceBackedDiff.metadata),
+    now,
+  ).run();
+
+  await db.prepare(
+    `INSERT INTO assessments
+       (id, candidate_id, stage_id, status, owner_id, started_at, created_at, updated_at)
+     VALUES (?1, ?2, ?3, 'PENDING', ?4, ?5, ?5, ?5)
+     ON CONFLICT(candidate_id, stage_id) DO UPDATE SET
+       owner_id = excluded.owner_id,
+       updated_at = excluded.updated_at`,
+  ).bind(
+    `standalone-review-assessment-${interviewId}`,
+    candidateId,
+    stageId,
+    candidate.owner_id,
+    now,
+  ).run();
+
+  await db.prepare(
+    `UPDATE candidates SET current_stage_id = ?1, updated_at = ?2 WHERE id = ?3`,
+  ).bind(stageId, now, candidateId).run();
+
+  return { stageId, challengeId };
 }
 
 /** Parse a submission (object or JSON string) and return it if it is a CV intake payload.
  *  Recognizes both R2-based uploads ({ resumeR2Key }) and text-based evidence ({ resumeText }).
  */
 function parseIntakePayload(submission: unknown): Record<string, unknown> | null {
+  const record = parseSubmissionObject(submission);
+  if (!record) return null;
+  if (typeof record.resumeR2Key === 'string') return record;
+  if (typeof record.resumeText === 'string' && record.resumeText.length > 0) return record;
+  return null;
+}
+
+function parseSubmissionObject(submission: unknown): Record<string, unknown> | null {
   let obj: unknown = submission;
-  if (typeof submission === 'string') {
+  if (typeof obj === 'string') {
     try {
-      obj = JSON.parse(submission);
+      obj = JSON.parse(obj);
     } catch {
       return null;
     }
   }
   if (typeof obj !== 'object' || obj === null) return null;
-  const record = obj as Record<string, unknown>;
-  if (typeof record.resumeR2Key === 'string') return record;
-  if (typeof record.resumeText === 'string' && record.resumeText.length > 0) return record;
-  return null;
+  if (Array.isArray(obj)) return null;
+  return obj as Record<string, unknown>;
 }
 
 /** Persist intake form data (resume / github / linkedin) and kick off enrichment. */
@@ -571,12 +1564,21 @@ async function handleIntakePayload(
     executionCtx.waitUntil(
       (async () => {
         try {
+          const parseResult = await parseResumeText({
+            resumeText,
+            env,
+            mock: env.MOCK_AI === 'true',
+          });
+          if (parseResult?.parsedCV) {
+            await persistParsedCV(env.DB, candidateId, parseResult.parsedCV);
+          }
           await runCandidateIngestion({
             env,
             db: env.DB,
             candidateId,
-            parsed: { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
+            parsed: parseResult?.parsedCV ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
             resumeText,
+            decompositionResult: parseResult?.decompositionResult ?? null,
           });
           console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
         } catch (err) {
@@ -820,11 +1822,24 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!candidateRow.pipeline_id) {
-    const needsResume = !candidateRow.resume_s3_key;
+    const needsResume = await candidateNeedsCvIntake(c.env.DB, candidateId);
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
 
-    // Standalone code-review interview: once the CV is in, serve the review stage
+    // Standalone code-review interview: once source-backed CV evidence is ready, serve the review stage.
     if (!needsResume && standaloneReview) {
+      const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+      if (!readiness.ready) {
+        return c.json({
+          isComplete: false,
+          stageId: 'standalone-code-review-matching',
+          candidateId,
+          stageTitle: 'Building your personalized challenge',
+          mode: 'ASYNC',
+          timeLimit: null,
+          challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
+          currentIndex: 0,
+        });
+      }
       return c.json({
         isComplete: false,
         stageId: 'standalone-code-review',
@@ -840,14 +1855,19 @@ rpcAuth.post('/get-stage-config', async (c) => {
     // Standalone dev-container challenge interview: once the CV is in, serve the challenge stage
     const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
     if (!needsResume && standaloneDevContainer) {
+      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
         isComplete: false,
         stageId: 'standalone-dev-container',
         candidateId,
-        stageTitle: 'Dev Container Challenge',
+        stageTitle: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
         mode: 'ASYNC',
         timeLimit: null,
-        challenges: [{ type: 'CODE_IMPLEMENTATION', order: 0, title: 'Dev Container Challenge' }],
+        challenges: [{
+          type: 'CODE_IMPLEMENTATION',
+          order: 0,
+          title: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+        }],
         currentIndex: 0,
       });
     }
@@ -860,7 +1880,13 @@ rpcAuth.post('/get-stage-config', async (c) => {
       stageTitle: needsResume
         ? 'Upload Your CV'
         : hasPendingStandalone
-          ? (standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review Interview')
+          ? (
+              standaloneDevContainer
+                ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+                  ? 'Open Source Bug Fix'
+                  : 'Dev Container Challenge'
+                : 'Code Review Interview'
+            )
           : 'Thank You',
       mode: 'INTAKE',
       timeLimit: null,
@@ -868,7 +1894,14 @@ rpcAuth.post('/get-stage-config', async (c) => {
         ? [{ type: 'INTAKE', order: 0, title: 'Profile & Resume' }]
         : [],
       upcoming: needsResume && hasPendingStandalone
-        ? [{ type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW', title: standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review' }]
+        ? [{
+            type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW',
+            title: standaloneDevContainer
+              ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+                ? 'Open Source Bug Fix'
+                : 'Dev Container Challenge'
+              : 'Code Review',
+          }]
         : [],
       currentIndex: 0,
     });
@@ -1143,17 +2176,21 @@ rpcAuth.post('/get-challenge', async (c) => {
       if (!repoUrl) {
         return c.json(STANDALONE_WAITING_CHALLENGE);
       }
+      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
         id: `standalone-dev-container-${standaloneDevContainer.id}`,
         type: 'CODE_IMPLEMENTATION',
-        title: 'Dev Container Challenge',
-        instructions: 'Complete the coding challenge in the dev container workspace provided below.',
+        title: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+        instructions: isOpenSourceBugFix
+          ? 'Use the dev container workspace to investigate the matched open-source task, implement a source-backed solution, and verify your changes with tests or concrete checks.'
+          : 'Complete the coding challenge in the dev container workspace provided below.',
         config: JSON.stringify({ starterCode: '' }),
         cachedDiffJson: null,
         githubPrTitle: null,
         githubPrNumber: standaloneDevContainer.github_pr_number ?? null,
         githubRepoUrl: repoUrl,
         githubPrDescription: null,
+        reviewProfile: null,
         devContainerRepoUrl: repoUrl,
       });
     }
@@ -1171,27 +2208,42 @@ rpcAuth.post('/get-challenge', async (c) => {
     let cachedDiffJson: unknown = null;
     let githubPrTitle: string | null = null;
     let githubPrDescription: string | null = null;
+    let reviewProfile: unknown = null;
     const sourceBackedDiff = await loadSourceBackedReviewDiff(c.env.DB, match.repoUrl, match.prNumber);
     if (sourceBackedDiff) {
       cachedDiffJson = sourceBackedDiff.diff;
       githubPrTitle = sourceBackedDiff.metadata.title;
       githubPrDescription = sourceBackedDiff.metadata.description ?? null;
+      reviewProfile = sourceBackedDiff.metadata.reviewProfile ?? null;
     }
 
-    if (!cachedDiffJson) return c.json(STANDALONE_WAITING_CHALLENGE);
+    if (!sourceBackedDiff || !cachedDiffJson) return c.json(STANDALONE_WAITING_CHALLENGE);
+    const backing = await ensureStandaloneReviewBackingChallenge(
+      c.env.DB,
+      candidateId,
+      standaloneReview.id,
+      match,
+      sourceBackedDiff,
+    );
 
     return c.json({
-      id: `standalone-review-${standaloneReview.id}`,
+      id: backing.challengeId,
       type: 'CODE_REVIEW',
       title: 'Code Review',
       instructions: 'Review this pull request as if a teammate opened it: call out bugs, risks, design concerns, and suggestions.',
-      config: null,
+      config: STANDALONE_REVIEW_CHALLENGE_CONFIG,
       cachedDiffJson,
       githubPrTitle,
       githubPrNumber: match.prNumber,
       githubRepoUrl: match.repoUrl,
       githubPrDescription,
+      reviewProfile,
       devContainerRepoUrl: null,
+      matchExplanation: match.matchExplanation,
+      reviewSession: {
+        requiresInit: true,
+        challengeId: backing.challengeId,
+      },
     });
   }
 
@@ -1229,6 +2281,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       githubPrNumber: null,
       githubRepoUrl: null,
       githubPrDescription: null,
+      reviewProfile: null,
       devContainerRepoUrl: null,
     });
   }
@@ -1241,7 +2294,7 @@ rpcAuth.post('/get-challenge', async (c) => {
   const challenges = await c.env.DB.prepare(`
     SELECT
       ch.id, ch.type, ch.title, ch.instructions, ch.config,
-      ch.cached_diff_json, ch.github_pr_title, ch.github_pr_number,
+      ch.cached_diff_json, ch.cached_metadata, ch.github_pr_title, ch.github_pr_number,
       ch.github_repo_url, ch.github_pr_description,
       ch.dev_container_repo_url,
       cca.id as assignment_id,
@@ -1315,11 +2368,12 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   if ((ch.type as string) === 'CODE_REVIEW') {
     const currentAssignment = await c.env.DB.prepare(
-      `SELECT id, github_repo_url, github_pr_number, issue_number
+      `SELECT id, repo_id, github_repo_url, github_pr_number, issue_number
          FROM candidate_challenge_assignment
         WHERE candidate_id = ?1 AND stage_id = ?2`,
     ).bind(candidateId, candidate.current_stage_id).first<{
       id: string;
+      repo_id: number | null;
       github_repo_url: string | null;
       github_pr_number: number | null;
       issue_number: number | null;
@@ -1327,6 +2381,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     if (currentAssignment) {
       hasAssignment = true;
       ch.assignment_id = currentAssignment.id;
+      ch.repo_id = currentAssignment.repo_id;
       ch.assignment_repo_url = currentAssignment.github_repo_url;
       ch.assignment_pr_number = currentAssignment.github_pr_number;
       ch.effective_repo_url = currentAssignment.github_repo_url;
@@ -1368,6 +2423,7 @@ rpcAuth.post('/get-challenge', async (c) => {
 
   // Parse cached diff JSON if stored as string
   let cachedDiffJson: unknown = null;
+  let cachedMetadata: Record<string, unknown> | null = null;
   const assignmentBackedReview = (ch.type as string) === 'CODE_REVIEW' && hasAssignment;
   if (!assignmentBackedReview && ch.cached_diff_json) {
     try {
@@ -1379,11 +2435,26 @@ rpcAuth.post('/get-challenge', async (c) => {
       cachedDiffJson = null;
     }
   }
+  if (ch.cached_metadata) {
+    try {
+      const parsedMetadata = typeof ch.cached_metadata === 'string'
+        ? JSON.parse(ch.cached_metadata as string)
+        : ch.cached_metadata;
+      cachedMetadata = typeof parsedMetadata === 'object'
+        && parsedMetadata !== null
+        && !Array.isArray(parsedMetadata)
+        ? parsedMetadata as Record<string, unknown>
+        : null;
+    } catch {
+      cachedMetadata = null;
+    }
+  }
 
   // Self-heal: if diff is missing but repo+PR exist, fetch and cache it now
   // Use the potentially overridden values from candidate_challenge_assignment
   const effectiveRepoUrl = ch.github_repo_url as string | null;
   const effectivePrNumber = ch.github_pr_number as number | null;
+  let reviewProfile: unknown = cachedMetadata?.reviewProfile ?? null;
   if (assignmentBackedReview) {
     const sourceBackedDiff = effectiveRepoUrl && effectivePrNumber
       ? await loadSourceBackedReviewDiff(c.env.DB, effectiveRepoUrl, effectivePrNumber)
@@ -1392,6 +2463,7 @@ rpcAuth.post('/get-challenge', async (c) => {
       cachedDiffJson = sourceBackedDiff.diff;
       ch.github_pr_title = sourceBackedDiff.metadata.title;
       ch.github_pr_description = sourceBackedDiff.metadata.description ?? null;
+      reviewProfile = sourceBackedDiff.metadata.reviewProfile ?? null;
     } else {
       return c.json(waitingForMatch('Source-backed review assignment is not ready').syntheticChallenge);
     }
@@ -1405,6 +2477,8 @@ rpcAuth.post('/get-challenge', async (c) => {
       );
       if (result) {
         cachedDiffJson = result.diff;
+        cachedMetadata = result.metadata;
+        reviewProfile = result.metadata.reviewProfile ?? reviewProfile;
         // Persist so we don't fetch again next time
         await c.env.DB.prepare(
           `UPDATE challenges SET cached_diff_json = ?1, cached_metadata = ?2, diff_cached_at = ?3 WHERE id = ?4`,
@@ -1435,6 +2509,7 @@ rpcAuth.post('/get-challenge', async (c) => {
     githubPrNumber: ch.github_pr_number ?? null,
     githubRepoUrl: ch.github_repo_url ?? null,
     githubPrDescription: ch.github_pr_description ?? null,
+    reviewProfile,
     devContainerRepoUrl: (
       (ch.type as string) === 'CODE_IMPLEMENTATION'
         ? (ch.effective_repo_url as string | null)
@@ -1449,6 +2524,17 @@ rpcAuth.post('/get-challenge', async (c) => {
         requiresInit: true,
         challengeId: ch.id as string,
       };
+    }
+    if (
+      hasAssignment
+      && typeof ch.github_pr_number === 'number'
+    ) {
+      response.matchExplanation = await loadCachedStandaloneReviewMatchExplanation(
+        c.env.DB,
+        candidateId,
+        typeof (ch as { repo_id?: unknown }).repo_id === 'number' ? (ch as { repo_id: number }).repo_id : null,
+        ch.github_pr_number,
+      );
     }
   }
 
@@ -1698,6 +2784,32 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     }
 
     if (!wasEmpty) {
+      const parsedSubmission = parseSubmissionObject(submission);
+      const reviewSessionId = typeof parsedSubmission?.reviewSessionId === 'string'
+        ? parsedSubmission.reviewSessionId
+        : null;
+      if (challenge.type === 'CODE_REVIEW' && reviewSessionId) {
+        const completedReviewSession = await c.env.DB.prepare(
+          `SELECT id FROM review_sessions
+           WHERE id = ?1
+             AND assessment_id = ?2
+             AND challenge_id = ?3
+             AND candidate_id = ?4
+             AND status IN ('verdict_submitted', 'scoring', 'scored', 'scoring_failed')
+           LIMIT 1`,
+        )
+          .bind(reviewSessionId, assessment.id, challengeId, candidateId)
+          .first<{ id: string }>();
+
+        if (completedReviewSession) {
+          return c.json({
+            success: true,
+            next: true,
+            message: 'Code review session already completed',
+          });
+        }
+      }
+
       return c.json(
         { success: false, error: 'Challenge already submitted' },
         409,
