@@ -543,7 +543,7 @@ function formatEventNarrative(event: SessionEvent): string {
     case 'terminal_output':
       return `[${time}] Terminal output: ${event.text.slice(0, 500)}`;
     case 'file_change':
-      return `[${time}] File ${event.properties?.action ?? 'changed'}: ${event.text}`;
+      return `[${time}] File ${event.properties?.operation ?? event.properties?.action ?? 'changed'}: ${event.text}`;
     case 'browser_navigation':
       return `[${time}] Browser navigated to: ${event.text}`;
     case 'window_open':

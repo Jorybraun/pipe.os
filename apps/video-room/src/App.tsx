@@ -52,6 +52,11 @@ import {
   type MediaControlKind,
 } from './lib/mediaControlEvidence';
 import {
+  buildRoomFileEvidence,
+  roomFileEvidenceText,
+  type RoomFileEvidenceOperation,
+} from './lib/roomFileEvidence';
+import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
@@ -1315,6 +1320,26 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureMediaControlChange('camera', enabled);
   };
 
+  const captureRoomFileChange = (operation: RoomFileEvidenceOperation, file: RoomFile): void => {
+    const text = roomFileEvidenceText(roomActor, operation, file.name);
+    void buildRoomFileEvidence({
+      actor: roomActor,
+      operation,
+      file,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      capturedAtMs: Date.now(),
+    }).then((evidence) => {
+      captureSessionEvent('file_change', text, roomActor, evidence.properties);
+    }).catch((error: unknown) => {
+      console.error('[Room] Failed to build source-backed room file evidence:', {
+        operation,
+        fileId: file.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  };
+
   const handleCursorMove = useCallback((position: { x: number; y: number }): void => {
     room.publishCursorPresence(position);
     if (room.roomSurface !== 'win95') return;
@@ -1413,38 +1438,38 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     updateSharedWindowData('notepad', { text });
     const existing = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
     const now = Date.now();
-    room.publishFileSystemEvent({
-      kind: 'UPSERT_FILE',
-      file: {
-        id: NOTEPAD_FILE_ID,
-        name: NOTEPAD_FILE_NAME,
-        kind: 'text',
-        content: text,
-        mimeType: 'text/plain',
-        metadata: { app: 'notepad', path: `Desktop/${NOTEPAD_FILE_NAME}` },
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      },
-    });
+    const file: RoomFile = {
+      id: NOTEPAD_FILE_ID,
+      name: NOTEPAD_FILE_NAME,
+      kind: 'text',
+      content: text,
+      mimeType: 'text/plain',
+      metadata: { app: 'notepad', path: `Desktop/${NOTEPAD_FILE_NAME}` },
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      updatedBy: metadata.role,
+    };
+    room.publishFileSystemEvent({ kind: 'UPSERT_FILE', file });
+    captureRoomFileChange('upsert', file);
   };
 
   const savePaintItems = (strokes: PaintCanvasItem[]): void => {
     updateSharedWindowData('paint', { strokes });
     const existing = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     const now = Date.now();
-    room.publishFileSystemEvent({
-      kind: 'UPSERT_FILE',
-      file: {
-        id: PAINT_FILE_ID,
-        name: PAINT_FILE_NAME,
-        kind: 'paint',
-        content: serializePaintItems(strokes),
-        mimeType: 'application/json',
-        metadata: { app: 'paint', path: `Desktop/${PAINT_FILE_NAME}` },
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      },
-    });
+    const file: RoomFile = {
+      id: PAINT_FILE_ID,
+      name: PAINT_FILE_NAME,
+      kind: 'paint',
+      content: serializePaintItems(strokes),
+      mimeType: 'application/json',
+      metadata: { app: 'paint', path: `Desktop/${PAINT_FILE_NAME}` },
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      updatedBy: metadata.role,
+    };
+    room.publishFileSystemEvent({ kind: 'UPSERT_FILE', file });
+    captureRoomFileChange('upsert', file);
   };
 
   const previewPaintItems = (strokes: PaintCanvasItem[]): void => {
@@ -1471,12 +1496,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (file.id === PAINT_FILE_ID) {
       wm.updateWindowData('paint', { strokes: [] });
     }
-    captureSessionEvent('file_change', file.name, roomActor, {
-      fileId: file.id,
-      fileKind: file.kind,
-      operation: 'delete',
-      surface: room.roomSurface,
-    });
+    captureRoomFileChange('delete', file);
   };
 
   const captureClippyAction = (

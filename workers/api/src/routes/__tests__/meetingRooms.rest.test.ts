@@ -1484,6 +1484,106 @@ describe('meeting room recording living-context route', () => {
       rawMediaStreamPersisted: false,
     });
 
+    const fakeWin95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'Guest saved Notes.txt',
+        actor: 'guest',
+        properties: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          operation: 'upsert',
+          fileId: 'desktop-notes',
+          fileName: 'Notes.txt',
+          fileKind: 'text',
+          surface: 'win95',
+          roomPhase: 'connected',
+          contentLength: 31,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWin95FileChangeRes.status).toBe(422);
+
+    const win95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'Guest saved Notes.txt',
+        actor: 'guest',
+        properties: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          actor: 'guest',
+          operation: 'upsert',
+          fileId: 'desktop-notes',
+          fileName: 'Notes.txt',
+          fileKind: 'text',
+          mimeType: 'text/plain',
+          path: 'Desktop/Notes.txt',
+          surface: 'win95',
+          roomPhase: 'connected',
+          contentLength: 31,
+          contentHash: 'content_0123456789abcdef0123456789abcdef',
+          contentPreview: 'Candidate noted retry evidence.',
+          fileCreatedAt: 1700000000000,
+          fileUpdatedAt: 1700000001000,
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(win95FileChangeRes.status).toBe(200);
+
+    const win95FileChangeNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_file_change'
+          AND extracted_properties_json LIKE '%win95_shared_file_system%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(win95FileChangeNode).toMatchObject({
+      node_type: 'session_file_change',
+      source_type: 'meeting_session',
+    });
+    expect(win95FileChangeNode?.narrative_text).toContain('File upsert: Guest saved Notes.txt');
+    expect(JSON.parse(win95FileChangeNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_shared_file_system',
+      fileEventSource: 'browser_client_submit',
+      operation: 'upsert',
+      fileId: 'desktop-notes',
+      fileName: 'Notes.txt',
+      contentHash: 'content_0123456789abcdef0123456789abcdef',
+      durableObjectReplayExpected: true,
+    });
+
+    const codeServerDeleteRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'file_change',
+        text: 'src/old-orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          path: 'src/old-orders.ts',
+          action: 'deleted',
+          observedAt: '2026-06-27T21:07:00.000Z',
+          bridgePersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(codeServerDeleteRes.status).toBe(200);
+
     const fakeCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

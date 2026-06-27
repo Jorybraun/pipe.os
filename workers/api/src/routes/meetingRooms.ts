@@ -100,6 +100,8 @@ const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
 const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
+const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -137,6 +139,58 @@ const sessionEventSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 }).superRefine((event, ctx) => {
   const properties = event.properties ?? {};
+  const hasString = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+  const hasFiniteNonNegativeNumber = (value: unknown): boolean => (
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+  );
+  if (event.type === 'file_change') {
+    if (properties.source === 'win95_shared_file_system') {
+      const operation = properties.operation;
+      const operationOk = operation === 'upsert' || operation === 'delete';
+      const sharedOk = properties.fileEventSource === 'browser_client_submit'
+        && hasString(properties.fileId)
+        && hasString(properties.fileName)
+        && hasString(properties.fileKind)
+        && properties.surface === 'win95'
+        && hasString(properties.roomPhase);
+      const upsertOk = operation === 'upsert'
+        && typeof properties.contentHash === 'string'
+        && LIVING_CONTENT_HASH_RE.test(properties.contentHash)
+        && hasFiniteNonNegativeNumber(properties.contentLength)
+        && hasFiniteNonNegativeNumber(properties.fileUpdatedAt);
+      const deleteOk = operation === 'delete'
+        && typeof properties.deletedContentHash === 'string'
+        && LIVING_CONTENT_HASH_RE.test(properties.deletedContentHash)
+        && hasFiniteNonNegativeNumber(properties.deletedContentLength)
+        && hasFiniteNonNegativeNumber(properties.deletedFileUpdatedAt);
+      if (operationOk && sharedOk && (upsertOk || deleteOk)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Win95 file-change evidence must include browser source, file identity, operation, content hash, and file timestamps.',
+        path: ['properties'],
+      });
+      return;
+    }
+    if (properties.source === 'code_server_workspace') {
+      const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';
+      const observedAtOk = hasString(properties.observedAt);
+      const actionOk = properties.action === 'deleted';
+      const pathOk = hasString(properties.path);
+      if (observedByOk && observedAtOk && actionOk && pathOk) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Code-server delete evidence must come from the workspace bridge with path, action, and observation time.',
+        path: ['properties'],
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'File-change evidence must come from a recognized source-backed file surface.',
+      path: ['properties'],
+    });
+    return;
+  }
   if (event.type === 'ai_chat_agent') {
     const hasBridgeSource = properties.source === 'clippy_agent_bridge';
     const hasChatResponseType = properties.bridgeEventType === 'CHAT_RESPONSE';
@@ -184,7 +238,7 @@ const sessionEventSchema = z.object({
     const pathValue = properties.path;
     const pathOk = typeof pathValue === 'string' && pathValue.trim().length > 0;
     const hashValue = properties.contentHash;
-    const hashOk = typeof hashValue === 'string' && /^[a-f0-9]{64}$/.test(hashValue);
+    const hashOk = typeof hashValue === 'string' && SHA256_HEX_RE.test(hashValue);
     const observedAt = properties.observedAt;
     const observedAtOk = typeof observedAt === 'string' && observedAt.trim().length > 0;
     if (sourceOk && observedByOk && pathOk && hashOk && observedAtOk) return;

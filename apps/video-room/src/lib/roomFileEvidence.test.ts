@@ -1,0 +1,87 @@
+import { describe, expect, it } from 'vitest';
+import { buildRoomFileEvidence, roomFileEvidenceText } from './roomFileEvidence';
+
+describe('buildRoomFileEvidence', () => {
+  it('captures Notepad saves with deterministic content provenance', async () => {
+    const evidence = await buildRoomFileEvidence({
+      actor: 'guest',
+      operation: 'upsert',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 1700000000000,
+      file: {
+        id: 'desktop-notes',
+        name: 'Notes.txt',
+        kind: 'text',
+        content: 'Candidate writes a replay test plan.',
+        mimeType: 'text/plain',
+        metadata: { app: 'notepad', path: 'Desktop/Notes.txt' },
+        createdAt: 1699999999000,
+        updatedAt: 1700000000000,
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      text: 'Notes.txt',
+      properties: {
+        source: 'win95_shared_file_system',
+        fileEventSource: 'browser_client_submit',
+        actor: 'guest',
+        operation: 'upsert',
+        fileId: 'desktop-notes',
+        fileName: 'Notes.txt',
+        fileKind: 'text',
+        surface: 'win95',
+        roomPhase: 'connected',
+        contentLength: 36,
+        contentPreview: 'Candidate writes a replay test plan.',
+        mimeType: 'text/plain',
+        path: 'Desktop/Notes.txt',
+        fileCreatedAt: 1699999999000,
+        fileUpdatedAt: 1700000000000,
+        durableObjectReplayExpected: true,
+      },
+    });
+    expect(evidence.properties.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+  });
+
+  it('captures Paint deletes without storing raw paint previews', async () => {
+    const evidence = await buildRoomFileEvidence({
+      actor: 'host',
+      operation: 'delete',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 1700000001000,
+      file: {
+        id: 'desktop-paint',
+        name: 'Sketch.pipe-paint',
+        kind: 'paint',
+        content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
+        mimeType: 'application/json',
+        metadata: { app: 'paint', path: 'Desktop/Sketch.pipe-paint' },
+        createdAt: 1699999999000,
+        updatedAt: 1700000000500,
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      text: 'Sketch.pipe-paint',
+      properties: {
+        source: 'win95_shared_file_system',
+        operation: 'delete',
+        fileId: 'desktop-paint',
+        fileKind: 'paint',
+        deletedContentLength: 64,
+        deletedFileCreatedAt: 1699999999000,
+        deletedFileUpdatedAt: 1700000000500,
+      },
+    });
+    expect(evidence.properties.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+    expect(evidence.properties).not.toHaveProperty('deletedContentPreview');
+  });
+
+  it('formats readable file activity text without replacing source properties', () => {
+    expect(roomFileEvidenceText('guest', 'upsert', 'Notes.txt')).toBe('Guest saved Notes.txt');
+    expect(roomFileEvidenceText('host', 'delete', 'Sketch.pipe-paint')).toBe('Host deleted Sketch.pipe-paint');
+  });
+});
