@@ -2535,6 +2535,67 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.id).toBeDefined();
   });
 
+  it('creates a person-first OPEN_SOURCE_BUG_FIX with explicit repo url + PR', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const response = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Margaret Hamilton',
+        recipientEmail: 'margaret@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+      }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        interviewType: string;
+        matchedRepoId: number | null;
+        githubRepoUrl: string | null;
+        githubPrNumber: number | null;
+        pipelineId: string | null;
+        candidateId: string | null;
+        contactId: string | null;
+      };
+    };
+    expect(body.interview.interviewType).toBe('OPEN_SOURCE_BUG_FIX');
+    expect(body.interview.githubRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
+    expect(body.interview.githubPrNumber).toBe(101);
+    expect(body.interview.matchedRepoId).toBeNull();
+    expect(body.interview.pipelineId).toBeNull();
+    expect(body.interview.candidateId).toBeNull();
+    expect(body.interview.contactId).not.toBeNull();
+
+    const row = sqlite!.prepare(
+      `SELECT interview_type, matched_repo_id, github_repo_url, github_pr_number,
+              pipeline_id, candidate_id, recipient_name, recipient_email
+         FROM scheduled_interviews WHERE id = ?`,
+    ).get(body.interview.id) as {
+      interview_type: string;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      pipeline_id: string | null;
+      candidate_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+    };
+    expect(row.interview_type).toBe('OPEN_SOURCE_BUG_FIX');
+    expect(row.github_repo_url).toBe('https://github.com/hash-pipe/open-source-task');
+    expect(row.github_pr_number).toBe(101);
+    expect(row.matched_repo_id).toBeNull();
+    expect(row.pipeline_id).toBeNull();
+    expect(row.candidate_id).toBeNull();
+    expect(row.recipient_name).toBe('Margaret Hamilton');
+    expect(row.recipient_email).toBe('margaret@example.com');
+  });
+
   it('rejects CODE_REVIEW with partial manual repo (url without PR number)', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();

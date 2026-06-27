@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Copy, Check, Video, Calendar, Code2, GitBranch } from 'lucide-react';
+import { X, Copy, Check, Video, Calendar, Code2, GitBranch, Bug } from 'lucide-react';
 import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
@@ -67,10 +67,22 @@ const INTERVIEW_MODES: Array<{
     description: 'Live dev-container challenge (auto-matched or manual repo)',
     icon: <GitBranch size={16} />,
   },
+  {
+    value: 'OPEN_SOURCE_BUG_FIX',
+    label: INTERVIEW_TYPE_LABELS.OPEN_SOURCE_BUG_FIX,
+    description: 'Matched repo task in the 95 workspace',
+    icon: <Bug size={16} />,
+  },
 ];
 
 function meetingTypeForInterviewType(interviewType: InterviewType): MeetingType {
   return interviewType === 'SCREENING' ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL';
+}
+
+function isWorkspaceAssessment(interviewType: InterviewType): boolean {
+  return interviewType === 'CODE_REVIEW'
+    || interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interviewType === 'OPEN_SOURCE_BUG_FIX';
 }
 
 export function InviteCreationModal({
@@ -112,7 +124,7 @@ export function InviteCreationModal({
   useEffect(() => {
     if (
       isOpen
-      && interviewType !== 'CODE_REVIEW'
+      && !isWorkspaceAssessment(interviewType)
       && connection?.status === 'ACTIVE'
       && connection.providerId === 'CALENDLY'
     ) {
@@ -121,7 +133,7 @@ export function InviteCreationModal({
   }, [isOpen, connection, interviewType]);
 
   useEffect(() => {
-    if (interviewType === 'CODE_REVIEW') {
+    if (isWorkspaceAssessment(interviewType)) {
       setSchedulingMode('manual');
     }
   }, [interviewType]);
@@ -154,8 +166,9 @@ export function InviteCreationModal({
   const calendlyEventTypes = connection?.eventTypes ?? [];
   const selectedCalendlyEventType = calendlyEventTypes[0] ?? null;
   const canUseCalendly = hasCalendly && Boolean(selectedCalendlyEventType?.schedulingUrl);
-  const supportsManualRepoOverride = interviewType === 'CODE_REVIEW' || interviewType === 'DEV_CONTAINER_CHALLENGE';
-  const showsRoomFeatures = interviewType !== 'CODE_REVIEW';
+  const workspaceAssessment = isWorkspaceAssessment(interviewType);
+  const supportsManualRepoOverride = workspaceAssessment;
+  const showsRoomFeatures = !workspaceAssessment;
   const parsedPrNumber = githubPrNumber.trim().length > 0
     ? Number.parseInt(githubPrNumber.trim(), 10)
     : null;
@@ -166,15 +179,15 @@ export function InviteCreationModal({
     && recipientEmail.trim().length > 0
     && (parsedPrNumber === null || hasManualPrNumber)
     && (!supportsManualRepoOverride || manualRepoOverrideComplete)
-    && (schedulingMode !== 'calendly' || canUseCalendly);
+    && (workspaceAssessment || schedulingMode !== 'calendly' || canUseCalendly);
   const createButtonLabel = isCreating
     ? 'CREATING...'
-    : interviewType === 'CODE_REVIEW'
+    : workspaceAssessment
       ? 'CREATE ASSESSMENT INVITE'
       : schedulingMode === 'calendly'
       ? 'SEND SCHEDULING LINK'
       : 'CREATE ROOM INVITE';
-  const linkLabel = interviewType === 'CODE_REVIEW' ? 'Assessment link' : 'Guest link';
+  const linkLabel = workspaceAssessment ? 'Assessment link' : 'Guest link';
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -208,7 +221,7 @@ export function InviteCreationModal({
         inviteData.agentType = agentType;
       }
       
-      if (schedulingMode === 'calendly' && canUseCalendly && selectedCalendlyEventType) {
+      if (!workspaceAssessment && schedulingMode === 'calendly' && canUseCalendly && selectedCalendlyEventType) {
         inviteData.schedulingProvider = 'CALENDLY';
         inviteData.schedulingUrl = selectedCalendlyEventType.schedulingUrl;
       } else if (scheduledAt) {
@@ -402,7 +415,7 @@ export function InviteCreationModal({
             {/* Meeting type selector */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>INTERVIEW TYPE</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
                 {INTERVIEW_MODES.map((type) => (
                   <button
                     key={type.value}
@@ -446,7 +459,7 @@ export function InviteCreationModal({
 
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>SCHEDULING</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: workspaceAssessment ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
                 <button
                   onClick={() => setSchedulingMode('manual')}
                   style={{
@@ -470,43 +483,45 @@ export function InviteCreationModal({
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                     <Video size={15} />
-                    {interviewType === 'CODE_REVIEW' ? 'Assessment invite' : 'Room invite'}
+                    {workspaceAssessment ? 'Assessment invite' : 'Room invite'}
                   </span>
                   <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.03em' }}>
-                    {interviewType === 'CODE_REVIEW' ? 'Send the assess link' : 'Send a private room link'}
+                    {workspaceAssessment ? 'Send the assess link' : 'Send a private room link'}
                   </span>
                 </button>
-                <button
-                  onClick={() => setSchedulingMode('calendly')}
-                  style={{
-                    display: 'flex',
-                    minHeight: 64,
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    justifyContent: 'center',
-                    gap: 5,
-                    padding: '12px 14px',
-                    background: schedulingMode === 'calendly' ? 'rgba(74,222,128,0.15)' : 'var(--pipe-surface)',
-                    border: `1px solid ${schedulingMode === 'calendly' ? 'rgba(74,222,128,0.3)' : 'var(--pipe-border)'}`,
-                    color: schedulingMode === 'calendly' ? '#4ade80' : 'var(--pipe-text-dim)',
-                    fontSize: 11,
-                    letterSpacing: '0.1em',
-                    fontFamily: '"Space Mono", monospace',
-                    cursor: 'pointer',
-                    borderRadius: 4,
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                    <Calendar size={15} />
-                    Calendly link
-                  </span>
-                  <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.03em' }}>
-                    Let them pick a time
-                  </span>
-                </button>
+                {!workspaceAssessment && (
+                  <button
+                    onClick={() => setSchedulingMode('calendly')}
+                    style={{
+                      display: 'flex',
+                      minHeight: 64,
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      justifyContent: 'center',
+                      gap: 5,
+                      padding: '12px 14px',
+                      background: schedulingMode === 'calendly' ? 'rgba(74,222,128,0.15)' : 'var(--pipe-surface)',
+                      border: `1px solid ${schedulingMode === 'calendly' ? 'rgba(74,222,128,0.3)' : 'var(--pipe-border)'}`,
+                      color: schedulingMode === 'calendly' ? '#4ade80' : 'var(--pipe-text-dim)',
+                      fontSize: 11,
+                      letterSpacing: '0.1em',
+                      fontFamily: '"Space Mono", monospace',
+                      cursor: 'pointer',
+                      borderRadius: 4,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <Calendar size={15} />
+                      Calendly link
+                    </span>
+                    <span style={{ fontSize: 9, color: 'var(--pipe-text-muted)', letterSpacing: '0.03em' }}>
+                      Let them pick a time
+                    </span>
+                  </button>
+                )}
               </div>
-              {schedulingMode === 'calendly' && (
+              {!workspaceAssessment && schedulingMode === 'calendly' && (
                 <div style={{ fontSize: 10, color: canUseCalendly ? '#4ade80' : '#fbbf24', fontFamily: '"Space Mono", monospace', marginTop: 6, lineHeight: 1.5 }}>
                   {canUseCalendly
                     ? `Will send ${selectedCalendlyEventType?.name ?? 'your Calendly event'} scheduling link.`

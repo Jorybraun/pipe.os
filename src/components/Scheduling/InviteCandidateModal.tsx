@@ -182,8 +182,8 @@ export function InviteCandidateModal({
               <label style={{ display: 'block', fontSize: 10, letterSpacing: '0.15em', color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', marginBottom: 6 }}>
                 INTERVIEW TYPE
               </label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {(['VIDEO', 'SCREENING', 'CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE'] as const).map((type) => (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {(['VIDEO', 'SCREENING', 'CODE_REVIEW', 'DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX'] as const).map((type) => (
                   <button
                     key={type}
                     onClick={() => setInterviewType(interviewType === type ? '' : type)}

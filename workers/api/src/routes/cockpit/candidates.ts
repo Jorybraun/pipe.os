@@ -1126,6 +1126,9 @@ const createStandaloneCandidateSchema = z.object({
 }).superRefine((value, ctx) => {
   const hasRepoUrl = Boolean(value.githubRepoUrl);
   const hasPrNumber = Boolean(value.githubPrNumber);
+  const supportsRepoOverride = value.interviewType === 'CODE_REVIEW'
+    || value.interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || value.interviewType === 'OPEN_SOURCE_BUG_FIX';
   if (hasRepoUrl !== hasPrNumber) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -1133,10 +1136,10 @@ const createStandaloneCandidateSchema = z.object({
       path: ['githubRepoUrl'],
     });
   }
-  if ((hasRepoUrl || hasPrNumber) && value.interviewType !== 'CODE_REVIEW' && value.interviewType !== 'DEV_CONTAINER_CHALLENGE') {
+  if ((hasRepoUrl || hasPrNumber) && !supportsRepoOverride) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Manual repo override is only supported for CODE_REVIEW or DEV_CONTAINER_CHALLENGE interviews.',
+      message: 'Manual repo override is only supported for workspace-backed assessment interviews.',
       path: ['interviewType'],
     });
   }

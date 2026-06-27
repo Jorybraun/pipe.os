@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the proposed source-backed repo-task assessment contract for `DEV_CONTAINER_REPO_TASK` and `OPEN_SOURCE_BUG_FIX`, including candidate evidence packets, repo task packets, match diagnostics, AI usage evidence, and final evaluation output types.
 - Documented the 95 Until Infinity repo-task matching plan, preserving the Evidence Hypergraph requirements that no positive match or evaluation claim can exist without source refs.
 - Tightened the repo-task final assessment output into evaluated vs diagnostic states so successful evaluations require source-backed submission/evaluation evidence and non-success states require explicit diagnostics.
+- Added `OPEN_SOURCE_BUG_FIX` as a workspace-backed assessment interview mode for scheduling, invite creation, dev-container launch, and candidate assessment routing.
 
 ### Fixed — Calendly scheduling sync and confirmations
 

@@ -117,7 +117,19 @@ export const INTERVIEW_TYPE_VALUES = [
   'SCREENING',
   'CODE_REVIEW',
   'DEV_CONTAINER_CHALLENGE',
+  'OPEN_SOURCE_BUG_FIX',
 ] as const;
+
+type InterviewTypeValue = typeof INTERVIEW_TYPE_VALUES[number];
+
+function isWorkspaceAssessmentInterviewType(value: string | null | undefined): value is Extract<
+  InterviewTypeValue,
+  'CODE_REVIEW' | 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX'
+> {
+  return value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX';
+}
 
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
@@ -153,7 +165,7 @@ const createInterviewSchema = z.object({
   // Workspace-backed assessments can attach a source-backed repo/PR task as a
   // manual override. When no repo is specified, matching selects a source-backed
   // challenge from candidate evidence at runtime.
-  if (value.interviewType === 'CODE_REVIEW' || value.interviewType === 'DEV_CONTAINER_CHALLENGE') {
+  if (isWorkspaceAssessmentInterviewType(value.interviewType)) {
     const hasMatchedRepo = value.matchedRepoId != null && value.matchedRepoId > 0;
     const hasRepoUrlAndPr = Boolean(value.githubRepoUrl && value.githubPrNumber);
     const hasPartialManual = Boolean(value.githubRepoUrl) !== Boolean(value.githubPrNumber);
@@ -1105,9 +1117,9 @@ async function ensureRecipientContact(
 
 /**
  * Ensure a standalone (pipeline-free) candidate exists for the given email,
- * returning the candidate id + invite token. Used for CODE_REVIEW and
- * DEV_CONTAINER_CHALLENGE interviews so the email can include an assessment
- * link that authenticates the candidate through /assess/:token.
+ * returning the candidate id + invite token. Used for workspace-backed
+ * assessments so the email can include an assessment link that authenticates
+ * the candidate through /assess/:token.
  */
 async function ensureStandaloneCandidateForInterview(
   db: D1Database,
@@ -2815,11 +2827,10 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     ? withDevBasicAuth(interview.scheduling_url, c.env)
     : null;
 
-  // For CODE_REVIEW and DEV_CONTAINER_CHALLENGE interviews, ensure a standalone
+  // For workspace-backed assessments, ensure a standalone
   // candidate exists so the email includes an assessment link that authenticates
   // the candidate and routes them to the code review / dev container challenge.
-  const needsAssessmentLink = interview.interview_type === 'CODE_REVIEW'
-    || interview.interview_type === 'DEV_CONTAINER_CHALLENGE';
+  const needsAssessmentLink = isWorkspaceAssessmentInterviewType(interview.interview_type);
   let assessUrl: string | null = null;
   if (needsAssessmentLink && !interview.candidate_id) {
     const recipientName = interview.candidate_name

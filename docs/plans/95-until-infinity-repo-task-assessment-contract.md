@@ -1,6 +1,6 @@
 # 95 Until Infinity Repo Task Assessment Contract
 
-**Status:** Proposed contract  
+**Status:** Contract proposed; `OPEN_SOURCE_BUG_FIX` mode seam implemented
 **Date:** 2026-06-27  
 **Contract file:** `workers/api/src/lib/assessmentEvidence.ts`
 
@@ -94,6 +94,16 @@ The controlling product rule remains:
    - If the system lacks source-backed evidence for a dimension, the dimension
      records a diagnostic gap instead of awarding implied credit.
 
+## Current Implementation Status
+
+- `OPEN_SOURCE_BUG_FIX` is a first-class scheduled interview type.
+- Scheduling and invite creation can create an assessment invite for the mode.
+- Candidate assessment routing currently serves it through the existing
+  dev-container `CODE_IMPLEMENTATION` runtime.
+- Meeting-room workspace provisioning treats it as a workspace-backed interview.
+- The full repo-task assessment session, event spine, final evidence bundle, and
+  source-backed evaluation report remain pending.
+
 ## Proposed TypeScript Surface
 
 The proposed contract is implemented in
@@ -148,8 +158,9 @@ Required blocking diagnostics:
    issue/PR source refs are missing.
 4. Add BDD coverage proving embedding-only recall returns
    `EMBEDDING_ONLY_MATCH_REJECTED`.
-5. Add the meeting creation seam for `DEV_CONTAINER_REPO_TASK` and
-   `OPEN_SOURCE_BUG_FIX`, accepting only `CandidateRepoTaskMatch`.
+5. Expand the initial `OPEN_SOURCE_BUG_FIX` meeting creation seam so matched
+   repo-task assessments accept only `CandidateRepoTaskMatch` or explicit
+   diagnostics.
 6. Add final evaluation persistence using `FinalRepoTaskAssessmentOutput`.
 7. Add recruiter and candidate-safe views that separate selected evidence,
    diagnostics, AI usage, and server-only ground truth.

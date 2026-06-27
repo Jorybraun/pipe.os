@@ -401,6 +401,7 @@ interface StandaloneReviewRow {
 interface StandaloneDevContainerRow {
   id: string;
   status: string;
+  interview_type: 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
   matched_repo_id: number | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
@@ -1131,9 +1132,11 @@ async function getPendingDevContainerChallenge(
 ): Promise<StandaloneDevContainerRow | null> {
   try {
     return await db.prepare(
-      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number, submission_json
+      `SELECT id, status, interview_type, matched_repo_id, github_repo_url, github_pr_number, submission_json
        FROM scheduled_interviews
-       WHERE candidate_id = ?1 AND interview_type = 'DEV_CONTAINER_CHALLENGE' AND stage_id IS NULL
+       WHERE candidate_id = ?1
+         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
+         AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
        ORDER BY created_at DESC LIMIT 1`,
     ).bind(candidateId).first<StandaloneDevContainerRow>();
@@ -1698,14 +1701,19 @@ rpcAuth.post('/get-stage-config', async (c) => {
     // Standalone dev-container challenge interview: once the CV is in, serve the challenge stage
     const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
     if (!needsResume && standaloneDevContainer) {
+      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
         isComplete: false,
         stageId: 'standalone-dev-container',
         candidateId,
-        stageTitle: 'Dev Container Challenge',
+        stageTitle: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
         mode: 'ASYNC',
         timeLimit: null,
-        challenges: [{ type: 'CODE_IMPLEMENTATION', order: 0, title: 'Dev Container Challenge' }],
+        challenges: [{
+          type: 'CODE_IMPLEMENTATION',
+          order: 0,
+          title: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+        }],
         currentIndex: 0,
       });
     }
@@ -1718,7 +1726,13 @@ rpcAuth.post('/get-stage-config', async (c) => {
       stageTitle: needsResume
         ? 'Upload Your CV'
         : hasPendingStandalone
-          ? (standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review Interview')
+          ? (
+              standaloneDevContainer
+                ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+                  ? 'Open Source Bug Fix'
+                  : 'Dev Container Challenge'
+                : 'Code Review Interview'
+            )
           : 'Thank You',
       mode: 'INTAKE',
       timeLimit: null,
@@ -1726,7 +1740,14 @@ rpcAuth.post('/get-stage-config', async (c) => {
         ? [{ type: 'INTAKE', order: 0, title: 'Profile & Resume' }]
         : [],
       upcoming: needsResume && hasPendingStandalone
-        ? [{ type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW', title: standaloneDevContainer ? 'Dev Container Challenge' : 'Code Review' }]
+        ? [{
+            type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW',
+            title: standaloneDevContainer
+              ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+                ? 'Open Source Bug Fix'
+                : 'Dev Container Challenge'
+              : 'Code Review',
+          }]
         : [],
       currentIndex: 0,
     });
@@ -2001,11 +2022,14 @@ rpcAuth.post('/get-challenge', async (c) => {
       if (!repoUrl) {
         return c.json(STANDALONE_WAITING_CHALLENGE);
       }
+      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
         id: `standalone-dev-container-${standaloneDevContainer.id}`,
         type: 'CODE_IMPLEMENTATION',
-        title: 'Dev Container Challenge',
-        instructions: 'Complete the coding challenge in the dev container workspace provided below.',
+        title: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+        instructions: isOpenSourceBugFix
+          ? 'Use the dev container workspace to investigate the matched open-source task, implement a source-backed solution, and verify your changes with tests or concrete checks.'
+          : 'Complete the coding challenge in the dev container workspace provided below.',
         config: JSON.stringify({ starterCode: '' }),
         cachedDiffJson: null,
         githubPrTitle: null,

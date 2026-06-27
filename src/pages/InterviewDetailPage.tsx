@@ -770,7 +770,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const matchScore = formatMatchScore(codeReviewMatch?.score);
   const codeReviewProfile = asCodeReviewReviewProfile(codeReviewMatch?.reviewProfile);
   const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
-  const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE';
+  const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
+    || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
   const showsRoomPanel = !isCodeReviewInterview;
   const showsCallRecord = !isCodeReviewInterview || Boolean(interview.linkedMeeting || interview.transcriptArtifact);
   const transcriptEmptyText = transcriptStatus === 'PROCESSING'

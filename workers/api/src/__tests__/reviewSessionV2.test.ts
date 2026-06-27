@@ -453,7 +453,7 @@ describe('POST /rpc/get-challenge', () => {
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
         {
-          match: "interview_type = 'DEV_CONTAINER_CHALLENGE'",
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
           value: null,
         },
         {
@@ -509,6 +509,56 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.id).toBe('waiting-for-match');
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it('routes standalone OPEN_SOURCE_BUG_FIX invites into a repo-backed implementation challenge', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'open_source_1',
+            status: 'INVITED',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: 'https://github.com/hash-pipe/open-source-task',
+            github_pr_number: 101,
+            submission_json: null,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      title: string;
+      instructions: string;
+      githubRepoUrl: string | null;
+      githubPrNumber: number | null;
+      devContainerRepoUrl: string | null;
+    };
+    expect(body.type).toBe('CODE_IMPLEMENTATION');
+    expect(body.title).toBe('Open Source Bug Fix');
+    expect(body.instructions).toContain('matched open-source task');
+    expect(body.githubRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
+    expect(body.githubPrNumber).toBe(101);
+    expect(body.devContainerRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
   });
 
   it('returns match proof for a manual standalone CODE_REVIEW source-backed PR', async () => {

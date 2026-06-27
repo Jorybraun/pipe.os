@@ -100,7 +100,8 @@ devContainer.post('/launch', async (c) => {
     const interview = await c.env.DB.prepare(
       `SELECT github_repo_url, github_pr_number
        FROM scheduled_interviews
-       WHERE candidate_id = ?1 AND interview_type = 'DEV_CONTAINER_CHALLENGE'
+       WHERE candidate_id = ?1
+         AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
          AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
        ORDER BY created_at DESC LIMIT 1`,
@@ -111,7 +112,7 @@ devContainer.post('/launch', async (c) => {
     }
   }
 
-  if (!repoGitUrl) {
+  if (!pipelineId && !repoGitUrl) {
     return c.json({ error: { code: 'BAD_REQUEST', message: 'No repository URL configured for this dev container challenge.' } }, 400);
   }
 
