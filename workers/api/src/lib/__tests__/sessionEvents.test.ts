@@ -274,6 +274,26 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000005000,
+            event: {
+              id: 'fs-notes-delete',
+              clientId: 'guest-client',
+              createdAt: 1700000005000,
+              kind: 'DELETE_FILE',
+              fileId: 'notepad',
+              file: {
+                id: 'notepad',
+                name: 'notes.txt',
+                kind: 'text',
+                content: 'Candidate identified retry bug evidence.',
+                mimeType: 'text/plain',
+                createdAt: 1700000004000,
+                updatedAt: 1700000004000,
+              },
+            },
+          },
         ],
       }, {
         candidateId: 'cand-room',
@@ -325,6 +345,11 @@ describe('sessionEvents', () => {
           actor: 'guest',
           text: 'notes.txt',
         }),
+        expect.objectContaining({
+          type: 'file_change',
+          actor: 'guest',
+          text: 'notes.txt',
+        }),
       ]);
       expect(events[1]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
@@ -345,6 +370,16 @@ describe('sessionEvents', () => {
         contentPreview: 'Candidate identified retry bug evidence.',
       });
       expect(events[5]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[6]!.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        operation: 'delete',
+        fileId: 'notepad',
+        fileName: 'notes.txt',
+        fileKind: 'text',
+        deletedContentLength: 'Candidate identified retry bug evidence.'.length,
+        deletedContentPreview: 'Candidate identified retry bug evidence.',
+      });
+      expect(events[6]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
     });
   });
 

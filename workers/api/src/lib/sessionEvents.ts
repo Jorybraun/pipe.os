@@ -381,11 +381,34 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
     if (!fileId) return null;
     properties.operation = 'delete';
     properties.fileId = fileId;
+    let text = fileId;
+    if (isRecord(event.file)) {
+      const file = event.file;
+      const name = stringOrNull(file.name);
+      const fileKind = stringOrNull(file.kind);
+      const mimeType = stringOrNull(file.mimeType);
+      if (name) {
+        properties.fileName = name;
+        text = name;
+      }
+      if (fileKind) properties.fileKind = fileKind;
+      if (mimeType) properties.mimeType = mimeType;
+      if (typeof file.content === 'string') {
+        properties.deletedContentLength = file.content.length;
+        properties.deletedContentHash = await deterministicEntityId('content', file.content);
+        const preview = compactPreview(file.content);
+        if (preview && fileKind !== 'paint') properties.deletedContentPreview = preview;
+      }
+      const createdAt = numberOrNull(file.createdAt);
+      const updatedAt = numberOrNull(file.updatedAt);
+      if (createdAt !== null) properties.deletedFileCreatedAt = createdAt;
+      if (updatedAt !== null) properties.deletedFileUpdatedAt = updatedAt;
+    }
     return createSessionEvent(input, {
       type: 'file_change',
       timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
       actor: actorFromRoomRole(role),
-      text: fileId,
+      text,
       properties,
     });
   }

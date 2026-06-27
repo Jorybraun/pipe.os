@@ -206,6 +206,7 @@ type RoomFileSystemEvent =
       createdAt: number;
       kind: 'DELETE_FILE';
       fileId: string;
+      file?: RoomFile;
     };
 
 interface RoomFileSystemActivityEntry {
@@ -699,12 +700,14 @@ export class VideoRoom {
       };
     }
     if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
+      const file = this.parseRoomFile(value.file);
       return {
         id: value.id,
         clientId: value.clientId,
         createdAt: value.createdAt,
         kind: 'DELETE_FILE',
         fileId: value.fileId,
+        file: file ?? undefined,
       };
     }
     return null;
@@ -719,6 +722,22 @@ export class VideoRoom {
 
   private async getRoomFileSystem(): Promise<RoomFile[]> {
     return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
+  }
+
+  private async enrichFileSystemEvent(event: RoomFileSystemEvent): Promise<RoomFileSystemEvent> {
+    if (event.kind !== 'DELETE_FILE') return event;
+    const files = await this.getRoomFileSystem();
+    const deletedFile = files.find((file) => file.id === event.fileId);
+    if (!deletedFile) {
+      return {
+        id: event.id,
+        clientId: event.clientId,
+        createdAt: event.createdAt,
+        kind: 'DELETE_FILE',
+        fileId: event.fileId,
+      };
+    }
+    return { ...event, file: deletedFile };
   }
 
   private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
@@ -1311,12 +1330,13 @@ export class VideoRoom {
         }));
         return;
       }
-      await this.persistFileSystemEvent(event, senderRole);
-      await this.recordFileSystemActivity(event, senderRole);
+      const enrichedEvent = await this.enrichFileSystemEvent(event);
+      await this.persistFileSystemEvent(enrichedEvent, senderRole);
+      await this.recordFileSystemActivity(enrichedEvent, senderRole);
       this.broadcastExcept(ws, JSON.stringify({
         type: 'ROOM_FILE_SYSTEM_EVENT',
         role: senderRole,
-        payload: event,
+        payload: enrichedEvent,
       }));
       return;
     }

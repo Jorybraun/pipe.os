@@ -115,6 +115,10 @@ The controlling product rule remains:
 - Shared Notepad/Paint file replay now computes deterministic content hashes
   server-side for `file_change` evidence, preserving immutable provenance even
   when the candidate-created file content is summarized or preview-suppressed.
+- Shared file delete replay now preserves the deleted file snapshot when the
+  Durable Object still has it, including deleted file name, kind, content hash,
+  and bounded preview, so removing a desktop artifact does not erase its
+  provenance.
 - Durable Object replay now includes synced window state changes as
   source-backed `window_update` evidence, preserving focus, minimize, maximize,
   and move patches from the shared Win95 desktop activity log.

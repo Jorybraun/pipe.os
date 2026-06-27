@@ -220,6 +220,7 @@ export type RoomFileSystemEvent =
       createdAt: number;
       kind: 'DELETE_FILE';
       fileId: string;
+      file?: RoomFile;
     };
 
 export type RoomFileSystemEventDraft =
@@ -630,12 +631,14 @@ function parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
     };
   }
   if (value.kind === 'DELETE_FILE' && typeof value.fileId === 'string') {
+    const file = parseRoomFile(value.file);
     return {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
       kind: 'DELETE_FILE',
       fileId: value.fileId,
+      file: file ?? undefined,
     };
   }
   return null;

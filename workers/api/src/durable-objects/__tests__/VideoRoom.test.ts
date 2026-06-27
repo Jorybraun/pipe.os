@@ -656,8 +656,35 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'DELETE_FILE',
         fileId: 'desktop-notes',
+        file: expect.objectContaining({
+          id: 'desktop-notes',
+          name: 'notes.txt',
+          content: 'Candidate asked about testing strategy.',
+        }),
       }),
     }));
+    expect(storage.get('fileSystemActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'fs-save-notes',
+          kind: 'UPSERT_FILE',
+        }),
+      }),
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'fs-delete-notes',
+          kind: 'DELETE_FILE',
+          fileId: 'desktop-notes',
+          file: expect.objectContaining({
+            id: 'desktop-notes',
+            name: 'notes.txt',
+            content: 'Candidate asked about testing strategy.',
+          }),
+        }),
+      }),
+    ]);
   });
 
   it('exposes replayable room activity logs for server-side evidence sync', async () => {
