@@ -112,8 +112,62 @@ function agentPromptHandoffDiagnosticMessage({
   };
 }
 
+function agentDiagnosticSessionEvent(message) {
+  const eventMessage = message && typeof message === 'object' ? message : {};
+  return {
+    type: 'ai_agent_status',
+    text: String(eventMessage.message || 'Agent bridge diagnostic.'),
+    actor: 'agent',
+    properties: {
+      source: 'clippy_agent_bridge',
+      agent: String(eventMessage.agent || 'devin'),
+      status: eventMessage.status ?? null,
+      diagnosticSource: eventMessage.diagnosticSource ?? null,
+      bridgeMessageSource: 'bridge_diagnostic',
+      observedAt: eventMessage.observedAt ?? null,
+      exitCode: eventMessage.exitCode ?? null,
+      signal: eventMessage.signal ?? null,
+      truncated: eventMessage.truncated ?? null,
+      promptType: eventMessage.promptType ?? null,
+      deliveredToAgent: eventMessage.deliveredToAgent ?? null,
+      promptLength: eventMessage.promptLength ?? null,
+      promptFingerprint: eventMessage.promptFingerprint ?? null,
+      roomContextStatus: eventMessage.roomContextStatus ?? null,
+      roomContextLength: eventMessage.roomContextLength ?? null,
+      roomContextFingerprint: eventMessage.roomContextFingerprint ?? null,
+      userMessageLength: eventMessage.userMessageLength ?? null,
+      userMessageFingerprint: eventMessage.userMessageFingerprint ?? null,
+      contextTruncated: eventMessage.contextTruncated ?? null,
+      bridgePersisted: true,
+    },
+  };
+}
+
+function agentChatSessionEvent({
+  agent = 'devin',
+  text,
+  observedAt = new Date().toISOString(),
+  actionCount = 0,
+}) {
+  return {
+    type: 'ai_chat_agent',
+    text: String(text || ''),
+    actor: 'agent',
+    properties: {
+      source: 'clippy_agent_bridge',
+      agent: String(agent || 'devin'),
+      bridgeEventType: 'CHAT_RESPONSE',
+      observedAt,
+      actionCount: Number.isFinite(actionCount) ? Math.max(0, Math.floor(actionCount)) : 0,
+      bridgePersisted: true,
+    },
+  };
+}
+
 module.exports = {
+  agentChatSessionEvent,
   agentDiagnosticMessage,
+  agentDiagnosticSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   diagnosticTextMetrics,

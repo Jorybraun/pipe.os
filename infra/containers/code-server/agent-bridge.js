@@ -4,7 +4,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const {
+  agentChatSessionEvent,
   agentDiagnosticMessage,
+  agentDiagnosticSessionEvent,
   agentPromptHandoffDiagnosticMessage,
 } = require('./agent-diagnostics.js');
 
@@ -195,6 +197,55 @@ async function captureWorkspaceFileChangeEvidence(change) {
     console.error('[agent-bridge] workspace file evidence capture failed:', error instanceof Error ? error.message : String(error));
     return false;
   }
+}
+
+async function postSessionEventEvidence(event, logLabel) {
+  const endpoint = roomSessionEventsUrl();
+  if (!endpoint) return false;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
+    if (!response.ok) {
+      console.error(`[agent-bridge] ${logLabel} evidence capture failed: ${response.status} ${response.statusText}`);
+    }
+    return response.ok;
+  } catch (error) {
+    console.error(`[agent-bridge] ${logLabel} evidence capture failed:`, error instanceof Error ? error.message : String(error));
+    return false;
+  }
+}
+
+async function captureAgentDiagnosticEvidence(message) {
+  return postSessionEventEvidence(agentDiagnosticSessionEvent(message), 'agent diagnostic');
+}
+
+async function captureAgentChatEvidence(message) {
+  return postSessionEventEvidence(agentChatSessionEvent(message), 'agent chat');
+}
+
+function broadcastAgentDiagnostic(message) {
+  void captureAgentDiagnosticEvidence(message)
+    .then((persisted) => {
+      broadcast({ ...message, persisted });
+    });
+}
+
+function sendAgentDiagnostic(ws, message) {
+  void captureAgentDiagnosticEvidence(message)
+    .then((persisted) => {
+      send(ws, { ...message, persisted });
+    });
+}
+
+function broadcastAgentChat(message) {
+  void captureAgentChatEvidence(message)
+    .then((persisted) => {
+      broadcast({ type: 'CHAT_RESPONSE', ...message, persisted });
+    });
 }
 
 function workspaceEventPayload(action, fact, observedAt, persisted) {
@@ -474,7 +525,7 @@ async function primeAgentWithRoomContext(targetProcess = agentProcess) {
   const roomContextText = compactAgentContext(context.text);
   const prompt = buildAgentContextPrompt(context.text);
   const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
-  broadcast(agentPromptHandoffDiagnosticMessage({
+  broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
     agent: AGENT_NAME,
     status: agentStatus,
     promptType: 'context_primer',
@@ -493,7 +544,7 @@ async function writeAgentChatPrompt(text) {
   const roomContextText = compactAgentContext(context.text);
   const prompt = buildAgentContextPrompt(context.text, text);
   const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
-  broadcast(agentPromptHandoffDiagnosticMessage({
+  broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
     agent: AGENT_NAME,
     status: agentStatus,
     promptType: 'chat_prompt',
@@ -597,7 +648,7 @@ function startAgent() {
     void primeAgentWithRoomContext(agentProcess).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       console.error('[agent-bridge] room context primer failed:', message);
-      broadcast(agentDiagnosticMessage({
+      broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: 'idle',
         message: `Room context primer failed: ${message}`,
@@ -608,7 +659,15 @@ function startAgent() {
       const parsed = extractTaggedRoomActions(chunk.toString());
       agentStatus = 'working';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-      if (parsed.text) broadcast({ type: 'CHAT_RESPONSE', text: parsed.text });
+      const observedAt = new Date().toISOString();
+      if (parsed.text) {
+        broadcastAgentChat({
+          agent: AGENT_NAME,
+          text: parsed.text,
+          observedAt,
+          actionCount: parsed.actions.length,
+        });
+      }
       for (const action of parsed.actions) broadcast({ type: 'ROOM_ACTION', ...action });
       agentStatus = 'idle';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
@@ -617,7 +676,7 @@ function startAgent() {
       const message = chunk.toString().trim();
       if (!message) return;
       console.error('[agent-bridge] devin stderr:', message);
-      broadcast(agentDiagnosticMessage({
+      broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: agentStatus,
         message,
@@ -627,7 +686,7 @@ function startAgent() {
     agentProcess.on('exit', (code, signal) => {
       agentProcess = null;
       agentStatus = 'idle';
-      broadcast(agentDiagnosticMessage({
+      broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: code === 0 && !signal ? 'idle' : 'disconnected',
         message: `Devin process exited with code ${code === null ? 'null' : code}${signal ? ` and signal ${signal}` : ''}.`,
@@ -640,7 +699,7 @@ function startAgent() {
     agentProcess.on('error', (error) => {
       agentProcess = null;
       agentStatus = 'idle';
-      broadcast(agentDiagnosticMessage({
+      broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: 'disconnected',
         message: `Devin CLI failed to start inside the container: ${error instanceof Error ? error.message : String(error)}`,
@@ -649,7 +708,7 @@ function startAgent() {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
   } catch (error) {
-    broadcast(agentDiagnosticMessage({
+    broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'disconnected',
       message: error instanceof Error ? error.message : String(error),
@@ -666,13 +725,13 @@ async function handleAgentMessage(ws, msg) {
       agentStatus = 'auth_needed';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
       send(ws, devinAuthNeededMessage());
-      send(ws, devinAuthDiagnosticMessage());
+      sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
     if (agentStatus === 'auth_needed') {
       send(ws, devinAuthNeededMessage());
-      send(ws, devinAuthDiagnosticMessage());
+      sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess) {

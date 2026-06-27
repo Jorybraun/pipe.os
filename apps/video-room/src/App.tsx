@@ -1470,6 +1470,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
+    if (message.persisted) return;
     const isAgentResponse = message.source === 'agent_stdout' || message.source === undefined;
     if (isAgentResponse) {
       captureSessionEvent('ai_chat_agent', message.text, 'agent', {

@@ -23,6 +23,7 @@ export interface AgentChatMessage {
   exitCode?: number | null;
   signal?: string | null;
   truncated?: boolean;
+  persisted?: boolean;
   promptType?: string;
   deliveredToAgent?: boolean;
   promptLength?: number;
@@ -273,7 +274,14 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     });
     return {
       kind: 'chat',
-      message: { role: 'agent', text, source: 'agent_stdout' },
+      message: {
+        role: 'agent',
+        text,
+        source: 'agent_stdout',
+        agentName: stringOrNull(value.agent) ?? undefined,
+        observedAt: stringOrNull(value.observedAt) ?? undefined,
+        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+      },
       actions: actions.length > 0 ? actions : undefined,
     };
   }
@@ -363,6 +371,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if ('exitCode' in value) message.exitCode = numberOrNullValue(value.exitCode);
     if ('signal' in value) message.signal = signal;
     if (typeof value.truncated === 'boolean') message.truncated = value.truncated;
+    if (typeof value.persisted === 'boolean') message.persisted = value.persisted;
     const promptType = stringOrNull(value.promptType);
     const promptFingerprint = stringOrNull(value.promptFingerprint);
     const roomContextFingerprint = stringOrNull(value.roomContextFingerprint);

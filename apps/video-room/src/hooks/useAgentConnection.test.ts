@@ -154,6 +154,7 @@ describe('parseAgentBridgeMessage', () => {
       userMessageLength: 18,
       userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       contextTruncated: false,
+      persisted: true,
     })).toEqual({
       kind: 'diagnostic',
       agentName: 'devin',
@@ -176,6 +177,7 @@ describe('parseAgentBridgeMessage', () => {
         userMessageLength: 18,
         userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
         contextTruncated: false,
+        persisted: true,
       },
     });
   });
@@ -184,12 +186,18 @@ describe('parseAgentBridgeMessage', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',
       text: 'I inspected the failing test.',
+      agent: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      persisted: true,
     })).toEqual({
       kind: 'chat',
       message: {
         role: 'agent',
         text: 'I inspected the failing test.',
         source: 'agent_stdout',
+        agentName: 'devin',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        persisted: true,
       },
       actions: undefined,
     });

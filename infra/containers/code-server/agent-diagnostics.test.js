@@ -3,6 +3,8 @@ import diagnostics from './agent-diagnostics.js';
 
 const {
   agentDiagnosticMessage,
+  agentDiagnosticSessionEvent,
+  agentChatSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   redactDiagnosticText,
@@ -114,6 +116,66 @@ describe('agent diagnostics', () => {
       promptType: 'context_primer',
       deliveredToAgent: false,
       contextTruncated: true,
+    });
+  });
+
+  it('builds source-backed session events for agent diagnostics without raw prompts', () => {
+    const diagnostic = agentPromptHandoffDiagnosticMessage({
+      agent: 'devin',
+      status: 'thinking',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      roomContextStatus: 200,
+      roomContextText: 'Room context with TOKEN=secret',
+      promptText: 'Private prompt with TOKEN=secret',
+      userMessage: 'Private user message',
+      observedAt: '2026-06-27T21:00:00.000Z',
+    });
+
+    expect(agentDiagnosticSessionEvent(diagnostic)).toMatchObject({
+      type: 'ai_agent_status',
+      text: 'devin chat prompt delivered to process stdin.',
+      actor: 'agent',
+      properties: {
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        status: 'thinking',
+        diagnosticSource: 'agent_prompt_sent',
+        bridgeMessageSource: 'bridge_diagnostic',
+        observedAt: '2026-06-27T21:00:00.000Z',
+        promptType: 'chat_prompt',
+        deliveredToAgent: true,
+        promptFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        roomContextFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        bridgePersisted: true,
+      },
+    });
+
+    const serialized = JSON.stringify(agentDiagnosticSessionEvent(diagnostic));
+    expect(serialized).not.toContain('Private prompt');
+    expect(serialized).not.toContain('Private user message');
+    expect(serialized).not.toContain('secret');
+  });
+
+  it('builds source-backed session events for real Devin stdout', () => {
+    expect(agentChatSessionEvent({
+      agent: 'devin',
+      text: 'I inspected the failing test.',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      actionCount: 1,
+    })).toEqual({
+      type: 'ai_chat_agent',
+      text: 'I inspected the failing test.',
+      actor: 'agent',
+      properties: {
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        actionCount: 1,
+        bridgePersisted: true,
+      },
     });
   });
 });

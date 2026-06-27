@@ -170,6 +170,11 @@ The controlling product rule remains:
   including delivery state, room-context fetch status, and redacted
   fingerprints/lengths for prompt, room context, and candidate message without
   storing the private prompt body.
+- Clippy/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now
+  post token-scoped `session-events` directly from the dev container before
+  broadcasting to browsers. Browser evidence capture remains a fallback only
+  when the bridge cannot persist, preventing duplicate graph events while
+  preserving the visible chat/diagnostic stream.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a
