@@ -38,6 +38,12 @@ interface Win95DesktopProps {
   recordingActive?: boolean;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
+  onWindowFocus?: (id: string) => void;
+  onWindowMinimize?: (id: string) => void;
+  onWindowRestore?: (id: string) => void;
+  onWindowMaximize?: (id: string) => void;
+  onWindowMove?: (id: string, x: number, y: number) => void;
+  onWindowMoveEnd?: (id: string, x: number, y: number) => void;
   canExitDesktop?: boolean;
   onExitDesktop?: () => void;
   peerCursors?: RoomCursorPresence[];
@@ -51,6 +57,12 @@ export function Win95Desktop({
   recordingActive,
   renderWindowContent,
   onWindowClose,
+  onWindowFocus,
+  onWindowMinimize,
+  onWindowRestore,
+  onWindowMaximize,
+  onWindowMove,
+  onWindowMoveEnd,
   canExitDesktop = false,
   onExitDesktop,
   peerCursors = [],
@@ -65,14 +77,14 @@ export function Win95Desktop({
   const handleWindowClick = useCallback(
     (win: WindowState): void => {
       if (win.minimized) {
-        wm.restoreWindow(win.id);
+        (onWindowRestore ?? wm.restoreWindow)(win.id);
       } else if (win.focused) {
-        wm.minimizeWindow(win.id);
+        (onWindowMinimize ?? wm.minimizeWindow)(win.id);
       } else {
-        wm.focusWindow(win.id);
+        (onWindowFocus ?? wm.focusWindow)(win.id);
       }
     },
-    [wm],
+    [onWindowFocus, onWindowMinimize, onWindowRestore, wm],
   );
 
   const handleIconDoubleClick = useCallback(
@@ -187,11 +199,12 @@ export function Win95Desktop({
           <Win95Window
             key={win.id}
             win={win}
-            onFocus={wm.focusWindow}
+            onFocus={onWindowFocus ?? wm.focusWindow}
             onClose={onWindowClose ?? wm.closeWindow}
-            onMinimize={wm.minimizeWindow}
-            onMaximize={wm.toggleMaximize}
-            onMove={wm.moveWindow}
+            onMinimize={onWindowMinimize ?? wm.minimizeWindow}
+            onMaximize={onWindowMaximize ?? wm.toggleMaximize}
+            onMove={onWindowMove ?? wm.moveWindow}
+            onMoveEnd={onWindowMoveEnd}
             noPadding={win.windowType === 'workspace'
               || win.windowType === 'video'
               || win.windowType === 'tasks'

@@ -64,6 +64,9 @@ interface RoomDesktopWindow {
   y?: number;
   width?: number;
   height?: number;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
   data?: Record<string, unknown>;
 }
 
@@ -96,6 +99,20 @@ type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
     }
   | {
       id: string;
@@ -300,6 +317,9 @@ export class VideoRoom {
       y: this.optionalNumber(value.y),
       width: this.optionalNumber(value.width),
       height: this.optionalNumber(value.height),
+      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
       data: this.isRecord(value.data) ? value.data : undefined,
     };
   }
@@ -351,6 +371,34 @@ export class VideoRoom {
         windowId: value.windowId,
         data: value.data,
       };
+    }
+    if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
+      const event: RoomDesktopEvent = {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: value.windowId,
+        x: this.optionalNumber(value.x),
+        y: this.optionalNumber(value.y),
+        width: this.optionalNumber(value.width),
+        height: this.optionalNumber(value.height),
+        minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+        maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+        focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+      };
+      if (
+        event.x === undefined
+        && event.y === undefined
+        && event.width === undefined
+        && event.height === undefined
+        && event.minimized === undefined
+        && event.maximized === undefined
+        && event.focused === undefined
+      ) {
+        return null;
+      }
+      return event;
     }
     if (value.kind === 'WORKSPACE_STATE_CHANGED') {
       const status = typeof value.status === 'string' && value.status.length <= 80
@@ -677,6 +725,25 @@ export class VideoRoom {
     }
     if (event.kind === 'WORKSPACE_STATE_CHANGED') {
       return windows;
+    }
+    if (event.kind === 'UPDATE_WINDOW_STATE') {
+      const nextWindows = windows.map((windowConfig) => {
+        if (windowConfig.id !== event.windowId) {
+          return event.focused === true ? { ...windowConfig, focused: false } : windowConfig;
+        }
+        return {
+          ...windowConfig,
+          x: event.x ?? windowConfig.x,
+          y: event.y ?? windowConfig.y,
+          width: event.width ?? windowConfig.width,
+          height: event.height ?? windowConfig.height,
+          minimized: event.minimized ?? windowConfig.minimized,
+          maximized: event.maximized ?? windowConfig.maximized,
+          focused: event.focused ?? windowConfig.focused,
+        };
+      });
+      await this.state.storage.put('desktopWindows', nextWindows);
+      return nextWindows;
     }
     const nextWindows = windows.map((windowConfig) => (
       windowConfig.id === event.windowId

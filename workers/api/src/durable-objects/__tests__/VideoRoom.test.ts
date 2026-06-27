@@ -211,6 +211,73 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
+  it('persists and broadcasts shared desktop window state changes', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    storage.set('desktopWindows', [
+      {
+        id: 'browser',
+        windowType: 'browser',
+        title: 'Microsoft Edge',
+        x: 100,
+        y: 60,
+        width: 800,
+        height: 560,
+      },
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-move-browser',
+        clientId: 'host-client',
+        createdAt: 3,
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: 'browser',
+        x: 260,
+        y: 140,
+        minimized: false,
+        focused: true,
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'browser',
+        x: 260,
+        y: 140,
+        minimized: false,
+        focused: true,
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: 'browser',
+        x: 260,
+        y: 140,
+        focused: true,
+      }),
+    }));
+    expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-move-browser',
+          kind: 'UPDATE_WINDOW_STATE',
+          windowId: 'browser',
+        }),
+      }),
+    ]);
+  });
+
   it('persists host-controlled desktop surface changes and records activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

@@ -24,6 +24,9 @@ const WINDOW_TYPES = new Set<WindowType>([
 
 export interface RoomDesktopWindowConfig extends OpenWindowConfig {
   id: string;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
 }
 
 export type RoomSurface = 'standard' | 'win95';
@@ -128,6 +131,20 @@ export type RoomDesktopEvent =
       id: string;
       clientId: string;
       createdAt: number;
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
     };
@@ -149,6 +166,17 @@ export type RoomDesktopEventDraft =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
     }
   | {
       kind: 'WORKSPACE_STATE_CHANGED';
@@ -264,6 +292,9 @@ function parseDesktopWindow(value: unknown): RoomDesktopWindowConfig | null {
     y: numberOrUndefined(value.y),
     width: numberOrUndefined(value.width),
     height: numberOrUndefined(value.height),
+    minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+    maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+    focused: typeof value.focused === 'boolean' ? value.focused : undefined,
     data: recordOrUndefined(value.data),
   };
 }
@@ -315,6 +346,34 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       windowId: value.windowId,
       data: value.data,
     };
+  }
+  if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
+    const event: RoomDesktopEvent = {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'UPDATE_WINDOW_STATE',
+      windowId: value.windowId,
+      x: numberOrUndefined(value.x),
+      y: numberOrUndefined(value.y),
+      width: numberOrUndefined(value.width),
+      height: numberOrUndefined(value.height),
+      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+    };
+    if (
+      event.x === undefined
+      && event.y === undefined
+      && event.width === undefined
+      && event.height === undefined
+      && event.minimized === undefined
+      && event.maximized === undefined
+      && event.focused === undefined
+    ) {
+      return null;
+    }
+    return event;
   }
   if (value.kind === 'WORKSPACE_STATE_CHANGED') {
     return {

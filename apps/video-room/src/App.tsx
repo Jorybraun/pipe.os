@@ -46,7 +46,7 @@ import { PaintWindow, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
-import type { OpenWindowConfig, WindowState, WindowType } from './hooks/useWindowManager';
+import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
 import type {
   IceServerProvider,
   RecordingSpeakerMetadata,
@@ -406,6 +406,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!enteredRoom || !room.desktopSnapshot) return;
     for (const windowConfig of room.desktopSnapshot) {
       wm.openWindow(windowConfig);
+      wm.applyWindowState(windowConfig.id, {
+        x: windowConfig.x,
+        y: windowConfig.y,
+        width: windowConfig.width,
+        height: windowConfig.height,
+        minimized: windowConfig.minimized,
+        maximized: windowConfig.maximized,
+        focused: windowConfig.focused,
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enteredRoom, room.desktopSnapshot]);
@@ -423,6 +432,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         wm.openWindow(event.window);
       } else if (event.kind === 'CLOSE_WINDOW') {
         wm.closeWindow(event.windowId);
+      } else if (event.kind === 'UPDATE_WINDOW_STATE') {
+        wm.applyWindowState(event.windowId, {
+          x: event.x,
+          y: event.y,
+          width: event.width,
+          height: event.height,
+          minimized: event.minimized,
+          maximized: event.maximized,
+          focused: event.focused,
+        });
       } else {
         wm.updateWindowData(event.windowId, event.data);
       }
@@ -496,6 +515,60 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       });
     }
   }, [captureSessionEvent, room, roomActor, wm]);
+
+  const publishSharedWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
+    if (room.roomSurface !== 'win95') return;
+    room.publishDesktopEvent({
+      kind: 'UPDATE_WINDOW_STATE',
+      windowId: id,
+      ...patch,
+    });
+  }, [room]);
+
+  const focusSharedWindow = useCallback((id: string): void => {
+    wm.focusWindow(id);
+    publishSharedWindowState(id, { focused: true, minimized: false });
+  }, [publishSharedWindowState, wm]);
+
+  const minimizeSharedWindow = useCallback((id: string): void => {
+    wm.minimizeWindow(id);
+    publishSharedWindowState(id, { minimized: true, focused: false });
+  }, [publishSharedWindowState, wm]);
+
+  const restoreSharedWindow = useCallback((id: string): void => {
+    wm.restoreWindow(id);
+    publishSharedWindowState(id, { minimized: false, focused: true });
+  }, [publishSharedWindowState, wm]);
+
+  const maximizeSharedWindow = useCallback((id: string): void => {
+    const win = wm.windows.find((entry) => entry.id === id);
+    if (!win) return;
+    const patch: WindowStatePatch = win.maximized
+      ? {
+          maximized: false,
+          x: win.prevX ?? win.x,
+          y: win.prevY ?? win.y,
+          width: win.prevWidth ?? win.width,
+          height: win.prevHeight ?? win.height,
+          focused: true,
+          minimized: false,
+        }
+      : {
+          maximized: true,
+          focused: true,
+          minimized: false,
+        };
+    wm.toggleMaximize(id);
+    publishSharedWindowState(id, patch);
+  }, [publishSharedWindowState, wm]);
+
+  const moveSharedWindow = useCallback((id: string, x: number, y: number): void => {
+    wm.moveWindow(id, x, y);
+  }, [wm]);
+
+  const publishSharedWindowMove = useCallback((id: string, x: number, y: number): void => {
+    publishSharedWindowState(id, { x, y });
+  }, [publishSharedWindowState]);
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (
@@ -1445,6 +1518,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={recordingState === 'recording'}
       renderWindowContent={renderWindowContent}
       onWindowClose={closeSharedWindow}
+      onWindowFocus={focusSharedWindow}
+      onWindowMinimize={minimizeSharedWindow}
+      onWindowRestore={restoreSharedWindow}
+      onWindowMaximize={maximizeSharedWindow}
+      onWindowMove={moveSharedWindow}
+      onWindowMoveEnd={publishSharedWindowMove}
       canExitDesktop={metadata.role === 'HOST'}
       onExitDesktop={exitWin95Desktop}
       peerCursors={room.peerCursors}

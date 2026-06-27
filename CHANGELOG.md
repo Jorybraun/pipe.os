@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Devin/Clippy container bridge `/context` endpoint now fetches the source-backed room context summary through a token-scoped API route so the assistant can read captured interview evidence without browser dev-auth cookies.
 - Devin is now primed with the latest source-backed room context and the safe shared-desktop `[[room_action:*]]` protocol when Clippy starts or forwards chat into the dev-container agent.
 - Clippy/Devin chat prompts and agent replies are now captured as source-marked meeting-session evidence so assistant guidance becomes part of the living context graph.
+- Shared Win95 windows now persist and replay geometry, focus, minimized, and maximized state so host window movement/state changes converge on the guest desktop.
 
 ### Changed — Win95-themed workspace overlay in video room
 

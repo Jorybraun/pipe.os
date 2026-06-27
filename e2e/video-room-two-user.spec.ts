@@ -928,6 +928,20 @@ test.describe('two-user video room', () => {
       await expect(host.getByTestId('room-window-browser')).toBeVisible();
       await expect(guest.getByTestId('room-window-browser')).toBeVisible({ timeout: 10_000 });
 
+      const guestBrowserBeforeMove = await guest.getByTestId('room-window-browser').boundingBox();
+      expect(guestBrowserBeforeMove).toBeTruthy();
+      const hostBrowserTitle = host.getByTestId('room-window-browser').locator('.win95-title-bar');
+      const hostBrowserTitleBox = await hostBrowserTitle.boundingBox();
+      expect(hostBrowserTitleBox).toBeTruthy();
+      await host.mouse.move(hostBrowserTitleBox!.x + 80, hostBrowserTitleBox!.y + 8);
+      await host.mouse.down();
+      await host.mouse.move(hostBrowserTitleBox!.x + 240, hostBrowserTitleBox!.y + 92, { steps: 8 });
+      await host.mouse.up();
+      await expect.poll(async () => {
+        const movedBox = await guest.getByTestId('room-window-browser').boundingBox();
+        return movedBox?.x ?? 0;
+      }, { timeout: 10_000 }).toBeGreaterThan(guestBrowserBeforeMove!.x + 80);
+
       await host.getByTestId('room-browser-address-input').fill('example.com');
       await host.getByTestId('room-browser-go').click();
       await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
