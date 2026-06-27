@@ -837,6 +837,102 @@ async function verifyJudgeExample(reviewSessionId) {
   };
 }
 
+function isLocalBase(url) {
+  return url.includes('localhost') || url.includes('127.0.0.1') || url.includes('[::1]');
+}
+
+function sqlString(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function localD1Query(command) {
+  const result = spawnSync(
+    'npx',
+    ['wrangler', 'd1', 'execute', 'pipe-db', '--local', '--json', '--command', command],
+    {
+      cwd: `${process.cwd()}/workers/api`,
+      encoding: 'utf8',
+      env: process.env,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(`Local D1 query failed (${result.status}): ${result.stderr || result.stdout}`);
+  }
+  const parsed = JSON.parse(result.stdout);
+  return Array.isArray(parsed?.[0]?.results) ? parsed[0].results : [];
+}
+
+async function verifyLocalAssessmentEvidence(reviewSessionId) {
+  if (!isLocalBase(API_BASE) && !isLocalBase(RPC_BASE)) {
+    return { skipped: true, reason: 'local D1 verification only runs against localhost smoke targets' };
+  }
+
+  const sessionKey = `assessment-session:code-review:${reviewSessionId}`;
+  const command = `
+    WITH target_session AS (
+      SELECT id, state
+        FROM assessment_sessions
+       WHERE ingestion_key = ${sqlString(sessionKey)}
+       LIMIT 1
+    )
+    SELECT
+      (SELECT id FROM target_session) AS session_id,
+      (SELECT state FROM target_session) AS state,
+      (SELECT COUNT(*)
+         FROM assessment_evidence_events e
+        WHERE e.session_id = (SELECT id FROM target_session)) AS event_count,
+      (SELECT COUNT(*)
+         FROM assessment_event_source_refs r
+         JOIN assessment_evidence_events e ON e.id = r.event_id
+        WHERE e.session_id = (SELECT id FROM target_session)) AS event_source_ref_count,
+      (SELECT COUNT(*)
+         FROM assessment_evaluation_reports r
+        WHERE r.session_id = (SELECT id FROM target_session)) AS report_count,
+      (SELECT COUNT(*)
+         FROM assessment_evaluation_claims c
+         JOIN assessment_evaluation_reports r ON r.id = c.report_id
+        WHERE r.session_id = (SELECT id FROM target_session)) AS claim_count,
+      (SELECT COUNT(*)
+         FROM assessment_claim_source_refs sr
+         JOIN assessment_evaluation_claims c ON c.id = sr.claim_id
+         JOIN assessment_evaluation_reports r ON r.id = c.report_id
+        WHERE r.session_id = (SELECT id FROM target_session)) AS claim_source_ref_count,
+      (SELECT GROUP_CONCAT(kind, ',')
+         FROM assessment_evidence_events e
+        WHERE e.session_id = (SELECT id FROM target_session)
+        ORDER BY e.sequence) AS event_kinds
+  `;
+
+  const deadline = Date.now() + 60_000;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = localD1Query(command)[0] ?? null;
+    if (
+      latest?.state === 'EVALUATED'
+      && Number(latest.event_count) >= 2
+      && Number(latest.event_source_ref_count) >= 2
+      && Number(latest.report_count) >= 1
+      && Number(latest.claim_count) >= 1
+      && Number(latest.claim_source_ref_count) >= 1
+    ) {
+      return {
+        skipped: false,
+        sessionId: latest.session_id,
+        state: latest.state,
+        eventCount: Number(latest.event_count),
+        eventSourceRefCount: Number(latest.event_source_ref_count),
+        reportCount: Number(latest.report_count),
+        claimCount: Number(latest.claim_count),
+        claimSourceRefCount: Number(latest.claim_source_ref_count),
+        eventKinds: typeof latest.event_kinds === 'string' ? latest.event_kinds.split(',') : [],
+      };
+    }
+    await sleep(2_000);
+  }
+
+  throw new Error(`Assessment evidence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
+}
+
 async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   if (!SUBMIT_REVIEW) return { skipped: true };
 
@@ -852,6 +948,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     annotation: firstRound.annotation,
   });
   const judgeExample = await verifyJudgeExample(init.sessionId);
+  const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
 
   return {
     skipped: false,
@@ -863,6 +960,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     firstAgentMove: firstRound.firstAgentMove,
     judgeExample,
     recruiterResults,
+    assessmentEvidence,
   };
 }
 
