@@ -27,6 +27,32 @@ export interface RoomDesktopWindowConfig extends OpenWindowConfig {
 }
 
 export type RoomSurface = 'standard' | 'win95';
+export type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+
+export interface RoomClippyAction {
+  id: string;
+  label: string;
+  disabled?: boolean;
+}
+
+export interface RoomClippyPrompt {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  source: RoomClippyPromptSource;
+  text: string;
+  hold?: boolean;
+  targetRoles?: RoomRole[];
+  actions?: RoomClippyAction[];
+}
+
+export interface RoomClippyPromptDraft {
+  source?: RoomClippyPromptSource;
+  text: string;
+  hold?: boolean;
+  targetRoles?: RoomRole[];
+  actions?: RoomClippyAction[];
+}
 
 export type RoomDesktopEvent =
   | {
@@ -86,6 +112,7 @@ interface RoomConnection {
   roomSurface: RoomSurface;
   desktopEvents: RoomDesktopEvent[];
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
+  clippyPrompt: RoomClippyPrompt | null;
   cameraEnabled: boolean;
   micEnabled: boolean;
   setLocalStream: (stream: MediaStream) => void;
@@ -96,6 +123,7 @@ interface RoomConnection {
   toggleMic: () => void;
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
+  publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
   setRoomSurface: (surface: RoomSurface) => void;
 }
 
@@ -223,6 +251,62 @@ function parseDesktopSnapshot(value: unknown): {
   };
 }
 
+function isRoomClippyPromptSource(value: unknown): value is RoomClippyPromptSource {
+  return value === 'system' || value === 'agent' || value === 'host' || value === 'guest';
+}
+
+function isRoomRole(value: unknown): value is RoomRole {
+  return value === 'HOST' || value === 'GUEST';
+}
+
+function parseClippyAction(value: unknown): RoomClippyAction | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.label !== 'string') return null;
+  if (value.id.length === 0 || value.label.length === 0) return null;
+  return {
+    id: value.id,
+    label: value.label,
+    disabled: typeof value.disabled === 'boolean' ? value.disabled : undefined,
+  };
+}
+
+function parseClippyPrompt(value: unknown): RoomClippyPrompt | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || typeof value.text !== 'string'
+    || value.text.trim().length === 0
+  ) {
+    return null;
+  }
+  const actions = Array.isArray(value.actions)
+    ? value.actions
+        .slice(0, 4)
+        .map(parseClippyAction)
+        .filter((entry): entry is RoomClippyAction => entry !== null)
+    : undefined;
+  const targetRoles = Array.isArray(value.targetRoles)
+    ? Array.from(new Set(value.targetRoles.filter((entry): entry is RoomRole => isRoomRole(entry))))
+    : undefined;
+  return {
+    id: value.id,
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    source: isRoomClippyPromptSource(value.source) ? value.source : 'system',
+    text: value.text,
+    hold: typeof value.hold === 'boolean' ? value.hold : undefined,
+    targetRoles: targetRoles && targetRoles.length > 0 ? targetRoles : undefined,
+    actions: actions && actions.length > 0 ? actions : undefined,
+  };
+}
+
+function parseClippySnapshot(value: unknown): { prompt: RoomClippyPrompt | null } | null {
+  if (!isRecord(value) || !('prompt' in value)) return null;
+  return { prompt: value.prompt === null ? null : parseClippyPrompt(value.prompt) };
+}
+
 export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
@@ -231,6 +315,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>('win95');
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
+  const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
@@ -249,6 +334,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
   const startCallRef = useRef<RoomConnection['startCall'] | null>(null);
   const autoStartTimerRef = useRef<number | null>(null);
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
+  const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
   const desktopClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -288,6 +374,13 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     return true;
   }, []);
 
+  const sendClippyPrompt = useCallback((prompt: RoomClippyPrompt): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_CLIPPY_PROMPT', payload: prompt }));
+    return true;
+  }, []);
+
   const flushDesktopOutbox = useCallback((): void => {
     if (desktopOutboxRef.current.length === 0) return;
     const pending = desktopOutboxRef.current.splice(0);
@@ -298,6 +391,17 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       }
     }
   }, [sendDesktopEvent]);
+
+  const flushClippyOutbox = useCallback((): void => {
+    if (clippyOutboxRef.current.length === 0) return;
+    const pending = clippyOutboxRef.current.splice(0);
+    for (const prompt of pending) {
+      if (!sendClippyPrompt(prompt)) {
+        clippyOutboxRef.current.unshift(prompt, ...pending.slice(pending.indexOf(prompt) + 1));
+        return;
+      }
+    }
+  }, [sendClippyPrompt]);
 
   const drainIce = useCallback(async (): Promise<void> => {
     const peer = peerRef.current;
@@ -452,6 +556,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       ws.onopen = () => {
         reconnectAttemptRef.current = 0;
         flushDesktopOutbox();
+        flushClippyOutbox();
         const peer = peerRef.current;
         if (
           remoteRef.current ||
@@ -550,6 +655,14 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
           if (!snapshot) return;
           if (snapshot.surface) setRoomSurfaceState(snapshot.surface);
           setDesktopSnapshot(snapshot.windows);
+        } else if (message.type === 'ROOM_CLIPPY_PROMPT') {
+          const prompt = parseClippyPrompt(message.payload);
+          if (!prompt) return;
+          setClippyPrompt(prompt);
+        } else if (message.type === 'ROOM_CLIPPY_STATE') {
+          const snapshot = parseClippySnapshot(message.payload);
+          if (!snapshot) return;
+          setClippyPrompt(snapshot.prompt);
         }
       };
       ws.onerror = () => {
@@ -583,6 +696,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     clearPeerDisconnectTimer,
     closePeer,
     drainIce,
+    flushClippyOutbox,
     flushDesktopOutbox,
     role,
     scheduleHostRenegotiation,
@@ -776,6 +890,22 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     }
   }, [sendDesktopEvent]);
 
+  const publishClippyPrompt = useCallback((draft: RoomClippyPromptDraft): void => {
+    const prompt: RoomClippyPrompt = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `clippy-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt: Date.now(),
+      source: draft.source ?? 'system',
+    };
+    setClippyPrompt(prompt);
+    if (!sendClippyPrompt(prompt)) {
+      clippyOutboxRef.current.push(prompt);
+    }
+  }, [sendClippyPrompt]);
+
   const setRoomSurface = useCallback((surface: RoomSurface): void => {
     publishDesktopEvent({ kind: 'SET_ROOM_SURFACE', surface });
   }, [publishDesktopEvent]);
@@ -816,6 +946,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     roomSurface,
     desktopEvents,
     desktopSnapshot,
+    clippyPrompt,
     cameraEnabled,
     micEnabled,
     setLocalStream,
@@ -826,6 +957,7 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
     toggleMic,
     retryConnection,
     publishDesktopEvent,
+    publishClippyPrompt,
     setRoomSurface,
   };
 }

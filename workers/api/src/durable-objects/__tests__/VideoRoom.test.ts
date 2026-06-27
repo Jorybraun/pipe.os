@@ -268,4 +268,57 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     ]);
   });
+
+  it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_PROMPT',
+      payload: {
+        id: 'clippy-recording',
+        clientId: 'host-client',
+        createdAt: 3,
+        source: 'system',
+        targetRoles: ['HOST'],
+        text: "It looks like you're starting an interview. Would you like to begin recording?",
+        hold: true,
+        actions: [
+          { id: 'start-recording', label: 'Start recording' },
+        ],
+      },
+    }));
+
+    expect(storage.get('currentClippyPrompt')).toEqual(expect.objectContaining({
+      id: 'clippy-recording',
+      clientId: 'host-client',
+      source: 'system',
+      targetRoles: ['HOST'],
+      text: "It looks like you're starting an interview. Would you like to begin recording?",
+      actions: [
+        { id: 'start-recording', label: 'Start recording' },
+      ],
+    }));
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_PROMPT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'clippy-recording',
+        text: "It looks like you're starting an interview. Would you like to begin recording?",
+      }),
+    }));
+    expect(storage.get('clippyPromptActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        prompt: expect.objectContaining({
+          id: 'clippy-recording',
+        }),
+      }),
+    ]);
+  });
 });

@@ -28,7 +28,7 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
-import { useRoomConnection } from './hooks/useRoomConnection';
+import { useRoomConnection, type RoomClippyPromptDraft } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useChatMessages } from './hooks/useChatMessages';
 import { StandardLayout } from './components/StandardLayout';
@@ -219,6 +219,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
   const recordingStartedRef = useRef(false);
+  const publishedClippyPromptSignatureRef = useRef<string | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -605,6 +606,143 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
 
+  const canStartCall = metadata.role === 'HOST' && (
+    room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
+  );
+  const hasConnectedMedia = room.phase === 'connected' && Boolean(room.localStream && room.remoteStream);
+  const canStartRecording = metadata.role === 'HOST'
+    && hasConnectedMedia
+    && !recorderRef.current
+    && (recordingState === 'idle' || recordingState === 'failed');
+  const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
+  const isConnecting = room.phase === 'connecting';
+  const isOpening = room.phase === 'disconnected';
+  const isRecovering = room.phase === 'peer_disconnected';
+  const isRoomError = room.phase === 'error';
+  const canRetry = room.phase === 'peer_disconnected' || room.phase === 'error';
+  const recordingLabel = {
+    idle: 'Not recording',
+    starting: 'Starting',
+    recording: 'Recording',
+    uploading: 'Saving',
+    saved: 'Saved',
+    failed: 'Save failed',
+  }[recordingState];
+  const visibleRecordingNotice = recordingError ?? recordingNotice;
+  const recordingButtonLabel = {
+    idle: 'Start recording',
+    starting: 'Starting',
+    recording: 'Recording',
+    uploading: 'Saving',
+    saved: 'Saved',
+    failed: 'Retry recording',
+  }[recordingState];
+
+  let proactiveClippyPrompt: RoomClippyPromptDraft | null = null;
+  if (enteredRoom) {
+    const workspaceActions: ClippyAction[] = [];
+    if (showWorkspacePanel) {
+      if (hasActiveWorkspace) {
+        workspaceActions.push({ id: 'open-workspace', label: 'Open workspace' });
+      } else if (canLaunchWorkspace) {
+        workspaceActions.push({ id: 'launch-workspace', label: 'Launch workspace' });
+      }
+    }
+
+    if (!room.remoteStream && metadata.role === 'HOST' && workspaceActions.length > 0) {
+      proactiveClippyPrompt = {
+        source: 'system',
+        targetRoles: ['HOST'],
+        text: "It looks like you're waiting for your guest. Would you like to prepare the dev workspace while you wait?",
+        hold: true,
+        actions: workspaceActions,
+      };
+    } else if (!room.remoteStream && metadata.role === 'HOST') {
+      proactiveClippyPrompt = {
+        source: 'system',
+        targetRoles: ['HOST'],
+        text: "It looks like you're waiting for your guest. I'll keep the desktop ready while they join.",
+        hold: true,
+      };
+    } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
+      proactiveClippyPrompt = {
+        source: 'system',
+        targetRoles: ['HOST'],
+        text: "It looks like you're starting an interview. Would you like to begin recording?",
+        hold: true,
+        actions: [{ id: 'start-recording', label: 'Start recording', disabled: !canStartRecording }],
+      };
+    } else if (recordingState === 'recording') {
+      const actions = hasActiveWorkspace
+        ? [
+            { id: 'open-workspace', label: 'Open workspace' },
+            { id: 'open-terminal', label: 'Open terminal' },
+          ]
+        : undefined;
+      proactiveClippyPrompt = {
+        source: 'system',
+        targetRoles: ['HOST'],
+        text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
+        hold: true,
+        actions,
+      };
+    } else if (room.phase === 'ended') {
+      proactiveClippyPrompt = {
+        source: 'system',
+        targetRoles: ['HOST', 'GUEST'],
+        text: "It looks like the call has ended. You can close this window now.",
+        hold: true,
+      };
+    }
+  }
+
+  const proactiveClippyPromptSignature = proactiveClippyPrompt
+    ? JSON.stringify({
+        source: proactiveClippyPrompt.source,
+        targetRoles: proactiveClippyPrompt.targetRoles,
+        text: proactiveClippyPrompt.text,
+        hold: proactiveClippyPrompt.hold ?? false,
+        actions: proactiveClippyPrompt.actions?.map((action) => ({
+          id: action.id,
+          label: action.label,
+          disabled: action.disabled ?? false,
+        })) ?? [],
+      })
+    : null;
+
+  useEffect(() => {
+    if (
+      metadata.role !== 'HOST'
+      || !enteredRoom
+      || !proactiveClippyPrompt
+      || !proactiveClippyPromptSignature
+    ) {
+      return;
+    }
+    if (publishedClippyPromptSignatureRef.current === proactiveClippyPromptSignature) return;
+    publishedClippyPromptSignatureRef.current = proactiveClippyPromptSignature;
+    room.publishClippyPrompt(proactiveClippyPrompt);
+  }, [
+    enteredRoom,
+    metadata.role,
+    proactiveClippyPrompt,
+    proactiveClippyPromptSignature,
+    room,
+  ]);
+
+  const sharedClippyPrompt = room.clippyPrompt;
+  const canShowSharedClippyPrompt = Boolean(
+    sharedClippyPrompt
+    && (!sharedClippyPrompt.targetRoles || sharedClippyPrompt.targetRoles.includes(metadata.role)),
+  );
+  const clippyMessages: ClippyMessage[] = canShowSharedClippyPrompt && sharedClippyPrompt
+    ? [{
+        text: sharedClippyPrompt.text,
+        hold: sharedClippyPrompt.hold,
+        actions: sharedClippyPrompt.actions,
+      }]
+    : [];
+
   const inLobby = room.localStream === null;
   const previewIsSynthetic = isSyntheticMedia(preview);
   const localIsSynthetic = isSyntheticMedia(room.localStream);
@@ -714,38 +852,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       </main>
     );
   }
-
-  const canStartCall = metadata.role === 'HOST' && (
-    room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
-  );
-  const hasConnectedMedia = room.phase === 'connected' && Boolean(room.localStream && room.remoteStream);
-  const canStartRecording = metadata.role === 'HOST'
-    && hasConnectedMedia
-    && !recorderRef.current
-    && (recordingState === 'idle' || recordingState === 'failed');
-  const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
-  const isConnecting = room.phase === 'connecting';
-  const isOpening = room.phase === 'disconnected';
-  const isRecovering = room.phase === 'peer_disconnected';
-  const isRoomError = room.phase === 'error';
-  const canRetry = room.phase === 'peer_disconnected' || room.phase === 'error';
-  const recordingLabel = {
-    idle: 'Not recording',
-    starting: 'Starting',
-    recording: 'Recording',
-    uploading: 'Saving',
-    saved: 'Saved',
-    failed: 'Save failed',
-  }[recordingState];
-  const visibleRecordingNotice = recordingError ?? recordingNotice;
-  const recordingButtonLabel = {
-    idle: 'Start recording',
-    starting: 'Starting',
-    recording: 'Recording',
-    uploading: 'Saving',
-    saved: 'Saved',
-    failed: 'Retry recording',
-  }[recordingState];
 
   const enterWin95Desktop = (): void => {
     if (metadata.role !== 'HOST') return;
@@ -1106,54 +1212,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         return <div style={{ padding: '8px', color: '#000' }}>Window content</div>;
     }
   };
-
-  const clippyMessages: ClippyMessage[] = [];
-  if (enteredRoom) {
-    const workspaceActions: ClippyAction[] = [];
-    if (showWorkspacePanel) {
-      if (hasActiveWorkspace) {
-        workspaceActions.push({ id: 'open-workspace', label: 'Open workspace' });
-      } else if (canLaunchWorkspace) {
-        workspaceActions.push({ id: 'launch-workspace', label: 'Launch workspace' });
-      }
-    }
-
-    if (!room.remoteStream && metadata.role === 'HOST' && workspaceActions.length > 0) {
-      clippyMessages.push({
-        text: "It looks like you're waiting for your guest. Would you like to prepare the dev workspace while you wait?",
-        hold: true,
-        actions: workspaceActions,
-      });
-    } else if (!room.remoteStream && metadata.role === 'HOST') {
-      clippyMessages.push({
-        text: "It looks like you're waiting for your guest. I'll keep the desktop ready while they join.",
-        hold: true,
-      });
-    } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
-      clippyMessages.push({
-        text: "It looks like you're starting an interview. Would you like to begin recording?",
-        hold: true,
-        actions: [{ id: 'start-recording', label: 'Start recording', disabled: !canStartRecording }],
-      });
-    } else if (recordingState === 'recording') {
-      const actions = hasActiveWorkspace
-        ? [
-            { id: 'open-workspace', label: 'Open workspace' },
-            { id: 'open-terminal', label: 'Open terminal' },
-          ]
-        : undefined;
-      clippyMessages.push({
-        text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
-        hold: true,
-        actions,
-      });
-    } else if (room.phase === 'ended') {
-      clippyMessages.push({
-        text: "It looks like the call has ended. You can close this window now.",
-        hold: true,
-      });
-    }
-  }
 
   const roomSurface = usesWin95Desktop ? (
     <Win95Desktop

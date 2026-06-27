@@ -33,7 +33,8 @@ interface SignalMessage {
     | 'ICE_CANDIDATE'
     | 'HANGUP'
     | 'STATUS_UPDATE'
-    | 'ROOM_DESKTOP_EVENT';
+    | 'ROOM_DESKTOP_EVENT'
+    | 'ROOM_CLIPPY_PROMPT';
   role?: VideoRole;
   status?: SignalStatus;
   payload?: unknown;
@@ -96,6 +97,31 @@ type RoomDesktopEvent =
 
 interface RoomDesktopActivityEntry {
   event: RoomDesktopEvent;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+
+interface RoomClippyAction {
+  id: string;
+  label: string;
+  disabled?: boolean;
+}
+
+interface RoomClippyPrompt {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  source: RoomClippyPromptSource;
+  text: string;
+  hold?: boolean;
+  targetRoles?: VideoRole[];
+  actions?: RoomClippyAction[];
+}
+
+interface RoomClippyPromptActivityEntry {
+  prompt: RoomClippyPrompt;
   role: VideoRole;
   recordedAt: number;
 }
@@ -276,8 +302,77 @@ export class VideoRoom {
       .filter((entry): entry is RoomDesktopWindow => entry !== null);
   }
 
+  private isRoomClippyPromptSource(value: unknown): value is RoomClippyPromptSource {
+    return value === 'system' || value === 'agent' || value === 'host' || value === 'guest';
+  }
+
+  private isVideoRole(value: unknown): value is VideoRole {
+    return value === 'RECRUITER'
+      || value === 'CANDIDATE'
+      || value === 'HOST'
+      || value === 'GUEST';
+  }
+
+  private parseClippyAction(value: unknown): RoomClippyAction | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || value.id.length === 0
+      || value.id.length > 80
+      || typeof value.label !== 'string'
+      || value.label.length === 0
+      || value.label.length > 80
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      label: value.label,
+      disabled: typeof value.disabled === 'boolean' ? value.disabled : undefined,
+    };
+  }
+
+  private parseClippyPrompt(value: unknown): RoomClippyPrompt | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      typeof value.id !== 'string'
+      || value.id.length === 0
+      || typeof value.clientId !== 'string'
+      || value.clientId.length === 0
+      || typeof value.createdAt !== 'number'
+      || typeof value.text !== 'string'
+      || value.text.trim().length === 0
+      || value.text.length > 800
+    ) {
+      return null;
+    }
+    const actions = Array.isArray(value.actions)
+      ? value.actions
+          .slice(0, 4)
+          .map((entry) => this.parseClippyAction(entry))
+          .filter((entry): entry is RoomClippyAction => entry !== null)
+      : undefined;
+    const targetRoles = Array.isArray(value.targetRoles)
+      ? value.targetRoles.filter((entry): entry is VideoRole => this.isVideoRole(entry))
+      : undefined;
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      source: this.isRoomClippyPromptSource(value.source) ? value.source : 'system',
+      text: value.text,
+      hold: typeof value.hold === 'boolean' ? value.hold : undefined,
+      targetRoles: targetRoles && targetRoles.length > 0 ? [...new Set(targetRoles)] : undefined,
+      actions: actions && actions.length > 0 ? actions : undefined,
+    };
+  }
+
   private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
     return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
+  }
+
+  private async getCurrentClippyPrompt(): Promise<RoomClippyPrompt | null> {
+    return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
   }
 
   private async persistRoomSurface(surface: RoomSurface): Promise<void> {
@@ -327,6 +422,28 @@ export class VideoRoom {
       { event, role, recordedAt: Date.now() },
     ];
     await this.state.storage.put('desktopActivityLog', next);
+  }
+
+  private async persistClippyPrompt(prompt: RoomClippyPrompt): Promise<void> {
+    await this.state.storage.put('currentClippyPrompt', prompt);
+  }
+
+  private async recordClippyPromptActivity(prompt: RoomClippyPrompt, role: VideoRole): Promise<void> {
+    const existing = await this.state.storage.get<unknown>('clippyPromptActivityLog');
+    const previous = Array.isArray(existing)
+      ? existing.filter((entry): entry is RoomClippyPromptActivityEntry => (
+          this.isRecord(entry)
+          && this.parseClippyPrompt(entry.prompt) !== null
+          && typeof entry.role === 'string'
+          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
+          && typeof entry.recordedAt === 'number'
+        ))
+      : [];
+    const next = [
+      ...previous.slice(-99),
+      { prompt, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('clippyPromptActivityLog', next);
   }
 
   /** Get all active WebSockets */
@@ -497,6 +614,12 @@ export class VideoRoom {
         payload: { windows: desktopWindows, surface: this.roomSurface },
       }));
 
+      const currentClippyPrompt = await this.getCurrentClippyPrompt();
+      server.send(JSON.stringify({
+        type: 'ROOM_CLIPPY_STATE',
+        payload: { prompt: currentClippyPrompt },
+      }));
+
       // Notify other peers that this role has connected
       this.broadcastExcept(server, JSON.stringify({
         type: 'PEER_CONNECTED',
@@ -640,6 +763,39 @@ export class VideoRoom {
         type: 'ROOM_DESKTOP_EVENT',
         role: senderRole,
         payload: event,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_CLIPPY_PROMPT') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      if (!this.isHostRole(senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          reason: 'ONLY_HOST_CAN_PROMPT',
+        }));
+        return;
+      }
+      const prompt = this.parseClippyPrompt(message.payload);
+      if (!prompt) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          reason: 'INVALID_PROMPT',
+        }));
+        return;
+      }
+      await this.persistClippyPrompt(prompt);
+      await this.recordClippyPromptActivity(prompt, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_CLIPPY_PROMPT',
+        role: senderRole,
+        payload: prompt,
       }));
       return;
     }
