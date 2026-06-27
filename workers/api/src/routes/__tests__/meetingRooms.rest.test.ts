@@ -1393,6 +1393,7 @@ describe('meeting room recording living-context route', () => {
     } as unknown as DurableObjectNamespace;
     env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
     env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
+    env.API_BASE_URL = 'http://localhost:8787';
 
     const scheduledInterviewId = 'scheduled-interview-workspace-pr';
     sqlite.prepare(
@@ -1456,7 +1457,7 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
-      pipeApiUrl: 'http://localhost:5175',
+      pipeApiUrl: 'http://localhost:8787',
       roomToken: created.hostToken,
     }));
   });

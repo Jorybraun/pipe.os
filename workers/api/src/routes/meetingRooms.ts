@@ -978,8 +978,8 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         repoGitUrl: effectiveRepoUrl,
         challengeBranch,
         agentType: 'devin',
-        pipeApiUrl: c.env.VIDEO_ROOM_APP_URL
-          ?? c.env.API_BASE_URL
+        pipeApiUrl: c.env.API_BASE_URL
+          ?? c.env.VIDEO_ROOM_APP_URL
           ?? c.env.APP_BASE_URL
           ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
         roomToken: token,
