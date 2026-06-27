@@ -4,7 +4,7 @@
  * Pipeline:
  * 1. Extract plain text via unpdf (edge-compatible pdf.js)
  * 2. Rule-based extraction of structured skeleton (experiences, education, credentials, projects)
- * 3. Call LLM (Cloudflare Workers AI Llama 3.1 8B by default) for rich decomposition
+ * 3. Call LLM (Cloudflare Workers AI by default) for rich decomposition
  *    (experiences, skills, projects, education, credentials, career_arc)
  * 4. Derive simple ParsedCV fields from the rich decomposition result
  * 5. Persist skills, role, experience, education to D1
@@ -904,7 +904,7 @@ export interface ParseResumeTextInput {
   mock?: boolean;
 }
 
-function buildRuleBasedParsedCV(text: string): ParsedCV {
+export function buildRuleBasedParsedCV(text: string): ParsedCV {
   return {
     skills: [],
     experiences: extractExperiences(text),

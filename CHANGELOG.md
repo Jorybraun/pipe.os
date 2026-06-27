@@ -83,6 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Standalone code review repo matching intake
 
 - Candidate CV decomposition now defaults stale Workers AI config to the current Gemma model instead of deprecated Llama 3.1 8B, preventing repo matching from failing into a candidate-facing needs-attention state.
+- Resume-derived review evidence now preserves diverse source-backed repo-matching terms and the deterministic matcher now prefers specific source concepts over generic language overlap.
+- Standalone code-review matching now attempts repo selection as soon as source-backed text-intake evidence exists, even if richer enrichment is still pending, and no longer exposes a fake estimated matching timer.
 - Plain-text candidate intake now runs through the same CV parsing/decomposition contract as uploaded resumes before starting ingestion, so standalone code-review invites produce source-backed candidate evidence for deterministic repo matching.
 - Resume decomposition now persists candidate nodes and living-context evidence before optional embedding, preventing Workers AI/embedding outages from leaving candidates stuck on `WAITING_FOR_MATCH` with a resume key but no scoreable graph evidence.
 - Parser-only resume fallback now creates source-backed semantic terms for experience/project evidence, and creates a bounded text-intake fallback node when no structured sections are available.

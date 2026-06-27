@@ -214,7 +214,7 @@ describe('compileCandidateMatchQuery', () => {
     ]);
 
     // Both should be included as they have valid evidence
-    expect(result.query.validationAtoms.map((atom) => atom.id)).toEqual(['seen-concept', 'unseen-concept']);
+    expect(result.query.validationAtoms.map((atom) => atom.id).sort()).toEqual(['seen-concept', 'unseen-concept']);
     expect(result.excludedSignalIds).toEqual([]);
   });
 

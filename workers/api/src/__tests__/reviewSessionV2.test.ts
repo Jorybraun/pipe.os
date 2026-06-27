@@ -55,11 +55,20 @@ vi.mock('../lib/challengeMatching', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/candidateDiscovery/orchestrate')>();
+  return {
+    ...actual,
+    runCandidateIngestion: vi.fn(async () => undefined),
+  };
+});
+
 import { AiDeveloperUnavailableError, callImplementerAgent } from '../lib/implementerAgent';
 import { callExplainerAgent } from '../lib/explainerAgent';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
 import { matchCandidateToReviewChallenge } from '../lib/challengeMatching';
+import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 
 // ─── Fake D1 ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +151,21 @@ function buildEnv(overrides: Partial<Env & { DB: FakeD1 }> = {}): Env & { DB: Fa
     DB: fakeD1(),
     ...overrides,
   } as Env & { DB: FakeD1 };
+}
+
+function buildCtx(): { ctx: ExecutionContext; waitUntilAll: () => Promise<void> } {
+  const promises: Promise<unknown>[] = [];
+  return {
+    ctx: {
+      waitUntil: (promise: Promise<unknown>) => {
+        promises.push(promise);
+      },
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext,
+    waitUntilAll: async () => {
+      await Promise.all(promises);
+    },
+  };
 }
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -397,6 +421,7 @@ beforeEach(() => {
     prNumber: null,
     explanation: undefined,
   } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+  vi.mocked(runCandidateIngestion).mockClear();
 });
 
 // ─── POST /rpc/get-stage-config ──────────────────────────────────────────────
@@ -601,6 +626,50 @@ describe('POST /rpc/get-stage-config', () => {
       type: 'WAITING_FOR_MATCH',
       title: 'Building your personalized challenge',
     });
+  });
+});
+
+// ─── POST /rpc/submit-challenge-response ─────────────────────────────────────
+
+describe('POST /rpc/submit-challenge-response', () => {
+  it('queues text-intake ingestion from deterministic CV evidence without a pre-ingestion AI parse', async () => {
+    const db = fakeD1();
+    const aiRun = vi.fn(async () => ({ response: '{}' }));
+    const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/submit-challenge-response',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({
+          order: 0,
+          submission: JSON.stringify({
+            resumeText: 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.',
+          }),
+        }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    await waitUntilAll();
+    expect(aiRun).not.toHaveBeenCalled();
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText: expect.stringContaining('Cloudflare Workers runtime tooling'),
+      decompositionResult: null,
+      parsed: expect.objectContaining({
+        skills: expect.any(Array),
+        experiences: expect.any(Array),
+        projects: expect.any(Array),
+      }),
+    }));
   });
 });
 
@@ -909,6 +978,62 @@ describe('POST /rpc/get-challenge', () => {
       type: 'WAITING_FOR_MATCH',
     });
     expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+  });
+
+  it('attempts standalone CODE_REVIEW matching once text intake has source-backed review evidence', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 16 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_pending_with_evidence',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            node_count: 16,
+            raw_node_count: 16,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string };
+    expect(body).toMatchObject({
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
   });
 
   it('refreshes weak cached automatic standalone CODE_REVIEW matches before serving a challenge', async () => {

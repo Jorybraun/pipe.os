@@ -103,6 +103,42 @@ function addDerivedTerm(terms: Set<string>, value: string): void {
   terms.add(`term:${COMPACT_TERM_ALIASES.get(normalizedValue) ?? normalizedValue}`);
 }
 
+function singularSegment(segment: string): string | null {
+  if (segment.length <= 3) return null;
+  if (segment.endsWith('ies') && segment.length > 4) {
+    return `${segment.slice(0, -3)}y`;
+  }
+  if (segment.endsWith('ses') || segment.endsWith('xes') || segment.endsWith('ches') || segment.endsWith('shes')) {
+    return segment.slice(0, -2);
+  }
+  if (segment.endsWith('s') && !segment.endsWith('ss')) {
+    return segment.slice(0, -1);
+  }
+  return null;
+}
+
+function actionStemSegment(segment: string): string | null {
+  if (segment.length <= 5) return null;
+  if (segment.endsWith('ments')) return segment.slice(0, -5);
+  if (segment.endsWith('ment')) return segment.slice(0, -4);
+  if (segment.endsWith('ing')) {
+    const stem = segment.slice(0, -3);
+    return stem.length >= 3 ? stem.replace(/([a-z])\1$/, '$1') : null;
+  }
+  return null;
+}
+
+function segmentVariants(segment: string): string[] {
+  const variants = new Set<string>([segment]);
+  const singular = singularSegment(segment);
+  if (singular) variants.add(singular);
+  for (const value of [...variants]) {
+    const stem = actionStemSegment(value);
+    if (stem) variants.add(stem);
+  }
+  return [...variants];
+}
+
 function expandOpenTermConcept(concept: string): string[] {
   const canonical = concept.trim().toLowerCase();
   if (!canonical.startsWith('term:')) return [canonical];
@@ -113,11 +149,14 @@ function expandOpenTermConcept(concept: string): string[] {
   if (aliased) expanded.add(`term:${aliased}`);
 
   const segments = openTermSegments(rawValue);
+  const compactSegments = segments.map((segment) =>
+    COMPACT_TERM_ALIASES.get(segment) ?? segment
+  );
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index]!;
     const next = segments[index + 1];
     const afterNext = segments[index + 2];
-    addDerivedTerm(expanded, segment);
+    for (const variant of segmentVariants(segment)) addDerivedTerm(expanded, variant);
     if (segment === 'use' && next && afterNext) {
       addDerivedTerm(expanded, `${segment}-${next}-${afterNext}`);
     }
@@ -125,6 +164,14 @@ function expandOpenTermConcept(concept: string): string[] {
       const pair = `${segment}-${next}`;
       const pairAlias = COMPACT_TERM_ALIASES.get(pair);
       if (pairAlias) expanded.add(`term:${pairAlias}`);
+    }
+  }
+  for (let size = 2; size <= 3; size += 1) {
+    for (let index = 0; index <= compactSegments.length - size; index += 1) {
+      const phraseSegments = compactSegments.slice(index, index + size);
+      addDerivedTerm(expanded, phraseSegments.join('-'));
+      const variantPhrase = phraseSegments.map((segment) => segmentVariants(segment)[0] ?? segment).join('-');
+      addDerivedTerm(expanded, variantPhrase);
     }
   }
 
@@ -160,13 +207,22 @@ function compareSignals(
   selectionConcepts: Set<string>,
 ): number {
   const selectionScore = (signal: CompileCandidateMatchInput['signals'][number]) => {
-    const concepts = expandedConcepts(signal.concepts);
-    if (concepts.length === 0) return 0;
-    const overlap = concepts.filter((concept) => selectionConcepts.has(concept)).length;
-    return overlap / concepts.length;
+    const originalConcepts = normalized(signal.concepts);
+    if (originalConcepts.length === 0) return 0;
+    const exactOverlap = originalConcepts.filter((concept) => selectionConcepts.has(concept)).length;
+    const expandedOverlap = expandedConcepts(signal.concepts)
+      .filter((concept) => selectionConcepts.has(concept)).length;
+    return Math.min(1, Math.max(exactOverlap, expandedOverlap) / originalConcepts.length);
+  };
+  const specificityScore = (signal: CompileCandidateMatchInput['signals'][number]) => {
+    return normalized(signal.concepts).reduce(
+      (max, concept) => Math.max(max, conceptSpecificity(concept)),
+      0,
+    );
   };
   return (
     selectionScore(b) - selectionScore(a)
+    || specificityScore(b) - specificityScore(a)
     || Number(Boolean(a.contradicted)) - Number(Boolean(b.contradicted))
     || (b.evidenceLevel == null ? -1 : EVIDENCE_RANK[b.evidenceLevel])
       - (a.evidenceLevel == null ? -1 : EVIDENCE_RANK[a.evidenceLevel])
@@ -374,6 +430,22 @@ function hasDirectSemanticGate(atom: QueryAtom, demand: ChallengeDemand): boolea
     || intersects(atom.mechanisms, demand.mechanisms);
 }
 
+function conceptSpecificity(concept: string): number {
+  const raw = concept.includes(':') ? concept.slice(concept.indexOf(':') + 1) : concept;
+  return raw
+    .split(/[^a-z0-9+#.]+/i)
+    .map((segment) => segment.trim().toLowerCase())
+    .filter((segment) => segment.length >= 3 && !OPEN_TERM_STOP_SEGMENTS.has(segment))
+    .length;
+}
+
+function sharedConceptSpecificity(atom: QueryAtom, demand: ChallengeDemand): number {
+  const demandConcepts = new Set(normalized(demand.concepts));
+  return normalized(atom.concepts)
+    .filter((concept) => demandConcepts.has(concept))
+    .reduce((max, concept) => Math.max(max, conceptSpecificity(concept)), 0);
+}
+
 function scorePair(
   atom: QueryAtom,
   demand: ChallengeDemand,
@@ -521,6 +593,7 @@ export function recallReviewChallenges(input: RecallReviewChallengesInput): Reca
 
 interface AssignmentState {
   score: number;
+  specificity: number;
   pairs: Array<{ atomIndex: number; demandIndex: number; pair: NonNullable<ReturnType<typeof scorePair>> }>;
   signature: string;
 }
@@ -528,6 +601,9 @@ interface AssignmentState {
 function betterAssignment(candidate: AssignmentState, current: AssignmentState | undefined): boolean {
   if (!current) return true;
   if (Math.abs(candidate.score - current.score) > 1e-12) return candidate.score > current.score;
+  if (Math.abs(candidate.specificity - current.specificity) > 1e-12) {
+    return candidate.specificity > current.specificity;
+  }
   return candidate.signature < current.signature;
 }
 
@@ -537,7 +613,7 @@ function maximumWeightAssignment(
   adjacency: ConceptAdjacency[],
 ): AssignmentState {
   let states = new Map<number, AssignmentState>([
-    [0, { score: 0, pairs: [], signature: '' }],
+    [0, { score: 0, specificity: 0, pairs: [], signature: '' }],
   ]);
 
   for (let demandIndex = 0; demandIndex < demands.length; demandIndex++) {
@@ -562,6 +638,7 @@ function maximumWeightAssignment(
           .join('|');
         const candidate: AssignmentState = {
           score: state.score + weighted,
+          specificity: state.specificity + sharedConceptSpecificity(atom, demand) * weighted,
           pairs,
           signature,
         };
@@ -572,7 +649,7 @@ function maximumWeightAssignment(
     states = next;
   }
 
-  let best: AssignmentState = { score: 0, pairs: [], signature: '' };
+  let best: AssignmentState = { score: 0, specificity: 0, pairs: [], signature: '' };
   for (const state of states.values()) {
     if (betterAssignment(state, best)) best = state;
   }

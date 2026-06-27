@@ -21,7 +21,7 @@ import { fetchGitHubDiff } from '../lib/fetchGitHubDiff';
 import { cultureCandidate } from './screening/culture';
 import { scoreImplementationSubmission } from '../lib/implementationScorer/implementationScorer';
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
-import { parseResumeText, persistParsedCV } from '../lib/cvParser';
+import { buildRuleBasedParsedCV, persistParsedCV } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
@@ -56,7 +56,6 @@ interface WaitingChallenge {
   config: {
     autoRefresh: boolean;
     refreshIntervalSeconds: number;
-    estimatedSecondsRemaining?: number;
     state?: 'pending' | 'blocked';
     reason?: string;
   };
@@ -76,11 +75,10 @@ function waitingForMatch(reason: string): GateResult {
       id: 'waiting-for-match',
       type: 'WAITING_FOR_MATCH',
       title: 'Building your personalized challenge',
-      instructions: 'We are analyzing your profile to find the best open-source project match. This takes 2–3 minutes.',
+      instructions: 'We are analyzing source-backed candidate evidence to find the best open-source project match.',
       config: {
         autoRefresh: true,
         refreshIntervalSeconds: 30,
-        estimatedSecondsRemaining: 180,
       },
     },
   };
@@ -392,7 +390,6 @@ function standaloneWaitingChallenge(options: {
     config: {
       autoRefresh: options.autoRefresh ?? state !== 'blocked',
       refreshIntervalSeconds: 30,
-      estimatedSecondsRemaining: state === 'pending' ? 180 : undefined,
       state,
       reason: options.reason ?? undefined,
     },
@@ -1342,16 +1339,6 @@ async function standaloneReviewEvidenceReadiness(
     };
   }
 
-  if (status === 'pending' || status === 'profile_generated' || status === 'enriching') {
-    return {
-      ready: false,
-      reason: `candidate ingestion is still ${status}`,
-      status,
-      nodeCount,
-      rawNodeCount,
-    };
-  }
-
   return {
     ready: true,
     reason: null,
@@ -1673,21 +1660,15 @@ async function handleIntakePayload(
     executionCtx.waitUntil(
       (async () => {
         try {
-          const parseResult = await parseResumeText({
-            resumeText,
-            env,
-            mock: env.MOCK_AI === 'true',
-          });
-          if (parseResult?.parsedCV) {
-            await persistParsedCV(env.DB, candidateId, parseResult.parsedCV);
-          }
+          const parsedCV = buildRuleBasedParsedCV(resumeText);
+          await persistParsedCV(env.DB, candidateId, parsedCV);
           await runCandidateIngestion({
             env,
             db: env.DB,
             candidateId,
-            parsed: parseResult?.parsedCV ?? { skills: [], experiences: [], educationBlocks: [], credentials: [], projects: [] },
+            parsed: parsedCV,
             resumeText,
-            decompositionResult: parseResult?.decompositionResult ?? null,
+            decompositionResult: null,
           });
           console.log(`[rpc/intake] text-based ingestion completed for candidate ${candidateId}`);
         } catch (err) {

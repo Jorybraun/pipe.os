@@ -78,7 +78,7 @@ export interface ResumeDecompositionResult {
 const DECOMPOSITION_VERSION = 'adr041-v1';
 const DEFAULT_CONFIDENCE = 0.5;
 const RAW_REVIEW_EVIDENCE_CONFIDENCE = 0.85;
-const RAW_REVIEW_EVIDENCE_NODE_LIMIT = 32;
+const RAW_REVIEW_EVIDENCE_NODE_LIMIT = 64;
 const RAW_REVIEW_EVIDENCE_QUOTE_LIMIT = 8;
 const RAW_REVIEW_EVIDENCE_MIN_CHARS = 24;
 
@@ -90,23 +90,41 @@ const RAW_EVIDENCE_STOPWORDS = new Set([
   'as',
   'at',
   'be',
+  'built',
   'by',
+  'created',
+  'designed',
+  'engineer',
   'for',
   'from',
   'have',
   'i',
+  'implemented',
   'in',
   'is',
   'it',
   'of',
   'on',
   'or',
+  'senior',
+  'shipped',
   'so',
+  'staff',
+  'team',
   'the',
   'their',
   'this',
   'to',
+  'years',
   'with',
+]);
+
+const RAW_EVIDENCE_LANGUAGE_SEGMENTS = new Set([
+  'javascript',
+  'java',
+  'script',
+  'typescript',
+  'type',
 ]);
 
 function nowEpoch(): number {
@@ -248,19 +266,77 @@ function rawReviewEvidenceTerms(quote: string, evidenceLevel: string): OpenSeman
       terms.set(term.canonical_key, term);
     }
   }
-  return [...terms.values()].sort((left, right) =>
-    rawReviewEvidenceTermPriority(right) - rawReviewEvidenceTermPriority(left)
+  const meaningfulTerms = [...terms.values()].filter((term) =>
+    rawReviewEvidenceDistinctiveSegments(term).length > 0
+    || rawReviewEvidenceHasTechnicalShape(term)
   );
+  const sorted = meaningfulTerms.sort((left, right) =>
+    rawReviewEvidenceTermPriority(right) - rawReviewEvidenceTermPriority(left)
+    || left.canonical_key.localeCompare(right.canonical_key)
+  );
+  return diversifyRawReviewEvidenceTerms(sorted);
+}
+
+function rawReviewEvidenceDistinctiveSegments(term: OpenSemanticTermRecord): string[] {
+  return term.canonical_key
+    .replace(/^term:/, '')
+    .split('-')
+    .map((segment) => segment.trim())
+    .filter((segment) =>
+      segment.length >= 3
+      && !RAW_EVIDENCE_STOPWORDS.has(segment)
+      && !RAW_EVIDENCE_LANGUAGE_SEGMENTS.has(segment)
+    );
+}
+
+function rawReviewEvidencePrimarySegment(term: OpenSemanticTermRecord): string {
+  return rawReviewEvidenceDistinctiveSegments(term)[0]
+    ?? term.canonical_key.replace(/^term:/, '');
+}
+
+function diversifyRawReviewEvidenceTerms(
+  terms: OpenSemanticTermRecord[],
+): OpenSemanticTermRecord[] {
+  const primaryCounts = new Map<string, number>();
+  const firstPass: OpenSemanticTermRecord[] = [];
+  const deferred: OpenSemanticTermRecord[] = [];
+
+  for (const term of terms) {
+    const primary = rawReviewEvidencePrimarySegment(term);
+    const count = primaryCounts.get(primary) ?? 0;
+    if (count === 0) {
+      firstPass.push(term);
+      primaryCounts.set(primary, 1);
+    } else {
+      deferred.push(term);
+      primaryCounts.set(primary, count + 1);
+    }
+  }
+
+  return [...firstPass, ...deferred];
+}
+
+function rawReviewEvidenceHasTechnicalShape(term: OpenSemanticTermRecord): boolean {
+  const canonical = term.canonical_key.replace(/^term:/, '');
+  return /[a-z][A-Z]/.test(term.surface)
+    || /\b[A-Z]{2,}\b/.test(term.surface)
+    || /[A-Za-z0-9]+-[A-Za-z0-9]+/.test(term.surface)
+    || /[./#]/.test(term.surface)
+    || /(^|-)javascript(-|$)|(^|-)typescript(-|$)|(^|-)type-script(-|$)/.test(canonical);
 }
 
 function rawReviewEvidenceTermPriority(term: OpenSemanticTermRecord): number {
   const canonical = term.canonical_key.replace(/^term:/, '');
   const segmentCount = canonical.split('-').filter(Boolean).length;
   const compactPhrase = segmentCount >= 2 && segmentCount <= 3 ? 30 : 0;
-  const languageLike = /(^|-)javascript(-|$)|(^|-)typescript(-|$)/.test(canonical) ? 80 : 0;
-  const identifierLike = /[a-z][A-Z]|[A-Za-z]+[0-9]|[./#]/.test(term.surface) ? 80 : 0;
+  const longMechanism = segmentCount === 4 ? 12 : 0;
+  const languageLike = /(^|-)javascript(-|$)|(^|-)typescript(-|$)|(^|-)type-script(-|$)/.test(canonical) ? 8 : 0;
+  const technicalShape = rawReviewEvidenceHasTechnicalShape(term) ? 80 : 0;
+  const mechanismSurface = canonical.replace(/-/g, ' ');
+  const softwareMechanism = /\b(api|apis|cli|configuration|cron|deploy|deployments|queue|queues|regression|routing|runtime|schedule|schedules|sdk|stack|stacks|test|tests|trace|traces|workflow|workflows)\b/.test(mechanismSurface) ? 24 : 0;
+  const distinctiveSegmentBonus = Math.min(24, rawReviewEvidenceDistinctiveSegments(term).length * 6);
   const tooLongPenalty = Math.max(0, segmentCount - 4) * 4;
-  return Math.max(identifierLike, languageLike) + compactPhrase - tooLongPenalty;
+  return Math.max(technicalShape, languageLike) + softwareMechanism + compactPhrase + longMechanism + distinctiveSegmentBonus - tooLongPenalty;
 }
 
 function rawReviewEvidenceNodes(
@@ -271,39 +347,52 @@ function rawReviewEvidenceNodes(
   const capturedAt = nowEpoch();
   const seenTerms = new Set<string>();
   const quotes = rawReviewEvidenceQuotes(resumeText);
-  const perQuoteLimit = Math.max(8, Math.ceil(RAW_REVIEW_EVIDENCE_NODE_LIMIT / Math.max(1, quotes.length)));
 
-  for (const quote of quotes) {
+  const quoteTerms = quotes.map((quote) => {
     const evidenceLevel = rawReviewEvidenceLevel(quote);
-    let nodesForQuote = 0;
-    for (const term of rawReviewEvidenceTerms(quote, evidenceLevel)) {
-      if (seenTerms.has(term.canonical_key)) continue;
-      seenTerms.add(term.canonical_key);
-      nodes.push({
-        candidate_id: candidateId,
-        node_type: 'ReviewEvidence',
-        narrative_text: `Candidate supplied review evidence for ${term.surface}: ${quote.slice(0, 500)}`,
-        extracted_properties_json: JSON.stringify({
-          source: 'resume_text_intake',
-          term_surface: term.surface,
-          term_canonical_key: term.canonical_key,
-          semantic_terms: [term],
-          ...sourceQuoteProperties(resumeText, quote),
-          index: nodes.length,
-        }),
-        embedding_json: null,
-        source_type: 'resume',
-        source_reference: `resume:review-evidence:${nodes.length}`,
-        captured_at: capturedAt,
-        confidence: RAW_REVIEW_EVIDENCE_CONFIDENCE,
-        supersedes: null,
-        superseded_at: null,
-        decomposition_version: DECOMPOSITION_VERSION,
-      });
-      if (nodes.length >= RAW_REVIEW_EVIDENCE_NODE_LIMIT) return nodes;
-      nodesForQuote++;
-      if (nodesForQuote >= perQuoteLimit) break;
+    return {
+      quote,
+      evidenceLevel,
+      terms: rawReviewEvidenceTerms(quote, evidenceLevel),
+      nextIndex: 0,
+    };
+  });
+
+  while (nodes.length < RAW_REVIEW_EVIDENCE_NODE_LIMIT) {
+    let addedInRound = false;
+    for (const entry of quoteTerms) {
+      while (entry.nextIndex < entry.terms.length) {
+        const term = entry.terms[entry.nextIndex]!;
+        entry.nextIndex++;
+        if (seenTerms.has(term.canonical_key)) continue;
+        seenTerms.add(term.canonical_key);
+        nodes.push({
+          candidate_id: candidateId,
+          node_type: 'ReviewEvidence',
+          narrative_text: `Candidate supplied review evidence for ${term.surface}: ${entry.quote.slice(0, 500)}`,
+          extracted_properties_json: JSON.stringify({
+            source: 'resume_text_intake',
+            term_surface: term.surface,
+            term_canonical_key: term.canonical_key,
+            semantic_terms: [term],
+            ...sourceQuoteProperties(resumeText, entry.quote),
+            index: nodes.length,
+          }),
+          embedding_json: null,
+          source_type: 'resume',
+          source_reference: `resume:review-evidence:${nodes.length}`,
+          captured_at: capturedAt,
+          confidence: RAW_REVIEW_EVIDENCE_CONFIDENCE,
+          supersedes: null,
+          superseded_at: null,
+          decomposition_version: DECOMPOSITION_VERSION,
+        });
+        addedInRound = true;
+        if (nodes.length >= RAW_REVIEW_EVIDENCE_NODE_LIMIT) return nodes;
+        break;
+      }
     }
+    if (!addedInRound) break;
   }
 
   return nodes;
@@ -686,21 +775,22 @@ async function writeParserOnlyNodes(
     });
   }
 
-  // Persist nodes before embedding so source-backed evidence survives AI outages.
+  // Persist every node before embedding so source-backed evidence survives AI
+  // outages or slow embedding calls.
   for (const node of nodesToInsert) {
-    let insertedNode: CandidateNode;
     try {
-      insertedNode = await insertCandidateNode(_db, node);
+      const insertedNode = await insertCandidateNode(_db, node);
       candidateNodes.push(insertedNode);
       inserted++;
     } catch (insertErr) {
       const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
       errors.push(`Insert failed for ${node.node_type}: ${msg}`);
-      continue;
     }
+  }
 
+  for (const insertedNode of candidateNodes) {
     try {
-      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);
       await _db.prepare(
         `UPDATE candidate_nodes SET embedding_json = ?1, updated_at = unixepoch() WHERE id = ?2`,
@@ -710,7 +800,7 @@ async function writeParserOnlyNodes(
       embeddings.push(embedding);
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-      errors.push(`Embed failed for ${node.node_type}: ${msg}`);
+      errors.push(`Embed failed for ${insertedNode.node_type}: ${msg}`);
     }
   }
 
@@ -888,23 +978,24 @@ export async function decomposeResumeToGraph(
     return result;
   }
 
-  // Step 3: Persist nodes before embedding so source-backed evidence survives AI outages.
+  // Step 3: Persist every node before embedding so source-backed evidence
+  // survives AI outages or slow embedding calls.
   const candidateNodes: CandidateNode[] = [];
   for (const node of nodesToInsert) {
-    let insertedNode: CandidateNode;
     try {
-      insertedNode = await insertCandidateNode(db, node);
+      const insertedNode = await insertCandidateNode(db, node);
       candidateNodes.push(insertedNode);
       result.nodesInserted++;
     } catch (insertErr) {
       const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
       console.warn('[resumeDecomposition] Insert failed for', node.node_type, ':', msg);
       result.errors.push(`Insert failed for ${node.node_type}: ${msg}`);
-      continue;
     }
+  }
 
+  for (const insertedNode of candidateNodes) {
     try {
-      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      const embedding = await embedCandidateNode(insertedNode.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
       const embeddingJson = JSON.stringify(embedding);
       await db.prepare(
         `UPDATE candidate_nodes SET embedding_json = ?1, updated_at = unixepoch() WHERE id = ?2`,
@@ -914,8 +1005,8 @@ export async function decomposeResumeToGraph(
       result.embeddings.push(embedding);
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
-      console.warn('[resumeDecomposition] Embed failed for', node.node_type, ':', msg);
-      result.errors.push(`Embed failed for ${node.node_type}: ${msg}`);
+      console.warn('[resumeDecomposition] Embed failed for', insertedNode.node_type, ':', msg);
+      result.errors.push(`Embed failed for ${insertedNode.node_type}: ${msg}`);
     }
   }
 
