@@ -103,9 +103,13 @@ const sessionEventSchema = z.object({
     'browser_navigation',
     'window_open',
     'window_close',
+    'window_update',
     'window_focus',
+    'room_surface_change',
+    'workspace_state',
     'participant_join',
     'participant_leave',
+    'clippy_prompt',
     'clippy_action',
     'recording_start',
     'recording_stop',
@@ -1173,10 +1177,19 @@ meetingRooms.post('/:token/session-events', async (c) => {
 // GET /:token/context-graph — retrieve all session events for the candidate
 meetingRooms.get('/:token/context-graph', async (c) => {
   const token = c.req.param('token');
-  const { resolveCandidateIdForRoom, getSessionContextGraph } = await import('../lib/sessionEvents.js');
+  const {
+    resolveCandidateIdForRoom,
+    getSessionContextGraph,
+    syncRoomActivityToSessionEvents,
+  } = await import('../lib/sessionEvents.js');
   const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
   if (!resolved) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
+
+  await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
+    candidateId: resolved.candidateId,
+    sessionId: resolved.sessionId,
+  });
 
   const graph = await getSessionContextGraph(c.env.DB, resolved.candidateId, resolved.sessionId);
   return c.json({
@@ -1189,10 +1202,19 @@ meetingRooms.get('/:token/context-graph', async (c) => {
 // GET /:token/context-summary — text summary for agent system prompt
 meetingRooms.get('/:token/context-summary', async (c) => {
   const token = c.req.param('token');
-  const { resolveCandidateIdForRoom, getSessionContextSummary } = await import('../lib/sessionEvents.js');
+  const {
+    resolveCandidateIdForRoom,
+    getSessionContextSummary,
+    syncRoomActivityToSessionEvents,
+  } = await import('../lib/sessionEvents.js');
   const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
   if (!resolved) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   if (!resolved.candidateId) return apiError(c, 'NOT_FOUND', 'No candidate linked to this meeting.');
+
+  await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
+    candidateId: resolved.candidateId,
+    sessionId: resolved.sessionId,
+  });
 
   const summary = await getSessionContextSummary(c.env.DB, resolved.candidateId, resolved.sessionId);
   return c.json({ summary });

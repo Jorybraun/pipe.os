@@ -1125,6 +1125,175 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
+  it('syncs durable room activity into the candidate context graph before graph reads', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const activitySnapshot = {
+      desktopActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000000000,
+          event: {
+            id: 'evt-enter-95',
+            clientId: 'host-client',
+            createdAt: 1700000000000,
+            kind: 'SET_ROOM_SURFACE',
+            surface: 'win95',
+          },
+        },
+        {
+          role: 'HOST',
+          recordedAt: 1700000001000,
+          event: {
+            id: 'evt-workspace-ready',
+            clientId: 'host-client',
+            createdAt: 1700000001000,
+            kind: 'WORKSPACE_STATE_CHANGED',
+            status: 'READY',
+          },
+        },
+      ],
+      chatActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002000,
+          message: {
+            id: 'chat-1',
+            clientId: 'guest-client',
+            createdAt: 1700000002000,
+            role: 'GUEST',
+            text: 'I found the retry bug in the queue worker.',
+          },
+        },
+      ],
+      clippyPromptActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000003000,
+          prompt: {
+            id: 'prompt-open-workspace',
+            clientId: 'host-client',
+            createdAt: 1700000003000,
+            source: 'system',
+            text: 'Would you like to open the workspace?',
+            actions: [{ id: 'open-workspace', label: 'Open workspace' }],
+          },
+        },
+      ],
+      fileSystemActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000004000,
+          event: {
+            id: 'fs-notes-save',
+            clientId: 'guest-client',
+            createdAt: 1700000004000,
+            kind: 'UPSERT_FILE',
+            file: {
+              id: 'notepad',
+              name: 'notes.txt',
+              kind: 'text',
+              content: 'Candidate identified retry bug evidence.',
+              mimeType: 'text/plain',
+              createdAt: 1700000004000,
+              updatedAt: 1700000004000,
+            },
+          },
+        },
+      ],
+    };
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify(activitySnapshot), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-activity-graph',
+      'owner-1',
+      'Activity Graph Candidate',
+      'activity-graph@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Activity Graph Candidate',
+        recipientEmail: 'activity-graph@example.com',
+        title: 'Activity graph room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-activity-graph',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const graphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(graphRes.status).toBe(200);
+    const graphBody = await graphRes.json() as {
+      candidateId: string;
+      events: Array<{
+        nodeType: string;
+        narrativeText: string;
+        properties: Record<string, unknown> | null;
+      }>;
+    };
+    expect(graphBody.events.map((event) => event.nodeType)).toEqual([
+      'session_room_surface_change',
+      'session_workspace_state',
+      'session_chat_user',
+      'session_clippy_prompt',
+      'session_file_change',
+    ]);
+    expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
+      'I found the retry bug in the queue worker.',
+    );
+    expect(graphBody.events.at(-1)?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      operation: 'upsert',
+      fileId: 'notepad',
+      contentPreview: 'Candidate identified retry bug evidence.',
+    });
+
+    const nodeCountAfterFirstRead = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'`,
+    ).get(graphBody.candidateId) as { count: number };
+    expect(nodeCountAfterFirstRead.count).toBe(5);
+
+    const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(secondGraphRes.status).toBe(200);
+    const nodeCountAfterSecondRead = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'`,
+    ).get(graphBody.candidateId) as { count: number };
+    expect(nodeCountAfterSecondRead.count).toBe(5);
+    expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://do/activity-log',
+    }));
+  });
+
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

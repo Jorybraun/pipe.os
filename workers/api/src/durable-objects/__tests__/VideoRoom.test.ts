@@ -538,4 +538,90 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     }));
   });
+
+  it('exposes replayable room activity logs for server-side evidence sync', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-enter-95',
+        clientId: 'host-client',
+        createdAt: 1000,
+        kind: 'SET_ROOM_SURFACE',
+        surface: 'win95',
+      },
+    }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-guest-question',
+        clientId: 'guest-client',
+        createdAt: 2000,
+        role: 'GUEST',
+        text: 'I found the retry bug in the queue worker.',
+      },
+    }));
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      payload: {
+        id: 'fs-notes-save',
+        clientId: 'host-client',
+        createdAt: 3000,
+        kind: 'UPSERT_FILE',
+        file: {
+          id: 'notepad',
+          name: 'notes.txt',
+          kind: 'text',
+          content: 'Candidate identified retry bug evidence.',
+          mimeType: 'text/plain',
+          createdAt: 3000,
+          updatedAt: 3000,
+        },
+      },
+    }));
+
+    const response = await room.fetch(new Request('https://do/activity-log'));
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      desktopActivityLog: unknown[];
+      chatActivityLog: unknown[];
+      fileSystemActivityLog: unknown[];
+    };
+
+    expect(body.desktopActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-enter-95',
+          kind: 'SET_ROOM_SURFACE',
+          surface: 'win95',
+        }),
+      }),
+    ]);
+    expect(body.chatActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        message: expect.objectContaining({
+          id: 'chat-guest-question',
+          text: 'I found the retry bug in the queue worker.',
+        }),
+      }),
+    ]);
+    expect(body.fileSystemActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'fs-notes-save',
+          kind: 'UPSERT_FILE',
+        }),
+      }),
+    ]);
+  });
 });

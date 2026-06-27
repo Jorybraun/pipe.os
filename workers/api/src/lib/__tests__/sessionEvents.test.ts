@@ -3,6 +3,7 @@ import {
   captureSessionEvent,
   getSessionContextGraph,
   getSessionContextSummary,
+  roomActivitySnapshotToSessionEvents,
   resolveCandidateIdForRoom,
   type SessionEvent,
 } from '../sessionEvents';
@@ -173,6 +174,126 @@ describe('sessionEvents', () => {
       expect(summary).toContain('User asked');
       expect(summary).toContain('TERMINAL');
       expect(summary).toContain('npm test');
+    });
+  });
+
+  describe('roomActivitySnapshotToSessionEvents', () => {
+    it('converts durable room activity logs into source-backed session events', () => {
+      const events = roomActivitySnapshotToSessionEvents({
+        desktopActivityLog: [
+          {
+            role: 'HOST',
+            recordedAt: 1700000000000,
+            event: {
+              id: 'evt-enter-95',
+              clientId: 'host-client',
+              createdAt: 1700000000000,
+              kind: 'SET_ROOM_SURFACE',
+              surface: 'win95',
+            },
+          },
+          {
+            role: 'HOST',
+            recordedAt: 1700000001000,
+            event: {
+              id: 'evt-workspace-ready',
+              clientId: 'host-client',
+              createdAt: 1700000001000,
+              kind: 'WORKSPACE_STATE_CHANGED',
+              status: 'READY',
+            },
+          },
+        ],
+        chatActivityLog: [
+          {
+            role: 'GUEST',
+            recordedAt: 1700000002000,
+            message: {
+              id: 'chat-1',
+              clientId: 'guest-client',
+              createdAt: 1700000002000,
+              role: 'GUEST',
+              text: 'I found the retry bug in the queue worker.',
+            },
+          },
+        ],
+        clippyPromptActivityLog: [
+          {
+            role: 'HOST',
+            recordedAt: 1700000003000,
+            prompt: {
+              id: 'prompt-open-workspace',
+              clientId: 'host-client',
+              createdAt: 1700000003000,
+              source: 'system',
+              text: 'Would you like to open the workspace?',
+              actions: [{ id: 'open-workspace', label: 'Open workspace' }],
+            },
+          },
+        ],
+        fileSystemActivityLog: [
+          {
+            role: 'GUEST',
+            recordedAt: 1700000004000,
+            event: {
+              id: 'fs-notes-save',
+              clientId: 'guest-client',
+              createdAt: 1700000004000,
+              kind: 'UPSERT_FILE',
+              file: {
+                id: 'notepad',
+                name: 'notes.txt',
+                kind: 'text',
+                content: 'Candidate identified retry bug evidence.',
+                mimeType: 'text/plain',
+                createdAt: 1700000004000,
+                updatedAt: 1700000004000,
+              },
+            },
+          },
+        ],
+      }, {
+        candidateId: 'cand-room',
+        sessionId: 'meeting--room-sync',
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'room_surface_change',
+          actor: 'host',
+          text: 'Room surface changed to win95',
+          candidateId: 'cand-room',
+          sessionId: 'meeting--room-sync',
+          timestamp: 1700000000,
+        }),
+        expect.objectContaining({
+          type: 'workspace_state',
+          actor: 'host',
+          text: 'Workspace state changed to READY',
+        }),
+        expect.objectContaining({
+          type: 'ai_chat_user',
+          actor: 'guest',
+          text: 'I found the retry bug in the queue worker.',
+        }),
+        expect.objectContaining({
+          type: 'clippy_prompt',
+          actor: 'host',
+          text: 'Would you like to open the workspace?',
+        }),
+        expect.objectContaining({
+          type: 'file_change',
+          actor: 'guest',
+          text: 'notes.txt',
+        }),
+      ]);
+      expect(events[4]!.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        operation: 'upsert',
+        fileId: 'notepad',
+        fileKind: 'text',
+        contentPreview: 'Candidate identified retry bug evidence.',
+      });
     });
   });
 

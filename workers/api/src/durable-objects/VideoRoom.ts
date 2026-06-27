@@ -443,8 +443,50 @@ export class VideoRoom {
     return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
   }
 
+  private parseDesktopActivityEntry(value: unknown): RoomDesktopActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseDesktopEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseDesktopActivityLog(value: unknown): RoomDesktopActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseDesktopActivityEntry(entry))
+      .filter((entry): entry is RoomDesktopActivityEntry => entry !== null);
+  }
+
   private async getCurrentClippyPrompt(): Promise<RoomClippyPrompt | null> {
     return this.parseClippyPrompt(await this.state.storage.get<unknown>('currentClippyPrompt'));
+  }
+
+  private parseClippyPromptActivityEntry(value: unknown): RoomClippyPromptActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const prompt = this.parseClippyPrompt(value.prompt);
+    if (
+      prompt === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { prompt, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseClippyPromptActivityLog(value: unknown): RoomClippyPromptActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseClippyPromptActivityEntry(entry))
+      .filter((entry): entry is RoomClippyPromptActivityEntry => entry !== null);
   }
 
   private parseChatMessage(value: unknown): RoomChatMessage | null {
@@ -479,6 +521,27 @@ export class VideoRoom {
 
   private async getChatMessages(): Promise<RoomChatMessage[]> {
     return this.parseChatMessages(await this.state.storage.get<unknown>('chatMessages'));
+  }
+
+  private parseChatActivityEntry(value: unknown): RoomChatActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const message = this.parseChatMessage(value.message);
+    if (
+      message === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { message, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseChatActivityLog(value: unknown): RoomChatActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseChatActivityEntry(entry))
+      .filter((entry): entry is RoomChatActivityEntry => entry !== null);
   }
 
   private isRoomFileKind(value: unknown): value is RoomFileKind {
@@ -569,6 +632,27 @@ export class VideoRoom {
     return this.parseRoomFiles(await this.state.storage.get<unknown>('roomFileSystem'));
   }
 
+  private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseFileSystemEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseFileSystemActivityLog(value: unknown): RoomFileSystemActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseFileSystemActivityEntry(entry))
+      .filter((entry): entry is RoomFileSystemActivityEntry => entry !== null);
+  }
+
   private async persistRoomSurface(surface: RoomSurface): Promise<void> {
     this.roomSurface = surface;
     await this.state.storage.put('roomSurface', surface);
@@ -604,16 +688,7 @@ export class VideoRoom {
   }
 
   private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
-    const existing = await this.state.storage.get<unknown>('desktopActivityLog');
-    const previous = Array.isArray(existing)
-      ? existing.filter((entry): entry is RoomDesktopActivityEntry => (
-          this.isRecord(entry)
-          && this.parseDesktopEvent(entry.event) !== null
-          && typeof entry.role === 'string'
-          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
-          && typeof entry.recordedAt === 'number'
-        ))
-      : [];
+    const previous = this.parseDesktopActivityLog(await this.state.storage.get<unknown>('desktopActivityLog'));
     const next = [
       ...previous.slice(-249),
       { event, role, recordedAt: Date.now() },
@@ -626,16 +701,9 @@ export class VideoRoom {
   }
 
   private async recordClippyPromptActivity(prompt: RoomClippyPrompt, role: VideoRole): Promise<void> {
-    const existing = await this.state.storage.get<unknown>('clippyPromptActivityLog');
-    const previous = Array.isArray(existing)
-      ? existing.filter((entry): entry is RoomClippyPromptActivityEntry => (
-          this.isRecord(entry)
-          && this.parseClippyPrompt(entry.prompt) !== null
-          && typeof entry.role === 'string'
-          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
-          && typeof entry.recordedAt === 'number'
-        ))
-      : [];
+    const previous = this.parseClippyPromptActivityLog(
+      await this.state.storage.get<unknown>('clippyPromptActivityLog'),
+    );
     const next = [
       ...previous.slice(-99),
       { prompt, role, recordedAt: Date.now() },
@@ -654,16 +722,7 @@ export class VideoRoom {
   }
 
   private async recordChatActivity(message: RoomChatMessage, role: VideoRole): Promise<void> {
-    const existing = await this.state.storage.get<unknown>('chatActivityLog');
-    const previous = Array.isArray(existing)
-      ? existing.filter((entry): entry is RoomChatActivityEntry => (
-          this.isRecord(entry)
-          && this.parseChatMessage(entry.message) !== null
-          && typeof entry.role === 'string'
-          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
-          && typeof entry.recordedAt === 'number'
-        ))
-      : [];
+    const previous = this.parseChatActivityLog(await this.state.storage.get<unknown>('chatActivityLog'));
     const next = [
       ...previous.slice(-249),
       { message: { ...message, role }, role, recordedAt: Date.now() },
@@ -691,16 +750,9 @@ export class VideoRoom {
   }
 
   private async recordFileSystemActivity(event: RoomFileSystemEvent, role: VideoRole): Promise<void> {
-    const existing = await this.state.storage.get<unknown>('fileSystemActivityLog');
-    const previous = Array.isArray(existing)
-      ? existing.filter((entry): entry is RoomFileSystemActivityEntry => (
-          this.isRecord(entry)
-          && this.parseFileSystemEvent(entry.event) !== null
-          && typeof entry.role === 'string'
-          && ['RECRUITER', 'CANDIDATE', 'HOST', 'GUEST'].includes(entry.role)
-          && typeof entry.recordedAt === 'number'
-        ))
-      : [];
+    const previous = this.parseFileSystemActivityLog(
+      await this.state.storage.get<unknown>('fileSystemActivityLog'),
+    );
     const next = [
       ...previous.slice(-249),
       { event, role, recordedAt: Date.now() },
@@ -840,6 +892,25 @@ export class VideoRoom {
         status: this.sessionStatus,
         metadata: this.metadata,
         peers: peerCount,
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/activity-log') {
+      return new Response(JSON.stringify({
+        desktopActivityLog: this.parseDesktopActivityLog(
+          await this.state.storage.get<unknown>('desktopActivityLog'),
+        ),
+        chatActivityLog: this.parseChatActivityLog(
+          await this.state.storage.get<unknown>('chatActivityLog'),
+        ),
+        clippyPromptActivityLog: this.parseClippyPromptActivityLog(
+          await this.state.storage.get<unknown>('clippyPromptActivityLog'),
+        ),
+        fileSystemActivityLog: this.parseFileSystemActivityLog(
+          await this.state.storage.get<unknown>('fileSystemActivityLog'),
+        ),
       }), {
         headers: { 'Content-Type': 'application/json' },
       });
