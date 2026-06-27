@@ -61,7 +61,23 @@ describe('useSchedulingConnection hook', () => {
       lastSyncAt: null,
     };
 
-    apiMocks.mockGet.mockResolvedValue({ connection: mockConnection });
+    apiMocks.mockGet.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/scheduling/connection') {
+        return { connection: mockConnection };
+      }
+      if (path === '/api/v1/scheduling/connection/conn-1/event-types') {
+        return {
+          eventTypes: [{
+            id: 'https://api.calendly.com/event_types/abc',
+            name: 'Pipe interview',
+            durationMinutes: 30,
+            url: 'https://api.calendly.com/event_types/abc',
+            schedulingUrl: 'https://calendly.com/pipe/interview',
+          }],
+        };
+      }
+      return {};
+    });
 
     const { result } = renderHook(() => useSchedulingConnection());
 
@@ -70,6 +86,13 @@ describe('useSchedulingConnection hook', () => {
       id: 'conn-1',
       status: 'ACTIVE',
       accountEmail: 'test@example.com',
+      eventTypes: [{
+        id: 'https://api.calendly.com/event_types/abc',
+        name: 'Pipe interview',
+        duration: 30,
+        url: 'https://api.calendly.com/event_types/abc',
+        schedulingUrl: 'https://calendly.com/pipe/interview',
+      }],
     }));
   });
 
