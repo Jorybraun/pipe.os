@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Camera,
@@ -58,6 +58,11 @@ import {
 } from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
+import {
+  buildTerminalCommandEvidence,
+  buildTerminalOutputEvidence,
+  type TerminalEvidenceContext,
+} from './lib/terminalProtocol';
 import { NotepadWindow } from './components/NotepadWindow';
 import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
@@ -297,6 +302,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const publishedClippyPromptSignatureRef = useRef<string | null>(null);
   const workspaceEditorOpenEvidenceKeysRef = useRef<Set<string>>(new Set());
   const publishedWorkspaceStateSignatureRef = useRef<string | null>(null);
+  const terminalCommandSequenceRef = useRef(0);
+  const terminalOutputSequenceRef = useRef(0);
+  const activeTerminalCommandIdRef = useRef<string | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -873,40 +881,50 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
-  const captureTerminalCommand = useCallback((command: string): void => {
-    captureSessionEvent('terminal_command', command, roomActor, {
-      source: 'container_terminal',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      repoUrl: workspace?.repoUrl ?? null,
-    });
-  }, [
-    captureSessionEvent,
+  const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
+  const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
+    surface: room.roomSurface,
+    roomPhase: room.phase,
+    workspaceStatus: workspaceSession?.status ?? null,
+    workspaceSessionId: workspaceSession?.sessionId ?? null,
+    repoUrl: workspace?.repoUrl ?? null,
+  }), [
     room.phase,
     room.roomSurface,
-    roomActor,
     workspace?.repoUrl,
     workspaceSession?.sessionId,
     workspaceSession?.status,
   ]);
-  const captureTerminalOutput = useCallback((output: string): void => {
-    captureSessionEvent('terminal_output', output, 'system', {
-      source: 'container_terminal',
-      surface: room.roomSurface,
-      roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      repoUrl: workspace?.repoUrl ?? null,
+  const captureTerminalCommand = useCallback((command: string): void => {
+    terminalCommandSequenceRef.current += 1;
+    const evidence = buildTerminalCommandEvidence({
+      command,
+      terminalSessionId,
+      commandSequence: terminalCommandSequenceRef.current,
+      context: terminalEvidenceContext,
     });
+    activeTerminalCommandIdRef.current = evidence.properties.terminalCommandId;
+    captureSessionEvent('terminal_command', evidence.text, roomActor, evidence.properties);
   }, [
+    terminalEvidenceContext,
+    terminalSessionId,
     captureSessionEvent,
-    room.phase,
-    room.roomSurface,
-    workspace?.repoUrl,
-    workspaceSession?.sessionId,
-    workspaceSession?.status,
+    roomActor,
+  ]);
+  const captureTerminalOutput = useCallback((output: string): void => {
+    terminalOutputSequenceRef.current += 1;
+    const evidence = buildTerminalOutputEvidence({
+      output,
+      terminalSessionId,
+      outputSequence: terminalOutputSequenceRef.current,
+      activeCommandId: activeTerminalCommandIdRef.current,
+      context: terminalEvidenceContext,
+    });
+    captureSessionEvent('terminal_output', evidence.text, 'system', evidence.properties);
+  }, [
+    terminalEvidenceContext,
+    terminalSessionId,
+    captureSessionEvent,
   ]);
 
   const captureWorkspaceEditorOpen = useCallback((): void => {

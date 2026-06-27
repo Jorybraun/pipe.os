@@ -137,6 +137,10 @@ The controlling product rule remains:
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
+- Terminal output chunks now carry terminal session ids, command/output
+  sequence ids, deterministic text fingerprints, and the active command id when
+  known, so shell output can be reconstructed as evidence for the command that
+  produced it.
 - VS Code/code-server iframe loads now capture deduplicated `code_editor_open`
   `meeting_session_event` evidence with workspace session and repo metadata,
   without storing room-token proxy URLs.
