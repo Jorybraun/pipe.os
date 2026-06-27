@@ -1025,7 +1025,7 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(lifecycleRes.status).toBe(422);
 
-    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1036,6 +1036,29 @@ describe('meeting room recording living-context route', () => {
           windowId: 'browser',
           windowType: 'browser',
           surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWindowOpenRes.status).toBe(422);
+
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_desktop_ui',
+          lifecycleKind: 'open',
+          actor: 'guest',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
         },
       }),
     }, env, ctx);
@@ -1240,10 +1263,15 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       properties: {
         source: 'window_state_client_submit',
+        stateSource: 'win95_window_chrome',
+        actor: 'guest',
         windowId: 'browser',
+        action: 'move',
         statePatch: { x: 120, y: 80 },
         stateKeys: ['x', 'y'],
         surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
         clientCapturedAtMs: 1782601500000,
       },
     };
@@ -1859,10 +1887,15 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'window_state_client_submit',
+          stateSource: 'win95_window_chrome',
+          actor: 'guest',
           windowId: 'browser',
+          action: 'move',
           statePatch: { x: 120, y: 80 },
           stateKeys: ['x', 'y'],
           surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
         },
       }),
     }, env, ctx);

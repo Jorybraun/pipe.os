@@ -42,7 +42,10 @@ import {
   buildCodeEditorOpenEvidence,
   buildWorkspaceStateDesktopEvent,
 } from './lib/workspaceEvidence';
-import { buildWindowStateUpdateEvidence } from './lib/windowEvidence';
+import {
+  buildWindowLifecycleEvidence,
+  buildWindowStateUpdateEvidence,
+} from './lib/windowEvidence';
 import {
   buildCursorPresenceEvidence,
   type CursorPresenceEvidenceState,
@@ -589,11 +592,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (room.roomSurface === 'win95') {
       room.publishDesktopEvent({ kind: 'OPEN_WINDOW', window: config });
     }
-    captureSessionEvent('window_open', config.title, roomActor, {
+    const evidence = buildWindowLifecycleEvidence({
+      kind: 'open',
+      actor: roomActor,
       windowId: config.id,
       windowType: config.windowType,
+      windowTitle: config.title,
+      source: 'win95_desktop_ui',
       surface: room.roomSurface,
+      roomPhase: room.phase,
     });
+    captureSessionEvent('window_open', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor, wm]);
 
   const closeSharedWindow = useCallback((id: string): void => {
@@ -602,11 +611,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (room.roomSurface === 'win95') {
       room.publishDesktopEvent({ kind: 'CLOSE_WINDOW', windowId: id });
     }
-    captureSessionEvent('window_close', win?.title ?? id, roomActor, {
+    const evidence = buildWindowLifecycleEvidence({
+      kind: 'close',
+      actor: roomActor,
       windowId: id,
       windowType: win?.windowType ?? 'custom',
+      windowTitle: win?.title ?? id,
+      source: 'win95_window_chrome',
       surface: room.roomSurface,
+      roomPhase: room.phase,
     });
+    captureSessionEvent('window_close', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor, wm]);
 
   const updateSharedWindowData = useCallback((
@@ -1712,9 +1727,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const existing = wm.getWindowByType(windowType);
     if (existing) {
       if (existing.minimized) {
-        wm.restoreWindow(existing.id);
+        restoreSharedWindow(existing.id);
       } else {
-        wm.focusWindow(existing.id);
+        focusSharedWindow(existing.id);
       }
       return;
     }

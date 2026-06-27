@@ -2,6 +2,18 @@ import type { RoomSurface } from '../hooks/useRoomConnection';
 import type { RoomPhase } from '../types';
 
 export type WindowEvidenceActor = 'host' | 'guest';
+export type WindowLifecycleKind = 'open' | 'close';
+export type WindowLifecycleSource =
+  | 'win95_desktop_ui'
+  | 'win95_window_chrome'
+  | 'win95_taskbar'
+  | 'clippy_action'
+  | 'shared_state_sync';
+
+export interface WindowLifecycleEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
 
 export interface WindowStateUpdateEvidence {
   text: string;
@@ -21,6 +33,33 @@ function inferWindowStateAction(statePatch: Record<string, number | boolean>): s
   if ('width' in statePatch || 'height' in statePatch) return 'resize';
   if (statePatch.focused === true) return 'focus';
   return 'update';
+}
+
+export function buildWindowLifecycleEvidence(input: {
+  kind: WindowLifecycleKind;
+  actor: WindowEvidenceActor;
+  windowId: string;
+  windowType: string;
+  windowTitle: string;
+  source: WindowLifecycleSource;
+  surface: RoomSurface;
+  roomPhase: RoomPhase;
+}): WindowLifecycleEvidence {
+  return {
+    text: input.windowTitle,
+    properties: {
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: input.source,
+      lifecycleKind: input.kind,
+      actor: input.actor,
+      windowId: input.windowId,
+      windowType: input.windowType,
+      windowTitle: input.windowTitle,
+      surface: input.surface,
+      roomPhase: input.roomPhase,
+      durableObjectReplayExpected: input.surface === 'win95',
+    },
+  };
 }
 
 export function buildWindowStateUpdateEvidence(input: {
@@ -45,6 +84,7 @@ export function buildWindowStateUpdateEvidence(input: {
     text: `Window state updated: ${input.windowId}`,
     properties: {
       source: 'window_state_client_submit',
+      stateSource: 'win95_window_chrome',
       actor: input.actor,
       windowId: input.windowId,
       action: inferWindowStateAction(statePatch),

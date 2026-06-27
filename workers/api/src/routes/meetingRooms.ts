@@ -102,6 +102,25 @@ const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
 const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const ROOM_SURFACES = new Set(['standard', 'win95']);
+const WINDOW_LIFECYCLE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_window_chrome',
+  'win95_taskbar',
+  'clippy_action',
+  'shared_state_sync',
+]);
+const WINDOW_STATE_ACTIONS = new Set([
+  'focus',
+  'maximize',
+  'minimize',
+  'move',
+  'resize',
+  'restore_or_focus',
+  'restore_size',
+  'update',
+]);
+const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -151,6 +170,9 @@ const sessionEventSchema = z.object({
   const hasFiniteNonNegativeNumber = (value: unknown): boolean => (
     typeof value === 'number' && Number.isFinite(value) && value >= 0
   );
+  const hasRoomSurface = (value: unknown): boolean => typeof value === 'string' && ROOM_SURFACES.has(value);
+  const propertyActorMatches = event.actor
+    && (properties.actor === undefined || properties.actor === event.actor);
   if (event.type === 'file_change') {
     if (properties.source === 'win95_shared_file_system') {
       const operation = properties.operation;
@@ -229,6 +251,79 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Browser navigation evidence must come from the room browser window with normalized URL, trigger, and room context.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'window_open' || event.type === 'window_close') {
+    const expectedLifecycleKind = event.type === 'window_open' ? 'open' : 'close';
+    const sourceOk = properties.source === 'window_lifecycle_client_submit'
+      && typeof properties.lifecycleSource === 'string'
+      && WINDOW_LIFECYCLE_SOURCES.has(properties.lifecycleSource);
+    const lifecycleOk = properties.lifecycleKind === expectedLifecycleKind;
+    const windowIdOk = hasString(properties.windowId);
+    const windowTypeOk = hasString(properties.windowType);
+    const windowTitleOk = hasString(properties.windowTitle)
+      && event.text === properties.windowTitle;
+    const contextOk = propertyActorMatches
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && lifecycleOk && windowIdOk && windowTypeOk && windowTitleOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Window lifecycle evidence must come from the room window client with lifecycle kind, window identity, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'window_update' || event.type === 'window_focus') {
+    const statePatch = properties.statePatch;
+    const statePatchRecord = typeof statePatch === 'object' && statePatch !== null && !Array.isArray(statePatch)
+      ? statePatch as Record<string, unknown>
+      : null;
+    const stateKeys = Array.isArray(properties.stateKeys)
+      ? properties.stateKeys.filter((key): key is string => typeof key === 'string')
+      : [];
+    const patchEntries = statePatchRecord ? Object.entries(statePatchRecord) : [];
+    const patchOk = patchEntries.length > 0
+      && patchEntries.every(([key, value]) =>
+        WINDOW_STATE_KEYS.has(key)
+        && (typeof value === 'number' || typeof value === 'boolean')
+        && (typeof value !== 'number' || Number.isFinite(value)),
+      );
+    const sortedPatchKeys = patchEntries.map(([key]) => key).sort();
+    const stateKeysOk = stateKeys.length === sortedPatchKeys.length
+      && stateKeys.every((key, index) => key === sortedPatchKeys[index]);
+    const sourceOk = properties.source === 'window_state_client_submit'
+      && properties.stateSource === 'win95_window_chrome';
+    const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
+    const windowOk = hasString(properties.windowId)
+      && event.text === `Window state updated: ${properties.windowId}`;
+    const contextOk = propertyActorMatches
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && actionOk && windowOk && contextOk && patchOk && stateKeysOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Window state evidence must include the client source, action, exact state patch, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'room_surface_change') {
+    const sourceOk = properties.source === 'room_surface_control';
+    const actorOk = propertyActorMatches;
+    const surfacesOk = hasRoomSurface(properties.surface)
+      && hasRoomSurface(properties.previousSurface)
+      && properties.surface !== properties.previousSurface;
+    const actionOk = properties.action === 'enter_desktop' || properties.action === 'exit_desktop';
+    const roomPhaseOk = hasString(properties.roomPhase);
+    if (sourceOk && actorOk && surfacesOk && actionOk && roomPhaseOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Room surface evidence must come from shared room surface controls with actor, previous surface, next surface, action, and room phase.',
       path: ['properties'],
     });
     return;
