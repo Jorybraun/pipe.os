@@ -364,6 +364,15 @@ function devinAuthNeededMessage() {
   };
 }
 
+function devinAuthDiagnosticMessage() {
+  return {
+    type: 'AGENT_DIAGNOSTIC',
+    agent: AGENT_NAME,
+    status: 'auth_needed',
+    message: DEVIN_AUTH_MESSAGE,
+  };
+}
+
 function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
   const base = String(pipeApiUrl || '').trim();
   const token = String(roomToken || '').trim();
@@ -592,13 +601,13 @@ async function handleAgentMessage(ws, msg) {
       agentStatus = 'auth_needed';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
       send(ws, devinAuthNeededMessage());
-      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
+      send(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
     if (agentStatus === 'auth_needed') {
       send(ws, devinAuthNeededMessage());
-      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
+      send(ws, devinAuthDiagnosticMessage());
       return;
     }
     if (!agentProcess) {

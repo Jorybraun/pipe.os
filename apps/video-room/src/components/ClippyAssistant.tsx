@@ -33,7 +33,7 @@ export interface ClippyAssistantProps {
   onOpenTerminal?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
-  onUserChatMessage?: (text: string) => void;
+  onUserChatMessage?: (message: AgentChatMessage) => void;
   onAgentChatMessage?: (message: AgentChatMessage) => void;
   onAgentStatus?: (status: AgentStatus, agentName: string) => void;
   onAgentFileChange?: (event: AgentFileChangeEvent) => void;
@@ -241,8 +241,9 @@ export function ClippyAssistant({
   const handleSendChat = useCallback(() => {
     const text = chatInput.trim();
     if (!text) return;
-    onUserChatMessage?.(text);
-    agentConn.sendMessage(text);
+    const message = agentConn.sendMessage(text);
+    if (!message) return;
+    onUserChatMessage?.(message);
     setChatInput('');
   }, [chatInput, agentConn, onUserChatMessage]);
 

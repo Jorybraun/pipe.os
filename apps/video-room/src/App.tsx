@@ -1419,20 +1419,37 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     executeRoomAction(action.id, { url: action.url, source: 'agent' });
   };
 
-  const captureClippyUserChatMessage = (text: string): void => {
-    captureSessionEvent('ai_chat_user', text, roomActor, {
-      source: 'clippy_agent_chat',
+  const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
+    captureSessionEvent('ai_chat_user', message.text, roomActor, {
+      source: 'clippy_agent_chat_client_submit',
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
+      deliveryStatus: 'sent_to_bridge',
+      messageTimestamp: message.timestamp,
     });
   };
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
-    captureSessionEvent('ai_chat_agent', message.text, 'agent', {
-      source: 'clippy_agent_chat',
-      agent: 'devin',
+    const isAgentResponse = message.source === 'agent_stdout' || message.source === undefined;
+    if (isAgentResponse) {
+      captureSessionEvent('ai_chat_agent', message.text, 'agent', {
+        source: 'clippy_agent_chat',
+        agent: message.agentName ?? 'devin',
+        surface: room.roomSurface,
+        roomPhase: room.phase,
+        workspaceStatus: workspaceSession?.status ?? null,
+        workspaceSessionId: workspaceSession?.sessionId ?? null,
+        messageTimestamp: message.timestamp,
+      });
+      return;
+    }
+    captureSessionEvent('ai_agent_status', message.text, 'agent', {
+      source: 'clippy_agent_bridge',
+      agent: message.agentName ?? 'devin',
+      status: message.agentStatus ?? null,
+      diagnosticSource: message.source,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,

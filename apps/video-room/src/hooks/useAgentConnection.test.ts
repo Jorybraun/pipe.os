@@ -44,6 +44,7 @@ describe('parseAgentBridgeMessage', () => {
       message: {
         role: 'agent',
         text: 'I noticed src/app.ts was modified in the workspace.',
+        source: 'bridge_observation',
       },
       action: {
         id: 'open-workspace',
@@ -73,6 +74,41 @@ describe('parseAgentBridgeMessage', () => {
       agentName: 'devin',
       authUrl: null,
       message: 'Real Devin credentials are required.',
+    });
+  });
+
+  it('classifies bridge diagnostics separately from Devin chat responses', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'auth_needed',
+      message: 'Devin is not authenticated.',
+    })).toEqual({
+      kind: 'diagnostic',
+      agentName: 'devin',
+      status: 'auth_needed',
+      message: {
+        role: 'agent',
+        text: 'Devin is not authenticated.',
+        source: 'bridge_diagnostic',
+        agentName: 'devin',
+        agentStatus: 'auth_needed',
+      },
+    });
+  });
+
+  it('marks real bridge chat responses as agent stdout', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      text: 'I inspected the failing test.',
+    })).toEqual({
+      kind: 'chat',
+      message: {
+        role: 'agent',
+        text: 'I inspected the failing test.',
+        source: 'agent_stdout',
+      },
+      actions: undefined,
     });
   });
 

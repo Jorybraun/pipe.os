@@ -15,6 +15,9 @@ export interface AgentChatMessage {
   role: 'user' | 'agent';
   text: string;
   timestamp: number;
+  source?: 'user_submit' | 'agent_stdout' | 'bridge_diagnostic' | 'bridge_observation';
+  agentName?: string;
+  agentStatus?: AgentStatus;
 }
 
 export interface AgentRoomAction {
@@ -71,6 +74,12 @@ export type ParsedAgentBridgeMessage =
   | {
       kind: 'error';
       message: Omit<AgentChatMessage, 'timestamp'>;
+    }
+  | {
+      kind: 'diagnostic';
+      message: Omit<AgentChatMessage, 'timestamp'>;
+      status: AgentStatus;
+      agentName: string;
     }
   | {
       kind: 'ignored';
@@ -225,7 +234,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const actions = parseRoomActions(value.actions);
     return {
       kind: 'chat',
-      message: { role: 'agent', text },
+      message: { role: 'agent', text, source: 'agent_stdout' },
       actions: actions.length > 0 ? actions : undefined,
     };
   }
@@ -253,7 +262,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const contentPreview = stringOrNull(value.contentPreview);
     return {
       kind: 'file_changed',
-      message: { role: 'agent', text },
+      message: { role: 'agent', text, source: 'bridge_observation' },
       action: {
         id: 'open-workspace',
         label: ROOM_ACTIONS['open-workspace'].label,
@@ -279,7 +288,30 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   }
   if (value.type === 'ERROR') {
     const text = stringOrNull(value.message) ?? 'Unknown agent error';
-    return { kind: 'error', message: { role: 'agent', text: `Error: ${text}` } };
+    return {
+      kind: 'error',
+      message: {
+        role: 'agent',
+        text: `Error: ${text}`,
+        source: 'bridge_diagnostic',
+      },
+    };
+  }
+  if (value.type === 'AGENT_DIAGNOSTIC') {
+    const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
+    const status = isAgentStatus(value.status) ? value.status : 'disconnected';
+    return {
+      kind: 'diagnostic',
+      status,
+      agentName: stringOrNull(value.agent) ?? 'devin',
+      message: {
+        role: 'agent',
+        text,
+        source: 'bridge_diagnostic',
+        agentName: stringOrNull(value.agent) ?? 'devin',
+        agentStatus: status,
+      },
+    };
   }
   return { kind: 'ignored' };
 }
@@ -381,6 +413,14 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
                 timestamp: Date.now(),
               }]);
               break;
+            case 'diagnostic':
+              setAgentName(parsed.agentName);
+              setStatus(parsed.status);
+              setMessages((prev) => [...prev, {
+                ...parsed.message,
+                timestamp: Date.now(),
+              }]);
+              break;
             case 'ignored':
               break;
           }
@@ -415,14 +455,18 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
     };
   }, [wsUrl, enabled]);
 
-  const sendMessage = useCallback((text: string) => {
-    if (!text.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    setMessages((prev) => [...prev, {
+  const sendMessage = useCallback((text: string): AgentChatMessage | null => {
+    const trimmed = text.trim();
+    if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
+    const message: AgentChatMessage = {
       role: 'user',
-      text,
+      text: trimmed,
       timestamp: Date.now(),
-    }]);
-    wsRef.current.send(JSON.stringify({ type: 'CHAT', text }));
+      source: 'user_submit',
+    };
+    setMessages((prev) => [...prev, message]);
+    wsRef.current.send(JSON.stringify({ type: 'CHAT', text: trimmed }));
+    return message;
   }, []);
 
   const startAuth = useCallback(() => {

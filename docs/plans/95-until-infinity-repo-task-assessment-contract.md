@@ -146,6 +146,9 @@ The controlling product rule remains:
 - Clippy/Devin bridge status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.
+- Clippy/Devin chat evidence distinguishes real Devin stdout from bridge
+  diagnostics and file-watcher observations, preventing auth-required or
+  container-observed facts from being projected as fabricated Devin replies.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a
