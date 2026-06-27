@@ -32,6 +32,7 @@ import type {
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
+import type { SessionEventType } from '../lib/sessionEvents';
 import type { Env, Variables } from '../types';
 
 type RoomRole = 'HOST' | 'GUEST';
@@ -80,6 +81,12 @@ interface RoomActivityEvidenceSyncResult {
   captured: number;
   failed: number;
   events: number;
+}
+
+interface RoomLifecycleEvidenceCaptureResult {
+  captured: boolean;
+  nodeId: string | null;
+  type: SessionEventType;
 }
 
 const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
@@ -158,6 +165,109 @@ async function syncRoomActivityEvidenceForToken(
     });
     return null;
   }
+}
+
+function roomLifecycleEvidencePayload(
+  room: ResolvedRoom,
+  event: z.infer<typeof roomEventSchema>['event'],
+  options: { recordingWasActive: boolean },
+): { type: SessionEventType; text: string; properties: Record<string, unknown> } | null {
+  const roleLabel = room.role === 'GUEST' ? 'Guest' : 'Host';
+  const sharedProperties = {
+    source: 'meeting_room_lifecycle',
+    lifecycleEvent: event,
+    participantRole: room.role,
+    roomId: room.room_id,
+    meetingId: room.meeting_id,
+  };
+
+  if (event === 'JOINED') {
+    return {
+      type: 'participant_join',
+      text: `${roleLabel} joined the 95 Until Infinity room`,
+      properties: sharedProperties,
+    };
+  }
+  if (event === 'LEFT') {
+    return {
+      type: 'participant_leave',
+      text: `${roleLabel} left the 95 Until Infinity room`,
+      properties: sharedProperties,
+    };
+  }
+  if (event === 'RECORDING_STARTED' && room.role === 'HOST') {
+    return {
+      type: 'recording_start',
+      text: 'Recording started for the 95 Until Infinity room',
+      properties: {
+        ...sharedProperties,
+        recordingStatus: 'started',
+      },
+    };
+  }
+  if (event === 'ENDED' && room.role === 'HOST' && options.recordingWasActive) {
+    return {
+      type: 'recording_stop',
+      text: 'Recording stopped for the 95 Until Infinity room',
+      properties: {
+        ...sharedProperties,
+        recordingStatus: 'stopped',
+      },
+    };
+  }
+
+  return null;
+}
+
+async function captureRoomLifecycleEvidenceForToken(
+  c: Context<{ Bindings: Env }>,
+  token: string,
+  room: ResolvedRoom,
+  event: z.infer<typeof roomEventSchema>['event'],
+  timestamp: number,
+  options: { recordingWasActive: boolean },
+): Promise<RoomLifecycleEvidenceCaptureResult | null> {
+  if (!c.env.VIDEO_ROOM) return null;
+
+  const payload = roomLifecycleEvidencePayload(room, event, options);
+  if (!payload) return null;
+
+  try {
+    const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
+    const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+    if (!resolved?.candidateId) return null;
+    const node = await captureSessionEvent(c.env.DB, {
+      type: payload.type,
+      sessionId: resolved.sessionId,
+      candidateId: resolved.candidateId,
+      timestamp,
+      actor: room.role === 'GUEST' ? 'guest' : 'host',
+      text: payload.text,
+      properties: payload.properties,
+    }, c.env);
+    return {
+      captured: !!node,
+      nodeId: node?.id ?? null,
+      type: payload.type,
+    };
+  } catch (error) {
+    console.error('[meetingRooms] Failed to capture room lifecycle evidence:', {
+      tokenHashPrefix: (await hashRoomToken(token)).slice(0, 12),
+      event,
+      role: room.role,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+async function meetingHasActiveRecordingEvidence(db: D1Database, meetingId: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT transcript_status, recording_r2_key
+       FROM meetings
+      WHERE id = ?`,
+  ).bind(meetingId).first<{ transcript_status: string | null; recording_r2_key: string | null }>();
+  return row?.transcript_status === 'RECORDING' || !!row?.recording_r2_key;
 }
 
 interface RoomWorkspacePayload {
@@ -1290,7 +1400,11 @@ meetingRooms.post('/:token/events', async (c) => {
 
   const now = new Date().toISOString();
   const event = parsed.data.event;
+  const recordingWasActive = event === 'ENDED' && room.role === 'HOST'
+    ? await meetingHasActiveRecordingEvidence(c.env.DB, room.meeting_id)
+    : false;
   let sessionEvidence: RoomActivityEvidenceSyncResult | null = null;
+  let lifecycleEvidence: RoomLifecycleEvidenceCaptureResult | null = null;
   if (event === 'STARTED' && room.role === 'HOST') {
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
@@ -1390,7 +1504,16 @@ meetingRooms.post('/:token/events', async (c) => {
     sessionEvidence = await syncRoomActivityEvidenceForToken(c, token);
   }
 
-  return c.json({ accepted: true, sessionEvidence });
+  lifecycleEvidence = await captureRoomLifecycleEvidenceForToken(
+    c,
+    token,
+    room,
+    event,
+    Math.floor(new Date(now).getTime() / 1000),
+    { recordingWasActive },
+  );
+
+  return c.json({ accepted: true, sessionEvidence, lifecycleEvidence });
 });
 
 meetingRooms.post('/:token/recording', async (c) => {

@@ -4,9 +4,15 @@ export type RepoTaskAssessmentMode =
   | 'DEV_CONTAINER_REPO_TASK'
   | 'OPEN_SOURCE_BUG_FIX';
 
-export type AssessmentMode =
-  | RepoTaskAssessmentMode
+export type AssessmentSurfaceMode =
+  | 'STANDARD_VIDEO_INTERVIEW'
   | 'CODE_REVIEW'
+  | RepoTaskAssessmentMode
+  | 'NINETY_FIVE_UNTIL_INFINITY_ROOM'
+  | 'CLIPPY_DEVIN_INTERACTION';
+
+export type AssessmentMode =
+  | AssessmentSurfaceMode
   | 'AUTO_MATCHED'
   | 'ROLE_BACKED_MATCHED'
   | 'RECRUITER_SELECTED_REVIEWABLE_PR'

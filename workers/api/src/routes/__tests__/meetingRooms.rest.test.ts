@@ -1582,7 +1582,8 @@ describe('meeting room recording living-context route', () => {
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
       'I would test the retry branch before touching the queue worker.',
     );
-    expect(JSON.parse(evidenceRows.at(-1)?.extracted_properties_json ?? '{}')).toMatchObject({
+    const fileEvidence = evidenceRows.find((row) => row.node_type === 'session_file_change');
+    expect(JSON.parse(fileEvidence?.extracted_properties_json ?? '{}')).toMatchObject({
       roomActivitySource: 'durable_object',
       operation: 'upsert',
       fileId: 'end-notes',
