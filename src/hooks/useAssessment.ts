@@ -69,6 +69,8 @@ export interface ChallengeContentDTO {
   githubRepoUrl?: string;
   githubPrDescription?: string;
   devContainerRepoUrl?: string;
+  matchExplanation?: unknown;
+  reviewProfile?: unknown;
   issueBody?: { title?: string | null; body?: string | null; labels?: string[] } | null;
   codeArtifact?: unknown;
   reviewSession?: {
@@ -145,6 +147,10 @@ async function rpcPost<T>(
     throw new Error('INVALID_TOKEN');
   }
 
+  if (res.status === 409) {
+    throw new Error('TOKEN_ALREADY_CLAIMED');
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     const errMsg = (data as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`;
@@ -181,6 +187,18 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
   const fetchData = useCallback(async () => {
     const cachedToken = sessionStorage.getItem('pipe_session_token');
     const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
+    const cachedInviteToken = sessionStorage.getItem('pipe_session_invite_token');
+    const cachedSessionMatchesInvite = Boolean(
+      cachedToken
+      && cachedCandidateJson
+      && (!inviteToken || cachedInviteToken === inviteToken),
+    );
+
+    if (inviteToken && cachedToken && cachedCandidateJson && cachedInviteToken !== inviteToken) {
+      sessionStorage.removeItem('pipe_session_token');
+      sessionStorage.removeItem('pipe_session_candidate');
+      sessionStorage.removeItem('pipe_session_invite_token');
+    }
 
     // Allow empty inviteToken when a cached session exists (demo/self-reg flow)
     if (!inviteToken && !(cachedToken && cachedCandidateJson)) {
@@ -191,7 +209,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     try {
       let candidate: ResolvedCandidate;
 
-      if (cachedToken && cachedCandidateJson) {
+      if (cachedSessionMatchesInvite && cachedToken && cachedCandidateJson) {
         try {
           const parsed = JSON.parse(cachedCandidateJson) as Record<string, unknown>;
           if (typeof parsed.id === 'string' && (typeof parsed.pipelineId === 'string' || parsed.pipelineId === null)) {
@@ -208,6 +226,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
         } catch {
           sessionStorage.removeItem('pipe_session_token');
           sessionStorage.removeItem('pipe_session_candidate');
+          sessionStorage.removeItem('pipe_session_invite_token');
           throw new Error('SESSION_EXPIRED');
         }
       } else {
@@ -222,6 +241,9 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
         sessionTokenRef.current = resolved.sessionToken;
         sessionStorage.setItem('pipe_session_token', resolved.sessionToken);
+        if (inviteToken) {
+          sessionStorage.setItem('pipe_session_invite_token', inviteToken);
+        }
 
         candidate = {
           id: resolved.id,
@@ -356,6 +378,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
 
           sessionStorage.removeItem('pipe_session_token');
           sessionStorage.removeItem('pipe_session_candidate');
+          sessionStorage.removeItem('pipe_session_invite_token');
           setState((prev) => ({ ...prev, isLoading: false, isSubmitted: true }));
           return;
         }
@@ -431,6 +454,7 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
   const reset = useCallback(() => {
     sessionStorage.removeItem('pipe_session_token');
     sessionStorage.removeItem('pipe_session_candidate');
+    sessionStorage.removeItem('pipe_session_invite_token');
     sessionTokenRef.current = null;
     void fetchData();
   }, [fetchData]);

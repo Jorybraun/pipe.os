@@ -1,4 +1,4 @@
-import { hashObject, stableId, stableJson } from './hash';
+import { stableId, stableJson } from './hash';
 import { buildChallengePacket } from './challengePacket';
 import { LivingContextStore } from '../livingContext/persistence';
 import type { ContextRecordInput, JsonObject } from '../livingContext/types';
@@ -27,6 +27,35 @@ export class RepoSemanticGraphPersistenceError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'RepoSemanticGraphPersistenceError';
+  }
+}
+
+const D1_BATCH_SIZE = 50;
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function runPreparedStatements(
+  db: D1Database,
+  statements: D1PreparedStatement[],
+): Promise<void> {
+  if (statements.length === 0) return;
+  const batch = (db as D1Database & {
+    batch?: (statements: D1PreparedStatement[]) => Promise<unknown>;
+  }).batch;
+  if (typeof batch === 'function') {
+    for (const group of chunk(statements, D1_BATCH_SIZE)) {
+      await batch.call(db, group);
+    }
+    return;
+  }
+  for (const statement of statements) {
+    await statement.run();
   }
 }
 
@@ -79,57 +108,66 @@ function repoSpanLocator(
   };
 }
 
-async function assertPersistedSourceSpanMatchesInput(
+async function assertPersistedSourceSpansMatchInput(
   db: D1Database,
-  span: SourceSpan,
-  path: string | undefined,
-  input: NormalizedPullRequestInput,
+  expectations: Array<{
+    span: SourceSpan;
+    path: string | undefined;
+    input: NormalizedPullRequestInput;
+  }>,
 ): Promise<void> {
-  const row = await db.prepare(
-    `SELECT artifact_version_id, content_hash, path, byte_start, byte_end,
-            line_start, line_end, pr_side, base_sha, head_sha, exact_text
-       FROM repo_source_spans
-      WHERE id = ?1`,
-  ).bind(span.id).first<{
-    artifact_version_id: string;
-    content_hash: string;
-    path: string | null;
-    byte_start: number | null;
-    byte_end: number | null;
-    line_start: number | null;
-    line_end: number | null;
-    pr_side: string | null;
-    base_sha: string | null;
-    head_sha: string | null;
-    exact_text: string;
-  }>();
-  if (!row) {
-    throw new RepoSemanticGraphPersistenceError(
-      `repo source span ${span.id} was not persisted`,
-    );
-  }
-
-  const expected = {
-    artifact_version_id: span.artifactVersionId,
-    content_hash: span.contentHash,
-    path: path ?? null,
-    byte_start: span.start.byteOffset,
-    byte_end: span.end.byteOffset,
-    line_start: span.start.line,
-    line_end: span.end.line,
-    pr_side: span.prSide ?? null,
-    base_sha: input.baseSha,
-    head_sha: input.headSha,
-    exact_text: span.exactText,
-  };
-  const mismatches = Object.entries(expected)
-    .filter(([key, value]) => row[key as keyof typeof row] !== value)
-    .map(([key]) => key)
-    .sort();
-  if (mismatches.length > 0) {
-    throw new RepoSemanticGraphPersistenceError(
-      `repo source span ${span.id} does not match immutable input fields: ${mismatches.join(', ')}`,
-    );
+  for (const group of chunk(expectations, D1_BATCH_SIZE)) {
+    const placeholders = group.map((_, index) => `?${index + 1}`).join(', ');
+    const rows = await db.prepare(
+      `SELECT id, artifact_version_id, content_hash, path, byte_start, byte_end,
+              line_start, line_end, pr_side, base_sha, head_sha, exact_text
+         FROM repo_source_spans
+        WHERE id IN (${placeholders})`,
+    ).bind(...group.map(({ span }) => span.id)).all<{
+      id: string;
+      artifact_version_id: string;
+      content_hash: string;
+      path: string | null;
+      byte_start: number | null;
+      byte_end: number | null;
+      line_start: number | null;
+      line_end: number | null;
+      pr_side: string | null;
+      base_sha: string | null;
+      head_sha: string | null;
+      exact_text: string;
+    }>();
+    const byId = new Map((rows.results ?? []).map((row) => [row.id, row]));
+    for (const { span, path, input } of group) {
+      const row = byId.get(span.id);
+      if (!row) {
+        throw new RepoSemanticGraphPersistenceError(
+          `repo source span ${span.id} was not persisted`,
+        );
+      }
+      const expected = {
+        artifact_version_id: span.artifactVersionId,
+        content_hash: span.contentHash,
+        path: path ?? null,
+        byte_start: span.start.byteOffset,
+        byte_end: span.end.byteOffset,
+        line_start: span.start.line,
+        line_end: span.end.line,
+        pr_side: span.prSide ?? null,
+        base_sha: input.baseSha,
+        head_sha: input.headSha,
+        exact_text: span.exactText,
+      };
+      const mismatches = Object.entries(expected)
+        .filter(([key, value]) => row[key as keyof typeof row] !== value)
+        .map(([key]) => key)
+        .sort();
+      if (mismatches.length > 0) {
+        throw new RepoSemanticGraphPersistenceError(
+          `repo source span ${span.id} does not match immutable input fields: ${mismatches.join(', ')}`,
+        );
+      }
+    }
   }
 }
 
@@ -282,30 +320,6 @@ async function validateChallengePacketPersistence(
     headSha: packet.pullRequest.headSha.toLowerCase(),
     policyVersion: packet.policyVersion,
   };
-  const content = {
-    ...identity,
-    repository: packet.repository,
-    pullRequest: {
-      number: packet.pullRequest.number,
-      url: packet.pullRequest.url,
-      title: packet.pullRequest.title,
-      body: packet.pullRequest.body,
-      author: packet.pullRequest.author,
-      baseSha: identity.baseSha,
-      headSha: identity.headSha,
-      mergedAt: packet.pullRequest.mergedAt,
-    },
-    languageSupport: packet.languageSupport,
-    changedFilePaths: packet.changedFilePaths,
-    changedSymbolIds: packet.changedSymbolIds,
-    sourceSpanIds: packet.sourceSpanIds,
-    testChanges: packet.testChanges,
-    issue: packet.issue,
-    demands: packet.demands,
-    demandFamilies: packet.demandFamilies,
-    quality: packet.quality,
-  };
-
   if (packet.repoSnapshotId !== repoSnapshotId) {
     failures.push(`packet ${packet.id} belongs to snapshot ${packet.repoSnapshotId}, expected ${repoSnapshotId}`);
   }
@@ -364,10 +378,6 @@ async function validateChallengePacketPersistence(
   if (packet.id !== expectedPacket.id) {
     failures.push(`packet ${packet.id} does not match the current normalized pull request identity; expected ${expectedPacket.id}`);
   }
-  const expectedContentHash = await hashObject(content);
-  if (packet.contentHash !== expectedContentHash) {
-    failures.push(`packet ${packet.id} content hash is stale; expected ${expectedContentHash}`);
-  }
   if (packet.contentHash !== expectedPacket.contentHash) {
     failures.push(`packet ${packet.id} does not match the current normalized pull request content; expected ${expectedPacket.contentHash}`);
   }
@@ -411,8 +421,8 @@ async function persistSemanticGraph(
   const signals = graph.repoSignals ?? [];
 
   const persistedFacetIds = new Map<string, string>();
-  for (const fact of structuralFacts) {
-    await db.prepare(
+  const structuralFactStatements = structuralFacts.map((fact) =>
+    db.prepare(
       `INSERT INTO repo_structural_facts (
          id, repo_snapshot_id, fact_type, subject_symbol_id, object_symbol_id,
          source_span_id, properties_json, created_at
@@ -439,8 +449,9 @@ async function persistSemanticGraph(
         parser: fact.parser,
         contentHash: fact.contentHash,
       }),
-    ).run();
-  }
+    )
+  );
+  await runPreparedStatements(db, structuralFactStatements);
 
   for (const episode of codeEpisodes) {
     await db.prepare(
@@ -805,10 +816,16 @@ export async function persistReviewChallengeGraph(
     persistedVersions.add(version.id);
   }
 
+  const sourceSpanExpectations: Array<{
+    span: SourceSpan;
+    path: string | undefined;
+    input: NormalizedPullRequestInput;
+  }> = [];
+  const sourceSpanStatements: D1PreparedStatement[] = [];
   for (const span of input.sourceSpans) {
     if (!persistedVersions.has(span.artifactVersionId)) continue;
     const path = artifactPaths.get(span.artifactId);
-    await db.prepare(
+    sourceSpanStatements.push(db.prepare(
       `INSERT INTO repo_source_spans (
          id, artifact_version_id, content_hash, path,
          byte_start, byte_end, line_start, line_end, pr_side,
@@ -828,10 +845,12 @@ export async function persistReviewChallengeGraph(
       input.baseSha,
       input.headSha,
       span.exactText,
-    ).run();
-    await assertPersistedSourceSpanMatchesInput(db, span, path, input);
-    persistedSpanIds.add(span.id);
+    ));
+    sourceSpanExpectations.push({ span, path, input });
   }
+  await runPreparedStatements(db, sourceSpanStatements);
+  await assertPersistedSourceSpansMatchInput(db, sourceSpanExpectations);
+  for (const { span } of sourceSpanExpectations) persistedSpanIds.add(span.id);
 
   const symbols = input.changedFiles
     .flatMap((file) => file.symbols)

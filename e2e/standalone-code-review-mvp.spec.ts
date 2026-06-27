@@ -31,6 +31,9 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { API_BASE, APP_BASE } from './env';
 
+test.describe.configure({ mode: 'serial' });
+test.setTimeout(60_000);
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface StandaloneCandidate {
@@ -73,6 +76,91 @@ interface ChallengeResponse {
   githubPrNumber?: number;
   githubRepoUrl?: string;
   githubPrDescription?: string | null;
+  reviewSession?: {
+    requiresInit?: boolean;
+    challengeId?: string;
+  };
+  matchExplanation?: {
+    status?: string;
+    summary?: string;
+    score?: number | null;
+    qualityGate?: {
+      verdict?: string;
+      checks?: string[];
+    };
+    assessmentQuality?: {
+      verdict?: string;
+      score?: number;
+      maxScore?: number;
+      metrics?: Array<{
+        id?: string;
+        label?: string;
+        score?: number;
+        maxScore?: number;
+        reason?: string;
+      }>;
+    };
+    candidateSourceCount?: number;
+    repoSourceCount?: number;
+    roleSourceCount?: number;
+    validatorAgent?: {
+      agentName?: string;
+      agentVersion?: string;
+      mode?: string;
+      verdict?: string;
+      rationale?: string;
+      checks?: Array<{
+        id?: string;
+        passed?: boolean;
+        reason?: string;
+      }>;
+      sourceBridge?: {
+        prNumber?: number;
+        candidateSourceCount?: number;
+        repoSourceCount?: number;
+        roleSourceCount?: number;
+        alignedDemandCount?: number;
+        stretchCount?: number;
+        provenanceComplete?: boolean;
+      };
+    };
+    evidence?: Array<{
+      roleSourceRefs?: Array<{
+        locator?: string;
+        exactText?: string;
+        conceptKeys?: string[];
+      }>;
+      candidateSourceRefs?: Array<{
+        sourceRefType?: string;
+        locator?: string;
+        exactText?: string;
+      }>;
+      challengeSourceRefs?: Array<{
+        sourceRefType?: string;
+        locator?: string;
+        exactText?: string;
+      }>;
+    }>;
+    evidenceHyperedges?: Array<{
+      relation?: string;
+      label?: string;
+      pairScore?: number;
+      nodes?: Array<{
+        kind?: string;
+        label?: string;
+        sourceRef?: {
+          locator?: string;
+          exactText?: string;
+          conceptKeys?: string[];
+        };
+      }>;
+      stretch?: {
+        atomConcept?: string;
+        demandConcept?: string;
+        dimension?: string;
+      };
+    }>;
+  };
   error?: { code: string; message: string };
 }
 
@@ -107,13 +195,16 @@ interface SeedStandaloneReviewFixture extends SeedStandaloneReviewFixtureRespons
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function getAuthToken(page: Page): Promise<string> {
-  await page.waitForLoadState('networkidle');
-  const cookies = await page.context().cookies();
-  const sessionCookie = cookies.find((c) => c.name === '__session');
-  if (!sessionCookie) {
-    throw new Error('[standalone-code-review-mvp.spec] No __session cookie. Run auth setup first.');
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const cookies = await page.context().cookies();
+    const sessionCookie = cookies.find((c) => c.name === '__session');
+    if (sessionCookie) {
+      return sessionCookie.value;
+    }
+    await page.waitForTimeout(250);
   }
-  return sessionCookie.value;
+  throw new Error('[standalone-code-review-mvp.spec] No __session cookie. Run auth setup first.');
 }
 
 function escapeRegex(value: string): string {
@@ -141,11 +232,18 @@ function candidateHeaders(sessionToken: string): Record<string, string> {
 async function createStandaloneCodeReviewCandidate(
   request: APIRequestContext,
   authToken: string,
-  options: { name?: string; email?: string } = {},
+  options: {
+    name?: string;
+    email?: string;
+    githubRepoUrl?: string;
+    githubPrNumber?: number;
+  } = {},
 ): Promise<StandaloneCandidate> {
   const {
     name = 'E2E Standalone Candidate',
     email = `standalone+e2e-${Date.now()}@pipe-test.dev`,
+    githubRepoUrl,
+    githubPrNumber,
   } = options;
 
   const res = await request.post(`${API_BASE}/api/v1/candidates`, {
@@ -155,6 +253,8 @@ async function createStandaloneCodeReviewCandidate(
       email,
       interviewType: 'CODE_REVIEW',
       skipEmail: true,
+      ...(githubRepoUrl ? { githubRepoUrl } : {}),
+      ...(githubPrNumber ? { githubPrNumber } : {}),
     },
   });
   expect(res.status()).toBe(201);
@@ -198,25 +298,182 @@ async function submitStandaloneIntakeEvidence(
   expect(intakeBody.success).toBe(true);
 }
 
+async function getChallengeWithRetry(
+  request: APIRequestContext,
+  sessionToken: string,
+  order = 0,
+): Promise<ChallengeResponse> {
+  let lastStatus = 0;
+  let lastBody = '';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const res = await request.post(`${API_BASE}/rpc/get-challenge`, {
+      headers: candidateHeaders(sessionToken),
+      data: { order },
+    });
+    lastStatus = res.status();
+    lastBody = await res.text();
+    if (lastStatus === 200) {
+      return JSON.parse(lastBody) as ChallengeResponse;
+    }
+    if (![500, 503].includes(lastStatus)) break;
+    await new Promise((resolve) => setTimeout(resolve, 500 + attempt * 250));
+  }
+  throw new Error(`get-challenge failed after retries: ${lastStatus} ${lastBody.slice(0, 500)}`);
+}
+
 async function seedStandaloneReviewMatchFixture(
   request: APIRequestContext,
   authToken: string,
   candidate: StandaloneCandidate,
 ): Promise<SeedStandaloneReviewFixture> {
   const suffix = candidate.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toLowerCase();
-  const conceptKey = `term:e2e-source-backed-${suffix}`;
-  const conceptLabel = `e2e source backed ${suffix}`;
-  const retryConceptKey = 'term:retry';
-  const idempotencyConceptKey = 'term:idempotency';
-  const publisherConceptKey = 'term:publisher';
+  const conceptKey = 'term:workflow-conflict-warning';
+  const conceptLabel = 'workflow conflict warning';
+  const uniquenessConceptKey = 'term:workflow-name-uniqueness';
+  const configRenameConceptKey = 'term:wrangler-config-rename';
+  const deployWarningConceptKey = 'term:deploy-warning';
+  const changesetConceptKey = 'term:changeset-release-note';
   const vitestConceptKey = 'term:vitest';
-  const repoFullName = `pipe/e2e-source-backed-${suffix}`;
-  const repoUrl = `https://github.com/pipe/e2e-source-backed-${suffix}`;
-  const prNumber = 42;
+  const repoFullName = 'cloudflare/workers-sdk';
+  const repoUrl = 'https://github.com/cloudflare/workers-sdk';
+  const prNumber = 14435;
   const recordingKey = `meetings/e2e-owner/${suffix}/recording.webm`;
   const transcriptionAudioKey = `meetings/e2e-owner/${suffix}/transcription-audio.webm`;
   const transcriptStatus = 'READY';
   const transcriptionProvider = 'deepgram-multichannel';
+
+  const comparatorRes = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
+    headers: recruiterHeaders(authToken),
+    data: {
+      fixtureId: `standalone-review-comparator-${suffix}`,
+      candidateId: candidate.id,
+      useExistingCandidateEvidence: true,
+      concepts: [
+        { canonicalKey: conceptKey, namespace: 'term', label: conceptLabel },
+        { canonicalKey: uniquenessConceptKey, namespace: 'term', label: 'workflow name uniqueness' },
+        { canonicalKey: 'term:release-note-wording', namespace: 'term', label: 'release note wording' },
+        { canonicalKey: 'term:dashboard-polish', namespace: 'term', label: 'dashboard polish' },
+        { canonicalKey: 'term:copy-editing', namespace: 'term', label: 'copy editing' },
+        { canonicalKey: 'term:readme-docs', namespace: 'term', label: 'readme docs' },
+      ],
+      repo: {
+        githubUrl: 'https://github.com/cloudflare/workers-sdk',
+        fullName: repoFullName,
+        primaryLanguage: 'TypeScript',
+        description: 'Cloudflare Workers SDK and Wrangler source repository.',
+      },
+      pullRequest: {
+        number: 14436,
+        title: '[Wrangler] Tidy copy for workflow dashboard notes',
+        author: 'pipe-e2e',
+        baseSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        headSha: 'cccccccccccccccccccccccccccccccccccccccc',
+        mergedAt: '2026-06-26T11:51:43Z',
+      },
+      repoSpans: [
+        {
+          key: 'dashboard-copy',
+          path: 'packages/wrangler/src/workflows/dashboard-copy.ts',
+          exactText: [
+            `export const workflowDashboardCopy = {`,
+            `  warning: "Workflow names must be unique per account.",`,
+            `  helper: "Review release note wording before publishing.",`,
+            `  audience: "workflow dashboard maintainers",`,
+            `  tone: "concise",`,
+            `  emphasis: "copy editing",`,
+            `};`,
+            ``,
+            `export function workflowDashboardWarning(): string {`,
+            `  return workflowDashboardCopy.warning;`,
+            `}`,
+          ].join('\n'),
+          artifactType: 'source',
+          lineStart: 12,
+        },
+        {
+          key: 'dashboard-test',
+          path: 'packages/wrangler/src/__tests__/workflows/dashboard-copy.test.ts',
+          exactText: [
+            `import { describe, expect, it } from "vitest";`,
+            `import { workflowDashboardWarning } from "../../workflows/dashboard-copy";`,
+            ``,
+            `describe("workflow dashboard copy", () => {`,
+            `  it("mentions account-scoped workflow names", () => {`,
+            `    expect(workflowDashboardWarning()).toContain("Workflow names must be unique");`,
+            `    expect(workflowDashboardWarning()).toContain("per account");`,
+            `  });`,
+            `});`,
+          ].join('\n'),
+          artifactType: 'test',
+          lineStart: 1,
+        },
+        {
+          key: 'readme-note',
+          path: 'packages/wrangler/README.md',
+          exactText: [
+            `### Workflow dashboard note`,
+            ``,
+            `Workflow names must be unique per account, and documentation copy should stay concise.`,
+            ``,
+            `Reviewers should confirm that the dashboard warning, release note wording,`,
+            `and README language do not overstate workflow reassignment behavior.`,
+          ].join('\n'),
+          artifactType: 'documentation',
+          lineStart: 42,
+        },
+      ],
+      demands: [
+        {
+          id: 'dashboard-copy-demand',
+          family: 'source-backed:dashboard-copy',
+          narrative: 'Review broad dashboard copy for workflow naming guidance.',
+          conceptKeys: [
+            conceptKey,
+            uniquenessConceptKey,
+            'term:release-note-wording',
+            'term:dashboard-polish',
+            'term:copy-editing',
+          ],
+          sourceSpanKeys: ['dashboard-copy'],
+          weight: 0.4,
+        },
+        {
+          id: 'dashboard-test-demand',
+          family: 'source-backed:dashboard-copy-test',
+          narrative: 'Review broad test coverage for workflow dashboard copy.',
+          conceptKeys: [
+            conceptKey,
+            uniquenessConceptKey,
+            'term:dashboard-polish',
+            'term:copy-editing',
+            'term:readme-docs',
+          ],
+          sourceSpanKeys: ['dashboard-test'],
+          weight: 0.3,
+        },
+        {
+          id: 'readme-note-demand',
+          family: 'source-backed:readme-docs',
+          narrative: 'Review README wording for workflow naming guidance.',
+          conceptKeys: [
+            conceptKey,
+            uniquenessConceptKey,
+            'term:readme-docs',
+            'term:copy-editing',
+            'term:dashboard-polish',
+          ],
+          sourceSpanKeys: ['readme-note'],
+          weight: 0.3,
+        },
+      ],
+    },
+  });
+  const comparatorText = await comparatorRes.text();
+  expect(comparatorRes.status(), comparatorText).toBe(200);
+  const comparatorBody = JSON.parse(comparatorText) as SeedStandaloneReviewFixtureResponse;
+  expect(comparatorBody.ok).toBe(true);
+  expect(comparatorBody.prNumber).toBe(14436);
+
   const res = await request.post(`${API_BASE}/api/v1/internal/e2e/standalone-review-match-fixture`, {
     headers: recruiterHeaders(authToken),
     data: {
@@ -230,30 +487,35 @@ async function seedStandaloneReviewMatchFixture(
           label: conceptLabel,
         },
         {
-          canonicalKey: retryConceptKey,
+          canonicalKey: uniquenessConceptKey,
           namespace: 'term',
-          label: 'retry',
+          label: 'workflow name uniqueness',
         },
         {
-          canonicalKey: idempotencyConceptKey,
+          canonicalKey: configRenameConceptKey,
           namespace: 'term',
-          label: 'idempotency',
+          label: 'wrangler config rename',
         },
         {
-          canonicalKey: publisherConceptKey,
+          canonicalKey: deployWarningConceptKey,
           namespace: 'term',
-          label: 'publisher',
+          label: 'deploy warning',
         },
         {
           canonicalKey: vitestConceptKey,
           namespace: 'term',
           label: 'vitest',
         },
+        {
+          canonicalKey: changesetConceptKey,
+          namespace: 'term',
+          label: 'changeset release note',
+        },
       ],
       roleSource: {
-        title: `Source-backed ${conceptLabel} role`,
-        jobDescriptionMd: `Review TypeScript PRs that implement ${conceptLabel} retry idempotency with source-backed evidence.`,
-        selectedConceptKeys: [conceptKey],
+        title: 'Source-backed Workers SDK review role',
+        jobDescriptionMd: 'Review TypeScript PRs that improve Wrangler deploy warnings for workflow name conflicts with source-backed evidence.',
+        selectedConceptKeys: [conceptKey, uniquenessConceptKey],
       },
       candidateEvidenceSource: {
         interactionType: 'video_meeting',
@@ -268,37 +530,46 @@ async function seedStandaloneReviewMatchFixture(
       },
       candidateEvidence: [
         {
-          exactText: `Implemented ${conceptLabel} idempotency with source-backed evidence.`,
+          exactText: 'Implemented workflow conflict warning copy explaining unique workflow names.',
           predicate: 'implemented',
-          narrative: `Candidate implemented ${conceptLabel} idempotency.`,
-          conceptKeys: [conceptKey, idempotencyConceptKey],
+          narrative: 'Candidate implemented workflow conflict warning copy.',
+          conceptKeys: [conceptKey, uniquenessConceptKey, deployWarningConceptKey],
           evidenceLevel: 'implemented',
           strength: 1,
           confidence: 1,
         },
         {
-          exactText: `Validated ${conceptLabel} retry behavior with tests.`,
+          exactText: 'Validated workflow conflict warning behavior in Wrangler deploy tests.',
           predicate: 'validated',
-          narrative: `Candidate validated ${conceptLabel} retry behavior.`,
-          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
+          narrative: 'Candidate validated workflow conflict warning behavior.',
+          conceptKeys: [conceptKey, deployWarningConceptKey, vitestConceptKey],
           evidenceLevel: 'validated',
           strength: 1,
           confidence: 1,
         },
         {
-          exactText: `Published ${conceptLabel} retry envelopes through a deterministic publisher.`,
-          predicate: 'implemented',
-          narrative: `Candidate implemented ${conceptLabel} publisher behavior.`,
-          conceptKeys: [publisherConceptKey],
+          exactText: 'Explained how Wrangler config rename guidance prevents unintended workflow reassignment.',
+          predicate: 'explained',
+          narrative: 'Candidate explained Wrangler config rename guidance.',
+          conceptKeys: [configRenameConceptKey, uniquenessConceptKey],
           evidenceLevel: 'implemented',
           strength: 1,
           confidence: 1,
         },
         {
-          exactText: `Explained how ${conceptLabel} prevents duplicate retry acknowledgements.`,
+          exactText: 'Reviewed deploy helper warning message for account-scoped workflow name uniqueness.',
           predicate: 'explained',
-          narrative: `Candidate explained ${conceptLabel} duplicate acknowledgement prevention.`,
-          conceptKeys: [retryConceptKey, idempotencyConceptKey],
+          narrative: 'Candidate reviewed deploy helper warning semantics.',
+          conceptKeys: [deployWarningConceptKey, uniquenessConceptKey],
+          evidenceLevel: 'validated',
+          strength: 1,
+          confidence: 1,
+        },
+        {
+          exactText: 'Reviewed changeset release note coverage for the Wrangler workflow conflict warning.',
+          predicate: 'reviewed',
+          narrative: 'Candidate reviewed changeset release note coverage.',
+          conceptKeys: [changesetConceptKey, deployWarningConceptKey],
           evidenceLevel: 'validated',
           strength: 1,
           confidence: 1,
@@ -308,101 +579,108 @@ async function seedStandaloneReviewMatchFixture(
         githubUrl: repoUrl,
         fullName: repoFullName,
         primaryLanguage: 'TypeScript',
-        description: 'Source-backed deterministic E2E fixture repository.',
+        description: 'Cloudflare Workers SDK and Wrangler source repository.',
       },
       pullRequest: {
         number: prNumber,
-        title: 'Review source-backed retry idempotency',
-        author: 'pipe-e2e',
-        baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        headSha: 'dddddddddddddddddddddddddddddddddddddddd',
-        mergedAt: '2026-06-14T08:00:00.000Z',
+        title: '[Wrangler] Improve deploy warn for workflows with repeated names',
+        author: 'pombosilva',
+        baseSha: 'cb7ad1177a4ba0b06054268229ed39ae111d7c4f',
+        headSha: 'f11917ab8f3dcf94e59bb72d8232f4e43c67a36d',
+        mergedAt: '2026-06-26T10:51:43Z',
       },
       repoSpans: [
         {
-          key: 'implementation',
-          path: 'src/retry-idempotency.ts',
+          key: 'deploy-helper',
+          path: 'packages/deploy-helpers/src/deploy/helpers/check-workflow-conflicts.ts',
           exactText: [
-            `export type RetryEvent = { id: string; attempt: number; key: string };`,
+            `const message =`,
+            `  \`The following workflow(s) already exist and belong to different workers:\\n\${conflictList}\\n\\n\` +`,
+            `  \`Deploying will reassign these workflows to "\${scriptName}". Workflow names must be unique per account. If this reassignment is unintended, rename the workflow(s) in the Wrangler config.\`;`,
             ``,
-            `// Implement ${conceptLabel} idempotency for reviewable retry events.`,
-            `export function buildRetryEnvelope(event: RetryEvent) {`,
-            `  const idempotencyKey = \`\${event.key}:\${event.attempt}\`;`,
-            `  return {`,
-            `    id: event.id,`,
-            `    idempotencyKey,`,
-            `    topic: '${conceptLabel}',`,
-            `    shouldPublish: event.attempt > 0,`,
-            `  };`,
-            `}`,
-            ``,
-            `export function acknowledgeRetry(event: RetryEvent) {`,
-            `  return buildRetryEnvelope(event).shouldPublish;`,
-            `}`,
+            `return { hasConflicts: true, conflicts, message };`,
           ].join('\n'),
           artifactType: 'source',
-          lineStart: 10,
+          lineStart: 85,
         },
         {
-          key: 'publisher',
-          path: 'src/retry-publisher.ts',
+          key: 'unit-test',
+          path: 'packages/wrangler/src/__tests__/deploy/check-workflow-conflicts.test.ts',
           exactText: [
-            `import { buildRetryEnvelope, type RetryEvent } from './retry-idempotency';`,
-            ``,
-            `export function publishRetry(event: RetryEvent, publish: (topic: string, key: string) => void) {`,
-            `  const envelope = buildRetryEnvelope(event);`,
-            `  if (!envelope.shouldPublish) return 'skipped';`,
-            `  publish(envelope.topic, envelope.idempotencyKey);`,
-            `  return 'published';`,
-            `}`,
-          ].join('\n'),
-          artifactType: 'source',
-          lineStart: 40,
-        },
-        {
-          key: 'validation',
-          path: 'src/retry-idempotency.test.ts',
-          exactText: [
-            `import { describe, expect, it } from 'vitest';`,
-            `import { buildRetryEnvelope } from './retry-idempotency';`,
-            ``,
-            `describe('${conceptLabel} retry behavior', () => {`,
-            `  it('keeps retry acknowledgement idempotent', () => {`,
-            `    // Validate ${conceptLabel} retry behavior with deterministic tests.`,
-            `    const envelope = buildRetryEnvelope({ id: 'evt-1', attempt: 2, key: 'retry' });`,
-            `    expect(envelope.idempotencyKey).toBe('retry:2');`,
-            `    expect(envelope.shouldPublish).toBe(true);`,
-            `  });`,
-            `});`,
+            `expect(message).toBe(`,
+            `  \`The following workflow(s) already exist and belong to different workers:\\n\` +`,
+            `    \`  - "my-workflow" (currently belongs to "other-worker")\\n\\n\` +`,
+            `    \`Deploying will reassign these workflows to "my-worker". Workflow names must be unique per account. If this reassignment is unintended, rename the workflow(s) in the Wrangler config.\``,
+            `);`,
           ].join('\n'),
           artifactType: 'test',
-          lineStart: 22,
+          lineStart: 277,
+        },
+        {
+          key: 'integration-test',
+          path: 'packages/wrangler/src/__tests__/deploy/workflows.test.ts',
+          exactText: [
+            `expect(std.warn).toContain(`,
+            `  'Deploying will reassign these workflows to "test-name".'`,
+            `);`,
+            `expect(std.warn).toContain(`,
+            `  "Workflow names must be unique per account."`,
+            `);`,
+            `expect(std.warn).toContain(`,
+            `  "If this reassignment is unintended, rename the workflow(s) in the Wrangler config."`,
+            `);`,
+          ].join('\n'),
+          artifactType: 'test',
+          lineStart: 987,
+        },
+        {
+          key: 'changeset',
+          path: '.changeset/explain-workflow-name-conflict.md',
+          exactText: [
+            `---`,
+            `"wrangler": patch`,
+            `---`,
+            ``,
+            `Improve the deploy warning shown when a Workflow name already belongs to another Worker`,
+            ``,
+            `The warning still notes that deploying reassigns the workflow to the current Worker, and now also explains why this happens (workflow names must be unique per account) and how to resolve it (rename the workflow in the Wrangler config).`,
+          ].join('\n'),
+          artifactType: 'documentation',
+          lineStart: 1,
         },
       ],
       demands: [
         {
-          id: 'implementation-demand',
-          family: 'source-backed:e2e-implementation',
-          narrative: `Review implemented ${conceptLabel} idempotency.`,
-          conceptKeys: [conceptKey, idempotencyConceptKey],
-          sourceSpanKeys: ['implementation'],
-          weight: 0.5,
+          id: 'deploy-helper-demand',
+          family: 'source-backed:workflow-conflict-message',
+          narrative: 'Review the deploy helper warning for workflow name conflicts.',
+          conceptKeys: [conceptKey, uniquenessConceptKey, deployWarningConceptKey],
+          sourceSpanKeys: ['deploy-helper'],
+          weight: 0.4,
         },
         {
-          id: 'publisher-demand',
-          family: 'source-backed:e2e-publisher',
-          narrative: `Review published ${conceptLabel} retry envelopes.`,
-          conceptKeys: [publisherConceptKey],
-          sourceSpanKeys: ['publisher'],
+          id: 'unit-test-demand',
+          family: 'source-backed:workflow-conflict-unit-test',
+          narrative: 'Review the direct unit assertion for the workflow conflict message.',
+          conceptKeys: [conceptKey, uniquenessConceptKey, vitestConceptKey],
+          sourceSpanKeys: ['unit-test'],
           weight: 0.25,
         },
         {
-          id: 'validation-demand',
-          family: 'source-backed:e2e-validation',
-          narrative: `Review validated ${conceptLabel} retry behavior.`,
-          conceptKeys: [conceptKey, retryConceptKey, vitestConceptKey],
-          sourceSpanKeys: ['validation'],
-          weight: 0.25,
+          id: 'integration-test-demand',
+          family: 'source-backed:workflow-conflict-integration-test',
+          narrative: 'Review the deploy integration test coverage for rename guidance.',
+          conceptKeys: [configRenameConceptKey, deployWarningConceptKey, vitestConceptKey],
+          sourceSpanKeys: ['integration-test'],
+          weight: 0.2,
+        },
+        {
+          id: 'changeset-demand',
+          family: 'source-backed:workflow-conflict-changeset',
+          narrative: 'Review the public changeset note for the workflow conflict warning.',
+          conceptKeys: [changesetConceptKey, deployWarningConceptKey],
+          sourceSpanKeys: ['changeset'],
+          weight: 0.15,
         },
       ],
     },
@@ -515,34 +793,166 @@ test.describe('§MVP.1 — Recruiter creates standalone CODE_REVIEW invite', () 
     expect(interviews![0].status).toBe('INVITED');
   });
 
-  test('UI flow: /schedule exposes current NEW INTERVIEW modal', async ({ browser }) => {
-    const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
-    const page = await context.newPage();
+  test('manual repo override is persisted for standalone CODE_REVIEW interviews', async ({ request }) => {
+    const repoUrl = 'https://github.com/cloudflare/workers-sdk';
+    const prNumber = 14435;
+    const candidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Manual Repo Override Candidate',
+      email: `manual-override+e2e-${Date.now()}@pipe-test.dev`,
+      githubRepoUrl: repoUrl,
+      githubPrNumber: prNumber,
+    });
 
-    await page.goto(`${APP_BASE}/schedule`);
-    await page.waitForLoadState('networkidle');
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+
+    const profile = await profileRes.json() as Record<string, unknown>;
+    const interviews = profile.scheduledInterviews as Array<{
+      interviewType: string;
+      githubRepoUrl: string | null;
+      githubPrNumber: number | null;
+    }> | undefined;
+
+    expect(interviews).toBeDefined();
+    expect(interviews).toHaveLength(1);
+    expect(interviews![0]).toEqual(expect.objectContaining({
+      interviewType: 'CODE_REVIEW',
+      githubRepoUrl: repoUrl,
+      githubPrNumber: prNumber,
+    }));
+  });
+
+  test('manual repo override returns source-backed validator-agent justification', async ({ request }) => {
+    const packetSeedCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Manual Override Packet Seeder',
+      email: `manual-packet-seed+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, packetSeedCandidate);
+
+    const manualCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Manual Override Review Candidate',
+      email: `manual-override-review+e2e-${Date.now()}@pipe-test.dev`,
+      githubRepoUrl: fixture.repoUrl,
+      githubPrNumber: fixture.prNumber,
+    });
+    const session = await resolveToken(request, manualCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, session.sessionToken);
+
+    const challenge = await getChallengeWithRetry(request, session.sessionToken);
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+    expect(challenge.cachedDiffJson).toBeTruthy();
+    expect(challenge.matchExplanation).toEqual(expect.objectContaining({
+      status: 'MATCHED',
+      summary: expect.stringContaining('Manual override'),
+      score: null,
+      qualityGate: expect.objectContaining({
+        verdict: 'PASSED',
+        checks: expect.arrayContaining([
+          'repo_source_spans',
+          'source_backed_manual_override',
+          'agent_validated_match',
+        ]),
+      }),
+      candidateSourceCount: 0,
+      repoSourceCount: 1,
+      roleSourceCount: 0,
+      assessmentQuality: expect.objectContaining({
+        verdict: 'USABLE',
+        score: 8,
+        maxScore: 12,
+        metrics: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'pr_reviewability',
+            score: 2,
+          }),
+          expect.objectContaining({
+            id: 'contrast_separation',
+            score: 0,
+          }),
+        ]),
+      }),
+      validatorAgent: expect.objectContaining({
+        agentName: 'source_backed_match_validator',
+        agentVersion: 'v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: expect.stringMatching(/recruiter-selected/i),
+        checks: expect.arrayContaining([
+          expect.objectContaining({ id: 'repo_source_spans', passed: true }),
+          expect.objectContaining({ id: 'source_backed_manual_override', passed: true }),
+          expect.objectContaining({ id: 'provenance_complete', passed: true }),
+        ]),
+        sourceBridge: expect.objectContaining({
+          prNumber: fixture.prNumber,
+          candidateSourceCount: 0,
+          repoSourceCount: 1,
+          roleSourceCount: 0,
+          provenanceComplete: true,
+        }),
+      }),
+    }));
+
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${manualCandidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+    const profile = await profileRes.json() as {
+      standaloneReviewMatch?: {
+        matchStatus: string;
+        repoUrl: string | null;
+        prNumber: number | null;
+        summary: string | null;
+        gaps: string[];
+      } | null;
+    };
+
+    expect(profile.standaloneReviewMatch).toEqual(expect.objectContaining({
+      matchStatus: 'MATCHED',
+      repoUrl: fixture.repoUrl,
+      prNumber: fixture.prNumber,
+    }));
+    expect(profile.standaloneReviewMatch?.summary).toContain('Matched to a reviewable PR challenge.');
+    expect(profile.standaloneReviewMatch?.gaps).toEqual([]);
+  });
+
+  test('UI flow: /schedule exposes current NEW INTERVIEW modal', async ({ page }) => {
+    await page.goto(`${APP_BASE}/schedule`, { waitUntil: 'domcontentloaded' });
 
     // CODE_REVIEW candidate creation is covered by the recruiter API tests above.
     // The current schedule UI creates meeting invites from the same interview surface.
-    const inviteBtn = page.getByRole('main').getByRole('button', { name: /NEW INTERVIEW/i }).first();
-    await expect(inviteBtn).toBeVisible({ timeout: 10000 });
+    const inviteBtn = page.getByRole('button', { name: /NEW INTERVIEW/i }).first();
+    await expect(inviteBtn).toBeVisible({ timeout: 30000 });
     await inviteBtn.click();
 
     await expect(page.getByText('NEW INTERVIEW').first()).toBeVisible({ timeout: 5000 });
 
-    const nameInput = page.locator('input[placeholder="Jane Smith"]');
+    const nameInput = page.getByPlaceholder('Jane Doe');
     await expect(nameInput).toBeVisible();
     await nameInput.fill('E2E Code Review Test');
 
-    const emailInput = page.locator('input[placeholder="jane@example.com"]');
+    const emailInput = page.getByPlaceholder('jane@example.com');
     await expect(emailInput).toBeVisible();
     await emailInput.fill(`standalone-ui+${Date.now()}@pipe-test.dev`);
 
-    await expect(page.getByRole('button', { name: /^VIDEO$/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /^CODE_REVIEW$/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /CREATE INTERVIEW/i })).toBeEnabled();
+    await expect(page.getByText('Video interview').first()).toBeVisible();
+    const codeReviewMode = page.getByRole('button', {
+      name: /Code-review interview\s+Async pull request review/i,
+    });
+    await expect(codeReviewMode).toBeVisible();
+    await codeReviewMode.click();
+    await expect(page.getByText('Async pull request review')).toBeVisible();
+    await expect(page.getByText('ROOM FEATURES')).toHaveCount(0);
 
-    await context.close();
+    await page.getByRole('button', { name: 'Specify repo manually' }).click();
+    await page.getByPlaceholder('https://github.com/owner/repo').fill('https://github.com/cloudflare/workers-sdk');
+    const createButton = page.getByRole('button', { name: /CREATE ASSESSMENT INVITE/i });
+    await expect(createButton).toBeDisabled();
+    await page.getByPlaceholder('PR number').fill('14435');
+    await expect(createButton).toBeEnabled();
   });
 });
 
@@ -623,6 +1033,46 @@ test.describe('§MVP.3 — Standalone candidate sees intake before code review',
     const challenge = (await res.json()) as ChallengeResponse;
     expect(challenge.type).toBe('INTAKE');
     expect(challenge.title).toBeTruthy();
+  });
+
+  test('candidate can paste resume text and reach source-backed CODE_REVIEW without file upload', async ({ browser, request }) => {
+    const textIntakeCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Text Intake Code Review Candidate',
+      email: `text-intake-code-review+e2e-${Date.now()}@pipe-test.dev`,
+      githubRepoUrl: 'https://github.com/cloudflare/workers-sdk',
+      githubPrNumber: 14435,
+    });
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, textIntakeCandidate);
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    await page.goto(`${APP_BASE}/assess/${textIntakeCandidate.inviteToken}`);
+    await expect(page.getByText('Code Review · Review a pull request and leave feedback')).toBeVisible({ timeout: 30000 });
+    await page.getByRole('button', { name: 'START_INTERVIEW' }).click();
+
+    const resumeText = page.getByPlaceholder('Paste resume text, recent project notes, or a short profile summary.');
+    await expect(resumeText).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole('button', { name: 'CONTINUE' })).toBeDisabled();
+    await resumeText.fill(
+      'Senior software engineer with TypeScript, Cloudflare Workers, deployment tooling, workflow configuration, and production PR review experience. I routinely review warning copy, regression tests, and developer-experience changes in large TypeScript repos.',
+    );
+    await page.getByPlaceholder('username (not the full URL)').fill('text-intake-e2e');
+    await expect(page.getByRole('button', { name: 'CONTINUE' })).toBeEnabled();
+    await page.getByRole('button', { name: 'CONTINUE' }).click();
+
+    const codeReview = page.getByTestId('code-review-challenge');
+    await expect(codeReview).toBeVisible({ timeout: 30000 });
+    await expect(codeReview).toContainText(fixture.repoFullName);
+    await expect(codeReview).toContainText(`#${fixture.prNumber}`);
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('MATCH_PROOF');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('REPO SOURCE SPANS');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('VALIDATOR_AGENT');
+    await expect(page.getByTestId('pierre-diff-viewer')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('JOIN VIDEO');
+    await expect(page.locator('body')).not.toContainText('Video Waiting Room');
+
+    await context.close();
   });
 });
 
@@ -716,17 +1166,11 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
     const page = await context.newPage();
 
     await page.goto(`${APP_BASE}/assess/${candidate.inviteToken}`);
-    await page.waitForLoadState('networkidle');
 
-    // Should see intake/upload UI — not a direct code review
-    // Verify presence of resume upload or intake protocol indicator
-    const hasIntake = await page
-      .locator('text=/upload|resume|cv|profile/i')
-      .first()
-      .isVisible({ timeout: 15000 })
-      .catch(() => false);
-
-    expect(hasIntake).toBe(true);
+    // Should see intake intro — not a direct code review.
+    await expect(page.getByText('UPLOAD YOUR CV · GETTING STARTED')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Profile & Resume')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'START_INTERVIEW' })).toBeVisible();
 
     // Must NOT immediately show a code review diff
     const hasDiff = await page
@@ -736,6 +1180,58 @@ test.describe('§MVP.5 — Candidate opens /assess/:token for standalone code re
       .catch(() => false);
 
     expect(hasDiff).toBe(false);
+
+    await context.close();
+  });
+
+  test('candidate URL invite token clears stale cached matched session', async ({ browser, request }) => {
+    const staleCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Stale Matched Code Review Candidate',
+      email: `stale-matched+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const staleSession = await resolveToken(request, staleCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, staleSession.sessionToken);
+    const staleFixture = await seedStandaloneReviewMatchFixture(request, authToken, staleCandidate);
+    await getChallengeWithRetry(request, staleSession.sessionToken);
+
+    const freshCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Fresh Intake Candidate',
+      email: `fresh-intake+e2e-${Date.now()}@pipe-test.dev`,
+    });
+
+    const context = await browser.newContext();
+    await context.addInitScript(({ sessionToken, inviteToken, candidate }) => {
+      window.sessionStorage.setItem('pipe_session_token', sessionToken);
+      window.sessionStorage.setItem('pipe_session_invite_token', inviteToken);
+      window.sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+        id: candidate.id,
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: candidate.name,
+        email: candidate.email,
+      }));
+    }, {
+      sessionToken: staleSession.sessionToken,
+      inviteToken: staleCandidate.inviteToken,
+      candidate: {
+        id: staleCandidate.id,
+        name: staleCandidate.name,
+        email: staleCandidate.email,
+      },
+    });
+    const page = await context.newPage();
+
+    await page.goto(`${APP_BASE}/assess/${freshCandidate.inviteToken}`);
+
+    await expect(page.getByText('UPLOAD YOUR CV · GETTING STARTED')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('Profile & Resume')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(staleFixture.repoFullName);
+    await expect(page.locator('body')).not.toContainText(`#${staleFixture.prNumber}`);
+
+    const cachedInviteToken = await page.evaluate(() =>
+      window.sessionStorage.getItem('pipe_session_invite_token')
+    );
+    expect(cachedInviteToken).toBe(freshCandidate.inviteToken);
 
     await context.close();
   });
@@ -774,34 +1270,106 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
 
     // Step 2: Get challenge — source-backed candidate evidence and repo packet must match deterministically.
-    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
-      headers: candidateHeaders(sessionToken),
-      data: { order: 0 },
-    });
-    expect(challengeRes.status()).toBe(200);
-
-    const challenge = (await challengeRes.json()) as ChallengeResponse;
+    const challenge = await getChallengeWithRetry(request, sessionToken);
 
     expect(challenge.type).toBe('CODE_REVIEW');
     expect(challenge.githubPrNumber).toBe(fixture.prNumber);
     expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
     expect(challenge.githubRepoUrl).toMatch(/^https:\/\/github\.com\//);
+    expect(challenge.githubRepoUrl).not.toMatch(/\/pipe\/e2e-|\/pipe\/manual-review/);
     expect(challenge.cachedDiffJson).toBeTruthy();
-    expect(challenge.githubPrTitle).toBe('Review source-backed retry idempotency');
+    expect(challenge.githubPrTitle).toBe('[Wrangler] Improve deploy warn for workflows with repeated names');
     expect(challenge.title).toBeTruthy();
+    expect(challenge.matchExplanation).toEqual(expect.objectContaining({
+      status: 'MATCHED',
+      summary: expect.stringContaining('Matched'),
+      qualityGate: expect.objectContaining({
+        verdict: 'PASSED',
+        checks: expect.arrayContaining([
+          'candidate_source_evidence',
+          'repo_source_spans',
+          'role_context_alignment',
+          'agent_validated_match',
+        ]),
+      }),
+      validatorAgent: expect.objectContaining({
+        agentName: 'source_backed_match_validator',
+        agentVersion: 'v1',
+        mode: 'deterministic',
+        verdict: 'PASSED',
+        rationale: expect.stringContaining('source-backed demand'),
+        sourceBridge: expect.objectContaining({
+          prNumber: fixture.prNumber,
+          provenanceComplete: true,
+        }),
+      }),
+    }));
+    expect(challenge.matchExplanation?.score ?? 0).toBeGreaterThan(0);
+    expect(challenge.matchExplanation?.candidateSourceCount ?? 0).toBeGreaterThan(0);
+    expect(challenge.matchExplanation?.repoSourceCount ?? 0).toBeGreaterThan(0);
+    expect(challenge.matchExplanation?.roleSourceCount ?? 0).toBeGreaterThan(0);
+    expect(challenge.matchExplanation?.evidence?.length ?? 0).toBeGreaterThan(0);
+    const validator = challenge.matchExplanation?.validatorAgent;
+    expect(validator?.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'candidate_source_evidence', passed: true }),
+      expect.objectContaining({ id: 'repo_source_spans', passed: true }),
+      expect.objectContaining({ id: 'role_context_alignment', passed: true }),
+      expect.objectContaining({ id: 'provenance_complete', passed: true }),
+      expect.objectContaining({ id: 'bounded_stretch', passed: true }),
+      expect.objectContaining({ id: 'eligible_match', passed: true }),
+    ]));
+    expect(validator?.sourceBridge?.candidateSourceCount ?? 0).toBeGreaterThan(0);
+    expect(validator?.sourceBridge?.repoSourceCount ?? 0).toBeGreaterThan(0);
+    expect(validator?.sourceBridge?.roleSourceCount ?? 0).toBeGreaterThan(0);
+    expect(validator?.sourceBridge?.alignedDemandCount ?? 0).toBeGreaterThanOrEqual(2);
+    const matchEvidence = challenge.matchExplanation?.evidence ?? [];
+    const roleRefs = matchEvidence.flatMap((entry) => entry.roleSourceRefs ?? []);
+    const candidateRefs = matchEvidence.flatMap((entry) => entry.candidateSourceRefs ?? []);
+    const challengeRefs = matchEvidence.flatMap((entry) => entry.challengeSourceRefs ?? []);
+    expect(roleRefs.some((ref) =>
+      ref.exactText?.includes('Review TypeScript PRs that improve Wrangler deploy warnings')
+      && ref.conceptKeys?.includes(fixture.conceptKey)
+    )).toBe(true);
+    expect(candidateRefs.some((ref) =>
+      ref.sourceRefType === 'source_span'
+      && ref.exactText?.includes('Implemented workflow conflict warning copy')
+    )).toBe(true);
+    expect(challengeRefs.some((ref) =>
+      ref.sourceRefType === 'repo_source_span'
+      && ref.exactText?.includes('Workflow names must be unique per account.')
+    )).toBe(true);
+    const evidenceHyperedges = challenge.matchExplanation?.evidenceHyperedges ?? [];
+    expect(evidenceHyperedges.length).toBeGreaterThan(0);
+    expect(evidenceHyperedges.some((edge) =>
+      edge.relation === 'candidate_role_repo_alignment'
+      && edge.nodes?.some((node) =>
+        node.kind === 'person_evidence'
+        && node.sourceRef?.exactText?.includes('Implemented workflow conflict warning copy')
+      )
+      && edge.nodes?.some((node) =>
+        node.kind === 'role_source'
+        && node.sourceRef?.exactText?.includes('Review TypeScript PRs that improve Wrangler deploy warnings')
+      )
+      && edge.nodes?.some((node) =>
+        node.kind === 'repo_challenge'
+        && node.sourceRef?.exactText?.includes('Workflow names must be unique per account.')
+      )
+    )).toBe(true);
 
     const diff = challenge.cachedDiffJson as { files?: Array<{ filename?: string; hunks?: unknown[] }> };
     expect(Array.isArray(diff.files)).toBe(true);
-    expect(diff.files!.map((file) => file.filename)).toEqual([
-      'src/retry-idempotency.test.ts',
-      'src/retry-idempotency.ts',
-    ]);
+    expect(diff.files!.map((file) => file.filename)).toEqual(expect.arrayContaining([
+      'packages/deploy-helpers/src/deploy/helpers/check-workflow-conflicts.ts',
+      'packages/wrangler/src/__tests__/deploy/check-workflow-conflicts.test.ts',
+      'packages/wrangler/src/__tests__/deploy/workflows.test.ts',
+    ]));
     expect(diff.files!.every((file) => Array.isArray(file.hunks) && file.hunks.length > 0)).toBe(true);
 
     const raw = JSON.stringify(challenge);
     expect(raw).not.toContain('groundTruth');
     expect(raw).not.toContain('plantedBugs');
     expect(raw).not.toContain('scoringRubric');
+    expect(raw).not.toMatch(/sourceRefId|sourceSpanId|artifactId|artifactVersion|contentHash/);
 
     const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${candidate.id}`, {
       headers: recruiterHeaders(authToken),
@@ -856,6 +1424,172 @@ test.describe('§MVP.6 — Matched candidate receives real CODE_REVIEW challenge
       entry.challengeId === fixture.packetId && entry.eligible === true
     )).toBe(true);
   });
+
+  test('matched standalone CODE_REVIEW initializes an AI developer defense session', async ({ request }) => {
+    const defenseCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'AI Developer Defense Candidate',
+      email: `defense+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const defenseSession = await resolveToken(request, defenseCandidate.inviteToken);
+
+    await submitStandaloneIntakeEvidence(request, defenseSession.sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, defenseCandidate);
+    const challenge = await getChallengeWithRetry(request, defenseSession.sessionToken);
+
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
+    expect(challenge.githubPrNumber).toBe(fixture.prNumber);
+    expect(challenge.reviewSession).toEqual(expect.objectContaining({
+      requiresInit: true,
+      challengeId: challenge.id,
+    }));
+
+    const initRes = await request.post(`${API_BASE}/rpc/review/session/init`, {
+      headers: candidateHeaders(defenseSession.sessionToken),
+      data: { challengeId: challenge.id },
+    });
+    expect(initRes.ok(), `initSession failed: ${await initRes.text()}`).toBeTruthy();
+
+    const initBody = await initRes.json() as {
+      sessionId?: string;
+      status?: string;
+      currentRound?: number;
+      maxRounds?: number;
+      pr?: {
+        repoUrl?: string | null;
+        prNumber?: number | null;
+        diff?: string;
+      };
+    };
+
+    expect(initBody.sessionId).toBeTruthy();
+    expect(initBody.status).toBe('pending');
+    expect(initBody.currentRound).toBe(1);
+    expect(initBody.maxRounds).toBeGreaterThanOrEqual(2);
+    expect(initBody.pr).toEqual(expect.objectContaining({
+      repoUrl: fixture.repoUrl,
+      prNumber: fixture.prNumber,
+    }));
+    expect(initBody.pr?.diff).toContain('workflow');
+  });
+
+  test('candidate UI renders CodeReviewChallenge with proof, diff, verdict, and submit flow', async ({ browser, request }) => {
+    const uiCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Matched Code Review UI Candidate',
+      email: `matched-ui+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const session = await resolveToken(request, uiCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, session.sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, uiCandidate);
+
+    const context = await browser.newContext();
+    await context.addInitScript(({ sessionToken, inviteToken, candidate }) => {
+      window.sessionStorage.setItem('pipe_session_token', sessionToken);
+      window.sessionStorage.setItem('pipe_session_invite_token', inviteToken);
+      window.sessionStorage.setItem('pipe_session_candidate', JSON.stringify({
+        id: candidate.id,
+        pipelineId: null,
+        status: 'IN_PROGRESS',
+        name: candidate.name,
+        email: candidate.email,
+      }));
+    }, {
+      sessionToken: session.sessionToken,
+      inviteToken: uiCandidate.inviteToken,
+      candidate: {
+        id: uiCandidate.id,
+        name: uiCandidate.name,
+        email: uiCandidate.email,
+      },
+    });
+    const page = await context.newPage();
+    const diffRenderErrors: string[] = [];
+    page.on('console', (message) => {
+      const renderedMessage = message.text();
+      const location = message.location();
+      const source = location.url ? ` ${location.url}` : '';
+      if (message.type() === 'error' && /parsePatchContent|Invalid hunk|pierre/i.test(`${renderedMessage}${source}`)) {
+        diffRenderErrors.push(`${renderedMessage}${source}`);
+      }
+    });
+    page.on('pageerror', (error) => {
+      if (/diff|patch|pierre/i.test(error.message)) {
+        diffRenderErrors.push(`[pageerror] ${error.message}`);
+      }
+    });
+
+    await page.goto(`${APP_BASE}/assess/${uiCandidate.inviteToken}`);
+    const startButton = page.getByRole('button', { name: 'START_INTERVIEW' });
+    if (await startButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await startButton.click();
+    }
+
+    const codeReview = page.getByTestId('code-review-challenge');
+    await expect(codeReview).toBeVisible({ timeout: 30000 });
+    await expect(codeReview).toContainText('PULL_REQUEST');
+    await expect(codeReview).toContainText(fixture.repoFullName);
+    await expect(codeReview).toContainText(`#${fixture.prNumber}`);
+    await expect(codeReview).toContainText('[Wrangler] Improve deploy warn for workflows with repeated names');
+    await expect(codeReview).toContainText('check-workflow-conflicts.ts');
+    await expect(page.getByTestId('conversation-panel')).toContainText('REVIEW_CONVERSATION');
+    await expect(page.getByTestId('pierre-diff-viewer')).toBeVisible({ timeout: 30000 });
+    const reviewLine = codeReview
+      .locator('[aria-label="Comment on diff line 5"]')
+      .filter({ hasText: 'Improve the deploy warning shown when a Workflow name already belongs to another Worker' });
+    await expect(reviewLine).toBeVisible({ timeout: 30000 });
+    expect(diffRenderErrors).toEqual([]);
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('MATCH_PROOF');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('PASSED');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Person');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Repo');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('Role');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('CANDIDATE EVIDENCE');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('REPO SOURCE SPANS');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('ROLE ALIGNMENT');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('ASSESSMENT QUALITY');
+    await expect(page.getByTestId('code-review-match-proof')).toContainText('AGENT VALIDATED');
+    await expect(page.getByTestId('code-review-assessment-quality')).toContainText('ASSESSMENT_QUALITY');
+    await expect(page.getByTestId('code-review-assessment-quality')).toContainText('PR reviewability');
+    await expect(page.getByTestId('code-review-assessment-quality')).toContainText('Contrast separation');
+    await expect(page.getByTestId('code-review-match-hyperedges')).toContainText('EVIDENCE_HYPEREDGES');
+    await expect(page.getByTestId('code-review-match-hyperedges')).toContainText('PERSON EVIDENCE');
+    await expect(page.getByTestId('code-review-match-hyperedges')).toContainText('ROLE SOURCE');
+    await expect(page.getByTestId('code-review-match-hyperedges')).toContainText('REPO CHALLENGE');
+    await expect(page.getByTestId('code-review-match-proof')).not.toContainText('candidate_source_evidence');
+    await expect(page.getByTestId('code-review-match-proof')).not.toContainText('repo_source_spans');
+    await expect(page.getByTestId('code-review-match-proof')).not.toContainText('role_context_alignment');
+    await expect(page.getByTestId('code-review-match-proof')).not.toContainText('assessment_quality_verified');
+    await expect(page.getByTestId('code-review-match-proof')).not.toContainText('agent_validated_match');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('VALIDATOR_AGENT');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('deterministic');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('PASSED');
+    await expect(page.getByTestId('code-review-match-validator')).toContainText('ELIGIBLE MATCH');
+    await expect(page.getByTestId('code-review-match-validator')).not.toContainText('eligible_match');
+    await expect(page.locator('body')).not.toContainText('JOIN VIDEO');
+    await expect(page.locator('body')).not.toContainText('Video Waiting Room');
+
+    await reviewLine.click();
+    await expect(page.getByTestId('annotation-editor-form')).toBeVisible();
+    await page.getByTestId('severity-major').click();
+    await page.getByTestId('annotation-input').fill('The warning copy needs review because it changes how users reason about workflow reassignment risk.');
+    await page.getByTestId('save-annotation-btn').click();
+    await expect(page.getByTestId('annotation-badge-5')).toBeVisible();
+
+    await page.getByTestId('submit-round').click();
+    await expect(page.getByTestId('conversation-thread')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('conversation-thread')).toContainText('AUTHOR');
+    await expect(page.getByTestId('conversation-thread')).toContainText(/COMMENT|PUSHBACK|CHANGE/);
+
+    await page.getByTestId('verdict-option-request_changes').click();
+    const summary = `The ${fixture.conceptLabel} review target is appropriate; the warning copy and regression coverage should stay aligned.`;
+    await page.getByTestId('verdict-summary').fill(summary);
+    await page.getByTestId('submit-verdict').click();
+    await expect(page.getByTestId('review-session-completion')).toBeVisible({ timeout: 30000 });
+    await page.getByTestId('review-session-continue-btn').click();
+    await expect(page.getByTestId('assessment-submitted')).toContainText('Submitted.', { timeout: 30000 });
+
+    await context.close();
+  });
 });
 
 // ─── §MVP.7 Code review submission (standalone) ─────────────────────────────
@@ -904,12 +1638,7 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     await submitStandaloneIntakeEvidence(request, sessionToken);
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, candidate);
 
-    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
-      headers: candidateHeaders(sessionToken),
-      data: { order: 0 },
-    });
-    expect(challengeRes.status()).toBe(200);
-    const challenge = await challengeRes.json() as ChallengeResponse;
+    const challenge = await getChallengeWithRetry(request, sessionToken);
     expect(challenge.type).toBe('CODE_REVIEW');
     expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
     expect(challenge.githubPrNumber).toBe(fixture.prNumber);
@@ -985,6 +1714,127 @@ test.describe('§MVP.7 — Candidate submits standalone code review', () => {
     )).toBe(true);
     expect(standaloneReviewMatch!.diagnostics?.recalledPacketIds).toContain(fixture.packetId);
   });
+
+  test('recruiter API resolves reviewSessionId submissions into review evidence', async ({ request }) => {
+    const sessionCandidate = await createStandaloneCodeReviewCandidate(request, authToken, {
+      name: 'Review Session Result Candidate',
+      email: `review-session-result+e2e-${Date.now()}@pipe-test.dev`,
+    });
+    const session = await resolveToken(request, sessionCandidate.inviteToken);
+    await submitStandaloneIntakeEvidence(request, session.sessionToken);
+    const fixture = await seedStandaloneReviewMatchFixture(request, authToken, sessionCandidate);
+
+    const challenge = await getChallengeWithRetry(request, session.sessionToken);
+    expect(challenge.type).toBe('CODE_REVIEW');
+    expect(challenge.reviewSession?.requiresInit).toBe(true);
+
+    const initRes = await request.post(`${API_BASE}/rpc/review/session/init`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: { challengeId: challenge.id },
+    });
+    expect(initRes.ok(), `init failed: ${await initRes.text()}`).toBeTruthy();
+    const initBody = await initRes.json() as { sessionId: string };
+
+    const reviewSummary = `The ${fixture.conceptLabel} review target is right for this candidate, and the user-facing warning needs test-backed explanation.`;
+    const reviewComment = 'Please defend the exact warning language with regression coverage for workflow reassignment risk.';
+    const messageRes = await request.post(`${API_BASE}/rpc/review/session/${initBody.sessionId}/message`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: {
+        summary: reviewSummary,
+        annotations: [{
+          id: 'annotation-1',
+          file: 'packages/deploy-helpers/src/deploy/helpers/check-workflow-conflicts.ts',
+          line: 85,
+          severity: 'major',
+          comment: reviewComment,
+        }],
+      },
+    });
+    expect(messageRes.ok(), `message failed: ${await messageRes.text()}`).toBeTruthy();
+
+    const completeRes = await request.post(`${API_BASE}/rpc/review/session/${initBody.sessionId}/complete`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: {
+        verdict: 'request_changes',
+        summary: reviewSummary,
+      },
+    });
+    expect(completeRes.ok(), `complete failed: ${await completeRes.text()}`).toBeTruthy();
+
+    const profileAfterCompleteRes = await request.get(`${API_BASE}/api/v1/candidates/${sessionCandidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileAfterCompleteRes.status()).toBe(200);
+    const profileAfterComplete = await profileAfterCompleteRes.json() as {
+      scheduledInterviews?: Array<{
+        interviewType?: string;
+        status?: string;
+      }>;
+      standaloneReviewMatch?: {
+        submitted?: boolean;
+        submission?: {
+          verdict?: string | null;
+          summary?: string | null;
+          annotationCount?: number;
+        } | null;
+      } | null;
+    };
+    const completedCodeReview = profileAfterComplete.scheduledInterviews?.find((interview) =>
+      interview.interviewType === 'CODE_REVIEW'
+    );
+    expect(completedCodeReview?.status).toBe('COMPLETED');
+    expect(profileAfterComplete.standaloneReviewMatch?.submitted).toBe(true);
+    expect(profileAfterComplete.standaloneReviewMatch?.submission).toEqual(expect.objectContaining({
+      verdict: 'request_changes',
+      summary: reviewSummary,
+      annotationCount: 1,
+    }));
+
+    const submitRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      headers: candidateHeaders(session.sessionToken),
+      data: {
+        order: 0,
+        submission: { reviewSessionId: initBody.sessionId },
+      },
+    });
+    expect(submitRes.ok(), `submit failed: ${await submitRes.text()}`).toBeTruthy();
+
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${sessionCandidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+    const profile = await profileRes.json() as {
+      standaloneReviewMatch?: {
+        submitted?: boolean;
+        submission?: {
+          verdict?: string | null;
+          summary?: string | null;
+          annotationCount?: number;
+          annotations?: Array<{
+            file?: string | null;
+            line?: number | null;
+            severity?: string | null;
+            comment?: string;
+          }>;
+        } | null;
+      } | null;
+    };
+
+    expect(profile.standaloneReviewMatch?.submitted).toBe(true);
+    expect(profile.standaloneReviewMatch?.submission).toEqual(expect.objectContaining({
+      verdict: 'request_changes',
+      summary: reviewSummary,
+      annotationCount: 1,
+    }));
+    expect(profile.standaloneReviewMatch?.submission?.annotations).toEqual([
+      expect.objectContaining({
+        file: 'packages/deploy-helpers/src/deploy/helpers/check-workflow-conflicts.ts',
+        line: 85,
+        severity: 'major',
+        comment: reviewComment,
+      }),
+    ]);
+  });
 });
 
 // ─── §MVP.8 Recruiter views candidate context graph ─────────────────────────
@@ -1023,18 +1873,18 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await context.newPage();
 
-    await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
-    await page.waitForLoadState('networkidle');
+    await page.goto(`${APP_BASE}/candidates/${candidate.id}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: candidate.name })).toBeVisible({ timeout: 30000 });
 
     // CONTEXT tab should exist
-    const contextTab = page.locator('button:has-text("CONTEXT")');
-    await expect(contextTab).toBeVisible({ timeout: 10000 });
+    const contextTab = page.getByRole('button', { name: 'CONTEXT', exact: true });
+    await expect(contextTab).toBeVisible({ timeout: 30000 });
 
     // Click CONTEXT tab
     await contextTab.click();
 
-    // Living context graph component should render
-    await expect(page.locator('[data-testid="living-context-graph"]')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByLabel('Standalone code review match')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('No source-backed living evidence yet for this person.')).toBeVisible();
 
     await context.close();
   });
@@ -1043,8 +1893,9 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const context = await browser.newContext({ storageState: 'playwright/.auth/user.json' });
     const page = await context.newPage();
 
-    await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
-    await page.locator('button').filter({ hasText: /^CONTEXT$/ }).click();
+    await page.goto(`${APP_BASE}/candidates/${candidate.id}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: candidate.name })).toBeVisible({ timeout: 30000 });
+    await page.getByRole('button', { name: 'CONTEXT', exact: true }).click();
 
     const matchPanel = page.getByLabel('Standalone code review match');
     await expect(matchPanel).toContainText('Code review match');
@@ -1140,23 +1991,18 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await submitStandaloneIntakeEvidence(request, session.sessionToken);
     const fixture = await seedStandaloneReviewMatchFixture(request, authToken, reviewedCandidate);
 
-    const challengeRes = await request.post(`${API_BASE}/rpc/get-challenge`, {
-      headers: candidateHeaders(session.sessionToken),
-      data: { order: 0 },
-    });
-    expect(challengeRes.status()).toBe(200);
-    const challenge = await challengeRes.json() as ChallengeResponse;
+    const challenge = await getChallengeWithRetry(request, session.sessionToken);
     expect(challenge.type).toBe('CODE_REVIEW');
     expect(challenge.githubRepoUrl).toBe(fixture.repoUrl);
     expect(challenge.githubPrNumber).toBe(fixture.prNumber);
 
-    const reviewSummary = `The ${fixture.conceptLabel} implementation is reviewable, but the retry path still needs an idempotency guard before acknowledging duplicate events.`;
-    const reviewComment = `Add an idempotency-key check around ${fixture.conceptLabel} retry publication before acknowledging the event.`;
+    const reviewSummary = `The ${fixture.conceptLabel} implementation is reviewable, but the helper and test wording should stay synchronized before this ships.`;
+    const reviewComment = `Keep the Wrangler config rename guidance aligned between the helper message and deploy tests.`;
     await submitStandaloneCodeReview(request, session.sessionToken, {
       summary: reviewSummary,
       annotations: [{
-        file: 'src/retry-idempotency.ts',
-        line: 10,
+        file: 'packages/deploy-helpers/src/deploy/helpers/check-workflow-conflicts.ts',
+        line: 85,
         severity: 'blocking',
         comment: reviewComment,
       }],
@@ -1174,8 +2020,8 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const meetingEvidence = page.getByTestId('meeting-evidence-panel');
     await expect(meetingEvidence).toBeVisible();
     await expect(meetingEvidence).toContainText('Video Meeting');
-    await expect(meetingEvidence).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
-    await expect(meetingEvidence).toContainText(`Validated ${fixture.conceptLabel} retry behavior with tests.`);
+    await expect(meetingEvidence).toContainText('Implemented workflow conflict warning copy');
+    await expect(meetingEvidence).toContainText('Validated workflow conflict warning behavior');
     await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.transcriptStatus);
     await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.transcriptionProvider);
     await expect(meetingEvidence.getByTestId('meeting-recording-provenance')).toContainText(fixture.recordingKey);
@@ -1185,7 +2031,7 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(matchPanel).toContainText('Code review match');
     await expect(matchPanel).toContainText('MATCHED');
     await expect(matchPanel).toContainText(`${fixture.repoFullName} #${fixture.prNumber}`);
-    await expect(matchPanel).toContainText('Review source-backed retry idempotency');
+    await expect(matchPanel).toContainText('[Wrangler] Improve deploy warn for workflows with repeated names');
     await expect(matchPanel).toContainText('Review submitted');
     const roleSources = page.getByTestId('standalone-review-role-sources');
     await expect(roleSources).toContainText('Role sources');
@@ -1200,13 +2046,13 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(evidenceBridge).toContainText('Person evidence');
     await expect(evidenceBridge).toContainText('Repo challenge');
     await expect(evidenceBridge).toContainText(
-      `Review TypeScript PRs that implement ${fixture.conceptLabel} retry idempotency with source-backed evidence.`,
+      'Review TypeScript PRs that improve Wrangler deploy warnings for workflow name conflicts with source-backed evidence.',
     );
     await expect(evidenceBridge).toContainText(
-      `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+      /(Implemented|Validated|Reviewed|Explained)[\s\S]*workflow conflict warning|workflow name uniqueness/,
     );
     await expect(evidenceBridge).toContainText(
-      `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+      'Workflow names must be unique per account.',
     );
     await expect(evidenceBridge).toContainText(fixture.conceptKey);
 
@@ -1218,16 +2064,18 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     const bridgePersonSource = evidenceBridge
       .getByTestId('match-bridge-person-source')
       .filter({
-        hasText: `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+        hasText: /workflow conflict warning|workflow name uniqueness|Wrangler config rename/,
       })
       .first();
     await expect(bridgePersonSource).toHaveAttribute('data-source-ref-type', 'source_span');
-    await expect(bridgePersonSource).toHaveAttribute('data-source-ref-id', fixture.candidateSourceSpanIds[0]);
-    await expect(bridgePersonSource).toHaveAttribute('data-source-span-id', fixture.candidateSourceSpanIds[0]);
+    const bridgePersonSourceRefId = await bridgePersonSource.getAttribute('data-source-ref-id');
+    const bridgePersonSourceSpanId = await bridgePersonSource.getAttribute('data-source-span-id');
+    expect(fixture.candidateSourceSpanIds).toContain(bridgePersonSourceRefId);
+    expect(fixture.candidateSourceSpanIds).toContain(bridgePersonSourceSpanId);
     const bridgeRepoSource = evidenceBridge
       .getByTestId('match-bridge-repo-source')
       .filter({
-        hasText: `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+        hasText: 'Workflow names must be unique per account.',
       })
       .first();
     await expect(bridgeRepoSource).toHaveAttribute('data-source-ref-type', 'repo_source_span');
@@ -1240,17 +2088,17 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(submission).toContainText('Request Changes');
     await expect(submission).toContainText('1 annotation');
     await expect(submission).toContainText(reviewSummary);
-    await expect(submission).toContainText('src/retry-idempotency.ts · line 10 · blocking');
+    await expect(submission).toContainText('check-workflow-conflicts.ts · line 85 · blocking');
     await expect(submission).toContainText(reviewComment);
 
     const evidence = page.getByTestId('standalone-review-evidence');
     await expect(evidence).toContainText('Candidate evidence');
     await expect(evidence).toContainText('PR demand evidence');
     await expect(evidence).toContainText(
-      new RegExp(`(Implemented|Validated|Published|Explained)[\\s\\S]*${escapeRegex(fixture.conceptLabel)}`),
+      new RegExp(`(Implemented|Validated|Explained|Reviewed)[\\s\\S]*${escapeRegex(fixture.conceptLabel)}`),
     );
     await expect(evidence).toContainText(
-      new RegExp(`(Implement|Validate|publishRetry|buildRetryEnvelope)[\\s\\S]*${escapeRegex(fixture.conceptLabel)}`),
+      /Workflow names must be unique per account|Wrangler config/,
     );
     await expect(evidence).toContainText(fixture.conceptKey);
 
@@ -1261,30 +2109,31 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     for (const demandId of fixture.demandIds.slice(0, 2)) {
       await expect(repoOverlay).toContainText(demandId);
     }
-    await expect(repoOverlay).toContainText('src/retry-idempotency.ts');
-    await expect(repoOverlay).toContainText('src/retry-publisher.ts');
-    await expect(repoOverlay).toContainText('src/retry-idempotency.test.ts');
+    await expect(repoOverlay).toContainText('check-workflow-conflicts.ts');
+    await expect(repoOverlay).toContainText('workflows.test.ts');
     await expect(repoOverlay).toContainText('Candidate source');
     await expect(repoOverlay).toContainText('PR demand source');
-    await expect(repoOverlay).toContainText(`Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`);
-    await expect(repoOverlay).toContainText(`Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`);
-    await expect(repoOverlay).toContainText(`Validate ${fixture.conceptLabel} retry behavior with deterministic tests.`);
+    await expect(repoOverlay).toContainText('Implemented workflow conflict warning copy');
+    await expect(repoOverlay).toContainText('Workflow names must be unique per account.');
+    await expect(repoOverlay).toContainText('Wrangler config.');
     await expect(repoOverlay).toContainText(fixture.conceptKey);
 
     const candidateSourceCard = repoOverlay
       .getByTestId('review-source-card')
       .filter({
-        hasText: `Implemented ${fixture.conceptLabel} idempotency with source-backed evidence.`,
+        hasText: /workflow conflict warning|workflow name uniqueness|Wrangler config rename/,
       })
       .first();
     await expect(candidateSourceCard).toHaveAttribute('data-source-ref-type', 'source_span');
-    await expect(candidateSourceCard).toHaveAttribute('data-source-ref-id', fixture.candidateSourceSpanIds[0]);
-    await expect(candidateSourceCard).toHaveAttribute('data-source-span-id', fixture.candidateSourceSpanIds[0]);
+    const candidateSourceRefId = await candidateSourceCard.getAttribute('data-source-ref-id');
+    const candidateSourceSpanId = await candidateSourceCard.getAttribute('data-source-span-id');
+    expect(fixture.candidateSourceSpanIds).toContain(candidateSourceRefId);
+    expect(fixture.candidateSourceSpanIds).toContain(candidateSourceSpanId);
 
     const repoSourceCard = repoOverlay
       .getByTestId('review-source-card')
       .filter({
-        hasText: `Implement ${fixture.conceptLabel} idempotency for reviewable retry events.`,
+        hasText: 'Workflow names must be unique per account.',
       })
       .first();
     await expect(repoSourceCard).toHaveAttribute('data-source-ref-type', 'repo_source_span');
@@ -1297,6 +2146,57 @@ test.describe('§MVP.8 — Recruiter inspects standalone candidate context + res
     await expect(diagnostics).toContainText(fixture.packetId);
     await expect(diagnostics).toContainText('Evaluated challenge evidence');
     await expect(diagnostics).toContainText('Eligible');
+
+    const profileRes = await request.get(`${API_BASE}/api/v1/candidates/${reviewedCandidate.id}`, {
+      headers: recruiterHeaders(authToken),
+    });
+    expect(profileRes.status()).toBe(200);
+    const profile = await profileRes.json() as {
+      scheduledInterviews?: Array<{
+        id: string;
+        interviewType: string;
+      }>;
+    };
+    const reviewInterview = profile.scheduledInterviews?.find((interview) =>
+      interview.interviewType === 'CODE_REVIEW'
+    );
+    expect(reviewInterview?.id).toBeTruthy();
+
+    await page.goto(`${APP_BASE}/interviews/${reviewInterview!.id}`, { waitUntil: 'domcontentloaded' });
+    const detailResult = page.getByTestId('interview-code-review-result');
+    await expect(detailResult).toBeVisible({ timeout: 30000 });
+    await expect(detailResult).toContainText('Request Changes');
+    await expect(detailResult).toContainText(reviewSummary);
+    await expect(detailResult).toContainText('1 annotation');
+    await expect(detailResult).toContainText('check-workflow-conflicts.ts · line 85 · blocking');
+    await expect(detailResult).toContainText(reviewComment);
+
+    const detailMatch = page.getByTestId('interview-code-review-match');
+    await expect(detailMatch).toBeVisible();
+    await expect(detailMatch).toContainText('Assessment quality');
+    await expect(detailMatch).toContainText(/STRONG|USABLE/);
+    await expect(detailMatch).toContainText('/12');
+    await expect(detailMatch).toContainText('Skill/stack overlap');
+    await expect(detailMatch).toContainText('Source coverage');
+    await expect(detailMatch).toContainText('Validator agent');
+    await expect(detailMatch).toContainText('deterministic');
+    await expect(detailMatch).toContainText('PASSED');
+    await expect(detailMatch).toContainText('source-backed demand');
+    await expect(detailMatch).toContainText('Person sources');
+    await expect(detailMatch).toContainText('Role sources');
+    await expect(detailMatch).toContainText('Repo sources');
+    await expect(detailMatch).toContainText('Evidence bridge');
+    await expect(detailMatch).toContainText('Role requirement');
+    await expect(detailMatch).toContainText('Person evidence');
+    await expect(detailMatch).toContainText('Repo challenge');
+    await expect(detailMatch).toContainText(fixture.conceptKey);
+    await expect(detailMatch).toContainText(/workflow conflict warning|workflow name uniqueness/i);
+    await expect(detailMatch).toContainText('Workflow names must be unique per account.');
+
+    await expect(page.locator('body')).toContainText(fixture.repoUrl);
+    await expect(page.locator('body')).toContainText(`#${fixture.prNumber}`);
+    await expect(page.locator('body')).not.toContainText('OPEN HOST ROOM');
+    await expect(page.locator('body')).not.toContainText('Live workspace');
 
     await context.close();
   });

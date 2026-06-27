@@ -2,11 +2,11 @@
  * IntakeChallenge — candidate-facing self-serve profile building.
  *
  * Collects:
- *   • Resume upload (PDF/DOCX)
+ *   • Resume upload (PDF/DOCX) or pasted resume/profile text
  *   • GitHub handle (optional)
  *   • LinkedIn URL (optional)
  *
- * On submit, the payload is passed to onSubmit({ resumeR2Key, githubHandle, linkedinUrl })
+ * On submit, the payload is passed to onSubmit({ resumeR2Key, resumeText, githubHandle, linkedinUrl })
  * and the backend queues resume parsing + ingestion via the enrichment worker.
  */
 
@@ -19,7 +19,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_U
 
 interface IntakeChallengeProps {
   challengeId: string;
-  onSubmit: (submission: { resumeR2Key?: string; githubHandle?: string; linkedinUrl?: string }) => void;
+  onSubmit: (submission: { resumeR2Key?: string; resumeText?: string; githubHandle?: string; linkedinUrl?: string }) => void;
   isSubmitting?: boolean;
   candidateName?: string | null | undefined;
   candidateEmail?: string | null | undefined;
@@ -33,6 +33,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
 
   const [file, setFile] = useState<File | null>(null);
   const [resumeR2Key, setResumeR2Key] = useState<string>('');
+  const [resumeText, setResumeText] = useState('');
   const [githubHandle, setGithubHandle] = useState('');
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -115,9 +116,10 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
 
   const handleSubmit = () => {
     setError(null);
+    const normalizedResumeText = resumeText.trim();
 
-    if (!resumeR2Key && !allowSkip) {
-      setError('Please upload your resume.');
+    if (!resumeR2Key && !normalizedResumeText && !allowSkip) {
+      setError('Please upload your resume or paste profile text.');
       return;
     }
 
@@ -133,7 +135,8 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
 
     setSubmitted(true);
     onSubmit({
-      resumeR2Key,
+      ...(resumeR2Key ? { resumeR2Key } : {}),
+      ...(normalizedResumeText ? { resumeText: normalizedResumeText } : {}),
       ...(githubHandle.trim() ? { githubHandle: githubHandle.trim() } : {}),
       ...(linkedinUrl.trim() ? { linkedinUrl: linkedinUrl.trim() } : {}),
     });
@@ -288,7 +291,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
               margin: '0 auto',
             }}
           >
-            Upload your resume and optionally share your GitHub and LinkedIn.
+            Upload your resume or paste profile text, then optionally share your GitHub and LinkedIn.
             We&apos;ll use this to find the best challenges for you.
           </p>
         </div>
@@ -367,6 +370,54 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Resume Text Fallback */}
+        <div style={{ marginBottom: 24 }}>
+          <label
+            style={{
+              display: 'block',
+              fontSize: 10,
+              color: 'var(--pipe-text-dim)',
+              marginBottom: 12,
+              fontFamily: 'Space Mono',
+              fontWeight: 600,
+            }}
+          >
+            RESUME_TEXT (OPTIONAL)
+          </label>
+          <textarea
+            value={resumeText}
+            onChange={(e) => setResumeText(e.target.value)}
+            placeholder="Paste resume text, recent project notes, or a short profile summary."
+            disabled={isSubmitting}
+            rows={6}
+            style={{
+              width: '100%',
+              resize: 'vertical',
+              minHeight: 132,
+              padding: '12px 16px',
+              background: 'var(--pipe-surface)',
+              border: '1px solid var(--pipe-border-light)',
+              borderRadius: 4,
+              color: 'var(--pipe-text, #fff)',
+              fontSize: 13,
+              fontFamily: 'inherit',
+              lineHeight: 1.5,
+              outline: 'none',
+            }}
+          />
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--pipe-text-dim)',
+              fontFamily: 'Space Mono',
+              marginTop: 8,
+              lineHeight: 1.5,
+            }}
+          >
+            Use this when you do not have a resume file available. Uploaded files take priority when both are provided.
           </div>
         </div>
 
@@ -477,7 +528,7 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
         {/* Submit */}
         <button
           onClick={handleSubmit}
-          disabled={isSubmitting || isUploading || (!resumeR2Key && !allowSkip)}
+          disabled={isSubmitting || isUploading || (!resumeR2Key && !resumeText.trim() && !allowSkip)}
           style={{
             width: '100%',
             padding: '16px',
@@ -488,12 +539,12 @@ export function IntakeChallenge({ challengeId, onSubmit, isSubmitting, candidate
             fontSize: 12,
             fontWeight: 800,
             fontFamily: 'Space Mono',
-            cursor: isSubmitting || isUploading || (!resumeR2Key && !allowSkip) ? 'default' : 'pointer',
+            cursor: isSubmitting || isUploading || (!resumeR2Key && !resumeText.trim() && !allowSkip) ? 'default' : 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: 12,
-            opacity: isSubmitting || isUploading || (!resumeR2Key && !allowSkip) ? 0.5 : 1,
+            opacity: isSubmitting || isUploading || (!resumeR2Key && !resumeText.trim() && !allowSkip) ? 0.5 : 1,
           }}
         >
           {isSubmitting ? (

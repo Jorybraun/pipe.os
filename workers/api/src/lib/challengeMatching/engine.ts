@@ -9,6 +9,8 @@ import type {
   ConceptAdjacency,
   DemandAlignment,
   EvidenceLevel,
+  MatchAssessmentQuality,
+  MatchAssessmentQualityMetric,
   MatchExplanation,
   PairScore,
   QueryAtom,
@@ -52,6 +54,87 @@ function normalized(values: string[] | undefined): string[] {
   return [...new Set((values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean))].sort();
 }
 
+const OPEN_TERM_STOP_SEGMENTS = new Set([
+  'and',
+  'the',
+  'for',
+  'with',
+  'from',
+  'use',
+  'type',
+  'script',
+  'java',
+  'root',
+  'src',
+  'packages',
+  'large',
+  'component',
+  'library',
+  'experience',
+  'engineer',
+  'deep',
+  'handling',
+  'implemented',
+  'designed',
+  'validated',
+  'comfortable',
+  'assessing',
+  'state',
+]);
+
+const COMPACT_TERM_ALIASES = new Map<string, string>([
+  ['type-script', 'typescript'],
+  ['java-script', 'javascript'],
+]);
+
+function openTermSegments(value: string): string[] {
+  const splitCamel = value.replace(/([a-z0-9])([A-Z])/g, '$1-$2');
+  return splitCamel
+    .toLowerCase()
+    .split(/[^a-z0-9+#]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function addDerivedTerm(terms: Set<string>, value: string): void {
+  const normalizedValue = value.trim().toLowerCase().replace(/[^a-z0-9+#]+/g, '-').replace(/^-|-$/g, '');
+  if (!normalizedValue || normalizedValue.length < 3) return;
+  if (OPEN_TERM_STOP_SEGMENTS.has(normalizedValue)) return;
+  terms.add(`term:${COMPACT_TERM_ALIASES.get(normalizedValue) ?? normalizedValue}`);
+}
+
+function expandOpenTermConcept(concept: string): string[] {
+  const canonical = concept.trim().toLowerCase();
+  if (!canonical.startsWith('term:')) return [canonical];
+
+  const rawValue = canonical.slice('term:'.length);
+  const expanded = new Set<string>([canonical]);
+  const aliased = COMPACT_TERM_ALIASES.get(rawValue);
+  if (aliased) expanded.add(`term:${aliased}`);
+
+  const segments = openTermSegments(rawValue);
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index]!;
+    const next = segments[index + 1];
+    const afterNext = segments[index + 2];
+    addDerivedTerm(expanded, segment);
+    if (segment === 'use' && next && afterNext) {
+      addDerivedTerm(expanded, `${segment}-${next}-${afterNext}`);
+    }
+    if (next) {
+      const pair = `${segment}-${next}`;
+      const pairAlias = COMPACT_TERM_ALIASES.get(pair);
+      if (pairAlias) expanded.add(`term:${pairAlias}`);
+    }
+  }
+
+  return [...expanded];
+}
+
+function expandedConcepts(values: string[] | undefined): string[] {
+  return normalized(normalized(values).flatMap(expandOpenTermConcept));
+}
+
 function nonEmptyString(value: string | undefined): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -77,7 +160,7 @@ function compareSignals(
   selectionConcepts: Set<string>,
 ): number {
   const selectionScore = (signal: CompileCandidateMatchInput['signals'][number]) => {
-    const concepts = normalized(signal.concepts);
+    const concepts = expandedConcepts(signal.concepts);
     if (concepts.length === 0) return 0;
     const overlap = concepts.filter((concept) => selectionConcepts.has(concept)).length;
     return overlap / concepts.length;
@@ -133,7 +216,7 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
       evidenceLevel: signal.evidenceLevel,
       evidenceStrength: signal.evidenceStrength,
       confidence: signal.confidence,
-      concepts: normalized(signal.concepts),
+      concepts: expandedConcepts(signal.concepts),
       problems: normalized(signal.problems),
       mechanisms: normalized(signal.mechanisms),
       domains: normalized(signal.domains),
@@ -154,7 +237,7 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
     }
 
     const episodeCount = episodeCounts.get(atom.episodeId) ?? 0;
-    const concepts = [...new Set(atom.concepts)];
+    const concepts = [...new Set(normalized(signal.concepts))];
     const exceedsConceptCap = concepts.some(
       (concept) => (conceptCounts.get(concept) ?? 0) >= MAX_ATOMS_PER_CONCEPT,
     );
@@ -240,6 +323,15 @@ function semanticSimilarity(atom: QueryAtom, demand: ChallengeDemand): number {
   return cosine(atom.embedding, demand.embedding) ?? 0;
 }
 
+function hasComparableEmbeddings(atom: QueryAtom, demand: ChallengeDemand): boolean {
+  return Boolean(
+    atom.embedding
+    && demand.embedding
+    && atom.embedding.length > 0
+    && atom.embedding.length === demand.embedding.length,
+  );
+}
+
 function findStretch(
   atom: QueryAtom,
   demand: ChallengeDemand,
@@ -311,8 +403,9 @@ function scorePair(
     if (stretch.dimension === 'domain') pairScore.domainBusinessContext = Math.max(pairScore.domainBusinessContext, 0.6);
     if (stretch.dimension === 'review_practice') pairScore.ownershipActionCorrespondence = Math.max(pairScore.ownershipActionCorrespondence, 0.6);
   }
+  const semanticAvailable = hasComparableEmbeddings(atom, demand);
   const dimensions = [
-    { score: pairScore.semanticNarrative, weight: 0.15, available: true },
+    { score: pairScore.semanticNarrative, weight: 0.15, available: semanticAvailable },
     {
       score: pairScore.conceptCorrespondence,
       weight: 0.35,
@@ -499,6 +592,26 @@ function nonGenericAlignment(
     || intersects(alignment.atom.businessObjects, alignment.demand.businessObjects);
 }
 
+function rolelessExactSourceBackedAlignment(input: {
+  alignments: DemandAlignment[];
+  candidateEvidenceAlignment: number;
+  challengeQuality: number;
+  contextualSpecificity: number;
+  hasRoleRequirements: boolean;
+  hasNonGenericAlignment: boolean;
+  provenanceComplete: boolean;
+  stretchCount: number;
+}): boolean {
+  return !input.hasRoleRequirements
+    && input.alignments.length > 0
+    && input.candidateEvidenceAlignment >= 0.10
+    && input.challengeQuality >= 0.85
+    && input.contextualSpecificity >= 0.75
+    && input.hasNonGenericAlignment
+    && input.provenanceComplete
+    && input.stretchCount === 0;
+}
+
 function weightedCoverage(
   alignments: DemandAlignment[],
   demands: ChallengeDemand[],
@@ -580,12 +693,25 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
 
   const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
   const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
+  const candidateAlignmentThreshold = hasRoleRequirements ? 0.50 : 0.45;
+  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+    alignments,
+    candidateEvidenceAlignment,
+    challengeQuality,
+    contextualSpecificity,
+    hasRoleRequirements,
+    hasNonGenericAlignment: hasNonGeneric,
+    provenanceComplete,
+    stretchCount: stretches.length,
+  });
   const rejectionReasons: string[] = [];
   if (!challengePassesGuardrails(input.challenge, input.query.roleGuardrails)) rejectionReasons.push('ROLE_GUARDRAIL_FAILED');
-  if (candidateEvidenceAlignment < 0.60) rejectionReasons.push('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
+  if (candidateEvidenceAlignment < candidateAlignmentThreshold && !exactSourceBackedRoleless) {
+    rejectionReasons.push('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
+  }
   if (hasRoleRequirements && roleRelevance < 0.60) rejectionReasons.push('ROLE_RELEVANCE_BELOW_THRESHOLD');
   if (challengeQuality < 0.70) rejectionReasons.push('CHALLENGE_QUALITY_BELOW_THRESHOLD');
-  if (demandFamilies.size < 2) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
+  if (demandFamilies.size < 2 && !exactSourceBackedRoleless) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
   if (!hasNonGeneric) rejectionReasons.push('NO_NON_GENERIC_ALIGNMENT');
   if (hasHighWeightRoleRequirements && !hasHighWeightRoleRequirement) rejectionReasons.push('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
   if (!provenanceComplete) rejectionReasons.push('INCOMPLETE_PROVENANCE');
@@ -635,9 +761,169 @@ export function rankReviewChallenges(
   };
 }
 
+function percent(value: number): string {
+  return `${Math.round(clamp01(value) * 100)}%`;
+}
+
+function scoreBand(value: number, strongThreshold: number, usableThreshold: number): 0 | 1 | 2 {
+  if (value >= strongThreshold) return 2;
+  if (value >= usableThreshold) return 1;
+  return 0;
+}
+
+function sourceRefKey(ref: QueryAtom['sourceRefs'][number]): string {
+  return [
+    ref.sourceRefType ?? '',
+    ref.sourceRefId ?? '',
+    ref.sourceSpanId ?? '',
+    ref.contentHash,
+    ref.locator ?? '',
+    ref.exactText ?? '',
+  ].join('|');
+}
+
+function uniqueSourceRefCount(refs: QueryAtom['sourceRefs']): number {
+  return new Set(refs.map(sourceRefKey)).size;
+}
+
+function assessmentQualityVerdict(
+  metrics: MatchAssessmentQualityMetric[],
+  options: { contrastMeasured: boolean },
+): MatchAssessmentQuality['verdict'] {
+  const score = metrics.reduce((sum, metric) => sum + metric.score, 0);
+  const coreMetricFailed = metrics.some((metric) =>
+    metric.id !== 'contrast_separation' && metric.score === 0
+  );
+  const contrastMetric = metrics.find((metric) => metric.id === 'contrast_separation');
+  const measuredNearTie = options.contrastMeasured && contrastMetric?.score === 0;
+  if (!coreMetricFailed && !measuredNearTie && score >= 10) return 'STRONG';
+  if (!coreMetricFailed && score >= 7) return 'USABLE';
+  return 'WEAK';
+}
+
+function buildAssessmentQuality(
+  alignment: ChallengeAlignment,
+  scoreSeparation?: number | null,
+): MatchAssessmentQuality {
+  const candidateSourceCount = uniqueSourceRefCount(
+    alignment.alignments.flatMap((entry) => entry.atom.sourceRefs),
+  );
+  const repoSourceCount = uniqueSourceRefCount(
+    alignment.alignments.flatMap((entry) => entry.demand.sourceRefs),
+  );
+  const demandFamilies = new Set(alignment.alignments.map((entry) => entry.demand.family));
+  const hasRoleRequirements = alignment.challenge.demands.some((demand) => demand.roleRequirement);
+  const separation = typeof scoreSeparation === 'number' && Number.isFinite(scoreSeparation)
+    ? Math.max(0, scoreSeparation)
+    : null;
+  const candidateStrongThreshold = hasRoleRequirements ? 0.75 : 0.60;
+  const candidateUsableThreshold = hasRoleRequirements ? 0.50 : 0.45;
+  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+    alignments: alignment.alignments,
+    candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
+    challengeQuality: alignment.challengeQuality,
+    contextualSpecificity: alignment.contextualSpecificity,
+    hasRoleRequirements,
+    hasNonGenericAlignment: alignment.hasNonGenericAlignment,
+    provenanceComplete: alignment.provenanceComplete,
+    stretchCount: alignment.stretchCount,
+  });
+  const candidateOverlapScore = scoreBand(
+    alignment.candidateEvidenceAlignment,
+    candidateStrongThreshold,
+    candidateUsableThreshold,
+  );
+
+  const metrics: MatchAssessmentQualityMetric[] = [
+    {
+      id: 'skill_stack_overlap',
+      label: 'Skill/stack overlap',
+      score: candidateOverlapScore === 0 && exactSourceBackedRoleless ? 1 : candidateOverlapScore,
+      maxScore: 2,
+      reason: exactSourceBackedRoleless && candidateOverlapScore === 0
+        ? `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight, with exact source-backed symbol overlap.`
+        : `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight.`,
+    },
+    {
+      id: 'role_demand_overlap',
+      label: 'Role/JD overlap',
+      score: hasRoleRequirements
+        ? scoreBand(alignment.roleRelevance, 0.75, 0.60)
+        : 1,
+      maxScore: 2,
+      reason: hasRoleRequirements
+        ? `Role-backed demands cover ${percent(alignment.roleRelevance)} of the selected challenge.`
+        : 'No role/JD source was supplied, so the match is evaluated as a roleless standalone assessment.',
+    },
+    {
+      id: 'pr_reviewability',
+      label: 'PR reviewability',
+      score: alignment.challengeQuality >= 0.85 && (demandFamilies.size >= 2 || exactSourceBackedRoleless)
+        ? 2
+        : alignment.challengeQuality >= 0.70 && demandFamilies.size >= 1
+          ? 1
+          : 0,
+      maxScore: 2,
+      reason: `${demandFamilies.size} source-backed demand famil${demandFamilies.size === 1 ? 'y' : 'ies'} and ${percent(alignment.challengeQuality)} deterministic challenge quality.`,
+    },
+    {
+      id: 'match_specificity',
+      label: 'Match specificity',
+      score: alignment.contextualSpecificity >= 0.75 && alignment.hasNonGenericAlignment
+        ? 2
+        : alignment.contextualSpecificity >= 0.55 || alignment.hasNonGenericAlignment
+          ? 1
+          : 0,
+      maxScore: 2,
+      reason: alignment.hasNonGenericAlignment
+        ? `The match uses non-generic evidence with ${percent(alignment.contextualSpecificity)} contextual specificity.`
+        : `The match relies on generic concepts with ${percent(alignment.contextualSpecificity)} contextual specificity.`,
+    },
+    {
+      id: 'source_coverage',
+      label: 'Source coverage',
+      score: alignment.provenanceComplete && candidateSourceCount > 0 && repoSourceCount > 0
+        ? 2
+        : candidateSourceCount > 0 || repoSourceCount > 0
+          ? 1
+          : 0,
+      maxScore: 2,
+      reason: `${candidateSourceCount} candidate source span(s) and ${repoSourceCount} repo source span(s) support the selected challenge.`,
+    },
+    {
+      id: 'contrast_separation',
+      label: 'Contrast separation',
+      score: separation === null
+        ? 0
+        : separation >= 0.08
+          ? 2
+          : separation >= 0.02
+            ? 1
+            : 0,
+      maxScore: 2,
+      reason: separation === null
+        ? 'No second eligible challenge was available in this explanation context, so score separation was not measured.'
+        : `The selected challenge leads the next comparable challenge by ${percent(separation)}.`,
+    },
+  ];
+  return {
+    verdict: assessmentQualityVerdict(metrics, { contrastMeasured: separation !== null }),
+    score: metrics.reduce((sum, metric) => sum + metric.score, 0),
+    maxScore: 12,
+    metrics,
+  };
+}
+
+type ExplainChallengeMatchContext = Partial<Pick<
+  MatchExplanation,
+  'rejectedPackets' | 'missingEvidence' | 'roleSources'
+>> & {
+  scoreSeparation?: number | null;
+};
+
 export function explainChallengeMatch(
   alignment: ChallengeAlignment,
-  context: Partial<Pick<MatchExplanation, 'rejectedPackets' | 'missingEvidence' | 'roleSources'>> = {
+  context: ExplainChallengeMatchContext = {
     rejectedPackets: [],
     missingEvidence: [],
     roleSources: [],
@@ -692,6 +978,7 @@ export function explainChallengeMatch(
       : undefined,
     score: alignment.finalScore,
     summary,
+    assessmentQuality: buildAssessmentQuality(alignment, context.scoreSeparation),
     evidence,
     candidateSpans: evidence.map((entry) => ({
       atomId: entry.atomId,

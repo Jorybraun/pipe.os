@@ -70,10 +70,11 @@ function fakeD1(cfg: FakeD1Config = {}): FakeD1 {
   } as unknown as FakeD1;
 }
 
-function buildEnv(db: FakeD1): Env {
+function buildEnv(db: FakeD1, overrides: Partial<Env> = {}): Env {
   return {
     DB: db,
     AI: {} as Ai,
+    ...overrides,
   } as Env;
 }
 
@@ -197,6 +198,97 @@ describe('scoreAndPropagate assignment-backed provenance', () => {
         producer: 'automated_scorer',
       }),
     );
+    expect(db.__calls.some((call) =>
+      call.ran &&
+      call.sql.includes('UPDATE code_review_judge_examples') &&
+      call.sql.includes('expected_output_json')
+    )).toBe(true);
+  });
+
+  it('uses Kimi for automated scoring when KIMI_API_KEY is configured', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM challenges ch', value: assignedScoringRow() },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(sourceBackedPacket()) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-retry',
+            path: 'src/orders/retry.ts',
+            exact_text: 'publishWithRetry(order)',
+            line_start: 18,
+            line_end: 18,
+          }],
+        },
+      ],
+    });
+
+    await scoreAndPropagate({
+      env: buildEnv(db, { KIMI_API_KEY: 'test-kimi-key' }),
+      sessionId: 'sess_1',
+      assessmentId: 'assessment_1',
+      challengeId: 'ch_1',
+      transcript: { rounds: [] },
+      scope: 'test',
+    });
+
+    expect(scoreReviewSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-kimi-key',
+        provider: 'kimi',
+      }),
+    );
+  });
+
+  it('falls back to Workers AI when the configured Kimi scorer fails', async () => {
+    vi.mocked(scoreReviewSession)
+      .mockRejectedValueOnce(new Error('Kimi 401'))
+      .mockResolvedValueOnce(scoreReport);
+
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM challenges ch', value: assignedScoringRow() },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(sourceBackedPacket()) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-retry',
+            path: 'src/orders/retry.ts',
+            exact_text: 'publishWithRetry(order)',
+            line_start: 18,
+            line_end: 18,
+          }],
+        },
+      ],
+    });
+
+    await scoreAndPropagate({
+      env: buildEnv(db, { KIMI_API_KEY: 'bad-kimi-key' }),
+      sessionId: 'sess_1',
+      assessmentId: 'assessment_1',
+      challengeId: 'ch_1',
+      transcript: { rounds: [] },
+      scope: 'test',
+    });
+
+    expect(scoreReviewSession).toHaveBeenCalledTimes(2);
+    expect(scoreReviewSession).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ apiKey: 'bad-kimi-key', provider: 'kimi' }),
+    );
+    expect(scoreReviewSession).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ apiKey: '', provider: 'workers-ai' }),
+    );
+    expect(db.__calls.some((call) =>
+      call.ran &&
+      call.sql.includes('UPDATE review_sessions') &&
+      call.sql.includes("status = 'scored'")
+    )).toBe(true);
   });
 
   it('fails closed when an assigned PR has no source-backed packet graph', async () => {

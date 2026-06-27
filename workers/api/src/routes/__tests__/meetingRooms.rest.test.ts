@@ -1031,10 +1031,11 @@ describe('meeting room recording living-context route', () => {
     });
 
     const node = sqlite.prepare(
-      `SELECT candidate_id, node_type, narrative_text, source_type, source_reference, extracted_properties_json
+      `SELECT id, candidate_id, node_type, narrative_text, source_type, source_reference, extracted_properties_json
          FROM candidate_nodes
         WHERE candidate_id = ?`,
     ).get(linked?.candidate_id) as {
+      id: string;
       candidate_id: string;
       node_type: string;
       narrative_text: string;
@@ -1054,6 +1055,104 @@ describe('meeting room recording living-context route', () => {
       windowId: 'browser',
       surface: 'win95',
     });
+
+    const sessionContextRecord = sqlite.prepare(
+      `SELECT id, workspace_person_id, interaction_id, record_type, predicate,
+              narrative, qualifiers_json, confidence
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:window_open'`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string;
+      interaction_id: string;
+      record_type: string;
+      predicate: string;
+      narrative: string;
+      qualifiers_json: string;
+      confidence: number;
+    } | undefined;
+    expect(sessionContextRecord).toMatchObject({
+      record_type: 'meeting_session_event',
+      predicate: 'session_event:window_open',
+      confidence: 1,
+    });
+    expect(sessionContextRecord?.narrative).toContain('Window opened: Microsoft Edge');
+    expect(JSON.parse(sessionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'window_open',
+      actor: 'guest',
+      sessionId: node?.source_reference,
+      surface: 'win95',
+    });
+
+    const contextSources = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, source_span_id, evidence_role,
+              exact_text, content_hash, locator_json
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY source_ref_type`,
+    ).all(sessionContextRecord?.id) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      source_span_id: string | null;
+      evidence_role: string;
+      exact_text: string | null;
+      content_hash: string | null;
+      locator_json: string;
+    }>;
+    expect(contextSources).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'meeting_session_event',
+        source_ref_id: node?.id,
+        evidence_role: 'source_event',
+        exact_text: 'Microsoft Edge',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        evidence_role: 'source_text',
+        exact_text: expect.stringContaining('Window opened: Microsoft Edge'),
+        source_span_id: expect.any(String),
+      }),
+    ]));
+    const eventSource = contextSources.find(
+      (source) => source.source_ref_type === 'meeting_session_event',
+    );
+    expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
+    expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
+      sessionId: node?.source_reference,
+      eventType: 'window_open',
+      actor: 'guest',
+      candidateNodeId: node?.id,
+    });
+
+    const contextEntities = sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship, value_json, metadata_json
+         FROM context_record_entities
+        WHERE context_record_id = ?
+        ORDER BY entity_type, relationship`,
+    ).all(sessionContextRecord?.id) as Array<{
+      entity_type: string;
+      entity_id: string | null;
+      relationship: string;
+      value_json: string | null;
+      metadata_json: string;
+    }>;
+    expect(contextEntities).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        entity_type: 'meeting_session',
+        entity_id: node?.source_reference,
+        relationship: 'source_session',
+      }),
+      expect.objectContaining({
+        entity_type: 'session_event',
+        relationship: 'source_event',
+      }),
+      expect.objectContaining({
+        entity_type: 'workspace_person',
+        entity_id: sessionContextRecord?.workspace_person_id,
+        relationship: 'subject',
+      }),
+    ]));
 
     const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',

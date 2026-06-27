@@ -42,7 +42,7 @@ vi.mock('../lib/neo4j/contextualGraph', async (importOriginal) => {
   };
 });
 
-import { callImplementerAgent } from '../lib/implementerAgent';
+import { AiDeveloperUnavailableError, callImplementerAgent } from '../lib/implementerAgent';
 import { callExplainerAgent } from '../lib/explainerAgent';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
@@ -453,7 +453,7 @@ describe('POST /rpc/get-challenge', () => {
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
         {
-          match: 'FROM scheduled_interviews',
+          match: "interview_type = 'CODE_REVIEW'",
           value: {
             id: 'standalone_1',
             status: 'MATCHED',
@@ -505,6 +505,105 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.id).toBe('waiting-for-match');
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it('returns match proof for a manual standalone CODE_REVIEW source-backed PR', async () => {
+    const packet = {
+      pullRequest: {
+        title: 'Manual source-backed PR',
+        author: 'dev',
+        baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        mergedAt: '2026-06-20T12:00:00.000Z',
+        body: 'Manual review packet body',
+      },
+      demands: [{ sourceSpanIds: ['repo-span-manual'] }],
+    };
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_1',
+            status: 'MATCHED',
+            matched_repo_id: 10,
+            github_repo_url: 'https://github.com/test/source-backed-repo',
+            github_pr_number: 42,
+            submission_json: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+        { match: 'SELECT owner_id FROM candidates', value: { owner_id: 'owner_1' } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-manual',
+            path: 'src/manual.ts',
+            exact_text: 'const reviewed = true;',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      cachedDiffJson?: { files: Array<{ filename: string; headContent: string }> };
+      githubPrNumber?: number | null;
+      githubRepoUrl?: string | null;
+      matchExplanation?: {
+        status?: string;
+        summary?: string;
+        qualityGate?: { verdict?: string; checks?: string[] };
+        assessmentQuality?: { verdict?: string };
+        validatorAgent?: { verdict?: string; sourceBridge?: { prNumber?: number } };
+      };
+      reviewSession?: { requiresInit?: boolean; challengeId?: string };
+    };
+
+    expect(body.type).toBe('CODE_REVIEW');
+    expect(body.githubRepoUrl).toBe('https://github.com/test/source-backed-repo');
+    expect(body.githubPrNumber).toBe(42);
+    expect(body.cachedDiffJson?.files[0]).toMatchObject({
+      filename: 'src/manual.ts',
+      headContent: 'const reviewed = true;',
+    });
+    expect(body.matchExplanation).toMatchObject({
+      status: 'MATCHED',
+      qualityGate: {
+        verdict: 'PASSED',
+        checks: expect.arrayContaining(['repo_source_spans', 'source_backed_manual_override']),
+      },
+      assessmentQuality: { verdict: 'USABLE' },
+      validatorAgent: {
+        verdict: 'PASSED',
+        sourceBridge: { prNumber: 42 },
+      },
+    });
+    expect(body.matchExplanation?.summary).toContain('Manual override');
+    expect(body.reviewSession).toMatchObject({
+      requiresInit: true,
+      challengeId: 'standalone-review-backing-challenge-standalone_1',
+    });
   });
 
   it('serves source-backed packet diff for assignment-backed review even when challenge cache is stale', async () => {
@@ -818,7 +917,7 @@ describe('POST /rpc/review/session/init', () => {
     };
     expect(body.status).toBe('pending');
     expect(body.maxRounds).toBe(4);
-    expect(body.currentRound).toBe(0);
+    expect(body.currentRound).toBe(1);
     expect(body.sessionId).toMatch(/^[0-9a-f-]{36}$/);
 
     const insertCall = db.__calls.find((c) => c.sql.includes('INSERT INTO review_sessions'));
@@ -861,7 +960,53 @@ describe('POST /rpc/review/session/init', () => {
     expect(body.sessionId).toBe('sess_existing');
     expect(body.status).toBe('pending');
     expect(body.maxRounds).toBe(6);
-    expect(body.currentRound).toBe(2);
+    expect(body.currentRound).toBe(3);
+  });
+
+  it('marks terminal existing sessions as completed on init so candidates cannot keep reviewing', async () => {
+    const existing = {
+      ...SESSION_IN_PROGRESS,
+      id: 'sess_scored',
+      status: 'scored',
+      current_round: 2,
+      max_rounds: 4,
+    };
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM challenges', value: CHALLENGE_ROW },
+        { match: 'FROM assessments', value: ASSESSMENT_ROW },
+        { match: 'candidate_id = ?1 AND challenge_id = ?2 AND assessment_id = ?3', value: existing },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/session/init',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ challengeId: 'ch_1' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessionId: string;
+      status: string;
+      completed: boolean;
+      currentRound: number;
+      maxRounds: number;
+    };
+    expect(body.sessionId).toBe('sess_scored');
+    expect(body.status).toBe('scored');
+    expect(body.completed).toBe(true);
+    expect(body.currentRound).toBe(4);
+    expect(body.maxRounds).toBe(4);
   });
 
   it('returns correct PR metadata and diff', async () => {
@@ -988,6 +1133,96 @@ describe('POST /rpc/review/session/:id/message', () => {
     );
     expect(transcriptUpdate).toBeTruthy();
     expect(transcriptUpdate?.ran).toBe(true);
+  });
+
+  it('uses Kimi for author pushback when KIMI_API_KEY is configured', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'implementer_persona', value: SESSION_PENDING },
+        { match: 'FROM challenges', value: CHALLENGE_ROW },
+      ],
+    });
+    const env = buildEnv({ DB: db, KIMI_API_KEY: 'test-kimi-key' });
+
+    const res = await rpcAuth.request(
+      '/review/session/sess_1/message',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({
+          annotations: [{ content: 'Missing edge-case handling', file: 'src/index.ts', line: 5 }],
+          summary: 'Initial review round',
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(callImplementerAgent)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-kimi-key',
+        provider: 'kimi',
+      }),
+    );
+  });
+
+  it('returns AI_DEVELOPER_UNAVAILABLE instead of a fake author round when the author agent is unavailable', async () => {
+    vi.mocked(callImplementerAgent).mockRejectedValueOnce(new AiDeveloperUnavailableError({
+      provider: 'workers-ai',
+      reason: 'Workers AI binding is not available for the review author agent.',
+      retryable: true,
+    }));
+
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'implementer_persona', value: SESSION_PENDING },
+        { match: 'FROM challenges', value: CHALLENGE_ROW },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/session/sess_1/message',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({
+          annotations: [{ content: 'Missing edge-case handling', file: 'src/index.ts', line: 5 }],
+          summary: 'Initial review round',
+        }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(503);
+    const body = await res.json() as {
+      error: {
+        code: string;
+        diagnostic: {
+          mode: string;
+          verdict: string;
+          provider: string;
+          retryable: boolean;
+        };
+      };
+    };
+    expect(body.error.code).toBe('AI_DEVELOPER_UNAVAILABLE');
+    expect(body.error.diagnostic).toMatchObject({
+      mode: 'AI_DEVELOPER_UNAVAILABLE',
+      verdict: 'AI_DEVELOPER_UNAVAILABLE',
+      provider: 'workers-ai',
+      retryable: true,
+    });
+    const transcriptUpdate = db.__calls.find(
+      (call) => call.sql.includes('UPDATE review_sessions') && call.sql.includes('transcript = ?1'),
+    );
+    expect(transcriptUpdate).toBeUndefined();
   });
 
   it('does not call implementer agent when assigned PR prompt context lacks source-backed packet graph', async () => {
@@ -1249,6 +1484,100 @@ describe('POST /rpc/review/session/:id/complete', () => {
     );
     expect(updateAssessment).toBeTruthy();
     expect(updateAssessment?.ran).toBe(true);
+
+    const insertJudgeExample = db.__calls.find((c) =>
+      c.sql.includes('INSERT INTO code_review_judge_examples')
+    );
+    expect(insertJudgeExample).toBeTruthy();
+    expect(insertJudgeExample?.ran).toBe(true);
+    expect(insertJudgeExample?.params[1]).toBe('sess_1');
+    expect(insertJudgeExample?.params[2]).toBe('assessment_1');
+    expect(insertJudgeExample?.params[3]).toBe('ch_1');
+    expect(insertJudgeExample?.params[4]).toBe('cand_1');
+
+    const promptInput = JSON.parse(String(insertJudgeExample?.params[6])) as {
+      task?: string;
+      candidateReview?: {
+        finalVerdict?: string;
+        finalSummary?: string;
+        comments?: Array<{ what?: string }>;
+      };
+      aiDeveloperPushback?: unknown[];
+      improvementUses?: string[];
+    };
+    expect(promptInput.task).toBe('score_and_improve_code_review_judge');
+    expect(promptInput.candidateReview?.finalVerdict).toBe('approve');
+    expect(promptInput.candidateReview?.finalSummary).toBe('Solid work overall.');
+    expect(promptInput.candidateReview?.comments).toEqual([
+      expect.objectContaining({ what: 'Missing test' }),
+    ]);
+    expect(promptInput.aiDeveloperPushback).toHaveLength(1);
+    expect(promptInput.improvementUses).toContain('judge_prompt_regression');
+  });
+
+  it('reconciles standalone CODE_REVIEW scheduled interview rows for recruiter results', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'candidate_id, challenge_id, assessment_id, status, transcript',
+          value: {
+            ...SESSION_IN_PROGRESS,
+            assessment_id: 'standalone-review-assessment-interview_1',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/session/sess_1/complete',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ verdict: 'request_changes', summary: 'Please add the missing regression test.' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+
+    const updateScheduledInterview = db.__calls.find((c) =>
+      c.sql.includes('UPDATE scheduled_interviews')
+      && c.sql.includes("interview_type = 'CODE_REVIEW'")
+      && c.sql.includes("status = 'COMPLETED'")
+    );
+    expect(updateScheduledInterview).toBeTruthy();
+    expect(updateScheduledInterview?.ran).toBe(true);
+    expect(updateScheduledInterview?.params[2]).toBe('interview_1');
+    expect(updateScheduledInterview?.params[3]).toBe('cand_1');
+
+    const storedResponse = JSON.parse(String(updateScheduledInterview?.params[0])) as {
+      type?: string;
+      verdict?: string;
+      summary?: string;
+      reviewSessionId?: string;
+      annotations?: Array<{ comment?: string; severity?: string | null }>;
+      transcript?: { verdict?: { decision?: string; summary?: string } };
+    };
+    expect(storedResponse.type).toBe('CODE_REVIEW');
+    expect(storedResponse.verdict).toBe('request_changes');
+    expect(storedResponse.summary).toBe('Please add the missing regression test.');
+    expect(storedResponse.reviewSessionId).toBe('sess_1');
+    expect(storedResponse.annotations).toEqual([
+      expect.objectContaining({
+        comment: 'Missing test',
+        severity: 'major',
+      }),
+    ]);
+    expect(storedResponse.transcript?.verdict).toEqual(
+      expect.objectContaining({
+        decision: 'request_changes',
+        summary: 'Please add the missing regression test.',
+      }),
+    );
   });
 
   it('returns 409 when session is not in_progress', async () => {

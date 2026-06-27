@@ -39,6 +39,15 @@ interface PersistedSemanticTerm {
   canonical_key?: unknown;
 }
 
+function normalizeRoleConceptKey(canonicalKey: string): string {
+  const trimmed = canonicalKey.trim().toLowerCase();
+  if (!trimmed.startsWith('term:')) return trimmed;
+  const rawValue = trimmed.slice('term:'.length)
+    .replace(/(^|-)type-script(?=-|$)/g, '$1typescript')
+    .replace(/(^|-)java-script(?=-|$)/g, '$1javascript');
+  return `term:${rawValue}`;
+}
+
 export interface RoleChallengeSemantics {
   roleSnapshotId: string;
   resolverVersion: typeof OPEN_TERM_RESOLVER_VERSION;
@@ -75,7 +84,7 @@ function termsFromProperties(
     const explicit = Array.isArray(parsed.semantic_terms)
       ? parsed.semantic_terms.flatMap((term) =>
       typeof term.surface === 'string' && typeof term.canonical_key === 'string'
-        ? [{ surface: term.surface, canonicalKey: term.canonical_key }]
+        ? [{ surface: term.surface, canonicalKey: normalizeRoleConceptKey(term.canonical_key) }]
         : []
       )
       : [];
@@ -136,8 +145,9 @@ export async function loadRoleChallengeSemantics(
   }>();
   for (const row of contextResult.results ?? []) {
     if (!row.canonical_key) continue;
-    terms.set(row.canonical_key, row.label ?? row.canonical_key);
-    contextConceptKeys.add(row.canonical_key);
+    const conceptKey = normalizeRoleConceptKey(row.canonical_key);
+    terms.set(conceptKey, row.label ?? conceptKey);
+    contextConceptKeys.add(conceptKey);
     const sourceKey = [
       row.context_record_id,
       row.source_ref_type ?? '',
@@ -155,7 +165,7 @@ export async function loadRoleChallengeSemantics(
       contentHash: row.content_hash ?? undefined,
       conceptKeys: new Set<string>(),
     };
-    source.conceptKeys.add(row.canonical_key);
+    source.conceptKeys.add(conceptKey);
     contextSources.set(sourceKey, source);
   }
   for (const [sourceKey, source] of [...contextSources.entries()].sort(([left], [right]) =>
@@ -198,9 +208,10 @@ export async function loadRoleChallengeSemantics(
     if (!normalizedSurface || !normalizedJobDescription.includes(normalizedSurface)) continue;
     const term = openSemanticTerm(surface);
     if (!term) continue;
-    terms.set(term.canonicalKey, term.surface);
-    if (!contextConceptKeys.has(term.canonicalKey)) {
-      jdConceptKeys.push(term.canonicalKey);
+    const conceptKey = normalizeRoleConceptKey(term.canonicalKey);
+    terms.set(conceptKey, term.surface);
+    if (!contextConceptKeys.has(conceptKey)) {
+      jdConceptKeys.push(conceptKey);
     }
   }
   if (jdConceptKeys.length > 0) {

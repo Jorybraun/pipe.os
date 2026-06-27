@@ -6,7 +6,13 @@
  */
 
 import type { Env } from '../../types';
-import { scoreReviewSession, type PlantedBug } from '../scorerAgent';
+import {
+  scoreReviewSession,
+  type LLMProvider,
+  type PlantedBug,
+  type ScorerInput,
+  type ScoreReport,
+} from '../scorerAgent';
 import {
   scoreComprehensionSession,
   type ComprehensionGroundTruth,
@@ -16,6 +22,10 @@ import { loadRcdForAssessment } from '../rcd';
 import type { ReviewRound } from '../implementerAgent';
 import type { ComprehensionExchange } from '../explainerAgent';
 import { ingestCodeReviewScoreReportToLivingContext } from '../livingContext/codeReview';
+import {
+  labelCodeReviewJudgeExample,
+  type CodeReviewJudgeExampleTranscript,
+} from './judgeImprovementExamples';
 import { loadSourceBackedReviewDiff } from './sourceBackedReviewDiff';
 
 export interface ScoreAndPropagateTranscript {
@@ -55,6 +65,85 @@ class SourceBackedReviewScoringNotReadyError extends Error {
   }
 }
 
+interface ScorerProviderConfig {
+  provider: LLMProvider;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+}
+
+function resolveScorerProvider(env: Env): ScorerProviderConfig {
+  if (env.GOOGLE_AI_API_KEY) {
+    return {
+      provider: 'google-ai',
+      apiKey: env.GOOGLE_AI_API_KEY,
+    };
+  }
+
+  if (env.KIMI_API_KEY) {
+    const config: ScorerProviderConfig = {
+      provider: 'kimi',
+      apiKey: env.KIMI_API_KEY,
+    };
+    if (env.KIMI_BASE_URL) config.kimiBaseUrl = env.KIMI_BASE_URL;
+    if (env.KIMI_SCORER_MODEL ?? env.KIMI_MODEL) {
+      config.kimiModel = env.KIMI_SCORER_MODEL ?? env.KIMI_MODEL;
+    }
+    return config;
+  }
+
+  return {
+    provider: 'workers-ai',
+    apiKey: '',
+  };
+}
+
+function buildScorerInput(
+  provider: ScorerProviderConfig,
+  baseInput: Omit<ScorerInput, 'apiKey' | 'provider' | 'kimiBaseUrl' | 'kimiModel'>,
+): ScorerInput {
+  return {
+    ...baseInput,
+    apiKey: provider.apiKey,
+    provider: provider.provider,
+    ...(provider.kimiBaseUrl ? { kimiBaseUrl: provider.kimiBaseUrl } : {}),
+    ...(provider.kimiModel ? { kimiModel: provider.kimiModel } : {}),
+  };
+}
+
+async function scoreReviewSessionWithProviderFallback(
+  input: {
+    env: Env;
+    primaryProvider: ScorerProviderConfig;
+    baseInput: Omit<ScorerInput, 'apiKey' | 'provider' | 'kimiBaseUrl' | 'kimiModel'>;
+    scope: string;
+    sessionId: string;
+  },
+): Promise<ScoreReport> {
+  const attempts: ScorerProviderConfig[] = [input.primaryProvider];
+  if (input.primaryProvider.provider !== 'workers-ai' && input.env.AI) {
+    attempts.push({ provider: 'workers-ai', apiKey: '' });
+  }
+
+  let lastError: unknown;
+  for (const [index, provider] of attempts.entries()) {
+    try {
+      return await scoreReviewSession(buildScorerInput(provider, input.baseInput));
+    } catch (error) {
+      lastError = error;
+      if (index < attempts.length - 1) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[${input.scope}] Scorer provider ${provider.provider} failed for session ${input.sessionId}; trying fallback:`,
+          message,
+        );
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 function parseJsonColumn<T>(value: unknown): T | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') {
@@ -65,6 +154,31 @@ function parseJsonColumn<T>(value: unknown): T | null {
     }
   }
   return value as T;
+}
+
+function toJudgeExampleTranscript(
+  transcript: ScoreAndPropagateTranscript,
+): CodeReviewJudgeExampleTranscript {
+  const out: CodeReviewJudgeExampleTranscript = {
+    rounds: transcript.rounds,
+  };
+
+  if (transcript.verdict && typeof transcript.verdict === 'object') {
+    const verdict = transcript.verdict as Record<string, unknown>;
+    if (
+      typeof verdict.decision === 'string' &&
+      typeof verdict.summary === 'string' &&
+      typeof verdict.submittedAt === 'string'
+    ) {
+      out.verdict = {
+        decision: verdict.decision,
+        summary: verdict.summary,
+        submittedAt: verdict.submittedAt,
+      };
+    }
+  }
+
+  return out;
 }
 
 async function resolveScoringContext(
@@ -163,23 +277,26 @@ export async function scoreAndPropagate(
       .bind(new Date().toISOString(), sessionId)
       .run();
 
-    const apiKey = env.GOOGLE_AI_API_KEY ?? '';
-    const provider = env.GOOGLE_AI_API_KEY ? ('google-ai' as const) : ('workers-ai' as const);
+    const provider = resolveScorerProvider(env);
 
     const rcd = await loadRcdForAssessment(env.DB, assessmentId);
     const dispositionalWeights = rcd?.technical_context?.dispositional_weights;
 
-    const scoreReport = await scoreReviewSession({
-      apiKey,
-      provider,
-      ai: env.AI,
-      transcript,
-      groundTruth: scoringContext.plantedBugs,
-      diff: scoringContext.diff,
-      prTitle: scoringContext.prTitle,
-      prDescription: scoringContext.prDescription,
-      instructions: ch.instructions,
-      ...(dispositionalWeights ? { dispositionalWeights } : {}),
+    const scoreReport = await scoreReviewSessionWithProviderFallback({
+      env,
+      primaryProvider: provider,
+      scope,
+      sessionId,
+      baseInput: {
+        ai: env.AI,
+        transcript,
+        groundTruth: scoringContext.plantedBugs,
+        diff: scoringContext.diff,
+        prTitle: scoringContext.prTitle,
+        prDescription: scoringContext.prDescription,
+        instructions: ch.instructions,
+        ...(dispositionalWeights ? { dispositionalWeights } : {}),
+      },
     });
 
     const implementerMetrics = computeImplementerMetrics(transcript.rounds);
@@ -194,10 +311,12 @@ export async function scoreAndPropagate(
           gtRaw?.mode === 'comprehension'
             ? gtRaw
             : { mode: 'comprehension', keyInsights: [], idealVerdict: 'approve', idealRationale: '' };
+        const comprehensionProvider = provider.provider === 'google-ai' ? 'google-ai' : 'workers-ai';
+        const comprehensionApiKey = provider.provider === 'google-ai' ? provider.apiKey : '';
 
         const compReport = await scoreComprehensionSession({
-          apiKey,
-          provider,
+          apiKey: comprehensionApiKey,
+          provider: comprehensionProvider,
           ai: env.AI,
           transcript: { mode: 'comprehension', exchanges: transcript.explainer_exchanges },
           groundTruth: comprehensionGroundTruth,
@@ -229,6 +348,24 @@ export async function scoreAndPropagate(
       producer: 'automated_scorer',
       startedAt: ch.created_at,
     });
+
+    try {
+      await labelCodeReviewJudgeExample({
+        db: env.DB,
+        sessionId,
+        candidateId: ch.candidate_id,
+        challengeId,
+        assessmentId,
+        transcript: toJudgeExampleTranscript(transcript),
+        expectedOutputJson: fullReportJson,
+        observedAt: scoredAt,
+        producer: 'automated_scorer',
+        source: 'automated_score_report',
+      });
+    } catch (labelErr) {
+      const message = labelErr instanceof Error ? labelErr.message : String(labelErr);
+      console.error(`[${scope}] Judge-example automated label failed for session ${sessionId}:`, message);
+    }
 
     await env.DB.prepare(
       `UPDATE review_sessions SET score_report = ?1, status = 'scored', updated_at = ?2 WHERE id = ?3`,

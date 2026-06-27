@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { callImplementerAgent, type CallImplementerAgentInput } from '../lib/implementerAgent';
+import {
+  AiDeveloperUnavailableError,
+  callImplementerAgent,
+  type CallImplementerAgentInput,
+} from '../lib/implementerAgent';
 
 // ─── Mock Workers AI binding ────────────────────────────────────────────────
 
@@ -161,5 +165,35 @@ describe('callImplementerAgent', () => {
     const results = await callImplementerAgent(BASE_INPUT);
     expect(results).toHaveLength(1);
     expect(results[0]!.updated_code).toBe('const x = 1;');
+  });
+
+  it('returns an AI_DEVELOPER_UNAVAILABLE diagnostic instead of a fake author response', async () => {
+    await expect(callImplementerAgent({
+      ...BASE_INPUT,
+      ai: undefined,
+      provider: 'workers-ai',
+    })).rejects.toMatchObject({
+      name: 'AiDeveloperUnavailableError',
+      diagnostic: {
+        mode: 'AI_DEVELOPER_UNAVAILABLE',
+        verdict: 'AI_DEVELOPER_UNAVAILABLE',
+        provider: 'workers-ai',
+        retryable: true,
+      },
+    } satisfies Partial<AiDeveloperUnavailableError>);
+  });
+
+  it('does not fall back to fake author responses when the provider call fails', async () => {
+    mockAiRun.mockRejectedValueOnce(new Error('provider unavailable'));
+
+    await expect(callImplementerAgent(BASE_INPUT)).rejects.toMatchObject({
+      name: 'AiDeveloperUnavailableError',
+      diagnostic: {
+        mode: 'AI_DEVELOPER_UNAVAILABLE',
+        verdict: 'AI_DEVELOPER_UNAVAILABLE',
+        provider: 'workers-ai',
+        retryable: true,
+      },
+    } satisfies Partial<AiDeveloperUnavailableError>);
   });
 });

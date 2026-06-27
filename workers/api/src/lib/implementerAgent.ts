@@ -7,12 +7,15 @@
  * - Output: ImplementerResponse[] with to_comment_id + move (comment/change/pushback)
  * - Input: ReviewRound[] transcript + new ReviewComment[]
  *
- * When no AI binding is available, returns mock responses so that
- * the Worker can be tested locally.
+ * Missing or failed AI providers return explicit diagnostics. They must not
+ * fabricate PR author behavior.
  */
 
+import {
+  aiDeveloperUnavailableDiagnostic,
+  type AssessmentDiagnostic,
+} from './assessmentEvidence';
 import { buildImplementerSystemPrompt } from './prompts';
-import { getMockImplementerResponses } from './mockResponses';
 
 // ─── Types (arena-aligned) ──────────────────────────────────────────────────
 
@@ -47,9 +50,32 @@ export interface ReviewRound {
 
 export type LLMProvider = 'workers-ai' | 'google-ai' | 'kimi';
 
+export class AiDeveloperUnavailableError extends Error {
+  readonly diagnostic: AssessmentDiagnostic;
+
+  constructor(input: {
+    provider: LLMProvider;
+    reason: string;
+    retryable?: boolean;
+    details?: Record<string, string | number | boolean | null>;
+  }) {
+    const diagnostic = aiDeveloperUnavailableDiagnostic({
+      provider: input.provider,
+      reason: input.reason,
+      retryable: input.retryable,
+      details: input.details,
+    });
+    super(diagnostic.reason);
+    this.name = 'AiDeveloperUnavailableError';
+    this.diagnostic = diagnostic;
+  }
+}
+
 export interface CallImplementerAgentInput {
   apiKey: string;
   provider?: LLMProvider;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
   /** Workers AI binding — required when provider is 'workers-ai' */
   ai?: Ai;
   persona: 'junior' | 'senior';
@@ -72,8 +98,15 @@ const VALID_MOVES: ImplementerMove[] = ['comment', 'change', 'pushback'];
 
 // ─── Kimi (Moonshot AI) ────────────────────────────────────────────────────
 
-async function callKimi(apiKey: string, systemPrompt: string, userMessage: string): Promise<string> {
-  const response = await fetch('https://api.kimi.com/coding/v1/chat/completions', {
+async function callKimi(
+  apiKey: string,
+  systemPrompt: string,
+  userMessage: string,
+  baseUrl = 'https://api.kimi.com/coding/v1',
+  model = 'kimi-for-coding',
+): Promise<string> {
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -81,7 +114,7 @@ async function callKimi(apiKey: string, systemPrompt: string, userMessage: strin
       'User-Agent': 'Kilo-Code/1.0.0',
     },
     body: JSON.stringify({
-      model: 'kimi-for-coding',
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage },
@@ -189,14 +222,15 @@ function buildUserMessage(
 /**
  * Calls the configured LLM to get implementer responses for the given comments.
  *
- * Falls back to mock responses when:
- * - The API call fails (logs error, does not throw — assessment must not break)
+ * Throws AiDeveloperUnavailableError when a real provider cannot produce a
+ * valid response. Candidate transcripts must never contain simulated author
+ * behavior.
  */
 export async function callImplementerAgent(
   input: CallImplementerAgentInput,
 ): Promise<ImplementerResponse[]> {
   const {
-    apiKey, provider = 'workers-ai', ai, persona, prBrief, prDiff,
+    apiKey, provider = 'workers-ai', kimiBaseUrl, kimiModel, ai, persona, prBrief, prDiff,
     previousRounds, newComments, dispositionalWeights,
   } = input;
 
@@ -205,7 +239,11 @@ export async function callImplementerAgent(
   }
 
   if (provider === 'workers-ai' && !ai) {
-    throw new Error('[implementerAgent] Workers AI binding not available.');
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: 'Workers AI binding is not available for the review author agent.',
+      retryable: true,
+    });
   }
 
   const systemPrompt = buildImplementerSystemPrompt(persona, prBrief, prDiff, dispositionalWeights);
@@ -216,19 +254,26 @@ export async function callImplementerAgent(
     if (provider === 'workers-ai') {
       raw = await callWorkersAI(ai!, systemPrompt, userMessage);
     } else if (provider === 'kimi') {
-      raw = await callKimi(apiKey, systemPrompt, userMessage);
+      raw = await callKimi(apiKey, systemPrompt, userMessage, kimiBaseUrl, kimiModel);
     } else {
       throw new Error(`[implementerAgent] Provider '${provider}' is not supported.`);
     }
   } catch (err) {
-    console.error(`[implementerAgent] ${provider} call failed:`, err);
-    console.log('[implementerAgent] Falling back to mock responses.');
-    return getMockImplementerResponses(newComments, persona);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[implementerAgent] ${provider} call failed:`, message);
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: `Review author agent provider failed: ${message}`,
+      retryable: true,
+    });
   }
 
   if (!raw) {
-    console.warn(`[implementerAgent] ${provider} returned empty response. Falling back to mocks.`);
-    return getMockImplementerResponses(newComments, persona);
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: 'Review author agent provider returned an empty response.',
+      retryable: true,
+    });
   }
 
   // Parse JSON array from response — handle fenced code blocks
@@ -238,14 +283,20 @@ export async function callImplementerAgent(
     parsed = JSON.parse(jsonText);
   } catch {
     console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-    console.log('[implementerAgent] Falling back to mock responses.');
-    return getMockImplementerResponses(newComments, persona);
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: 'Review author agent provider returned invalid JSON.',
+      retryable: true,
+    });
   }
 
   if (!Array.isArray(parsed)) {
     console.error('[implementerAgent] Response is not an array:', typeof parsed);
-    console.log('[implementerAgent] Falling back to mock responses.');
-    return getMockImplementerResponses(newComments, persona);
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: 'Review author agent provider response was not an array.',
+      retryable: true,
+    });
   }
 
   // Validate and normalise each item
@@ -283,7 +334,11 @@ export async function callImplementerAgent(
 
   if (results.length === 0) {
     console.error('[implementerAgent] Parsed array had no valid items');
-    throw new Error(`[implementerAgent] ${provider} failed to produce valid responses`);
+    throw new AiDeveloperUnavailableError({
+      provider,
+      reason: 'Review author agent provider returned no valid responses.',
+      retryable: true,
+    });
   }
 
   return results;

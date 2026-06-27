@@ -184,6 +184,9 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     expect(startArg.startOptions.entrypoint[2]).toContain('node /tmp/agent-bridge.js > /tmp/agent-bridge.log 2>&1 &');
     expect(startArg.startOptions.entrypoint[2]).toContain('TERMINAL_INPUT');
     expect(startArg.startOptions.entrypoint[2]).toContain('TERMINAL_RESIZE');
+    expect(startArg.startOptions.entrypoint[2]).not.toContain('simulated=1');
+    expect(startArg.startOptions.entrypoint[2]).toContain('AI_DEVELOPER_UNAVAILABLE');
+    expect(startArg.startOptions.entrypoint[2]).toContain('AGENT_UNAVAILABLE');
 
     const updates = db.__calls.filter(
       (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,

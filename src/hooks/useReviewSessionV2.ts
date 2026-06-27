@@ -30,6 +30,8 @@ export interface ThreadReplyInput {
 
 export interface ReviewSessionV2Status {
   sessionId: string;
+  status: string;
+  completed?: boolean;
   rounds: ReviewRound[];
   currentRound: number;
   maxRounds: number;
@@ -126,15 +128,17 @@ export function useReviewSessionV2(initialSessionId?: string | null, explicitTok
       setIsLoading(true);
       setError(null);
       try {
-        const body: Record<string, unknown> = { message };
+        const body: Record<string, unknown> = { message, summary: message };
         if (annotations && annotations.length > 0) {
-          body.annotations = annotations.map((a) => ({
+          const serializedAnnotations = annotations.map((a) => ({
             id: a.id,
             file: a.file,
             line: a.line,
             severity: a.severity,
             comment: a.comment,
           }));
+          body.annotations = serializedAnnotations;
+          body.newAnnotations = serializedAnnotations;
         }
         if (replies && replies.length > 0) {
           body.replies = replies.map((r) => ({

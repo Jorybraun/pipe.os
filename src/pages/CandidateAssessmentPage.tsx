@@ -8,8 +8,11 @@ import { TimerProvider } from '../components/Assessment/TimerContext';
 import { LiquidMetalCard } from '../components/ui/LiquidMetalCard';
 import { ChromeMeshGrid } from '../components/ChromeMeshGrid';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { InterviewProvider } from '../contexts/InterviewContext';
+import { InterviewProvider, useInterview } from '../contexts/InterviewContext';
 import { StageRenderer } from '../components/Assessment/StageRenderer';
+import { CodeReviewChallenge, asCodeReviewReviewProfile } from '../components/Assessment/CodeReviewChallenge';
+import type { Annotation } from '../components/Assessment/DiffPanel';
+import type { CodeReviewMatchExplanation } from '../components/Panels/ProblemPanel';
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { WelcomeScreen } from '../components/Assessment/WelcomeScreen';
@@ -20,6 +23,63 @@ import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig
 import { useReviewSessionV2 } from '../hooks/useReviewSessionV2';
 import { ReviewSessionPage } from './ReviewSessionPage';
 import { VideoShell } from '../components/Shells/VideoShell';
+import type { ReviewRound } from '../types/conversation';
+
+function isAnnotation(value: unknown): value is Annotation {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.id === 'string'
+    && typeof record.file === 'string'
+    && typeof record.line === 'number'
+    && ['critical', 'major', 'minor'].includes(String(record.severity))
+    && typeof record.comment === 'string'
+    && typeof record.createdAt === 'string';
+}
+
+function asCodeReviewMatchExplanation(value: unknown): CodeReviewMatchExplanation | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as CodeReviewMatchExplanation
+    : null;
+}
+
+function CodeReviewAssessmentView(): JSX.Element {
+  const { currentChallenge, submission, updateSubmission } = useInterview();
+  const annotations = Array.isArray(submission.annotations)
+    ? submission.annotations.filter(isAnnotation)
+    : [];
+  const verdict = typeof submission.verdict === 'string' ? submission.verdict : null;
+  const summary = typeof submission.summary === 'string' ? submission.summary : '';
+  const diff = normalizeDiffJson(currentChallenge.data.cachedDiffJson ?? { files: [] });
+
+  return (
+    <CodeReviewChallenge
+      challenge={{
+        id: currentChallenge.id,
+        title: currentChallenge.title,
+        instructions: currentChallenge.instructions,
+        githubRepoUrl: typeof currentChallenge.data.githubRepoUrl === 'string'
+          ? currentChallenge.data.githubRepoUrl
+          : null,
+        githubPrNumber: typeof currentChallenge.data.githubPrNumber === 'number'
+          ? currentChallenge.data.githubPrNumber
+          : null,
+        githubPrTitle: typeof currentChallenge.data.githubPrTitle === 'string'
+          ? currentChallenge.data.githubPrTitle
+          : null,
+        githubPrDescription: typeof currentChallenge.data.githubPrDescription === 'string'
+          ? currentChallenge.data.githubPrDescription
+          : null,
+        cachedMetadata: currentChallenge.data.cachedMetadata,
+        matchExplanation: asCodeReviewMatchExplanation(currentChallenge.data.matchExplanation),
+        reviewProfile: currentChallenge.data.reviewProfile,
+      }}
+      diff={diff.files.length > 0 ? diff : null}
+      isFetchingDiff={false}
+      submission={{ annotations, verdict, summary }}
+      onSubmissionChange={(next) => updateSubmission(next)}
+    />
+  );
+}
 
 /**
  * Build a RawStage from the stage config DTO + current challenge content.
@@ -27,6 +87,20 @@ import { VideoShell } from '../components/Shells/VideoShell';
  * We include ALL challenges so the WelcomeScreen can show the full queue,
  * and hydrate only the current challenge with content from get-challenge.
  */
+function asRawCodeArtifact(
+  value: unknown,
+): Exclude<RawChallenge['codeArtifact'], undefined> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== 'string') return null;
+  return {
+    id: record.id,
+    code: typeof record.code === 'string' ? record.code : null,
+    language: typeof record.language === 'string' ? record.language : null,
+    title: typeof record.title === 'string' ? record.title : null,
+  };
+}
+
 function buildRawStage(
   stageConfig: StageConfigDTO,
   content: ChallengeContentDTO,
@@ -44,13 +118,15 @@ function buildRawStage(
           ? content.config
           : JSON.stringify(content.config ?? {}),
         order: index,
-        codeArtifact: content.codeArtifact as any ?? null,
+        codeArtifact: asRawCodeArtifact(content.codeArtifact),
         cachedDiffJson: content.cachedDiffJson ?? null,
         githubPrTitle: (content.githubPrTitle as string) ?? null,
         githubRepoUrl: (content.githubRepoUrl as string) ?? null,
         githubPrNumber: (content.githubPrNumber as number) ?? null,
         githubPrDescription: (content.githubPrDescription as string) ?? null,
         devContainerRepoUrl: (content.devContainerRepoUrl as string) ?? null,
+        matchExplanation: content.matchExplanation ?? null,
+        reviewProfile: content.reviewProfile ?? null,
         issueBody: content.issueBody ?? null,
       };
     }
@@ -119,7 +195,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   const resolvedConfig = useMemo(() => {
     if (!stageConfig || !challengeContent) return null;
     const rawStage = buildRawStage(stageConfig, challengeContent, currentOrder);
-    return resolveStageConfig(rawStage as any);
+    return resolveStageConfig(rawStage);
   }, [stageConfig, challengeContent, currentOrder]);
 
   const currentType = challengeContent?.type ?? stageConfig?.challenges?.[currentOrder]?.type;
@@ -127,6 +203,10 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
   // Review session v2 state (CODE_REVIEW golden path)
   const [reviewSessionMeta, setReviewSessionMeta] = useState<{
     sessionId: string;
+    status: string;
+    completed: boolean;
+    rounds: ReviewRound[];
+    currentRound: number;
     maxRounds: number;
   } | null>(null);
   const [reviewSessionInitLoading, setReviewSessionInitLoading] = useState(false);
@@ -145,7 +225,14 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
       setReviewSessionInitLoading(true);
       initSession(challengeContent.id)
         .then((result) => {
-          setReviewSessionMeta({ sessionId: result.sessionId, maxRounds: result.maxRounds });
+          setReviewSessionMeta({
+            sessionId: result.sessionId,
+            status: result.status,
+            completed: result.completed === true,
+            rounds: result.rounds,
+            currentRound: result.currentRound,
+            maxRounds: result.maxRounds,
+          });
         })
         .catch((err: unknown) => {
           console.error('[CandidateAssessmentPage] initSession failed:', err);
@@ -480,8 +567,21 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                       title: challengeContent.githubPrTitle ?? undefined,
                       description: challengeContent.githubPrDescription ?? undefined,
                       diff: normalizeDiffJson(challengeContent.cachedDiffJson ?? { files: [] }),
+                      repoUrl: typeof challengeContent.githubRepoUrl === 'string'
+                        ? challengeContent.githubRepoUrl
+                        : null,
+                      prNumber: typeof challengeContent.githubPrNumber === 'number'
+                        ? challengeContent.githubPrNumber
+                        : null,
+                      instructions: challengeContent.instructions ?? null,
+                      matchExplanation: asCodeReviewMatchExplanation(challengeContent.matchExplanation),
+                      reviewProfile: asCodeReviewReviewProfile(challengeContent.reviewProfile),
                     }}
                     maxRounds={reviewSessionMeta.maxRounds}
+                    initialStatus={reviewSessionMeta.status}
+                    initialCompleted={reviewSessionMeta.completed}
+                    initialRounds={reviewSessionMeta.rounds}
+                    initialCurrentRound={reviewSessionMeta.currentRound}
                     onComplete={() => {
                       setReviewSessionMeta(null);
                       void handleSubmit({ reviewSessionId: reviewSessionMeta.sessionId });
@@ -507,6 +607,8 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
                     onSubmit={(answers) => handleSubmit({ answers })}
                     onSkip={() => handleSubmit({ answers: {} })}
                   />
+                ) : currentType === 'CODE_REVIEW' ? (
+                  <CodeReviewAssessmentView />
                 ) : (
                   <StageRenderer />
                 )}

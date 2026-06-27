@@ -13,6 +13,8 @@ const appBase = process.env.APP_BASE || "http://localhost:5173";
 const apiBase = process.env.API_BASE || "http://localhost:8787";
 const videoRoomBase = process.env.VIDEO_ROOM_BASE || "http://localhost:5175";
 const isRemote = !appBase.includes("localhost") || !apiBase.includes("localhost") || !videoRoomBase.includes("localhost");
+const basicAuthUser = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || "";
+const basicAuthPassword = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || "";
 
 function localPort(baseUrl: string, fallback: string): string {
   try {
@@ -41,6 +43,9 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
+    ...(isRemote && basicAuthUser && basicAuthPassword
+      ? { httpCredentials: { username: basicAuthUser, password: basicAuthPassword } }
+      : {}),
   },
 
   projects: [

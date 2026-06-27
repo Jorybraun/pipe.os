@@ -3,8 +3,9 @@ import { FileCode, MessageSquare, AlignJustify, Rows3, ExternalLink } from 'luci
 import { PierreDiffViewer } from './CodeReview/PierreDiffViewer';
 
 export interface DiffLine {
-  type: 'addition' | 'deletion' | 'context';
-  num: number;
+  type: 'addition' | 'deletion' | 'context' | 'added' | 'deleted';
+  num?: number;
+  lineNumber?: number;
   content: string;
 }
 

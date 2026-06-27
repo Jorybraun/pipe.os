@@ -39,6 +39,8 @@ import { buildNeo4jConfig, getNeo4jDriver } from '../neo4j/driver';
 import { slugifySkills } from '../skills/slugifySkills';
 import { attributeSkillTenure } from './attributeSkillTenure';
 import {
+  extractOpenIdentifierTerms,
+  normalizeOpenTermSurface,
   openSemanticTermRecord,
   type OpenSemanticTermRecord,
 } from '../livingContext/openTerms';
@@ -75,6 +77,37 @@ export interface ResumeDecompositionResult {
 
 const DECOMPOSITION_VERSION = 'adr041-v1';
 const DEFAULT_CONFIDENCE = 0.5;
+const RAW_REVIEW_EVIDENCE_CONFIDENCE = 0.85;
+const RAW_REVIEW_EVIDENCE_NODE_LIMIT = 32;
+const RAW_REVIEW_EVIDENCE_QUOTE_LIMIT = 8;
+const RAW_REVIEW_EVIDENCE_MIN_CHARS = 24;
+
+const RAW_EVIDENCE_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'for',
+  'from',
+  'have',
+  'i',
+  'in',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'so',
+  'the',
+  'their',
+  'this',
+  'to',
+  'with',
+]);
 
 function nowEpoch(): number {
   return Math.floor(Date.now() / 1000);
@@ -115,6 +148,165 @@ function sourceQuoteProperties(resumeText: string, sourceQuote?: string): {
     source_quote_char_start: index,
     source_quote_char_end: index + quote.length,
   };
+}
+
+function rawReviewEvidenceLevel(quote: string): string {
+  const normalized = normalizeOpenTermSurface(quote);
+  if (/\b(validated|verified|tested|regression|test|runner)\b/.test(normalized)) {
+    return 'validated';
+  }
+  if (/\b(implemented|built|designed|shipped|created|authored|led)\b/.test(normalized)) {
+    return 'implemented';
+  }
+  if (/\b(review|assess|explain|defend|reason|trade off|tradeoff)\b/.test(normalized)) {
+    return 'explained';
+  }
+  return 'used';
+}
+
+function rawReviewEvidenceQuotes(resumeText: string): string[] {
+  const trimmed = resumeText.trim();
+  if (trimmed.length < RAW_REVIEW_EVIDENCE_MIN_CHARS) return [];
+
+  const quotes = new Map<string, string>();
+  for (const match of resumeText.match(/[^.!?\n]+[.!?]?/g) ?? []) {
+    const quote = match.trim();
+    if (quote.length < RAW_REVIEW_EVIDENCE_MIN_CHARS) continue;
+    quotes.set(quote, quote);
+    if (quotes.size >= RAW_REVIEW_EVIDENCE_QUOTE_LIMIT) break;
+  }
+
+  if (quotes.size === 0) {
+    const quote = trimmed.slice(0, 4000);
+    quotes.set(quote, quote);
+  }
+  return [...quotes.values()];
+}
+
+function meaningfulRawEvidenceTokens(quote: string): string[] {
+  return normalizeOpenTermSurface(quote)
+    .split(' ')
+    .map((token) => token.replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, ''))
+    .filter((token) =>
+      token.length >= 2
+      && !RAW_EVIDENCE_STOPWORDS.has(token)
+      && !/^\d+$/.test(token)
+    );
+}
+
+function originalPhraseTokens(quote: string): string[] {
+  return (quote.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? [])
+    .map((token) => token.replace(/^[^A-Za-z0-9+#]+|[^A-Za-z0-9+#]+$/g, ''))
+    .filter((token) =>
+      token.length >= 2
+      && !RAW_EVIDENCE_STOPWORDS.has(token.toLowerCase())
+      && !/^\d+$/.test(token)
+    );
+}
+
+function compactLanguageNames(surface: string): string {
+  return surface
+    .replace(/\bJavaScript\b/g, 'javascript')
+    .replace(/\bTypeScript\b/g, 'typescript');
+}
+
+function rawReviewEvidenceTerms(quote: string, evidenceLevel: string): OpenSemanticTermRecord[] {
+  const surfaces: string[] = [];
+  const tokens = meaningfulRawEvidenceTokens(quote);
+  const originalTokens = originalPhraseTokens(quote);
+
+  for (const token of quote.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
+    const cleaned = token.replace(/^[^A-Za-z0-9+#]+|[^A-Za-z0-9+#]+$/g, '');
+    if (/[a-z][A-Z]/.test(cleaned) || /[A-Za-z]+[0-9]/.test(cleaned)) {
+      surfaces.push(cleaned);
+    }
+  }
+
+  for (let size = 4; size >= 2; size--) {
+    for (let index = 0; index <= originalTokens.length - size; index++) {
+      const ngram = originalTokens.slice(index, index + size);
+      if (!ngram.some((token) => token.length >= 4)) continue;
+      const surface = ngram.join(' ');
+      surfaces.push(surface, compactLanguageNames(surface));
+    }
+  }
+
+  for (let size = 4; size >= 2; size--) {
+    for (let index = 0; index <= tokens.length - size; index++) {
+      const ngram = tokens.slice(index, index + size);
+      if (!ngram.some((token) => token.length >= 4)) continue;
+      surfaces.push(ngram.join(' '));
+    }
+  }
+
+  surfaces.push(...extractOpenIdentifierTerms([quote], 32).map((term) => term.surface));
+
+  const terms = new Map<string, OpenSemanticTermRecord>();
+  for (const surface of surfaces) {
+    const term = openSemanticTermRecord(surface, evidenceLevel);
+    if (term && !terms.has(term.canonical_key)) {
+      terms.set(term.canonical_key, term);
+    }
+  }
+  return [...terms.values()].sort((left, right) =>
+    rawReviewEvidenceTermPriority(right) - rawReviewEvidenceTermPriority(left)
+  );
+}
+
+function rawReviewEvidenceTermPriority(term: OpenSemanticTermRecord): number {
+  const canonical = term.canonical_key.replace(/^term:/, '');
+  const segmentCount = canonical.split('-').filter(Boolean).length;
+  const compactPhrase = segmentCount >= 2 && segmentCount <= 3 ? 30 : 0;
+  const languageLike = /(^|-)javascript(-|$)|(^|-)typescript(-|$)/.test(canonical) ? 80 : 0;
+  const identifierLike = /[a-z][A-Z]|[A-Za-z]+[0-9]|[./#]/.test(term.surface) ? 80 : 0;
+  const tooLongPenalty = Math.max(0, segmentCount - 4) * 4;
+  return Math.max(identifierLike, languageLike) + compactPhrase - tooLongPenalty;
+}
+
+function rawReviewEvidenceNodes(
+  candidateId: string,
+  resumeText: string,
+): Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> {
+  const nodes: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
+  const capturedAt = nowEpoch();
+  const seenTerms = new Set<string>();
+  const quotes = rawReviewEvidenceQuotes(resumeText);
+  const perQuoteLimit = Math.max(8, Math.ceil(RAW_REVIEW_EVIDENCE_NODE_LIMIT / Math.max(1, quotes.length)));
+
+  for (const quote of quotes) {
+    const evidenceLevel = rawReviewEvidenceLevel(quote);
+    let nodesForQuote = 0;
+    for (const term of rawReviewEvidenceTerms(quote, evidenceLevel)) {
+      if (seenTerms.has(term.canonical_key)) continue;
+      seenTerms.add(term.canonical_key);
+      nodes.push({
+        candidate_id: candidateId,
+        node_type: 'ReviewEvidence',
+        narrative_text: `Candidate supplied review evidence for ${term.surface}: ${quote.slice(0, 500)}`,
+        extracted_properties_json: JSON.stringify({
+          source: 'resume_text_intake',
+          term_surface: term.surface,
+          term_canonical_key: term.canonical_key,
+          semantic_terms: [term],
+          ...sourceQuoteProperties(resumeText, quote),
+          index: nodes.length,
+        }),
+        embedding_json: null,
+        source_type: 'resume',
+        source_reference: `resume:review-evidence:${nodes.length}`,
+        captured_at: capturedAt,
+        confidence: RAW_REVIEW_EVIDENCE_CONFIDENCE,
+        supersedes: null,
+        superseded_at: null,
+        decomposition_version: DECOMPOSITION_VERSION,
+      });
+      if (nodes.length >= RAW_REVIEW_EVIDENCE_NODE_LIMIT) return nodes;
+      nodesForQuote++;
+      if (nodesForQuote >= perQuoteLimit) break;
+    }
+  }
+
+  return nodes;
 }
 
 function experienceToNode(
@@ -319,6 +511,7 @@ async function writeParserOnlyNodes(
   _db: import('@cloudflare/workers-types').D1Database,
   candidateId: string,
   parsedCV: ParsedCV,
+  resumeText: string,
   env: Env,
 ): Promise<{ inserted: number; embedded: number; errors: string[]; embeddings: number[][] }> {
   const errors: string[] = [];
@@ -328,7 +521,9 @@ async function writeParserOnlyNodes(
   const candidateNodes: CandidateNode[] = [];
   const now = nowEpoch();
 
-  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
+  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [
+    ...rawReviewEvidenceNodes(candidateId, resumeText),
+  ];
 
   // Canonicalize parser-extracted skills and create Skill nodes
   const canonicalSkills = parsedCV.skills.length > 0
@@ -371,6 +566,11 @@ async function writeParserOnlyNodes(
         startDate: exp.startDate,
         endDate: exp.endDate,
         isCurrent: exp.isCurrent,
+        semantic_terms: mergeSemanticTerms(
+          undefined,
+          extractOpenIdentifierTerms([exp.role, exp.description], 24).map((term) => term.surface),
+          'demonstrated',
+        ),
         index: i,
       }),
       embedding_json: null,
@@ -441,6 +641,11 @@ async function writeParserOnlyNodes(
         name: proj.name,
         description: proj.description,
         url: proj.url,
+        semantic_terms: mergeSemanticTerms(
+          undefined,
+          extractOpenIdentifierTerms([proj.name, proj.description], 24).map((term) => term.surface),
+          'demonstrated',
+        ),
         index: i,
       }),
       embedding_json: null,
@@ -454,19 +659,55 @@ async function writeParserOnlyNodes(
     });
   }
 
-  // Embed and build CandidateNode array
-  for (const node of nodesToInsert) {
-    try {
-      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
-      embedded++;
-      embeddings.push(embedding);
+  if (nodesToInsert.length === 0 && resumeText.trim().length >= 20) {
+    const sourceQuote = resumeText.trim().slice(0, 4000);
+    nodesToInsert.push({
+      candidate_id: candidateId,
+      node_type: 'Experience',
+      narrative_text: `Candidate supplied resume evidence: ${sourceQuote.slice(0, 500)}`,
+      extracted_properties_json: JSON.stringify({
+        source: 'text_intake_fallback',
+        semantic_terms: extractOpenIdentifierTerms([sourceQuote], 48).map((term) => ({
+          surface: term.surface,
+          canonical_key: term.canonicalKey,
+          evidence_level: 'used',
+        })),
+        ...sourceQuoteProperties(resumeText, sourceQuote),
+        index: 0,
+      }),
+      embedding_json: null,
+      source_type: 'resume',
+      source_reference: null,
+      captured_at: now,
+      confidence: DEFAULT_CONFIDENCE,
+      supersedes: null,
+      superseded_at: null,
+      decomposition_version: DECOMPOSITION_VERSION,
+    });
+  }
 
-      const insertedNode = await insertCandidateNode(_db, {
-        ...node,
-        embedding_json: JSON.stringify(embedding),
-      });
+  // Persist nodes before embedding so source-backed evidence survives AI outages.
+  for (const node of nodesToInsert) {
+    let insertedNode: CandidateNode;
+    try {
+      insertedNode = await insertCandidateNode(_db, node);
       candidateNodes.push(insertedNode);
       inserted++;
+    } catch (insertErr) {
+      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
+      errors.push(`Insert failed for ${node.node_type}: ${msg}`);
+      continue;
+    }
+
+    try {
+      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      const embeddingJson = JSON.stringify(embedding);
+      await _db.prepare(
+        `UPDATE candidate_nodes SET embedding_json = ?1, updated_at = unixepoch() WHERE id = ?2`,
+      ).bind(embeddingJson, insertedNode.id).run();
+      insertedNode.embedding_json = embeddingJson;
+      embedded++;
+      embeddings.push(embedding);
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
       errors.push(`Embed failed for ${node.node_type}: ${msg}`);
@@ -541,7 +782,9 @@ export async function decomposeResumeToGraph(
   let decomposition: DecompositionResult | null = decompositionResult ?? null;
 
   // Step 2: Build node list
-  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [];
+  const nodesToInsert: Array<Omit<CandidateNode, 'id' | 'created_at' | 'updated_at'>> = [
+    ...rawReviewEvidenceNodes(candidateId, resumeText),
+  ];
 
   if (decomposition) {
     // Canonicalize all skills from LLM decomposition against skill_aliases
@@ -599,7 +842,7 @@ export async function decomposeResumeToGraph(
   } else {
     // No decomposition — fall back to parser-only nodes with lower confidence
     console.log('[resumeDecomposition] No decomposition result provided; falling back to parser-only nodes');
-    const fallback = await writeParserOnlyNodes(db, candidateId, parsedCV, env);
+    const fallback = await writeParserOnlyNodes(db, candidateId, parsedCV, resumeText, env);
     result.nodesInserted = fallback.inserted;
     result.nodesEmbedded = fallback.embedded;
     result.errors.push(...fallback.errors);
@@ -645,20 +888,30 @@ export async function decomposeResumeToGraph(
     return result;
   }
 
-  // Step 3: Embed nodes and build CandidateNode array
+  // Step 3: Persist nodes before embedding so source-backed evidence survives AI outages.
   const candidateNodes: CandidateNode[] = [];
   for (const node of nodesToInsert) {
+    let insertedNode: CandidateNode;
     try {
-      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
-      result.nodesEmbedded++;
-      result.embeddings.push(embedding);
-
-      const insertedNode = await insertCandidateNode(db, {
-        ...node,
-        embedding_json: JSON.stringify(embedding),
-      });
+      insertedNode = await insertCandidateNode(db, node);
       candidateNodes.push(insertedNode);
       result.nodesInserted++;
+    } catch (insertErr) {
+      const msg = insertErr instanceof Error ? insertErr.message : String(insertErr);
+      console.warn('[resumeDecomposition] Insert failed for', node.node_type, ':', msg);
+      result.errors.push(`Insert failed for ${node.node_type}: ${msg}`);
+      continue;
+    }
+
+    try {
+      const embedding = await embedCandidateNode(node.narrative_text, env as unknown as Parameters<typeof embedCandidateNode>[1]);
+      const embeddingJson = JSON.stringify(embedding);
+      await db.prepare(
+        `UPDATE candidate_nodes SET embedding_json = ?1, updated_at = unixepoch() WHERE id = ?2`,
+      ).bind(embeddingJson, insertedNode.id).run();
+      insertedNode.embedding_json = embeddingJson;
+      result.nodesEmbedded++;
+      result.embeddings.push(embedding);
     } catch (embedErr) {
       const msg = embedErr instanceof Error ? embedErr.message : String(embedErr);
       console.warn('[resumeDecomposition] Embed failed for', node.node_type, ':', msg);

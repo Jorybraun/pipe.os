@@ -8,7 +8,11 @@ import {
   deterministicEntityId,
   LivingContextStore,
 } from './persistence';
-import type { JsonObject } from './types';
+import type {
+  ContextRecordEntityInput,
+  ContextRecordSourceInput,
+  JsonObject,
+} from './types';
 
 export interface CodeReviewTranscript {
   rounds: ReviewRound[];
@@ -63,6 +67,34 @@ interface ArtifactVersionRow {
   version_number: number;
 }
 
+interface ChallengeEvidenceLink {
+  sources: ContextRecordSourceInput[];
+  entities: ContextRecordEntityInput[];
+  qualifiers: JsonObject;
+}
+
+interface ChallengeEvidenceRow {
+  assignment_id: string | null;
+  repo_id: number | null;
+  github_repo_url: string | null;
+  full_name: string | null;
+  github_pr_number: number | null;
+  packet_id: string | null;
+  packet_hash: string | null;
+  packet_quality_score: number | null;
+  match_run_id?: string | null;
+  match_status?: string | null;
+  match_policy_version?: string | null;
+  match_role_context_id?: string | null;
+}
+
+interface MatchRunRow {
+  id: string;
+  status: string;
+  policy_version: string;
+  role_context_id: string | null;
+}
+
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
@@ -73,6 +105,201 @@ function lineNumberAt(value: string, offset: number): number {
     if (value[index] === '\n') line++;
   }
   return line;
+}
+
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+function buildChallengeEvidenceLink(
+  row: ChallengeEvidenceRow,
+  matchRun: MatchRunRow | null,
+): ChallengeEvidenceLink {
+  const sources: ContextRecordSourceInput[] = [];
+  const entities: ContextRecordEntityInput[] = [];
+  const selected: JsonObject = {
+    repoId: row.repo_id,
+    repoUrl: row.github_repo_url,
+    repoFullName: row.full_name,
+    prNumber: row.github_pr_number,
+    assignmentId: row.assignment_id,
+    packetId: row.packet_id,
+    packetQualityScore: row.packet_quality_score,
+    matchRunId: matchRun?.id ?? null,
+    matchStatus: matchRun?.status ?? null,
+    matchPolicyVersion: matchRun?.policy_version ?? null,
+    roleContextId: matchRun?.role_context_id ?? null,
+  };
+
+  if (row.assignment_id) {
+    sources.push({
+      sourceRefType: 'candidate_challenge_assignment',
+      sourceRefId: row.assignment_id,
+      evidenceRole: 'challenge_selection',
+      locator: selected,
+      metadata: {
+        sourceKind: 'candidate_challenge_assignment',
+        sourceBackedPacketId: row.packet_id,
+      },
+    });
+    entities.push({
+      entityType: 'candidate_challenge_assignment',
+      entityId: row.assignment_id,
+      relationship: 'challenge_selection',
+    });
+  }
+
+  if (row.packet_id && row.packet_hash) {
+    sources.push({
+      sourceRefType: 'review_challenge_packet',
+      sourceRefId: row.packet_id,
+      evidenceRole: 'selected_review_challenge',
+      contentHash: row.packet_hash,
+      locator: selected,
+      metadata: {
+        sourceKind: 'review_challenge_packet',
+        repoId: row.repo_id,
+        prNumber: row.github_pr_number,
+      },
+    });
+    entities.push({
+      entityType: 'review_challenge_packet',
+      entityId: row.packet_id,
+      relationship: 'selected_challenge_packet',
+      confidence: row.packet_quality_score,
+    });
+  }
+
+  if (matchRun) {
+    sources.push({
+      sourceRefType: 'match_run',
+      sourceRefId: matchRun.id,
+      evidenceRole: 'repo_match_decision',
+      locator: selected,
+      metadata: {
+        sourceKind: 'match_run',
+        status: matchRun.status,
+        policyVersion: matchRun.policy_version,
+      },
+    });
+    entities.push({
+      entityType: 'match_run',
+      entityId: matchRun.id,
+      relationship: 'selection_decision',
+    });
+  }
+
+  if (row.repo_id !== null) {
+    entities.push({
+      entityType: 'repository',
+      entityId: String(row.repo_id),
+      relationship: 'selected_repository',
+      value: {
+        githubUrl: row.github_repo_url,
+        fullName: row.full_name,
+      },
+    });
+  }
+  if (typeof row.github_pr_number === 'number') {
+    entities.push({
+      entityType: 'pull_request',
+      entityId: row.repo_id !== null ? `${row.repo_id}#${row.github_pr_number}` : null,
+      relationship: 'selected_pull_request',
+      value: {
+        repoUrl: row.github_repo_url,
+        prNumber: row.github_pr_number,
+      },
+    });
+  }
+
+  return {
+    sources,
+    entities,
+    qualifiers: {
+      selectedReviewChallenge: selected,
+    },
+  };
+}
+
+async function loadChallengeEvidenceLink(
+  db: D1Database,
+  input: CodeReviewTranscriptIngestionInput,
+): Promise<ChallengeEvidenceLink> {
+  const empty: ChallengeEvidenceLink = { sources: [], entities: [], qualifiers: {} };
+  const hasAssignmentTable = await tableExists(db, 'candidate_challenge_assignment');
+  const hasRepoTable = await tableExists(db, 'qualified_repos');
+  const hasPacketTable = await tableExists(db, 'review_challenge_packets');
+  const hasMatchRunsTable = await tableExists(db, 'match_runs');
+  if (!hasAssignmentTable || !hasRepoTable || !hasPacketTable) return empty;
+
+  const selectFields = `cca.id AS assignment_id,
+            COALESCE(cca.repo_id, qr.id) AS repo_id,
+            COALESCE(cca.github_repo_url, qr.github_url) AS github_repo_url,
+            qr.full_name,
+            cca.github_pr_number,
+            rcp.id AS packet_id,
+            rcp.source_hash AS packet_hash,
+            rcp.quality_score AS packet_quality_score`;
+  const joins = `FROM candidate_challenge_assignment cca
+       LEFT JOIN qualified_repos qr
+         ON (
+              cca.repo_id IS NOT NULL
+              AND qr.id = cca.repo_id
+            )
+         OR (
+              cca.repo_id IS NULL
+              AND cca.github_repo_url IS NOT NULL
+              AND qr.github_url = cca.github_repo_url
+            )
+       LEFT JOIN review_challenge_packets rcp
+         ON rcp.repo_id = qr.id
+        AND rcp.pr_number = cca.github_pr_number
+        AND rcp.production_ready = 1`;
+  const whereClause = `WHERE cca.candidate_id = ?1
+        AND cca.challenge_id = ?2`;
+
+  const sql = hasMatchRunsTable
+    ? `SELECT ${selectFields},
+              mr.id AS match_run_id,
+              mr.status AS match_status,
+              mr.policy_version AS match_policy_version,
+              mr.role_context_id AS match_role_context_id
+         ${joins}
+         LEFT JOIN match_runs mr
+           ON mr.candidate_id = cca.candidate_id
+          AND mr.selected_packet_id = rcp.id
+        ${whereClause}
+        ORDER BY cca.assigned_at DESC,
+                 rcp.quality_score DESC,
+                 rcp.updated_at DESC,
+                 CASE WHEN mr.id IS NULL THEN 1 ELSE 0 END,
+                 mr.created_at DESC
+        LIMIT 1`
+    : `SELECT ${selectFields}
+         ${joins}
+        ${whereClause}
+        ORDER BY cca.assigned_at DESC,
+                 rcp.quality_score DESC,
+                 rcp.updated_at DESC
+        LIMIT 1`;
+
+  const row = await db.prepare(sql)
+    .bind(input.candidateId, input.challengeId)
+    .first<ChallengeEvidenceRow>();
+
+  if (!row) return empty;
+  const matchRun = row.match_run_id && row.match_status && row.match_policy_version
+    ? {
+        id: row.match_run_id,
+        status: row.match_status,
+        policy_version: row.match_policy_version,
+        role_context_id: row.match_role_context_id ?? null,
+      }
+    : null;
+  return buildChallengeEvidenceLink(row, matchRun);
 }
 
 class ReviewDocumentBuilder {
@@ -460,6 +687,17 @@ export async function ingestCodeReviewTranscriptToLivingContext(
   }
 
   if (sourceSpanIds.length > 0) {
+    const challengeEvidence = await loadChallengeEvidenceLink(db, input);
+    const verdictEntity: ContextRecordEntityInput[] = input.transcript.verdict
+      ? [{
+          entityType: 'code_review_verdict',
+          relationship: 'candidate_verdict',
+          value: {
+            decision: input.transcript.verdict.decision,
+            submittedAt: input.transcript.verdict.submittedAt,
+          },
+        }]
+      : [];
     await store.upsertContextRecord({
       ingestionKey: `code-review:${input.sessionId}:transcript:${version.id}:context`,
       workspacePersonId,
@@ -474,15 +712,25 @@ export async function ingestCodeReviewTranscriptToLivingContext(
         status: input.status,
         candidateSpanCount,
         sourceSpanCount: sourceSpanIds.length,
+        finalVerdictDecision: input.transcript.verdict?.decision ?? null,
+        ...challengeEvidence.qualifiers,
       },
       confidence: null,
       extractionVersion: 'code-review-ingestion-v1',
       observedAt: input.observedAt,
-      sources: sourceSpanIds.map((sourceSpanId) => ({
-        sourceSpanId,
-        evidenceRole: 'transcript_segment',
-      })),
+      sources: [
+        ...sourceSpanIds.map((sourceSpanId) => ({
+          sourceSpanId,
+          evidenceRole: 'transcript_segment',
+        })),
+        ...challengeEvidence.sources,
+      ],
       entities: [
+        {
+          entityType: 'candidate',
+          entityId: input.candidateId,
+          relationship: 'legacy_candidate',
+        },
         {
           entityType: 'code_review_session',
           entityId: input.sessionId,
@@ -498,6 +746,8 @@ export async function ingestCodeReviewTranscriptToLivingContext(
           entityId: input.assessmentId,
           relationship: 'assessment',
         },
+        ...challengeEvidence.entities,
+        ...verdictEntity,
       ],
     });
   }

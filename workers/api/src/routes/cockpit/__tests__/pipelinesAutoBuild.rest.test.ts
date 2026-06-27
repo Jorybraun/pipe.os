@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { checkGuardrails, type MatchConfigInput } from '../../../lib/match/guardrails';
+import { buildAutoBuiltChallengeConfig } from '../pipelinesAutoBuild';
 
 // ── 1. Body schema — mirrors workers/api/src/routes/cockpit/pipelinesAutoBuild.ts
 
@@ -324,5 +325,41 @@ describe('201 response warnings contract', () => {
     const result = checkGuardrails(input);
     expect(result.allowed).toBe(true);
     expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('auto-built challenge config', () => {
+  it('marks CODE_REVIEW challenges as multi-turn so review-session pushback can initialize', () => {
+    const config = buildAutoBuiltChallengeConfig({
+      challengeType: 'CODE_REVIEW',
+      repoId: null,
+      issueNumber: null,
+      matchDeferred: true,
+    });
+
+    expect(config).toMatchObject({
+      autoBuilt: true,
+      repoId: null,
+      issueNumber: null,
+      matchDeferred: true,
+      isMultiTurn: true,
+      maxRounds: 4,
+    });
+  });
+
+  it('does not add review-session flags to implementation challenges', () => {
+    const config = buildAutoBuiltChallengeConfig({
+      challengeType: 'CODE_IMPLEMENTATION',
+      repoId: 42,
+      issueNumber: 123,
+      matchDeferred: false,
+    });
+
+    expect(config).toEqual({
+      autoBuilt: true,
+      repoId: 42,
+      issueNumber: 123,
+      matchDeferred: false,
+    });
   });
 });

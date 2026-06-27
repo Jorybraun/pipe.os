@@ -195,4 +195,52 @@ describe('loadRoleChallengeSemantics', () => {
       },
     ]);
   });
+
+  it('compacts source-backed TypeScript and JavaScript role terms for repo packet guardrails', async () => {
+    const semantics = await loadRoleChallengeSemantics(d1([], [
+      {
+        context_record_id: 'context-record-jd',
+        record_type: 'simple_job_description',
+        extraction_version: 'simple-jd-v1',
+        canonical_key: 'term:type-script',
+        label: 'TypeScript',
+        source_ref_type: 'source_span',
+        source_ref_id: 'jd-span-1',
+        source_span_id: 'jd-span-1',
+        exact_text: 'TypeScript and JavaScript test runner work.',
+        content_hash: 'sha256:jd',
+      },
+      {
+        context_record_id: 'context-record-jd',
+        record_type: 'simple_job_description',
+        extraction_version: 'simple-jd-v1',
+        canonical_key: 'term:java-script-test-runner',
+        label: 'JavaScript test runner',
+        source_ref_type: 'source_span',
+        source_ref_id: 'jd-span-1',
+        source_span_id: 'jd-span-1',
+        exact_text: 'TypeScript and JavaScript test runner work.',
+        content_hash: 'sha256:jd',
+      },
+    ]), {
+      id: 'role-jd-context',
+      rcd_version: null,
+      rcd_json: null,
+      job_description_md: 'TypeScript and JavaScript test runner work.',
+      non_negotiable_skills_json: JSON.stringify(['TypeScript', 'JavaScript test runner']),
+    });
+
+    expect(semantics.relevantConcepts).toEqual([
+      'term:javascript-test-runner',
+      'term:typescript',
+    ]);
+    expect(semantics.requiredConcepts).toEqual([
+      'term:javascript-test-runner',
+      'term:typescript',
+    ]);
+    expect(semantics.sources[0]?.conceptKeys).toEqual([
+      'term:javascript-test-runner',
+      'term:typescript',
+    ]);
+  });
 });

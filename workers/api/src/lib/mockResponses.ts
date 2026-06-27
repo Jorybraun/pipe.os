@@ -19,14 +19,28 @@ export function getMockImplementerResponses(
     const moveOptions: Array<'comment' | 'change' | 'pushback'> = ['comment', 'change', 'pushback'];
     const moveIdx = (comment.id + idx + (persona === 'junior' ? 1 : 0)) % moveOptions.length;
     const move = moveOptions[moveIdx]!;
+    const finding = comment.what.trim();
+    const quotedFinding = finding.length > 180 ? `${finding.slice(0, 177)}...` : finding;
+
+    let content: string;
+    if (move === 'pushback') {
+      content = persona === 'junior'
+        ? `Can you point to the concrete failure mode for "${quotedFinding}"? I added this behavior to solve the PR's user-facing issue, so I need to understand why this risk is severe enough to block the change.`
+        : `I am not convinced this should block the PR yet. Can you connect "${quotedFinding}" to a reproducible failure or lifecycle path, and explain why the existing implementation would not already contain it?`;
+    } else if (move === 'change') {
+      content = persona === 'junior'
+        ? `That makes sense. I will update the patch and add coverage for "${quotedFinding}" so the behavior is protected.`
+        : `Agreed. I will make the smallest targeted change for "${quotedFinding}" and add a regression around the failing path.`;
+    } else {
+      content = persona === 'junior'
+        ? `I need one more detail before changing this: what input or lifecycle sequence makes "${quotedFinding}" fail in practice?`
+        : `Can you clarify the expected invariant behind "${quotedFinding}" so I can separate a real bug from a theoretical edge case?`;
+    }
 
     return {
       to_comment_id: comment.id,
       move,
-      content:
-        persona === 'junior'
-          ? `Thanks for pointing that out. I'll ${move === 'change' ? 'fix' : 'consider'} this.`
-          : `Good catch. Here's my perspective on this: ${comment.what.toLowerCase()}. I've ${move === 'change' ? 'updated the code' : 'documented'} accordingly.`,
+      content,
       ...(move === 'change' ? { updated_code: '// Updated code here\nfunction example() { return true; }' } : {}),
     };
   });

@@ -39,3 +39,15 @@ Format:
   - Updated `docs/README.md` to remove archive section, add deletion note
 - **Files affected:** 109 files deleted, 1 modified
 - **Root cause:** Archives contained docs describing systems that no longer exist (AWS Amplify, Lambda, AppSync, DynamoDB, Cognito, old UI components, old data models). The role discovery system alone had 4 archived docs describing a completely different architecture (separate Lambdas, 6-phase grid UI, "Next-Gen" styling) vs. the current implementation (Cloudflare Workers, AIChat component, brutalist glassmorphic). Reading archived docs was a trap — they looked official but described ghosts.
+
+#### 2026-06-27 — CODE_REVIEW app-dev smoke exposed deployed matching drift
+- **Found by:** Codex app-dev smoke run while validating standalone CODE_REVIEW production readiness.
+- **Action taken:**
+  - Fixed `scripts/smoke-code-review-assess-dev.mjs` to load `.env.local`/`.env`, use app-dev for recruiter setup, use api-dev for candidate `/rpc` bearer calls, and report sanitized challenge context on failure.
+  - Fixed Playwright remote runs to pass dev HTTP Basic credentials from env when app-dev/room-dev are used.
+  - Deployed the current API Worker and app shell to app-dev after adding source-backed manual match proof and roleless exact-symbol auto-match acceptance.
+  - Added regression coverage for manual standalone CODE_REVIEW `matchExplanation` and roleless exact source-backed auto-match eligibility.
+  - Verified `npm run smoke:code-review-assess-dev` and `CODE_REVIEW_SMOKE_AUTO_MATCH=1 npm run smoke:code-review-assess-dev` against app-dev; both selected real `mui/base-ui#973`, returned `MATCHED`, passed quality gate, rendered Pierre diff, and avoided video-room UI.
+  - Updated `e2e/TESTING.md` with the remote transport split and smoke-test scope.
+- **Files affected:** `scripts/smoke-code-review-assess-dev.mjs`, `playwright.config.ts`, `e2e/TESTING.md`, `CHANGELOG.md`.
+- **Root cause:** The deployed smoke path had two separate drifts: local documentation expected remote app-dev validation, but the script did not load local env or split app-dev recruiter auth from candidate bearer RPC. After fixing the smoke transport, app-dev still failed readiness: auto-match remained in `WAITING_FOR_MATCH`, and manual override produced a CODE_REVIEW challenge without `matchExplanation`. Manual proof was stale deployed API code; auto-match was a too-strict roleless gate that rejected exact source-backed symbol evidence when only one production-ready packet made role/contrast metrics unavailable.

@@ -365,6 +365,49 @@ describe('repository semantic graph challenge packets', () => {
     ).toMatchObject({ passed: false });
   });
 
+  it('adds candidate-safe review fit metadata to challenge packets', async () => {
+    const input = await makePullRequest();
+    const packet = await buildChallengePacket(input);
+
+    expect(packet.reviewProfile).toMatchObject({
+      source: 'deterministic_engineering_prior',
+      difficultyBand: 'advanced',
+      expectedSeniority: 'staff',
+      expectedTimeMinutes: 75,
+      basis: {
+        changedFileCount: 3,
+        changedLineCount: 43,
+        sourceHunkCount: 3,
+        testChangeCount: 1,
+        demandFamilyCount: 6,
+        hasIssueContext: true,
+      },
+    });
+    expect(packet.reviewProfile.rationale).toContain('advanced review calibrated for staff candidates');
+    expect(packet.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+  });
+
+  it('marks oversized packet profiles as staff-level calibration risks', async () => {
+    const input = await makePullRequest();
+    const oversized = {
+      ...input,
+      changedFiles: input.changedFiles.map((file, index) =>
+        index === 0 ? { ...file, additions: 1_600 } : file,
+      ),
+    };
+    const packet = await buildChallengePacket(oversized);
+
+    expect(packet.reviewProfile).toMatchObject({
+      difficultyBand: 'oversized',
+      expectedSeniority: 'staff',
+      expectedTimeMinutes: 90,
+      basis: expect.objectContaining({
+        changedLineCount: 1_631,
+      }),
+    });
+    expect(packet.quality.eligible).toBe(false);
+  });
+
   it('marks production-language packets ineligible when source extraction diagnostics are present', async () => {
     const input = await makePullRequest();
     const packet = await buildChallengePacket({

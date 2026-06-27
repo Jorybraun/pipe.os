@@ -1,0 +1,993 @@
+import { spawnSync } from 'node:child_process';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
+
+const APP_BASE = (process.env.APP_BASE || 'https://app-dev.hire-pipe.com').replace(/\/$/, '');
+const API_BASE = (process.env.API_BASE || 'https://api-dev.hire-pipe.com').replace(/\/$/, '');
+const RECRUITER_API_BASE = (process.env.RECRUITER_API_BASE || APP_BASE).replace(/\/$/, '');
+const RPC_BASE = (process.env.RPC_BASE || API_BASE).replace(/\/$/, '');
+const VIDEO_ROOM_BASE = (process.env.VIDEO_ROOM_BASE || process.env.ROOM_BASE || 'https://room-dev.hire-pipe.com').replace(/\/$/, '');
+const BASIC_USER = process.env.PIPE_DEV_BASIC_AUTH_USER || process.env.DEV_BASIC_AUTH_USER || '';
+const BASIC_PASSWORD = process.env.PIPE_DEV_BASIC_AUTH_PASSWORD || process.env.DEV_BASIC_AUTH_PASSWORD || '';
+const SEND_EMAIL = process.env.CODE_REVIEW_SMOKE_SEND_EMAIL === '1';
+const SKIP_BROWSER = process.env.CODE_REVIEW_SMOKE_SKIP_BROWSER === '1';
+const AUTO_MATCH = process.env.CODE_REVIEW_SMOKE_AUTO_MATCH === '1';
+const ROLE_BACKED = process.env.CODE_REVIEW_SMOKE_ROLE_BACKED === '1';
+const SUBMIT_REVIEW = process.env.CODE_REVIEW_SMOKE_SUBMIT === '1'
+  || process.env.CODE_REVIEW_SMOKE_FULL_SUBMIT === '1';
+const DEFAULT_REPO_URL = AUTO_MATCH ? '' : 'https://github.com/mui/base-ui';
+const DEFAULT_PR_NUMBER = AUTO_MATCH ? '' : '973';
+const REPO_URL = (process.env.CODE_REVIEW_SMOKE_REPO_URL ?? DEFAULT_REPO_URL).trim();
+const PR_NUMBER_RAW = (process.env.CODE_REVIEW_SMOKE_PR_NUMBER ?? DEFAULT_PR_NUMBER).trim();
+const PR_NUMBER = PR_NUMBER_RAW ? Number(PR_NUMBER_RAW) : null;
+const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH
+  ?? (AUTO_MATCH ? '1' : '0');
+const REQUIRE_CONTRAST = process.env.CODE_REVIEW_REQUIRE_CONTRAST
+  ?? (!REPO_URL && !PR_NUMBER ? '1' : '0');
+
+const DEFAULT_RESUME_TEXT = [
+  'Senior frontend platform engineer with deep React and TypeScript experience.',
+  'Recently implemented popover trigger click handling in usePopoverRoot for a large component library.',
+  'Designed a patient click threshold so impatient trigger clicks do not immediately close hover-open popovers.',
+  'Reviewed popup trigger id ownership bugs where rendered DOM ids diverged from internal registries and active-trigger state.',
+  'Comfortable assessing accessibility state, user interaction timing, implicit active trigger ownership, JavaScript test runner regression tests, and maintainability trade-offs.',
+  'I routinely explain review decisions to implementation authors and defend risk-based request-changes calls.',
+].join(' ');
+
+const RESUME_TEXT = (process.env.CODE_REVIEW_SMOKE_RESUME_TEXT || DEFAULT_RESUME_TEXT).trim();
+const GITHUB_HANDLE = (process.env.CODE_REVIEW_SMOKE_GITHUB_HANDLE || 'code-review-smoke').trim();
+const ROLE_TITLE = (process.env.CODE_REVIEW_SMOKE_ROLE_TITLE || 'Senior Frontend Platform Engineer').trim();
+const DEFAULT_ROLE_JOB_DESCRIPTION = [
+  `## Role Title\n${ROLE_TITLE}`,
+  '## Role Scope',
+  'The role reviews React and TypeScript component-library pull requests that change popup and popover trigger behavior.',
+  'The engineer must reason about usePopoverRoot, patient click thresholds, rendered trigger id ownership, DOM id versus internal registry state, JavaScript test runner regression tests, accessibility state, and maintainability trade-offs.',
+  'The assessment should reveal whether the candidate can defend request-changes decisions against implementation pushback.',
+].join('\n\n');
+const ROLE_JOB_DESCRIPTION = (
+  process.env.CODE_REVIEW_SMOKE_ROLE_JD
+  || DEFAULT_ROLE_JOB_DESCRIPTION
+).trim();
+const ROLE_SELECTED_TERMS = (
+  process.env.CODE_REVIEW_SMOKE_ROLE_TERMS
+    ? process.env.CODE_REVIEW_SMOKE_ROLE_TERMS.split(',').map((term) => term.trim()).filter(Boolean)
+    : [
+        'React',
+        'TypeScript',
+        'usePopoverRoot',
+        'popup trigger id ownership',
+        'DOM id registry',
+        'patient click threshold',
+        'JavaScript test runner',
+      ]
+);
+const DEFAULT_REVIEW_SUMMARY = [
+  'Request changes: the interaction threshold logic is reviewable and relevant,',
+  'but this PR needs a regression test and a clearer explanation of timeout cleanup risk before merge.',
+].join(' ');
+const REVIEW_SUMMARY = (process.env.CODE_REVIEW_SMOKE_REVIEW_SUMMARY || DEFAULT_REVIEW_SUMMARY).trim();
+
+function assertEnv() {
+  const remote = !APP_BASE.includes('localhost') && !APP_BASE.includes('127.0.0.1');
+  if (remote && (!BASIC_USER || !BASIC_PASSWORD)) {
+    throw new Error(
+      'Set PIPE_DEV_BASIC_AUTH_USER and PIPE_DEV_BASIC_AUTH_PASSWORD to smoke deployed app-dev.',
+    );
+  }
+  if (Boolean(REPO_URL) !== Boolean(PR_NUMBER)) {
+    throw new Error(
+      'Set both CODE_REVIEW_SMOKE_REPO_URL and CODE_REVIEW_SMOKE_PR_NUMBER for a manual override, or set CODE_REVIEW_SMOKE_AUTO_MATCH=1.',
+    );
+  }
+  if (ROLE_BACKED && (!AUTO_MATCH || REPO_URL || PR_NUMBER)) {
+    throw new Error('CODE_REVIEW_SMOKE_ROLE_BACKED=1 requires CODE_REVIEW_SMOKE_AUTO_MATCH=1 with no manual repo override.');
+  }
+  if (PR_NUMBER !== null && (!Number.isInteger(PR_NUMBER) || PR_NUMBER <= 0)) {
+    throw new Error(`CODE_REVIEW_SMOKE_PR_NUMBER must be a positive integer, got ${PR_NUMBER_RAW}`);
+  }
+  if (!RESUME_TEXT) {
+    throw new Error('CODE_REVIEW_SMOKE_RESUME_TEXT must not be empty.');
+  }
+}
+
+function authHeaders() {
+  if (!BASIC_USER && !BASIC_PASSWORD) return {};
+  const value = Buffer.from(`${BASIC_USER}:${BASIC_PASSWORD}`).toString('base64');
+  return { Authorization: `Basic ${value}` };
+}
+
+function candidateHeaders(sessionToken) {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${sessionToken}`,
+  };
+}
+
+function requestBaseFor(path, options) {
+  if (options.baseUrl) return options.baseUrl;
+  if (path.startsWith('/rpc/')) return RPC_BASE;
+  return RECRUITER_API_BASE;
+}
+
+async function requestJson(path, init = {}, options = {}) {
+  const useBasicAuth = options.basicAuth !== false;
+  const url = `${requestBaseFor(path, options)}${path}`;
+  const maxAttempts = options.retryTransient === false ? 1 : 3;
+  let response;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: {
+          ...(useBasicAuth ? authHeaders() : {}),
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(init.headers ?? {}),
+        },
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const causeCode = error instanceof Error && error.cause && typeof error.cause === 'object'
+        ? error.cause.code
+        : null;
+      const transient = message.includes('fetch failed')
+        || causeCode === 'ECONNRESET'
+        || causeCode === 'EPIPE'
+        || causeCode === 'ECONNREFUSED';
+      if (!transient || attempt === maxAttempts) {
+        throw error;
+      }
+      await sleep(500 * attempt);
+    }
+  }
+
+  if (!response) {
+    throw lastError ?? new Error(`${init.method ?? 'GET'} ${path} did not return a response`);
+  }
+
+  const text = await response.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`${init.method ?? 'GET'} ${path} failed (${response.status}): ${text}`);
+  }
+  return body;
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function challengePreview(challenge) {
+  if (!challenge || typeof challenge !== 'object') return challenge ?? null;
+  const contrastMetric = assessmentQualityMetric(challenge, 'contrast_separation');
+  const sourceBridge = challenge.matchExplanation?.validatorAgent?.sourceBridge ?? null;
+  return {
+    id: challenge.id ?? null,
+    type: challenge.type ?? null,
+    title: challenge.title ?? null,
+    githubRepoUrl: challenge.githubRepoUrl ?? null,
+    githubPrNumber: challenge.githubPrNumber ?? null,
+    hasCachedDiffJson: Boolean(challenge.cachedDiffJson),
+    hasMatchExplanation: Boolean(challenge.matchExplanation),
+    matchStatus: challenge.matchExplanation?.status ?? null,
+    qualityGate: challenge.matchExplanation?.qualityGate?.verdict ?? null,
+    assessmentQuality: challenge.matchExplanation?.assessmentQuality?.verdict ?? null,
+    contrastSeparation: contrastMetric
+      ? { score: contrastMetric.score ?? null, reason: contrastMetric.reason ?? null }
+      : null,
+    hasValidatorAgent: Boolean(challenge.matchExplanation?.validatorAgent),
+    sourceBridge: sourceBridge
+      ? {
+          candidateSourceCount: sourceBridge.candidateSourceCount ?? null,
+          roleSourceCount: sourceBridge.roleSourceCount ?? null,
+          repoSourceCount: sourceBridge.repoSourceCount ?? null,
+          alignedDemandCount: sourceBridge.alignedDemandCount ?? null,
+        }
+      : null,
+    hasReviewSession: Boolean(challenge.reviewSession),
+  };
+}
+
+function assessmentQualityMetric(challenge, metricId) {
+  const metrics = challenge?.matchExplanation?.assessmentQuality?.metrics;
+  if (!Array.isArray(metrics)) return null;
+  return metrics.find((metric) => metric?.id === metricId) ?? null;
+}
+
+function parseMaybeJson(value) {
+  let parsed = value;
+  for (let depth = 0; depth < 2 && typeof parsed === 'string'; depth += 1) {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return parsed && typeof parsed === 'object' ? parsed : null;
+}
+
+function isDeletionLine(line) {
+  const type = typeof line?.type === 'string' ? line.type : '';
+  return type === 'deletion' || type === 'deleted' || type === 'removed';
+}
+
+function isDiffMetadataContent(content) {
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  return !trimmed
+    || trimmed.startsWith('@@')
+    || trimmed.startsWith('diff --git')
+    || trimmed.startsWith('--- ')
+    || trimmed.startsWith('+++ ');
+}
+
+function lineNumberFor(line, fallback) {
+  const candidates = [line?.lineNumber, line?.num, line?.newLineNumber, line?.new_lineno];
+  for (const candidate of candidates) {
+    if (Number.isInteger(candidate) && candidate > 0) return candidate;
+  }
+  return fallback;
+}
+
+function pickAnnotationTarget(challenge) {
+  const diff = parseMaybeJson(challenge.cachedDiffJson) ?? challenge.cachedDiffJson;
+  const files = Array.isArray(diff?.files) ? diff.files : [];
+  for (const file of files) {
+    const filePath = file?.path ?? file?.filename;
+    if (typeof filePath !== 'string' || filePath.length === 0) continue;
+
+    const hunks = Array.isArray(file?.hunks) ? file.hunks : [];
+    for (const hunk of hunks) {
+      const lines = Array.isArray(hunk?.lines) ? hunk.lines : [];
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        if (isDeletionLine(line)) continue;
+        if (isDiffMetadataContent(line?.content)) continue;
+        return {
+          file: filePath,
+          line: lineNumberFor(line, index + 1),
+          content: typeof line?.content === 'string' ? line.content : null,
+        };
+      }
+    }
+
+    if (typeof file.patch === 'string') {
+      const patchLines = file.patch.split('\n');
+      let currentLine = 1;
+      for (const patchLine of patchLines) {
+        const hunkMatch = patchLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (hunkMatch) {
+          currentLine = Number(hunkMatch[1]);
+          continue;
+        }
+        if (patchLine.startsWith('-')) continue;
+        if (patchLine.startsWith('+') || patchLine.startsWith(' ')) {
+          return {
+            file: filePath,
+            line: currentLine,
+            content: patchLine.slice(1),
+          };
+        }
+        currentLine += 1;
+      }
+    }
+  }
+
+  throw new Error(`Could not find an annotatable diff line in challenge: ${JSON.stringify(challengePreview(challenge))}`);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function cleanUrl(rawUrl) {
+  if (!rawUrl) return null;
+  const url = new URL(rawUrl);
+  url.username = '';
+  url.password = '';
+  return url.toString()
+    .replace(/\/assess\/[^/?#]+/, '/assess/<token>')
+    .replace(/\/room\/[^/?#]+/, '/room/<token>');
+}
+
+function assertAssessUrl(rawUrl) {
+  assert(typeof rawUrl === 'string' && rawUrl.length > 0, 'Invite response missing deliveredUrl.');
+  const url = new URL(rawUrl);
+  const match = url.pathname.match(/\/assess\/([^/?#]+)/);
+  assert(match, `Delivered URL is not an assess link: ${cleanUrl(rawUrl)}`);
+  return decodeURIComponent(match[1]);
+}
+
+function canonicalUrl(rawUrl) {
+  if (!rawUrl) return null;
+  const url = new URL(rawUrl);
+  url.username = '';
+  url.password = '';
+  return url.toString();
+}
+
+function currentMatchMode() {
+  if (ROLE_BACKED) return 'role_backed_auto_match';
+  return REPO_URL && PR_NUMBER ? 'manual_override' : 'auto_match';
+}
+
+async function createRoleBackedCodeReviewInvite() {
+  const unique = Date.now();
+  const recipientEmail = `code-review-role-smoke-${unique}@pipe-test.dev`;
+  const recipientName = 'Code Review Role Smoke';
+
+  const roleContext = await requestJson('/api/v1/role-contexts/simple-job-description', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: ROLE_TITLE,
+      jobDescriptionMd: ROLE_JOB_DESCRIPTION,
+      selectedTerms: ROLE_SELECTED_TERMS,
+    }),
+  });
+  assert(roleContext?.id, `Role context response missing id: ${JSON.stringify(roleContext)}`);
+  assert(
+    Array.isArray(roleContext.selectedTerms) && roleContext.selectedTerms.length >= ROLE_SELECTED_TERMS.length,
+    `Role context did not persist selected terms: ${JSON.stringify(roleContext)}`,
+  );
+
+  const autoBuilt = await requestJson('/api/v1/pipelines/auto-build', {
+    method: 'POST',
+    body: JSON.stringify({
+      role_context_id: roleContext.id,
+      pipeline_title: `${ROLE_TITLE} CODE_REVIEW Smoke ${unique}`,
+      match_config: {
+        match_philosophy: 'tailored',
+        tolerance: 'moderate',
+        stage_linkage: 'shared-repo',
+        automation_granularity: 'per-candidate',
+        hybrid_mix_ratio: null,
+        non_negotiable_skills: roleContext.selectedTerms,
+      },
+      selected_stages: ['CODE_REVIEW'],
+    }),
+  });
+  const pipelineId = autoBuilt?.pipeline?.id;
+  const codeReviewStage = Array.isArray(autoBuilt?.stages)
+    ? autoBuilt.stages.find((stage) => stage?.type === 'CODE_REVIEW')
+    : null;
+  const stageId = codeReviewStage?.id;
+  assert(pipelineId, `Auto-build response missing pipeline id: ${JSON.stringify(autoBuilt)}`);
+  assert(stageId, `Auto-build response missing CODE_REVIEW stage id: ${JSON.stringify(autoBuilt)}`);
+
+  const candidateCreated = await requestJson(`/api/v1/pipelines/${pipelineId}/candidates`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: recipientName,
+      email: recipientEmail,
+      currentStageId: stageId,
+      skipEmail: true,
+    }),
+  });
+  const candidateId = candidateCreated?.candidate?.id;
+  assert(candidateId, `Pipeline candidate response missing candidate id: ${JSON.stringify(candidateCreated)}`);
+
+  const created = await requestJson('/api/v1/scheduling/interviews', {
+    method: 'POST',
+    body: JSON.stringify({
+      candidateId,
+      pipelineId,
+      stageId,
+      meetingType: 'DIRECT_VIDEO_CALL',
+      interviewType: 'CODE_REVIEW',
+    }),
+  });
+  const interviewId = created?.interview?.id;
+  assert(interviewId, `Create role-backed interview response missing id: ${JSON.stringify(created)}`);
+  assert(created?.interview?.interviewType === 'CODE_REVIEW', 'Created role-backed interview is not CODE_REVIEW.');
+
+  const invited = await requestJson(`/api/v1/scheduling/interviews/${interviewId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify({
+      email: recipientEmail,
+      sendEmail: SEND_EMAIL,
+      message: 'Automated smoke for the role-backed async CODE_REVIEW assess-link path.',
+    }),
+  });
+  assert(invited?.success === true, `Role-backed invite did not report success: ${JSON.stringify(invited)}`);
+  assert(invited?.emailSent === SEND_EMAIL, `Unexpected role-backed emailSent value: ${JSON.stringify(invited)}`);
+
+  const deliveredUrl = invited?.deliveredUrl ?? invited?.meetingUrl;
+  const inviteToken = assertAssessUrl(deliveredUrl);
+  assert(
+    !canonicalUrl(deliveredUrl)?.includes('/room/'),
+    `Role-backed CODE_REVIEW delivered URL must not be a room URL: ${cleanUrl(deliveredUrl)}`,
+  );
+
+  return {
+    interviewId,
+    recipientEmail,
+    recipientName,
+    deliveredUrl,
+    inviteToken,
+    invited,
+    roleContextId: roleContext.id,
+    pipelineId,
+    stageId,
+    candidateId,
+  };
+}
+
+async function createCodeReviewInvite() {
+  if (ROLE_BACKED) return createRoleBackedCodeReviewInvite();
+
+  const unique = Date.now();
+  const recipientEmail = `code-review-assess-smoke-${unique}@pipe-test.dev`;
+  const recipientName = 'Code Review Assess Smoke';
+  const createPayload = {
+    recipientName,
+    recipientEmail,
+    meetingType: 'DIRECT_VIDEO_CALL',
+    interviewType: 'CODE_REVIEW',
+    ...(REPO_URL ? { githubRepoUrl: REPO_URL } : {}),
+    ...(PR_NUMBER ? { githubPrNumber: PR_NUMBER } : {}),
+  };
+
+  const created = await requestJson('/api/v1/scheduling/interviews', {
+    method: 'POST',
+    body: JSON.stringify(createPayload),
+  });
+  const interviewId = created?.interview?.id;
+  assert(interviewId, `Create interview response missing interview id: ${JSON.stringify(created)}`);
+  assert(created?.interview?.interviewType === 'CODE_REVIEW', 'Created interview is not CODE_REVIEW.');
+
+  const invited = await requestJson(`/api/v1/scheduling/interviews/${interviewId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify({
+      email: recipientEmail,
+      sendEmail: SEND_EMAIL,
+      message: 'Automated smoke for the async CODE_REVIEW assess-link path.',
+    }),
+  });
+  assert(invited?.success === true, `Invite did not report success: ${JSON.stringify(invited)}`);
+  assert(invited?.emailSent === SEND_EMAIL, `Unexpected emailSent value: ${JSON.stringify(invited)}`);
+
+  const deliveredUrl = invited?.deliveredUrl ?? invited?.meetingUrl;
+  const inviteToken = assertAssessUrl(deliveredUrl);
+  assert(
+    !canonicalUrl(deliveredUrl)?.includes('/room/'),
+    `CODE_REVIEW delivered URL must not be a room URL: ${cleanUrl(deliveredUrl)}`,
+  );
+  assert(
+    canonicalUrl(deliveredUrl) !== canonicalUrl(invited?.room?.guestUrl),
+    'CODE_REVIEW deliveredUrl must be distinct from the generated guest room URL.',
+  );
+
+  return { interviewId, recipientEmail, recipientName, deliveredUrl, inviteToken, invited };
+}
+
+async function resolveInvite(inviteToken) {
+  return requestJson('/rpc/resolve-token', {
+    method: 'POST',
+    body: JSON.stringify({ inviteToken }),
+  });
+}
+
+async function submitIntake(sessionToken) {
+  const intake = await requestJson('/rpc/submit-challenge-response', {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({
+      order: 0,
+      submission: {
+        resumeText: RESUME_TEXT,
+        githubHandle: GITHUB_HANDLE,
+      },
+    }),
+  }, { basicAuth: false });
+  assert(intake?.success === true, `Intake submission did not succeed: ${JSON.stringify(intake)}`);
+  return intake;
+}
+
+async function getChallenge(sessionToken, order = 0) {
+  return requestJson('/rpc/get-challenge', {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({ order }),
+  }, { basicAuth: false });
+}
+
+async function bootstrapStageConfig(sessionToken) {
+  const stageConfig = await requestJson('/rpc/get-stage-config', {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({}),
+  }, { basicAuth: false });
+
+  assert(stageConfig?.isComplete !== true, `Stage config unexpectedly complete before CODE_REVIEW: ${JSON.stringify(stageConfig)}`);
+  assert(stageConfig?.stageId, `Stage config missing stage id: ${JSON.stringify(stageConfig)}`);
+  assert(
+    Array.isArray(stageConfig.challenges) && stageConfig.challenges.length > 0,
+    `Stage config missing challenges: ${JSON.stringify(stageConfig)}`,
+  );
+
+  return stageConfig;
+}
+
+async function pollCodeReviewChallenge(sessionToken, order = 0) {
+  const deadline = Date.now() + 120_000;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await getChallenge(sessionToken, order);
+    if (last?.type === 'CODE_REVIEW') return last;
+    if (last?.type !== 'WAITING_FOR_MATCH') {
+      throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
+    }
+    await sleep(5_000);
+  }
+  throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
+}
+
+function runBrowserSmoke({ deliveredUrl, inviteToken, session, expectedMatchProofVerdict }) {
+  if (SKIP_BROWSER) return { skipped: true };
+
+  const candidate = JSON.stringify({
+    id: session.id,
+    pipelineId: session.pipelineId ?? null,
+    status: session.status ?? 'IN_PROGRESS',
+    name: session.name ?? 'CODE_REVIEW Smoke Candidate',
+  });
+  const result = spawnSync(
+    'npx',
+    [
+      'playwright',
+      'test',
+      'e2e/code-review-assess-smoke.unauth.spec.ts',
+      '--project=unauthenticated',
+      '--reporter=line',
+    ],
+    {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        APP_BASE,
+        API_BASE,
+        VIDEO_ROOM_BASE,
+        CODE_REVIEW_ASSESS_TOKEN: deliveredUrl,
+        CODE_REVIEW_SESSION_TOKEN: session.sessionToken,
+        CODE_REVIEW_SESSION_INVITE_TOKEN: inviteToken,
+        CODE_REVIEW_SESSION_CANDIDATE_JSON: candidate,
+        CODE_REVIEW_EXPECT_AUTOMATCH: EXPECT_AUTOMATCH,
+        CODE_REVIEW_EXPECT_MANUAL_OVERRIDE: REPO_URL && PR_NUMBER ? '1' : '0',
+        CODE_REVIEW_EXPECT_MATCH_PROOF_VERDICT: expectedMatchProofVerdict,
+        CODE_REVIEW_REQUIRE_HYPEREDGES: REPO_URL && PR_NUMBER ? '0' : '1',
+        CODE_REVIEW_BROWSER_SUBMIT_ROUND: SUBMIT_REVIEW ? '1' : '0',
+      },
+    },
+  );
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`Playwright assess smoke failed with exit code ${result.status}`);
+  }
+  return { skipped: false };
+}
+
+async function initReviewSession(sessionToken, challenge) {
+  const challengeId = challenge.reviewSession?.challengeId ?? challenge.id;
+  assert(challenge.reviewSession?.requiresInit === true, 'CODE_REVIEW challenge does not require review session init.');
+  assert(typeof challengeId === 'string' && challengeId.length > 0, 'CODE_REVIEW challenge missing backing challenge id.');
+
+  const body = await requestJson('/rpc/review/session/init', {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({ challengeId }),
+  }, { basicAuth: false });
+
+  assert(typeof body?.sessionId === 'string' && body.sessionId.length > 0, `review/session/init missing sessionId: ${JSON.stringify(body)}`);
+  assert(body.status === 'pending' || body.status === 'in_progress', `Unexpected review session status: ${JSON.stringify(body)}`);
+  return body;
+}
+
+async function sendFirstReviewRound(sessionToken, sessionId, challenge) {
+  const target = pickAnnotationTarget(challenge);
+  const annotation = {
+    id: 'smoke-annotation-1',
+    file: target.file,
+    line: target.line,
+    severity: 'major',
+    comment: [
+      'This source-backed line is relevant to the candidate profile, but the PR needs regression coverage',
+      'and an explicit defense of the interaction timing trade-off before merge.',
+    ].join(' '),
+  };
+
+  const body = await requestJson(`/rpc/review/session/${sessionId}/message`, {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({
+      summary: REVIEW_SUMMARY,
+      message: REVIEW_SUMMARY,
+      annotations: [annotation],
+      newAnnotations: [annotation],
+    }),
+  }, { basicAuth: false });
+
+  assert(Number.isInteger(body?.round) && body.round >= 1, `review/session/message missing round: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.agentResponse) && body.agentResponse.length > 0, `AI developer response missing: ${JSON.stringify(body)}`);
+  assert(Array.isArray(body?.threads) && body.threads.length > 0, `AI developer thread missing: ${JSON.stringify(body)}`);
+
+  return {
+    target,
+    annotation,
+    round: body.round,
+    agentResponseCount: body.agentResponse.length,
+    threadCount: body.threads.length,
+    firstAgentMove: body.agentResponse[0]?.move ?? null,
+  };
+}
+
+async function completeReviewSession(sessionToken, sessionId) {
+  const body = await requestJson(`/rpc/review/session/${sessionId}/complete`, {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({
+      verdict: 'request_changes',
+      summary: REVIEW_SUMMARY,
+    }),
+  }, { basicAuth: false });
+
+  assert(body?.status === 'verdict_submitted', `review/session/complete did not submit verdict: ${JSON.stringify(body)}`);
+  assert(body?.sessionId === sessionId, `review/session/complete returned wrong sessionId: ${JSON.stringify(body)}`);
+  return body;
+}
+
+async function submitReviewSessionReference(sessionToken, sessionId) {
+  const body = await requestJson('/rpc/submit-challenge-response', {
+    method: 'POST',
+    headers: candidateHeaders(sessionToken),
+    body: JSON.stringify({
+      order: ROLE_BACKED ? 1 : 0,
+      submission: JSON.stringify({ reviewSessionId: sessionId }),
+    }),
+  }, { basicAuth: false });
+
+  assert(body?.success === true, `submit-challenge-response did not accept reviewSessionId: ${JSON.stringify(body)}`);
+  return body;
+}
+
+function assertSubmissionJson(submissionJson, sessionId, annotation) {
+  const submission = parseMaybeJson(submissionJson);
+  assert(submission, `Missing or invalid submissionJson: ${String(submissionJson).slice(0, 300)}`);
+  assert(submission.reviewSessionId === sessionId, `submissionJson missing reviewSessionId ${sessionId}: ${JSON.stringify(submission)}`);
+  assert(submission.verdict === 'request_changes', `submissionJson verdict was not request_changes: ${JSON.stringify(submission)}`);
+  assert(submission.summary === REVIEW_SUMMARY, `submissionJson summary mismatch: ${JSON.stringify(submission)}`);
+  assert(Array.isArray(submission.annotations), `submissionJson missing annotations: ${JSON.stringify(submission)}`);
+  assert(
+    submission.annotations.some((candidate) =>
+      candidate?.file === annotation.file
+      && candidate?.line === annotation.line
+      && candidate?.severity === annotation.severity
+      && typeof candidate?.comment === 'string'
+    ),
+    `submissionJson missing smoke annotation: ${JSON.stringify(submission.annotations)}`,
+  );
+  const rounds = Array.isArray(submission.transcript?.rounds) ? submission.transcript.rounds : [];
+  assert(rounds.length > 0, `submissionJson missing review transcript rounds: ${JSON.stringify(submission)}`);
+  assert(
+    rounds.some((round) =>
+      Array.isArray(round?.reviewer_comments)
+      && round.reviewer_comments.some((comment) =>
+        typeof comment?.what === 'string'
+        && comment.what.length > 0
+      )
+    ),
+    `submissionJson missing reviewer comments in transcript: ${JSON.stringify(rounds)}`,
+  );
+  assert(
+    rounds.some((round) =>
+      Array.isArray(round?.implementer_responses)
+      && round.implementer_responses.some((response) =>
+        typeof response?.content === 'string'
+        && response.content.length > 0
+      )
+    ),
+    `submissionJson missing AI developer pushback in transcript: ${JSON.stringify(rounds)}`,
+  );
+  return submission;
+}
+
+async function verifyRecruiterResults({ interviewId, candidateId, challenge, reviewSessionId, annotation }) {
+  const detail = await requestJson(`/api/v1/scheduling/interviews/${interviewId}`);
+  const interview = detail?.interview;
+  assert(interview?.id === interviewId, `Interview detail returned wrong id: ${JSON.stringify(detail)}`);
+  assert(interview.status === 'COMPLETED', `Interview was not completed: ${JSON.stringify(interview)}`);
+  assert(interview.githubRepoUrl === challenge.githubRepoUrl, `Interview detail repo mismatch: ${JSON.stringify(interview)}`);
+  assert(interview.githubPrNumber === challenge.githubPrNumber, `Interview detail PR mismatch: ${JSON.stringify(interview)}`);
+  assertSubmissionJson(interview.submissionJson, reviewSessionId, annotation);
+
+  const codeReviewMatch = interview.codeReviewMatch ?? null;
+  if (!REPO_URL || !PR_NUMBER) {
+    assert(codeReviewMatch?.status === 'MATCHED', `Auto-match detail missing MATCHED codeReviewMatch: ${JSON.stringify(codeReviewMatch)}`);
+    assert(codeReviewMatch?.validatorAgent, `Auto-match detail missing validatorAgent match proof: ${JSON.stringify(codeReviewMatch)}`);
+    assert(
+      Array.isArray(codeReviewMatch.evidenceHyperedges) && codeReviewMatch.evidenceHyperedges.length > 0,
+      `Auto-match detail missing evidence hyperedges: ${JSON.stringify(codeReviewMatch)}`,
+    );
+    if (ROLE_BACKED) {
+      assert(
+        Number(codeReviewMatch.validatorAgent?.sourceBridge?.roleSourceCount ?? 0) > 0,
+        `Role-backed detail missing role source bridge: ${JSON.stringify(codeReviewMatch)}`,
+      );
+      assert(
+        codeReviewMatch.evidenceHyperedges.some((edge) => edge?.relation === 'candidate_role_repo_alignment'),
+        `Role-backed detail missing person-role-repo hyperedge: ${JSON.stringify(codeReviewMatch.evidenceHyperedges)}`,
+      );
+    }
+  } else if (codeReviewMatch) {
+    assert(codeReviewMatch.status === 'MATCHED', `Manual detail codeReviewMatch is not MATCHED: ${JSON.stringify(codeReviewMatch)}`);
+    assert(
+      codeReviewMatch.validatorAgent?.verdict === 'PASSED',
+      `Manual detail missing PASSED validator proof: ${JSON.stringify(codeReviewMatch)}`,
+    );
+    assert(
+      codeReviewMatch.assessmentQuality?.verdict === 'USABLE',
+      `Manual detail missing USABLE assessment quality: ${JSON.stringify(codeReviewMatch)}`,
+    );
+  } else {
+    throw new Error('Manual detail missing source-backed codeReviewMatch proof.');
+  }
+
+  const profile = await requestJson(`/api/v1/candidates/${candidateId}`);
+  const scheduledInterviews = Array.isArray(profile?.scheduledInterviews)
+    ? profile.scheduledInterviews
+    : [];
+  const profileInterview = scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.interviewType === 'CODE_REVIEW'
+    && candidateInterview?.id === interviewId
+  ) ?? scheduledInterviews.find((candidateInterview) =>
+    candidateInterview?.interviewType === 'CODE_REVIEW'
+  );
+  assert(profileInterview?.status === 'COMPLETED', `Candidate profile missing completed CODE_REVIEW interview: ${JSON.stringify(profileInterview)}`);
+
+  if (ROLE_BACKED) {
+    return {
+      interviewStatus: interview.status,
+      profileInterviewStatus: profileInterview.status,
+      profileSubmitted: true,
+      profileAnnotationCount: null,
+      codeReviewMatchStatus: codeReviewMatch?.status ?? null,
+      evidenceHyperedgeCount: Array.isArray(codeReviewMatch?.evidenceHyperedges)
+        ? codeReviewMatch.evidenceHyperedges.length
+        : 0,
+      validatorVerdict: codeReviewMatch?.validatorAgent?.verdict ?? null,
+      roleSourceCount: codeReviewMatch?.validatorAgent?.sourceBridge?.roleSourceCount ?? null,
+      personRoleRepoHyperedge: codeReviewMatch?.evidenceHyperedges?.some((edge) =>
+        edge?.relation === 'candidate_role_repo_alignment'
+      ) ?? false,
+    };
+  }
+
+  const match = profile?.standaloneReviewMatch ?? null;
+  assert(match?.submitted === true, `Candidate profile missing submitted standalone review match: ${JSON.stringify(match)}`);
+  assert(match.matchStatus === 'MATCHED', `Candidate profile match is not MATCHED: ${JSON.stringify(match)}`);
+  assert(match.repoUrl === challenge.githubRepoUrl, `Candidate profile repo mismatch: ${JSON.stringify(match)}`);
+  assert(match.prNumber === challenge.githubPrNumber, `Candidate profile PR mismatch: ${JSON.stringify(match)}`);
+  assert(match.submission?.verdict === 'request_changes', `Candidate profile verdict mismatch: ${JSON.stringify(match.submission)}`);
+  assert(match.submission?.summary === REVIEW_SUMMARY, `Candidate profile summary mismatch: ${JSON.stringify(match.submission)}`);
+  assert(match.submission?.annotationCount >= 1, `Candidate profile annotation count missing: ${JSON.stringify(match.submission)}`);
+
+  return {
+    interviewStatus: interview.status,
+    profileInterviewStatus: profileInterview.status,
+    profileSubmitted: match.submitted,
+    profileAnnotationCount: match.submission?.annotationCount ?? null,
+    codeReviewMatchStatus: codeReviewMatch?.status ?? null,
+    evidenceHyperedgeCount: Array.isArray(codeReviewMatch?.evidenceHyperedges)
+      ? codeReviewMatch.evidenceHyperedges.length
+      : 0,
+    validatorVerdict: codeReviewMatch?.validatorAgent?.verdict ?? null,
+  };
+}
+
+async function verifyJudgeExample(reviewSessionId) {
+  const body = await requestJson('/api/v1/review-sessions/judge-examples?limit=100');
+  const examples = Array.isArray(body?.examples) ? body.examples : [];
+  const example = examples.find((candidate) => candidate?.sessionId === reviewSessionId);
+
+  assert(example, `Judge example queue missing review session ${reviewSessionId}: ${JSON.stringify(body).slice(0, 1200)}`);
+  assert(
+    example.status === 'READY' || example.status === 'LABELLED',
+    `Judge example ${example.id ?? reviewSessionId} has unexpected status: ${JSON.stringify(example)}`,
+  );
+  assert(
+    example.promptInput?.task === 'score_and_improve_code_review_judge',
+    `Judge example missing replay task: ${JSON.stringify(example.promptInput)}`,
+  );
+  assert(
+    Array.isArray(example.promptInput?.candidateReview?.comments)
+      && example.promptInput.candidateReview.comments.length > 0,
+    `Judge example missing candidate review comments: ${JSON.stringify(example.promptInput)}`,
+  );
+  assert(
+    Array.isArray(example.promptInput?.aiDeveloperPushback)
+      && example.promptInput.aiDeveloperPushback.length > 0,
+    `Judge example missing AI developer pushback: ${JSON.stringify(example.promptInput)}`,
+  );
+  assert(
+    Array.isArray(example.promptInput?.improvementUses)
+      && example.promptInput.improvementUses.includes('human_label_queue')
+      && example.promptInput.improvementUses.includes('cross_model_calibration'),
+    `Judge example missing improvement-loop uses: ${JSON.stringify(example.promptInput?.improvementUses)}`,
+  );
+
+  return {
+    id: example.id ?? null,
+    status: example.status,
+    commentCount: example.promptInput.candidateReview.comments.length,
+    pushbackCount: example.promptInput.aiDeveloperPushback.length,
+    improvementUses: example.promptInput.improvementUses,
+  };
+}
+
+async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
+  if (!SUBMIT_REVIEW) return { skipped: true };
+
+  const init = await initReviewSession(session.sessionToken, challenge);
+  const firstRound = await sendFirstReviewRound(session.sessionToken, init.sessionId, challenge);
+  await completeReviewSession(session.sessionToken, init.sessionId);
+  await submitReviewSessionReference(session.sessionToken, init.sessionId);
+  const recruiterResults = await verifyRecruiterResults({
+    interviewId,
+    candidateId: session.id,
+    challenge,
+    reviewSessionId: init.sessionId,
+    annotation: firstRound.annotation,
+  });
+  const judgeExample = await verifyJudgeExample(init.sessionId);
+
+  return {
+    skipped: false,
+    reviewSessionId: init.sessionId,
+    annotationTarget: firstRound.target,
+    round: firstRound.round,
+    agentResponseCount: firstRound.agentResponseCount,
+    threadCount: firstRound.threadCount,
+    firstAgentMove: firstRound.firstAgentMove,
+    judgeExample,
+    recruiterResults,
+  };
+}
+
+async function main() {
+  assertEnv();
+
+  const invite = await createCodeReviewInvite();
+  try {
+    const session = await resolveInvite(invite.inviteToken);
+    assert(session?.sessionToken, `resolve-token response missing session token: ${JSON.stringify(session)}`);
+
+    await submitIntake(session.sessionToken);
+    const initialStageConfig = await bootstrapStageConfig(session.sessionToken);
+    const challengeOrder = ROLE_BACKED ? 1 : 0;
+    const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder);
+    const readyStageConfig = await bootstrapStageConfig(session.sessionToken);
+    const preview = challengePreview(challenge);
+    assert(challenge.githubRepoUrl, `CODE_REVIEW challenge missing githubRepoUrl: ${JSON.stringify(preview)}`);
+    assert(challenge.githubPrNumber, `CODE_REVIEW challenge missing githubPrNumber: ${JSON.stringify(preview)}`);
+    assert(challenge.cachedDiffJson, `CODE_REVIEW challenge missing cachedDiffJson: ${JSON.stringify(preview)}`);
+    assert(challenge.matchExplanation, `CODE_REVIEW challenge missing matchExplanation: ${JSON.stringify(preview)}`);
+    assert(
+      challenge.matchExplanation.validatorAgent,
+      `CODE_REVIEW challenge missing validatorAgent match proof: ${JSON.stringify(preview)}`,
+    );
+    if (REQUIRE_CONTRAST === '1') {
+      assert(
+        challenge.matchExplanation.qualityGate?.verdict === 'PASSED',
+        `Auto-match quality gate did not pass: ${JSON.stringify(preview)}`,
+      );
+    }
+    if (REQUIRE_CONTRAST === '1') {
+      const contrastMetric = assessmentQualityMetric(challenge, 'contrast_separation');
+      assert(
+        contrastMetric,
+        `Auto-match challenge missing contrast_separation metric: ${JSON.stringify(preview)}`,
+      );
+      assert(
+        typeof contrastMetric.reason === 'string'
+          && !contrastMetric.reason.includes('No second eligible challenge'),
+        `Auto-match did not compare against a second eligible challenge: ${JSON.stringify(preview)}`,
+      );
+      assert(
+        Number(contrastMetric.score) >= 1,
+        `Auto-match contrast separation is too weak: ${JSON.stringify(preview)}`,
+      );
+    }
+    if (ROLE_BACKED) {
+      const roleSourceCount = Number(
+        challenge.matchExplanation?.roleSourceCount
+          ?? challenge.matchExplanation?.validatorAgent?.sourceBridge?.roleSourceCount
+          ?? 0,
+      );
+      assert(roleSourceCount > 0, `Role-backed challenge missing role source proof: ${JSON.stringify(preview)}`);
+      assert(
+        Array.isArray(challenge.matchExplanation?.evidenceHyperedges)
+          && challenge.matchExplanation.evidenceHyperedges.some((edge) => edge?.relation === 'candidate_role_repo_alignment'),
+        `Role-backed challenge missing candidate_role_repo_alignment hyperedge: ${JSON.stringify(preview)}`,
+      );
+    }
+
+    const browserSmoke = runBrowserSmoke({
+      deliveredUrl: invite.deliveredUrl,
+      inviteToken: invite.inviteToken,
+      session,
+      expectedMatchProofVerdict: challenge.matchExplanation?.qualityGate?.verdict ?? 'PASSED',
+    });
+    const submissionSmoke = await runFullSubmissionSmoke({
+      session,
+      challenge,
+      interviewId: invite.interviewId,
+    });
+
+    console.log(JSON.stringify({
+      ok: true,
+      interviewId: invite.interviewId,
+      roleContextId: invite.roleContextId ?? null,
+      pipelineId: invite.pipelineId ?? session.pipelineId ?? null,
+      stageId: invite.stageId ?? null,
+      emailSent: SEND_EMAIL,
+      matchMode: currentMatchMode(),
+      deliveredUrl: cleanUrl(invite.deliveredUrl),
+      roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+      repoUrl: challenge.githubRepoUrl,
+      prNumber: challenge.githubPrNumber,
+      matchSummary: challenge.matchExplanation?.summary ?? null,
+      matchStatus: challenge.matchExplanation?.status ?? null,
+      qualityGate: challenge.matchExplanation?.qualityGate?.verdict ?? null,
+      assessmentQuality: challenge.matchExplanation?.assessmentQuality?.verdict ?? null,
+      contrastSeparation: assessmentQualityMetric(challenge, 'contrast_separation'),
+      stageConfig: {
+        initialStageId: initialStageConfig.stageId,
+        initialCurrentIndex: initialStageConfig.currentIndex ?? null,
+        initialChallengeTypes: Array.isArray(initialStageConfig.challenges)
+          ? initialStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
+          : [],
+        readyStageId: readyStageConfig.stageId,
+        readyCurrentIndex: readyStageConfig.currentIndex ?? null,
+        readyChallengeTypes: Array.isArray(readyStageConfig.challenges)
+          ? readyStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
+          : [],
+      },
+      browserSmoke,
+      submissionSmoke,
+    }, null, 2));
+  } catch (error) {
+    const context = {
+      ok: false,
+      interviewId: invite.interviewId,
+      roleContextId: invite.roleContextId ?? null,
+      pipelineId: invite.pipelineId ?? null,
+      stageId: invite.stageId ?? null,
+      emailSent: SEND_EMAIL,
+      matchMode: currentMatchMode(),
+      deliveredUrl: cleanUrl(invite.deliveredUrl),
+      roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+    };
+    const suffix = `\nSmoke context: ${JSON.stringify(context, null, 2)}`;
+    if (error instanceof Error) {
+      error.message += suffix;
+      throw error;
+    }
+    throw new Error(`${String(error)}${suffix}`);
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

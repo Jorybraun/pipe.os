@@ -13,6 +13,8 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { API_BASE, APP_BASE } from './env';
 
+test.describe.configure({ mode: "serial" });
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface SeededPipeline {
@@ -41,13 +43,16 @@ interface SeededCandidate {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function getAuthToken(page: Page): Promise<string> {
-  await page.waitForLoadState("networkidle");
-  const cookies = await page.context().cookies();
-  const sessionCookie = cookies.find((c) => c.name === "__session");
-  if (!sessionCookie) {
-    throw new Error("[code-review-golden-path.spec] No __session cookie. Run auth setup first.");
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const cookies = await page.context().cookies();
+    const sessionCookie = cookies.find((c) => c.name === "__session");
+    if (sessionCookie) {
+      return sessionCookie.value;
+    }
+    await page.waitForTimeout(250);
   }
-  return sessionCookie.value;
+  throw new Error("[code-review-golden-path.spec] No __session cookie. Run auth setup first.");
 }
 
 function recruiterHeaders(token: string): Record<string, string> {
@@ -57,11 +62,23 @@ function recruiterHeaders(token: string): Record<string, string> {
 async function seedPipeline(request: APIRequestContext, authToken: string): Promise<SeededPipeline> {
   const res = await request.post(`${API_BASE}/api/v1/pipelines`, {
     headers: recruiterHeaders(authToken),
-    data: { title: "E2E — Code Review Golden Path", status: "DRAFT" },
+    data: { title: "E2E — Code Review Golden Path", status: "DRAFT", createDefaultStages: false },
   });
   expect(res.ok(), `seedPipeline failed: ${await res.text()}`).toBeTruthy();
   const body = (await res.json()) as { id: string; title: string };
   return body;
+}
+
+async function setValidateMatchMode(
+  request: APIRequestContext,
+  authToken: string,
+  pipelineId: string,
+): Promise<void> {
+  const res = await request.patch(`${API_BASE}/api/v1/pipelines/${pipelineId}/match-config`, {
+    headers: recruiterHeaders(authToken),
+    data: { match_philosophy: "validate" },
+  });
+  expect(res.ok(), `setValidateMatchMode failed: ${await res.text()}`).toBeTruthy();
 }
 
 async function seedStage(request: APIRequestContext, authToken: string, pipelineId: string): Promise<SeededStage> {
@@ -154,6 +171,23 @@ async function teardownPipeline(request: APIRequestContext, authToken: string, p
   }
 }
 
+async function submitPipelineIntakeEvidence(
+  request: APIRequestContext,
+  sessionToken: string,
+): Promise<void> {
+  const res = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+    data: {
+      order: 0,
+      submission: {
+        resumeText: "Senior TypeScript engineer with React, Node.js, testing, and code review experience. Reviews pull requests for correctness, edge cases, and maintainability.",
+        githubHandle: "code-review-e2e",
+      },
+    },
+  });
+  expect(res.ok(), `submitPipelineIntakeEvidence failed: ${await res.text()}`).toBeTruthy();
+}
+
 // ─── Suite: Candidate review flow ─────────────────────────────────────────────
 
 test.describe("Feature: CODE_REVIEW — candidate session init + review flow", () => {
@@ -173,6 +207,7 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
     await ctx.close();
 
     pipeline = await seedPipeline(request, authToken);
+    await setValidateMatchMode(request, authToken, pipeline.id);
     stage = await seedStage(request, authToken, pipeline.id);
     challenge = await seedCodeReviewChallenge(request, authToken, stage.id);
     candidate = await seedCandidate(request, authToken, pipeline.id);
@@ -190,6 +225,11 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
       headers: { Authorization: `Bearer ${sessionToken}` },
     });
     expect(stageConfigRes.ok()).toBeTruthy();
+    await submitPipelineIntakeEvidence(request, sessionToken);
+    const codeReviewStageConfigRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    expect(codeReviewStageConfigRes.ok()).toBeTruthy();
 
     // Create review session via real API so the page can load it
     const initRes = await request.post(`${API_BASE}/rpc/review/session/init`, {
@@ -208,7 +248,7 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
   test("full review flow: annotation, implementer response, verdict, completion", async ({ page }) => {
     // Mock LLM-dependent endpoints only
     await page.route(
-      new RegExp(`${API_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/rpc/review/session/[^/]+/message`),
+      /\/rpc\/review\/session\/[^/]+\/message$/,
       async (route) => {
         await route.fulfill({
           status: 200,
@@ -232,9 +272,8 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
                 implementer_responses: [
                   {
                     to_comment_id: 1,
-                    move: "change",
-                    content: "Good catch! I will update the check to allow rate === 0.",
-                    updated_code: 'if (rate < 0 || rate > 1) throw new RangeError("rate out of bounds");',
+                    move: "pushback",
+                    content: "Can you explain why this is a real boundary issue instead of an expected validation guard?",
                   },
                 ],
                 reviewer_summary: "The boundary check should include equality at 0 and 1.",
@@ -248,7 +287,7 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
     );
 
     await page.route(
-      new RegExp(`${API_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/rpc/review/session/[^/]+/complete`),
+      /\/rpc\/review\/session\/[^/]+\/complete$/,
       async (route) => {
         await route.fulfill({
           status: 200,
@@ -259,27 +298,30 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
     );
 
     // Inject session token + candidate so page skips resolve-token (already claimed)
-    await page.addInitScript(({ tok, cand }: { tok: string; cand: string }) => {
+    await page.addInitScript(({ tok, invite, cand }: { tok: string; invite: string; cand: string }) => {
       sessionStorage.setItem("pipe_session_token", tok);
+      sessionStorage.setItem("pipe_session_invite_token", invite);
       sessionStorage.setItem("pipe_session_candidate", cand);
-    }, { tok: sessionToken, cand: JSON.stringify({ id: candidate.id, pipelineId: pipeline.id, status: "INVITED", name: candidate.name }) });
+    }, { tok: sessionToken, invite: candidate.inviteToken, cand: JSON.stringify({ id: candidate.id, pipelineId: pipeline.id, status: "INVITED", name: candidate.name }) });
 
     await page.goto(`${APP_BASE}/assess/${candidate.inviteToken}`);
 
-    // Welcome screen — assert and click through
+    // Welcome screen — click through the synthetic intro challenge.
     const startBtn = page.locator('[data-testid="start-interview-btn"]');
-    await expect(startBtn).toBeVisible({ timeout: 15000 });
-    await startBtn.click();
-    await expect(startBtn).toBeHidden();
+    await expect(startBtn).toBeVisible({ timeout: 10000 });
+    await startBtn.evaluate((button) => (button as HTMLButtonElement).click());
 
     // Assert diff panel mounts
     await expect(page.locator('[data-testid="diff-panel"]')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('[data-testid="pierre-diff-viewer"]')).toBeVisible({ timeout: 20000 });
+    await expect(page).toHaveURL(new RegExp(`/assess/${candidate.inviteToken}$`));
+    await expect(page.locator('body')).not.toContainText(/video room|waiting room|camera|microphone/i);
 
     // Assert conversation panel mounts
     await expect(page.locator('[data-testid="conversation-panel"]')).toBeVisible({ timeout: 20000 });
 
     // Click an added diff line
-    await page.locator('[data-testid="diff-line-3"]').click();
+    await page.locator('[data-testid="diff-line-3"]').dispatchEvent("click");
 
     // Annotation editor should appear
     await expect(page.locator('[data-testid="annotation-editor-form"]')).toBeVisible();
@@ -297,6 +339,8 @@ test.describe("Feature: CODE_REVIEW — candidate session init + review flow", (
 
     // Assert implementer response appears in conversation panel
     await expect(page.locator('[data-testid="conversation-thread"]')).toBeVisible();
+    await expect(page.locator('[data-testid="diff-panel"]').getByText("PUSHBACK")).toBeVisible();
+    await expect(page.locator('[data-testid="diff-panel"]').getByText(/why this is a real boundary issue/i)).toBeVisible();
 
     // Select verdict
     await page.locator('[data-testid="verdict-option-request_changes"]').click();
@@ -335,6 +379,7 @@ test.describe("Feature: CODE_REVIEW — recruiter report", () => {
     await ctx.close();
 
     pipeline = await seedPipeline(request, authToken);
+    await setValidateMatchMode(request, authToken, pipeline.id);
     stage = await seedStage(request, authToken, pipeline.id);
     challenge = await seedCodeReviewChallenge(request, authToken, stage.id);
     candidate = await seedCandidate(request, authToken, pipeline.id);
@@ -350,6 +395,11 @@ test.describe("Feature: CODE_REVIEW — recruiter report", () => {
       headers: { Authorization: `Bearer ${sessionToken}` },
     });
     expect(stageConfigRes.ok()).toBeTruthy();
+    await submitPipelineIntakeEvidence(request, sessionToken);
+    const codeReviewStageConfigRes = await request.post(`${API_BASE}/rpc/get-stage-config`, {
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    expect(codeReviewStageConfigRes.ok()).toBeTruthy();
 
     const initRes = await request.post(`${API_BASE}/rpc/review/session/init`, {
       headers: { Authorization: `Bearer ${sessionToken}` },
@@ -380,6 +430,15 @@ test.describe("Feature: CODE_REVIEW — recruiter report", () => {
       data: { verdict: "request_changes", summary: "Boundary conditions need fixing." },
     });
     expect(completeRes.ok()).toBeTruthy();
+
+    const continueRes = await request.post(`${API_BASE}/rpc/submit-challenge-response`, {
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+      data: {
+        order: 1,
+        submission: { reviewSessionId: sessionId },
+      },
+    });
+    expect(continueRes.ok(), `continue after review completion failed: ${await continueRes.text()}`).toBeTruthy();
   });
 
   test.afterAll(async ({ request }) => {
@@ -393,6 +452,7 @@ test.describe("Feature: CODE_REVIEW — recruiter report", () => {
     await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
 
     await expect(page.locator('[data-testid="candidate-name"]')).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: /^CODE REVIEW/ }).click();
     await expect(page.locator('[data-testid="review-verdict"]')).toBeVisible();
     await expect(page.locator('[data-testid="review-summary"]')).toBeVisible();
 

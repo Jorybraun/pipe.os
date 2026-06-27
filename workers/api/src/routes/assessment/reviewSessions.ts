@@ -16,6 +16,10 @@ import type { Env, Variables } from '../../types';
 import { scoreAndPropagate, type ScoreAndPropagateTranscript } from '../../lib/review/scoreAndPropagate';
 import { ingestCodeReviewScoreReportToLivingContext } from '../../lib/livingContext/codeReview';
 import { loadSourceBackedReviewDiff } from '../../lib/review/sourceBackedReviewDiff';
+import {
+  labelCodeReviewJudgeExample,
+  type CodeReviewJudgeExampleTranscript,
+} from '../../lib/review/judgeImprovementExamples';
 
 const reviewSessions = new Hono<{ Bindings: Env; Variables: Variables }>();
 reviewSessions.use('*', authMiddleware);
@@ -33,6 +37,141 @@ function parseJsonColumn<T>(value: unknown): T | null {
   }
   return value as T;
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isCodeReviewJudgeExampleTranscript(value: unknown): value is CodeReviewJudgeExampleTranscript {
+  return isRecord(value) && Array.isArray(value.rounds);
+}
+
+function optionalTrimmedText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function optionalStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.flatMap((entry) => {
+    const text = optionalTrimmedText(entry);
+    return text ? [text] : [];
+  }))].slice(0, 12);
+}
+
+function parseJudgeLabelMetadata(body: Record<string, unknown>): {
+  reviewerFeedback: string | null;
+  judgeFailureModes: string[];
+} {
+  const label = isRecord(body.judgeLabel)
+    ? body.judgeLabel
+    : isRecord(body.calibrationLabel)
+      ? body.calibrationLabel
+      : null;
+  return {
+    reviewerFeedback: optionalTrimmedText(body.reviewerFeedback)
+      ?? optionalTrimmedText(label?.reviewerFeedback)
+      ?? optionalTrimmedText(label?.feedback),
+    judgeFailureModes: optionalStringList(body.judgeFailureModes).length > 0
+      ? optionalStringList(body.judgeFailureModes)
+      : optionalStringList(label?.judgeFailureModes),
+  };
+}
+
+const JUDGE_EXAMPLE_STATUSES = new Set(['READY', 'LABELLED', 'ARCHIVED']);
+
+function parseJudgeExampleLimit(value: string | null): number {
+  if (value === null) return 25;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) return 25;
+  return Math.min(parsed, 100);
+}
+
+// ─── GET /judge-examples ────────────────────────────────────────────────────
+// Replay queue for improving the CODE_REVIEW judge/feedback loop.
+
+reviewSessions.get('/judge-examples', async (c) => {
+  const userId = c.var.userId;
+  const requestedStatus = c.req.query('status')?.trim().toUpperCase() ?? null;
+  if (requestedStatus !== null && !JUDGE_EXAMPLE_STATUSES.has(requestedStatus)) {
+    return c.json({
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'status must be READY, LABELLED, or ARCHIVED.',
+      },
+    }, 400);
+  }
+
+  const limit = parseJudgeExampleLimit(c.req.query('limit') ?? null);
+  const rows = await c.env.DB.prepare(`
+    SELECT ex.id,
+           ex.session_id,
+           ex.assessment_id,
+           ex.challenge_id,
+           ex.candidate_id,
+           ex.example_version,
+           ex.prompt_input_json,
+           ex.expected_output_json,
+           ex.judge_feedback_json,
+           ex.provenance_json,
+           ex.status,
+           ex.created_at,
+           ex.updated_at,
+           cand.name AS candidate_name,
+           cand.email AS candidate_email
+      FROM code_review_judge_examples ex
+      JOIN candidates cand ON cand.id = ex.candidate_id
+     WHERE cand.owner_id = ?1
+       AND (?2 IS NULL OR ex.status = ?2)
+     ORDER BY ex.updated_at DESC
+     LIMIT ?3
+  `)
+    .bind(userId, requestedStatus, limit)
+    .all<{
+      id: string;
+      session_id: string;
+      assessment_id: string;
+      challenge_id: string;
+      candidate_id: string;
+      example_version: string;
+      prompt_input_json: string;
+      expected_output_json: string | null;
+      judge_feedback_json: string | null;
+      provenance_json: string;
+      status: string;
+      created_at: string;
+      updated_at: string;
+      candidate_name: string | null;
+      candidate_email: string | null;
+    }>();
+
+  return c.json({
+    examples: (rows.results ?? []).map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      assessmentId: row.assessment_id,
+      challengeId: row.challenge_id,
+      candidateId: row.candidate_id,
+      candidate: {
+        name: row.candidate_name,
+        email: row.candidate_email,
+      },
+      exampleVersion: row.example_version,
+      status: row.status,
+      promptInput: parseJsonColumn<unknown>(row.prompt_input_json),
+      expectedOutput: parseJsonColumn<unknown>(row.expected_output_json),
+      judgeFeedback: parseJsonColumn<unknown>(row.judge_feedback_json),
+      provenance: parseJsonColumn<unknown>(row.provenance_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    })),
+    filters: {
+      status: requestedStatus,
+      limit,
+    },
+  });
+});
 
 // ─── GET /:sessionId/report ─────────────────────────────────────────────────
 // Full score report with dimensional breakdown for recruiters
@@ -194,22 +333,27 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
 
   let body: Record<string, unknown>;
   try {
-    body = await c.req.json();
+    const parsed = await c.req.json();
+    if (!isRecord(parsed)) {
+      return c.json({ error: { code: 'BAD_REQUEST', message: 'JSON object is required.' } }, 400);
+    }
+    body = parsed;
   } catch {
     return c.json({ error: { code: 'BAD_REQUEST', message: 'Invalid JSON.' } }, 400);
   }
 
   const scoreReport = body.scoreReport;
-  if (!scoreReport || typeof scoreReport !== 'object') {
+  if (!isRecord(scoreReport)) {
     return c.json(
       { error: { code: 'BAD_REQUEST', message: 'scoreReport object is required.' } },
       400,
     );
   }
+  const judgeLabel = parseJudgeLabelMetadata(body);
 
   // Validate ownership via pipeline
   const session = await c.env.DB.prepare(`
-    SELECT rs.id, rs.assessment_id, rs.challenge_id, rs.candidate_id, rs.created_at
+    SELECT rs.id, rs.assessment_id, rs.challenge_id, rs.candidate_id, rs.transcript, rs.created_at
     FROM review_sessions rs
     JOIN assessments a ON a.id = rs.assessment_id
     JOIN candidates cand ON cand.id = rs.candidate_id
@@ -222,6 +366,7 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
       assessment_id: string;
       challenge_id: string;
       candidate_id: string;
+      transcript: string | null;
       created_at: string;
     }>();
 
@@ -289,6 +434,36 @@ reviewSessions.patch('/:sessionId/score', async (c) => {
         .bind(session.assessment_id, now)
         .run();
     }
+  }
+
+  const transcript = parseJsonColumn<unknown>(session.transcript);
+  if (isCodeReviewJudgeExampleTranscript(transcript)) {
+    try {
+      await labelCodeReviewJudgeExample({
+        db: c.env.DB,
+        sessionId,
+        assessmentId: session.assessment_id,
+        challengeId: session.challenge_id,
+        candidateId: session.candidate_id,
+        transcript,
+        expectedOutputJson: scoreReportJson,
+        observedAt: now,
+        producer: 'recruiter_override',
+        producerId: userId,
+        source: 'review_session_score_override',
+        reviewerFeedback: judgeLabel.reviewerFeedback,
+        judgeFailureModes: judgeLabel.judgeFailureModes,
+      });
+    } catch (err) {
+      console.error('[reviewSessions/score] Failed to label judge example:', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } else {
+    console.error('[reviewSessions/score] Cannot label judge example without a valid transcript:', {
+      sessionId,
+    });
   }
 
   return c.json({ success: true, status: 'scored' });

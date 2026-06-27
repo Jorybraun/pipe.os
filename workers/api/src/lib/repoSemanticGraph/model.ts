@@ -336,6 +336,28 @@ export interface ChallengeQuality {
   eligible: boolean;
 }
 
+export type ChallengeDifficultyBand = 'introductory' | 'focused' | 'advanced' | 'oversized';
+
+export type ChallengeExpectedSeniority = 'mid' | 'senior' | 'staff';
+
+export interface ChallengeReviewProfileBasis {
+  changedFileCount: number;
+  changedLineCount: number;
+  sourceHunkCount: number;
+  testChangeCount: number;
+  demandFamilyCount: number;
+  hasIssueContext: boolean;
+}
+
+export interface ChallengeReviewProfile {
+  source: 'deterministic_engineering_prior';
+  difficultyBand: ChallengeDifficultyBand;
+  expectedSeniority: ChallengeExpectedSeniority;
+  expectedTimeMinutes: number;
+  basis: ChallengeReviewProfileBasis;
+  rationale: string;
+}
+
 export interface ChallengePacket {
   schemaVersion: typeof REPO_SEMANTIC_GRAPH_SCHEMA_VERSION;
   policyVersion: 'repo-challenge-v1';
@@ -361,5 +383,6 @@ export interface ChallengePacket {
   demands: ChallengeDemand[];
   demandFamilies: ChallengeDemandFamily[];
   quality: ChallengeQuality;
+  reviewProfile: ChallengeReviewProfile;
   contentHash: Sha256;
 }

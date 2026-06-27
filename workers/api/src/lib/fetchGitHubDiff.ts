@@ -6,6 +6,8 @@
  *   - /rpc/get-challenge (candidate-facing, self-healing fallback)
  */
 
+import type { ChallengeReviewProfile } from './repoSemanticGraph';
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 interface GitHubPRResponse {
@@ -56,6 +58,7 @@ export interface GitHubDiffResult {
     head_sha: string;
     merged_at: string | null;
     description: string;
+    reviewProfile?: ChallengeReviewProfile;
   };
 }
 

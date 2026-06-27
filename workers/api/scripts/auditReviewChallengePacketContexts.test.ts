@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { BetterSqliteDb } from '../src/__tests__/helpers/mockD1';
 import {
   auditReviewChallengePacketContexts,
+  hasContrastReadyPacketCorpus,
   type QueryClient,
 } from './auditReviewChallengePacketContexts';
 
@@ -30,7 +31,8 @@ function setupDb(): BetterSqliteDb {
       repo_id INTEGER NOT NULL,
       pr_number INTEGER NOT NULL,
       production_ready INTEGER NOT NULL,
-      repo_snapshot_id TEXT NOT NULL
+      repo_snapshot_id TEXT NOT NULL,
+      packet_json TEXT
     );
     CREATE TABLE context_records (
       id TEXT PRIMARY KEY,
@@ -91,11 +93,32 @@ interface PacketFixture {
   context?: boolean;
   repoSourceRefs?: number;
   concepts?: number;
+  reviewProfile?: boolean;
 }
 
 function seedPacket(sqlite: BetterSqliteDb, fixture: PacketFixture): void {
   const prNumber = fixture.prNumber ?? 1;
   const repoSnapshotId = `snapshot-${fixture.packetId}`;
+  const packetJson = fixture.reviewProfile === false
+    ? JSON.stringify({ pullRequest: { number: prNumber } })
+    : JSON.stringify({
+      pullRequest: { number: prNumber },
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+        basis: {
+          changedFileCount: 3,
+          changedLineCount: 120,
+          sourceHunkCount: 8,
+          testChangeCount: 1,
+          demandFamilyCount: 4,
+          hasIssueContext: true,
+        },
+        rationale: 'focused review calibrated for senior candidates',
+      },
+    });
   sqlite.prepare(
     `INSERT OR IGNORE INTO qualified_repos (id, full_name, test_framework)
      VALUES (?, ?, ?)`,
@@ -106,14 +129,15 @@ function seedPacket(sqlite: BetterSqliteDb, fixture: PacketFixture): void {
   );
   sqlite.prepare(
     `INSERT INTO review_challenge_packets (
-       id, repo_id, pr_number, production_ready, repo_snapshot_id
-     ) VALUES (?, ?, ?, ?, ?)`,
+       id, repo_id, pr_number, production_ready, repo_snapshot_id, packet_json
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     fixture.packetId,
     fixture.repoId,
     prNumber,
     fixture.productionReady === false ? 0 : 1,
     repoSnapshotId,
+    packetJson,
   );
 
   if (fixture.context === false) return;
@@ -251,5 +275,32 @@ describe('auditReviewChallengePacketContexts', () => {
     expect(result.missingContextRecordPacketIds).toEqual(['packet-real-missing-context']);
     expect(result.missingRepoSourceRefPacketIds).toEqual(['packet-real-missing-refs']);
     expect(result.missingConceptLinkPacketIds).toEqual(['packet-real-missing-concepts']);
+  });
+
+  it('requires two real overlay-ready packets for contrast readiness', async () => {
+    sqlite = setupDb();
+    seedPacket(sqlite, {
+      packetId: 'packet-real-ready-one',
+      repoId: 77,
+      fullName: 'pipe-labs/orders',
+    });
+
+    const onePacket = await auditReviewChallengePacketContexts(new BetterQueryClient(sqlite));
+
+    expect(onePacket.status).toBe('ready');
+    expect(onePacket.stats.realOverlayReadyPackets).toBe(1);
+    expect(hasContrastReadyPacketCorpus(onePacket)).toBe(false);
+
+    seedPacket(sqlite, {
+      packetId: 'packet-real-ready-two',
+      repoId: 78,
+      fullName: 'pipe-labs/billing',
+    });
+
+    const twoPackets = await auditReviewChallengePacketContexts(new BetterQueryClient(sqlite));
+
+    expect(twoPackets.status).toBe('ready');
+    expect(twoPackets.stats.realOverlayReadyPackets).toBe(2);
+    expect(hasContrastReadyPacketCorpus(twoPackets)).toBe(true);
   });
 });

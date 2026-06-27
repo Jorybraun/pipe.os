@@ -1,3 +1,5 @@
+import type { ChallengeReviewProfile } from '../repoSemanticGraph';
+
 export type EvidenceLevel =
   | 'mentioned'
   | 'used'
@@ -103,6 +105,62 @@ export type MatchStatus =
   | 'NEEDS_MORE_EVIDENCE'
   | 'NO_ROLE_SAFE_CHALLENGE';
 
+export type MatchValidatorVerdict = 'PASSED' | 'NEEDS_REVIEW' | 'REJECTED';
+
+export interface MatchValidatorCheck {
+  id: string;
+  passed: boolean;
+  reason: string;
+}
+
+export interface MatchValidatorSourceBridge {
+  matchRunId: string;
+  challengeId?: string;
+  repoId?: string;
+  prNumber?: number;
+  candidateSourceCount: number;
+  repoSourceCount: number;
+  roleSourceCount: number;
+  alignedDemandCount: number;
+  stretchCount: number;
+  provenanceComplete: boolean;
+}
+
+export interface MatchValidatorDecision {
+  agentName: 'source_backed_match_validator';
+  agentVersion: 'v1';
+  mode: 'deterministic';
+  verdict: MatchValidatorVerdict;
+  rationale: string;
+  checks: MatchValidatorCheck[];
+  sourceBridge: MatchValidatorSourceBridge;
+}
+
+export type MatchAssessmentQualityVerdict = 'STRONG' | 'USABLE' | 'WEAK';
+
+export type MatchAssessmentQualityMetricId =
+  | 'skill_stack_overlap'
+  | 'role_demand_overlap'
+  | 'pr_reviewability'
+  | 'match_specificity'
+  | 'source_coverage'
+  | 'contrast_separation';
+
+export interface MatchAssessmentQualityMetric {
+  id: MatchAssessmentQualityMetricId;
+  label: string;
+  score: 0 | 1 | 2;
+  maxScore: 2;
+  reason: string;
+}
+
+export interface MatchAssessmentQuality {
+  verdict: MatchAssessmentQualityVerdict;
+  score: number;
+  maxScore: 12;
+  metrics: MatchAssessmentQualityMetric[];
+}
+
 export interface CompileCandidateMatchResult {
   status: 'READY' | 'NEEDS_MORE_EVIDENCE';
   query: CandidateMatchQuery;
@@ -143,6 +201,7 @@ export interface ChallengePacket {
   challengeReady: boolean;
   languages: string[];
   seniority?: Seniority;
+  reviewProfile?: ChallengeReviewProfile;
   concepts: string[];
   demands: ChallengeDemand[];
   quality: ChallengeQuality;
@@ -245,6 +304,8 @@ export interface MatchExplanation {
   };
   score: number;
   summary: string;
+  assessmentQuality?: MatchAssessmentQuality;
+  validatorAgent?: MatchValidatorDecision;
   evidence: Array<{
     atomId: string;
     demandId: string;
