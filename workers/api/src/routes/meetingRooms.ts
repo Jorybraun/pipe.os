@@ -1742,6 +1742,11 @@ export function withDevBasicAuth(
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return rawUrl;
+    const hostname = url.hostname.toLowerCase();
+    const isPipeDevHost = hostname === 'app-dev.hire-pipe.com'
+      || hostname === 'room-dev.hire-pipe.com'
+      || hostname === 'api-dev.hire-pipe.com';
+    if (!isPipeDevHost) return rawUrl;
     url.username = env.VIDEO_ROOM_DEV_AUTH_USER || env.DEV_BASIC_AUTH_USER;
     url.password = env.VIDEO_ROOM_DEV_AUTH_PASSWORD || env.DEV_BASIC_AUTH_PASSWORD;
     return url.toString();

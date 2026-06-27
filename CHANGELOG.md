@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Calendly scheduling links now load event types from both user-owned and organization-owned Calendly event types, normalize them for the invite modal, and fall back to the user's Calendly scheduling page when no discrete event type is returned.
 - Calendly booking webhooks now import unmatched scheduled bookings, update existing invites idempotently, and link each booking 1:1 to a Pipe meeting/room using the Calendly scheduled event URI.
 - Calendly/Cal.com scheduling-link emails now include the scheduled interview id as `a1` alongside invitee prefill data, giving provider webhooks a stable 1:1 Pipe interview reference.
+- Dev basic-auth credentials are no longer injected into external provider scheduling links such as Calendly URLs.
 - Calendly booking confirmation emails now track `booking_confirmation_sent_at` separately from the original invite email, so candidates receive exactly one confirmed Pipe room-link email after booking.
 - Scheduling list/detail views now expose the Calendly provider event reference and linked Pipe meeting id so accepted scheduled bookings are inspectable from the recruiter UI.
 - Candidate scheduling emails now use the Pipe room link for confirmed Calendly bookings and render the PIPE logo from a public HTTPS API asset instead of embedded data images.

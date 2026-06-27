@@ -1326,6 +1326,9 @@ describe('GET /interviews/:id detail', () => {
         },
       },
       OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+      ENV: 'dev',
+      DEV_BASIC_AUTH_USER: 'pipe',
+      DEV_BASIC_AUTH_PASSWORD: 'pipe-dev',
     } as Partial<Env>);
 
     const schedulingUrl = 'https://calendly.com/pipe/code-review';
@@ -1386,6 +1389,7 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
     expect(sentMessages[0]?.html).toContain('email=grace%40example.com');
     expect(sentMessages[0]?.html).not.toContain('email=grace%2540example.com');
+    expect(sentMessages[0]?.html).not.toContain('pipe:pipe-dev@calendly.com');
     expect(sentMessages[0]?.html).not.toContain(inviteBody.meetingUrl);
     expect(sentMessages[0]?.html).toContain('/assets/email/pipe-logo.png');
     expect(sentMessages[0]?.html).not.toContain('data:image');
