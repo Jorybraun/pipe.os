@@ -175,7 +175,7 @@ interface VideoRoomMetadata {
 export class VideoRoom {
   private state: DurableObjectState;
   private sessionStatus: SessionStatus = 'WAITING';
-  private roomSurface: RoomSurface = 'win95';
+  private roomSurface: RoomSurface = 'standard';
   private metadata: VideoRoomMetadata = {};
 
   constructor(state: DurableObjectState) {
@@ -702,10 +702,18 @@ export class VideoRoom {
         meetingId: string;
         hostId: string;
         resetEnded?: boolean;
+        initialSurface?: RoomSurface;
       };
       if (!this.metadata.meetingId) {
         this.metadata = { meetingId: body.meetingId, hostId: body.hostId };
         await this.state.storage.put('metadata', this.metadata);
+      }
+      const storedSurface = await this.state.storage.get<unknown>('roomSurface');
+      if (this.isRoomSurface(storedSurface)) {
+        this.roomSurface = storedSurface;
+      } else if (this.isRoomSurface(body.initialSurface)) {
+        this.roomSurface = body.initialSurface;
+        await this.state.storage.put('roomSurface', this.roomSurface);
       }
       const storedStatus = await this.state.storage.get<unknown>('status');
       const endedByHost = await this.state.storage.get<boolean>('endedByHost');

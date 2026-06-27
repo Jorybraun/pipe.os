@@ -225,7 +225,8 @@ function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
-  const room = useRoomConnection(token, metadata.role, enteredRoom);
+  const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
+  const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface);
   const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);

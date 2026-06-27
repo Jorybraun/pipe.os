@@ -1259,6 +1259,20 @@ describe('meeting room recording living-context route', () => {
   it('keeps standard meeting rooms off the workspace desktop path', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
+    const ensureBodies: unknown[] = [];
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/ensure') {
+        ensureBodies.push(JSON.parse(await request.text()) as unknown);
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
 
     const createMeetingRes = await app.request('/meetings', {
       method: 'POST',
@@ -1291,6 +1305,68 @@ describe('meeting room recording living-context route', () => {
     expect(launchRes.status).toBe(403);
     const launchBody = await launchRes.json() as { error: { message: string } };
     expect(launchBody.error.message).toContain('dev-container');
+
+    const wsRes = await app.request(`/meeting/${created.hostToken}/ws`, {
+      headers: { Upgrade: 'websocket' },
+    }, env, ctx);
+    expect(wsRes.status).toBe(200);
+    expect(ensureBodies).toContainEqual(expect.objectContaining({
+      meetingId: expect.any(String),
+      initialSurface: 'standard',
+    }));
+  });
+
+  it('starts dev-container challenge meeting rooms on the 95 desktop', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const ensureBodies: unknown[] = [];
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/ensure') {
+        ensureBodies.push(JSON.parse(await request.text()) as unknown);
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const scheduledInterviewId = 'scheduled-interview-95-surface';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/order-recovery',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: '95 Workspace Guest',
+        recipientEmail: 'workspace-95@example.com',
+        title: '95 workspace challenge',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const wsRes = await app.request(`/meeting/${created.hostToken}/ws`, {
+      headers: { Upgrade: 'websocket' },
+    }, env, ctx);
+    expect(wsRes.status).toBe(200);
+    expect(ensureBodies).toContainEqual(expect.objectContaining({
+      meetingId: expect.any(String),
+      initialSurface: 'win95',
+    }));
   });
 
   it('routes a recorded meeting transcript into the same graph after roleless candidate convergence', async () => {

@@ -446,12 +446,17 @@ function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): Ro
   ]);
 }
 
-export function useRoomConnection(token: string, role: RoomRole, active: boolean): RoomConnection {
+export function useRoomConnection(
+  token: string,
+  role: RoomRole,
+  active: boolean,
+  initialSurface: RoomSurface = 'standard',
+): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [iceProvider, setIceProvider] = useState<IceServerProvider>('unknown');
-  const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>('win95');
+  const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>(initialSurface);
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
@@ -482,6 +487,10 @@ export function useRoomConnection(token: string, role: RoomRole, active: boolean
       : `desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   phaseRef.current = phase;
+
+  useEffect(() => {
+    if (!active) setRoomSurfaceState(initialSurface);
+  }, [active, initialSurface]);
 
   const setConnectionPhase = useCallback((nextPhase: RoomPhase): void => {
     phaseRef.current = nextPhase;

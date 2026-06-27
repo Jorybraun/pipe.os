@@ -357,6 +357,10 @@ async function buildRoomWorkspacePayload(
   };
 }
 
+function initialRoomSurfaceForWorkspace(workspace: RoomWorkspacePayload): 'standard' | 'win95' {
+  return workspace.enabled ? 'win95' : 'standard';
+}
+
 async function resolveRoom(db: D1Database, token: string): Promise<ResolvedRoom | null> {
   const tokenHash = await hashRoomToken(token);
   const now = new Date().toISOString();
@@ -1062,11 +1066,13 @@ meetingRooms.get('/:token/context-summary', async (c) => {
 });
 
 meetingRooms.get('/:token/ws', async (c) => {
-  const room = await resolveRoom(c.env.DB, c.req.param('token'));
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   if (c.req.header('Upgrade')?.toLowerCase() !== 'websocket') {
     return apiError(c, 'VALIDATION_ERROR', 'Expected WebSocket upgrade.');
   }
+  const workspace = await buildRoomWorkspacePayload(c.env.DB, token, room);
 
   const doId = c.env.VIDEO_ROOM.idFromName(room.session_id);
   const stub = c.env.VIDEO_ROOM.get(doId);
@@ -1077,6 +1083,7 @@ meetingRooms.get('/:token/ws', async (c) => {
       meetingId: room.meeting_id,
       hostId: room.owner_id,
       resetEnded: room.room_status !== 'ENDED',
+      initialSurface: initialRoomSurfaceForWorkspace(workspace),
     }),
   }));
   return stub.fetch(new Request(`https://do/ws?role=${room.role}`, {
