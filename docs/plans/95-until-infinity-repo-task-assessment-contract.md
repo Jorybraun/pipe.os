@@ -161,6 +161,10 @@ The controlling product rule remains:
   now persist origin, bridge event type, action protocol, agent name, and
   browser execution role in `clippy_action` evidence, so prompt-button actions
   and real agent-directed desktop actions remain separate.
+- Clippy/Devin process diagnostics now persist bounded and redacted bridge
+  evidence for real stderr, context-primer failures, process exits, and startup
+  errors, including diagnostic source, observed time, exit code, and signal
+  metadata instead of leaving failures only in container logs.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a

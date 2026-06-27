@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { agentDiagnosticMessage } = require('./agent-diagnostics.js');
 
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
@@ -368,12 +369,12 @@ function devinAuthNeededMessage() {
 }
 
 function devinAuthDiagnosticMessage() {
-  return {
-    type: 'AGENT_DIAGNOSTIC',
+  return agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'auth_needed',
     message: DEVIN_AUTH_MESSAGE,
-  };
+    diagnosticSource: 'auth_required',
+  });
 }
 
 function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
@@ -566,7 +567,14 @@ function startAgent() {
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
     void primeAgentWithRoomContext(agentProcess).catch((error) => {
-      console.error('[agent-bridge] room context primer failed:', error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[agent-bridge] room context primer failed:', message);
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: 'idle',
+        message: `Room context primer failed: ${message}`,
+        diagnosticSource: 'context_primer_error',
+      }));
     });
     agentProcess.stdout.on('data', (chunk) => {
       const parsed = extractTaggedRoomActions(chunk.toString());
@@ -578,21 +586,47 @@ function startAgent() {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
     agentProcess.stderr.on('data', (chunk) => {
-      console.error('[agent-bridge] devin stderr:', chunk.toString().trim());
+      const message = chunk.toString().trim();
+      if (!message) return;
+      console.error('[agent-bridge] devin stderr:', message);
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: agentStatus,
+        message,
+        diagnosticSource: 'agent_stderr',
+      }));
     });
-    agentProcess.on('exit', () => {
+    agentProcess.on('exit', (code, signal) => {
       agentProcess = null;
       agentStatus = 'idle';
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: code === 0 && !signal ? 'idle' : 'disconnected',
+        message: `Devin process exited with code ${code === null ? 'null' : code}${signal ? ` and signal ${signal}` : ''}.`,
+        diagnosticSource: 'agent_exit',
+        exitCode: code,
+        signal,
+      }));
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
-    agentProcess.on('error', () => {
+    agentProcess.on('error', (error) => {
       agentProcess = null;
       agentStatus = 'idle';
-      broadcast({ type: 'ERROR', message: 'Devin CLI failed to start inside the container.' });
+      broadcast(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: 'disconnected',
+        message: `Devin CLI failed to start inside the container: ${error instanceof Error ? error.message : String(error)}`,
+        diagnosticSource: 'agent_process_error',
+      }));
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });
   } catch (error) {
-    broadcast({ type: 'ERROR', message: error instanceof Error ? error.message : String(error) });
+    broadcast(agentDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: 'disconnected',
+      message: error instanceof Error ? error.message : String(error),
+      diagnosticSource: 'agent_start_exception',
+    }));
   }
 }
 

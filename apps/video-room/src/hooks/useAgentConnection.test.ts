@@ -106,6 +106,36 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
+  it('preserves source metadata for real agent process diagnostics', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'disconnected',
+      message: 'Devin process exited with code 1.',
+      diagnosticSource: 'agent_exit',
+      observedAt: '2026-06-27T19:00:00.000Z',
+      exitCode: 1,
+      signal: null,
+      truncated: false,
+    })).toEqual({
+      kind: 'diagnostic',
+      agentName: 'devin',
+      status: 'disconnected',
+      message: {
+        role: 'agent',
+        text: 'Devin process exited with code 1.',
+        source: 'bridge_diagnostic',
+        agentName: 'devin',
+        agentStatus: 'disconnected',
+        diagnosticSource: 'agent_exit',
+        observedAt: '2026-06-27T19:00:00.000Z',
+        exitCode: 1,
+        signal: null,
+        truncated: false,
+      },
+    });
+  });
+
   it('marks real bridge chat responses as agent stdout', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',

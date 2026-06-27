@@ -18,6 +18,11 @@ export interface AgentChatMessage {
   source?: 'user_submit' | 'agent_stdout' | 'bridge_diagnostic' | 'bridge_observation';
   agentName?: string;
   agentStatus?: AgentStatus;
+  diagnosticSource?: string;
+  observedAt?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+  truncated?: boolean;
 }
 
 export interface AgentRoomAction {
@@ -159,6 +164,10 @@ function stringOrNull(value: unknown): string | null {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function numberOrNullValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function normalizeActionName(value: string): string {
@@ -328,17 +337,27 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'AGENT_DIAGNOSTIC') {
     const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
     const status = isAgentStatus(value.status) ? value.status : 'disconnected';
+    const agentName = stringOrNull(value.agent) ?? 'devin';
+    const message: Omit<AgentChatMessage, 'timestamp'> = {
+      role: 'agent',
+      text,
+      source: 'bridge_diagnostic',
+      agentName,
+      agentStatus: status,
+    };
+    const diagnosticSource = stringOrNull(value.diagnosticSource);
+    const observedAt = stringOrNull(value.observedAt);
+    const signal = stringOrNull(value.signal);
+    if (diagnosticSource) message.diagnosticSource = diagnosticSource;
+    if (observedAt) message.observedAt = observedAt;
+    if ('exitCode' in value) message.exitCode = numberOrNullValue(value.exitCode);
+    if ('signal' in value) message.signal = signal;
+    if (typeof value.truncated === 'boolean') message.truncated = value.truncated;
     return {
       kind: 'diagnostic',
       status,
-      agentName: stringOrNull(value.agent) ?? 'devin',
-      message: {
-        role: 'agent',
-        text,
-        source: 'bridge_diagnostic',
-        agentName: stringOrNull(value.agent) ?? 'devin',
-        agentStatus: status,
-      },
+      agentName,
+      message,
     };
   }
   return { kind: 'ignored' };
