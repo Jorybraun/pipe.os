@@ -34,6 +34,7 @@ import {
   buildRoomSurfaceChangeEvidence,
   canControlSharedRoomSurface,
 } from './lib/roomSurfaceEvidence';
+import { buildClippyUiActionEvidence } from './lib/clippyEvidence';
 import {
   buildCodeEditorOpenEvidence,
   buildWorkspaceStateDesktopEvent,
@@ -439,10 +440,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
   const canControlRoomSurface = canControlSharedRoomSurface(metadata.role);
-  const openClippyChat = (): void => {
-    setClippyVisible(true);
-    setClippyChatRequest((request) => request + 1);
-  };
   const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({
     id: message.id,
     role: message.role === 'HOST' ? 'host' : 'candidate',
@@ -898,6 +895,31 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : metadata.role === 'HOST' && canLaunchWorkspace
           ? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.'
           : 'The host needs to launch the VS Code workspace before Clippy can connect to real Devin.';
+  const captureClippyUiAction = (
+    actionId: 'open-clippy-chat' | 'dismiss-clippy',
+    origin: 'tray' | 'prompt',
+  ): void => {
+    const evidence = buildClippyUiActionEvidence({
+      actionId,
+      origin,
+      actor: roomActor,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      agentWorkspaceReady: hasActiveWorkspace,
+    });
+    captureSessionEvent('clippy_action', evidence.text, roomActor, evidence.properties);
+  };
+  const openClippyChat = (): void => {
+    captureClippyUiAction('open-clippy-chat', 'tray');
+    setClippyVisible(true);
+    setClippyChatRequest((request) => request + 1);
+  };
+  const dismissClippy = (): void => {
+    captureClippyUiAction('dismiss-clippy', 'prompt');
+    setClippyVisible(false);
+  };
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
     surface: room.roomSurface,
@@ -1889,7 +1911,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       {clippyVisible && enteredRoom && usesWin95Desktop && (metadata.features?.clippyEnabled ?? true) && (
         <ClippyAssistant
           messages={clippyMessages}
-          onDismiss={() => setClippyVisible(false)}
+          onDismiss={dismissClippy}
           agentWsUrl={workspaceSession && hasActiveWorkspace
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
             : null}

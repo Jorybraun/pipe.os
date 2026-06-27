@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Clippy/Devin chat now opens from a Win95 taskbar tray paperclip beside the clock even before the workspace is ready, clearly distinguishes real Devin availability from Room Chat, and lets users restore Clippy after dismissing the prompt.
 - The video-room package now owns its Clippy/Win95 component test harness, preventing duplicate React renderers from invalidating the real-agent chat and taskbar tray tests.
+- Opening Clippy from the Win95 tray and dismissing the Clippy prompt now emit source-backed `clippy_action` evidence as human UI actions without claiming a Devin response.
 - Dev-container workspace launches now pass the Worker `DEVIN_API_KEY` secret into the container as server-side init data for the real Clippy/Devin bridge without exposing the key in candidate-facing room responses.
 - The Clippy/Devin bridge now persists an `auth_required` agent diagnostic as soon as it observes missing real Devin credentials, instead of waiting for a candidate chat attempt before creating source-backed evidence.
 - Matched-repo dev workspaces now surface an explicit `missing_reviewable_task` diagnostic when no PR/task is assigned, and room desktop evidence preserves that setup gap instead of treating a repo-only launch as a completed assessment challenge.
