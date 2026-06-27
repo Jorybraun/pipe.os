@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
 - Meeting-session event replay now keys evidence on stable event properties, preserving distinct repeated Win95 interactions such as multiple browser/window moves while keeping Durable Object replays idempotent.
+- Session-event route coverage now proves browser-submitted client event ids preserve distinct repeated same-second Win95 interactions while retrying the same client event remains idempotent.
 - Browser-submitted meeting-session evidence now includes stable client event ids and capture times, so repeated same-second Win95 interactions remain distinct while retries keep the same source identity.
 - The VideoRoom Durable Object now lets host and guest participants switch the shared room surface, so returning from 95 Until Infinity to the standard call syncs both screens instead of rejecting guest surface changes.
 - Clippy/Devin chat now opens from a Win95 taskbar tray paperclip beside the clock even before the workspace is ready, clearly distinguishes real Devin availability from Room Chat, and lets users restore Clippy after dismissing the prompt.

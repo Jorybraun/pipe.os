@@ -1161,40 +1161,130 @@ describe('meeting room recording living-context route', () => {
       candidateNodeId: node?.id,
     });
 
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
+
+    const browserWindowMoveEvent = {
+      type: 'window_update',
+      text: 'Window state updated: browser',
+      actor: 'guest',
+      properties: {
+        source: 'window_state_client_submit',
+        windowId: 'browser',
+        statePatch: { x: 120, y: 80 },
+        stateKeys: ['x', 'y'],
+        surface: 'win95',
+        clientCapturedAtMs: 1782601500000,
+      },
+    };
     const beaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
       body: JSON.stringify({
-        type: 'window_update',
-        text: 'Window state updated: browser',
-        actor: 'guest',
+        ...browserWindowMoveEvent,
         properties: {
-          source: 'window_state_client_submit',
-          windowId: 'browser',
-          statePatch: { x: 120, y: 80 },
-          stateKeys: ['x', 'y'],
-          surface: 'win95',
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-1',
         },
       }),
     }, env, ctx);
     expect(beaconSessionEventRes.status).toBe(200);
-    await expect(beaconSessionEventRes.json()).resolves.toMatchObject({
+    const firstBeaconBody = await beaconSessionEventRes.json() as { captured: boolean; nodeId: string };
+    expect(firstBeaconBody).toMatchObject({
       captured: true,
       nodeId: expect.any(String),
     });
 
-    const beaconNode = sqlite.prepare(
-      `SELECT node_type, narrative_text, extracted_properties_json
+    const duplicateBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        ...browserWindowMoveEvent,
+        properties: {
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-1',
+        },
+      }),
+    }, env, ctx);
+    expect(duplicateBeaconSessionEventRes.status).toBe(200);
+    await expect(duplicateBeaconSessionEventRes.json()).resolves.toMatchObject({
+      captured: true,
+      nodeId: firstBeaconBody.nodeId,
+    });
+
+    const secondBeaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        ...browserWindowMoveEvent,
+        properties: {
+          ...browserWindowMoveEvent.properties,
+          clientEventId: 'browser-window-move-2',
+        },
+      }),
+    }, env, ctx);
+    expect(secondBeaconSessionEventRes.status).toBe(200);
+    const secondBeaconBody = await secondBeaconSessionEventRes.json() as { captured: boolean; nodeId: string };
+    expect(secondBeaconBody).toMatchObject({
+      captured: true,
+      nodeId: expect.any(String),
+    });
+    expect(secondBeaconBody.nodeId).not.toBe(firstBeaconBody.nodeId);
+
+    const beaconNodes = sqlite.prepare(
+      `SELECT id, node_type, narrative_text, extracted_properties_json
          FROM candidate_nodes
         WHERE candidate_id = ?
-          AND node_type = 'session_window_update'`,
-    ).get(linked?.candidate_id) as {
+          AND node_type = 'session_window_update'
+        ORDER BY id`,
+    ).all(linked?.candidate_id) as Array<{
+      id: string;
       node_type: string;
       narrative_text: string;
       extracted_properties_json: string;
-    } | undefined;
-    expect(beaconNode?.narrative_text).toContain('Window updated: Window state updated: browser');
-    expect(JSON.parse(beaconNode?.extracted_properties_json ?? '{}')).toMatchObject({
+    }>;
+    expect(beaconNodes).toHaveLength(2);
+    expect(beaconNodes.map((node) => node.id).sort()).toEqual([
+      firstBeaconBody.nodeId,
+      secondBeaconBody.nodeId,
+    ].sort());
+    const beaconProperties = beaconNodes.map((node) =>
+      JSON.parse(node.extracted_properties_json) as { clientEventId: string; clientCapturedAtMs: number },
+    );
+    expect(beaconNodes[0]?.narrative_text).toContain('Window updated: Window state updated: browser');
+    expect(beaconProperties.map((properties) => properties.clientEventId).sort()).toEqual([
+      'browser-window-move-1',
+      'browser-window-move-2',
+    ]);
+    expect(beaconProperties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'guest',
+        source: 'window_state_client_submit',
+        windowId: 'browser',
+        surface: 'win95',
+        clientCapturedAtMs: 1782601500000,
+      }),
+    ]));
+
+    const windowUpdateContextRecords = sqlite.prepare(
+      `SELECT id, qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:window_update'
+        ORDER BY id`,
+    ).all() as Array<{ id: string; qualifiers_json: string }>;
+    expect(windowUpdateContextRecords).toHaveLength(2);
+    const windowUpdateContextClientIds = windowUpdateContextRecords.map((record) => {
+      const qualifiers = JSON.parse(record.qualifiers_json) as {
+        properties: { clientEventId: string };
+      };
+      return qualifiers.properties.clientEventId;
+    });
+    expect(windowUpdateContextClientIds.sort()).toEqual([
+      'browser-window-move-1',
+      'browser-window-move-2',
+    ]);
+    expect(JSON.parse(beaconNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'window_state_client_submit',
       windowId: 'browser',
