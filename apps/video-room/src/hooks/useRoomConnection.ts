@@ -603,6 +603,26 @@ function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): Ro
   ]);
 }
 
+export function mergePeerCursorPresence(
+  previous: RoomCursorPresence[],
+  cursor: RoomCursorPresence,
+  now = Date.now(),
+  ttlMs = PEER_CURSOR_TTL_MS,
+): RoomCursorPresence[] {
+  const cutoff = now - ttlMs;
+  const receivedCursor: RoomCursorPresence = {
+    ...cursor,
+    updatedAt: now,
+  };
+  return [
+    ...previous.filter((entry) => (
+      entry.role !== cursor.role
+      && entry.updatedAt >= cutoff
+    )),
+    receivedCursor,
+  ];
+}
+
 export function useRoomConnection(
   token: string,
   role: RoomRole,
@@ -1049,15 +1069,7 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
           if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
-          const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
-          setPeerCursors((prev) => [
-            ...prev.filter((entry) => (
-              entry.clientId !== cursor.clientId
-              && entry.role !== cursor.role
-              && entry.updatedAt >= cutoff
-            )),
-            cursor,
-          ]);
+          setPeerCursors((prev) => mergePeerCursorPresence(prev, cursor));
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
           const event = parseFileSystemEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;

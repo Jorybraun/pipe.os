@@ -1752,11 +1752,14 @@ button:focus-visible {
 
 .win95-peer-cursor {
   position: absolute;
+  left: 0;
+  top: 0;
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  transform: translate3d(0, 0, 0);
-  will-change: left, top;
+  transform: translate3d(var(--room-cursor-x, 0vw), var(--room-cursor-y, 0dvh), 0);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .win95-peer-cursor-pointer {

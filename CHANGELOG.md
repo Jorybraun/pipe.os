@@ -82,6 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completed multi-turn CODE_REVIEW sessions now persist a compact `code_review_judge_examples` artifact for judge-prompt regression, feedback-loop calibration, human labelling, and future cross-model evaluation.
 - Review-packet profile backfills now refresh stale row `source_hash` values whenever packet `contentHash` changes, preventing real source-backed packets from being excluded from automatic repo matching by provenance checks.
 - Standalone CODE_REVIEW now waits for source-backed candidate evidence before automatic repo matching and refreshes weak cached automatic PR selections instead of serving near-tie matches as final challenges.
+- The local CODE_REVIEW full-submit smoke now verifies assessment-layer persistence, including immutable evidence events, source refs, evaluation reports, claims, and claim source refs for the completed review session.
 - Recruiter CODE_REVIEW score overrides now label the corresponding `code_review_judge_examples` row with the human score report, giving the judge/feedback loop replayable calibration targets from human corrections.
 - Recruiter review-session APIs now expose an owner-scoped CODE_REVIEW judge-example queue, giving the judge/feedback loop a deterministic replay surface for ready and labelled calibration examples.
 - CODE_REVIEW author pushback and automated scoring now honor the configured Kimi provider before falling back to Workers AI, preventing local/prod scorer runs from silently using the wrong LLM path.
@@ -162,7 +163,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added durable synced room chat and live peer cursors to the shared 95 desktop so host and guest can see each other's messages, pointer presence, and desktop actions.
 - Added server-side replay from the `VideoRoom` Durable Object activity log into candidate session evidence so synced room surface, workspace, chat, Clippy prompt, and shared file actions are idempotently available in the context graph.
 - Restored dev-container workspace startup by keeping VS Code/code-server on port 8080 and routing the Devin/Clippy bridge through sidecar port 8081.
-- Fixed peer cursor trails by rendering one expiring cursor per remote role with a composited SVG pointer.
+- Fixed peer cursor trails by merging remote cursor presence into one receive-timestamped cursor per role and rendering it with transform-only composited SVG pointer movement.
 - Added a shared-surface regression so host "Return to Call" moves both host and guest back to the standard call layout.
 - Removed the oversized dynamic Devin bridge script from container startup so VS Code/code-server can boot through the image entrypoint without hitting Cloudflare runtime value limits.
 - Added the Devin/Clippy bridge/router to the dev-container image so agent startup no longer depends on a large Worker-provided entrypoint.

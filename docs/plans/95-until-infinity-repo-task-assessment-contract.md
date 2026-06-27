@@ -136,6 +136,9 @@ The controlling product rule remains:
   `session-events` directly without the browser Basic Auth proxy, so app-dev can
   prove the same source-backed workspace evidence path used by production room
   token validation.
+- Live peer cursor presence now keeps one receive-timestamped cursor per remote
+  role and renders movement with transform-only compositing, so host/guest
+  pointer presence stays synced without stale visual trails.
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
