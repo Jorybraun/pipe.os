@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed peer cursor trails by rendering one expiring cursor per remote role with a composited SVG pointer.
 - Added a shared-surface regression so host "Return to Call" moves both host and guest back to the standard call layout.
 - Removed the oversized dynamic Devin bridge script from container startup so VS Code/code-server can boot through the image entrypoint without hitting Cloudflare runtime value limits.
+- Added the Devin/Clippy bridge/router to the dev-container image so agent startup no longer depends on a large Worker-provided entrypoint.
+- Fixed the workspace proxy root route so the code-server iframe can load the bare session proxy URL.
+- Added research tasks for the remote OS-agent protocol decision and stream-backed transcript speaker attribution.
 
 ### Changed — Win95-themed workspace overlay in video room
 

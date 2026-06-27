@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
 import { apiError } from '../middleware/errors';
@@ -890,12 +890,14 @@ meetingRooms.post('/:token/workspace/:sessionId/destroy', async (c) => {
   return c.json({ workspace: await buildRoomWorkspacePayload(c.env.DB, token, room) });
 });
 
-meetingRooms.all('/:token/workspace/proxy/:sessionId/*', async (c) => {
+async function proxyWorkspaceRequest(c: Context<{ Bindings: Env }>): Promise<Response> {
   const token = c.req.param('token');
+  if (!token) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   const room = await resolveRoom(c.env.DB, token);
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
 
   const sessionId = c.req.param('sessionId');
+  if (!sessionId) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);
   if (!session) return apiError(c, 'NOT_FOUND', 'Workspace session not found.');
 
@@ -932,9 +934,12 @@ meetingRooms.all('/:token/workspace/proxy/:sessionId/*', async (c) => {
       error: { code: 'BAD_GATEWAY', message: 'Workspace proxy failed.' },
     }, 502);
   }
-});
+}
 
-// Agent bridge WebSocket proxy — connects Clippy UI to the agent bridge inside the container.
+meetingRooms.all('/:token/workspace/proxy/:sessionId', proxyWorkspaceRequest);
+meetingRooms.all('/:token/workspace/proxy/:sessionId/*', proxyWorkspaceRequest);
+
+// Agent bridge WebSocket proxy — connects Clippy UI to the baked bridge/router inside the container.
 // Path: /:token/agent/:sessionId/ws
 meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
   const token = c.req.param('token');
@@ -954,7 +959,7 @@ meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
     }, session.status === 'LAUNCHING' ? 425 : 410);
   }
 
-  // Forward WebSocket upgrade to the container's agent bridge on port 8081
+  // Forward WebSocket upgrade to the container bridge/router on the default port.
   const incoming = new URL(c.req.url);
   const innerUrl = new URL(`https://do.internal/ws${incoming.search}`);
   const forwarded = new Request(innerUrl.toString(), c.req.raw);
@@ -971,7 +976,7 @@ meetingRooms.all('/:token/agent/:sessionId/ws', async (c) => {
   }
 });
 
-// Agent auth HTTP proxy — proxies auth server requests to the container's port 8082.
+// Agent auth HTTP proxy — proxies auth requests to the container bridge/router.
 // Path: /:token/agent/:sessionId/auth/*
 meetingRooms.all('/:token/agent/:sessionId/auth/*', async (c) => {
   const token = c.req.param('token');

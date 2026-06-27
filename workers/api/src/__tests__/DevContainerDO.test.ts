@@ -145,7 +145,7 @@ async function init(
 // ─── /__init scheduling ─────────────────────────────────────────────────────
 
 describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () => {
-  it('starts the code-server port before marking the session READY', async () => {
+  it('starts the shared bridge/router port before marking the session READY', async () => {
     const db = fakeD1();
     const env = buildEnv(db);
     const instance = new DevContainerDO(buildState(), env) as SpyableDO;
@@ -171,8 +171,8 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     expect(startArg.startOptions.envVars).toMatchObject({
       SESSION_ID: 'sess_start',
       WORKSPACE_DIR: '/workspace',
-      AGENT_BRIDGE_PORT: '8081',
-      CODE_SERVER_PORT: '8080',
+      AGENT_BRIDGE_PORT: '8080',
+      CODE_SERVER_PORT: '8082',
       REPO_GIT_URL: 'https://github.com/example/repo.git',
       CHALLENGE_BRANCH: 'challenge/fix',
     });

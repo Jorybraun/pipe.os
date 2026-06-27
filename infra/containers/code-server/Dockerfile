@@ -1,5 +1,7 @@
 FROM codercom/code-server:4.22.1
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Switch to root to install system packages
 USER root
 
@@ -14,7 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://cli.devin.ai/install.sh | bash || test -x /root/.local/bin/devin
+ENV PATH="/root/.local/bin:${PATH}"
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY agent-bridge.js /usr/local/bin/agent-bridge.js
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN mkdir -p /workspace && chown -R coder:coder /workspace
 
