@@ -33,6 +33,13 @@ describe('dev-container agent bridge context endpoint', () => {
     expect(bridgeSource).toContain('authUrl: null');
   });
 
+  it('persists missing-Devin-auth as a bridge diagnostic before any fake agent chat can occur', () => {
+    expect(bridgeSource).toContain('function devinAuthDiagnosticMessage()');
+    expect(bridgeSource).toContain("diagnosticSource: 'auth_required'");
+    expect(bridgeSource).toContain('broadcastAgentDiagnostic(devinAuthDiagnosticMessage());');
+    expect(bridgeSource).toContain('sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());');
+  });
+
   it('observes real code-server workspace file changes as source-backed room events', () => {
     expect(bridgeSource).toContain('scanWorkspaceSnapshot');
     expect(bridgeSource).toContain('FILE_CHANGED');

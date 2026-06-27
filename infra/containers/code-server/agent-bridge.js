@@ -650,6 +650,7 @@ function startAgent() {
     agentStatus = 'auth_needed';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcast(devinAuthNeededMessage());
+    broadcastAgentDiagnostic(devinAuthDiagnosticMessage());
     return;
   }
 
@@ -769,6 +770,7 @@ async function handleAgentMessage(ws, msg) {
     agentStatus = 'auth_needed';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     broadcast(devinAuthNeededMessage());
+    broadcastAgentDiagnostic(devinAuthDiagnosticMessage());
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
     agentProcess.kill('SIGTERM');
   } else if (msg.type === 'GET_STATUS') {
@@ -795,6 +797,7 @@ function acceptAgent(req, socket) {
   }
   if (agentStatus === 'auth_needed') {
     send(ws, devinAuthNeededMessage());
+    sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
   }
 }
 
