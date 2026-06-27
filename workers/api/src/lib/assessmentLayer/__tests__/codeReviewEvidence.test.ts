@@ -90,6 +90,17 @@ describe('ingestCodeReviewAssessmentEvidence', () => {
       startedAt: '2026-06-27T17:55:00.000Z',
       producer: 'automated_scorer',
     });
+    await ingestCodeReviewAssessmentEvidence(db, {
+      sessionId: 'review-session-1',
+      candidateId: 'candidate-1',
+      challengeId: 'challenge-1',
+      assessmentId: 'assessment-1',
+      transcript,
+      scoreReportJson,
+      observedAt: '2026-06-27T18:02:00.000Z',
+      startedAt: '2026-06-27T17:55:00.000Z',
+      producer: 'automated_scorer',
+    });
 
     const session = sqlite.prepare(
       `SELECT mode, state, candidate_id, metadata_json
@@ -111,6 +122,16 @@ describe('ingestCodeReviewAssessmentEvidence', () => {
       challengeId: 'challenge-1',
       assessmentId: 'assessment-1',
     });
+    expect(sqlite.prepare(
+      `SELECT from_state, to_state
+         FROM assessment_state_transitions
+        ORDER BY sequence`,
+    ).all()).toEqual([
+      { from_state: 'INTAKE', to_state: 'IN_PROGRESS' },
+      { from_state: 'IN_PROGRESS', to_state: 'FINAL_SUBMITTED' },
+      { from_state: 'FINAL_SUBMITTED', to_state: 'EVALUATION_PENDING' },
+      { from_state: 'EVALUATION_PENDING', to_state: 'EVALUATED' },
+    ]);
 
     const eventRefs = sqlite.prepare(
       `SELECT e.kind, r.source_ref_type, r.source_ref_id, r.exact_text, r.content_hash

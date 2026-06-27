@@ -214,6 +214,36 @@ describe('AssessmentLayerStore', () => {
     });
   });
 
+  it('rejects positive claims that cite source refs not captured in session evidence', async () => {
+    const session = await store.createAssessmentSession({
+      ingestionKey: 'assessment-session:evaluation-forged-ref',
+      interviewId: 'interview-evaluation-forged-ref',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const claimedDiffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
+
+    await expect(store.createEvaluationReport({
+      sessionId: session.id,
+      ingestionKey: 'evaluation:forged-source-ref',
+      status: 'EVALUATED',
+      summary: 'Candidate produced a source-backed fix.',
+      claims: [{
+        id: 'claim-forged-code-fix',
+        polarity: 'positive',
+        dimension: 'implementation_correctness',
+        narrative: 'Candidate changed the listener cleanup path.',
+        sourceRefs: [await sourceRef('code_diff', 'diff-forged', claimedDiffText)],
+      }],
+      diagnostics: [],
+    })).rejects.toThrow(
+      'positive evaluation claim claim-forged-code-fix source ref code_diff:diff-forged is not backed by assessment session evidence',
+    );
+
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+  });
+
   it('persists evaluation reports as source-backed hypergraph records with diagnostics', async () => {
     const session = await store.createAssessmentSession({
       ingestionKey: 'assessment-session:evaluation',
@@ -223,6 +253,29 @@ describe('AssessmentLayerStore', () => {
     });
     const diffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
     const transcriptText = 'I chose this fix because the stale listener survives unmount.';
+    const diffSourceRef = await sourceRef('code_diff', 'diff-1', diffText);
+    const transcriptSourceRef = await sourceRef('transcript_span', 'transcript-1', transcriptText);
+
+    await store.recordAssessmentEvent({
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:evaluation:diff',
+      kind: 'code_diff',
+      actorType: 'candidate',
+      actorId: 'candidate-evaluation',
+      narrative: 'Candidate changed the listener cleanup path.',
+      payload: { filePath: 'src/popover.ts' },
+      sourceRefs: [diffSourceRef],
+    });
+    await store.recordAssessmentEvent({
+      sessionId: session.id,
+      ingestionKey: 'assessment-event:evaluation:transcript',
+      kind: 'transcript_span',
+      actorType: 'candidate',
+      actorId: 'candidate-evaluation',
+      narrative: 'Candidate explained the implementation rationale.',
+      payload: { transcriptOffsetMs: 12000 },
+      sourceRefs: [transcriptSourceRef],
+    });
 
     const report = await store.createEvaluationReport({
       sessionId: session.id,
@@ -235,14 +288,14 @@ describe('AssessmentLayerStore', () => {
           polarity: 'positive',
           dimension: 'implementation_correctness',
           narrative: 'Candidate changed the listener cleanup path.',
-          sourceRefs: [await sourceRef('code_diff', 'diff-1', diffText)],
+          sourceRefs: [diffSourceRef],
         },
         {
           id: 'claim-rationale',
           polarity: 'positive',
           dimension: 'communication',
           narrative: 'Candidate explained the implementation rationale.',
-          sourceRefs: [await sourceRef('transcript_span', 'transcript-1', transcriptText)],
+          sourceRefs: [transcriptSourceRef],
         },
       ],
       diagnostics: [{

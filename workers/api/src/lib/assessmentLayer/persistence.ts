@@ -394,6 +394,42 @@ async function nextEventSequence(db: D1Database, sessionId: string): Promise<num
   return (row?.max_sequence ?? 0) + 1;
 }
 
+async function requireClaimSourceBackedBySessionEvent(input: {
+  db: D1Database;
+  sessionId: string;
+  claimId: string;
+  sourceRef: AssessmentEvidenceSourceRefInput;
+}): Promise<void> {
+  const evidenceRole = input.sourceRef.evidenceRole ?? 'support';
+  const sourceSpanId = input.sourceRef.sourceSpanId ?? '';
+  const row = await input.db.prepare(
+    `SELECT r.event_id
+       FROM assessment_event_source_refs r
+       JOIN assessment_evidence_events e ON e.id = r.event_id
+      WHERE e.session_id = ?1
+        AND r.source_ref_type = ?2
+        AND r.source_ref_id = ?3
+        AND r.evidence_role = ?4
+        AND COALESCE(r.source_span_id, '') = ?5
+        AND r.exact_text = ?6
+        AND r.content_hash = ?7
+      LIMIT 1`,
+  ).bind(
+    input.sessionId,
+    input.sourceRef.sourceRefType,
+    input.sourceRef.sourceRefId,
+    evidenceRole,
+    sourceSpanId,
+    input.sourceRef.exactText,
+    input.sourceRef.contentHash,
+  ).first<{ event_id: string }>();
+  if (!row) {
+    throw new Error(
+      `positive evaluation claim ${input.claimId} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
+    );
+  }
+}
+
 export class AssessmentLayerStore {
   readonly #db: D1Database;
   readonly #clock: Clock;
@@ -603,6 +639,12 @@ export class AssessmentLayerStore {
       for (const sourceRef of claim.sourceRefs) {
         if (claim.polarity === 'positive') {
           assertExactSourceRef(sourceRef, claim.id);
+          await requireClaimSourceBackedBySessionEvent({
+            db: this.#db,
+            sessionId: session.id,
+            claimId: claim.id,
+            sourceRef,
+          });
         } else {
           assertExactEventSourceRef(sourceRef, `evaluation claim ${claim.id}`);
         }

@@ -165,6 +165,45 @@ export interface PersistedAssessmentDiagnostic {
   severity: AssessmentDiagnosticSeverity;
 }
 
+export interface FinalSubmissionEvidenceArtifactInput {
+  ingestionKey: string;
+  kind: Exclude<AssessmentEvidenceEventKind, 'final_submission' | 'system_diagnostic'>;
+  actorType: RepoTaskAssessmentActorType;
+  actorId?: string | null;
+  narrative: string;
+  payload?: JsonObject;
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}
+
+export interface SubmitFinalAssessmentBundleInput {
+  sessionId: string;
+  ingestionKey: string;
+  actorType: RepoTaskAssessmentActorType;
+  actorId?: string | null;
+  narrative: string;
+  payload?: JsonObject;
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+  artifacts: readonly FinalSubmissionEvidenceArtifactInput[];
+}
+
+export interface PersistedFinalAssessmentBundle {
+  event: PersistedAssessmentEvent;
+  artifactEvents: PersistedAssessmentEvent[];
+  transition: PersistedAssessmentStateTransition | null;
+}
+
+const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInterviewState[]> = {
+  INTAKE: ['IN_PROGRESS', 'DIAGNOSTIC', 'CANCELLED'],
+  IN_PROGRESS: ['FINAL_SUBMITTED', 'DIAGNOSTIC', 'CANCELLED'],
+  FINAL_SUBMITTED: ['EVALUATING', 'DIAGNOSTIC', 'CANCELLED'],
+  EVALUATING: ['EVALUATED', 'DIAGNOSTIC', 'CANCELLED'],
+  DIAGNOSTIC: ['IN_PROGRESS', 'EVALUATING', 'CANCELLED'],
+  EVALUATED: [],
+  CANCELLED: [],
+};
+
 function toCanonicalState(state: RepoTaskInterviewState): AssessmentSessionState {
   if (state === 'EVALUATING') return 'EVALUATING';
   if (state === 'DIAGNOSTIC') return 'DIAGNOSTIC';
@@ -312,6 +351,19 @@ export class RepoTaskInterviewSessionStore {
   async transitionState(
     input: TransitionAssessmentStateInput,
   ): Promise<PersistedAssessmentStateTransition> {
+    const session = await this.loadSession(input.sessionId);
+    if (session.state === input.toState) {
+      return {
+        id: `assessment_state_transition_noop_${session.id}_${input.toState}`,
+        sessionId: session.id,
+        fromState: session.state,
+        toState: input.toState,
+        reason: input.reason,
+      };
+    }
+    if (!ALLOWED_TRANSITIONS[session.state].includes(input.toState)) {
+      throw new Error(`cannot transition assessment session from ${session.state} to ${input.toState}`);
+    }
     const transition = await this.#store.transitionAssessmentState({
       sessionId: input.sessionId,
       toState: toCanonicalState(input.toState),
@@ -324,6 +376,68 @@ export class RepoTaskInterviewSessionStore {
       fromState: fromCanonicalState(transition.fromState),
       toState: fromCanonicalState(transition.toState),
       reason: transition.reason,
+    };
+  }
+
+  async submitFinalBundle(
+    input: SubmitFinalAssessmentBundleInput,
+  ): Promise<PersistedFinalAssessmentBundle> {
+    const initialSession = await this.loadSession(input.sessionId);
+    if (initialSession.state === 'INTAKE') {
+      await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'IN_PROGRESS',
+        reason: 'Final submission bundle received.',
+        createdBy: input.actorId,
+      });
+    }
+
+    const artifactEvents: PersistedAssessmentEvent[] = [];
+    for (const artifact of input.artifacts) {
+      artifactEvents.push(await this.recordEvent({
+        sessionId: input.sessionId,
+        ingestionKey: artifact.ingestionKey,
+        kind: artifact.kind,
+        actorType: artifact.actorType,
+        actorId: artifact.actorId,
+        narrative: artifact.narrative,
+        payload: artifact.payload,
+        occurredAt: artifact.occurredAt,
+        sourceRefs: artifact.sourceRefs,
+      }));
+    }
+
+    const event = await this.recordEvent({
+      sessionId: input.sessionId,
+      ingestionKey: input.ingestionKey,
+      kind: 'final_submission',
+      actorType: input.actorType,
+      actorId: input.actorId,
+      narrative: input.narrative,
+      payload: {
+        ...(input.payload ?? {}),
+        artifactEventIds: artifactEvents.map((artifactEvent) => artifactEvent.id),
+        artifactKinds: artifactEvents.map((artifactEvent) => artifactEvent.kind),
+      },
+      occurredAt: input.occurredAt,
+      sourceRefs: input.sourceRefs,
+    });
+
+    const latestSession = await this.loadSession(input.sessionId);
+    const transition = latestSession.state === 'FINAL_SUBMITTED'
+      ? null
+      : await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'FINAL_SUBMITTED',
+        reason: input.narrative,
+        eventId: event.id,
+        createdBy: input.actorId,
+      });
+
+    return {
+      event,
+      artifactEvents,
+      transition,
     };
   }
 

@@ -1,4 +1,4 @@
-import { AssessmentLayerStore } from './persistence';
+import { AssessmentLayerStore, type AssessmentSessionState } from './persistence';
 import type { ScoreAndPropagateTranscript } from '../review/scoreAndPropagate';
 import { stableJson } from '../livingContext/persistence';
 import type { JsonObject, JsonValue } from '../livingContext/types';
@@ -34,6 +34,35 @@ async function sha256Hex(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function currentAssessmentState(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentSessionState | null> {
+  const row = await db.prepare(
+    'SELECT state FROM assessment_sessions WHERE id = ?1',
+  ).bind(sessionId).first<{ state: AssessmentSessionState }>();
+  return row?.state ?? null;
+}
+
+async function transitionIfCurrentState(input: {
+  db: D1Database;
+  store: AssessmentLayerStore;
+  sessionId: string;
+  fromStates: readonly AssessmentSessionState[];
+  toState: AssessmentSessionState;
+  reason: string;
+}): Promise<void> {
+  const current = await currentAssessmentState(input.db, input.sessionId);
+  if (current === input.toState || current === null) return;
+  if (!input.fromStates.includes(current)) return;
+  await input.store.transitionAssessmentState({
+    sessionId: input.sessionId,
+    toState: input.toState,
+    reason: input.reason,
+    actorType: 'system',
+  });
 }
 
 function parseScoreReport(scoreReportJson: string): ScoreReportSummary {
@@ -99,14 +128,14 @@ export async function ingestCodeReviewAssessmentEvidence(
     },
   });
 
-  if (session.state === 'INTAKE') {
-    await store.transitionAssessmentState({
-      sessionId: session.id,
-      toState: 'IN_PROGRESS',
-      reason: 'CODE_REVIEW session entered scoring ingestion.',
-      actorType: 'system',
-    });
-  }
+  await transitionIfCurrentState({
+    db,
+    store,
+    sessionId: session.id,
+    fromStates: ['INTAKE'],
+    toState: 'IN_PROGRESS',
+    reason: 'CODE_REVIEW session entered scoring ingestion.',
+  });
 
   await store.recordAssessmentEvent({
     sessionId: session.id,
@@ -138,11 +167,13 @@ export async function ingestCodeReviewAssessmentEvidence(
     }],
   });
 
-  await store.transitionAssessmentState({
+  await transitionIfCurrentState({
+    db,
+    store,
     sessionId: session.id,
+    fromStates: ['IN_PROGRESS'],
     toState: 'FINAL_SUBMITTED',
     reason: 'CODE_REVIEW final transcript was captured as exact-source assessment evidence.',
-    actorType: 'system',
   });
 
   await store.recordAssessmentEvent({
@@ -179,11 +210,13 @@ export async function ingestCodeReviewAssessmentEvidence(
     }],
   });
 
-  await store.transitionAssessmentState({
+  await transitionIfCurrentState({
+    db,
+    store,
     sessionId: session.id,
+    fromStates: ['FINAL_SUBMITTED'],
     toState: 'EVALUATION_PENDING',
     reason: 'CODE_REVIEW score report was captured and is ready for final assessment projection.',
-    actorType: 'system',
   });
 
   await store.createEvaluationReport({
@@ -228,10 +261,12 @@ export async function ingestCodeReviewAssessmentEvidence(
     diagnostics: [],
   });
 
-  await store.transitionAssessmentState({
+  await transitionIfCurrentState({
+    db,
+    store,
     sessionId: session.id,
+    fromStates: ['EVALUATION_PENDING'],
     toState: 'EVALUATED',
     reason: 'CODE_REVIEW evaluation report was projected into the assessment evidence spine.',
-    actorType: 'system',
   });
 }

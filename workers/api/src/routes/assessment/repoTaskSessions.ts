@@ -10,6 +10,7 @@ import {
   type AssessmentEvidenceEventKind,
   type AssessmentEvaluationClaimPolarity,
   type EvaluationReportStatus,
+  type FinalSubmissionEvidenceArtifactInput,
   type RepoTaskInterviewMode,
   type RepoTaskInterviewState,
 } from '../../lib/repoTaskInterviewSession';
@@ -62,6 +63,20 @@ const eventKindSchema = z.enum([
   'dev_container_event',
   'system_diagnostic',
 ] satisfies [AssessmentEvidenceEventKind, ...AssessmentEvidenceEventKind[]]);
+
+const finalSubmissionArtifactKindSchema = z.enum([
+  'candidate_plan',
+  'diagram',
+  'message',
+  'terminal_output',
+  'test_run',
+  'code_diff',
+  'ai_interaction',
+  'tool_usage',
+  'transcript_span',
+  'recruiter_note',
+  'dev_container_event',
+] satisfies [FinalSubmissionEvidenceArtifactInput['kind'], ...FinalSubmissionEvidenceArtifactInput['kind'][]]);
 
 const actorTypeSchema = z.enum([
   'candidate',
@@ -171,6 +186,28 @@ const aiProviderUnavailableSchema = z.object({
   details: jsonObjectSchema.optional(),
 });
 
+const finalSubmissionArtifactSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  kind: finalSubmissionArtifactKindSchema,
+  actorType: actorTypeSchema,
+  actorId: z.string().trim().min(1).nullable().optional(),
+  narrative: z.string().trim().min(1),
+  payload: jsonObjectSchema.optional(),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(1),
+});
+
+const finalSubmissionBundleSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  actorType: actorTypeSchema,
+  actorId: z.string().trim().min(1).nullable().optional(),
+  narrative: z.string().trim().min(1),
+  payload: jsonObjectSchema.optional(),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(1),
+  artifacts: z.array(finalSubmissionArtifactSchema).min(1),
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Request failed.';
 }
@@ -234,6 +271,23 @@ repoTaskSessions.post('/sessions/:sessionId/state', async (c) => {
       ...body.data,
     });
     return c.json({ transition });
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.post('/sessions/:sessionId/final-submission-bundles', async (c) => {
+  const body = finalSubmissionBundleSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid final submission bundle body.');
+  }
+  try {
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const bundle = await store.submitFinalBundle({
+      sessionId: c.req.param('sessionId'),
+      ...body.data,
+    });
+    return c.json({ bundle }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
   }

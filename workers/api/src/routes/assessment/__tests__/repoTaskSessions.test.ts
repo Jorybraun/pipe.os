@@ -243,6 +243,169 @@ describe('repo task assessment session routes', () => {
     ).run(eventBody.event.id)).toThrow('assessment_evidence_events are immutable');
   });
 
+  it('submits a final assessment bundle that stores every required artifact kind as source-backed evidence', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:final-bundle',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-bundle',
+    });
+
+    const artifacts = [
+      {
+        ingestionKey: 'assessment-event:bundle-plan',
+        kind: 'candidate_plan',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate described suspected root cause and implementation plan.',
+        payload: { phase: 'plan' },
+        sourceRefs: [await sourceRef('candidate_plan', 'plan-1', 'Root cause is likely stale listener cleanup.')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-diagram',
+        kind: 'diagram',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate drew the event listener lifecycle.',
+        payload: { diagramType: 'mermaid' },
+        sourceRefs: [await sourceRef('diagram', 'diagram-1', 'flowchart LR; Mount-->Listener; Unmount-->Cleanup;')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-message',
+        kind: 'message',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate asked a clarifying question about expected behavior.',
+        payload: { channel: 'room_chat' },
+        sourceRefs: [await sourceRef('message', 'message-1', 'Should keyboard dismissal remove the listener too?')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-terminal',
+        kind: 'terminal_output',
+        actorType: 'dev_container',
+        narrative: 'Candidate captured failing terminal output before the fix.',
+        payload: { command: 'npm test -- popover' },
+        sourceRefs: [await sourceRef('terminal_output', 'terminal-2', 'FAIL popover stale listener remains attached')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-test-run',
+        kind: 'test_run',
+        actorType: 'dev_container',
+        narrative: 'Candidate captured passing tests after the fix.',
+        payload: { command: 'npm test -- popover', exitCode: 0 },
+        sourceRefs: [await sourceRef('test_run', 'test-run-1', 'PASS popover cleanup regression')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-code-diff',
+        kind: 'code_diff',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate changed cleanup behavior in the popover listener.',
+        payload: { filePath: 'src/popover.ts' },
+        sourceRefs: [await sourceRef('code_diff', 'diff-2', '+ cleanupStaleHandler();')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-ai-interaction',
+        kind: 'ai_interaction',
+        actorType: 'ai_developer',
+        actorId: 'openai:repo-task-interviewer',
+        narrative: 'AI interviewer challenged the edge-case behavior.',
+        payload: { provider: 'openai', model: 'configured-real-provider' },
+        sourceRefs: [await sourceRef('ai_usage_event', 'ai-turn-1', 'What happens if the component unmounts during pointer capture?')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-tool-usage',
+        kind: 'tool_usage',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate used git diff to inspect the patch before submission.',
+        payload: { tool: 'git', command: 'git diff' },
+        sourceRefs: [await sourceRef('tool_usage', 'tool-1', 'git diff -- src/popover.ts')],
+      },
+      {
+        ingestionKey: 'assessment-event:bundle-transcript',
+        kind: 'transcript_span',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate explained why the patch fixes the bug.',
+        payload: { transcriptOffsetMs: 42000 },
+        sourceRefs: [await sourceRef('transcript_span', 'transcript-2', 'The cleanup now runs on unmount and removes the stale listener.')],
+      },
+    ];
+    const finalSummary = 'I fixed stale listener cleanup and validated it with the regression test.';
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/final-submission-bundles`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:bundle-final-submission',
+        actorType: 'candidate',
+        actorId: 'candidate-bundle',
+        narrative: 'Candidate submitted the final repo-task evidence bundle.',
+        payload: { finalSummary },
+        sourceRefs: [await sourceRef('final_submission', 'submission-1', finalSummary)],
+        artifacts,
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      bundle: {
+        event: { id: string; kind: string };
+        artifactEvents: Array<{ id: string; kind: string }>;
+        transition: { toState: string } | null;
+      };
+    };
+    expect(body.bundle.event.kind).toBe('final_submission');
+    expect(body.bundle.artifactEvents.map((event) => event.kind).sort()).toEqual([
+      'ai_interaction',
+      'candidate_plan',
+      'code_diff',
+      'diagram',
+      'message',
+      'terminal_output',
+      'test_run',
+      'tool_usage',
+      'transcript_span',
+    ]);
+    expect(body.bundle.transition?.toState).toBe('FINAL_SUBMITTED');
+
+    expect(sqlite.prepare(
+      'SELECT state FROM assessment_sessions WHERE id = ?',
+    ).get(session.id)).toEqual({ state: 'FINAL_SUBMITTED' });
+    expect(sqlite.prepare(
+      `SELECT kind, COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+        GROUP BY kind
+        ORDER BY kind`,
+    ).all(session.id)).toEqual([
+      { kind: 'ai_interaction', count: 1 },
+      { kind: 'candidate_plan', count: 1 },
+      { kind: 'code_diff', count: 1 },
+      { kind: 'diagram', count: 1 },
+      { kind: 'final_submission', count: 1 },
+      { kind: 'message', count: 1 },
+      { kind: 'terminal_output', count: 1 },
+      { kind: 'test_run', count: 1 },
+      { kind: 'tool_usage', count: 1 },
+      { kind: 'transcript_span', count: 1 },
+    ]);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM context_records
+        WHERE scope_type = 'assessment_session'
+          AND scope_id = ?`,
+    ).get(session.id)).toEqual({ count: 10 });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, exact_text
+         FROM assessment_event_source_refs
+        WHERE event_id = ?`,
+    ).get(body.bundle.event.id)).toEqual({
+      source_ref_type: 'final_submission',
+      exact_text: finalSummary,
+    });
+  });
+
   it('rejects unsupported positive claims and records unavailable AI providers as diagnostics', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:unsupported-positive',
@@ -272,6 +435,34 @@ describe('repo task assessment session routes', () => {
     const unsupportedBody = await unsupportedReport.json() as { error: { message: string } };
     expect(unsupportedBody.error.message).toContain(
       'positive evaluation claim claim-debugging requires at least one exact source ref',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+
+    const forgedText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
+    const forgedReport = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:forged-positive-source',
+        status: 'EVALUATED',
+        summary: 'Candidate demonstrated implementation correctness.',
+        output: { schemaVersion: 'repo-task-assessment-output-v1' },
+        claims: [{
+          id: 'claim-forged-source',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'Candidate fixed the listener cleanup.',
+          sourceRefs: [await sourceRef('code_diff', 'diff-forged', forgedText)],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+    expect(forgedReport.status).toBe(400);
+    const forgedBody = await forgedReport.json() as { error: { message: string } };
+    expect(forgedBody.error.message).toContain(
+      'positive evaluation claim claim-forged-source source ref code_diff:diff-forged is not backed by assessment session evidence',
     );
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
       count: 0,
@@ -312,6 +503,35 @@ describe('repo task assessment session routes', () => {
     });
     const diffText = 'diff --git a/src/popover.ts b/src/popover.ts\n+cleanupStaleHandler();';
     const transcriptText = 'I chose this fix because the stale listener survives unmount.';
+    const diffSourceRef = await sourceRef('code_diff', 'diff-1', diffText);
+    const transcriptSourceRef = await sourceRef('transcript_span', 'transcript-1', transcriptText);
+
+    expect((await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:evaluation-code-diff',
+        kind: 'code_diff',
+        actorType: 'candidate',
+        actorId: 'candidate-evaluation',
+        narrative: 'Candidate changed the listener cleanup path.',
+        payload: { filePath: 'src/popover.ts' },
+        sourceRefs: [diffSourceRef],
+      }),
+      env,
+    )).status).toBe(201);
+    expect((await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:evaluation-transcript',
+        kind: 'transcript_span',
+        actorType: 'candidate',
+        actorId: 'candidate-evaluation',
+        narrative: 'Candidate explained the implementation rationale.',
+        payload: { transcriptOffsetMs: 12000 },
+        sourceRefs: [transcriptSourceRef],
+      }),
+      env,
+    )).status).toBe(201);
 
     const reportResponse = await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
@@ -330,7 +550,7 @@ describe('repo task assessment session routes', () => {
             dimension: 'implementation_correctness',
             narrative: 'Candidate changed the listener cleanup path.',
             confidence: 0.87,
-            sourceRefs: [await sourceRef('code_diff', 'diff-1', diffText)],
+            sourceRefs: [diffSourceRef],
           },
           {
             id: 'claim-rationale',
@@ -338,7 +558,7 @@ describe('repo task assessment session routes', () => {
             dimension: 'communication',
             narrative: 'Candidate explained the implementation rationale.',
             confidence: 0.82,
-            sourceRefs: [await sourceRef('transcript_span', 'transcript-1', transcriptText)],
+            sourceRefs: [transcriptSourceRef],
           },
         ],
         diagnostics: [{

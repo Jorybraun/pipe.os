@@ -62,6 +62,11 @@ API shape:
 - `POST /sessions`: create an assessment session for a supported mode.
 - `POST /sessions/:sessionId/events`: append a source-backed event.
 - `POST /sessions/:sessionId/state`: record a state transition.
+- `POST /sessions/:sessionId/final-submission-bundles`: append the candidate's
+  final assessment bundle, storing each included plan/diagram/message/terminal
+  output/test run/code diff/AI interaction/tool use/transcript artifact as its
+  own source-backed event before recording the final submission event and moving
+  the session to `FINAL_SUBMITTED`.
 - `POST /sessions/:sessionId/evaluation-reports`: persist final output,
   cited claims, and diagnostics.
 - `POST /sessions/:sessionId/diagnostics/ai-provider-unavailable`: record a
@@ -70,10 +75,17 @@ API shape:
 The route is intentionally not mounted into global runtime routing in this
 slice; Agent A owns runtime/routing integration.
 
+CODE_REVIEW scoring now has a server-side projection helper:
+`ingestCodeReviewAssessmentEvidence` records the final review transcript, score
+report, state transitions, and evaluation report into the same assessment
+tables when the scorer runs. The helper is idempotent and no-ops when the
+assessment schema is absent, preserving older test fixtures and migrations.
+
 ## Evidence Invariants
 
 - Events require at least one source ref with exact text and content hash.
-- Positive evaluation claims require at least one exact source ref.
+- Positive evaluation claims require at least one exact source ref that already
+  exists on an immutable assessment event in the same session.
 - Evaluation reports store final output JSON but do not treat it as evidence for
   positive claims unless underlying claim refs cite source artifacts.
 - Diagnostics can exist without source refs when the gap is missing evidence or
@@ -88,11 +100,16 @@ Agent A/runtime surfaces should submit evidence in this order:
 
 1. Create session after resolving the scheduled interview/candidate server-side.
 2. Append candidate/recruiter/runtime events as they happen.
-3. Append final submission artifacts before marking `FINAL_SUBMITTED`.
+3. Submit the final bundle when the candidate is done. The backend records all
+   included artifact events before marking `FINAL_SUBMITTED`.
 4. If a real AI provider cannot respond, call the AI-unavailable diagnostic
    path. Do not simulate Devin, Clippy, or a PR author.
 5. Evaluation workers consume the session evidence and write either a cited
    report or diagnostics.
+
+For CODE_REVIEW, `scoreAndPropagate` is the first integrated worker path. It
+continues writing living-context review score records, then mirrors the scored
+transcript/report into the assessment evidence spine with exact source refs.
 
 Candidate-facing clients should keep receiving invite/session tokens only.
 Internal session ids stay server-side until a Worker has resolved ownership.
