@@ -60,9 +60,18 @@ import agents from './routes/agents';
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-function isDevContainerRoomContextRequest(pathname: string, method: string): boolean {
-  if (method !== 'GET') return false;
-  return /^\/api\/v1\/meeting-rooms\/[^/]+\/context-summary$/.test(pathname);
+function isDevContainerRoomRuntimeRequest(pathname: string, method: string): boolean {
+  if (
+    method === 'GET'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/context-summary$/.test(pathname)
+  ) return true;
+
+  if (
+    method === 'POST'
+    && /^\/api\/v1\/meeting-rooms\/[^/]+\/session-events$/.test(pathname)
+  ) return true;
+
+  return false;
 }
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -120,9 +129,10 @@ app.use('*', async (c, next) => {
   if (pathname === PIPE_EMAIL_LOGO_PATH) return next();
   // RPC routes use candidate JWT auth, not the dev proxy secret
   if (pathname.startsWith('/rpc/')) return next();
-  // Containers need room context without browser Basic-auth cookies. The room
-  // token remains the bearer credential and is validated by the route.
-  if (isDevContainerRoomContextRequest(pathname, c.req.method)) return next();
+  // Containers need token-scoped room context and event capture without browser
+  // Basic-auth cookies. The room token remains the bearer credential and is
+  // validated by the route.
+  if (isDevContainerRoomRuntimeRequest(pathname, c.req.method)) return next();
 
   if (!c.env.DEV_PROXY_SECRET) {
     return c.json(

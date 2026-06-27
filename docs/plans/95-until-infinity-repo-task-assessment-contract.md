@@ -118,6 +118,10 @@ The controlling product rule remains:
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a
   bounded text preview when the changed file is small and textual.
+- Dev deployments allow the container bridge to post token-scoped
+  `session-events` directly without the browser Basic Auth proxy, so app-dev can
+  prove the same source-backed workspace evidence path used by production room
+  token validation.
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
