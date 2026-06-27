@@ -42,6 +42,11 @@ function sessionEventsUrl(apiBase: string, token: string): string {
   return `${apiBase}/api/v1/meeting-rooms/${token}/session-events`;
 }
 
+function createClientEventId(sequence: number): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  return `session-event-${Date.now()}-${sequence}-${Math.random().toString(36).slice(2)}`;
+}
+
 /**
  * Hook to capture session events and send them to the API
  * where they become candidate_nodes in the knowledge graph.
@@ -49,6 +54,7 @@ function sessionEventsUrl(apiBase: string, token: string): string {
 export function useSessionEvents({ token, apiBase }: CaptureOptions) {
   const queueRef = useRef<QueuedSessionEvent[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eventSequenceRef = useRef(0);
   const tokenRef = useRef(token);
   const apiBaseRef = useRef(apiBase);
   tokenRef.current = token;
@@ -106,7 +112,24 @@ export function useSessionEvents({ token, apiBase }: CaptureOptions) {
   }, [clearFlushTimer]);
 
   const capture = useCallback((type: SessionEventType, text: string, actor?: string, properties?: Record<string, unknown>) => {
-    queueRef.current.push({ type, text, actor, properties });
+    eventSequenceRef.current += 1;
+    const clientCapturedAtMs = Date.now();
+    const clientEventId = typeof properties?.clientEventId === 'string'
+      ? properties.clientEventId
+      : createClientEventId(eventSequenceRef.current);
+    queueRef.current.push({
+      type,
+      text,
+      actor,
+      properties: {
+        ...properties,
+        clientEventId,
+        clientCapturedAtMs: typeof properties?.clientCapturedAtMs === 'number'
+          && Number.isFinite(properties.clientCapturedAtMs)
+          ? properties.clientCapturedAtMs
+          : clientCapturedAtMs,
+      },
+    });
 
     // Debounce flush — batch events over 500ms
     clearFlushTimer();
