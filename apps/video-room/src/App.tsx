@@ -324,23 +324,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setWorkspaceError(null);
     try {
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
-      setWorkspace(await launchRoomWorkspace(token, repoUrl));
+      const nextWorkspace = await launchRoomWorkspace(token, repoUrl);
+      setWorkspace(nextWorkspace);
+      room.publishDesktopEvent({
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: nextWorkspace.session?.status ?? null,
+      });
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [token, workspace?.repoUrl, workspaceRepoInput]);
+  }, [room, token, workspace?.repoUrl, workspaceRepoInput]);
 
   useEffect(() => {
-    if (!workspace?.enabled || !workspace.canLaunch) return undefined;
+    if (!workspace?.enabled) return undefined;
     const status = workspace.session?.status;
     if (status !== 'LAUNCHING') return undefined;
     const timer = window.setInterval(() => {
       void refreshWorkspace();
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [refreshWorkspace, workspace?.canLaunch, workspace?.session?.status]);
+  }, [refreshWorkspace, workspace?.enabled, workspace?.session?.status]);
 
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
@@ -406,6 +411,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       processedDesktopEventsRef.current.add(event.id);
       if (event.kind === 'SET_ROOM_SURFACE') {
         continue;
+      } else if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+        void refreshWorkspace();
       } else if (event.kind === 'OPEN_WINDOW') {
         wm.openWindow(event.window);
       } else if (event.kind === 'CLOSE_WINDOW') {
@@ -415,7 +422,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom, room.desktopEvents]);
+  }, [enteredRoom, refreshWorkspace, room.desktopEvents]);
 
   useEffect(() => {
     if (!enteredRoom) return;

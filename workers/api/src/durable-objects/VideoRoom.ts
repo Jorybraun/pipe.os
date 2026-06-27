@@ -96,6 +96,13 @@ type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'WORKSPACE_STATE_CHANGED';
+      status?: string | null;
     };
 
 interface RoomDesktopActivityEntry {
@@ -345,6 +352,18 @@ export class VideoRoom {
         data: value.data,
       };
     }
+    if (value.kind === 'WORKSPACE_STATE_CHANGED') {
+      const status = typeof value.status === 'string' && value.status.length <= 80
+        ? value.status
+        : null;
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status,
+      };
+    }
     return null;
   }
 
@@ -571,6 +590,9 @@ export class VideoRoom {
       const nextWindows = windows.filter((windowConfig) => windowConfig.id !== event.windowId);
       await this.state.storage.put('desktopWindows', nextWindows);
       return nextWindows;
+    }
+    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+      return windows;
     }
     const nextWindows = windows.map((windowConfig) => (
       windowConfig.id === event.windowId

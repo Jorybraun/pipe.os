@@ -123,6 +123,13 @@ export type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'WORKSPACE_STATE_CHANGED';
+      status?: string | null;
     };
 
 export type RoomDesktopEventDraft =
@@ -142,6 +149,10 @@ export type RoomDesktopEventDraft =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      kind: 'WORKSPACE_STATE_CHANGED';
+      status?: string | null;
     };
 
 export type RoomFileSystemEvent =
@@ -303,6 +314,15 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       kind: 'UPDATE_WINDOW_DATA',
       windowId: value.windowId,
       data: value.data,
+    };
+  }
+  if (value.kind === 'WORKSPACE_STATE_CHANGED') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'WORKSPACE_STATE_CHANGED',
+      status: typeof value.status === 'string' ? value.status : null,
     };
   }
   return null;

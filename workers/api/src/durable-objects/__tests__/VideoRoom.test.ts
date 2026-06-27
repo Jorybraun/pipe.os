@@ -269,6 +269,60 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('broadcasts workspace state changes without changing shared windows', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    storage.set('desktopWindows', [
+      {
+        id: 'workspace',
+        windowType: 'workspace',
+        title: 'VS Code',
+      },
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-workspace-ready',
+        clientId: 'host-client',
+        createdAt: 3,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: 'READY',
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'workspace',
+        windowType: 'workspace',
+        title: 'VS Code',
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: 'READY',
+      }),
+    }));
+    expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-workspace-ready',
+          kind: 'WORKSPACE_STATE_CHANGED',
+          status: 'READY',
+        }),
+      }),
+    ]);
+  });
+
   it('broadcasts live room cursor presence without persisting activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
