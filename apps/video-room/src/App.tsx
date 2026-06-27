@@ -29,6 +29,7 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
+import { buildCodeEditorOpenEvidence } from './lib/workspaceEvidence';
 import {
   useRoomConnection,
   type RoomClippyPromptDraft,
@@ -285,6 +286,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const callStartedRef = useRef(false);
   const recordingStartedRef = useRef(false);
   const publishedClippyPromptSignatureRef = useRef<string | null>(null);
+  const workspaceEditorOpenEvidenceKeysRef = useRef<Set<string>>(new Set());
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -797,6 +799,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const workspaceUrl = workspaceReady && workspaceSession
     ? roomWorkspaceProxyUrl(token, workspaceSession.sessionId)
     : null;
+  useEffect(() => {
+    setIframeLoaded(false);
+  }, [workspaceUrl]);
   const canLaunchWorkspace = metadata.role === 'HOST'
     && hasWorkspaceFeature
     && Boolean(workspace?.canLaunch)
@@ -839,6 +844,30 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     workspace?.repoUrl,
     workspaceSession?.sessionId,
     workspaceSession?.status,
+  ]);
+
+  const captureWorkspaceEditorOpen = useCallback((): void => {
+    setIframeLoaded(true);
+    const evidence = buildCodeEditorOpenEvidence({
+      workspace,
+      actor: roomActor,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+    });
+    if (!evidence) return;
+    const sessionId = typeof evidence.properties.workspaceSessionId === 'string'
+      ? evidence.properties.workspaceSessionId
+      : 'unknown-workspace-session';
+    const evidenceKey = `${sessionId}:${roomActor}`;
+    if (workspaceEditorOpenEvidenceKeysRef.current.has(evidenceKey)) return;
+    workspaceEditorOpenEvidenceKeysRef.current.add(evidenceKey);
+    captureSessionEvent('code_editor_open', evidence.text, roomActor, evidence.properties);
+  }, [
+    captureSessionEvent,
+    room.phase,
+    room.roomSurface,
+    roomActor,
+    workspace,
   ]);
 
   const canStartCall = metadata.role === 'HOST' && (
@@ -1542,7 +1571,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   className="win95-workspace-iframe"
                   data-testid="workspace-iframe"
                   sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads allow-top-navigation-by-user-activation"
-                  onLoad={() => setIframeLoaded(true)}
+                  onLoad={captureWorkspaceEditorOpen}
                 />
               </>
             ) : (

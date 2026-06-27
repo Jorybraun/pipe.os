@@ -119,6 +119,9 @@ The controlling product rule remains:
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
+- VS Code/code-server iframe loads now capture deduplicated `code_editor_open`
+  `meeting_session_event` evidence with workspace session and repo metadata,
+  without storing room-token proxy URLs.
 - Clippy/Devin bridge status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.
