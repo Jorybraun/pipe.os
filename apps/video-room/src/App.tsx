@@ -42,6 +42,7 @@ import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './compon
 import {
   agentStatusEvidenceText,
   type AgentChatMessage,
+  type AgentFileChangeEvent,
   type AgentRoomAction,
   type AgentStatus,
 } from './hooks/useAgentConnection';
@@ -1340,6 +1341,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const captureClippyFileChange = (event: AgentFileChangeEvent): void => {
+    if (event.persisted) return;
+    captureSessionEvent('file_change', event.filePath, 'system', {
+      source: event.source ?? 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      action: event.actionName,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      repoUrl: workspace?.repoUrl ?? null,
+      observedAt: event.observedAt ?? null,
+      contentHash: event.contentHash ?? null,
+      sizeBytes: event.sizeBytes ?? null,
+      contentPreview: event.contentPreview ?? null,
+      bridgePersisted: false,
+    });
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -1671,6 +1691,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onUserChatMessage={captureClippyUserChatMessage}
           onAgentChatMessage={captureClippyAgentChatMessage}
           onAgentStatus={captureClippyAgentStatus}
+          onAgentFileChange={captureClippyFileChange}
         />
       )}
       {room.phase === 'ended' && (

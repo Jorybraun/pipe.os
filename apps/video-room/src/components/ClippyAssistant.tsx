@@ -4,6 +4,7 @@ import ClippyLoaders from 'clippyjs/agents/clippy';
 import {
   useAgentConnection,
   type AgentChatMessage,
+  type AgentFileChangeEvent,
   type AgentRoomAction,
   type AgentStatus,
 } from '../hooks/useAgentConnection';
@@ -35,6 +36,7 @@ export interface ClippyAssistantProps {
   onUserChatMessage?: (text: string) => void;
   onAgentChatMessage?: (message: AgentChatMessage) => void;
   onAgentStatus?: (status: AgentStatus, agentName: string) => void;
+  onAgentFileChange?: (event: AgentFileChangeEvent) => void;
 }
 
 export function ClippyAssistant({
@@ -50,6 +52,7 @@ export function ClippyAssistant({
   onUserChatMessage,
   onAgentChatMessage,
   onAgentStatus,
+  onAgentFileChange,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
@@ -60,6 +63,7 @@ export function ClippyAssistant({
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
   const capturedAgentStatusRef = useRef<string | null>(null);
+  const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -159,6 +163,21 @@ export function ClippyAssistant({
     capturedAgentStatusRef.current = signature;
     onAgentStatus?.(agentConn.status, agentConn.agentName);
   }, [agentConn.agentName, agentConn.status, agentEnabled, onAgentStatus]);
+
+  useEffect(() => {
+    for (const event of agentConn.fileChanges) {
+      const signature = [
+        event.timestamp,
+        event.filePath,
+        event.actionName,
+        event.contentHash ?? '',
+        event.sizeBytes ?? '',
+      ].join('|');
+      if (capturedAgentFileChangesRef.current.has(signature)) continue;
+      capturedAgentFileChangesRef.current.add(signature);
+      onAgentFileChange?.(event);
+    }
+  }, [agentConn.fileChanges, onAgentFileChange]);
 
   const latestAgentRoomAction = agentConn.roomActions[agentConn.roomActions.length - 1] ?? null;
   const latestAgentRoomActionSignature = latestAgentRoomAction

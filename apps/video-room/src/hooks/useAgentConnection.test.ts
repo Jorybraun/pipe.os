@@ -34,6 +34,11 @@ describe('parseAgentBridgeMessage', () => {
       type: 'FILE_CHANGED',
       path: 'src/app.ts',
       action: 'modified',
+      contentHash: 'sha256-source-hash',
+      sizeBytes: 421,
+      contentPreview: 'export const answer = 42;',
+      observedAt: '2026-06-27T12:00:00.000Z',
+      persisted: false,
     })).toEqual({
       kind: 'file_changed',
       message: {
@@ -44,6 +49,16 @@ describe('parseAgentBridgeMessage', () => {
         id: 'open-workspace',
         label: 'Open Workspace',
         text: 'I noticed src/app.ts was modified in the workspace.',
+      },
+      fileChange: {
+        filePath: 'src/app.ts',
+        actionName: 'modified',
+        contentHash: 'sha256-source-hash',
+        sizeBytes: 421,
+        contentPreview: 'export const answer = 42;',
+        observedAt: '2026-06-27T12:00:00.000Z',
+        source: undefined,
+        persisted: false,
       },
     });
   });

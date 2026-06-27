@@ -25,6 +25,18 @@ export interface AgentRoomAction {
   autoExecute?: boolean;
 }
 
+export interface AgentFileChangeEvent {
+  filePath: string;
+  actionName: string;
+  timestamp: number;
+  observedAt?: string;
+  source?: string;
+  sizeBytes?: number;
+  contentHash?: string;
+  contentPreview?: string;
+  persisted?: boolean;
+}
+
 export type ParsedAgentBridgeMessage =
   | {
       kind: 'status';
@@ -50,6 +62,7 @@ export type ParsedAgentBridgeMessage =
       kind: 'file_changed';
       message: Omit<AgentChatMessage, 'timestamp'>;
       action: AgentRoomAction;
+      fileChange: Omit<AgentFileChangeEvent, 'timestamp'>;
     }
   | {
       kind: 'room_action';
@@ -72,6 +85,7 @@ export interface AgentConnectionState {
   agentName: string;
   capabilities: string[];
   roomActions: AgentRoomAction[];
+  fileChanges: AgentFileChangeEvent[];
 }
 
 export interface UseAgentConnectionOptions {
@@ -128,6 +142,10 @@ function isAgentStatus(value: unknown): value is AgentStatus {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeActionName(value: string): string {
@@ -229,9 +247,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'FILE_CHANGED') {
-    const filePath = stringOrNull(value.path) ?? 'a workspace file';
-    const action = stringOrNull(value.action) ?? 'changed';
-    const text = `I noticed ${filePath} was ${action} in the workspace.`;
+    const filePath = stringOrNull(value.path ?? value.filePath) ?? 'a workspace file';
+    const actionName = stringOrNull(value.action ?? value.operation) ?? 'changed';
+    const text = `I noticed ${filePath} was ${actionName} in the workspace.`;
+    const contentPreview = stringOrNull(value.contentPreview);
     return {
       kind: 'file_changed',
       message: { role: 'agent', text },
@@ -239,6 +258,18 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         id: 'open-workspace',
         label: ROOM_ACTIONS['open-workspace'].label,
         text,
+      },
+      fileChange: {
+        filePath,
+        actionName,
+        observedAt: stringOrNull(value.observedAt) ?? undefined,
+        source: stringOrNull(value.source) ?? undefined,
+        sizeBytes: numberOrUndefined(value.sizeBytes),
+        contentHash: stringOrNull(value.contentHash) ?? undefined,
+        contentPreview: contentPreview && contentPreview.length <= 4000
+          ? contentPreview
+          : contentPreview?.slice(0, 4000),
+        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
       },
     };
   }
@@ -263,6 +294,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const [agentName, setAgentName] = useState('devin');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [roomActions, setRoomActions] = useState<AgentRoomAction[]>([]);
+  const [fileChanges, setFileChanges] = useState<AgentFileChangeEvent[]>([]);
 
   useEffect(() => {
     if (!enabled || !wsUrl) return;
@@ -320,10 +352,17 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
               setAuthMessage(null);
               break;
             case 'file_changed':
-              setMessages((prev) => [...prev, {
-                ...parsed.message,
-                timestamp: Date.now(),
-              }]);
+              {
+                const timestamp = Date.now();
+                setMessages((prev) => [...prev, {
+                  ...parsed.message,
+                  timestamp,
+                }]);
+                setFileChanges((prev) => [...prev.slice(-49), {
+                  ...parsed.fileChange,
+                  timestamp,
+                }]);
+              }
               setRoomActions((prev) => [...prev.slice(-19), parsed.action]);
               break;
             case 'room_action':
@@ -405,6 +444,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
     agentName,
     capabilities,
     roomActions,
+    fileChanges,
     sendMessage,
     startAuth,
     stopAgent,

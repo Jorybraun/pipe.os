@@ -114,6 +114,10 @@ The controlling product rule remains:
 - Clippy/Devin bridge status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.
+- Code-server workspace create/modify/delete events are now observed by the
+  container bridge and persisted as source-backed `file_change`
+  `meeting_session_event` evidence with path, content hash, file size, and a
+  bounded text preview when the changed file is small and textual.
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
