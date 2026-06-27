@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Sparkles, User } from 'lucide-react';
+import { AlertTriangle, Loader2, Sparkles, User } from 'lucide-react';
 import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import type { CandidateProfile } from './CandidateProfileReview';
 import { CandidateProfileReview } from './CandidateProfileReview';
@@ -10,6 +10,8 @@ interface WaitingForMatchProps {
   config: {
     autoRefresh?: boolean;
     refreshIntervalSeconds?: number;
+    state?: 'pending' | 'blocked';
+    reason?: string;
   };
   onRefresh: () => void;
   sessionToken?: string | null;
@@ -38,6 +40,7 @@ export function WaitingForMatch({
   sessionToken,
 }: WaitingForMatchProps): JSX.Element {
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
+  const isBlocked = config.state === 'blocked';
 
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
@@ -120,14 +123,14 @@ export function WaitingForMatch({
             height: 56,
             borderRadius: '50%',
             background: 'rgba(96, 165, 250, 0.08)',
-            border: '1px solid rgba(96, 165, 250, 0.2)',
+            border: isBlocked ? '1px solid rgba(251, 191, 36, 0.28)' : '1px solid rgba(96, 165, 250, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 28px',
           }}
         >
-          <Sparkles size={24} color="#60a5fa" />
+          {isBlocked ? <AlertTriangle size={24} color="#fbbf24" /> : <Sparkles size={24} color="#60a5fa" />}
         </div>
 
         <h2
@@ -154,6 +157,20 @@ export function WaitingForMatch({
           {instructions}
         </p>
 
+        {config.reason && (
+          <p
+            style={{
+              fontSize: 11,
+              color: 'var(--pipe-text-dim)',
+              lineHeight: 1.6,
+              margin: '0 0 24px',
+              fontFamily: '"Space Mono", monospace',
+            }}
+          >
+            {config.reason}
+          </p>
+        )}
+
         <div
           style={{
             display: 'flex',
@@ -163,20 +180,22 @@ export function WaitingForMatch({
             marginBottom: 24,
           }}
         >
-          <Loader2
-            size={14}
-            color="var(--pipe-text-dim)"
-            className="animate-spin"
-          />
+          {!isBlocked && (
+            <Loader2
+              size={14}
+              color="var(--pipe-text-dim)"
+              className="animate-spin"
+            />
+          )}
           <span
             style={{
               fontSize: 11,
-              color: 'var(--pipe-text-dim)',
+              color: isBlocked ? '#fbbf24' : 'var(--pipe-text-dim)',
               fontFamily: '"Space Mono", monospace',
               letterSpacing: '0.05em',
             }}
           >
-            {`MATCHING IN PROGRESS${dots}`}
+            {isBlocked ? 'MATCHING NEEDS ATTENTION' : `MATCHING IN PROGRESS${dots}`}
           </span>
         </div>
 

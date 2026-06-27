@@ -30,6 +30,8 @@ export type StageSubmission = CodeReviewSubmission | QuizSubmission | ShortAnswe
 export interface WaitingChallengeConfig {
   autoRefresh: boolean;
   refreshIntervalSeconds: number;
+  state?: 'pending' | 'blocked';
+  reason?: string;
 }
 
 export interface WaitingChallengeDTO {
@@ -188,6 +190,16 @@ export function useAssessment(inviteToken: string): UseAssessmentReturn {
     const cachedToken = sessionStorage.getItem('pipe_session_token');
     const cachedCandidateJson = sessionStorage.getItem('pipe_session_candidate');
     const cachedInviteToken = sessionStorage.getItem('pipe_session_invite_token');
+
+    if (inviteToken?.startsWith('CLAIMED::')) {
+      sessionStorage.removeItem('pipe_session_token');
+      sessionStorage.removeItem('pipe_session_candidate');
+      sessionStorage.removeItem('pipe_session_invite_token');
+      sessionTokenRef.current = null;
+      setState((prev) => ({ ...prev, isLoading: false, error: new Error('TOKEN_ALREADY_CLAIMED') }));
+      return;
+    }
+
     const cachedSessionMatchesInvite = Boolean(
       cachedToken
       && cachedCandidateJson

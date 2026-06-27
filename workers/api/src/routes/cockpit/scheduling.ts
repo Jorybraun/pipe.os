@@ -23,6 +23,7 @@ import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
 import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailAssets';
+import { ensureUsableCandidateInviteToken } from '../../lib/candidateInviteTokens';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
   LivingContextStore,
@@ -1224,7 +1225,8 @@ async function ensureStandaloneCandidateForInterview(
       .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ? AND candidate_id IS NULL')
       .bind(existing.id, new Date().toISOString(), interviewId)
       .run();
-    return { candidateId: existing.id, inviteToken: existing.invite_token };
+    const inviteToken = await ensureUsableCandidateInviteToken(db, existing.id, existing.invite_token);
+    return { candidateId: existing.id, inviteToken };
   }
 
   const candidateId = crypto.randomUUID();
@@ -2977,8 +2979,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       .bind(interview.candidate_id)
       .first<{ invite_token: string }>();
     if (candidate?.invite_token) {
+      const inviteToken = await ensureUsableCandidateInviteToken(
+        db,
+        interview.candidate_id,
+        candidate.invite_token,
+      );
       const baseUrl = c.env.APP_BASE_URL ?? 'https://pipe.build';
-      assessUrl = withDevBasicAuth(`${baseUrl}/assess/${candidate.invite_token}`, c.env);
+      assessUrl = withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, c.env);
     }
   }
 

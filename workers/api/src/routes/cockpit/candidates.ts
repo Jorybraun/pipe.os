@@ -13,6 +13,7 @@ import { apiError } from '../../middleware/errors';
 import { parseResume, persistParsedCV } from '../../lib/cvParser';
 import { processResumeFromR2 } from '../../lib/enrichment/resumeIngestion';
 import { sendNotificationEmail } from '../../lib/email';
+import { ensureUsableCandidateInviteToken } from '../../lib/candidateInviteTokens';
 import { checkDealbreakersForCandidate } from '../../lib/neo4j/matchingQueries';
 import { buildNeo4jConfig, createNeo4jDriver } from '../../lib/neo4j/driver';
 import { buildProfileSections } from '../../lib/candidateDiscovery/buildProfileSections';
@@ -1311,7 +1312,9 @@ candidateOps.post('/', async (c) => {
     .first<{ id: string; invite_token: string; status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' }>();
 
   const id = existing?.id ?? crypto.randomUUID();
-  const inviteToken = existing?.invite_token ?? crypto.randomUUID();
+  const inviteToken = existing
+    ? await ensureUsableCandidateInviteToken(db, existing.id, existing.invite_token)
+    : crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {

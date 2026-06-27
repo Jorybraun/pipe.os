@@ -56,7 +56,9 @@ interface WaitingChallenge {
   config: {
     autoRefresh: boolean;
     refreshIntervalSeconds: number;
-    estimatedSecondsRemaining: number;
+    estimatedSecondsRemaining?: number;
+    state?: 'pending' | 'blocked';
+    reason?: string;
   };
 }
 
@@ -370,16 +372,50 @@ const INTAKE_CHALLENGE_CONTENT = {
   config: JSON.stringify({ acceptedFormats: ['pdf', 'docx', 'doc'], maxSizeMb: 10 }),
 };
 
-const STANDALONE_WAITING_CHALLENGE = {
-  id: 'waiting-for-match',
-  type: 'WAITING_FOR_MATCH',
-  title: 'Building your personalized challenge',
-  instructions: 'We are analyzing your profile to find the best open-source project match.',
-  config: {
-    autoRefresh: true,
-    refreshIntervalSeconds: 30,
-  },
-};
+function standaloneWaitingChallenge(options: {
+  title?: string;
+  instructions?: string;
+  state?: 'pending' | 'blocked';
+  reason?: string | null;
+  autoRefresh?: boolean;
+} = {}): WaitingChallenge {
+  const state = options.state ?? 'pending';
+  return {
+    id: 'waiting-for-match',
+    type: 'WAITING_FOR_MATCH',
+    title: options.title ?? (state === 'blocked'
+      ? 'Challenge needs attention'
+      : 'Building your personalized challenge'),
+    instructions: options.instructions ?? (state === 'blocked'
+      ? 'We could not select a source-backed repo challenge from the available evidence. Please contact your recruiter so they can refresh the invite or add candidate evidence.'
+      : 'We are analyzing your profile to find the best open-source project match.'),
+    config: {
+      autoRefresh: options.autoRefresh ?? state !== 'blocked',
+      refreshIntervalSeconds: 30,
+      estimatedSecondsRemaining: state === 'pending' ? 180 : undefined,
+      state,
+      reason: options.reason ?? undefined,
+    },
+  };
+}
+
+function standaloneWaitingChallengeForReadiness(
+  readiness: StandaloneReviewEvidenceReadiness,
+): WaitingChallenge {
+  if (readiness.status === 'failed') {
+    return standaloneWaitingChallenge({
+      state: 'blocked',
+      autoRefresh: false,
+      reason: readiness.reason,
+      instructions: readiness.reason
+        ?? 'Candidate evidence ingestion failed before a source-backed repo challenge could be selected.',
+    });
+  }
+  return standaloneWaitingChallenge({
+    state: 'pending',
+    reason: readiness.reason,
+  });
+}
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
   isMultiTurn: true,
@@ -389,9 +425,30 @@ const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
   maxRounds: 4,
 };
 
+const MATCHABLE_CANDIDATE_EVIDENCE_SQL = `
+  cn.superseded_at IS NULL
+  AND (
+    cn.source_type IN (
+      'resume',
+      'github_enrichment',
+      'automated_screener',
+      'culture_interview',
+      'culture_contextual',
+      'code_review_session',
+      'implementation_challenge'
+    )
+    OR cn.node_type = 'ReviewEvidence'
+    OR (
+      cn.source_type = 'meeting_session'
+      AND cn.node_type NOT LIKE 'session_%'
+    )
+  )
+`;
+
 interface StandaloneReviewRow {
   id: string;
   status: string;
+  created_at: string | null;
   matched_repo_id: number | null;
   github_repo_url: string | null;
   github_pr_number: number | null;
@@ -401,6 +458,7 @@ interface StandaloneReviewRow {
 interface StandaloneDevContainerRow {
   id: string;
   status: string;
+  created_at: string | null;
   interview_type: 'DEV_CONTAINER_CHALLENGE' | 'OPEN_SOURCE_BUG_FIX';
   matched_repo_id: number | null;
   github_repo_url: string | null;
@@ -517,6 +575,7 @@ interface StandaloneReviewEvidenceReadiness {
   reason: string | null;
   status: string | null;
   nodeCount: number;
+  rawNodeCount: number;
 }
 
 interface PersistedMatchRunRow {
@@ -1138,7 +1197,7 @@ async function getPendingStandaloneReview(
 ): Promise<StandaloneReviewRow | null> {
   try {
     return await db.prepare(
-      `SELECT id, status, matched_repo_id, github_repo_url, github_pr_number, submission_json
+      `SELECT id, status, created_at, matched_repo_id, github_repo_url, github_pr_number, submission_json
        FROM scheduled_interviews
        WHERE candidate_id = ?1 AND interview_type = 'CODE_REVIEW' AND stage_id IS NULL
          AND status NOT IN ('COMPLETED', 'CANCELLED')
@@ -1156,7 +1215,7 @@ async function getPendingDevContainerChallenge(
 ): Promise<StandaloneDevContainerRow | null> {
   try {
     return await db.prepare(
-      `SELECT id, status, interview_type, matched_repo_id, github_repo_url, github_pr_number, submission_json
+      `SELECT id, status, created_at, interview_type, matched_repo_id, github_repo_url, github_pr_number, submission_json
        FROM scheduled_interviews
        WHERE candidate_id = ?1
          AND interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')
@@ -1170,13 +1229,51 @@ async function getPendingDevContainerChallenge(
   }
 }
 
-/** True when the candidate has neither a stored resume nor any graph nodes yet. */
+function standaloneInterviewTime(row: { created_at: string | null } | null): number {
+  if (!row?.created_at) return 0;
+  const timestamp = Date.parse(row.created_at);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function chooseLatestStandaloneAssessment(
+  review: StandaloneReviewRow | null,
+  devContainer: StandaloneDevContainerRow | null,
+): StandaloneReviewRow | StandaloneDevContainerRow | null {
+  if (!review) return devContainer;
+  if (!devContainer) return review;
+  return standaloneInterviewTime(devContainer) > standaloneInterviewTime(review)
+    ? devContainer
+    : review;
+}
+
+async function getPendingStandaloneAssessment(
+  db: D1Database,
+  candidateId: string,
+): Promise<StandaloneReviewRow | StandaloneDevContainerRow | null> {
+  const [review, devContainer] = await Promise.all([
+    getPendingStandaloneReview(db, candidateId),
+    getPendingDevContainerChallenge(db, candidateId),
+  ]);
+  return chooseLatestStandaloneAssessment(review, devContainer);
+}
+
+/** True when the candidate has neither a stored resume nor matchable graph evidence yet. */
 async function candidateNeedsCvIntake(db: D1Database, candidateId: string): Promise<boolean> {
   const row = await db.prepare(
     `SELECT c.resume_s3_key,
-            (SELECT COUNT(*) FROM candidate_nodes cn WHERE cn.candidate_id = c.id) AS node_count
+            (SELECT COUNT(*)
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = c.id) AS raw_node_count,
+            (SELECT COUNT(*)
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = c.id
+                AND ${MATCHABLE_CANDIDATE_EVIDENCE_SQL}) AS node_count
      FROM candidates c WHERE c.id = ?1`,
-  ).bind(candidateId).first<{ resume_s3_key: string | null; node_count: number }>();
+  ).bind(candidateId).first<{
+    resume_s3_key: string | null;
+    raw_node_count: number;
+    node_count: number;
+  }>();
   if (!row) return false;
   return !row.resume_s3_key && (row.node_count ?? 0) === 0;
 }
@@ -1192,7 +1289,12 @@ async function standaloneReviewEvidenceReadiness(
             ci.error_text,
             (SELECT COUNT(*)
                FROM candidate_nodes cn
-              WHERE cn.candidate_id = c.id AND cn.superseded_at IS NULL) AS node_count
+              WHERE cn.candidate_id = c.id
+                AND cn.superseded_at IS NULL) AS raw_node_count,
+            (SELECT COUNT(*)
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = c.id
+                AND ${MATCHABLE_CANDIDATE_EVIDENCE_SQL}) AS node_count
        FROM candidates c
        LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
       WHERE c.id = ?1`,
@@ -1201,6 +1303,7 @@ async function standaloneReviewEvidenceReadiness(
     status: string | null;
     current_step: string | null;
     error_text: string | null;
+    raw_node_count: number;
     node_count: number;
   }>();
 
@@ -1210,10 +1313,23 @@ async function standaloneReviewEvidenceReadiness(
       reason: 'candidate not found',
       status: null,
       nodeCount: 0,
+      rawNodeCount: 0,
     };
   }
 
   const nodeCount = row.node_count ?? 0;
+  const rawNodeCount = row.raw_node_count ?? nodeCount;
+  const status = row.status ?? null;
+  if (status === 'failed' && nodeCount <= 0) {
+    return {
+      ready: false,
+      reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
+      status,
+      nodeCount,
+      rawNodeCount,
+    };
+  }
+
   if (nodeCount <= 0) {
     return {
       ready: false,
@@ -1222,25 +1338,17 @@ async function standaloneReviewEvidenceReadiness(
         : 'candidate CV intake has not completed',
       status: row.status ?? null,
       nodeCount,
+      rawNodeCount,
     };
   }
 
-  const status = row.status ?? null;
   if (status === 'pending' || status === 'profile_generated' || status === 'enriching') {
     return {
       ready: false,
       reason: `candidate ingestion is still ${status}`,
       status,
       nodeCount,
-    };
-  }
-
-  if (status === 'failed' && nodeCount <= 0) {
-    return {
-      ready: false,
-      reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
-      status,
-      nodeCount,
+      rawNodeCount,
     };
   }
 
@@ -1249,6 +1357,7 @@ async function standaloneReviewEvidenceReadiness(
     reason: null,
     status,
     nodeCount,
+    rawNodeCount,
   };
 }
 
@@ -1329,7 +1438,7 @@ async function matchStandaloneReview(
   const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
   if (!readiness.ready) {
     console.log(
-      `[standaloneReview] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, nodes=${readiness.nodeCount})`,
+      `[standaloneReview] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, matchableNodes=${readiness.nodeCount}, rawNodes=${readiness.rawNodeCount})`,
     );
     return null;
   }
@@ -1823,10 +1932,10 @@ rpcAuth.post('/get-stage-config', async (c) => {
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!candidateRow.pipeline_id) {
     const needsResume = await candidateNeedsCvIntake(c.env.DB, candidateId);
-    const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
+    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
 
     // Standalone code-review interview: once source-backed CV evidence is ready, serve the review stage.
-    if (!needsResume && standaloneReview) {
+    if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
       const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
       if (!readiness.ready) {
         return c.json({
@@ -1838,6 +1947,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
           timeLimit: null,
           challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
           currentIndex: 0,
+          waitingChallenge: standaloneWaitingChallengeForReadiness(readiness),
         });
       }
       return c.json({
@@ -1853,9 +1963,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
     }
 
     // Standalone dev-container challenge interview: once the CV is in, serve the challenge stage
-    const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
-    if (!needsResume && standaloneDevContainer) {
-      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
+    if (!needsResume && standaloneAssessment && 'interview_type' in standaloneAssessment) {
+      const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
         isComplete: false,
         stageId: 'standalone-dev-container',
@@ -1872,7 +1981,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
       });
     }
 
-    const hasPendingStandalone = standaloneReview || standaloneDevContainer;
+    const hasPendingStandalone = Boolean(standaloneAssessment);
+    const pendingIsDevContainer = Boolean(standaloneAssessment && 'interview_type' in standaloneAssessment);
     return c.json({
       isComplete: !needsResume && !hasPendingStandalone,
       stageId: 'talent-pool-intake',
@@ -1881,8 +1991,8 @@ rpcAuth.post('/get-stage-config', async (c) => {
         ? 'Upload Your CV'
         : hasPendingStandalone
           ? (
-              standaloneDevContainer
-                ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+              pendingIsDevContainer
+                ? standaloneAssessment && 'interview_type' in standaloneAssessment && standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX'
                   ? 'Open Source Bug Fix'
                   : 'Dev Container Challenge'
                 : 'Code Review Interview'
@@ -1895,9 +2005,9 @@ rpcAuth.post('/get-stage-config', async (c) => {
         : [],
       upcoming: needsResume && hasPendingStandalone
         ? [{
-            type: standaloneDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW',
-            title: standaloneDevContainer
-              ? standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX'
+            type: pendingIsDevContainer ? 'CODE_IMPLEMENTATION' : 'CODE_REVIEW',
+            title: pendingIsDevContainer && standaloneAssessment && 'interview_type' in standaloneAssessment
+              ? standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX'
                 ? 'Open Source Bug Fix'
                 : 'Dev Container Challenge'
               : 'Code Review',
@@ -2169,16 +2279,17 @@ rpcAuth.post('/get-challenge', async (c) => {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    // Check for standalone dev-container challenge first
-    const standaloneDevContainer = await getPendingDevContainerChallenge(c.env.DB, candidateId);
-    if (standaloneDevContainer) {
-      const repoUrl = standaloneDevContainer.github_repo_url;
+    const standaloneAssessment = await getPendingStandaloneAssessment(c.env.DB, candidateId);
+    if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
+      const repoUrl = standaloneAssessment.github_repo_url;
       if (!repoUrl) {
-        return c.json(STANDALONE_WAITING_CHALLENGE);
+        return c.json(standaloneWaitingChallenge({
+          reason: 'A source-backed repository has not been assigned to this challenge yet.',
+        }));
       }
-      const isOpenSourceBugFix = standaloneDevContainer.interview_type === 'OPEN_SOURCE_BUG_FIX';
+      const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
       return c.json({
-        id: `standalone-dev-container-${standaloneDevContainer.id}`,
+        id: `standalone-dev-container-${standaloneAssessment.id}`,
         type: 'CODE_IMPLEMENTATION',
         title: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
         instructions: isOpenSourceBugFix
@@ -2187,7 +2298,7 @@ rpcAuth.post('/get-challenge', async (c) => {
         config: JSON.stringify({ starterCode: '' }),
         cachedDiffJson: null,
         githubPrTitle: null,
-        githubPrNumber: standaloneDevContainer.github_pr_number ?? null,
+        githubPrNumber: standaloneAssessment.github_pr_number ?? null,
         githubRepoUrl: repoUrl,
         githubPrDescription: null,
         reviewProfile: null,
@@ -2195,14 +2306,21 @@ rpcAuth.post('/get-challenge', async (c) => {
       });
     }
 
-    const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
-    if (!standaloneReview) {
+    if (!standaloneAssessment) {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
+    const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneAssessment);
     if (!match) {
-      return c.json(STANDALONE_WAITING_CHALLENGE);
+      const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+      if (!readiness.ready) {
+        return c.json(standaloneWaitingChallengeForReadiness(readiness));
+      }
+      return c.json(standaloneWaitingChallenge({
+        state: 'blocked',
+        autoRefresh: false,
+        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
+      }));
     }
 
     let cachedDiffJson: unknown = null;
@@ -2217,11 +2335,17 @@ rpcAuth.post('/get-challenge', async (c) => {
       reviewProfile = sourceBackedDiff.metadata.reviewProfile ?? null;
     }
 
-    if (!sourceBackedDiff || !cachedDiffJson) return c.json(STANDALONE_WAITING_CHALLENGE);
+    if (!sourceBackedDiff || !cachedDiffJson) {
+      return c.json(standaloneWaitingChallenge({
+        state: 'blocked',
+        autoRefresh: false,
+        reason: 'The selected pull request is missing a rebuildable source-backed diff packet.',
+      }));
+    }
     const backing = await ensureStandaloneReviewBackingChallenge(
       c.env.DB,
       candidateId,
-      standaloneReview.id,
+      standaloneAssessment.id,
       match,
       sourceBackedDiff,
     );
@@ -2642,12 +2766,19 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
     if (standaloneReview) {
       const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneReview);
       if (!match) {
+        const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
         return c.json({
           error: {
             code: 'WAITING_FOR_MATCH',
             message: 'A source-backed review challenge has not been selected yet.',
           },
-          challenge: STANDALONE_WAITING_CHALLENGE,
+          challenge: readiness.ready
+            ? standaloneWaitingChallenge({
+                state: 'blocked',
+                autoRefresh: false,
+                reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
+              })
+            : standaloneWaitingChallengeForReadiness(readiness),
         }, 409);
       }
       const now = new Date().toISOString();

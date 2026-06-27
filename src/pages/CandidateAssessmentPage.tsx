@@ -401,6 +401,10 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
     const waitConfig = typeof challengeContent.config === 'object' && challengeContent.config !== null
       ? (challengeContent.config as Record<string, unknown>)
       : {};
+    const waitState = waitConfig.state === 'blocked' || waitConfig.state === 'pending'
+      ? waitConfig.state
+      : undefined;
+    const waitReason = typeof waitConfig.reason === 'string' ? waitConfig.reason : undefined;
     return (
       <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
@@ -410,6 +414,8 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
           config={{
             autoRefresh: waitConfig.autoRefresh === true,
             refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
+            ...(waitState ? { state: waitState } : {}),
+            ...(waitReason ? { reason: waitReason } : {}),
           }}
           onRefresh={() => void refresh()}
           sessionToken={sessionToken}
