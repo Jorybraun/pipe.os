@@ -319,8 +319,8 @@ function cosine(a: number[] | undefined, b: number[] | undefined): number | null
   return clamp01((dot / (Math.sqrt(normA) * Math.sqrt(normB)) + 1) / 2);
 }
 
-function semanticSimilarity(atom: QueryAtom, demand: ChallengeDemand): number {
-  return cosine(atom.embedding, demand.embedding) ?? 0;
+function semanticSimilarity(atom: QueryAtom, demand: ChallengeDemand): number | null {
+  return cosine(atom.embedding, demand.embedding);
 }
 
 function hasComparableEmbeddings(atom: QueryAtom, demand: ChallengeDemand): boolean {
@@ -383,8 +383,9 @@ function scorePair(
   const stretch = direct ? undefined : findStretch(atom, demand, adjacency);
   if (!direct && !stretch) return null;
 
+  const semanticNarrative = semanticSimilarity(atom, demand);
   const pairScore: PairScore = {
-    semanticNarrative: semanticSimilarity(atom, demand),
+    semanticNarrative: semanticNarrative ?? 0,
     conceptCorrespondence: containmentRatio(atom.concepts, demand.concepts),
     problemMechanismCorrespondence: Math.max(
       intersectionRatio(atom.problems, demand.problems),

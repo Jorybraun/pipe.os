@@ -35,9 +35,13 @@ export type SessionEventType =
   | 'browser_navigation'
   | 'window_open'
   | 'window_close'
+  | 'window_update'
   | 'window_focus'
+  | 'room_surface_change'
+  | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
+  | 'clippy_prompt'
   | 'clippy_action'
   | 'recording_start'
   | 'recording_stop'
@@ -52,6 +56,321 @@ export interface SessionEvent {
   actor: 'host' | 'guest' | 'agent' | 'system';
   text: string;
   properties?: Record<string, unknown>;
+}
+
+type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
+
+interface RoomActivitySyncEnv {
+  VIDEO_ROOM?: DurableObjectNamespace;
+  NEO4J_URI?: string;
+  NEO4J_USER?: string;
+  NEO4J_PASSWORD?: string;
+}
+
+interface RoomActivitySyncInput {
+  candidateId: string;
+  sessionId: string;
+}
+
+interface RoomActivitySyncResult {
+  captured: number;
+  failed: number;
+  events: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isRoomActivityRole(value: unknown): value is RoomActivityRole {
+  return value === 'RECRUITER' || value === 'CANDIDATE' || value === 'HOST' || value === 'GUEST';
+}
+
+function actorFromRoomRole(value: unknown): SessionEvent['actor'] {
+  if (value === 'HOST' || value === 'RECRUITER') return 'host';
+  if (value === 'GUEST' || value === 'CANDIDATE') return 'guest';
+  return 'system';
+}
+
+function unixTimestampFromActivity(primary: unknown, fallback: unknown): number {
+  const value = numberOrNull(primary) ?? numberOrNull(fallback) ?? Date.now();
+  return Math.floor(value > 10_000_000_000 ? value / 1000 : value);
+}
+
+function compactPreview(value: unknown, maxLength = 1000): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function roomActivityBaseProperties(
+  kind: string,
+  role: unknown,
+  recordedAt: unknown,
+): Record<string, unknown> {
+  const properties: Record<string, unknown> = {
+    roomActivitySource: 'durable_object',
+    roomActivityKind: kind,
+  };
+  if (isRoomActivityRole(role)) properties.roomRole = role;
+  const recordedAtNumber = numberOrNull(recordedAt);
+  if (recordedAtNumber !== null) properties.recordedAt = recordedAtNumber;
+  return properties;
+}
+
+function createSessionEvent(
+  input: RoomActivitySyncInput,
+  event: {
+    type: SessionEventType;
+    timestamp: number;
+    actor: SessionEvent['actor'];
+    text: string;
+    properties?: Record<string, unknown>;
+  },
+): SessionEvent {
+  return {
+    type: event.type,
+    sessionId: input.sessionId,
+    candidateId: input.candidateId,
+    timestamp: event.timestamp,
+    actor: event.actor,
+    text: event.text,
+    properties: event.properties,
+  };
+}
+
+function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const role = isRoomActivityRole(value.role) ? value.role : null;
+  const actor = actorFromRoomRole(role);
+  const timestamp = unixTimestampFromActivity(event.createdAt, value.recordedAt);
+  const base = roomActivityBaseProperties('desktop', role, value.recordedAt);
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) base.roomEventId = eventId;
+  if (clientId) base.clientId = clientId;
+
+  if (event.kind === 'SET_ROOM_SURFACE') {
+    const surface = stringOrNull(event.surface);
+    if (!surface) return null;
+    return createSessionEvent(input, {
+      type: 'room_surface_change',
+      timestamp,
+      actor,
+      text: `Room surface changed to ${surface}`,
+      properties: { ...base, surface },
+    });
+  }
+
+  if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+    const status = stringOrNull(event.status) ?? 'unknown';
+    return createSessionEvent(input, {
+      type: 'workspace_state',
+      timestamp,
+      actor,
+      text: `Workspace state changed to ${status}`,
+      properties: { ...base, workspaceStatus: status },
+    });
+  }
+
+  if (event.kind === 'OPEN_WINDOW' && isRecord(event.window)) {
+    const title = stringOrNull(event.window.title);
+    const windowId = stringOrNull(event.window.id);
+    const windowType = stringOrNull(event.window.windowType);
+    if (!title || !windowId || !windowType) return null;
+    return createSessionEvent(input, {
+      type: 'window_open',
+      timestamp,
+      actor,
+      text: title,
+      properties: { ...base, windowId, windowType },
+    });
+  }
+
+  if (event.kind === 'CLOSE_WINDOW') {
+    const windowId = stringOrNull(event.windowId);
+    if (!windowId) return null;
+    return createSessionEvent(input, {
+      type: 'window_close',
+      timestamp,
+      actor,
+      text: windowId,
+      properties: { ...base, windowId },
+    });
+  }
+
+  if (event.kind === 'UPDATE_WINDOW_DATA') {
+    const windowId = stringOrNull(event.windowId);
+    if (!windowId || !isRecord(event.data)) return null;
+    const currentUrl = stringOrNull(event.data.currentUrl);
+    if (currentUrl) {
+      return createSessionEvent(input, {
+        type: 'browser_navigation',
+        timestamp,
+        actor,
+        text: currentUrl,
+        properties: { ...base, windowId },
+      });
+    }
+    return createSessionEvent(input, {
+      type: 'window_update',
+      timestamp,
+      actor,
+      text: windowId,
+      properties: { ...base, windowId, keys: Object.keys(event.data).sort() },
+    });
+  }
+
+  return null;
+}
+
+function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.message)) return null;
+  const message = value.message;
+  const role = isRoomActivityRole(value.role)
+    ? value.role
+    : isRoomActivityRole(message.role)
+      ? message.role
+      : null;
+  const text = stringOrNull(message.text);
+  if (!text) return null;
+  const properties = roomActivityBaseProperties('chat', role, value.recordedAt);
+  const messageId = stringOrNull(message.id);
+  const clientId = stringOrNull(message.clientId);
+  if (messageId) properties.roomMessageId = messageId;
+  if (clientId) properties.clientId = clientId;
+  return createSessionEvent(input, {
+    type: 'ai_chat_user',
+    timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),
+    actor: actorFromRoomRole(role),
+    text,
+    properties,
+  });
+}
+
+function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.prompt)) return null;
+  const prompt = value.prompt;
+  const text = stringOrNull(prompt.text);
+  if (!text) return null;
+  const role = isRoomActivityRole(value.role) ? value.role : null;
+  const properties = roomActivityBaseProperties('clippy_prompt', role, value.recordedAt);
+  const promptId = stringOrNull(prompt.id);
+  const clientId = stringOrNull(prompt.clientId);
+  const promptSource = stringOrNull(prompt.source);
+  if (promptId) properties.promptId = promptId;
+  if (clientId) properties.clientId = clientId;
+  if (promptSource) properties.promptSource = promptSource;
+  if (typeof prompt.hold === 'boolean') properties.hold = prompt.hold;
+  if (Array.isArray(prompt.targetRoles)) properties.targetRoles = prompt.targetRoles.filter(isRoomActivityRole);
+  if (Array.isArray(prompt.actions)) {
+    properties.actions = prompt.actions
+      .filter(isRecord)
+      .map((action) => ({
+        id: stringOrNull(action.id),
+        label: stringOrNull(action.label),
+      }))
+      .filter((action) => action.id && action.label);
+  }
+  return createSessionEvent(input, {
+    type: 'clippy_prompt',
+    timestamp: unixTimestampFromActivity(prompt.createdAt, value.recordedAt),
+    actor: actorFromRoomRole(role),
+    text,
+    properties,
+  });
+}
+
+function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const role = isRoomActivityRole(value.role) ? value.role : null;
+  const properties = roomActivityBaseProperties('file_system', role, value.recordedAt);
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) properties.roomEventId = eventId;
+  if (clientId) properties.clientId = clientId;
+
+  if (event.kind === 'UPSERT_FILE' && isRecord(event.file)) {
+    const file = event.file;
+    const fileId = stringOrNull(file.id);
+    const name = stringOrNull(file.name);
+    const fileKind = stringOrNull(file.kind);
+    if (!fileId || !name || !fileKind) return null;
+    properties.operation = 'upsert';
+    properties.fileId = fileId;
+    properties.fileName = name;
+    properties.fileKind = fileKind;
+    const mimeType = stringOrNull(file.mimeType);
+    if (mimeType) properties.mimeType = mimeType;
+    if (typeof file.content === 'string') {
+      properties.contentLength = file.content.length;
+      const preview = compactPreview(file.content);
+      if (preview && fileKind !== 'paint') properties.contentPreview = preview;
+    }
+    return createSessionEvent(input, {
+      type: 'file_change',
+      timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+      actor: actorFromRoomRole(role),
+      text: name,
+      properties,
+    });
+  }
+
+  if (event.kind === 'DELETE_FILE') {
+    const fileId = stringOrNull(event.fileId);
+    if (!fileId) return null;
+    properties.operation = 'delete';
+    properties.fileId = fileId;
+    return createSessionEvent(input, {
+      type: 'file_change',
+      timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+      actor: actorFromRoomRole(role),
+      text: fileId,
+      properties,
+    });
+  }
+
+  return null;
+}
+
+export function roomActivitySnapshotToSessionEvents(
+  snapshot: unknown,
+  input: RoomActivitySyncInput,
+): SessionEvent[] {
+  if (!isRecord(snapshot)) return [];
+  const events: SessionEvent[] = [];
+  const pushMapped = (event: SessionEvent | null): void => {
+    if (event) events.push(event);
+  };
+
+  const desktopActivityLog = Array.isArray(snapshot.desktopActivityLog) ? snapshot.desktopActivityLog : [];
+  const chatActivityLog = Array.isArray(snapshot.chatActivityLog) ? snapshot.chatActivityLog : [];
+  const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
+    ? snapshot.clippyPromptActivityLog
+    : [];
+  const fileSystemActivityLog = Array.isArray(snapshot.fileSystemActivityLog) ? snapshot.fileSystemActivityLog : [];
+
+  desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
+  chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
+  clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
+  fileSystemActivityLog.forEach((entry) => pushMapped(fileSystemActivityToSessionEvent(input, entry)));
+
+  return events.sort((a, b) => (
+    a.timestamp - b.timestamp
+    || a.type.localeCompare(b.type)
+    || a.text.localeCompare(b.text)
+  ));
 }
 
 /**
@@ -91,9 +410,13 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     browser_navigation: 'session_browser_nav',
     window_open: 'session_window_open',
     window_close: 'session_window_close',
+    window_update: 'session_window_update',
     window_focus: 'session_window_focus',
+    room_surface_change: 'session_room_surface_change',
+    workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
+    clippy_prompt: 'session_clippy_prompt',
     clippy_action: 'session_clippy_action',
     recording_start: 'session_recording_start',
     recording_stop: 'session_recording_stop',
@@ -124,12 +447,20 @@ function formatEventNarrative(event: SessionEvent): string {
       return `[${time}] Window opened: ${event.text}`;
     case 'window_close':
       return `[${time}] Window closed: ${event.text}`;
+    case 'window_update':
+      return `[${time}] Window updated: ${event.text}`;
     case 'window_focus':
       return `[${time}] Window focused: ${event.text}`;
+    case 'room_surface_change':
+      return `[${time}] ${event.text}`;
+    case 'workspace_state':
+      return `[${time}] ${event.text}`;
     case 'participant_join':
       return `[${time}] Participant joined: ${event.text}`;
     case 'participant_leave':
       return `[${time}] Participant left: ${event.text}`;
+    case 'clippy_prompt':
+      return `[${time}] Clippy prompted: "${event.text}"`;
     case 'clippy_action':
       return `[${time}] ${event.text}`;
     case 'recording_start':
@@ -443,6 +774,42 @@ export async function captureSessionEvents(
   }
 
   return { captured, failed };
+}
+
+/**
+ * Replay the authoritative Durable Object room activity log into candidate
+ * session evidence. The candidate node insertion path is deterministic, so
+ * callers can safely run this before graph reads, post-interview processing,
+ * or debugging tools without duplicating evidence.
+ */
+export async function syncRoomActivityToSessionEvents(
+  db: D1Database,
+  env: RoomActivitySyncEnv,
+  input: RoomActivitySyncInput,
+): Promise<RoomActivitySyncResult> {
+  if (!env.VIDEO_ROOM) return { captured: 0, failed: 0, events: 0 };
+
+  try {
+    const roomId = env.VIDEO_ROOM.idFromName(input.sessionId);
+    const room = env.VIDEO_ROOM.get(roomId);
+    const response = await room.fetch(new Request('https://do/activity-log'));
+    if (!response.ok) return { captured: 0, failed: 0, events: 0 };
+    const snapshot = await response.json().catch(() => null);
+    const events = roomActivitySnapshotToSessionEvents(snapshot, input);
+    if (events.length === 0) return { captured: 0, failed: 0, events: 0 };
+    const result = await captureSessionEvents(db, events, env);
+    return {
+      ...result,
+      events: events.length,
+    };
+  } catch (error) {
+    console.error('[sessionEvents] Failed to sync room activity:', {
+      sessionId: input.sessionId,
+      candidateId: input.candidateId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { captured: 0, failed: 0, events: 0 };
+  }
 }
 
 /**

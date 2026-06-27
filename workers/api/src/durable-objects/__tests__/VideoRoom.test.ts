@@ -211,6 +211,73 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
+  it('persists and broadcasts shared desktop window state changes', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    storage.set('desktopWindows', [
+      {
+        id: 'browser',
+        windowType: 'browser',
+        title: 'Microsoft Edge',
+        x: 100,
+        y: 60,
+        width: 800,
+        height: 560,
+      },
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-move-browser',
+        clientId: 'host-client',
+        createdAt: 3,
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: 'browser',
+        x: 260,
+        y: 140,
+        minimized: false,
+        focused: true,
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'browser',
+        x: 260,
+        y: 140,
+        minimized: false,
+        focused: true,
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'UPDATE_WINDOW_STATE',
+        windowId: 'browser',
+        x: 260,
+        y: 140,
+        focused: true,
+      }),
+    }));
+    expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-move-browser',
+          kind: 'UPDATE_WINDOW_STATE',
+          windowId: 'browser',
+        }),
+      }),
+    ]);
+  });
+
   it('persists host-controlled desktop surface changes and records activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -264,6 +331,60 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-host-surface',
           kind: 'SET_ROOM_SURFACE',
           surface: 'win95',
+        }),
+      }),
+    ]);
+  });
+
+  it('broadcasts workspace state changes without changing shared windows', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    storage.set('desktopWindows', [
+      {
+        id: 'workspace',
+        windowType: 'workspace',
+        title: 'VS Code',
+      },
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-workspace-ready',
+        clientId: 'host-client',
+        createdAt: 3,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: 'READY',
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'workspace',
+        windowType: 'workspace',
+        title: 'VS Code',
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: 'READY',
+      }),
+    }));
+    expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-workspace-ready',
+          kind: 'WORKSPACE_STATE_CHANGED',
+          status: 'READY',
         }),
       }),
     ]);
@@ -483,5 +604,91 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         fileId: 'desktop-notes',
       }),
     }));
+  });
+
+  it('exposes replayable room activity logs for server-side evidence sync', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-enter-95',
+        clientId: 'host-client',
+        createdAt: 1000,
+        kind: 'SET_ROOM_SURFACE',
+        surface: 'win95',
+      },
+    }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-guest-question',
+        clientId: 'guest-client',
+        createdAt: 2000,
+        role: 'GUEST',
+        text: 'I found the retry bug in the queue worker.',
+      },
+    }));
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      payload: {
+        id: 'fs-notes-save',
+        clientId: 'host-client',
+        createdAt: 3000,
+        kind: 'UPSERT_FILE',
+        file: {
+          id: 'notepad',
+          name: 'notes.txt',
+          kind: 'text',
+          content: 'Candidate identified retry bug evidence.',
+          mimeType: 'text/plain',
+          createdAt: 3000,
+          updatedAt: 3000,
+        },
+      },
+    }));
+
+    const response = await room.fetch(new Request('https://do/activity-log'));
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      desktopActivityLog: unknown[];
+      chatActivityLog: unknown[];
+      fileSystemActivityLog: unknown[];
+    };
+
+    expect(body.desktopActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'evt-enter-95',
+          kind: 'SET_ROOM_SURFACE',
+          surface: 'win95',
+        }),
+      }),
+    ]);
+    expect(body.chatActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        message: expect.objectContaining({
+          id: 'chat-guest-question',
+          text: 'I found the retry bug in the queue worker.',
+        }),
+      }),
+    ]);
+    expect(body.fileSystemActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'fs-notes-save',
+          kind: 'UPSERT_FILE',
+        }),
+      }),
+    ]);
   });
 });

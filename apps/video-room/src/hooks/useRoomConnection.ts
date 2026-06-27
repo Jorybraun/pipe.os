@@ -24,6 +24,9 @@ const WINDOW_TYPES = new Set<WindowType>([
 
 export interface RoomDesktopWindowConfig extends OpenWindowConfig {
   id: string;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
 }
 
 export type RoomSurface = 'standard' | 'win95';
@@ -123,6 +126,27 @@ export type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'WORKSPACE_STATE_CHANGED';
+      status?: string | null;
     };
 
 export type RoomDesktopEventDraft =
@@ -142,6 +166,21 @@ export type RoomDesktopEventDraft =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+    }
+  | {
+      kind: 'UPDATE_WINDOW_STATE';
+      windowId: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      minimized?: boolean;
+      maximized?: boolean;
+      focused?: boolean;
+    }
+  | {
+      kind: 'WORKSPACE_STATE_CHANGED';
+      status?: string | null;
     };
 
 export type RoomFileSystemEvent =
@@ -207,6 +246,7 @@ const FALLBACK_ICE: RTCIceServer[] = [
 const PEER_DISCONNECT_GRACE_MS = 15000;
 const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
+const PEER_CURSOR_TTL_MS = 4000;
 
 function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
   return {
@@ -252,6 +292,9 @@ function parseDesktopWindow(value: unknown): RoomDesktopWindowConfig | null {
     y: numberOrUndefined(value.y),
     width: numberOrUndefined(value.width),
     height: numberOrUndefined(value.height),
+    minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+    maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+    focused: typeof value.focused === 'boolean' ? value.focused : undefined,
     data: recordOrUndefined(value.data),
   };
 }
@@ -302,6 +345,43 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       kind: 'UPDATE_WINDOW_DATA',
       windowId: value.windowId,
       data: value.data,
+    };
+  }
+  if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {
+    const event: RoomDesktopEvent = {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'UPDATE_WINDOW_STATE',
+      windowId: value.windowId,
+      x: numberOrUndefined(value.x),
+      y: numberOrUndefined(value.y),
+      width: numberOrUndefined(value.width),
+      height: numberOrUndefined(value.height),
+      minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
+      maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
+      focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+    };
+    if (
+      event.x === undefined
+      && event.y === undefined
+      && event.width === undefined
+      && event.height === undefined
+      && event.minimized === undefined
+      && event.maximized === undefined
+      && event.focused === undefined
+    ) {
+      return null;
+    }
+    return event;
+  }
+  if (value.kind === 'WORKSPACE_STATE_CHANGED') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'WORKSPACE_STATE_CHANGED',
+      status: typeof value.status === 'string' ? value.status : null,
     };
   }
   return null;
@@ -585,6 +665,15 @@ export function useRoomConnection(
   useEffect(() => {
     remoteRef.current = remoteStream;
   }, [remoteStream]);
+
+  useEffect(() => {
+    if (peerCursors.length === 0) return undefined;
+    const intervalId = window.setInterval(() => {
+      const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
+      setPeerCursors((prev) => prev.filter((cursor) => cursor.updatedAt >= cutoff));
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [peerCursors.length]);
 
   const hasOpenSignal = useCallback((): boolean => (
     wsRef.current?.readyState === WebSocket.OPEN
@@ -960,8 +1049,13 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
           if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
+          const cutoff = Date.now() - PEER_CURSOR_TTL_MS;
           setPeerCursors((prev) => [
-            ...prev.filter((entry) => entry.clientId !== cursor.clientId),
+            ...prev.filter((entry) => (
+              entry.clientId !== cursor.clientId
+              && entry.role !== cursor.role
+              && entry.updatedAt >= cutoff
+            )),
             cursor,
           ]);
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
@@ -1241,7 +1335,7 @@ export function useRoomConnection(
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
     const now = Date.now();
-    if (now - lastCursorSentAtRef.current < 50) return;
+    if (now - lastCursorSentAtRef.current < 90) return;
     lastCursorSentAtRef.current = now;
     const cursor: RoomCursorPresence = {
       clientId: desktopClientIdRef.current,

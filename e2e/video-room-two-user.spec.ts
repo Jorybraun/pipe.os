@@ -110,6 +110,116 @@ async function newRoomContext(context: BrowserContext): Promise<Page> {
   return context.newPage();
 }
 
+type MockWorkspaceSession = {
+  sessionId: string;
+  status: string;
+  ttlSeconds: number;
+  ttlSource: string;
+  expiresAt: string;
+  warnedAt: string | null;
+  expiringSoon: boolean;
+  proxyPath: string | null;
+  errorMessage: string | null;
+};
+
+type MockWorkspaceState = {
+  session: MockWorkspaceSession | null;
+};
+
+function workspaceProxyPath(token: string, sessionId: string): string {
+  return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
+}
+
+async function installDevWorkspaceMocks(
+  page: Page,
+  state: MockWorkspaceState,
+  pageRole: 'HOST' | 'GUEST',
+): Promise<void> {
+  await page.route('**/api/v1/meeting-rooms/**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const tokenMatch = url.pathname.match(/^\/api\/v1\/meeting-rooms\/([^/]+)/);
+    const token = tokenMatch ? decodeURIComponent(tokenMatch[1]!) : '';
+    const roomRootPath = `/api/v1/meeting-rooms/${encodeURIComponent(token)}`;
+    const workspace = (role: 'HOST' | 'GUEST') => ({
+      enabled: true,
+      canLaunch: role === 'HOST',
+      repoUrl: 'https://github.com/octocat/Hello-World',
+      githubPrNumber: 1,
+      matchedRepoId: null,
+      session: state.session
+        ? {
+            ...state.session,
+            proxyPath: workspaceProxyPath(token, state.session.sessionId),
+          }
+        : null,
+    });
+
+    if (request.method() === 'GET' && url.pathname === roomRootPath) {
+      const upstream = await route.fetch();
+      const body = await upstream.json() as {
+        room: {
+          role: 'HOST' | 'GUEST';
+          workspace?: unknown;
+          features?: Record<string, boolean>;
+        };
+      };
+      body.room.workspace = workspace(body.room.role);
+      body.room.features = {
+        ...(body.room.features ?? {}),
+        workspaceEnabled: true,
+        clippyEnabled: true,
+      };
+      await route.fulfill({
+        status: upstream.status(),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return;
+    }
+
+    if (request.method() === 'GET' && url.pathname === `${roomRootPath}/workspace`) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace: workspace(pageRole) }),
+      });
+      return;
+    }
+
+    if (request.method() === 'POST' && url.pathname === `${roomRootPath}/workspace/launch`) {
+      state.session = {
+        sessionId: 'e2e-workspace-session',
+        status: 'READY',
+        ttlSeconds: 3600,
+        ttlSource: 'default',
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+        warnedAt: null,
+        expiringSoon: false,
+        proxyPath: workspaceProxyPath(token, 'e2e-workspace-session'),
+        errorMessage: null,
+      };
+      await route.fulfill({
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspace: workspace('HOST') }),
+      });
+      return;
+    }
+
+    if (url.pathname.startsWith(`${roomRootPath}/workspace/proxy/e2e-workspace-session`)) {
+      await route.fulfill({
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+        body: '<!doctype html><title>VS Code</title><main data-testid="mock-code-server">VS Code workspace</main>',
+      });
+      return;
+    }
+
+    await route.continue();
+  });
+}
+
 type MeetingRecordingDetail = {
   status: string;
   transcriptStatus: string;
@@ -818,6 +928,20 @@ test.describe('two-user video room', () => {
       await expect(host.getByTestId('room-window-browser')).toBeVisible();
       await expect(guest.getByTestId('room-window-browser')).toBeVisible({ timeout: 10_000 });
 
+      const guestBrowserBeforeMove = await guest.getByTestId('room-window-browser').boundingBox();
+      expect(guestBrowserBeforeMove).toBeTruthy();
+      const hostBrowserTitle = host.getByTestId('room-window-browser').locator('.win95-title-bar');
+      const hostBrowserTitleBox = await hostBrowserTitle.boundingBox();
+      expect(hostBrowserTitleBox).toBeTruthy();
+      await host.mouse.move(hostBrowserTitleBox!.x + 80, hostBrowserTitleBox!.y + 8);
+      await host.mouse.down();
+      await host.mouse.move(hostBrowserTitleBox!.x + 240, hostBrowserTitleBox!.y + 92, { steps: 8 });
+      await host.mouse.up();
+      await expect.poll(async () => {
+        const movedBox = await guest.getByTestId('room-window-browser').boundingBox();
+        return movedBox?.x ?? 0;
+      }, { timeout: 10_000 }).toBeGreaterThan(guestBrowserBeforeMove!.x + 80);
+
       await host.getByTestId('room-browser-address-input').fill('example.com');
       await host.getByTestId('room-browser-go').click();
       await expect(guest.getByTestId('room-browser-address-input')).toHaveValue('https://example.com', { timeout: 10_000 });
@@ -833,6 +957,70 @@ test.describe('two-user video room', () => {
       await guest.getByTestId('room-window-browser').getByLabel('Close').click();
       await expect(host.getByTestId('room-window-browser')).toHaveCount(0, { timeout: 10_000 });
       await expect(guest.getByTestId('room-window-browser')).toHaveCount(0);
+
+      await host.getByTestId('win95-start-btn').click();
+      await host.getByText('Return to Call').click();
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'standard', { timeout: 10_000 });
+      await expect(host.getByTestId('standard-layout')).toBeVisible();
+      await expect(guest.getByTestId('standard-layout')).toBeVisible();
+    } finally {
+      await hostContext.close();
+      await guestContext.close();
+    }
+  });
+
+  test('syncs a host-launched dev workspace iframe to the guest desktop', async ({
+    browser,
+    page,
+    request,
+  }) => {
+    const token = await getAuthToken(page);
+    const { hostUrl, guestUrl } = await createMeetingRoom(request, token, {
+      title: 'E2E Shared Dev Workspace Room',
+    });
+
+    const hostContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+    const guestContext = await browser.newContext({
+      permissions: ['camera', 'microphone'],
+      viewport: { width: 1280, height: 720 },
+    });
+
+    try {
+      const workspaceState: MockWorkspaceState = { session: null };
+      const host = await newRoomContext(hostContext);
+      const guest = await newRoomContext(guestContext);
+      await installDevWorkspaceMocks(host, workspaceState, 'HOST');
+      await installDevWorkspaceMocks(guest, workspaceState, 'GUEST');
+
+      await Promise.all([
+        host.goto(hostUrl),
+        guest.goto(guestUrl),
+      ]);
+      await Promise.all([
+        expect(host.getByTestId('device-check')).toBeVisible(),
+        expect(guest.getByTestId('device-check')).toBeVisible(),
+      ]);
+      await Promise.all([
+        host.getByTestId('join-room').click(),
+        guest.getByTestId('join-room').click(),
+      ]);
+
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
+      await expect(guest.getByTestId('call-stage')).toHaveAttribute('data-room-layout', 'win95', { timeout: 10_000 });
+      await expect(host.getByTestId('room-window-workspace')).toBeVisible();
+      await expect(guest.getByTestId('room-window-workspace')).toBeVisible();
+      await expect(guest.getByTestId('room-window-workspace')).toContainText('host can launch', {
+        ignoreCase: true,
+      });
+
+      await host.getByTestId('room-window-workspace').getByText('Launch workspace').click();
+
+      await expect(host.getByTestId('workspace-iframe')).toHaveAttribute('src', /e2e-workspace-session/, { timeout: 10_000 });
+      await expect(guest.getByTestId('workspace-iframe')).toHaveAttribute('src', /e2e-workspace-session/, { timeout: 10_000 });
     } finally {
       await hostContext.close();
       await guestContext.close();

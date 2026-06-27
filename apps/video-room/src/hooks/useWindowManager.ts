@@ -32,6 +32,16 @@ export interface WindowState {
   data?: Record<string, unknown>;
 }
 
+export interface WindowStatePatch {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
+}
+
 export interface OpenWindowConfig {
   id?: string;
   windowType: WindowType;
@@ -41,6 +51,9 @@ export interface OpenWindowConfig {
   y?: number;
   width?: number;
   height?: number;
+  minimized?: boolean;
+  maximized?: boolean;
+  focused?: boolean;
   data?: Record<string, unknown>;
 }
 
@@ -54,6 +67,7 @@ export interface WindowManagerApi {
   moveWindow: (id: string, x: number, y: number) => void;
   resizeWindow: (id: string, width: number, height: number) => void;
   updateWindowData: (id: string, data: Partial<Record<string, unknown>>) => void;
+  applyWindowState: (id: string, patch: WindowStatePatch) => void;
   restoreWindow: (id: string) => void;
   isWindowOpen: (windowType: WindowType) => boolean;
   getWindowByType: (windowType: WindowType) => WindowState | undefined;
@@ -119,9 +133,9 @@ export function useWindowManager(): WindowManagerApi {
         width: config.width ?? defaults.width,
         height: config.height ?? defaults.height,
         zIndex: nextZ,
-        minimized: false,
-        maximized: false,
-        focused: true,
+        minimized: config.minimized ?? false,
+        maximized: config.maximized ?? false,
+        focused: config.focused ?? true,
         data: config.data,
       };
       return [...prev.map((w) => ({ ...w, focused: false })), newWindow];
@@ -203,6 +217,32 @@ export function useWindowManager(): WindowManagerApi {
     [],
   );
 
+  const applyWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
+    const focusTarget = patch.focused === true;
+    if (focusTarget) {
+      zCounter.current += 1;
+    }
+    const nextZ = zCounter.current;
+    setWindows((prev) =>
+      prev.map((w) => {
+        if (w.id !== id) {
+          return focusTarget ? { ...w, focused: false } : w;
+        }
+        return {
+          ...w,
+          x: patch.x ?? w.x,
+          y: patch.y ?? w.y,
+          width: patch.width ?? w.width,
+          height: patch.height ?? w.height,
+          minimized: patch.minimized ?? w.minimized,
+          maximized: patch.maximized ?? w.maximized,
+          focused: patch.focused ?? w.focused,
+          zIndex: focusTarget ? nextZ : w.zIndex,
+        };
+      }),
+    );
+  }, []);
+
   const isWindowOpen = useCallback(
     (windowType: WindowType): boolean =>
       windows.some((w) => w.windowType === windowType),
@@ -225,6 +265,7 @@ export function useWindowManager(): WindowManagerApi {
     moveWindow,
     resizeWindow,
     updateWindowData,
+    applyWindowState,
     restoreWindow,
     isWindowOpen,
     getWindowByType,

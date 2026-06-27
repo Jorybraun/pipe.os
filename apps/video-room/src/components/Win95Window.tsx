@@ -9,6 +9,7 @@ interface Win95WindowProps {
   onMinimize: (id: string) => void;
   onMaximize: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
+  onMoveEnd?: (id: string, x: number, y: number) => void;
   children: ReactNode;
   className?: string;
   noPadding?: boolean;
@@ -21,32 +22,50 @@ export function Win95Window({
   onMinimize,
   onMaximize,
   onMove,
+  onMoveEnd,
   children,
   className = '',
   noPadding = false,
 }: Win95WindowProps): JSX.Element | null {
-  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (win.maximized) return;
-      onFocus(win.id);
+      if (!win.focused) onFocus(win.id);
       dragRef.current = {
         startX: e.clientX,
         startY: e.clientY,
         origX: win.x,
         origY: win.y,
+        currentX: win.x,
+        currentY: win.y,
       };
 
       const handleMouseMove = (ev: MouseEvent): void => {
         if (!dragRef.current) return;
         const dx = ev.clientX - dragRef.current.startX;
         const dy = ev.clientY - dragRef.current.startY;
-        onMove(win.id, dragRef.current.origX + dx, dragRef.current.origY + dy);
+        const nextX = dragRef.current.origX + dx;
+        const nextY = dragRef.current.origY + dy;
+        dragRef.current.currentX = nextX;
+        dragRef.current.currentY = nextY;
+        onMove(win.id, nextX, nextY);
       };
 
       const handleMouseUp = (): void => {
+        const finalPosition = dragRef.current
+          ? { x: dragRef.current.currentX, y: dragRef.current.currentY }
+          : null;
         dragRef.current = null;
+        if (finalPosition) onMoveEnd?.(win.id, finalPosition.x, finalPosition.y);
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
       };
@@ -54,19 +73,21 @@ export function Win95Window({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [win.id, win.maximized, win.x, win.y, onFocus, onMove],
+    [win.focused, win.id, win.maximized, win.x, win.y, onFocus, onMove, onMoveEnd],
   );
 
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (win.maximized) return;
-      onFocus(win.id);
+      if (!win.focused) onFocus(win.id);
       const touch = e.touches[0];
       dragRef.current = {
         startX: touch.clientX,
         startY: touch.clientY,
         origX: win.x,
         origY: win.y,
+        currentX: win.x,
+        currentY: win.y,
       };
 
       const handleTouchMove = (ev: TouchEvent): void => {
@@ -74,11 +95,19 @@ export function Win95Window({
         const t = ev.touches[0];
         const dx = t.clientX - dragRef.current.startX;
         const dy = t.clientY - dragRef.current.startY;
-        onMove(win.id, dragRef.current.origX + dx, dragRef.current.origY + dy);
+        const nextX = dragRef.current.origX + dx;
+        const nextY = dragRef.current.origY + dy;
+        dragRef.current.currentX = nextX;
+        dragRef.current.currentY = nextY;
+        onMove(win.id, nextX, nextY);
       };
 
       const handleTouchEnd = (): void => {
+        const finalPosition = dragRef.current
+          ? { x: dragRef.current.currentX, y: dragRef.current.currentY }
+          : null;
         dragRef.current = null;
+        if (finalPosition) onMoveEnd?.(win.id, finalPosition.x, finalPosition.y);
         document.removeEventListener('touchmove', handleTouchMove);
         document.removeEventListener('touchend', handleTouchEnd);
       };
@@ -86,7 +115,7 @@ export function Win95Window({
       document.addEventListener('touchmove', handleTouchMove);
       document.addEventListener('touchend', handleTouchEnd);
     },
-    [win.id, win.maximized, win.x, win.y, onFocus, onMove],
+    [win.focused, win.id, win.maximized, win.x, win.y, onFocus, onMove, onMoveEnd],
   );
 
   const style: React.CSSProperties = win.maximized
@@ -111,7 +140,9 @@ export function Win95Window({
     <div
       className={`win95-window ${className} ${win.focused ? 'is-focused' : 'is-unfocused'}`}
       style={style}
-      onMouseDown={() => onFocus(win.id)}
+      onMouseDown={() => {
+        if (!win.focused) onFocus(win.id);
+      }}
       data-testid={`room-window-${win.windowType}`}
       data-window-id={win.id}
     >

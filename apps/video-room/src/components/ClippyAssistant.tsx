@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { initAgent } from 'clippyjs';
 import ClippyLoaders from 'clippyjs/agents/clippy';
-import { useAgentConnection, type AgentRoomAction } from '../hooks/useAgentConnection';
+import { useAgentConnection, type AgentChatMessage, type AgentRoomAction } from '../hooks/useAgentConnection';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
 
@@ -27,6 +27,8 @@ export interface ClippyAssistantProps {
   onOpenTerminal?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
+  onUserChatMessage?: (text: string) => void;
+  onAgentChatMessage?: (message: AgentChatMessage) => void;
 }
 
 export function ClippyAssistant({
@@ -39,6 +41,8 @@ export function ClippyAssistant({
   onOpenTerminal,
   onAction,
   onAgentRoomAction,
+  onUserChatMessage,
+  onAgentChatMessage,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
@@ -47,6 +51,7 @@ export function ClippyAssistant({
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
+  const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -129,6 +134,16 @@ export function ClippyAssistant({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [agentConn.messages]);
 
+  useEffect(() => {
+    for (const msg of agentConn.messages) {
+      if (msg.role !== 'agent') continue;
+      const signature = `${msg.timestamp}|${msg.text}`;
+      if (capturedAgentMessagesRef.current.has(signature)) continue;
+      capturedAgentMessagesRef.current.add(signature);
+      onAgentChatMessage?.(msg);
+    }
+  }, [agentConn.messages, onAgentChatMessage]);
+
   const latestAgentRoomAction = agentConn.roomActions[agentConn.roomActions.length - 1] ?? null;
   const latestAgentRoomActionSignature = latestAgentRoomAction
     ? `${latestAgentRoomAction.id}|${latestAgentRoomAction.text ?? ''}|${latestAgentRoomAction.url ?? ''}`
@@ -160,6 +175,14 @@ export function ClippyAssistant({
     onClippyClick?.();
   }, [onClippyClick]);
 
+  const openChat = useCallback(() => {
+    if (agentRef.current) {
+      agentRef.current.animate();
+    }
+    setChatOpen(true);
+    onClippyClick?.();
+  }, [onClippyClick]);
+
   const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setChatInput(e.target.value);
     if (!agentRef.current || !ready) return;
@@ -181,10 +204,12 @@ export function ClippyAssistant({
   }, [ready]);
 
   const handleSendChat = useCallback(() => {
-    if (!chatInput.trim()) return;
-    agentConn.sendMessage(chatInput);
+    const text = chatInput.trim();
+    if (!text) return;
+    onUserChatMessage?.(text);
+    agentConn.sendMessage(text);
     setChatInput('');
-  }, [chatInput, agentConn]);
+  }, [chatInput, agentConn, onUserChatMessage]);
 
   const handleAuthClick = useCallback(() => {
     if (agentConn.authUrl && onOpenBrowser) {
@@ -224,6 +249,14 @@ export function ClippyAssistant({
     auth_needed: 'Authentication required',
     disconnected: 'Disconnected',
   };
+  const canSendToAgent = agentConn.connected && agentConn.status !== 'auth_needed';
+  const emptyChatMessage = !agentConn.connected
+    ? 'Clippy bridge is reconnecting to the dev container.'
+    : agentConn.status === 'auth_needed'
+      ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
+      : agentConn.capabilities.length === 0
+        ? 'Clippy bridge is ready. Send a message to start the real Devin process.'
+        : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
 
   return (
     <>
@@ -262,7 +295,31 @@ export function ClippyAssistant({
               ))}
             </div>
           )}
+          {agentEnabled && !chatOpen && (
+            <div className="win95-clippy-prompt-actions">
+              <button
+                type="button"
+                onClick={openChat}
+                disabled={!agentConn.connected}
+                data-testid="clippy-open-chat"
+              >
+                Ask Clippy
+              </button>
+            </div>
+          )}
         </div>
+      )}
+
+      {agentEnabled && !chatOpen && !currentPrompt && (
+        <button
+          type="button"
+          className="win95-clippy-open-chat"
+          onClick={openChat}
+          disabled={!agentConn.connected}
+          data-testid="clippy-open-chat"
+        >
+          Ask Clippy
+        </button>
       )}
 
       {chatOpen && agentEnabled && (
@@ -275,7 +332,7 @@ export function ClippyAssistant({
           <div className="win95-clippy-chat-messages">
             {agentConn.messages.length === 0 && (
               <div className="win95-clippy-chat-msg agent">
-                Hi! I'm Clippy, your AI pair programmer. Ask me anything about the code!
+                {emptyChatMessage}
               </div>
             )}
             {agentConn.messages.map((msg, i) => (
@@ -295,7 +352,7 @@ export function ClippyAssistant({
             {!agentConn.connected && <span> — reconnecting...</span>}
           </div>
 
-          {agentConn.status === 'auth_needed' && (
+          {agentConn.status === 'auth_needed' && agentConn.authUrl && (
             <button
               className="win95-clippy-chat-auth-btn"
               onClick={handleAuthClick}
@@ -323,12 +380,12 @@ export function ClippyAssistant({
                 if (e.key === 'Enter') handleSendChat();
               }}
               placeholder="Ask Clippy..."
-              disabled={agentConn.status === 'auth_needed' || !agentConn.connected}
+              disabled={!canSendToAgent}
             />
             <button
               className="win95-clippy-chat-send"
               onClick={handleSendChat}
-              disabled={agentConn.status === 'auth_needed' || !agentConn.connected || !chatInput.trim()}
+              disabled={!canSendToAgent || !chatInput.trim()}
             >
               Send
             </button>

@@ -39,7 +39,7 @@ import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
-import type { AgentRoomAction } from './hooks/useAgentConnection';
+import type { AgentChatMessage, AgentRoomAction } from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
@@ -47,8 +47,13 @@ import { PaintWindow, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
-import type { OpenWindowConfig, WindowState, WindowType } from './hooks/useWindowManager';
-import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
+import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
+import type {
+  IceServerProvider,
+  RecordingSpeakerMetadata,
+  RoomMetadata,
+  RoomWorkspace,
+} from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
 const NOTEPAD_FILE_ID = 'desktop-notes';
@@ -245,6 +250,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingChunksRef = useRef<Blob[]>([]);
   const transcriptionChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
+  const recordingSpeakerMetadataRef = useRef<RecordingSpeakerMetadata | null>(null);
   const autoAcceptingRef = useRef(false);
   const processedDesktopEventsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
@@ -325,23 +331,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setWorkspaceError(null);
     try {
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
-      setWorkspace(await launchRoomWorkspace(token, repoUrl));
+      const nextWorkspace = await launchRoomWorkspace(token, repoUrl);
+      setWorkspace(nextWorkspace);
+      room.publishDesktopEvent({
+        kind: 'WORKSPACE_STATE_CHANGED',
+        status: nextWorkspace.session?.status ?? null,
+      });
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [token, workspace?.repoUrl, workspaceRepoInput]);
+  }, [room, token, workspace?.repoUrl, workspaceRepoInput]);
 
   useEffect(() => {
-    if (!workspace?.enabled || !workspace.canLaunch) return undefined;
+    if (!workspace?.enabled) return undefined;
     const status = workspace.session?.status;
     if (status !== 'LAUNCHING') return undefined;
     const timer = window.setInterval(() => {
       void refreshWorkspace();
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [refreshWorkspace, workspace?.canLaunch, workspace?.session?.status]);
+  }, [refreshWorkspace, workspace?.enabled, workspace?.session?.status]);
 
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
@@ -396,6 +407,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!enteredRoom || !room.desktopSnapshot) return;
     for (const windowConfig of room.desktopSnapshot) {
       wm.openWindow(windowConfig);
+      wm.applyWindowState(windowConfig.id, {
+        x: windowConfig.x,
+        y: windowConfig.y,
+        width: windowConfig.width,
+        height: windowConfig.height,
+        minimized: windowConfig.minimized,
+        maximized: windowConfig.maximized,
+        focused: windowConfig.focused,
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enteredRoom, room.desktopSnapshot]);
@@ -407,16 +427,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       processedDesktopEventsRef.current.add(event.id);
       if (event.kind === 'SET_ROOM_SURFACE') {
         continue;
+      } else if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+        void refreshWorkspace();
       } else if (event.kind === 'OPEN_WINDOW') {
         wm.openWindow(event.window);
       } else if (event.kind === 'CLOSE_WINDOW') {
         wm.closeWindow(event.windowId);
+      } else if (event.kind === 'UPDATE_WINDOW_STATE') {
+        wm.applyWindowState(event.windowId, {
+          x: event.x,
+          y: event.y,
+          width: event.width,
+          height: event.height,
+          minimized: event.minimized,
+          maximized: event.maximized,
+          focused: event.focused,
+        });
       } else {
         wm.updateWindowData(event.windowId, event.data);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enteredRoom, room.desktopEvents]);
+  }, [enteredRoom, refreshWorkspace, room.desktopEvents]);
 
   useEffect(() => {
     if (!enteredRoom) return;
@@ -485,6 +517,60 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [captureSessionEvent, room, roomActor, wm]);
 
+  const publishSharedWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
+    if (room.roomSurface !== 'win95') return;
+    room.publishDesktopEvent({
+      kind: 'UPDATE_WINDOW_STATE',
+      windowId: id,
+      ...patch,
+    });
+  }, [room]);
+
+  const focusSharedWindow = useCallback((id: string): void => {
+    wm.focusWindow(id);
+    publishSharedWindowState(id, { focused: true, minimized: false });
+  }, [publishSharedWindowState, wm]);
+
+  const minimizeSharedWindow = useCallback((id: string): void => {
+    wm.minimizeWindow(id);
+    publishSharedWindowState(id, { minimized: true, focused: false });
+  }, [publishSharedWindowState, wm]);
+
+  const restoreSharedWindow = useCallback((id: string): void => {
+    wm.restoreWindow(id);
+    publishSharedWindowState(id, { minimized: false, focused: true });
+  }, [publishSharedWindowState, wm]);
+
+  const maximizeSharedWindow = useCallback((id: string): void => {
+    const win = wm.windows.find((entry) => entry.id === id);
+    if (!win) return;
+    const patch: WindowStatePatch = win.maximized
+      ? {
+          maximized: false,
+          x: win.prevX ?? win.x,
+          y: win.prevY ?? win.y,
+          width: win.prevWidth ?? win.width,
+          height: win.prevHeight ?? win.height,
+          focused: true,
+          minimized: false,
+        }
+      : {
+          maximized: true,
+          focused: true,
+          minimized: false,
+        };
+    wm.toggleMaximize(id);
+    publishSharedWindowState(id, patch);
+  }, [publishSharedWindowState, wm]);
+
+  const moveSharedWindow = useCallback((id: string, x: number, y: number): void => {
+    wm.moveWindow(id, x, y);
+  }, [wm]);
+
+  const publishSharedWindowMove = useCallback((id: string, x: number, y: number): void => {
+    publishSharedWindowState(id, { x, y });
+  }, [publishSharedWindowState]);
+
   const startRecording = useCallback(async (): Promise<void> => {
     if (
       metadata.role !== 'HOST' ||
@@ -525,6 +611,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = recorder;
       transcriptionRecorderRef.current = transcriptionRecorder;
       recordingDisposeRef.current = composite.dispose;
+      recordingSpeakerMetadataRef.current = composite.speakerMetadata;
       recordingStartedRef.current = true;
       setRecordingNotice('Recording started. Transcript processing begins after the host ends the call.');
       setRecordingState('recording');
@@ -555,6 +642,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = null;
       transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
+      recordingSpeakerMetadataRef.current = null;
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
       if (metadata.role === 'HOST') {
@@ -587,7 +675,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         iceProvider: room.iceProvider,
       });
-      const result = await uploadRecording(token, blob, transcriptionAudio);
+      const result = await uploadRecording(
+        token,
+        blob,
+        transcriptionAudio,
+        recordingSpeakerMetadataRef.current ?? undefined,
+      );
       console.log('[room] Recording upload succeeded', {
         accepted: result.accepted,
         transcriptStatus: result.transcriptStatus,
@@ -616,6 +709,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = null;
       transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
+      recordingSpeakerMetadataRef.current = null;
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
     }
@@ -1172,6 +1266,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     executeRoomAction(action.id, { url: action.url, source: 'agent' });
   };
 
+  const captureClippyUserChatMessage = (text: string): void => {
+    captureSessionEvent('ai_chat_user', text, roomActor, {
+      source: 'clippy_agent_chat',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+    });
+  };
+
+  const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
+    captureSessionEvent('ai_chat_agent', message.text, 'agent', {
+      source: 'clippy_agent_chat',
+      agent: 'devin',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      messageTimestamp: message.timestamp,
+    });
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -1454,6 +1570,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={recordingState === 'recording'}
       renderWindowContent={renderWindowContent}
       onWindowClose={closeSharedWindow}
+      onWindowFocus={focusSharedWindow}
+      onWindowMinimize={minimizeSharedWindow}
+      onWindowRestore={restoreSharedWindow}
+      onWindowMaximize={maximizeSharedWindow}
+      onWindowMove={moveSharedWindow}
+      onWindowMoveEnd={publishSharedWindowMove}
       canExitDesktop={metadata.role === 'HOST'}
       onExitDesktop={exitWin95Desktop}
       peerCursors={room.peerCursors}
@@ -1492,6 +1614,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onOpenTerminal={openTerminalWindow}
           onAction={handleClippyAction}
           onAgentRoomAction={handleAgentRoomAction}
+          onUserChatMessage={captureClippyUserChatMessage}
+          onAgentChatMessage={captureClippyAgentChatMessage}
         />
       )}
       {room.phase === 'ended' && (

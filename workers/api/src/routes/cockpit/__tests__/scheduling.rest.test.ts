@@ -2033,6 +2033,66 @@ describe('GET /interviews/:id detail', () => {
     ).get()).toEqual({ count: 0 });
   });
 
+  it('returns organization Calendly event types when the user event type list is empty', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduling_connections (
+        id, owner_id, provider_id, access_token, refresh_token, token_expiry,
+        account_email, account_name, webhook_secret, webhook_id, status,
+        connected_at, last_sync_at, created_at, updated_at
+      ) VALUES (
+        'conn-1', 'owner-1', 'CALENDLY', 'cal-token', NULL, '2026-07-01T00:00:00.000Z',
+        'recruiter@example.com', 'Recruiter', NULL, NULL, 'ACTIVE',
+        '2026-06-26T12:00:00.000Z', NULL, '2026-06-26T12:00:00.000Z', '2026-06-26T12:00:00.000Z'
+      )
+    `).run();
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === 'https://api.calendly.com/users/me') {
+        return new Response(JSON.stringify({
+          resource: {
+            uri: 'https://api.calendly.com/users/user-1',
+            current_organization: 'https://api.calendly.com/organizations/org-1',
+            scheduling_url: 'https://calendly.com/pipe',
+          },
+        }));
+      }
+      if (url.includes('/event_types?user=')) {
+        return new Response(JSON.stringify({ collection: [] }));
+      }
+      if (url.includes('/event_types?organization=')) {
+        return new Response(JSON.stringify({
+          collection: [{
+            uri: 'https://api.calendly.com/event_types/org-event',
+            name: 'Org interview',
+            duration: 45,
+            scheduling_url: 'https://calendly.com/pipe/org-interview',
+          }],
+        }));
+      }
+      return new Response('not found', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/connection/conn-1/event-types');
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      eventTypes: [{
+        id: 'https://api.calendly.com/event_types/org-event',
+        name: 'Org interview',
+        durationMinutes: 45,
+        url: 'https://api.calendly.com/event_types/org-event',
+        schedulingUrl: 'https://calendly.com/pipe/org-interview',
+      }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('organization=https%3A%2F%2Fapi.calendly.com%2Forganizations%2Forg-1'),
+      expect.any(Object),
+    );
+  });
+
   it('emails a contact-first participant their meeting link when Calendly books', async () => {
     seedInterviewDetailFixture();
     const sentMessages: Array<{

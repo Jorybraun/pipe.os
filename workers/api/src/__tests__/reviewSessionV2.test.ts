@@ -453,6 +453,10 @@ describe('POST /rpc/get-challenge', () => {
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 1 } },
         {
+          match: "interview_type = 'DEV_CONTAINER_CHALLENGE'",
+          value: null,
+        },
+        {
           match: "interview_type = 'CODE_REVIEW'",
           value: {
             id: 'standalone_1',

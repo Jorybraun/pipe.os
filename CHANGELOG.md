@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Calendly scheduling sync and confirmations
 
+- Calendly scheduling links now load event types from both user-owned and organization-owned Calendly event types, normalize them for the invite modal, and fall back to the user's Calendly scheduling page when no discrete event type is returned.
 - Calendly booking webhooks now import unmatched scheduled bookings, update existing invites idempotently, and link each booking 1:1 to a Pipe meeting/room using the Calendly scheduled event URI.
 - Scheduling list/detail views now expose the Calendly provider event reference and linked Pipe meeting id so accepted scheduled bookings are inspectable from the recruiter UI.
 - Candidate scheduling emails now use the Pipe room link for confirmed Calendly bookings and render the PIPE logo from a public HTTPS API asset instead of embedded data images.
@@ -122,7 +123,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a room-surface sync race so a host-triggered switch into 95 mode is not overwritten by an older standard-room snapshot.
 - Renamed the Win95 code workspace affordance from "My Computer" to "VS Code" so candidates see the actual container editor.
 - Added durable synced room chat and live peer cursors to the shared 95 desktop so host and guest can see each other's messages, pointer presence, and desktop actions.
+- Added server-side replay from the `VideoRoom` Durable Object activity log into candidate session evidence so synced room surface, workspace, chat, Clippy prompt, and shared file actions are idempotently available in the context graph.
 - Restored dev-container workspace startup by keeping VS Code/code-server on port 8080 and routing the Devin/Clippy bridge through sidecar port 8081.
+- Fixed peer cursor trails by rendering one expiring cursor per remote role with a composited SVG pointer.
+- Added a shared-surface regression so host "Return to Call" moves both host and guest back to the standard call layout.
+- Removed the oversized dynamic Devin bridge script from container startup so VS Code/code-server can boot through the image entrypoint without hitting Cloudflare runtime value limits.
+- Added the Devin/Clippy bridge/router to the dev-container image so agent startup no longer depends on a large Worker-provided entrypoint.
+- Fixed the workspace proxy root route so the code-server iframe can load the bare session proxy URL.
+- Added a shared-room workspace state sync event so a host-launched dev workspace appears on the guest's 95 desktop.
+- Added research tasks for the remote OS-agent protocol decision and stream-backed transcript speaker attribution.
+- Recording uploads now include validated speaker-channel metadata, persist it with transcript artifacts, and use it for Deepgram segment attribution before promoting transcript evidence into the living context graph.
+- Tightened standalone CODE_REVIEW RPC coverage so malformed source-backed packet diffs stay in `WAITING_FOR_MATCH` instead of falling through the dev-container challenge branch.
+- The Devin/Clippy container bridge `/context` endpoint now fetches the source-backed room context summary through a token-scoped API route so the assistant can read captured interview evidence without browser dev-auth cookies.
+- Devin is now primed with the latest source-backed room context and the safe shared-desktop `[[room_action:*]]` protocol when Clippy starts or forwards chat into the dev-container agent.
+- Clippy/Devin chat prompts and agent replies are now captured as source-marked meeting-session evidence so assistant guidance becomes part of the living context graph.
+- Shared Win95 windows now persist and replay geometry, focus, minimized, and maximized state so host window movement/state changes converge on the guest desktop.
+- Added an explicit "Ask Clippy" control to the Win95 room so candidates can open the Devin-backed Clippy chat without relying on the animated paperclip click target.
+- Removed the unauthenticated Devin auth bypass and local Clippy room-action replies so Clippy only chats and drives the shared desktop through a real Devin process.
 
 ### Changed — Win95-themed workspace overlay in video room
 
@@ -155,6 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — Harden source-backed repo discovery and matching (HAS-86)
 
 - Removed the `jaccardText` text-overlap fallback in `semanticSimilarity` so the `semanticNarrative` scoring dimension contributes zero when embedding evidence is absent instead of fabricating a heuristic text-overlap score.
+- Direct source-backed concept matches are no longer penalized for missing embeddings; absent embedding similarity remains recorded as zero but is excluded from the pair-score denominator.
 - Removed fabricated `roleRequirement: true` and `highWeightRoleRequirement: true` defaults in `materializeChallengePacketForMatching` when no role concepts are provided; demands are now only marked as role requirements when backed by source-evidenced role concept overlap.
 - Made role discovery optional in `alignCandidateToChallenge`: `ROLE_RELEVANCE_BELOW_THRESHOLD` and `NO_HIGH_WEIGHT_ROLE_REQUIREMENT` rejection reasons are only applied when at least one demand carries a role requirement, so challenges remain eligible without role context.
 - Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.

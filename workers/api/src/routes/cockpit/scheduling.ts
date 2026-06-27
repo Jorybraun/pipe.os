@@ -45,6 +45,29 @@ interface ProviderOAuthConfig {
   clientSecret: string;
 }
 
+interface ProviderEventTypeSummary {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  url: string;
+  schedulingUrl: string;
+}
+
+interface CalendlyUserResource {
+  uri?: string;
+  name?: string;
+  scheduling_url?: string;
+  current_organization?: string;
+}
+
+interface CalendlyEventTypeResource {
+  uri?: string;
+  name?: string;
+  duration?: number;
+  scheduling_url?: string;
+  slug?: string;
+}
+
 function getProviderConfig(providerId: string, env: Env): ProviderOAuthConfig | null {
   const calendlyClientId = (env as unknown as Record<string, string>)['CALENDLY_CLIENT_ID'] ?? '';
   const calendlyClientSecret = (env as unknown as Record<string, string>)['CALENDLY_CLIENT_SECRET'] ?? '';
@@ -2080,41 +2103,12 @@ schedulingAuth.get('/connection/:id/event-types', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', 'Provider does not support event types.');
   }
 
-  let eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }> = [];
+  let eventTypes: ProviderEventTypeSummary[] = [];
 
   if (connection.provider_id === 'CALENDLY') {
-    try {
-      const userRes = await fetch('https://api.calendly.com/users/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!userRes.ok) {
-        return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly user.');
-      }
-      const userData = await userRes.json() as { resource?: { uri?: string } };
-      const userUri = userData.resource?.uri;
-      if (!userUri) {
-        return apiError(c, 'INTERNAL_ERROR', 'Could not resolve Calendly user URI.');
-      }
-
-      const etRes = await fetch(
-        `https://api.calendly.com/event_types?user=${encodeURIComponent(userUri)}&active=true`,
-        { headers: { Authorization: `Bearer ${accessToken}` } },
-      );
-      if (!etRes.ok) {
-        return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly event types.');
-      }
-      const etData = await etRes.json() as { collection?: Array<{ uri: string; name: string; duration: number; scheduling_url: string }> };
-      eventTypes = (etData.collection || []).map((et) => ({
-        id: et.uri,
-        name: et.name,
-        durationMinutes: et.duration,
-        url: et.uri,
-        schedulingUrl: et.scheduling_url,
-      }));
-    } catch (err) {
-      console.error('[scheduling] Calendly event types fetch error:', err);
-      return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch event types.');
-    }
+    eventTypes = await fetchCalendlyEventTypes(accessToken, config);
+  } else if (connection.provider_id === 'CAL_COM') {
+    eventTypes = await fetchCalComEventTypes(accessToken, config);
   }
 
   return c.json({ eventTypes });
@@ -2165,7 +2159,7 @@ schedulingAuth.get('/event-types', async (c) => {
     return apiError(c, 'INTERNAL_ERROR', 'Provider does not support event types.');
   }
 
-  let eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }> = [];
+  let eventTypes: ProviderEventTypeSummary[] = [];
 
   if (connection.provider_id === 'CALENDLY') {
     eventTypes = await fetchCalendlyEventTypes(accessToken, config);
@@ -3495,41 +3489,125 @@ async function refreshToken(
 async function fetchCalendlyEventTypes(
   accessToken: string,
   config: ProviderOAuthConfig,
-): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>> {
-  const userResp = await fetch(config.userInfoUrl!, {
+): Promise<ProviderEventTypeSummary[]> {
+  const user = await fetchCalendlyCurrentUser(accessToken, config);
+  if (!user) return [];
+
+  if (user.uri) {
+    const userEventTypes = await fetchCalendlyEventTypesForOwner(accessToken, config, 'user', user.uri, user);
+    if (userEventTypes.length > 0) return userEventTypes;
+  }
+
+  if (user.current_organization) {
+    const organizationEventTypes = await fetchCalendlyEventTypesForOwner(
+      accessToken,
+      config,
+      'organization',
+      user.current_organization,
+      user,
+    );
+    if (organizationEventTypes.length > 0) return organizationEventTypes;
+  }
+
+  return calendlySchedulingPageFallback(user);
+}
+
+async function fetchCalendlyCurrentUser(
+  accessToken: string,
+  config: ProviderOAuthConfig,
+): Promise<CalendlyUserResource | null> {
+  if (!config.userInfoUrl) return null;
+  const userResp = await fetch(config.userInfoUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!userResp.ok) return [];
+  if (!userResp.ok) return null;
 
-  const userData = await userResp.json() as { resource?: { uri?: string } };
-  const userUri = userData.resource?.uri;
-  if (!userUri) return [];
+  const userData = await userResp.json() as { resource?: CalendlyUserResource };
+  return userData.resource ?? null;
+}
 
-  const resp = await fetch(
-    `${config.eventTypesUrl}?user=${encodeURIComponent(userUri)}&active=true`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  );
-  if (!resp.ok) return [];
+async function fetchCalendlyEventTypesForOwner(
+  accessToken: string,
+  config: ProviderOAuthConfig,
+  ownerParam: 'user' | 'organization',
+  ownerUri: string,
+  user: CalendlyUserResource,
+): Promise<ProviderEventTypeSummary[]> {
+  if (!config.eventTypesUrl) return [];
+  const eventTypes: ProviderEventTypeSummary[] = [];
+  let pageToken: string | null = null;
 
-  const data = await resp.json() as {
-    collection?: Array<{
-      uri?: string; name?: string; duration?: number; scheduling_url?: string;
-    }>;
+  do {
+    const url = new URL(config.eventTypesUrl);
+    url.searchParams.set(ownerParam, ownerUri);
+    url.searchParams.set('active', 'true');
+    url.searchParams.set('count', '100');
+    if (pageToken) url.searchParams.set('page_token', pageToken);
+
+    const resp = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!resp.ok) return [];
+
+    const data = await resp.json() as {
+      collection?: CalendlyEventTypeResource[];
+      pagination?: { next_page_token?: string | null };
+    };
+
+    for (const eventType of data.collection ?? []) {
+      const normalized = normalizeCalendlyEventType(eventType, user);
+      if (normalized) eventTypes.push(normalized);
+    }
+
+    pageToken = data.pagination?.next_page_token ?? null;
+  } while (pageToken);
+
+  return eventTypes;
+}
+
+function normalizeCalendlyEventType(
+  eventType: CalendlyEventTypeResource,
+  user: CalendlyUserResource,
+): ProviderEventTypeSummary | null {
+  const id = eventType.uri?.trim();
+  const schedulingUrl = eventType.scheduling_url?.trim()
+    ?? calendlySchedulingUrlFromSlug(user.scheduling_url, eventType.slug);
+  if (!id || !schedulingUrl) return null;
+  return {
+    id,
+    name: eventType.name?.trim() || 'Calendly event',
+    durationMinutes: eventType.duration ?? 30,
+    url: id,
+    schedulingUrl,
   };
+}
 
-  return (data.collection ?? []).map((et) => ({
-    id: et.uri ?? '',
-    name: et.name ?? 'Unnamed',
-    durationMinutes: et.duration ?? 30,
-    url: et.uri ?? '',
-    schedulingUrl: et.scheduling_url ?? '',
-  }));
+function calendlySchedulingUrlFromSlug(
+  userSchedulingUrl: string | undefined,
+  slug: string | undefined,
+): string | null {
+  const base = userSchedulingUrl?.trim();
+  const eventSlug = slug?.trim();
+  if (!base || !eventSlug) return null;
+  return `${base.replace(/\/+$/, '')}/${encodeURIComponent(eventSlug)}`;
+}
+
+function calendlySchedulingPageFallback(user: CalendlyUserResource): ProviderEventTypeSummary[] {
+  const schedulingUrl = user.scheduling_url?.trim();
+  if (!schedulingUrl) return [];
+  return [{
+    id: user.uri?.trim() || schedulingUrl,
+    name: user.name?.trim() ? `${user.name.trim()} Calendly` : 'Calendly scheduling page',
+    durationMinutes: 30,
+    url: user.uri?.trim() || schedulingUrl,
+    schedulingUrl,
+  }];
 }
 
 async function fetchCalComEventTypes(
   accessToken: string,
   config: ProviderOAuthConfig,
-): Promise<Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>> {
+): Promise<ProviderEventTypeSummary[]> {
   const resp = await fetch(config.eventTypesUrl!, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

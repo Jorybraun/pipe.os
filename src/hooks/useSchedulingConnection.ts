@@ -47,13 +47,32 @@ interface UseSchedulingConnectionResult {
   refetch: () => Promise<void>;
 }
 
+interface ApiProviderEventType {
+  id: string;
+  name: string;
+  duration?: number;
+  durationMinutes?: number;
+  url: string;
+  schedulingUrl: string;
+}
+
+function normalizeProviderEventType(eventType: ApiProviderEventType): ProviderEventType {
+  return {
+    id: eventType.id,
+    name: eventType.name,
+    duration: eventType.duration ?? eventType.durationMinutes ?? 30,
+    url: eventType.url,
+    schedulingUrl: eventType.schedulingUrl,
+  };
+}
+
 /**
  * Helper function to fetch event types for a connection
  */
 async function fetchEventTypesForConnection(api: ApiClient, connectionId: string): Promise<ProviderEventType[]> {
   try {
-    const result = await api.get<{ eventTypes: ProviderEventType[] }>(`/api/v1/scheduling/connection/${connectionId}/event-types`);
-    return result.eventTypes || [];
+    const result = await api.get<{ eventTypes: ApiProviderEventType[] }>(`/api/v1/scheduling/connection/${connectionId}/event-types`);
+    return (result.eventTypes || []).map(normalizeProviderEventType);
   } catch (err) {
     console.error('[fetchEventTypesForConnection] Failed:', err);
     return [];
@@ -164,6 +183,7 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         codeVerifier,
       });
 
+      const eventTypes = await fetchEventTypesForConnection(api, result.connection.id);
       setConnection({
         id: result.connection.id,
         providerId: result.connection.providerId,
@@ -172,6 +192,7 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
         accountName: result.connection.accountName,
         connectedAt: new Date().toISOString(),
         lastSyncAt: null,
+        eventTypes,
       });
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Exchange failed');
@@ -187,16 +208,10 @@ export function useSchedulingConnection(): UseSchedulingConnectionResult {
     setError(null);
     try {
       const result = await api.get<{
-        eventTypes: Array<{ id: string; name: string; durationMinutes: number; url: string; schedulingUrl: string }>;
+        eventTypes: ApiProviderEventType[];
       }>('/api/v1/scheduling/event-types');
 
-      return result.eventTypes.map((et) => ({
-        id: et.id,
-        name: et.name,
-        duration: et.durationMinutes,
-        url: et.url,
-        schedulingUrl: et.schedulingUrl,
-      }));
+      return result.eventTypes.map(normalizeProviderEventType);
     } catch (err) {
       const wrapped = err instanceof Error ? err : new Error('Fetch event types failed');
       console.error('[useSchedulingConnection] fetchEventTypes failed:', wrapped);

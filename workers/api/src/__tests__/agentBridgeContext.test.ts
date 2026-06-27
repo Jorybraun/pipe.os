@@ -1,0 +1,35 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const bridgeSource = readFileSync(
+  new URL('../../../../infra/containers/code-server/agent-bridge.js', import.meta.url),
+  'utf8',
+);
+
+describe('dev-container agent bridge context endpoint', () => {
+  const forbiddenAuthBypass = `callback?${'sim' + 'ulated'}`;
+
+  it('fetches the source-backed room context summary instead of returning a placeholder', () => {
+    expect(bridgeSource).toContain('PIPE_API_URL');
+    expect(bridgeSource).toContain('ROOM_TOKEN');
+    expect(bridgeSource).toContain('/context-summary');
+    expect(bridgeSource).not.toContain('Room context endpoint is available from the PIPE API bridge.');
+  });
+
+  it('primes Devin with room context and the shared desktop action protocol', () => {
+    expect(bridgeSource).toContain('buildAgentContextPrompt');
+    expect(bridgeSource).toContain('PIPE room context');
+    expect(bridgeSource).toContain('[[room_action:open-workspace');
+    expect(bridgeSource).toContain('primeAgentWithRoomContext');
+    expect(bridgeSource).toContain('agentProcess.stdin.write');
+  });
+
+  it('does not expose a local Devin auth bypass or non-agent Clippy responder', () => {
+    expect(bridgeSource).not.toContain(forbiddenAuthBypass);
+    expect(bridgeSource).not.toContain('AUTH_CALLBACK');
+    expect(bridgeSource).not.toContain('roomActionFromText');
+    expect(bridgeSource).not.toContain('I can help by opening');
+    expect(bridgeSource).toContain('DEVIN_API_KEY');
+    expect(bridgeSource).toContain('authUrl: null');
+  });
+});

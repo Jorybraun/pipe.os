@@ -38,6 +38,12 @@ interface Win95DesktopProps {
   recordingActive?: boolean;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
+  onWindowFocus?: (id: string) => void;
+  onWindowMinimize?: (id: string) => void;
+  onWindowRestore?: (id: string) => void;
+  onWindowMaximize?: (id: string) => void;
+  onWindowMove?: (id: string, x: number, y: number) => void;
+  onWindowMoveEnd?: (id: string, x: number, y: number) => void;
   canExitDesktop?: boolean;
   onExitDesktop?: () => void;
   peerCursors?: RoomCursorPresence[];
@@ -51,6 +57,12 @@ export function Win95Desktop({
   recordingActive,
   renderWindowContent,
   onWindowClose,
+  onWindowFocus,
+  onWindowMinimize,
+  onWindowRestore,
+  onWindowMaximize,
+  onWindowMove,
+  onWindowMoveEnd,
   canExitDesktop = false,
   onExitDesktop,
   peerCursors = [],
@@ -65,14 +77,14 @@ export function Win95Desktop({
   const handleWindowClick = useCallback(
     (win: WindowState): void => {
       if (win.minimized) {
-        wm.restoreWindow(win.id);
+        (onWindowRestore ?? wm.restoreWindow)(win.id);
       } else if (win.focused) {
-        wm.minimizeWindow(win.id);
+        (onWindowMinimize ?? wm.minimizeWindow)(win.id);
       } else {
-        wm.focusWindow(win.id);
+        (onWindowFocus ?? wm.focusWindow)(win.id);
       }
     },
-    [wm],
+    [onWindowFocus, onWindowMinimize, onWindowRestore, wm],
   );
 
   const handleIconDoubleClick = useCallback(
@@ -101,17 +113,26 @@ export function Win95Desktop({
       <div className="win95-peer-cursors" aria-hidden="true">
         {peerCursors.map((cursor) => {
           const label = cursor.role === 'HOST' ? 'Host' : 'Guest';
+          const x = Math.min(0.985, Math.max(0.015, cursor.x));
+          const y = Math.min(0.96, Math.max(0.015, cursor.y));
           return (
             <div
               key={cursor.clientId}
               className={`win95-peer-cursor win95-peer-cursor-${cursor.role.toLowerCase()}`}
               data-testid={`room-peer-cursor-${cursor.role.toLowerCase()}`}
               style={{
-                left: `${cursor.x * 100}%`,
-                top: `${cursor.y * 100}%`,
+                left: `${x * 100}%`,
+                top: `${y * 100}%`,
               }}
             >
-              <span className="win95-peer-cursor-pointer" />
+              <svg
+                className="win95-peer-cursor-pointer"
+                viewBox="0 0 18 24"
+                focusable="false"
+                aria-hidden="true"
+              >
+                <path d="M1 1v19l5-5 3.5 8 3-1.5-3.5-7.5h7z" />
+              </svg>
               <span className="win95-peer-cursor-label">{label}</span>
             </div>
           );
@@ -178,11 +199,12 @@ export function Win95Desktop({
           <Win95Window
             key={win.id}
             win={win}
-            onFocus={wm.focusWindow}
+            onFocus={onWindowFocus ?? wm.focusWindow}
             onClose={onWindowClose ?? wm.closeWindow}
-            onMinimize={wm.minimizeWindow}
-            onMaximize={wm.toggleMaximize}
-            onMove={wm.moveWindow}
+            onMinimize={onWindowMinimize ?? wm.minimizeWindow}
+            onMaximize={onWindowMaximize ?? wm.toggleMaximize}
+            onMove={onWindowMove ?? wm.moveWindow}
+            onMoveEnd={onWindowMoveEnd}
             noPadding={win.windowType === 'workspace'
               || win.windowType === 'video'
               || win.windowType === 'tasks'

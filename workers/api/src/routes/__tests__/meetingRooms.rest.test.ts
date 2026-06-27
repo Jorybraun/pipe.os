@@ -329,6 +329,39 @@ function installDeepgramFetch(
   })));
 }
 
+function installDeepgramFetchWithReversedChannels(
+  guestTranscript = 'I implemented lattice replay buffers for ecommerce order recovery.',
+): void {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    metadata: { channels: 2 },
+    results: {
+      utterances: [
+        {
+          id: 'dg-host-1',
+          transcript: 'What system did you improve?',
+          start: 1,
+          end: 2,
+          channel: 1,
+          speaker: 0,
+          confidence: 0.98,
+        },
+        {
+          id: 'dg-guest-1',
+          transcript: guestTranscript,
+          start: 2.1,
+          end: 6.5,
+          channel: 0,
+          speaker: 1,
+          confidence: 0.96,
+        },
+      ],
+    },
+  }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })));
+}
+
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
@@ -1189,6 +1222,240 @@ describe('meeting room recording living-context route', () => {
       actionId: 'start-recording',
       surface: 'win95',
     });
+
+    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat',
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyUserChatRes.status).toBe(200);
+
+    const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_chat',
+          agent: 'devin',
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentChatRes.status).toBe(200);
+
+    const chatNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_chat_user', 'session_chat_agent')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    }>;
+    expect(chatNodes).toHaveLength(2);
+    expect(chatNodes.map((node) => node.node_type)).toEqual([
+      'session_chat_agent',
+      'session_chat_user',
+    ]);
+    expect(chatNodes[0]?.narrative_text).toContain('Agent responded');
+    expect(chatNodes[0]?.narrative_text).toContain('replay idempotency');
+    expect(JSON.parse(chatNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'agent',
+      source: 'clippy_agent_chat',
+      agent: 'devin',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(chatNodes[1]?.narrative_text).toContain('User asked');
+    expect(chatNodes[1]?.narrative_text).toContain('order recovery test');
+    expect(JSON.parse(chatNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'clippy_agent_chat',
+      workspaceSessionId: 'workspace-session-1',
+    });
+  });
+
+  it('syncs durable room activity into the candidate context graph before graph reads', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const activitySnapshot = {
+      desktopActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000000000,
+          event: {
+            id: 'evt-enter-95',
+            clientId: 'host-client',
+            createdAt: 1700000000000,
+            kind: 'SET_ROOM_SURFACE',
+            surface: 'win95',
+          },
+        },
+        {
+          role: 'HOST',
+          recordedAt: 1700000001000,
+          event: {
+            id: 'evt-workspace-ready',
+            clientId: 'host-client',
+            createdAt: 1700000001000,
+            kind: 'WORKSPACE_STATE_CHANGED',
+            status: 'READY',
+          },
+        },
+      ],
+      chatActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002000,
+          message: {
+            id: 'chat-1',
+            clientId: 'guest-client',
+            createdAt: 1700000002000,
+            role: 'GUEST',
+            text: 'I found the retry bug in the queue worker.',
+          },
+        },
+      ],
+      clippyPromptActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000003000,
+          prompt: {
+            id: 'prompt-open-workspace',
+            clientId: 'host-client',
+            createdAt: 1700000003000,
+            source: 'system',
+            text: 'Would you like to open the workspace?',
+            actions: [{ id: 'open-workspace', label: 'Open workspace' }],
+          },
+        },
+      ],
+      fileSystemActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000004000,
+          event: {
+            id: 'fs-notes-save',
+            clientId: 'guest-client',
+            createdAt: 1700000004000,
+            kind: 'UPSERT_FILE',
+            file: {
+              id: 'notepad',
+              name: 'notes.txt',
+              kind: 'text',
+              content: 'Candidate identified retry bug evidence.',
+              mimeType: 'text/plain',
+              createdAt: 1700000004000,
+              updatedAt: 1700000004000,
+            },
+          },
+        },
+      ],
+    };
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify(activitySnapshot), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-activity-graph',
+      'owner-1',
+      'Activity Graph Candidate',
+      'activity-graph@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Activity Graph Candidate',
+        recipientEmail: 'activity-graph@example.com',
+        title: 'Activity graph room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-activity-graph',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const graphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(graphRes.status).toBe(200);
+    const graphBody = await graphRes.json() as {
+      candidateId: string;
+      events: Array<{
+        nodeType: string;
+        narrativeText: string;
+        properties: Record<string, unknown> | null;
+      }>;
+    };
+    expect(graphBody.events.map((event) => event.nodeType)).toEqual([
+      'session_room_surface_change',
+      'session_workspace_state',
+      'session_chat_user',
+      'session_clippy_prompt',
+      'session_file_change',
+    ]);
+    expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
+      'I found the retry bug in the queue worker.',
+    );
+    expect(graphBody.events.at(-1)?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      operation: 'upsert',
+      fileId: 'notepad',
+      contentPreview: 'Candidate identified retry bug evidence.',
+    });
+
+    const nodeCountAfterFirstRead = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'`,
+    ).get(graphBody.candidateId) as { count: number };
+    expect(nodeCountAfterFirstRead.count).toBe(5);
+
+    const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(secondGraphRes.status).toBe(200);
+    const nodeCountAfterSecondRead = sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'`,
+    ).get(graphBody.candidateId) as { count: number };
+    expect(nodeCountAfterSecondRead.count).toBe(5);
+    expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://do/activity-log',
+    }));
   });
 
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
@@ -1290,6 +1557,7 @@ describe('meeting room recording living-context route', () => {
     } as unknown as DurableObjectNamespace;
     env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
     env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
+    env.API_BASE_URL = 'http://localhost:8787';
 
     const scheduledInterviewId = 'scheduled-interview-workspace-pr';
     sqlite.prepare(
@@ -1353,6 +1621,8 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
+      pipeApiUrl: 'http://localhost:8787',
+      roomToken: created.hostToken,
     }));
   });
 
@@ -1690,6 +1960,141 @@ describe('meeting room recording living-context route', () => {
     ).toBe(true);
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM people').get()).toEqual({ count: 1 });
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM workspace_people').get()).toEqual({ count: 1 });
+  });
+
+  it('uses uploaded speaker metadata instead of implicit channel order for transcript evidence', async () => {
+    installDeepgramFetchWithReversedChannels();
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const personEmail = 'speaker-map-person@example.com';
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Speaker Map Person',
+        recipientEmail: personEmail,
+        title: 'Speaker map interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string; contactId: string };
+      hostToken: string;
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: personEmail }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const speakerMetadata = {
+      version: 1,
+      transcriptionAudio: {
+        channelLayout: 'test-reversed-host-guest',
+        channelCount: 2,
+        channels: [
+          { channel: 0, role: 'guest', source: 'remote' },
+          { channel: 1, role: 'host', source: 'local' },
+        ],
+      },
+    };
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([4, 5, 6])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    form.append('speakerMetadata', JSON.stringify(speakerMetadata));
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(202);
+    await waitUntilAll();
+
+    const meetingRow = sqlite.prepare(
+      `SELECT transcript_status, transcript_json, transcript_analysis_json
+         FROM meetings
+        WHERE id = ?`,
+    ).get(created.meeting.id) as {
+      transcript_status: string;
+      transcript_json: string;
+      transcript_analysis_json: string;
+    };
+    expect(meetingRow.transcript_status).toBe('READY');
+    const transcriptSegments = JSON.parse(meetingRow.transcript_json) as Array<{
+      stable_segment_id: string;
+      role: string | null;
+      contact_id: string | null;
+      channel: number | null;
+      text: string;
+    }>;
+    expect(transcriptSegments).toContainEqual(expect.objectContaining({
+      stable_segment_id: 'utterance-0001',
+      role: 'host',
+      contact_id: null,
+      channel: 1,
+      text: 'What system did you improve?',
+    }));
+    expect(transcriptSegments).toContainEqual(expect.objectContaining({
+      stable_segment_id: 'utterance-0002',
+      role: 'guest',
+      contact_id: created.meeting.contactId,
+      channel: 0,
+      text: 'I implemented lattice replay buffers for ecommerce order recovery.',
+    }));
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      personContextMode: 'attributed',
+      speakerMetadata,
+    });
+
+    const transcriptArtifactMetadata = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'
+          AND logical_key = ?`,
+    ).get(created.meeting.id) as { metadata_json: string } | undefined;
+    expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
+      speakerMetadata,
+      provider: 'deepgram-multichannel',
+    });
+
+    const contactGraphRes = await app.request(
+      `/contacts/${created.meeting.contactId}/living-context`,
+      {},
+      env,
+      ctx,
+    );
+    expect(contactGraphRes.status).toBe(200);
+    const contactGraph = await contactGraphRes.json() as GraphBody;
+    expect(contactGraph.summary).toMatchObject({
+      assertionCount: 1,
+      signalCount: 1,
+    });
+    expect(contactGraph.assertions[0]?.sources.map((source) => source.exactText)).toEqual([
+      'I implemented lattice replay buffers for ecommerce order recovery.',
+    ]);
   });
 
   it('uses recording-route transcript evidence to select a source-backed PR challenge', async () => {

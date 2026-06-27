@@ -1,8 +1,23 @@
+import type { RecordingSpeakerMetadata } from '../types';
+
 interface CompositeRecording {
   stream: MediaStream;
   transcriptionStream: MediaStream;
+  speakerMetadata: RecordingSpeakerMetadata;
   dispose: () => Promise<void>;
 }
+
+const HOST_GUEST_SPEAKER_METADATA: RecordingSpeakerMetadata = {
+  version: 1,
+  transcriptionAudio: {
+    channelLayout: 'host-local-guest-remote-v1',
+    channelCount: 2,
+    channels: [
+      { channel: 0, role: 'host', source: 'local' },
+      { channel: 1, role: 'guest', source: 'remote' },
+    ],
+  },
+};
 
 function attachVideo(stream: MediaStream): HTMLVideoElement {
   const video = document.createElement('video');
@@ -62,6 +77,7 @@ export async function createCompositeRecording(
   return {
     stream,
     transcriptionStream,
+    speakerMetadata: HOST_GUEST_SPEAKER_METADATA,
     dispose: async () => {
       cancelAnimationFrame(frameId);
       stream.getTracks().forEach((track) => track.stop());
