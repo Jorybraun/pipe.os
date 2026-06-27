@@ -39,6 +39,7 @@ import {
   buildCodeEditorOpenEvidence,
   buildWorkspaceStateDesktopEvent,
 } from './lib/workspaceEvidence';
+import { buildWindowStateUpdateEvidence } from './lib/windowEvidence';
 import {
   useRoomConnection,
   type RoomClippyPromptDraft,
@@ -614,7 +615,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       windowId: id,
       ...patch,
     });
-  }, [room]);
+    const evidence = buildWindowStateUpdateEvidence({
+      actor: roomActor,
+      windowId: id,
+      patch: { ...patch },
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+    });
+    if (evidence) {
+      captureSessionEvent('window_update', evidence.text, roomActor, evidence.properties);
+    }
+  }, [captureSessionEvent, room, roomActor]);
 
   const focusSharedWindow = useCallback((id: string): void => {
     wm.focusWindow(id);
