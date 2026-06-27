@@ -136,6 +136,50 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
+  it('preserves prompt handoff metadata for bridge diagnostics', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'thinking',
+      message: 'devin chat prompt delivered to process stdin.',
+      diagnosticSource: 'agent_prompt_sent',
+      observedAt: '2026-06-27T20:00:00.000Z',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      promptLength: 241,
+      promptFingerprint: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      roomContextStatus: 200,
+      roomContextLength: 92,
+      roomContextFingerprint: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      userMessageLength: 18,
+      userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+      contextTruncated: false,
+    })).toEqual({
+      kind: 'diagnostic',
+      agentName: 'devin',
+      status: 'thinking',
+      message: {
+        role: 'agent',
+        text: 'devin chat prompt delivered to process stdin.',
+        source: 'bridge_diagnostic',
+        agentName: 'devin',
+        agentStatus: 'thinking',
+        diagnosticSource: 'agent_prompt_sent',
+        observedAt: '2026-06-27T20:00:00.000Z',
+        promptType: 'chat_prompt',
+        deliveredToAgent: true,
+        promptLength: 241,
+        promptFingerprint: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        roomContextStatus: 200,
+        roomContextLength: 92,
+        roomContextFingerprint: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        userMessageLength: 18,
+        userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        contextTruncated: false,
+      },
+    });
+  });
+
   it('marks real bridge chat responses as agent stdout', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',

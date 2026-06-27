@@ -3,6 +3,7 @@ import diagnostics from './agent-diagnostics.js';
 
 const {
   agentDiagnosticMessage,
+  agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   redactDiagnosticText,
 } = diagnostics;
@@ -51,6 +52,68 @@ describe('agent diagnostics', () => {
       exitCode: 1,
       signal: null,
       truncated: false,
+    });
+  });
+
+  it('builds prompt handoff diagnostics without storing raw prompt text', () => {
+    const message = agentPromptHandoffDiagnosticMessage({
+      agent: 'devin',
+      status: 'thinking',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      roomContextStatus: 200,
+      roomContextText: 'Candidate opened VS Code with token=room-secret',
+      promptText: 'PIPE room context\nCurrent Clippy chat message: please run the tests TOKEN=hidden',
+      userMessage: 'please run the tests TOKEN=hidden',
+      observedAt: '2026-06-27T20:00:00.000Z',
+    });
+
+    expect(message).toMatchObject({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'thinking',
+      message: 'devin chat prompt delivered to process stdin.',
+      diagnosticSource: 'agent_prompt_sent',
+      observedAt: '2026-06-27T20:00:00.000Z',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      promptLength: expect.any(Number),
+      promptFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      roomContextStatus: 200,
+      roomContextLength: expect.any(Number),
+      roomContextFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      userMessageLength: expect.any(Number),
+      userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      contextTruncated: false,
+    });
+
+    const serialized = JSON.stringify(message);
+    expect(serialized).not.toContain('please run the tests');
+    expect(serialized).not.toContain('Candidate opened VS Code');
+    expect(serialized).not.toContain('room-secret');
+    expect(serialized).not.toContain('hidden');
+  });
+
+  it('marks failed context-primer handoffs as diagnostics', () => {
+    expect(agentPromptHandoffDiagnosticMessage({
+      agent: 'devin',
+      status: 'idle',
+      promptType: 'context_primer',
+      deliveredToAgent: false,
+      roomContextStatus: 200,
+      roomContextText: 'Large context\n[PIPE room context truncated]',
+      promptText: 'PIPE room context\nLarge context\n[PIPE room context truncated]',
+      observedAt: '2026-06-27T20:05:00.000Z',
+    })).toMatchObject({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'idle',
+      message: 'devin context primer was not delivered to process stdin.',
+      diagnosticSource: 'agent_context_primer_sent',
+      observedAt: '2026-06-27T20:05:00.000Z',
+      promptType: 'context_primer',
+      deliveredToAgent: false,
+      contextTruncated: true,
     });
   });
 });

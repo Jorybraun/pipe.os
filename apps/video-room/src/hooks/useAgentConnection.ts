@@ -23,6 +23,16 @@ export interface AgentChatMessage {
   exitCode?: number | null;
   signal?: string | null;
   truncated?: boolean;
+  promptType?: string;
+  deliveredToAgent?: boolean;
+  promptLength?: number;
+  promptFingerprint?: string;
+  roomContextStatus?: number | null;
+  roomContextLength?: number;
+  roomContextFingerprint?: string;
+  userMessageLength?: number;
+  userMessageFingerprint?: string;
+  contextTruncated?: boolean;
 }
 
 export interface AgentRoomAction {
@@ -353,6 +363,29 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if ('exitCode' in value) message.exitCode = numberOrNullValue(value.exitCode);
     if ('signal' in value) message.signal = signal;
     if (typeof value.truncated === 'boolean') message.truncated = value.truncated;
+    const promptType = stringOrNull(value.promptType);
+    const promptFingerprint = stringOrNull(value.promptFingerprint);
+    const roomContextFingerprint = stringOrNull(value.roomContextFingerprint);
+    const userMessageFingerprint = stringOrNull(value.userMessageFingerprint);
+    if (promptType) message.promptType = promptType;
+    if (typeof value.deliveredToAgent === 'boolean') message.deliveredToAgent = value.deliveredToAgent;
+    if ('promptLength' in value) {
+      const promptLength = numberOrUndefined(value.promptLength);
+      if (promptLength !== undefined) message.promptLength = promptLength;
+    }
+    if (promptFingerprint) message.promptFingerprint = promptFingerprint;
+    if ('roomContextStatus' in value) message.roomContextStatus = numberOrNullValue(value.roomContextStatus);
+    if ('roomContextLength' in value) {
+      const roomContextLength = numberOrUndefined(value.roomContextLength);
+      if (roomContextLength !== undefined) message.roomContextLength = roomContextLength;
+    }
+    if (roomContextFingerprint) message.roomContextFingerprint = roomContextFingerprint;
+    if ('userMessageLength' in value) {
+      const userMessageLength = numberOrUndefined(value.userMessageLength);
+      if (userMessageLength !== undefined) message.userMessageLength = userMessageLength;
+    }
+    if (userMessageFingerprint) message.userMessageFingerprint = userMessageFingerprint;
+    if (typeof value.contextTruncated === 'boolean') message.contextTruncated = value.contextTruncated;
     return {
       kind: 'diagnostic',
       status,

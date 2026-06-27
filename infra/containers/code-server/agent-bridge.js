@@ -3,7 +3,10 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { agentDiagnosticMessage } = require('./agent-diagnostics.js');
+const {
+  agentDiagnosticMessage,
+  agentPromptHandoffDiagnosticMessage,
+} = require('./agent-diagnostics.js');
 
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
@@ -468,14 +471,39 @@ function writeToCurrentAgentProcess(targetProcess, prompt) {
 async function primeAgentWithRoomContext(targetProcess = agentProcess) {
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
-  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text));
+  const roomContextText = compactAgentContext(context.text);
+  const prompt = buildAgentContextPrompt(context.text);
+  const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
+  broadcast(agentPromptHandoffDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: agentStatus,
+    promptType: 'context_primer',
+    deliveredToAgent,
+    roomContextStatus: context.status,
+    roomContextText,
+    promptText: prompt,
+  }));
+  return deliveredToAgent;
 }
 
 async function writeAgentChatPrompt(text) {
   const targetProcess = agentProcess;
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
-  return writeToCurrentAgentProcess(targetProcess, buildAgentContextPrompt(context.text, text));
+  const roomContextText = compactAgentContext(context.text);
+  const prompt = buildAgentContextPrompt(context.text, text);
+  const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
+  broadcast(agentPromptHandoffDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: agentStatus,
+    promptType: 'chat_prompt',
+    deliveredToAgent,
+    roomContextStatus: context.status,
+    roomContextText,
+    promptText: prompt,
+    userMessage: text,
+  }));
+  return deliveredToAgent;
 }
 
 function decodeFrames(buffer, onFrame) {

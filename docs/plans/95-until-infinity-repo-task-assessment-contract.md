@@ -165,6 +165,11 @@ The controlling product rule remains:
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal
   metadata instead of leaving failures only in container logs.
+- Clippy/Devin context-primer and chat-prompt handoffs now persist
+  `ai_agent_status` diagnostics when the bridge writes to real Devin stdin,
+  including delivery state, room-context fetch status, and redacted
+  fingerprints/lengths for prompt, room context, and candidate message without
+  storing the private prompt body.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a

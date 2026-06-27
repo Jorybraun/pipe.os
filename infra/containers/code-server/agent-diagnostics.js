@@ -1,4 +1,7 @@
+const crypto = require('crypto');
+
 const DEFAULT_MAX_CHARS = 1200;
+const PROMPT_TYPES = new Set(['context_primer', 'chat_prompt']);
 
 function redactDiagnosticText(value) {
   return String(value || '')
@@ -20,6 +23,24 @@ function boundedDiagnosticText(value, maxChars = DEFAULT_MAX_CHARS) {
     text: `${redacted.slice(0, limit)}\n[diagnostic truncated]`,
     truncated: true,
   };
+}
+
+function diagnosticTextMetrics(value) {
+  const text = redactDiagnosticText(value).trim();
+  if (!text) {
+    return {
+      length: 0,
+      fingerprint: null,
+    };
+  }
+  return {
+    length: text.length,
+    fingerprint: `sha256:${crypto.createHash('sha256').update(text).digest('hex')}`,
+  };
+}
+
+function normalizedPromptType(value) {
+  return PROMPT_TYPES.has(value) ? value : 'chat_prompt';
 }
 
 function agentDiagnosticMessage({
@@ -46,8 +67,55 @@ function agentDiagnosticMessage({
   };
 }
 
+function agentPromptHandoffDiagnosticMessage({
+  agent = 'devin',
+  status = 'thinking',
+  promptType = 'chat_prompt',
+  deliveredToAgent = false,
+  roomContextStatus = null,
+  roomContextText = '',
+  promptText = '',
+  userMessage = '',
+  observedAt = new Date().toISOString(),
+  maxChars = DEFAULT_MAX_CHARS,
+}) {
+  const safeAgent = String(agent || 'devin').trim() || 'devin';
+  const safePromptType = normalizedPromptType(promptType);
+  const promptLabel = safePromptType === 'context_primer' ? 'context primer' : 'chat prompt';
+  const delivered = deliveredToAgent === true;
+  const promptMetrics = diagnosticTextMetrics(promptText);
+  const roomContextMetrics = diagnosticTextMetrics(roomContextText);
+  const userMessageMetrics = diagnosticTextMetrics(userMessage);
+  const baseMessage = agentDiagnosticMessage({
+    agent: safeAgent,
+    status,
+    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to process stdin.`,
+    diagnosticSource: safePromptType === 'context_primer'
+      ? 'agent_context_primer_sent'
+      : 'agent_prompt_sent',
+    observedAt,
+    maxChars,
+  });
+
+  return {
+    ...baseMessage,
+    promptType: safePromptType,
+    deliveredToAgent: delivered,
+    promptLength: promptMetrics.length,
+    promptFingerprint: promptMetrics.fingerprint,
+    roomContextStatus: Number.isFinite(roomContextStatus) ? Math.floor(roomContextStatus) : null,
+    roomContextLength: roomContextMetrics.length,
+    roomContextFingerprint: roomContextMetrics.fingerprint,
+    userMessageLength: userMessageMetrics.length,
+    userMessageFingerprint: userMessageMetrics.fingerprint,
+    contextTruncated: String(roomContextText || '').includes('[PIPE room context truncated]'),
+  };
+}
+
 module.exports = {
   agentDiagnosticMessage,
+  agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
+  diagnosticTextMetrics,
   redactDiagnosticText,
 };
