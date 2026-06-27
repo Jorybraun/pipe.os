@@ -7,6 +7,7 @@ const {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
+  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
 } = require('./agent-diagnostics.js');
 
@@ -227,6 +228,13 @@ async function captureAgentChatEvidence(message) {
   return postSessionEventEvidence(agentChatSessionEvent(message), 'agent chat');
 }
 
+async function captureAgentRoomActionEvidence(action, observedAt) {
+  return postSessionEventEvidence(
+    agentRoomActionSessionEvent({ agent: AGENT_NAME, action, observedAt }),
+    'agent room action',
+  );
+}
+
 function broadcastAgentDiagnostic(message) {
   void captureAgentDiagnosticEvidence(message)
     .then((persisted) => {
@@ -245,6 +253,13 @@ function broadcastAgentChat(message) {
   void captureAgentChatEvidence(message)
     .then((persisted) => {
       broadcast({ type: 'CHAT_RESPONSE', ...message, persisted });
+    });
+}
+
+function broadcastAgentRoomAction(action, observedAt) {
+  void captureAgentRoomActionEvidence(action, observedAt)
+    .then((persisted) => {
+      broadcast({ type: 'ROOM_ACTION', ...action, observedAt, persisted });
     });
 }
 
@@ -668,7 +683,7 @@ function startAgent() {
           actionCount: parsed.actions.length,
         });
       }
-      for (const action of parsed.actions) broadcast({ type: 'ROOM_ACTION', ...action });
+      for (const action of parsed.actions) broadcastAgentRoomAction(action, observedAt);
       agentStatus = 'idle';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     });

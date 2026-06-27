@@ -164,10 +164,49 @@ function agentChatSessionEvent({
   };
 }
 
+function safeActionString(value, fallback = null, maxChars = DEFAULT_MAX_CHARS) {
+  const raw = typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+  if (raw === null || raw === undefined) return null;
+  return boundedDiagnosticText(raw, maxChars).text || null;
+}
+
+function agentRoomActionSessionEvent({
+  agent = 'devin',
+  action,
+  observedAt = new Date().toISOString(),
+}) {
+  const safeAgent = String(agent || 'devin');
+  const rawAction = action && typeof action === 'object' ? action : {};
+  const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, 'unknown-action', 120)
+    ?? 'unknown-action';
+  return {
+    type: 'clippy_action',
+    text: `${safeAgent} suggested room action: ${actionId}`,
+    actor: 'agent',
+    properties: {
+      source: 'clippy_agent_bridge',
+      origin: 'agent',
+      executionStatus: 'suggested',
+      actionId,
+      actionSource: safeActionString(rawAction.source, 'agent_stdout', 120),
+      actionProtocol: safeActionString(rawAction.protocol, 'clippy_room_action_tag', 120),
+      bridgeEventType: 'ROOM_ACTION',
+      agent: safeAgent,
+      agentActionLabel: safeActionString(rawAction.label, null, 500),
+      agentActionText: safeActionString(rawAction.text, null, 1000),
+      autoExecute: typeof rawAction.autoExecute === 'boolean' ? rawAction.autoExecute : null,
+      url: safeActionString(rawAction.url ?? rawAction.href, null, 2048),
+      observedAt,
+      bridgePersisted: true,
+    },
+  };
+}
+
 module.exports = {
   agentChatSessionEvent,
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
+  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   diagnosticTextMetrics,

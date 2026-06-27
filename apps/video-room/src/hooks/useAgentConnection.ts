@@ -46,6 +46,8 @@ export interface AgentRoomAction {
   agentName?: string;
   bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
   protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
+  observedAt?: string;
+  persisted?: boolean;
 }
 
 export interface AgentFileChangeEvent {
@@ -230,6 +232,8 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
     agentName: stringOrNull(value.agent) ?? context.agentName,
     bridgeEventType: context.bridgeEventType,
     protocol: context.protocol,
+    observedAt: stringOrNull(value.observedAt) ?? undefined,
+    persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
   };
 }
 

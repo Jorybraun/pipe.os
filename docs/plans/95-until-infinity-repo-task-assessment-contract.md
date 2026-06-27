@@ -175,6 +175,10 @@ The controlling product rule remains:
   broadcasting to browsers. Browser evidence capture remains a fallback only
   when the bridge cannot persist, preventing duplicate graph events while
   preserving the visible chat/diagnostic stream.
+- Clippy/Devin room-action suggestions now persist directly from the bridge as
+  `clippy_action` events with `executionStatus: suggested`. Browser-side action
+  execution remains separate `clippy_action` evidence with
+  `executionStatus: executed` and links back to the bridge suggestion metadata.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a

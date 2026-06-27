@@ -19,6 +19,8 @@ describe('parseAgentBridgeMessage', () => {
       action: 'open_terminal',
       text: 'I can inspect that from the terminal.',
       autoExecute: true,
+      observedAt: '2026-06-27T21:10:00.000Z',
+      persisted: true,
     })).toEqual({
       kind: 'room_action',
       action: {
@@ -31,6 +33,8 @@ describe('parseAgentBridgeMessage', () => {
         agentName: 'devin',
         bridgeEventType: 'ROOM_ACTION',
         protocol: 'clippy_room_action_tag',
+        observedAt: '2026-06-27T21:10:00.000Z',
+        persisted: true,
       },
     });
   });

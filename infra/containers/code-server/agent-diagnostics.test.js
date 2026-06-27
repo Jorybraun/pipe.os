@@ -5,6 +5,7 @@ const {
   agentDiagnosticMessage,
   agentDiagnosticSessionEvent,
   agentChatSessionEvent,
+  agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   redactDiagnosticText,
@@ -174,6 +175,41 @@ describe('agent diagnostics', () => {
         bridgeEventType: 'CHAT_RESPONSE',
         observedAt: '2026-06-27T21:05:00.000Z',
         actionCount: 1,
+        bridgePersisted: true,
+      },
+    });
+  });
+
+  it('builds source-backed session events for real Devin room action suggestions', () => {
+    expect(agentRoomActionSessionEvent({
+      agent: 'devin',
+      action: {
+        action: 'open-terminal',
+        label: 'Open Terminal',
+        text: 'Open a terminal so we can inspect the failure TOKEN=secret',
+        source: 'agent_stdout',
+        protocol: 'clippy_room_action_tag',
+        autoExecute: false,
+      },
+      observedAt: '2026-06-27T21:10:00.000Z',
+    })).toEqual({
+      type: 'clippy_action',
+      text: 'devin suggested room action: open-terminal',
+      actor: 'agent',
+      properties: {
+        source: 'clippy_agent_bridge',
+        origin: 'agent',
+        executionStatus: 'suggested',
+        actionId: 'open-terminal',
+        actionSource: 'agent_stdout',
+        actionProtocol: 'clippy_room_action_tag',
+        bridgeEventType: 'ROOM_ACTION',
+        agent: 'devin',
+        agentActionLabel: 'Open Terminal',
+        agentActionText: 'Open a terminal so we can inspect the failure TOKEN=[redacted]',
+        autoExecute: false,
+        url: null,
+        observedAt: '2026-06-27T21:10:00.000Z',
         bridgePersisted: true,
       },
     });
