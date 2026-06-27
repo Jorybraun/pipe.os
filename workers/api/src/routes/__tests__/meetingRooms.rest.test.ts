@@ -1372,6 +1372,29 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(clippyUserChatRes.status).toBe(200);
 
+    const fakeClippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The fake agent claims it inspected the code.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_chat',
+          agent: 'devin',
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeClippyAgentChatRes.status).toBe(422);
+    await expect(fakeClippyAgentChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
     const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1380,8 +1403,12 @@ describe('meeting room recording living-context route', () => {
         text: 'The failing test is asserting replay idempotency after an inventory timeout.',
         actor: 'agent',
         properties: {
-          source: 'clippy_agent_chat',
+          source: 'clippy_agent_bridge',
           agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          bridgePersisted: true,
           surface: 'win95',
           workspaceSessionId: 'workspace-session-1',
         },
@@ -1409,8 +1436,12 @@ describe('meeting room recording living-context route', () => {
     expect(chatNodes[0]?.narrative_text).toContain('replay idempotency');
     expect(JSON.parse(chatNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'agent',
-      source: 'clippy_agent_chat',
+      source: 'clippy_agent_bridge',
       agent: 'devin',
+      bridgeEventType: 'CHAT_RESPONSE',
+      bridgeMessageSource: 'agent_stdout',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      bridgePersisted: true,
       workspaceSessionId: 'workspace-session-1',
     });
     expect(chatNodes[1]?.narrative_text).toContain('User asked');

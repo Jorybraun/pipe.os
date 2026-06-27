@@ -133,6 +133,19 @@ const sessionEventSchema = z.object({
   text: z.string().min(1).max(8000),
   actor: z.enum(['host', 'guest', 'agent', 'system']).optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
+}).superRefine((event, ctx) => {
+  if (event.type !== 'ai_chat_agent') return;
+  const properties = event.properties ?? {};
+  const hasBridgeSource = properties.source === 'clippy_agent_bridge';
+  const hasChatResponseType = properties.bridgeEventType === 'CHAT_RESPONSE';
+  const observedAt = properties.observedAt;
+  const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
+  if (hasBridgeSource && hasChatResponseType && hasObservedAt) return;
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE.',
+    path: ['properties'],
+  });
 });
 
 async function readJsonRequestBody(c: Context<{ Bindings: Env }>): Promise<unknown> {

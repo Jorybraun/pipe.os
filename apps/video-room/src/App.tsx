@@ -34,7 +34,10 @@ import {
   buildRoomSurfaceChangeEvidence,
   canControlSharedRoomSurface,
 } from './lib/roomSurfaceEvidence';
-import { buildClippyUiActionEvidence } from './lib/clippyEvidence';
+import {
+  buildClippyAgentChatFallbackEvidence,
+  buildClippyUiActionEvidence,
+} from './lib/clippyEvidence';
 import {
   buildCodeEditorOpenEvidence,
   buildWorkspaceStateDesktopEvent,
@@ -1527,24 +1530,31 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
     if (message.persisted) return;
-    const isAgentResponse = message.source === 'agent_stdout' || message.source === undefined;
-    if (isAgentResponse) {
-      captureSessionEvent('ai_chat_agent', message.text, 'agent', {
-        source: 'clippy_agent_chat',
-        agent: message.agentName ?? 'devin',
+    const isAgentResponse = message.source === 'agent_stdout';
+    if (isAgentResponse && message.observedAt) {
+      const evidence = buildClippyAgentChatFallbackEvidence({
+        text: message.text,
+        agentName: message.agentName ?? 'devin',
+        observedAt: message.observedAt,
         surface: room.roomSurface,
         roomPhase: room.phase,
         workspaceStatus: workspaceSession?.status ?? null,
         workspaceSessionId: workspaceSession?.sessionId ?? null,
         messageTimestamp: message.timestamp,
       });
+      captureSessionEvent('ai_chat_agent', evidence.text, 'agent', evidence.properties);
       return;
     }
-    captureSessionEvent('ai_agent_status', message.text, 'agent', {
+    const diagnosticText = isAgentResponse
+      ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
+      : message.text;
+    captureSessionEvent('ai_agent_status', diagnosticText, 'agent', {
       source: 'clippy_agent_bridge',
       agent: message.agentName ?? 'devin',
       status: message.agentStatus ?? null,
-      diagnosticSource: message.diagnosticSource ?? message.source,
+      diagnosticSource: isAgentResponse
+        ? 'agent_response_missing_source_metadata'
+        : message.diagnosticSource ?? message.source,
       bridgeMessageSource: message.source,
       observedAt: message.observedAt ?? null,
       exitCode: message.exitCode ?? null,

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — 95 Until Infinity desktop tools
 
 - Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
+- Clippy/Devin agent replies now require real bridge `CHAT_RESPONSE` source metadata before becoming `ai_chat_agent` evidence; source-less browser claims are rejected as invalid session events.
 - Meeting-session event replay now keys evidence on stable event properties, preserving distinct repeated Win95 interactions such as multiple browser/window moves while keeping Durable Object replays idempotent.
 - Session-event route coverage now proves browser-submitted client event ids preserve distinct repeated same-second Win95 interactions while retrying the same client event remains idempotent.
 - Browser-submitted meeting-session evidence now includes stable client event ids and capture times, so repeated same-second Win95 interactions remain distinct while retries keep the same source identity.
