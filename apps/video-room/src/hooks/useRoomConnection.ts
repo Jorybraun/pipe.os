@@ -148,6 +148,17 @@ export type RoomDesktopEvent =
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 export type RoomDesktopEventDraft =
@@ -182,6 +193,17 @@ export type RoomDesktopEventDraft =
   | {
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 export type RoomFileSystemEvent =
@@ -269,6 +291,20 @@ function isWindowType(value: unknown): value is WindowType {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function stringOrNull(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function numberOrNull(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function recordOrUndefined(value: unknown): Record<string, unknown> | undefined {
@@ -383,6 +419,17 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'WORKSPACE_STATE_CHANGED',
       status: typeof value.status === 'string' ? value.status : null,
+      workspaceSessionId: stringOrNull(value.workspaceSessionId),
+      errorMessage: stringOrNull(value.errorMessage),
+      repoUrl: stringOrNull(value.repoUrl),
+      githubPrNumber: numberOrNull(value.githubPrNumber),
+      matchedRepoId: numberOrNull(value.matchedRepoId),
+      canLaunch: booleanOrUndefined(value.canLaunch),
+      ttlSeconds: numberOrNull(value.ttlSeconds),
+      ttlSource: stringOrNull(value.ttlSource),
+      expiresAt: stringOrNull(value.expiresAt),
+      expiringSoon: booleanOrUndefined(value.expiringSoon),
+      source: typeof value.source === 'string' && value.source.length <= 80 ? value.source : undefined,
     };
   }
   return null;

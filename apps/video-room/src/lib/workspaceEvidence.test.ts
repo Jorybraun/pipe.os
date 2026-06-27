@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodeEditorOpenEvidence } from './workspaceEvidence';
+import {
+  buildCodeEditorOpenEvidence,
+  buildWorkspaceStateDesktopEvent,
+} from './workspaceEvidence';
 import type { RoomWorkspace } from '../types';
 
 const workspace: RoomWorkspace = {
@@ -56,5 +59,48 @@ describe('buildCodeEditorOpenEvidence', () => {
       surface: 'standard',
       roomPhase: 'waiting',
     })).toBeNull();
+  });
+});
+
+describe('buildWorkspaceStateDesktopEvent', () => {
+  it('builds source-backed workspace state without leaking proxy URLs', () => {
+    const event = buildWorkspaceStateDesktopEvent({
+      workspace,
+      source: 'launch',
+    });
+
+    expect(event).toEqual({
+      kind: 'WORKSPACE_STATE_CHANGED',
+      status: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      errorMessage: null,
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      githubPrNumber: 14435,
+      matchedRepoId: 42,
+      canLaunch: false,
+      ttlSeconds: 3600,
+      ttlSource: 'default',
+      expiresAt: '2026-06-27T20:00:00.000Z',
+      expiringSoon: false,
+      source: 'launch',
+    });
+    expect(JSON.stringify(event)).not.toContain('secret-token');
+    expect(JSON.stringify(event)).not.toContain('proxyPath');
+  });
+
+  it('records explicit launch errors as diagnostic workspace state', () => {
+    expect(buildWorkspaceStateDesktopEvent({
+      workspace: { ...workspace, session: null, repoUrl: null, canLaunch: true },
+      source: 'error',
+      fallbackRepoUrl: 'https://github.com/example/repo',
+      errorMessage: 'Container start failed',
+    })).toMatchObject({
+      status: 'ERROR',
+      workspaceSessionId: null,
+      errorMessage: 'Container start failed',
+      repoUrl: 'https://github.com/example/repo',
+      canLaunch: true,
+      source: 'error',
+    });
   });
 });

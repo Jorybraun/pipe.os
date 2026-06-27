@@ -360,6 +360,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 3,
         kind: 'WORKSPACE_STATE_CHANGED',
         status: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        githubPrNumber: 14435,
+        matchedRepoId: 42,
+        ttlSeconds: 3600,
+        ttlSource: 'default',
+        expiringSoon: false,
+        source: 'launch',
       },
     }));
 
@@ -376,6 +384,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'WORKSPACE_STATE_CHANGED',
         status: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        githubPrNumber: 14435,
+        matchedRepoId: 42,
+        source: 'launch',
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
@@ -385,6 +398,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-workspace-ready',
           kind: 'WORKSPACE_STATE_CHANGED',
           status: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          githubPrNumber: 14435,
+          matchedRepoId: 42,
+          ttlSeconds: 3600,
+          ttlSource: 'default',
+          expiringSoon: false,
+          source: 'launch',
         }),
       }),
     ]);

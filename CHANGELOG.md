@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Host and guest participants can now both switch the shared room between standard call and 95 Until Infinity, with browser-side `room_surface_change` evidence recording the actor, previous surface, next surface, and room phase.
 - 95 Until Infinity terminal windows now capture completed container commands and bounded terminal output chunks as source-backed meeting-session evidence with workspace/session metadata.
 - 95 Until Infinity now captures a deduplicated `code_editor_open` evidence event when the VS Code/code-server workspace iframe actually loads, without persisting room-token proxy URLs.
+- 95 Until Infinity workspace state events now preserve source-backed dev-container diagnostics, including session id, status, repo context, TTL, and error message, without persisting room-token proxy paths.
 - Clippy/Devin bridge status transitions now persist as source-backed meeting-session evidence, including real auth-required/disconnected states instead of simulated agent availability.
 - Code-server workspace file create/modify/delete events are now observed by the container bridge and captured as source-backed `file_change` meeting-session evidence with path, hash, size, and bounded text preview when available.
 - Dev containers can now post token-scoped room `session-events` directly in dev without the browser Basic Auth proxy, so code-server workspace evidence persists through the same room-token validation path as room context.

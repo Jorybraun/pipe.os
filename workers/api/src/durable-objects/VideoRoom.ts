@@ -120,6 +120,17 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
       status?: string | null;
+      workspaceSessionId?: string | null;
+      errorMessage?: string | null;
+      repoUrl?: string | null;
+      githubPrNumber?: number | null;
+      matchedRepoId?: number | null;
+      canLaunch?: boolean;
+      ttlSeconds?: number | null;
+      ttlSource?: string | null;
+      expiresAt?: string | null;
+      expiringSoon?: boolean;
+      source?: string;
     };
 
 interface RoomDesktopActivityEntry {
@@ -410,6 +421,17 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'WORKSPACE_STATE_CHANGED',
         status,
+        workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
+        errorMessage: this.safeTextOrNull(value.errorMessage, 500),
+        repoUrl: this.safeTextOrNull(value.repoUrl, 500),
+        githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
+        matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
+        canLaunch: this.safeBoolean(value.canLaunch),
+        ttlSeconds: this.safeNumberOrNull(value.ttlSeconds),
+        ttlSource: this.safeTextOrNull(value.ttlSource, 80),
+        expiresAt: this.safeTextOrNull(value.expiresAt, 80),
+        expiringSoon: this.safeBoolean(value.expiringSoon),
+        source: this.safeTextOrNull(value.source, 80) ?? undefined,
       };
     }
     return null;
@@ -603,6 +625,20 @@ export class VideoRoom {
 
   private isSafeFileText(value: unknown, maxLength: number): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
+  }
+
+  private safeTextOrNull(value: unknown, maxLength: number): string | null | undefined {
+    if (value === null) return null;
+    return this.isSafeFileText(value, maxLength) ? value : undefined;
+  }
+
+  private safeNumberOrNull(value: unknown): number | null | undefined {
+    if (value === null) return null;
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private safeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
   }
 
   private parseRoomFile(value: unknown): RoomFile | null {

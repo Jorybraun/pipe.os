@@ -140,6 +140,9 @@ The controlling product rule remains:
 - VS Code/code-server iframe loads now capture deduplicated `code_editor_open`
   `meeting_session_event` evidence with workspace session and repo metadata,
   without storing room-token proxy URLs.
+- Workspace state events now persist dev-container diagnostics with workspace
+  session id, status, repo context, TTL details, and error messages, while
+  excluding room-token proxy paths from the evidence payload.
 - Clippy/Devin bridge status transitions now persist as source-backed
   `meeting_session_event` evidence, including real auth-required or
   disconnected states instead of simulated agent availability.

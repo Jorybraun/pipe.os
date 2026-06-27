@@ -175,12 +175,33 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
 
   if (event.kind === 'WORKSPACE_STATE_CHANGED') {
     const status = stringOrNull(event.status) ?? 'unknown';
+    const properties: Record<string, unknown> = { ...base, workspaceStatus: status };
+    const workspaceSessionId = stringOrNull(event.workspaceSessionId);
+    const errorMessage = stringOrNull(event.errorMessage);
+    const repoUrl = stringOrNull(event.repoUrl);
+    const githubPrNumber = numberOrNull(event.githubPrNumber);
+    const matchedRepoId = numberOrNull(event.matchedRepoId);
+    const ttlSeconds = numberOrNull(event.ttlSeconds);
+    const ttlSource = stringOrNull(event.ttlSource);
+    const expiresAt = stringOrNull(event.expiresAt);
+    const source = stringOrNull(event.source);
+    if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
+    if (errorMessage) properties.errorMessage = errorMessage;
+    if (repoUrl) properties.repoUrl = repoUrl;
+    if (githubPrNumber !== null) properties.githubPrNumber = githubPrNumber;
+    if (matchedRepoId !== null) properties.matchedRepoId = matchedRepoId;
+    if (typeof event.canLaunch === 'boolean') properties.canLaunch = event.canLaunch;
+    if (ttlSeconds !== null) properties.ttlSeconds = ttlSeconds;
+    if (ttlSource) properties.ttlSource = ttlSource;
+    if (expiresAt) properties.expiresAt = expiresAt;
+    if (typeof event.expiringSoon === 'boolean') properties.expiringSoon = event.expiringSoon;
+    if (source) properties.source = source;
     return createSessionEvent(input, {
       type: 'workspace_state',
       timestamp,
       actor,
       text: `Workspace state changed to ${status}`,
-      properties: { ...base, workspaceStatus: status },
+      properties,
     });
   }
 

@@ -34,7 +34,10 @@ import {
   buildRoomSurfaceChangeEvidence,
   canControlSharedRoomSurface,
 } from './lib/roomSurfaceEvidence';
-import { buildCodeEditorOpenEvidence } from './lib/workspaceEvidence';
+import {
+  buildCodeEditorOpenEvidence,
+  buildWorkspaceStateDesktopEvent,
+} from './lib/workspaceEvidence';
 import {
   useRoomConnection,
   type RoomClippyPromptDraft,
@@ -293,6 +296,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingStartedRef = useRef(false);
   const publishedClippyPromptSignatureRef = useRef<string | null>(null);
   const workspaceEditorOpenEvidenceKeysRef = useRef<Set<string>>(new Set());
+  const publishedWorkspaceStateSignatureRef = useRef<string | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
     const requestId = deviceRequestRef.current + 1;
@@ -347,19 +351,51 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     void postRoomEvent(token, 'STARTED');
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
+  const publishWorkspaceStateEvent = useCallback((
+    nextWorkspace: RoomWorkspace | null,
+    source: 'initial_load' | 'launch' | 'refresh' | 'error',
+    options: { errorMessage?: string | null; fallbackRepoUrl?: string | null } = {},
+  ): void => {
+    if (metadata.role !== 'HOST') return;
+    if (!nextWorkspace && !options.errorMessage) return;
+    const event = buildWorkspaceStateDesktopEvent({
+      workspace: nextWorkspace,
+      source,
+      fallbackRepoUrl: options.fallbackRepoUrl,
+      errorMessage: options.errorMessage,
+    });
+    const signature = JSON.stringify(event);
+    if (publishedWorkspaceStateSignatureRef.current === signature) return;
+    publishedWorkspaceStateSignatureRef.current = signature;
+    room.publishDesktopEvent(event);
+  }, [metadata.role, room.publishDesktopEvent]);
+
   useEffect(() => {
-    setWorkspace(metadata.workspace ?? null);
+    const initialWorkspace = metadata.workspace ?? null;
+    setWorkspace(initialWorkspace);
+    publishWorkspaceStateEvent(initialWorkspace, 'initial_load');
     // Always fetch fresh workspace data on room entry; metadata can be stale.
-    void getRoomWorkspace(token).then(setWorkspace).catch(() => {});
-  }, [metadata.workspace, token]);
+    void getRoomWorkspace(token).then((freshWorkspace) => {
+      setWorkspace(freshWorkspace);
+      publishWorkspaceStateEvent(freshWorkspace, 'refresh');
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Workspace status failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(initialWorkspace, 'error', { errorMessage: message });
+    });
+  }, [metadata.workspace, publishWorkspaceStateEvent, token]);
 
   const refreshWorkspace = useCallback(async (): Promise<void> => {
     try {
-      setWorkspace(await getRoomWorkspace(token));
+      const nextWorkspace = await getRoomWorkspace(token);
+      setWorkspace(nextWorkspace);
+      publishWorkspaceStateEvent(nextWorkspace, 'refresh');
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Workspace status failed.');
+      const message = error instanceof Error ? error.message : 'Workspace status failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(workspace, 'error', { errorMessage: message });
     }
-  }, [token]);
+  }, [publishWorkspaceStateEvent, token, workspace]);
 
   const launchWorkspace = useCallback(async (): Promise<void> => {
     setWorkspaceLoading(true);
@@ -368,16 +404,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       const repoUrl = workspace?.repoUrl ?? (workspaceRepoInput.trim() || undefined);
       const nextWorkspace = await launchRoomWorkspace(token, repoUrl);
       setWorkspace(nextWorkspace);
-      room.publishDesktopEvent({
-        kind: 'WORKSPACE_STATE_CHANGED',
-        status: nextWorkspace.session?.status ?? null,
-      });
+      publishWorkspaceStateEvent(nextWorkspace, 'launch', { fallbackRepoUrl: repoUrl ?? null });
     } catch (error) {
-      setWorkspaceError(error instanceof Error ? error.message : 'Workspace launch failed.');
+      const message = error instanceof Error ? error.message : 'Workspace launch failed.';
+      setWorkspaceError(message);
+      publishWorkspaceStateEvent(workspace, 'error', {
+        errorMessage: message,
+        fallbackRepoUrl: workspace?.repoUrl ?? (workspaceRepoInput.trim() || null),
+      });
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [room, token, workspace?.repoUrl, workspaceRepoInput]);
+  }, [publishWorkspaceStateEvent, token, workspace, workspaceRepoInput]);
 
   useEffect(() => {
     if (!workspace?.enabled) return undefined;
