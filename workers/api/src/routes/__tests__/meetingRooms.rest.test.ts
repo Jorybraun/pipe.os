@@ -1456,6 +1456,8 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
+      pipeApiUrl: 'http://localhost:5175',
+      roomToken: created.hostToken,
     }));
   });
 

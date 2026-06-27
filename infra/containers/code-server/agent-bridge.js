@@ -8,6 +8,8 @@ const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
 const WORKSPACE = process.env.WORKSPACE_DIR || '/workspace';
 const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
 const AGENT_NAME = process.env.AGENT_TYPE || 'devin';
+const PIPE_API_URL = process.env.PIPE_API_URL || '';
+const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 
 let agentAuthed = Boolean(DEVIN_API_KEY);
 let agentProcess = null;
@@ -128,6 +130,55 @@ function sendBinary(ws, chunk) {
 
 function broadcast(msg) {
   for (const ws of clients) send(ws, msg);
+}
+
+function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
+  const base = String(pipeApiUrl || '').trim();
+  const token = String(roomToken || '').trim();
+  if (!base || !token) return null;
+
+  try {
+    return new URL(
+      `/api/v1/meeting-rooms/${encodeURIComponent(token)}/context-summary`,
+      base,
+    ).toString();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRoomContextSummary(fetchImpl = fetch) {
+  const contextUrl = roomContextSummaryUrl();
+  if (!contextUrl) {
+    return {
+      status: 503,
+      text: 'PIPE room context is not configured for this workspace.',
+    };
+  }
+
+  try {
+    const response = await fetchImpl(contextUrl, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      return {
+        status: response.status,
+        text: `PIPE room context fetch failed (${response.status}).`,
+      };
+    }
+
+    const body = await response.json().catch(() => null);
+    const summary = body && typeof body.summary === 'string' ? body.summary.trim() : '';
+    return {
+      status: 200,
+      text: summary || 'No PIPE room context has been captured yet.',
+    };
+  } catch (error) {
+    return {
+      status: 502,
+      text: `PIPE room context fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 }
 
 function decodeFrames(buffer, onFrame) {
@@ -375,7 +426,7 @@ function proxyUpgradeToCodeServer(req, socket, head) {
   proxyReq.end();
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -399,8 +450,12 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url.pathname === '/context') {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Room context endpoint is available from the PIPE API bridge.');
+    const context = await fetchRoomContextSummary();
+    res.writeHead(context.status, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    res.end(context.text);
     return;
   }
   proxyToCodeServer(req, res);
