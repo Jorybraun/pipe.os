@@ -61,6 +61,7 @@ export interface MeetingTranscriptIngestionInput {
   recordingKey?: string | null;
   transcriptionAudioKey?: string | null;
   provider?: string | null;
+  speakerMetadata?: JsonObject | null;
 }
 
 interface CanonicalSegment extends MeetingTranscriptSegmentInput {
@@ -554,6 +555,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       recordingKey: input.recordingKey ?? null,
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       provider: input.provider ?? null,
+      speakerMetadata: input.speakerMetadata ?? null,
       transcriptStatus: 'READY',
     },
   });
@@ -593,6 +595,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         provider: input.provider ?? null,
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+        speakerMetadata: input.speakerMetadata ?? null,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
@@ -670,6 +673,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         provider: input.provider ?? null,
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+        speakerMetadata: input.speakerMetadata ?? null,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },

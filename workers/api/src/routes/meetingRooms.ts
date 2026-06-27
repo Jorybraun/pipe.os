@@ -28,6 +28,7 @@ import {
   type DevContainerSessionRow,
 } from '../lib/devContainerSessions';
 import type {
+  JsonObject,
   MeetingTranscriptAssertionInput,
   MeetingTranscriptSegmentInput,
 } from '../lib/livingContext';
@@ -145,6 +146,120 @@ interface RoomWorkspacePayload {
 interface RecordingProcessingOverrides {
   structuredTranscription?: StructuredTranscription | null;
   analysisJson?: string | null;
+  speakerMetadata?: RecordingSpeakerMetadata | null;
+}
+
+const recordingSpeakerChannelSchema = z.object({
+  channel: z.number().int().min(0).max(7),
+  role: z.enum(['host', 'guest']),
+  source: z.enum(['local', 'remote']),
+}).strict();
+
+const recordingSpeakerMetadataSchema = z.object({
+  version: z.literal(1),
+  transcriptionAudio: z.object({
+    channelLayout: z.string().min(1).max(120),
+    channelCount: z.number().int().min(1).max(8),
+    channels: z.array(recordingSpeakerChannelSchema).min(1).max(8),
+  }).strict(),
+}).strict().superRefine((metadata, ctx) => {
+  const channels = new Set<number>();
+  const roles = new Set<string>();
+  for (const [index, channel] of metadata.transcriptionAudio.channels.entries()) {
+    if (channels.has(channel.channel)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate transcription audio channel ${channel.channel}.`,
+        path: ['transcriptionAudio', 'channels', index, 'channel'],
+      });
+    }
+    channels.add(channel.channel);
+    roles.add(channel.role);
+    if (channel.channel >= metadata.transcriptionAudio.channelCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Channel index must be lower than channelCount.',
+        path: ['transcriptionAudio', 'channels', index, 'channel'],
+      });
+    }
+  }
+  if (!roles.has('host') || !roles.has('guest')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Speaker metadata must map both host and guest audio channels.',
+      path: ['transcriptionAudio', 'channels'],
+    });
+  }
+});
+
+type RecordingSpeakerMetadata = z.infer<typeof recordingSpeakerMetadataSchema>;
+type RecordingSpeakerChannel = z.infer<typeof recordingSpeakerChannelSchema>;
+
+function defaultRecordingSpeakerMetadata(): RecordingSpeakerMetadata {
+  return {
+    version: 1,
+    transcriptionAudio: {
+      channelLayout: 'host-local-guest-remote-v1',
+      channelCount: 2,
+      channels: [
+        { channel: 0, role: 'host', source: 'local' },
+        { channel: 1, role: 'guest', source: 'remote' },
+      ],
+    },
+  };
+}
+
+function parseRecordingSpeakerMetadata(
+  value: unknown,
+): { ok: true; metadata: RecordingSpeakerMetadata } | { ok: false; message: string } {
+  const parsed = recordingSpeakerMetadataSchema.safeParse(value);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Invalid speaker metadata.' };
+  }
+  return { ok: true, metadata: parsed.data };
+}
+
+function parseRecordingSpeakerMetadataJson(
+  value: string,
+): { ok: true; metadata: RecordingSpeakerMetadata } | { ok: false; message: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return { ok: false, message: 'Speaker metadata must be JSON.' };
+  }
+  return parseRecordingSpeakerMetadata(parsed);
+}
+
+function speakerMetadataJsonObject(metadata: RecordingSpeakerMetadata): JsonObject {
+  return metadata as unknown as JsonObject;
+}
+
+function speakerMetadataFromCustomMetadata(
+  customMetadata: Record<string, string> | undefined,
+): RecordingSpeakerMetadata | null {
+  const raw = customMetadata?.speakerMetadata;
+  if (!raw) return null;
+  const parsed = parseRecordingSpeakerMetadataJson(raw);
+  return parsed.ok ? parsed.metadata : null;
+}
+
+function speakerMetadataCustomMetadata(
+  metadata: RecordingSpeakerMetadata,
+): Record<string, string> {
+  return {
+    speakerMetadata: JSON.stringify(metadata),
+    speakerMetadataVersion: String(metadata.version),
+    speakerChannelLayout: metadata.transcriptionAudio.channelLayout,
+  };
+}
+
+function speakerChannelsByChannel(
+  metadata: RecordingSpeakerMetadata,
+): Map<number, RecordingSpeakerChannel> {
+  return new Map(
+    metadata.transcriptionAudio.channels.map((channel) => [channel.channel, channel]),
+  );
 }
 
 const evidenceLevelSchema = z.enum([
@@ -528,10 +643,15 @@ async function processRecording(
     }
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
+    const speakerMetadata = overrides.speakerMetadata
+      ?? speakerMetadataFromCustomMetadata(object.customMetadata)
+      ?? defaultRecordingSpeakerMetadata();
+    const channelMap = speakerChannelsByChannel(speakerMetadata);
     console.log(`${logPrefix} Retrieved audio from R2`, {
       transcriptionSourceKey,
       bytes: audioBuffer.byteLength,
       contentType,
+      speakerChannelLayout: speakerMetadata.transcriptionAudio.channelLayout,
     });
     const structured = overrides.structuredTranscription ?? (env.DEEPGRAM_API_KEY
       ? await transcribeAudioDeepgramStructured(
@@ -548,24 +668,27 @@ async function processRecording(
     let segments: MeetingTranscriptSegmentInput[];
     let transcript: string;
     if (structured) {
-      segments = structured.segments.map((segment) => ({
-        stableSegmentId: segment.stableSegmentId,
-        text: segment.text,
-        speakerLabel: segment.speakerLabel,
-        speakerRole: segment.channel === 0
-          ? 'host'
-          : segment.channel === 1
-            ? 'guest'
-            : null,
-        contactId: segment.channel === 1 ? room.guest_contact_id : null,
-        channel: segment.channel,
-        timestampStartMs: segment.timestampStartMs,
-        timestampEndMs: segment.timestampEndMs,
-        confidence: segment.confidence,
-        metadata: {
-          providerSegmentId: segment.providerSegmentId,
-        },
-      }));
+      segments = structured.segments.map((segment) => {
+        const speakerChannel = segment.channel === null
+          ? null
+          : channelMap.get(segment.channel) ?? null;
+        return {
+          stableSegmentId: segment.stableSegmentId,
+          text: segment.text,
+          speakerLabel: segment.speakerLabel,
+          speakerRole: speakerChannel?.role ?? null,
+          contactId: speakerChannel?.role === 'guest' ? room.guest_contact_id : null,
+          channel: segment.channel,
+          timestampStartMs: segment.timestampStartMs,
+          timestampEndMs: segment.timestampEndMs,
+          confidence: segment.confidence,
+          metadata: {
+            providerSegmentId: segment.providerSegmentId,
+            speakerMetadataRole: speakerChannel?.role ?? null,
+            speakerMetadataSource: speakerChannel?.source ?? null,
+          },
+        };
+      });
       transcript = structured.transcript;
     } else {
       console.log(`${logPrefix} Using Whisper fallback (no structured transcription)`);
@@ -613,8 +736,11 @@ async function processRecording(
       personContextReason: hasAttributedGuestAudio
         ? null
         : structured
-          ? 'guest_contact_id_missing'
+          ? room.guest_contact_id
+            ? 'guest_audio_channel_missing'
+            : 'guest_contact_id_missing'
           : 'mixed_audio_without_speaker_attribution',
+      speakerMetadata: speakerMetadataJsonObject(speakerMetadata),
     };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
       stable_segment_id: segment.stableSegmentId,
@@ -660,6 +786,7 @@ async function processRecording(
       recordingKey,
       transcriptionAudioKey: transcriptionSourceKey !== recordingKey ? transcriptionSourceKey : null,
       provider,
+      speakerMetadata: speakerMetadataJsonObject(speakerMetadata),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1276,6 +1403,7 @@ meetingRooms.post('/:token/recording', async (c) => {
   let contentType: string;
   let transcriptionBytes: ArrayBuffer | null = null;
   let transcriptionContentType: string | null = null;
+  let speakerMetadata = defaultRecordingSpeakerMetadata();
 
   if (requestContentType.toLowerCase().includes('multipart/form-data')) {
     const form = await c.req.formData();
@@ -1292,6 +1420,18 @@ meetingRooms.post('/:token/recording', async (c) => {
       transcriptionBytes = await transcriptionAudio.arrayBuffer();
       transcriptionContentType = transcriptionAudio.type || 'audio/webm';
     }
+
+    const speakerMetadataField = form.get('speakerMetadata');
+    if (speakerMetadataField !== null) {
+      if (typeof speakerMetadataField !== 'string') {
+        return apiError(c, 'VALIDATION_ERROR', 'Speaker metadata must be a JSON string.');
+      }
+      const parsedSpeakerMetadata = parseRecordingSpeakerMetadataJson(speakerMetadataField);
+      if (!parsedSpeakerMetadata.ok) {
+        return apiError(c, 'VALIDATION_ERROR', parsedSpeakerMetadata.message);
+      }
+      speakerMetadata = parsedSpeakerMetadata.metadata;
+    }
   } else {
     bytes = await c.req.arrayBuffer();
     contentType = requestContentType;
@@ -1303,6 +1443,7 @@ meetingRooms.post('/:token/recording', async (c) => {
     hasTranscriptionAudio: transcriptionBytes !== null,
     transcriptionBytes: transcriptionBytes?.byteLength ?? 0,
     contentType,
+    speakerChannelLayout: speakerMetadata.transcriptionAudio.channelLayout,
   });
 
   if (bytes.byteLength === 0) {
@@ -1322,7 +1463,11 @@ meetingRooms.post('/:token/recording', async (c) => {
   try {
     await c.env.STORAGE.put(recordingKey, bytes, {
       httpMetadata: { contentType },
-      customMetadata: { meetingId: room.meeting_id, roomId: room.room_id },
+      customMetadata: {
+        meetingId: room.meeting_id,
+        roomId: room.room_id,
+        ...speakerMetadataCustomMetadata(speakerMetadata),
+      },
     });
   } catch (r2Error) {
     console.error('[meetingRooms] R2 put failed for recording', {
@@ -1341,6 +1486,7 @@ meetingRooms.post('/:token/recording', async (c) => {
         meetingId: room.meeting_id,
         roomId: room.room_id,
         derivedFrom: recordingKey,
+        ...speakerMetadataCustomMetadata(speakerMetadata),
       },
     });
   }
@@ -1357,7 +1503,10 @@ meetingRooms.post('/:token/recording', async (c) => {
     room,
     transcriptionSourceKey,
     recordingKey,
-    processingOverrides,
+    {
+      ...processingOverrides,
+      speakerMetadata,
+    },
   ));
   console.log('[meetingRooms] Recording upload complete, processing started', {
     meetingId: room.meeting_id,

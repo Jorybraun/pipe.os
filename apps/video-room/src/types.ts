@@ -1,4 +1,6 @@
 export type RoomRole = 'HOST' | 'GUEST';
+export type RecordingSpeakerRole = 'host' | 'guest';
+export type RecordingAudioSource = 'local' | 'remote';
 export type IceServerProvider = 'cloudflare' | 'metered' | 'fallback' | 'unknown';
 export type RoomPhase =
   | 'disconnected'
@@ -50,6 +52,21 @@ export interface RoomWorkspace {
   githubPrNumber: number | null;
   matchedRepoId: number | null;
   session: RoomWorkspaceSession | null;
+}
+
+export interface RecordingSpeakerChannel {
+  channel: number;
+  role: RecordingSpeakerRole;
+  source: RecordingAudioSource;
+}
+
+export interface RecordingSpeakerMetadata {
+  version: 1;
+  transcriptionAudio: {
+    channelLayout: string;
+    channelCount: number;
+    channels: RecordingSpeakerChannel[];
+  };
 }
 
 export interface SdpPayload {

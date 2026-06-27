@@ -47,7 +47,12 @@ import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowType } from './hooks/useWindowManager';
-import type { IceServerProvider, RoomMetadata, RoomWorkspace } from './types';
+import type {
+  IceServerProvider,
+  RecordingSpeakerMetadata,
+  RoomMetadata,
+  RoomWorkspace,
+} from './types';
 
 type RecordingState = 'idle' | 'starting' | 'recording' | 'uploading' | 'saved' | 'failed';
 const NOTEPAD_FILE_ID = 'desktop-notes';
@@ -244,6 +249,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingChunksRef = useRef<Blob[]>([]);
   const transcriptionChunksRef = useRef<Blob[]>([]);
   const recordingDisposeRef = useRef<(() => Promise<void>) | null>(null);
+  const recordingSpeakerMetadataRef = useRef<RecordingSpeakerMetadata | null>(null);
   const autoAcceptingRef = useRef(false);
   const processedDesktopEventsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
@@ -531,6 +537,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = recorder;
       transcriptionRecorderRef.current = transcriptionRecorder;
       recordingDisposeRef.current = composite.dispose;
+      recordingSpeakerMetadataRef.current = composite.speakerMetadata;
       recordingStartedRef.current = true;
       setRecordingNotice('Recording started. Transcript processing begins after the host ends the call.');
       setRecordingState('recording');
@@ -561,6 +568,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = null;
       transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
+      recordingSpeakerMetadataRef.current = null;
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
       if (metadata.role === 'HOST') {
@@ -593,7 +601,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         iceProvider: room.iceProvider,
       });
-      const result = await uploadRecording(token, blob, transcriptionAudio);
+      const result = await uploadRecording(
+        token,
+        blob,
+        transcriptionAudio,
+        recordingSpeakerMetadataRef.current ?? undefined,
+      );
       console.log('[room] Recording upload succeeded', {
         accepted: result.accepted,
         transcriptStatus: result.transcriptStatus,
@@ -622,6 +635,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recorderRef.current = null;
       transcriptionRecorderRef.current = null;
       recordingDisposeRef.current = null;
+      recordingSpeakerMetadataRef.current = null;
       recordingChunksRef.current = [];
       transcriptionChunksRef.current = [];
     }

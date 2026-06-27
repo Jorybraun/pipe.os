@@ -9,12 +9,12 @@ The current video-room recorder builds a two-channel transcription stream from t
 - channel 0: host local audio
 - channel 1: guest remote audio
 
-The server maps Deepgram multichannel output as:
+The server now consumes explicit speaker metadata from the recording upload and maps Deepgram multichannel output through that upload-time contract:
 
 - channel 0 -> `host`
 - channel 1 -> `guest`
 
-This is the correct direction, but the fallback transcription path collapses audio into a mixed transcript and loses speaker attribution.
+This is the current browser recorder layout, but the persisted map is the source of truth. The fallback transcription path still collapses audio into a mixed transcript and loses speaker attribution.
 
 ## Acceptance Criteria
 
@@ -32,3 +32,9 @@ This is the correct direction, but the fallback transcription path collapses aud
 - Store speaker metadata in R2/D1 next to `transcript_json`.
 - If Deepgram returns fewer than two channels, keep the transcript searchable but set `personContextMode = summary_only`.
 - Future live transcription should use participant stream IDs directly rather than inferring role after recording.
+
+## Progress
+
+- Implemented upload-time speaker metadata from the video-room composite recorder.
+- Validated and persisted the channel map in the Worker recording route and transcript artifact metadata.
+- Added a regression proving reversed Deepgram channels are attributed from uploaded metadata rather than implicit channel order.

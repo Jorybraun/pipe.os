@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the workspace proxy root route so the code-server iframe can load the bare session proxy URL.
 - Added a shared-room workspace state sync event so a host-launched dev workspace appears on the guest's 95 desktop.
 - Added research tasks for the remote OS-agent protocol decision and stream-backed transcript speaker attribution.
+- Recording uploads now include validated speaker-channel metadata, persist it with transcript artifacts, and use it for Deepgram segment attribution before promoting transcript evidence into the living context graph.
 
 ### Changed — Win95-themed workspace overlay in video room
 

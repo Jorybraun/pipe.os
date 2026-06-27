@@ -1,4 +1,9 @@
-import type { IceServerProvider, RoomMetadata, RoomWorkspace } from '../types';
+import type {
+  IceServerProvider,
+  RecordingSpeakerMetadata,
+  RoomMetadata,
+  RoomWorkspace,
+} from '../types';
 
 const localApiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8787'
@@ -47,11 +52,15 @@ export async function uploadRecording(
   token: string,
   recording: Blob,
   transcriptionAudio?: Blob,
+  speakerMetadata?: RecordingSpeakerMetadata,
 ): Promise<{ accepted: boolean; transcriptStatus?: string }> {
   if (transcriptionAudio && transcriptionAudio.size > 0) {
     const body = new FormData();
     body.append('recording', recording, 'recording.webm');
     body.append('transcriptionAudio', transcriptionAudio, 'transcription-audio.webm');
+    if (speakerMetadata) {
+      body.append('speakerMetadata', JSON.stringify(speakerMetadata));
+    }
     const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
       method: 'POST',
       body,
