@@ -1,7 +1,7 @@
 /**
  * Cloudflare Workers AI provider — wraps env.AI.run() for text generation.
  *
- * Default model: @cf/meta/llama-3.1-8b-instruct
+ * Default model: @cf/google/gemma-4-26b-a4b-it
  * Override via CLOUDFLARE_AI_MODEL env var.
  *
  * The binding is already live in wrangler.toml — transcribe.ts uses the same
@@ -11,12 +11,24 @@
  * uses a deterministic FSM rather than ReAct-with-tools, so supportsTools =
  * false is correct.
  *
- * Forced-JSON mode uses response_format: { type: "json_object" } for models
- * that support it (Llama 3.1/3.2, Mistral, etc.) and falls back to prompt-
- * level JSON enforcement for models that don't (e.g. Gemma 4).
+ * Forced-JSON mode uses prompt-level JSON enforcement because Workers AI
+ * models have inconsistent response_format support across families.
  */
 
 import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions } from './types';
+
+export const DEFAULT_CLOUDFLARE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+
+const DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS: Record<string, string> = {
+  '@cf/meta/llama-3.1-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+};
+
+export function normalizeCloudflareAIModel(model: string): string {
+  const replacement = DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS[model];
+  if (!replacement) return model;
+  console.warn(`[cloudflareAIProvider] Workers AI model ${model} is deprecated; using ${replacement} instead.`);
+  return replacement;
+}
 
 // Workers AI chat messages use OpenAI-compatible roles.
 interface CFChatMessage {
@@ -102,11 +114,14 @@ function stripJsonFences(text: string): string {
 export class CloudflareAIProvider implements LLMProvider {
   readonly name = 'cloudflare-ai';
   readonly supportsTools = false;
+  readonly model: string;
 
   constructor(
     private readonly ai: Ai,
-    readonly model: string = '@cf/meta/llama-3.1-8b-instruct',
-  ) {}
+    model: string = DEFAULT_CLOUDFLARE_MODEL,
+  ) {
+    this.model = normalizeCloudflareAIModel(model);
+  }
 
   async complete(messages: LLMMessage[], options: CompleteOptions = {}): Promise<LLMCompletion> {
     const forceJson = options.forceJson === true;

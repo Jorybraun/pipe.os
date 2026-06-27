@@ -25,22 +25,22 @@
  *   KIMI_MODEL             = default Kimi model (default: kimi-k2-6)
  *
  * Shared Cloudflare credentials:
- *   CLOUDFLARE_AI_MODEL    = default Workers AI model (default: @cf/meta/llama-3.1-8b-instruct)
+ *   CLOUDFLARE_AI_MODEL    = default Workers AI model (default: @cf/google/gemma-4-26b-a4b-it)
  *   AI                     = Cloudflare Workers AI binding
  *
  * When 'MOCK_AI=true', culture/copilot/candidate agents return null (deterministic mock paths).
  */
 
 import { GoogleAIProvider } from './googleAIProvider';
-import { CloudflareAIProvider } from './cloudflareAIProvider';
+import { CloudflareAIProvider, DEFAULT_CLOUDFLARE_MODEL } from './cloudflareAIProvider';
 import { VertexAIProvider } from './vertexAIProvider';
 import { KimiProvider } from './kimiProvider';
 import type { LLMProvider } from './types';
 
 export type ProviderName = 'google-ai' | 'cloudflare-ai' | 'vertex-ai' | 'kimi';
+export { DEFAULT_CLOUDFLARE_MODEL } from './cloudflareAIProvider';
 
 const DEFAULT_VERTEX_MODEL = 'google/gemini-1.5-flash-002';
-const DEFAULT_CLOUDFLARE_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const DEFAULT_KIMI_MODEL = 'kimi-k2-6';
 const DEFAULT_KIMI_BASE_URL = 'https://api.moonshot.cn/v1';
 
