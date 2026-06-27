@@ -318,7 +318,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   });
 }
 
-function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): Promise<SessionEvent | null> {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const role = isRoomActivityRole(value.role) ? value.role : null;
@@ -342,6 +342,7 @@ function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: u
     if (mimeType) properties.mimeType = mimeType;
     if (typeof file.content === 'string') {
       properties.contentLength = file.content.length;
+      properties.contentHash = await deterministicEntityId('content', file.content);
       const preview = compactPreview(file.content);
       if (preview && fileKind !== 'paint') properties.contentPreview = preview;
     }
@@ -371,10 +372,10 @@ function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, value: u
   return null;
 }
 
-export function roomActivitySnapshotToSessionEvents(
+export async function roomActivitySnapshotToSessionEvents(
   snapshot: unknown,
   input: RoomActivitySyncInput,
-): SessionEvent[] {
+): Promise<SessionEvent[]> {
   if (!isRecord(snapshot)) return [];
   const events: SessionEvent[] = [];
   const pushMapped = (event: SessionEvent | null): void => {
@@ -391,7 +392,9 @@ export function roomActivitySnapshotToSessionEvents(
   desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
-  fileSystemActivityLog.forEach((entry) => pushMapped(fileSystemActivityToSessionEvent(input, entry)));
+  for (const entry of fileSystemActivityLog) {
+    pushMapped(await fileSystemActivityToSessionEvent(input, entry));
+  }
 
   return events.sort((a, b) => (
     a.timestamp - b.timestamp
@@ -825,7 +828,7 @@ export async function syncRoomActivityToSessionEvents(
     const response = await room.fetch(new Request('https://do/activity-log'));
     if (!response.ok) return { captured: 0, failed: 0, events: 0 };
     const snapshot = await response.json().catch(() => null);
-    const events = roomActivitySnapshotToSessionEvents(snapshot, input);
+    const events = await roomActivitySnapshotToSessionEvents(snapshot, input);
     if (events.length === 0) return { captured: 0, failed: 0, events: 0 };
     const result = await captureSessionEvents(db, events, env);
     return {

@@ -178,8 +178,8 @@ describe('sessionEvents', () => {
   });
 
   describe('roomActivitySnapshotToSessionEvents', () => {
-    it('converts durable room activity logs into source-backed session events', () => {
-      const events = roomActivitySnapshotToSessionEvents({
+    it('converts durable room activity logs into source-backed session events', async () => {
+      const events = await roomActivitySnapshotToSessionEvents({
         desktopActivityLog: [
           {
             role: 'HOST',
@@ -325,6 +325,7 @@ describe('sessionEvents', () => {
         fileKind: 'text',
         contentPreview: 'Candidate identified retry bug evidence.',
       });
+      expect(events[5]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
     });
   });
 
