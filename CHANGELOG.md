@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 95 Until Infinity shared Notepad/Paint file replay now adds deterministic content hashes to `file_change` evidence, so desktop-created files have immutable provenance beyond previews.
 - 95 Until Infinity room activity replay now captures synced window state changes such as focus, minimize, maximize, and movement as source-backed `window_update` meeting-session evidence.
 - 95 Until Infinity room lifecycle now captures accepted guest join/leave and recording start/stop events as source-backed meeting-session evidence, without fabricating a recording stop when no recording was active.
+- 95 Until Infinity recording transcripts now persist per-segment speaker-channel metadata and attribution-source metadata, so host/guest transcript evidence can explain the stream/channel mapping used for speaker roles.
 - 95 Until Infinity terminal windows now capture completed container commands and bounded terminal output chunks as source-backed meeting-session evidence with workspace/session metadata.
 - 95 Until Infinity now captures a deduplicated `code_editor_open` evidence event when the VS Code/code-server workspace iframe actually loads, without persisting room-token proxy URLs.
 - Clippy/Devin bridge status transitions now persist as source-backed meeting-session evidence, including real auth-required/disconnected states instead of simulated agent availability.

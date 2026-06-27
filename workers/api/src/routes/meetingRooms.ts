@@ -899,6 +899,7 @@ async function processRecording(
       timestamp_start_ms: segment.timestampStartMs ?? null,
       timestamp_end_ms: segment.timestampEndMs ?? null,
       confidence: segment.confidence ?? null,
+      metadata: segment.metadata ?? null,
     })));
     const now = new Date().toISOString();
     await env.DB.prepare(

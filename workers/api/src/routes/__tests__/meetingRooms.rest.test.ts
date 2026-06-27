@@ -2349,6 +2349,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: string | null;
       channel: number | null;
       text: string;
+      metadata: {
+        providerSegmentId?: string | null;
+        speakerMetadataRole?: string | null;
+        speakerMetadataSource?: string | null;
+      } | null;
     }>;
     expect(transcriptSegments).toContainEqual(expect.objectContaining({
       stable_segment_id: 'utterance-0001',
@@ -2356,6 +2361,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: null,
       channel: 1,
       text: 'What system did you improve?',
+      metadata: expect.objectContaining({
+        providerSegmentId: 'dg-host-1',
+        speakerMetadataRole: 'host',
+        speakerMetadataSource: 'local',
+      }),
     }));
     expect(transcriptSegments).toContainEqual(expect.objectContaining({
       stable_segment_id: 'utterance-0002',
@@ -2363,6 +2373,11 @@ describe('meeting room recording living-context route', () => {
       contact_id: created.meeting.contactId,
       channel: 0,
       text: 'I implemented lattice replay buffers for ecommerce order recovery.',
+      metadata: expect.objectContaining({
+        providerSegmentId: 'dg-guest-1',
+        speakerMetadataRole: 'guest',
+        speakerMetadataSource: 'remote',
+      }),
     }));
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
       personContextMode: 'attributed',
@@ -2378,6 +2393,32 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
       speakerMetadata,
       provider: 'deepgram-multichannel',
+    });
+
+    const guestSpan = sqlite.prepare(
+      `SELECT ss.metadata_json AS span_metadata_json,
+              ssa.metadata_json AS attribution_metadata_json
+         FROM source_spans ss
+         JOIN source_span_attributions ssa ON ssa.source_span_id = ss.id
+        WHERE ss.stable_segment_id = 'utterance-0002'`,
+    ).get() as {
+      span_metadata_json: string;
+      attribution_metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(guestSpan?.span_metadata_json ?? '{}')).toMatchObject({
+      speakerRole: 'guest',
+      channel: 0,
+      providerSegmentId: 'dg-guest-1',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
+    });
+    expect(JSON.parse(guestSpan?.attribution_metadata_json ?? '{}')).toMatchObject({
+      contactId: created.meeting.contactId,
+      speakerRole: 'guest',
+      channel: 0,
+      providerSegmentId: 'dg-guest-1',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
     });
 
     const contactGraphRes = await app.request(

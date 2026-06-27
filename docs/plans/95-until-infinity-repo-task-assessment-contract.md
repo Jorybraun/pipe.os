@@ -119,6 +119,10 @@ The controlling product rule remains:
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.
+- Recording transcript segments now persist provider segment IDs plus
+  speaker-metadata role/source fields on the meeting transcript row, source
+  spans, and speaker attributions, so transcript-derived person evidence can
+  reconstruct how host/guest stream channels produced speaker roles.
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
