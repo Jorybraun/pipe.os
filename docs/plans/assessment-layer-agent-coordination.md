@@ -60,7 +60,8 @@ Agent B owns the backend assessment substrate.
 
 Primary responsibilities:
 
-- Create `RepoTaskInterviewSession` and assessment event storage.
+- Extend the canonical `assessment_sessions` and immutable assessment event
+  storage into repo-task routes and final bundles.
 - Persist candidate/recruiter/AI/dev-container events with source refs.
 - Enforce state transitions for repo-task assessments.
 - Build tests proving unsupported claims remain diagnostics.
@@ -68,8 +69,9 @@ Primary responsibilities:
 
 Preferred files for Agent B:
 
-- `workers/api/migrations/0102_repo_task_interview_sessions.sql`
-- `workers/api/src/lib/repoTaskInterviewSession.ts`
+- `workers/api/migrations/0102_assessment_layer.sql`
+- `workers/api/migrations/0103_assessment_layer_repo_task_compat.sql`
+- `workers/api/src/lib/assessmentLayer/persistence.ts`
 - `workers/api/src/routes/assessment/repoTaskSessions.ts`
 - `workers/api/src/routes/assessment/__tests__/repoTaskSessions.test.ts`
 - `docs/plans/95-until-infinity-repo-task-interview-session.md`
@@ -89,7 +91,7 @@ Agent A provides:
 
 Agent B provides:
 
-- a session id linked to scheduled interview/candidate/person context
+- a canonical assessment session id linked to scheduled interview/candidate/person context
 - append-only assessment events with source refs
 - state transition APIs
 - diagnostics for missing evidence or unavailable AI
@@ -123,3 +125,9 @@ OPEN_SOURCE_BUG_FIX scheduled interview
 
 - 2026-06-27: `OPEN_SOURCE_BUG_FIX` is implemented as a mode-routing seam. The
   full assessment session/event spine remains unbuilt and belongs to Agent B.
+- 2026-06-27: Agent B started the backend evidence spine with
+  `assessment_sessions`, immutable `assessment_evidence_events`,
+  state transitions, source-backed evaluation reports, and a
+  `repo_task_interview_sessions` compatibility view. Remaining Agent B work is
+  route/API integration, final submission bundle wiring, and
+  `FinalRepoTaskAssessmentOutput` persistence from real assessment runs.

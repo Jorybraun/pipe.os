@@ -1605,6 +1605,158 @@ describe('meeting room recording living-context route', () => {
     }));
   });
 
+  it('captures real room lifecycle events as source-backed session evidence', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify({
+          desktopActivityLog: [],
+          chatActivityLog: [],
+          clippyPromptActivityLog: [],
+          fileSystemActivityLog: [],
+        }), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INVITED', ?)`,
+    ).run(
+      'scheduled-lifecycle-evidence',
+      'owner-1',
+      'Lifecycle Evidence Candidate',
+      'lifecycle-evidence@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Lifecycle Evidence Candidate',
+        recipientEmail: 'lifecycle-evidence@example.com',
+        title: 'Lifecycle evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-lifecycle-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      meeting: { id: string };
+      hostToken: string;
+    };
+
+    const inviteRes = await app.request(`/meetings/${created.meeting.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'lifecycle-evidence@example.com' }),
+    }, env, ctx);
+    expect(inviteRes.status).toBe(200);
+    const invite = await inviteRes.json() as { guestToken: string };
+
+    const guestJoinedRes = await app.request(`/meeting/${invite.guestToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'JOINED' }),
+    }, env, ctx);
+    expect(guestJoinedRes.status).toBe(200);
+
+    const recordingStartedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+    expect(recordingStartedRes.status).toBe(200);
+
+    const guestLeftRes = await app.request(`/meeting/${invite.guestToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'LEFT' }),
+    }, env, ctx);
+    expect(guestLeftRes.status).toBe(200);
+
+    const endedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-lifecycle-evidence') as { candidate_id: string } | undefined;
+    expect(linked?.candidate_id).toEqual(expect.any(String));
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string | null;
+    }>;
+    expect(evidenceRows.map((row) => row.node_type).sort()).toEqual([
+      'session_participant_join',
+      'session_participant_leave',
+      'session_recording_start',
+      'session_recording_stop',
+    ]);
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'Participant joined: Guest joined the 95 Until Infinity room',
+    );
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'Recording started',
+    );
+    const guestJoin = evidenceRows.find((row) => row.node_type === 'session_participant_join');
+    expect(JSON.parse(guestJoin?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'meeting_room_lifecycle',
+      lifecycleEvent: 'JOINED',
+      participantRole: 'GUEST',
+    });
+
+    const contextRows = sqlite.prepare(
+      `SELECT predicate
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+        ORDER BY predicate`,
+    ).all() as Array<{ predicate: string }>;
+    expect(contextRows.map((row) => row.predicate)).toEqual([
+      'session_event:participant_join',
+      'session_event:participant_leave',
+      'session_event:recording_start',
+      'session_event:recording_stop',
+    ]);
+
+    const contextSources = sqlite.prepare(
+      `SELECT csr.exact_text
+         FROM context_record_source_refs csr
+         INNER JOIN context_records cr ON cr.id = csr.context_record_id
+        WHERE cr.record_type = 'meeting_session_event'
+          AND csr.source_ref_type = 'meeting_session_event'
+        ORDER BY csr.exact_text`,
+    ).all() as Array<{ exact_text: string | null }>;
+    expect(contextSources.map((source) => source.exact_text)).toEqual([
+      'Guest joined the 95 Until Infinity room',
+      'Guest left the 95 Until Infinity room',
+      'Recording started for the 95 Until Infinity room',
+      'Recording stopped for the 95 Until Infinity room',
+    ]);
+  });
+
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

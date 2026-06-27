@@ -32,6 +32,7 @@ import { videoAuth, videoCandidate, videoPublic } from './routes/assessment/vide
 import { meetingRooms, meetingsAuth } from './routes/meetingRooms';
 import { challengeSubmissions } from './routes/assessment/challengeSubmissions';
 import { reviewSessions } from './routes/assessment/reviewSessions';
+import { repoTaskSessions } from './routes/assessment/repoTaskSessions';
 // Voice — voice session creation, WebSocket upgrade, transcript callback
 import { voiceSessions } from './routes/voice/voiceSessions';
 // TTS — Google Cloud Text-to-Speech proxy
@@ -219,6 +220,8 @@ app.route('/api/v1/meetings', meetingsAuth);
 app.route('/api/v1/challenge-submissions', challengeSubmissions);
 // Review session reports: GET/PATCH /api/v1/review-sessions/:id/{report,transcript,score}
 app.route('/api/v1/review-sessions', reviewSessions);
+// Repo-task assessment evidence spine: sessions/events/evaluation reports
+app.route('/api/v1/assessment/repo-task', repoTaskSessions);
 
 // Role Discovery Agent: AI-powered role context extraction (ADR-027)
 app.route('/api/v1/role-contexts', roleContexts);

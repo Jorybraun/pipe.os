@@ -1,6 +1,6 @@
 # 95 Until Infinity Repo Task Assessment Contract
 
-**Status:** Contract proposed; `OPEN_SOURCE_BUG_FIX` mode seam implemented
+**Status:** Contract proposed; `OPEN_SOURCE_BUG_FIX` mode seam and assessment event spine implemented
 **Date:** 2026-06-27  
 **Contract file:** `workers/api/src/lib/assessmentEvidence.ts`
 
@@ -105,8 +105,15 @@ The controlling product rule remains:
   and file activity logs into source-backed `meeting_session_event` evidence,
   so Win95 room interactions are captured as part of the interview lifecycle
   instead of only when a graph read is requested later.
-- The full repo-task assessment session, event spine, final evidence bundle, and
-  source-backed evaluation report remain pending.
+- The canonical assessment event spine now persists `assessment_sessions`,
+  immutable evidence events with exact source refs, state transitions, and
+  source-backed evaluation reports.
+- `repo_task_interview_sessions` exists as a compatibility view over
+  `assessment_sessions` so repo-task-specific routes can build on the common
+  assessment substrate without duplicating event storage.
+- Repo-task route/API integration, final evidence bundle assembly, and
+  production `FinalRepoTaskAssessmentOutput` persistence from real assessment
+  runs remain pending.
 
 ## Proposed TypeScript Surface
 
@@ -165,7 +172,8 @@ Required blocking diagnostics:
 5. Expand the initial `OPEN_SOURCE_BUG_FIX` meeting creation seam so matched
    repo-task assessments accept only `CandidateRepoTaskMatch` or explicit
    diagnostics.
-6. Add final evaluation persistence using `FinalRepoTaskAssessmentOutput`.
+6. Add final evaluation persistence using `FinalRepoTaskAssessmentOutput`
+   against the canonical assessment event spine.
 7. Add recruiter and candidate-safe views that separate selected evidence,
    diagnostics, AI usage, and server-only ground truth.
 
