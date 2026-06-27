@@ -26,4 +26,26 @@ describe('BrowserWindow', () => {
 
     expect(open).toHaveBeenCalledWith('https://www.google.com', '_blank', 'noopener,noreferrer');
   });
+
+  it('reports back and forward navigation so browser history is synced and recorded', () => {
+    const onNavigate = vi.fn();
+    render(<BrowserWindow onNavigate={onNavigate} />);
+
+    fireEvent.change(screen.getByTestId('room-browser-address-input'), {
+      target: { value: 'example.com' },
+    });
+    fireEvent.click(screen.getByTestId('room-browser-go'));
+    fireEvent.change(screen.getByTestId('room-browser-address-input'), {
+      target: { value: 'example.org' },
+    });
+    fireEvent.click(screen.getByTestId('room-browser-go'));
+
+    fireEvent.click(screen.getByTitle('Back'));
+    fireEvent.click(screen.getByTitle('Forward'));
+
+    expect(onNavigate).toHaveBeenNthCalledWith(1, 'https://example.com');
+    expect(onNavigate).toHaveBeenNthCalledWith(2, 'https://example.org');
+    expect(onNavigate).toHaveBeenNthCalledWith(3, 'https://example.com');
+    expect(onNavigate).toHaveBeenNthCalledWith(4, 'https://example.org');
+  });
 });

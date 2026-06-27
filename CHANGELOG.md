@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
 - Microsoft Edge now detects common sites that block iframe embedding, including Google, and shows an external-open fallback instead of a blank white page.
+- Microsoft Edge back/forward navigation now syncs through the shared desktop and emits `browser_navigation` evidence instead of staying local to one participant.
 
 ### Added — 95 Until Infinity repo-task assessment contract
 

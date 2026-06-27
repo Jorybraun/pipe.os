@@ -108,6 +108,8 @@ The controlling product rule remains:
 - Durable Object replay now includes synced window state changes as
   source-backed `window_update` evidence, preserving focus, minimize, maximize,
   and move patches from the shared Win95 desktop activity log.
+- Microsoft Edge direct, back, and forward navigation now publish shared desktop
+  URL state and persist as `browser_navigation` evidence.
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.

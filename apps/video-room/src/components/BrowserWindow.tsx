@@ -82,22 +82,26 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
   const goBack = useCallback(() => {
     if (historyIdx > 0) {
       const idx = historyIdx - 1;
+      const nextUrl = history[idx];
       setHistoryIdx(idx);
-      setUrl(history[idx]);
-      setInputUrl(history[idx]);
+      setUrl(nextUrl);
+      setInputUrl(nextUrl);
       setIframeFailed(false);
+      onNavigate?.(nextUrl);
     }
-  }, [history, historyIdx]);
+  }, [history, historyIdx, onNavigate]);
 
   const goForward = useCallback(() => {
     if (historyIdx < history.length - 1) {
       const idx = historyIdx + 1;
+      const nextUrl = history[idx];
       setHistoryIdx(idx);
-      setUrl(history[idx]);
-      setInputUrl(history[idx]);
+      setUrl(nextUrl);
+      setInputUrl(nextUrl);
       setIframeFailed(false);
+      onNavigate?.(nextUrl);
     }
-  }, [history, historyIdx]);
+  }, [history, historyIdx, onNavigate]);
 
   const reload = useCallback(() => {
     if (iframeRef.current && url) {
