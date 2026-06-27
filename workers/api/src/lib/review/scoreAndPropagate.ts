@@ -27,6 +27,7 @@ import {
   type CodeReviewJudgeExampleTranscript,
 } from './judgeImprovementExamples';
 import { loadSourceBackedReviewDiff } from './sourceBackedReviewDiff';
+import { ingestCodeReviewAssessmentEvidence } from '../assessmentLayer/codeReviewEvidence';
 
 export interface ScoreAndPropagateTranscript {
   rounds: ReviewRound[];
@@ -343,6 +344,18 @@ export async function scoreAndPropagate(
       candidateId: ch.candidate_id,
       challengeId,
       assessmentId,
+      scoreReportJson: fullReportJson,
+      observedAt: scoredAt,
+      producer: 'automated_scorer',
+      startedAt: ch.created_at,
+    });
+
+    await ingestCodeReviewAssessmentEvidence(env.DB, {
+      sessionId,
+      candidateId: ch.candidate_id,
+      challengeId,
+      assessmentId,
+      transcript,
       scoreReportJson: fullReportJson,
       observedAt: scoredAt,
       producer: 'automated_scorer',

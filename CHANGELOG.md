@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `OPEN_SOURCE_BUG_FIX` as a workspace-backed assessment interview mode for scheduling, invite creation, dev-container launch, and candidate assessment routing.
 - Added the canonical assessment-layer persistence spine with assessment sessions, immutable source-backed evidence events, state transitions, evaluation reports, diagnostics, and a repo-task compatibility projection for later `OPEN_SOURCE_BUG_FIX`/dev-container assessment routes.
 - Added the repo-task assessment session facade and focused API route tests for creating sessions, appending exact-source evidence events, transitioning state, rejecting unsupported positive claims, recording AI-unavailable diagnostics, and projecting assessment evidence into context records.
+- Completed scored CODE_REVIEW sessions now write exact-source transcript and score-report events plus an evaluated assessment report into the assessment evidence spine.
 - 95 Until Infinity room lifecycle now replays Durable Object desktop/chat/file activity into source-backed meeting-session evidence when the host ends the room, instead of waiting for a later context-graph read.
 - 95 Until Infinity room lifecycle now captures accepted guest join/leave and recording start/stop events as source-backed meeting-session evidence, without fabricating a recording stop when no recording was active.
 

@@ -111,6 +111,9 @@ The controlling product rule remains:
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
+- Completed scored CODE_REVIEW sessions now write their final transcript and
+  automated score report into the canonical assessment event spine as exact
+  source-backed evidence, then project an evaluated assessment report.
 - `repo_task_interview_sessions` exists as a compatibility view over
   `assessment_sessions` so repo-task-specific routes can build on the common
   assessment substrate without duplicating event storage.

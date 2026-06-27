@@ -3,6 +3,7 @@ import type { Env } from '../../../types';
 import { scoreAndPropagate } from '../scoreAndPropagate';
 import { scoreReviewSession } from '../../scorerAgent';
 import { ingestCodeReviewScoreReportToLivingContext } from '../../livingContext/codeReview';
+import { ingestCodeReviewAssessmentEvidence } from '../../assessmentLayer/codeReviewEvidence';
 
 vi.mock('../../scorerAgent', () => ({
   scoreReviewSession: vi.fn(),
@@ -14,6 +15,10 @@ vi.mock('../../rcd', () => ({
 
 vi.mock('../../livingContext/codeReview', () => ({
   ingestCodeReviewScoreReportToLivingContext: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../assessmentLayer/codeReviewEvidence', () => ({
+  ingestCodeReviewAssessmentEvidence: vi.fn(async () => undefined),
 }));
 
 interface PreparedCall {
@@ -150,6 +155,7 @@ describe('scoreAndPropagate assignment-backed provenance', () => {
     vi.mocked(scoreReviewSession).mockReset();
     vi.mocked(scoreReviewSession).mockResolvedValue(scoreReport);
     vi.mocked(ingestCodeReviewScoreReportToLivingContext).mockClear();
+    vi.mocked(ingestCodeReviewAssessmentEvidence).mockClear();
   });
 
   it('scores assigned PRs from source-backed packet spans and not stale challenge cache', async () => {
@@ -195,6 +201,17 @@ describe('scoreAndPropagate assignment-backed provenance', () => {
         candidateId: 'cand_1',
         challengeId: 'ch_1',
         assessmentId: 'assessment_1',
+        producer: 'automated_scorer',
+      }),
+    );
+    expect(ingestCodeReviewAssessmentEvidence).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        sessionId: 'sess_1',
+        candidateId: 'cand_1',
+        challengeId: 'ch_1',
+        assessmentId: 'assessment_1',
+        scoreReportJson: expect.stringContaining('Source-backed scoring complete.'),
         producer: 'automated_scorer',
       }),
     );
