@@ -77,6 +77,8 @@ export interface ScheduledInterview {
   completedAt?: string | null;
   // Room status (enriched from meeting_rooms join)
   meetingId?: string | null;
+  meetingSchedulingProvider?: string | null;
+  meetingExternalEventId?: string | null;
   roomStatus?: string | null;
   guestWaiting?: boolean;
   // Transcript artifact
@@ -94,6 +96,8 @@ export interface LinkedMeetingSummary {
   durationSecs: number | null;
   meetingUrl: string | null;
   meetingType: string;
+  schedulingProvider?: SchedulingProvider | null;
+  externalEventId?: string | null;
   transcriptStatus: string;
   transcriptSummary: string | null;
   transcriptJson?: string | null;

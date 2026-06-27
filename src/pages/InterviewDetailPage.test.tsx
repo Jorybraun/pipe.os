@@ -192,6 +192,48 @@ describe('InterviewDetailPage', () => {
     expect(mocks.api.get).toHaveBeenCalledTimes(1);
   });
 
+  it('shows Calendly event linkage on the interview detail', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        status: 'SCHEDULED',
+        scheduledAt: '2026-07-03T19:00:00.000Z',
+        schedulingProvider: 'CALENDLY',
+        externalEventId: 'https://api.calendly.com/scheduled_events/event-katherine',
+        linkedMeeting: {
+          id: 'meeting-katherine',
+          title: 'Katherine Johnson interview',
+          description: null,
+          status: 'SCHEDULED',
+          scheduledAt: '2026-07-03T19:00:00.000Z',
+          startedAt: null,
+          endedAt: null,
+          durationSecs: null,
+          meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+          meetingType: 'INTERVIEW',
+          schedulingProvider: 'CALENDLY',
+          externalEventId: 'https://api.calendly.com/scheduled_events/event-katherine',
+          transcriptStatus: 'NONE',
+          transcriptSummary: null,
+          transcriptJson: null,
+          transcriptAnalysisJson: null,
+          transcriptError: null,
+          recordingR2Key: null,
+          room: null,
+          createdAt: '2026-06-23T00:00:00.000Z',
+          updatedAt: '2026-06-23T00:00:00.000Z',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    expect(screen.getByText('Scheduling')).toBeTruthy();
+    expect(screen.getByText('CALENDLY')).toBeTruthy();
+    expect(screen.getByText('event-katherine')).toBeTruthy();
+    expect(screen.getByText('meeting-katherine')).toBeTruthy();
+  });
+
   it('does not poll forever for stale recording state after a disconnected call', async () => {
     vi.setSystemTime(new Date('2026-06-23T12:00:00.000Z'));
     mocks.api.get.mockResolvedValueOnce({

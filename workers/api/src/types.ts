@@ -145,6 +145,10 @@ export interface Env {
   };
   /** Default top-domain sender for app transactional email. */
   OUTBOUND_EMAIL_FROM?: string;
+  /** Optional public URL for email logo rendering. Defaults to the API asset route. */
+  PUBLIC_EMAIL_LOGO_URL?: string;
+  /** Public API base URL used for provider webhook callbacks. */
+  API_BASE_URL?: string;
   /**
    * Base URL for candidate-facing assessment links.
    * Defaults to 'https://pipe.build' in production.

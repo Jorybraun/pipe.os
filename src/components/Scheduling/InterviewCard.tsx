@@ -31,6 +31,14 @@ interface InterviewCardProps {
 
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
+function providerEventLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? trimmed;
+}
+
 function isJoinable(interview: ScheduledInterview): boolean {
   // Allow host to join for both INVITED and SCHEDULED statuses
   if (interview.status !== 'SCHEDULED' && interview.status !== 'INVITED') return false;
@@ -104,6 +112,8 @@ export function InterviewCard({
   const modeLabel = interview.interviewType
     ? INTERVIEW_TYPE_LABELS[interview.interviewType] ?? interview.interviewType
     : 'Interview';
+  const provider = interview.meetingSchedulingProvider ?? interview.schedulingProvider ?? null;
+  const providerEventId = providerEventLabel(interview.meetingExternalEventId ?? interview.externalEventId);
   const roleContext = pipelineTitle && pipelineTitle !== 'Talent Pool'
     ? `${pipelineTitle}${stageTitle ? ` · ${stageTitle}` : ''}`
     : null;
@@ -189,6 +199,11 @@ export function InterviewCard({
           {candidateEmail && (
             <div style={{ fontSize: 10, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace' }}>
               {candidateEmail}
+            </div>
+          )}
+          {provider && providerEventId && (
+            <div style={{ fontSize: 9, color: '#60a5fa', fontFamily: '"Space Mono", monospace', marginTop: 4, letterSpacing: '0.08em' }}>
+              {provider} ACCEPTED · {providerEventId}
             </div>
           )}
         </div>

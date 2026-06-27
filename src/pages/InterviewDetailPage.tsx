@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
+  CalendarCheck,
   CheckCircle,
   Clock,
   Copy,
@@ -73,6 +74,14 @@ function formatDurationMs(value: number | null | undefined): string | null {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function providerEventLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split('/').filter(Boolean);
+  return parts[parts.length - 1] ?? trimmed;
 }
 
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
@@ -501,6 +510,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const transcriptError = interview.linkedMeeting?.transcriptError ?? interview.transcriptArtifact?.errorMessage ?? null;
   const transcriptContextText = personContextModeText(personContextMode, personContextReason);
   const guestRoomUrl = roomLinks?.guestUrl ?? interview.linkedMeeting?.meetingUrl ?? null;
+  const providerName = interview.linkedMeeting?.schedulingProvider ?? interview.schedulingProvider ?? null;
+  const providerEventId = interview.linkedMeeting?.externalEventId ?? interview.externalEventId ?? null;
+  const providerEventDisplay = providerEventLabel(providerEventId);
   const personProfilePath = interview.contactId
     ? `/people/${interview.contactId}`
     : interview.candidateId
@@ -661,6 +673,43 @@ export default function InterviewDetailPage(): JSX.Element {
       )}
 
       <main style={EVIDENCE_GRID}>
+        <Section title="Scheduling" icon={<CalendarCheck size={15} />}>
+          <div style={EVIDENCE_LIST}>
+            <div style={EVIDENCE_ROW}>
+              <span style={FIELD_LABEL}>Status</span>
+              <span style={FIELD_VALUE}>{displayStatus ?? 'INVITED'}</span>
+            </div>
+            <div style={EVIDENCE_ROW}>
+              <span style={FIELD_LABEL}>Scheduled for</span>
+              <span style={FIELD_VALUE}>{formatDate(interview.scheduledAt)}</span>
+            </div>
+            {providerName && (
+              <div style={EVIDENCE_ROW}>
+                <span style={FIELD_LABEL}>Provider</span>
+                <span style={FIELD_VALUE}>{providerName}</span>
+              </div>
+            )}
+            {providerEventId && (
+              <div style={EVIDENCE_ROW}>
+                <span style={FIELD_LABEL}>Provider event</span>
+                {providerEventId.startsWith('http') ? (
+                  <a href={providerEventId} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
+                    {providerEventDisplay ?? providerEventId}
+                  </a>
+                ) : (
+                  <span style={FIELD_VALUE}>{providerEventDisplay ?? providerEventId}</span>
+                )}
+              </div>
+            )}
+            {interview.linkedMeeting?.id && (
+              <div style={EVIDENCE_ROW}>
+                <span style={FIELD_LABEL}>Pipe meeting</span>
+                <span style={FIELD_VALUE}>{interview.linkedMeeting.id}</span>
+              </div>
+            )}
+          </div>
+        </Section>
+
         <Section title="Call record" icon={<FileText size={15} />}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
