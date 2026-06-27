@@ -38,7 +38,7 @@ import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
-import type { AgentRoomAction } from './hooks/useAgentConnection';
+import type { AgentChatMessage, AgentRoomAction } from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
@@ -1159,6 +1159,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     executeRoomAction(action.id, { url: action.url, source: 'agent' });
   };
 
+  const captureClippyUserChatMessage = (text: string): void => {
+    captureSessionEvent('ai_chat_user', text, roomActor, {
+      source: 'clippy_agent_chat',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+    });
+  };
+
+  const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
+    captureSessionEvent('ai_chat_agent', message.text, 'agent', {
+      source: 'clippy_agent_chat',
+      agent: 'devin',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      messageTimestamp: message.timestamp,
+    });
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -1461,6 +1483,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onOpenTerminal={openTerminalWindow}
           onAction={handleClippyAction}
           onAgentRoomAction={handleAgentRoomAction}
+          onUserChatMessage={captureClippyUserChatMessage}
+          onAgentChatMessage={captureClippyAgentChatMessage}
         />
       )}
       {room.phase === 'ended' && (

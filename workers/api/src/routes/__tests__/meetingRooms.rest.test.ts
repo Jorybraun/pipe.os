@@ -1123,6 +1123,71 @@ describe('meeting room recording living-context route', () => {
       actionId: 'start-recording',
       surface: 'win95',
     });
+
+    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat',
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyUserChatRes.status).toBe(200);
+
+    const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_chat',
+          agent: 'devin',
+          surface: 'win95',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentChatRes.status).toBe(200);
+
+    const chatNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_chat_user', 'session_chat_agent')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    }>;
+    expect(chatNodes).toHaveLength(2);
+    expect(chatNodes.map((node) => node.node_type)).toEqual([
+      'session_chat_agent',
+      'session_chat_user',
+    ]);
+    expect(chatNodes[0]?.narrative_text).toContain('Agent responded');
+    expect(chatNodes[0]?.narrative_text).toContain('replay idempotency');
+    expect(JSON.parse(chatNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'agent',
+      source: 'clippy_agent_chat',
+      agent: 'devin',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(chatNodes[1]?.narrative_text).toContain('User asked');
+    expect(chatNodes[1]?.narrative_text).toContain('order recovery test');
+    expect(JSON.parse(chatNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'clippy_agent_chat',
+      workspaceSessionId: 'workspace-session-1',
+    });
   });
 
   it('syncs durable room activity into the candidate context graph before graph reads', async () => {
