@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Win95Desktop } from './Win95Desktop';
 import type { WindowManagerApi, WindowType } from '../hooks/useWindowManager';
@@ -57,5 +57,28 @@ describe('Win95Desktop', () => {
     expect(guestCursor.style.getPropertyValue('--room-cursor-y')).toBe('96dvh');
     expect(hostCursor.style.getPropertyValue('--room-cursor-x')).toBe('50vw');
     expect(hostCursor.style.getPropertyValue('--room-cursor-y')).toBe('25dvh');
+  });
+
+  it('renders Clippy as a system tray button beside the clock', () => {
+    const onClippyClick = vi.fn();
+    render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        onClippyClick={onClippyClick}
+        clippyActive
+      />,
+    );
+
+    const tray = screen.getByTestId('win95-taskbar');
+    const clippy = screen.getByTestId('win95-tray-clippy');
+    const clock = screen.getByTestId('win95-tray-clock');
+
+    expect(tray.contains(clippy)).toBe(true);
+    expect(tray.contains(clock)).toBe(true);
+    expect(clippy.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(clippy);
+    expect(onClippyClick).toHaveBeenCalledTimes(1);
   });
 });

@@ -2098,6 +2098,26 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.win95-tray-button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+}
+
+.win95-tray-button:active,
+.win95-tray-button.is-active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+  background: #b0b0b0;
+}
+
 .win95-tray-recording {
   display: inline-flex;
   align-items: center;
@@ -2930,6 +2950,10 @@ button:focus-visible {
 }
 
 .win95-clippy-chat-status-dot.idle {
+  background: #808080;
+}
+
+.win95-clippy-chat-status-dot.unavailable {
   background: #808080;
 }
 

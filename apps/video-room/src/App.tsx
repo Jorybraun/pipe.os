@@ -287,6 +287,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [clippyVisible, setClippyVisible] = useState(true);
+  const [clippyChatRequest, setClippyChatRequest] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -438,6 +439,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
   const canControlRoomSurface = canControlSharedRoomSurface(metadata.role);
+  const openClippyChat = (): void => {
+    setClippyVisible(true);
+    setClippyChatRequest((request) => request + 1);
+  };
   const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({
     id: message.id,
     role: message.role === 'HOST' ? 'host' : 'candidate',
@@ -483,7 +488,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
     }
     if (!wm.isWindowOpen('chat')) {
-      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
+      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
     }
     if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
       wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'VS Code', x: 80, y: 80, width: 800, height: 500 });
@@ -881,6 +886,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const clippyAgentUnavailableMessage = !hasWorkspaceFeature
+    ? 'This room was not configured with a dev workspace. Room chat still goes to people; Clippy/Devin chat requires a real container workspace.'
+    : workspaceSession?.status === 'LAUNCHING'
+      ? 'The VS Code workspace is starting. Clippy will connect to real Devin when the container bridge is ready.'
+      : workspaceSession?.status === 'ERROR'
+        ? `The VS Code workspace failed: ${workspaceSession.errorMessage ?? workspaceError ?? 'container startup did not complete'}. Clippy/Devin chat stays disabled until the workspace is relaunched.`
+        : metadata.role === 'HOST' && canLaunchWorkspace
+          ? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.'
+          : 'The host needs to launch the VS Code workspace before Clippy can connect to real Devin.';
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
     surface: room.roomSurface,
@@ -1564,7 +1578,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         openWorkspaceWindow();
         break;
       case 'chat':
-        openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
+        openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
         break;
       case 'tasks':
         openFilesWindow();
@@ -1828,6 +1842,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onIconDoubleClick={handleDesktopIconDoubleClick}
       recordingLabel={recordingLabel}
       recordingActive={recordingState === 'recording'}
+      onClippyClick={(metadata.features?.clippyEnabled ?? true) ? openClippyChat : undefined}
+      clippyActive={clippyVisible}
       renderWindowContent={renderWindowContent}
       onWindowClose={closeSharedWindow}
       onWindowFocus={focusSharedWindow}
@@ -1870,6 +1886,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
             : null}
           agentEnabled={hasActiveWorkspace}
+          agentUnavailableMessage={clippyAgentUnavailableMessage}
+          canLaunchAgentWorkspace={canLaunchWorkspace}
+          openChatRequest={clippyChatRequest}
           onOpenBrowser={openBrowserWindow}
           onOpenTerminal={openTerminalWindow}
           onAction={handleClippyAction}

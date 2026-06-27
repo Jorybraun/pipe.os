@@ -158,6 +158,8 @@ export interface Env {
   VIDEO_ROOM_APP_URL?: string;
   /** Shared secret accepted only from the authenticated dev room proxy. */
   DEV_PROXY_SECRET?: string;
+  /** Devin API key injected server-side into dev containers for the real Clippy/Devin bridge. */
+  DEVIN_API_KEY?: string;
   /** Dev-only Basic Auth username embedded into generated room links. */
   DEV_BASIC_AUTH_USER?: string;
   /** Dev-only Basic Auth password embedded into generated room links. */

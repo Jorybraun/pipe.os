@@ -1858,6 +1858,7 @@ describe('meeting room recording living-context route', () => {
     env.DEV_CONTAINER_DEFAULT_TTL_SECONDS = '3600';
     env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
     env.API_BASE_URL = 'http://localhost:8787';
+    env.DEVIN_API_KEY = 'test-devin-api-key';
 
     const scheduledInterviewId = 'scheduled-interview-workspace-pr';
     sqlite.prepare(
@@ -1921,9 +1922,11 @@ describe('meeting room recording living-context route', () => {
       repoGitUrl: 'https://github.com/pipe/order-recovery',
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
+      agentApiKey: 'test-devin-api-key',
       pipeApiUrl: 'http://localhost:8787',
       roomToken: created.hostToken,
     }));
+    expect(JSON.stringify(body)).not.toContain('test-devin-api-key');
   });
 
   it('keeps standard meeting rooms off the workspace desktop path', async () => {

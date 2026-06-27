@@ -22,7 +22,7 @@ interface DesktopIcon {
 const DESKTOP_ICONS: DesktopIcon[] = [
   { windowType: 'video', label: 'Video Call', icon: Video },
   { windowType: 'workspace', label: 'VS Code', icon: SquareTerminal },
-  { windowType: 'chat', label: 'Chat', icon: MessageSquare },
+  { windowType: 'chat', label: 'Room Chat', icon: MessageSquare },
   { windowType: 'tasks', label: 'Files', icon: FolderOpen },
   { windowType: 'notepad', label: 'Notepad', icon: FileText },
   { windowType: 'paint', label: 'Paint', icon: Palette },
@@ -36,6 +36,8 @@ interface Win95DesktopProps {
   onIconDoubleClick?: (windowType: WindowType) => void;
   recordingLabel?: string;
   recordingActive?: boolean;
+  onClippyClick?: () => void;
+  clippyActive?: boolean;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
   onWindowFocus?: (id: string) => void;
@@ -55,6 +57,8 @@ export function Win95Desktop({
   onIconDoubleClick,
   recordingLabel,
   recordingActive,
+  onClippyClick,
+  clippyActive,
   renderWindowContent,
   onWindowClose,
   onWindowFocus,
@@ -226,6 +230,8 @@ export function Win95Desktop({
         startMenuOpen={startMenuOpen}
         recordingLabel={recordingLabel}
         recordingActive={recordingActive}
+        onClippyClick={onClippyClick}
+        clippyActive={clippyActive}
       />
     </div>
   );

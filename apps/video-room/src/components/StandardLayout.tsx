@@ -72,7 +72,8 @@ export function StandardLayout({
         <button
           className={`standard-control-btn${chatOpen ? ' is-active' : ''}`}
           onClick={() => setChatOpen((v) => !v)}
-          title="Toggle chat"
+          title="Toggle room chat"
+          aria-label="Toggle room chat"
         >
           <MessageSquare size={18} />
         </button>
@@ -88,7 +89,7 @@ export function StandardLayout({
       {chatOpen && chatWin && (
         <div className="standard-chat-panel" data-testid="standard-chat">
           <div className="standard-chat-header">
-            <span>Chat</span>
+            <span>Room Chat</span>
             <button onClick={() => setChatOpen(false)}>
               <X size={16} />
             </button>

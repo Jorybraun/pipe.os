@@ -29,6 +29,9 @@ export interface ClippyAssistantProps {
   onClippyClick?: () => void;
   agentWsUrl?: string | null;
   agentEnabled?: boolean;
+  agentUnavailableMessage?: string;
+  canLaunchAgentWorkspace?: boolean;
+  openChatRequest?: number;
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
   onAction?: (actionId: string) => void;
@@ -45,6 +48,9 @@ export function ClippyAssistant({
   onClippyClick,
   agentWsUrl,
   agentEnabled = false,
+  agentUnavailableMessage,
+  canLaunchAgentWorkspace = false,
+  openChatRequest,
   onOpenBrowser,
   onOpenTerminal,
   onAction,
@@ -64,6 +70,7 @@ export function ClippyAssistant({
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
   const capturedAgentStatusRef = useRef<string | null>(null);
   const capturedAgentFileChangesRef = useRef<Set<string>>(new Set());
+  const lastOpenChatRequestRef = useRef<number | undefined>(undefined);
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -218,6 +225,13 @@ export function ClippyAssistant({
     onClippyClick?.();
   }, [onClippyClick]);
 
+  useEffect(() => {
+    if (openChatRequest === undefined || openChatRequest <= 0) return;
+    if (lastOpenChatRequestRef.current === openChatRequest) return;
+    lastOpenChatRequestRef.current = openChatRequest;
+    openChat();
+  }, [openChat, openChatRequest]);
+
   const handleChatInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setChatInput(e.target.value);
     if (!agentRef.current || !ready) return;
@@ -285,14 +299,19 @@ export function ClippyAssistant({
     auth_needed: 'Authentication required',
     disconnected: 'Disconnected',
   };
-  const canSendToAgent = agentConn.connected && agentConn.status !== 'auth_needed';
-  const emptyChatMessage = !agentConn.connected
-    ? 'Clippy bridge is reconnecting to the dev container.'
-    : agentConn.status === 'auth_needed'
-      ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
-      : agentConn.capabilities.length === 0
-        ? 'Clippy bridge is ready. Send a message to start the real Devin process.'
-        : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
+  const unavailableMessage = agentUnavailableMessage
+    ?? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.';
+  const canSendToAgent = agentEnabled && agentConn.connected && agentConn.status !== 'auth_needed';
+  const emptyChatMessage = !agentEnabled
+    ? unavailableMessage
+    : !agentConn.connected
+      ? 'Clippy bridge is reconnecting to the dev container.'
+      : agentConn.status === 'auth_needed'
+        ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
+        : agentConn.capabilities.length === 0
+          ? 'Clippy bridge is ready. Send a message to start the real Devin process.'
+          : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
+  const chatAgentName = agentEnabled ? agentConn.agentName : 'devin';
 
   return (
     <>
@@ -331,37 +350,13 @@ export function ClippyAssistant({
               ))}
             </div>
           )}
-          {agentEnabled && !chatOpen && (
-            <div className="win95-clippy-prompt-actions">
-              <button
-                type="button"
-                onClick={openChat}
-                disabled={!agentConn.connected}
-                data-testid="clippy-open-chat"
-              >
-                Ask Clippy
-              </button>
-            </div>
-          )}
         </div>
       )}
 
-      {agentEnabled && !chatOpen && !currentPrompt && (
-        <button
-          type="button"
-          className="win95-clippy-open-chat"
-          onClick={openChat}
-          disabled={!agentConn.connected}
-          data-testid="clippy-open-chat"
-        >
-          Ask Clippy
-        </button>
-      )}
-
-      {chatOpen && agentEnabled && (
-        <div className="win95-clippy-chat">
+      {chatOpen && (
+        <div className="win95-clippy-chat" data-testid="clippy-chat">
           <div className="win95-clippy-chat-header">
-            <span>Clippy — {agentConn.agentName}</span>
+            <span>Clippy — {chatAgentName}</span>
             <button onClick={() => setChatOpen(false)}>×</button>
           </div>
 
@@ -383,17 +378,31 @@ export function ClippyAssistant({
           </div>
 
           <div className="win95-clippy-chat-status">
-            <span className={`win95-clippy-chat-status-dot ${agentConn.status}`} />
-            <span>{statusLabel[agentConn.status] || agentConn.status}</span>
-            {!agentConn.connected && <span> — reconnecting...</span>}
+            <span className={`win95-clippy-chat-status-dot ${agentEnabled ? agentConn.status : 'unavailable'}`} />
+            <span>
+              {agentEnabled
+                ? statusLabel[agentConn.status] || agentConn.status
+                : 'Workspace required'}
+            </span>
+            {agentEnabled && !agentConn.connected && <span> — reconnecting...</span>}
           </div>
 
-          {agentConn.status === 'auth_needed' && agentConn.authUrl && (
+          {agentEnabled && agentConn.status === 'auth_needed' && agentConn.authUrl && (
             <button
               className="win95-clippy-chat-auth-btn"
               onClick={handleAuthClick}
             >
               Authenticate {agentConn.agentName}
+            </button>
+          )}
+
+          {!agentEnabled && canLaunchAgentWorkspace && (
+            <button
+              className="win95-clippy-chat-auth-btn"
+              onClick={() => handleActionClick('launch-workspace')}
+              data-testid="clippy-launch-workspace"
+            >
+              Launch workspace
             </button>
           )}
 
@@ -415,8 +424,9 @@ export function ClippyAssistant({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSendChat();
               }}
-              placeholder="Ask Clippy..."
+              placeholder={agentEnabled ? 'Ask Clippy...' : 'Ask Clippy when Devin is connected...'}
               disabled={!canSendToAgent}
+              data-testid="clippy-chat-input"
             />
             <button
               className="win95-clippy-chat-send"

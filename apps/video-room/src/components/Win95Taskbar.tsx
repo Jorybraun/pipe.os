@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Video, SquareTerminal } from 'lucide-react';
+import { FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Paperclip, Video, SquareTerminal } from 'lucide-react';
 import type { WindowState, WindowType } from '../hooks/useWindowManager';
 
 interface Win95TaskbarProps {
@@ -9,6 +9,8 @@ interface Win95TaskbarProps {
   startMenuOpen: boolean;
   recordingLabel?: string;
   recordingActive?: boolean;
+  onClippyClick?: () => void;
+  clippyActive?: boolean;
 }
 
 const WINDOW_ICONS: Record<WindowType, typeof Video> = {
@@ -39,6 +41,8 @@ export function Win95Taskbar({
   startMenuOpen,
   recordingLabel,
   recordingActive,
+  onClippyClick,
+  clippyActive = false,
 }: Win95TaskbarProps): JSX.Element {
   const [now, setNow] = useState(new Date());
 
@@ -75,6 +79,18 @@ export function Win95Taskbar({
         })}
       </div>
       <div className="win95-system-tray">
+        {onClippyClick && (
+          <button
+            type="button"
+            className={`win95-tray-button${clippyActive ? ' is-active' : ''}`}
+            onClick={onClippyClick}
+            title="Ask Clippy"
+            aria-label="Ask Clippy"
+            data-testid="win95-tray-clippy"
+          >
+            <Paperclip size={15} />
+          </button>
+        )}
         {recordingActive && (
           <span className="win95-tray-recording" data-testid="win95-tray-recording">
             <span className="win95-tray-rec-dot" />
