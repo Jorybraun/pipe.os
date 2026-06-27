@@ -29,6 +29,7 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
+import { buildRecordingLifecycleEvidence } from './lib/recordingEvidence';
 import { buildCodeEditorOpenEvidence } from './lib/workspaceEvidence';
 import {
   useRoomConnection,
@@ -648,14 +649,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
         setRecordingNotice('Recording started. Status will sync when the call ends.');
       });
-      captureSessionEvent('recording_start', 'Recording started', 'host');
+      captureSessionEvent('recording_start', 'Recording started', 'host', buildRecordingLifecycleEvidence({
+        speakerMetadata: composite.speakerMetadata,
+        iceProvider: room.iceProvider,
+        hasTranscriptionAudio: transcriptionTracks.length > 0,
+      }));
     } catch (error) {
       await dispose?.().catch(() => undefined);
       const message = error instanceof Error ? error.message : 'Recording could not start.';
       setRecordingState('failed');
       setRecordingError(message);
     }
-  }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
+  }, [captureSessionEvent, metadata.role, room.iceProvider, room.localStream, room.phase, room.remoteStream, token]);
 
   const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
     if (!recorder || recorder.state === 'inactive') return;
@@ -705,6 +710,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         iceProvider: room.iceProvider,
       });
+      captureSessionEvent('recording_stop', 'Recording stopped', 'host', buildRecordingLifecycleEvidence({
+        speakerMetadata: recordingSpeakerMetadataRef.current,
+        iceProvider: room.iceProvider,
+        hasTranscriptionAudio: Boolean(transcriptionAudio),
+        recordingBytes: blob.size,
+        recordingMimeType: blob.type || null,
+        transcriptionBytes: transcriptionAudio?.size ?? 0,
+        transcriptionMimeType: transcriptionAudio?.type ?? null,
+        uploadStatus: 'attempting',
+      }));
       const result = await uploadRecording(
         token,
         blob,
@@ -748,7 +763,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const stopRecording = async (): Promise<void> => {
     if (metadata.role !== 'HOST' || recordingState !== 'recording' || !recorderRef.current) return;
     try {
-      captureSessionEvent('recording_stop', 'Recording stopped', 'host');
       await stopAndUploadRecording();
     } catch {
       // stopAndUploadRecording already surfaced the error in state.

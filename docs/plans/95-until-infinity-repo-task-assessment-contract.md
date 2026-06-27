@@ -123,6 +123,9 @@ The controlling product rule remains:
   speaker-metadata role/source fields on the meeting transcript row, source
   spans, and speaker attributions, so transcript-derived person evidence can
   reconstruct how host/guest stream channels produced speaker roles.
+- Browser recording lifecycle events now include the observed speaker-channel
+  map, ICE provider, MIME types, and captured byte counts, with host-end
+  auto-stop and manual stop using the same source-backed event path.
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
