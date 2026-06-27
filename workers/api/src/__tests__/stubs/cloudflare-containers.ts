@@ -32,6 +32,12 @@ export interface ScheduleCall<T = unknown> {
   payload: T | undefined;
 }
 
+export function switchPort(request: Request, port: number): Request {
+  const headers = new Headers(request.headers);
+  headers.set('cf-container-target-port', String(port));
+  return new Request(request, { headers });
+}
+
 export class Container<Env = unknown> extends DurableObject<Env> {
   defaultPort?: number;
   requiredPorts?: number[];
