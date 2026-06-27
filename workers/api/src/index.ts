@@ -48,6 +48,7 @@ import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
+import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
 
 // Unified Agent Runtime plugin registration (ADR-034)
 import { registerAllPlugins } from './lib/agents';
@@ -110,6 +111,7 @@ app.use('*', async (c, next) => {
 
   const { pathname } = new URL(c.req.url);
   if (pathname === '/health' || pathname === '/api/health') return next();
+  if (pathname === PIPE_EMAIL_LOGO_PATH) return next();
   // RPC routes use candidate JWT auth, not the dev proxy secret
   if (pathname.startsWith('/rpc/')) return next();
 
@@ -244,6 +246,7 @@ function healthPayload(): { status: 'ok'; timestamp: string } {
   return { status: 'ok', timestamp: new Date().toISOString() };
 }
 
+app.get(PIPE_EMAIL_LOGO_PATH, () => pipeEmailLogoResponse());
 app.get('/health', (c) => c.json(healthPayload()));
 app.get('/api/health', (c) => c.json(healthPayload()));
 

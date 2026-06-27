@@ -68,6 +68,8 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           pipelineTitle: string | null;
           stageTitle: string | null;
           meetingId?: string | null;
+          meetingSchedulingProvider?: string | null;
+          meetingExternalEventId?: string | null;
           roomStatus?: string | null;
           guestWaiting?: boolean;
         }>;
@@ -105,6 +107,8 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           pipelineTitle: r.pipelineTitle,
           stageTitle: r.stageTitle,
           meetingId: r.meetingId ?? null,
+          meetingSchedulingProvider: r.meetingSchedulingProvider ?? null,
+          meetingExternalEventId: r.meetingExternalEventId ?? null,
           roomStatus: r.roomStatus ?? null,
           guestWaiting: r.guestWaiting ?? false,
         })),
@@ -117,23 +121,11 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
     }
   }, [api]);
 
-  // Load interviews immediately, then sync with provider in background and refetch.
-  // Live room presence/status updates arrive through useRoomStatusNotifications.
+  // Load interviews immediately. Calendly bookings arrive from provider webhooks;
+  // live room presence/status updates arrive through useRoomStatusNotifications.
   useEffect(() => {
     void fetchInterviews();
-
-    // Background sync — don't block initial render
-    const syncThenRefresh = async (): Promise<void> => {
-      try {
-        await api.post('/api/v1/scheduling/interviews/sync', {});
-        // Refetch to pick up any newly synced data
-        await fetchInterviews();
-      } catch {
-        // Best-effort — fails gracefully if no connection
-      }
-    };
-    void syncThenRefresh();
-  }, [fetchInterviews, api]);
+  }, [fetchInterviews]);
 
   useEffect(() => {
     const freshUpdates = roomStatusUpdates.filter((update) => {

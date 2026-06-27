@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Calendly scheduling sync and confirmations
 
-- Calendly sync now imports unmatched upcoming bookings into scheduled interviews so recruiter scheduling views include meetings created directly in Calendly.
-- Calendly booking webhooks now send the participant a confirmation email with the meeting/event link for contact-first interviews via the shared transactional email path.
+- Calendly booking webhooks now import unmatched scheduled bookings, update existing invites idempotently, and link each booking 1:1 to a Pipe meeting/room using the Calendly scheduled event URI.
+- Scheduling list/detail views now expose the Calendly provider event reference and linked Pipe meeting id so accepted scheduled bookings are inspectable from the recruiter UI.
+- Candidate scheduling emails now use the Pipe room link for confirmed Calendly bookings and render the PIPE logo from a public HTTPS API asset instead of embedded data images.
+- The legacy scheduling sync endpoint no longer polls Calendly's paginated `scheduled_events` API; provider webhooks are the source of truth.
 
 ### Added — 95 Until Infinity shared interview desktop
 

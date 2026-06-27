@@ -22,6 +22,7 @@ import { streamSSE } from 'hono/streaming';
 import { authMiddleware } from '../../middleware/auth';
 import { apiError } from '../../middleware/errors';
 import { sendTransactionalEmail } from '../../lib/transactionalEmail';
+import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailAssets';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
   LivingContextStore,
@@ -197,6 +198,12 @@ function buildInternalVideoUrl(_c: { env: Env }, interview: { id: string; stage_
   return null;
 }
 
+function emailLogoImgForRequest(c: { req: { url: string }; env: Env }): string {
+  return buildPipeEmailLogoImg(
+    resolvePipeEmailLogoUrl(c.req.url, c.env.PUBLIC_EMAIL_LOGO_URL),
+  );
+}
+
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
 
 async function loadScheduledInterviewLivingContext(
@@ -343,6 +350,8 @@ async function ensureScheduledInterviewRoomLinks(
     pipeline_title: string | null;
     stage_title: string | null;
     interview_type: string | null;
+    scheduling_provider?: string | null;
+    external_event_id?: string | null;
   },
   inviteEmail: string,
 ): Promise<{
@@ -380,8 +389,9 @@ async function ensureScheduledInterviewRoomLinks(
     await db.prepare(
       `INSERT INTO meetings
        (id, owner_id, title, description, status, scheduled_at, meeting_type,
-        scheduled_interview_id, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?7)`,
+        scheduled_interview_id, scheduling_provider, external_event_id,
+        created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, 'SCHEDULED', ?5, 'INTERVIEW', ?6, ?7, ?8, ?9, ?9)`,
     ).bind(
       meetingId,
       ownerId,
@@ -389,9 +399,26 @@ async function ensureScheduledInterviewRoomLinks(
       `${role} · ${stage}`,
       interview.scheduled_at,
       interview.id,
+      interview.scheduling_provider ?? null,
+      interview.external_event_id ?? null,
       now,
     ).run();
     meeting = { id: meetingId };
+  } else {
+    await db.prepare(
+      `UPDATE meetings
+          SET scheduled_at = ?1,
+              scheduling_provider = COALESCE(?2, scheduling_provider),
+              external_event_id = COALESCE(?3, external_event_id),
+              updated_at = ?4
+        WHERE id = ?5`,
+    ).bind(
+      interview.scheduled_at,
+      interview.scheduling_provider ?? null,
+      interview.external_event_id ?? null,
+      now,
+      meeting.id,
+    ).run();
   }
 
   const participant = await db.prepare(
@@ -763,6 +790,7 @@ function buildScheduledBookingEmailHtml(input: {
   stageTitle: string | null;
   scheduledTime: string | null;
   meetingUrl: string;
+  logoUrl: string;
 }): string {
   const recipientName = escapeEmailHtml(input.recipientName);
   const pipelineTitle = escapeEmailHtml(input.pipelineTitle);
@@ -771,6 +799,7 @@ function buildScheduledBookingEmailHtml(input: {
   const safeMeetingUrl = encodeURI(input.meetingUrl);
 
   return `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
+  ${buildPipeEmailLogoImg(input.logoUrl)}
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Interview Confirmed</h1>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
     Hi ${recipientName}, your interview for <strong>${pipelineTitle}</strong> is confirmed.
@@ -854,6 +883,7 @@ async function sendScheduledBookingConfirmationEmail(
     stageTitle: details.stageTitle,
     scheduledTime,
     meetingUrl,
+    logoUrl: resolvePipeEmailLogoUrl(null, env.PUBLIC_EMAIL_LOGO_URL),
   });
 
   try {
@@ -893,18 +923,6 @@ function queueScheduledBookingConfirmation(
   );
 }
 
-interface CalendlyScheduledEvent {
-  uri: string;
-  name?: string;
-  start_time: string;
-  end_time?: string;
-  status?: string;
-  location?: {
-    join_url?: string;
-    location?: string;
-  } | null;
-}
-
 interface CalendlyInvitee {
   uri?: string;
   name?: string;
@@ -918,16 +936,6 @@ interface CalendlyInvitee {
     question?: string;
     answer?: string;
   }>;
-}
-
-function calendlyLocationUrl(event: CalendlyScheduledEvent): string | null {
-  return event.location?.join_url
-    ?? event.location?.location
-    ?? null;
-}
-
-function calendlyInviteeName(invitee: CalendlyInvitee, email: string): string {
-  return invitee.name?.trim() || nameFromEmail(email);
 }
 
 function calendlyInviteeInterviewId(invitee: CalendlyInvitee): string | null {
@@ -1395,16 +1403,31 @@ schedulingAuth.get('/interviews', async (c) => {
               p.title AS pipeline_title,
               s.title AS stage_title,
               m.id AS meeting_id,
+              m.scheduling_provider AS meeting_scheduling_provider,
+              m.external_event_id AS meeting_external_event_id,
               mr.status AS room_status,
-              guest_mp.joined_at AS guest_joined_at,
-              guest_mp.left_at AS guest_left_at
+              EXISTS (
+                SELECT 1
+                  FROM meeting_participants guest_mp
+                 WHERE guest_mp.meeting_id = m.id
+                   AND guest_mp.role = 'ATTENDEE'
+                   AND guest_mp.joined_at IS NOT NULL
+                   AND guest_mp.left_at IS NULL
+                   AND COALESCE(mr.status, '') <> 'ENDED'
+              ) AS guest_waiting
        FROM scheduled_interviews si
        LEFT JOIN candidates c ON c.id = si.candidate_id
        LEFT JOIN pipelines p ON p.id = si.pipeline_id
        LEFT JOIN stages s ON s.id = si.stage_id
-       LEFT JOIN meetings m ON m.scheduled_interview_id = si.id AND m.owner_id = si.owner_id
+       LEFT JOIN meetings m ON m.id = (
+         SELECT lm.id
+           FROM meetings lm
+          WHERE lm.scheduled_interview_id = si.id
+            AND lm.owner_id = si.owner_id
+          ORDER BY lm.created_at DESC
+          LIMIT 1
+       )
        LEFT JOIN meeting_rooms mr ON mr.meeting_id = m.id
-       LEFT JOIN meeting_participants guest_mp ON guest_mp.meeting_id = m.id AND guest_mp.role = 'ATTENDEE'
        WHERE si.owner_id = ?
        ORDER BY si.scheduled_at ASC`
     )
@@ -1440,15 +1463,13 @@ schedulingAuth.get('/interviews', async (c) => {
       pipeline_title: string | null;
       stage_title: string | null;
       meeting_id: string | null;
+      meeting_scheduling_provider: string | null;
+      meeting_external_event_id: string | null;
       room_status: string | null;
-      guest_joined_at: string | null;
-      guest_left_at: string | null;
+      guest_waiting: number | null;
     }>();
 
   const interviews = (result.results ?? []).map((r) => {
-    const guestWaiting = Boolean(
-      r.guest_joined_at && !r.guest_left_at && r.room_status && r.room_status !== 'ENDED',
-    );
     return {
       id: r.id,
       candidateId: r.candidate_id,
@@ -1480,8 +1501,10 @@ schedulingAuth.get('/interviews', async (c) => {
       pipelineTitle: r.pipeline_title,
       stageTitle: r.stage_title,
       meetingId: r.meeting_id,
+      meetingSchedulingProvider: r.meeting_scheduling_provider,
+      meetingExternalEventId: r.meeting_external_event_id,
       roomStatus: r.room_status,
-      guestWaiting,
+      guestWaiting: Boolean(r.guest_waiting),
     };
   });
 
@@ -1583,7 +1606,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
     .prepare(
       `SELECT m.id, m.title, m.description, m.status, m.scheduled_at,
               m.started_at, m.ended_at, m.duration_secs, m.meeting_url,
-              m.meeting_type, m.transcript_status, m.transcript_summary,
+              m.meeting_type, m.scheduling_provider, m.external_event_id,
+              m.transcript_status, m.transcript_summary,
               m.transcript_json, m.transcript_analysis_json, m.transcript_error,
               m.recording_r2_key, m.created_at, m.updated_at,
               mr.id AS room_id, mr.session_id, mr.status AS room_status
@@ -1605,6 +1629,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       duration_secs: number | null;
       meeting_url: string | null;
       meeting_type: string;
+      scheduling_provider: string | null;
+      external_event_id: string | null;
       transcript_status: string;
       transcript_summary: string | null;
       transcript_json: string | null;
@@ -1673,6 +1699,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
           ? withDevBasicAuth(linkedMeeting.meeting_url, c.env)
           : null,
         meetingType: linkedMeeting.meeting_type,
+        schedulingProvider: linkedMeeting.scheduling_provider,
+        externalEventId: linkedMeeting.external_event_id,
         transcriptStatus: linkedMeeting.transcript_status,
         transcriptSummary: linkedMeeting.transcript_summary,
         transcriptJson: linkedMeeting.transcript_json,
@@ -1694,7 +1722,7 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   });
 });
 
-// POST /interviews/sync — poll Calendly for recent events and update interviews
+// POST /interviews/sync — retained for older clients; Calendly bookings arrive via webhooks.
 schedulingAuth.post('/interviews/sync', async (c) => {
   const userId = c.var.userId;
   const db = c.env.DB;
@@ -1710,211 +1738,21 @@ schedulingAuth.post('/interviews/sync', async (c) => {
     .first<{ id: string; access_token: string; provider_id: string; token_expiry: string | null; refresh_token: string | null }>();
 
   if (!conn) {
-    // No scheduling provider connected — return empty sync result instead of 404.
-    // The frontend calls this as a best-effort background sync.
     return c.json({ synced: 0, message: 'No active scheduling connection.' });
   }
 
-  // Refresh token if expired
-  if (conn.token_expiry && new Date(conn.token_expiry) < new Date()) {
-    const refreshed = await refreshToken(conn as Parameters<typeof refreshToken>[0], c.env);
-    if (!refreshed) {
-      return apiError(c, 'UNAUTHORIZED', 'Calendly token expired and refresh failed.');
-    }
-    conn.access_token = refreshed;
-  }
-
-  // Fetch current user URI
-  const userRes = await fetch('https://api.calendly.com/users/me', {
-    headers: { Authorization: `Bearer ${conn.access_token}` },
-  });
-  if (!userRes.ok) {
-    return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly user.');
-  }
-  const userData = await userRes.json() as { resource?: { uri?: string } };
-  const userUri = userData.resource?.uri;
-  if (!userUri) {
-    return apiError(c, 'INTERNAL_ERROR', 'Could not resolve Calendly user URI.');
-  }
-
-  // Fetch upcoming scheduled events so the recruiter sees Calendly bookings
-  // even when the booking originated outside Pipe.
-  const minDate = new Date().toISOString();
-  const eventsRes = await fetch(
-    `https://api.calendly.com/scheduled_events?user=${encodeURIComponent(userUri)}&min_start_time=${encodeURIComponent(minDate)}&status=active&count=100&sort=start_time:asc`,
-    { headers: { Authorization: `Bearer ${conn.access_token}` } },
-  );
-  if (!eventsRes.ok) {
-    console.error('[scheduling/sync] Failed to fetch events:', eventsRes.status);
-    return apiError(c, 'INTERNAL_ERROR', 'Failed to fetch Calendly events.');
-  }
-
-  const eventsData = await eventsRes.json() as {
-    collection?: CalendlyScheduledEvent[];
-  };
-
-  const events = eventsData.collection ?? [];
-  let synced = 0;
-  let created = 0;
   const now = new Date().toISOString();
-
-  // Get all INVITED interviews for this user — include both candidate email
-  // (via LEFT JOIN) and recipient_email (stored directly on the interview)
-  // so contact-first interviews without a candidate record can still match.
-  const invited = await db
-    .prepare(
-      `SELECT si.id, si.candidate_id, si.recipient_email, si.email_sent_at,
-              c.email AS candidate_email
-       FROM scheduled_interviews si
-       LEFT JOIN candidates c ON c.id = si.candidate_id
-       WHERE si.owner_id = ? AND si.status = 'INVITED'`
-    )
-    .bind(userId)
-    .all<{
-      id: string;
-      candidate_id: string | null;
-      recipient_email: string | null;
-      email_sent_at: string | null;
-      candidate_email: string | null;
-    }>();
-
-  // For each event, fetch invitees and try to match to our interviews
-  for (const event of events) {
-    const inviteesRes = await fetch(
-      `${event.uri}/invitees`,
-      { headers: { Authorization: `Bearer ${conn.access_token}` } },
-    );
-    if (!inviteesRes.ok) continue;
-
-    const inviteesData = await inviteesRes.json() as {
-      collection?: CalendlyInvitee[];
-    };
-
-    for (const invitee of inviteesData.collection ?? []) {
-      const inviteeEmail = normalizeEmail(invitee.email);
-      if (!inviteeEmail) continue;
-
-      // Try to match by interview ID from custom answer a1 first
-      const answeredInterviewId = calendlyInviteeInterviewId(invitee);
-      let match = answeredInterviewId
-        ? await db
-            .prepare(
-              `SELECT si.id, si.email_sent_at
-                 FROM scheduled_interviews si
-                WHERE si.id = ?1
-                  AND si.owner_id = ?2
-                LIMIT 1`,
-            )
-            .bind(answeredInterviewId, userId)
-            .first<{ id: string; email_sent_at: string | null }>()
-        : null;
-
-      if (!match) {
-        match = await db
-          .prepare(
-            `SELECT si.id, si.email_sent_at
-               FROM scheduled_interviews si
-               LEFT JOIN candidates c ON c.id = si.candidate_id
-              WHERE si.owner_id = ?1
-                AND si.external_event_id = ?2
-                AND (
-                  lower(COALESCE(c.email, '')) = ?3
-                  OR lower(COALESCE(si.recipient_email, '')) = ?3
-                )
-              ORDER BY si.updated_at DESC
-              LIMIT 1`,
-          )
-          .bind(userId, event.uri, inviteeEmail)
-          .first<{ id: string; email_sent_at: string | null }>();
-      }
-
-      // Fallback: match by candidate email OR recipient email
-      if (!match) {
-        match = invited.results?.find(
-          (i) =>
-            normalizeEmail(i.candidate_email) === inviteeEmail ||
-            normalizeEmail(i.recipient_email) === inviteeEmail
-        ) ?? null;
-      }
-
-      const meetingUrl = calendlyLocationUrl(event);
-
-      if (match) {
-        await db
-          .prepare(
-            `UPDATE scheduled_interviews
-             SET status = 'SCHEDULED', scheduled_at = ?, meeting_url = ?,
-                 external_event_id = ?, scheduling_provider = 'CALENDLY',
-                 sync_source = 'POLL', last_synced_at = ?, updated_at = ?
-             WHERE id = ?`,
-          )
-          .bind(event.start_time, meetingUrl, event.uri, now, now, match.id)
-          .run();
-
-        synced++;
-        queueScheduledBookingConfirmation(c, db, userId, match.id);
-        continue;
-      }
-
-      const importedInterviewId = crypto.randomUUID();
-      const inviteeName = calendlyInviteeName(invitee, inviteeEmail);
-      const contactId = await ensureRecipientContact(db, userId, {
-        name: inviteeName,
-        email: inviteeEmail,
-      });
-
-      await db
-        .prepare(
-          `INSERT INTO scheduled_interviews
-           (id, candidate_id, pipeline_id, stage_id, owner_id, status,
-            interview_type, meeting_type, scheduled_at, meeting_url,
-            scheduling_provider, external_event_id, recipient_name,
-            recipient_email, sync_source, last_synced_at, created_at, updated_at)
-           VALUES (?, NULL, NULL, NULL, ?, 'SCHEDULED',
-            'VIDEO', 'DIRECT_VIDEO_CALL', ?, ?,
-            'CALENDLY', ?, ?, ?, 'POLL', ?, ?, ?)`,
-        )
-        .bind(
-          importedInterviewId,
-          userId,
-          event.start_time,
-          meetingUrl,
-          event.uri,
-          inviteeName,
-          inviteeEmail,
-          now,
-          now,
-          now,
-        )
-        .run();
-
-      await persistContactFirstInterviewInviteContext(db, {
-        contactId,
-        ownerId: userId,
-        interviewId: importedInterviewId,
-        recipientName: inviteeName,
-        recipientEmail: inviteeEmail,
-        meetingType: 'DIRECT_VIDEO_CALL',
-        interviewType: 'VIDEO',
-        scheduledAt: event.start_time,
-        schedulingProvider: 'CALENDLY',
-        schedulingUrl: null,
-        createdAt: now,
-      });
-
-      synced++;
-      created++;
-      queueScheduledBookingConfirmation(c, db, userId, importedInterviewId);
-    }
-  }
-
-  // Update connection sync timestamp
   await db
     .prepare('UPDATE scheduling_connections SET last_sync_at = ?, updated_at = ? WHERE id = ?')
     .bind(now, now, conn.id)
     .run();
 
-  return c.json({ synced, total: events.length, created });
+  return c.json({
+    synced: 0,
+    total: 0,
+    created: 0,
+    message: 'Calendly bookings sync from provider webhooks.',
+  });
 });
 
 // POST /interviews — create scheduled interview
@@ -2143,6 +1981,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       `SELECT si.id, si.candidate_id, si.pipeline_id, si.stage_id, si.status,
               si.scheduled_at, si.meeting_url, si.recipient_name, si.recipient_email,
               si.interview_type, si.scheduling_provider, si.scheduling_url,
+              si.external_event_id,
               c.name AS candidate_name, c.email AS candidate_email,
               p.title AS pipeline_title,
               s.title AS stage_title
@@ -2166,6 +2005,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       interview_type: string | null;
       scheduling_provider: string | null;
       scheduling_url: string | null;
+      external_event_id: string | null;
       candidate_name: string | null;
       candidate_email: string | null;
       pipeline_title: string | null;
@@ -2255,7 +2095,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     : '';
 
   const html = `<div style="font-family: 'Space Mono', monospace; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #e0e0e0; background: #0c0c0e;">
-  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAACXBIWXMAAAsTAAALEwEAmpwYAAADP0lEQVR4nO2dO2tUQRiGnyReomiprVFQREnaiYLiBYsgXnpBwcJKgqZREUHEwj9hvCCkVhAjoiCsoKhoiASMjYrEGwpaRLyODEyxhpPFxJnzjTPfAy+BLWb3vA97yLns+UBRFKVI5gBbgNPABeA68ASYAEaBYeA8cArYCHRIf+AcaAN2AZeAj4CdQd4Dg0CfX0eZIVuBBzMs3U6Te8Am6Q36X1jpdyc2Qq4Ay6Q3MGW2zWJXY2exa9JvQwUHgG+Ry7c+X4H90hucEsdqKt5OSb/0hqfAbuCnkIAfwHYKZg3wSah86+Pefy0FMhd4Kly+9XkEtFMYBxMo3jZlLwWxCHidQOm2Ka+ABRTCiQQKtxUZoBDGEyjbVmSEAuhOoGjbIsvJnFR3P9bnEJlzN4GSbYvcIHNin2yz/5jnZMx84FfAsm4BZ4BG4BN12V7A6QpY1NmmdV1hQwHXXkKmrAtYUm/FFbRQa/eQKZsDltQ9ZW0TcG23VpaoAGFUgDAqQBgVIIwKEEYFCKMChFEBwqgAYVSAMCpAGBUgjAoQRgUIowKEUQHCqABhVIAAncBDn5C3JI75Nd0dEbEENJo+e4y4bqKzMGAxtiKTEQVMRv7srhsVgApQATFRAagAqwJUgFUBqAAVQP0Cmg/EYqRRw4HYWMC1x+s+EKsLE0FAjN+1udMxWWJUgCxGBchiVIAsRgXIYlSALEYFyGJUgCxGBchiVIAsRgXIYlSALEYFyGJUgCxGBchiVIAsRgXIYlSALEYFyNITsCQ3LKiuB01lw9KAJQ01PTeuzU9nCrV2tiNU2gNP4Gj4BwLeDrime2DhPDLmZcCyYuQtmXMzgZJb5Q6ZcziBklvlKJnTlUDJrbKaAhhJoOiqPKMQBhIouyrHKYRO4EUChU/972cxBbEvgdKb46YEFkU78DiB4q2/td3NQi6OVQnMKvhc8Yv+4qazfhcq341n3CldQAr0Cwk4Ir3hKbEH+FJT8e4bp+VXsB54E7n8D36QhDIN7lz85UjlXwVWTPfGyp/0BjzPf7/iCpryF7grXX3AIPBuFruai8COnCcu1UkHsAE4CZwDrgGjwIT/O+xfP+Uvqhd5YKUoCqXzG8WSNQQZXBr+AAAAAElFTkSuQmCC" alt="PIPE" width="48" height="48" style="display: block; margin-bottom: 24px;" />
+  ${emailLogoImgForRequest(c)}
   <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #ffffff;">Hi ${candidateName},</h1>
   <p style="font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
     You've been invited to ${inviteVerb} for <strong>${pipelineTitle}</strong>.
@@ -2558,13 +2398,21 @@ schedulingPublic.post('/webhook', async (c) => {
       if (inviteeRes.ok) {
         const inviteeData = await inviteeRes.json() as {
           resource?: {
+            name?: string;
+            email?: string;
             answers?: Array<{ position: number; value: string }>;
+            questions_and_answers?: Array<{ position?: number; question?: string; answer?: string }>;
           };
         };
-        const answers = inviteeData.resource?.answers;
-        const a1 = answers?.find((a) => a.position === 1);
-        if (a1?.value) {
-          normalized.interviewId = a1.value;
+        if (inviteeData.resource?.name) {
+          normalized.candidateName = inviteeData.resource.name;
+        }
+        if (inviteeData.resource?.email) {
+          normalized.candidateEmail = inviteeData.resource.email;
+        }
+        const customInterviewId = calendlyInviteeInterviewId(inviteeData.resource ?? {});
+        if (customInterviewId) {
+          normalized.interviewId = customInterviewId;
         }
       }
     } catch (err) {
@@ -2589,7 +2437,12 @@ schedulingPublic.post('/webhook', async (c) => {
   if (!interview && normalized.externalEventId) {
     interview = await db
       .prepare(
-        'SELECT id, status FROM scheduled_interviews WHERE external_event_id = ? AND owner_id = ?'
+        `SELECT id, status
+           FROM scheduled_interviews
+          WHERE external_event_id = ?
+            AND owner_id = ?
+          ORDER BY updated_at DESC
+          LIMIT 1`
       )
       .bind(normalized.externalEventId, connection.owner_id)
       .first<{ id: string; status: string }>();
@@ -2615,16 +2468,76 @@ schedulingPublic.post('/webhook', async (c) => {
       .first<{ id: string; status: string }>();
   }
 
+  const now = new Date().toISOString();
+  let created = false;
+
   if (!interview) {
-    console.log('[scheduling/webhook] No matching interview', {
-      externalEventId: normalized.externalEventId,
-      candidateEmail: normalized.candidateEmail,
+    const candidateEmail = normalizeEmail(normalized.candidateEmail);
+    if (
+      normalized.status !== 'SCHEDULED'
+      || !normalized.externalEventId
+      || !candidateEmail
+      || !normalized.scheduledAt
+    ) {
+      console.log('[scheduling/webhook] No importable interview match', {
+        externalEventId: normalized.externalEventId,
+        candidateEmail: normalized.candidateEmail,
+        status: normalized.status,
+      });
+      return c.json({ message: 'No matching interview' }, 200);
+    }
+
+    const importedInterviewId = crypto.randomUUID();
+    const recipientName = normalized.candidateName?.trim() || nameFromEmail(candidateEmail);
+    const contactId = await ensureRecipientContact(db, connection.owner_id, {
+      name: recipientName,
+      email: candidateEmail,
     });
-    return c.json({ message: 'No matching interview' }, 200);
+
+    await db
+      .prepare(
+        `INSERT INTO scheduled_interviews
+         (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+          interview_type, meeting_type, scheduled_at, meeting_url,
+          scheduling_provider, external_event_id, recipient_name,
+          recipient_email, sync_source, last_synced_at, created_at, updated_at)
+         VALUES (?1, NULL, NULL, NULL, ?2, 'SCHEDULED',
+          'VIDEO', 'DIRECT_VIDEO_CALL', ?3, NULL,
+          ?4, ?5, ?6, ?7, 'WEBHOOK', ?8, ?8, ?8)`,
+      )
+      .bind(
+        importedInterviewId,
+        connection.owner_id,
+        normalized.scheduledAt,
+        providerId,
+        normalized.externalEventId,
+        recipientName,
+        candidateEmail,
+        now,
+      )
+      .run();
+
+    await persistContactFirstInterviewInviteContext(db, {
+      contactId,
+      ownerId: connection.owner_id,
+      interviewId: importedInterviewId,
+      recipientName,
+      recipientEmail: candidateEmail,
+      meetingType: 'DIRECT_VIDEO_CALL',
+      interviewType: 'VIDEO',
+      scheduledAt: normalized.scheduledAt,
+      schedulingProvider: providerId,
+      schedulingUrl: null,
+      createdAt: now,
+    });
+
+    interview = { id: importedInterviewId, status: 'SCHEDULED' };
+    created = true;
   }
 
-  // Validate status transition
-  if (!canInterviewStatusTransition(interview.status, normalized.status)) {
+  // Validate status transition. Duplicate webhook deliveries may repeat the
+  // same status and should refresh provider metadata idempotently.
+  if (interview.status !== normalized.status && !canInterviewStatusTransition(interview.status, normalized.status)) {
     console.warn('[scheduling/webhook] Invalid transition', {
       from: interview.status,
       to: normalized.status,
@@ -2633,23 +2546,18 @@ schedulingPublic.post('/webhook', async (c) => {
   }
 
   // Update interview
-  const now = new Date().toISOString();
   const updateFields = [
     'status = ?', 'sync_source = ?', 'last_synced_at = ?',
-    'external_event_id = ?', 'updated_at = ?',
+    'external_event_id = ?', 'scheduling_provider = ?', 'updated_at = ?',
   ];
   const updateValues: unknown[] = [
     normalized.status, 'WEBHOOK', now,
-    normalized.externalEventId, now,
+    normalized.externalEventId, providerId, now,
   ];
 
   if (normalized.scheduledAt) {
     updateFields.push('scheduled_at = ?');
     updateValues.push(normalized.scheduledAt);
-  }
-  if (normalized.meetingUrl) {
-    updateFields.push('meeting_url = ?');
-    updateValues.push(normalized.meetingUrl);
   }
 
   updateValues.push(interview.id);
@@ -2659,6 +2567,18 @@ schedulingPublic.post('/webhook', async (c) => {
     .bind(...updateValues)
     .run();
 
+  if (normalized.status === 'CANCELLED') {
+    await db.prepare(
+      `UPDATE meetings
+          SET status = 'CANCELLED',
+              scheduling_provider = COALESCE(?1, scheduling_provider),
+              external_event_id = COALESCE(?2, external_event_id),
+              updated_at = ?3
+        WHERE scheduled_interview_id = ?4
+          AND owner_id = ?5`,
+    ).bind(providerId, normalized.externalEventId, now, interview.id, connection.owner_id).run();
+  }
+
   // Update connection lastSyncAt
   await db
     .prepare('UPDATE scheduling_connections SET last_sync_at = ?, updated_at = ? WHERE id = ?')
@@ -2666,15 +2586,53 @@ schedulingPublic.post('/webhook', async (c) => {
     .run();
 
   if (normalized.status === 'SCHEDULED') {
+    const roomInterview = await db.prepare(
+      `SELECT si.id, si.scheduled_at, si.scheduling_provider, si.external_event_id,
+              si.recipient_name, si.recipient_email, si.interview_type,
+              c.name AS candidate_name, c.email AS candidate_email,
+              p.title AS pipeline_title,
+              s.title AS stage_title
+         FROM scheduled_interviews si
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+         LEFT JOIN pipelines p ON p.id = si.pipeline_id
+         LEFT JOIN stages s ON s.id = si.stage_id
+        WHERE si.id = ?1
+          AND si.owner_id = ?2`,
+    ).bind(interview.id, connection.owner_id).first<{
+      id: string;
+      scheduled_at: string | null;
+      scheduling_provider: string | null;
+      external_event_id: string | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      interview_type: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+      pipeline_title: string | null;
+      stage_title: string | null;
+    }>();
+    const recipientEmail = normalizeEmail(
+      normalized.candidateEmail ?? roomInterview?.candidate_email ?? roomInterview?.recipient_email,
+    );
+    if (roomInterview && recipientEmail) {
+      await ensureScheduledInterviewRoomLinks(
+        db,
+        connection.owner_id,
+        c.env,
+        roomInterview,
+        recipientEmail,
+      );
+    }
     queueScheduledBookingConfirmation(c, db, connection.owner_id, interview.id);
   }
 
   console.log('[scheduling/webhook] Interview updated', {
     interviewId: interview.id,
     newStatus: normalized.status,
+    created,
   });
 
-  return c.json({ message: 'Interview updated', interviewId: interview.id });
+  return c.json({ message: created ? 'Interview imported' : 'Interview updated', interviewId: interview.id, created });
 });
 
 // ─── Helpers: Provider API calls ────────────────────────────────────────────
@@ -2803,7 +2761,7 @@ async function registerProviderWebhook(
   config: ProviderOAuthConfig,
   env: Env,
 ): Promise<string | null> {
-  const baseUrl = env.APP_BASE_URL ?? 'https://api.pipe.build';
+  const baseUrl = env.API_BASE_URL ?? env.APP_BASE_URL ?? 'https://api.pipe.build';
   const callbackUrl = `${baseUrl}/api/v1/scheduling/webhook?connectionId=${encodeURIComponent(connectionId)}`;
 
   if (providerId === 'CALENDLY' && config.webhookUrl) {
@@ -2947,6 +2905,7 @@ interface NormalizedEvent {
   status: string;
   scheduledAt: string | null;
   meetingUrl: string | null;
+  candidateName: string | null;
   candidateEmail: string | null;
   interviewId: string | null;
   inviteeUri: string | null;
@@ -2969,6 +2928,7 @@ function normalizeWebhookPayload(
       status: event === 'invitee.canceled' ? 'CANCELLED' : 'SCHEDULED',
       scheduledAt: (scheduledEvent?.['start_time'] as string) ?? null,
       meetingUrl: (location?.['join_url'] as string) ?? null,
+      candidateName: (p['name'] as string) ?? null,
       candidateEmail: (p['email'] as string) ?? null,
       interviewId: null,
       inviteeUri: (p['uri'] as string) ?? null,
@@ -2996,6 +2956,7 @@ function normalizeWebhookPayload(
       status,
       scheduledAt: (p['startTime'] as string) ?? null,
       meetingUrl: (p['metadata']as Record<string, unknown>)?.['videoCallUrl'] as string ?? null,
+      candidateName: (firstAttendee?.['name'] as string) ?? null,
       candidateEmail: (firstAttendee?.['email'] as string) ?? null,
       interviewId: null,
       inviteeUri: null,
