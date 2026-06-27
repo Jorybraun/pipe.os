@@ -39,6 +39,7 @@ interface PacketRow {
   pr_number: number;
   production_ready: number;
   packet_json: string;
+  source_hash: string | null;
 }
 
 interface SourceSpanRow {
@@ -224,14 +225,61 @@ function packetContentForHash(packet: Record<string, unknown>): Record<string, u
 async function repairedPacketJson(
   packet: Record<string, unknown>,
   reviewProfile: ChallengeReviewProfile,
-): Promise<string | null> {
-  const next = { ...packet, reviewProfile };
-  const content = packetContentForHash(next);
+): Promise<{ json: string; contentHash: string } | null> {
+  return refreshPacketContentHash({ ...packet, reviewProfile });
+}
+
+async function refreshPacketContentHash(
+  packet: Record<string, unknown>,
+): Promise<{ json: string; contentHash: string } | null> {
+  const content = packetContentForHash(packet);
   if (!content) return null;
-  return stableJson({
-    ...next,
-    contentHash: await hashObject(content),
-  });
+  const contentHash = await hashObject(content);
+  return {
+    json: stableJson({
+      ...packet,
+      contentHash,
+    }),
+    contentHash,
+  };
+}
+
+function existingPacketContentHash(packet: Record<string, unknown>): string | null {
+  const contentHash = packet.contentHash;
+  return typeof contentHash === 'string' && contentHash.trim() ? contentHash : null;
+}
+
+function updateReviewPacketRow(
+  database: SqliteDatabase,
+  input: {
+    packetId: string;
+    packetJson?: string;
+    contentHash?: string | null;
+    hasSourceHash: boolean;
+    hasUpdatedAt: boolean;
+  },
+): void {
+  const assignments: string[] = [];
+  const values: SqlValue[] = [];
+  if (input.packetJson !== undefined) {
+    assignments.push('packet_json = ?');
+    values.push(input.packetJson);
+  }
+  if (input.hasSourceHash && input.contentHash) {
+    assignments.push('source_hash = ?');
+    values.push(input.contentHash);
+  }
+  if (input.hasUpdatedAt) {
+    assignments.push('updated_at = ?');
+    values.push(new Date().toISOString());
+  }
+  if (assignments.length === 0) return;
+  values.push(input.packetId);
+  database.prepare(
+    `UPDATE review_challenge_packets
+        SET ${assignments.join(', ')}
+      WHERE id = ?`,
+  ).run(...values);
 }
 
 function tableColumns(database: SqliteDatabase, tableName: string): Set<string> {
@@ -251,6 +299,7 @@ function loadRows(database: SqliteDatabase, options: RepairOptions): PacketRow[]
        qr.full_name AS repo_full_name,
        rcp.pr_number,
        rcp.production_ready,
+       rcp.source_hash,
        rcp.packet_json
      FROM review_challenge_packets rcp
      LEFT JOIN qualified_repos qr ON qr.id = rcp.repo_id
@@ -303,7 +352,9 @@ export async function repairReviewPacketReviewProfiles(
 ): Promise<RepairResult> {
   const stats = zeroStats();
   const outcomes: RepairOutcome[] = [];
-  const hasUpdatedAt = tableColumns(database, 'review_challenge_packets').has('updated_at');
+  const packetColumns = tableColumns(database, 'review_challenge_packets');
+  const hasUpdatedAt = packetColumns.has('updated_at');
+  const hasSourceHash = packetColumns.has('source_hash');
 
   for (const row of loadRows(database, options)) {
     stats.scanned += 1;
@@ -335,6 +386,47 @@ export async function repairReviewPacketReviewProfiles(
       const basisRecord = typeof basis === 'object' && basis !== null && !Array.isArray(basis)
         ? basis as Partial<ChallengeReviewProfileBasis>
         : {};
+      const readyPacket = await refreshPacketContentHash(packet);
+      const contentHash = readyPacket?.contentHash ?? existingPacketContentHash(packet);
+      const packetHashStale = readyPacket !== null && existingPacketContentHash(packet) !== readyPacket.contentHash;
+      const rowHashStale = hasSourceHash && contentHash !== null && row.source_hash !== contentHash;
+      if (packetHashStale || rowHashStale) {
+        if (options.write) {
+          updateReviewPacketRow(database, {
+            packetId: row.id,
+            ...(packetHashStale && readyPacket ? { packetJson: readyPacket.json } : {}),
+            contentHash,
+            hasSourceHash,
+            hasUpdatedAt,
+          });
+          increment(stats, 'updated');
+          outcomes.push(outcome({
+            packetId: row.id,
+            repoFullName: row.repo_full_name,
+            prNumber: row.pr_number,
+            status: 'updated',
+            changedFileCount: basisRecord.changedFileCount ?? null,
+            changedLineCount: basisRecord.changedLineCount ?? null,
+            sourceHunkCount: basisRecord.sourceHunkCount ?? null,
+            error: null,
+            profile: packet.reviewProfile,
+          }));
+        } else {
+          increment(stats, 'would_update');
+          outcomes.push(outcome({
+            packetId: row.id,
+            repoFullName: row.repo_full_name,
+            prNumber: row.pr_number,
+            status: 'would_update',
+            changedFileCount: basisRecord.changedFileCount ?? null,
+            changedLineCount: basisRecord.changedLineCount ?? null,
+            sourceHunkCount: basisRecord.sourceHunkCount ?? null,
+            error: packetHashStale ? 'packet contentHash is stale' : 'source_hash is stale',
+            profile: packet.reviewProfile,
+          }));
+        }
+        continue;
+      }
       increment(stats, 'already_ready');
       outcomes.push(outcome({
         packetId: row.id,
@@ -388,19 +480,13 @@ export async function repairReviewPacketReviewProfiles(
     }
 
     if (options.write) {
-      if (hasUpdatedAt) {
-        database.prepare(
-          `UPDATE review_challenge_packets
-              SET packet_json = ?, updated_at = ?
-            WHERE id = ?`,
-        ).run(nextPacketJson, new Date().toISOString(), row.id);
-      } else {
-        database.prepare(
-          `UPDATE review_challenge_packets
-              SET packet_json = ?
-            WHERE id = ?`,
-        ).run(nextPacketJson, row.id);
-      }
+      updateReviewPacketRow(database, {
+        packetId: row.id,
+        packetJson: nextPacketJson.json,
+        contentHash: nextPacketJson.contentHash,
+        hasSourceHash,
+        hasUpdatedAt,
+      });
       increment(stats, 'updated');
       outcomes.push(outcome({
         packetId: row.id,

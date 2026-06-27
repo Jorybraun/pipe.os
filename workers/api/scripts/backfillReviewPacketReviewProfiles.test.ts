@@ -16,6 +16,7 @@ function setupDb(): BetterSqliteDb {
       pr_number INTEGER NOT NULL,
       production_ready INTEGER NOT NULL,
       repo_snapshot_id TEXT NOT NULL,
+      source_hash TEXT,
       packet_json TEXT NOT NULL,
       updated_at TEXT
     );
@@ -106,9 +107,9 @@ function legacyPacket(overrides: Record<string, unknown> = {}): Record<string, u
 function seedLegacyPacket(sqlite: BetterSqliteDb, packet = legacyPacket()): void {
   sqlite.prepare(
     `INSERT INTO review_challenge_packets (
-       id, repo_id, pr_number, production_ready, repo_snapshot_id, packet_json, updated_at
-     ) VALUES (?, 1, 973, 1, 'snapshot-legacy', ?, '2026-06-01T00:00:00.000Z')`,
-  ).run(String(packet.id), JSON.stringify(packet));
+       id, repo_id, pr_number, production_ready, repo_snapshot_id, source_hash, packet_json, updated_at
+     ) VALUES (?, 1, 973, 1, 'snapshot-legacy', ?, ?, '2026-06-01T00:00:00.000Z')`,
+  ).run(String(packet.id), packet.contentHash, JSON.stringify(packet));
   sqlite.prepare(
     `INSERT INTO repo_source_spans (id, path, exact_text, line_start, line_end)
      VALUES
@@ -153,8 +154,8 @@ describe('backfillReviewPacketReviewProfiles', () => {
 
     const result = await repairReviewPacketReviewProfiles(sqlite, { write: true });
     const row = sqlite.prepare(
-      `SELECT packet_json, updated_at FROM review_challenge_packets WHERE id = 'packet-legacy'`,
-    ).get() as { packet_json: string; updated_at: string };
+      `SELECT packet_json, source_hash, updated_at FROM review_challenge_packets WHERE id = 'packet-legacy'`,
+    ).get() as { packet_json: string; source_hash: string; updated_at: string };
     const packet = JSON.parse(row.packet_json) as {
       reviewProfile?: {
         difficultyBand: string;
@@ -178,7 +179,43 @@ describe('backfillReviewPacketReviewProfiles', () => {
     });
     expect(packet.contentHash).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(packet.contentHash).not.toBe('sha256:legacy');
+    expect(row.source_hash).toBe(packet.contentHash);
     expect(row.updated_at).not.toBe('2026-06-01T00:00:00.000Z');
+  });
+
+  it('refreshes stale row source hashes on already calibrated packets', async () => {
+    sqlite = setupDb();
+    seedLegacyPacket(sqlite, legacyPacket({
+      reviewProfile: {
+        source: 'deterministic_engineering_prior',
+        difficultyBand: 'focused',
+        expectedSeniority: 'senior',
+        expectedTimeMinutes: 45,
+        basis: {
+          changedFileCount: 2,
+          changedLineCount: 5,
+          sourceHunkCount: 2,
+          blockingRiskCount: 0,
+          testChangeCount: 1,
+          maxDemandWeight: 0.167,
+        },
+        reasons: ['Existing calibrated packet.'],
+      },
+      contentHash: 'sha256:current-packet-hash',
+    }));
+    sqlite.prepare(
+      `UPDATE review_challenge_packets SET source_hash = 'sha256:stale-row-hash' WHERE id = 'packet-legacy'`,
+    ).run();
+
+    const result = await repairReviewPacketReviewProfiles(sqlite, { write: true });
+    const row = sqlite.prepare(
+      `SELECT packet_json, source_hash FROM review_challenge_packets WHERE id = 'packet-legacy'`,
+    ).get() as { packet_json: string; source_hash: string };
+    const packet = JSON.parse(row.packet_json) as { contentHash: string };
+
+    expect(result.stats).toMatchObject({ scanned: 1, updated: 1, alreadyReady: 0 });
+    expect(row.source_hash).toBe(packet.contentHash);
+    expect(row.source_hash).not.toBe('sha256:stale-row-hash');
   });
 
   it('leaves already calibrated packets unchanged', async () => {
@@ -201,6 +238,7 @@ describe('backfillReviewPacketReviewProfiles', () => {
       },
     }));
 
+    await repairReviewPacketReviewProfiles(sqlite, { write: true });
     const result = await repairReviewPacketReviewProfiles(sqlite, { write: true });
 
     expect(result.stats).toMatchObject({ scanned: 1, alreadyReady: 1, updated: 0 });
