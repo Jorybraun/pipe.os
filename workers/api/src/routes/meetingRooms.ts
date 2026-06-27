@@ -102,6 +102,14 @@ const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
 const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const BROWSER_NAVIGATION_TRIGGERS = new Set([
+  'address_bar',
+  'go_button',
+  'history_back',
+  'history_forward',
+  'open_window_initial_url',
+  'shared_state_sync',
+]);
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -187,6 +195,40 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'File-change evidence must come from a recognized source-backed file surface.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'browser_navigation') {
+    const url = properties.url;
+    let parsedUrl: URL | null = null;
+    if (typeof url === 'string') {
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        parsedUrl = null;
+      }
+    }
+    const protocol = parsedUrl?.protocol.replace(':', '');
+    const sourceOk = properties.source === 'room_browser_window'
+      && properties.navigationSource === 'browser_window_client_submit';
+    const urlOk = typeof url === 'string'
+      && url.trim().length > 0
+      && event.text === url
+      && parsedUrl !== null
+      && (protocol === 'http' || protocol === 'https');
+    const urlPartsOk = parsedUrl !== null
+      && properties.urlHost === parsedUrl.hostname
+      && properties.urlProtocol === protocol;
+    const triggerOk = typeof properties.navigationTrigger === 'string'
+      && BROWSER_NAVIGATION_TRIGGERS.has(properties.navigationTrigger);
+    const contextOk = hasString(properties.windowId)
+      && (properties.surface === 'standard' || properties.surface === 'win95')
+      && hasString(properties.roomPhase);
+    if (sourceOk && urlOk && urlPartsOk && triggerOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Browser navigation evidence must come from the room browser window with normalized URL, trigger, and room context.',
       path: ['properties'],
     });
     return;

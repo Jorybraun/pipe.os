@@ -1,42 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, RotateCw } from 'lucide-react';
+import {
+  isKnownEmbedBlockedUrl,
+  normalizeBrowserNavigationUrl,
+  type BrowserNavigationTrigger,
+} from '../lib/browserNavigationEvidence';
 
 export interface BrowserWindowProps {
   initialUrl?: string;
   currentUrl?: string;
-  onNavigate?: (url: string) => void;
-}
-
-const EMBED_BLOCKED_HOSTS = [
-  'accounts.google.com',
-  'docs.google.com',
-  'github.com',
-  'google.com',
-  'linkedin.com',
-  'mail.google.com',
-  'notion.so',
-  'stackoverflow.com',
-  'twitter.com',
-  'x.com',
-  'youtube.com',
-];
-
-function normalizeUrl(target: string): string | null {
-  let normalized = target.trim();
-  if (!normalized) return null;
-  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-    normalized = 'https://' + normalized;
-  }
-  return normalized;
-}
-
-function isKnownEmbedBlockedUrl(target: string): boolean {
-  try {
-    const host = new URL(target).hostname.replace(/^www\./, '').toLowerCase();
-    return EMBED_BLOCKED_HOSTS.some((blockedHost) => host === blockedHost || host.endsWith(`.${blockedHost}`));
-  } catch {
-    return false;
-  }
+  onNavigate?: (url: string, metadata: { trigger: BrowserNavigationTrigger; knownEmbedBlocked: boolean }) => void;
 }
 
 export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: BrowserWindowProps): JSX.Element {
@@ -66,8 +39,12 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
     });
   }, [currentUrl, url]);
 
-  const navigate = useCallback((target: string) => {
-    const normalized = normalizeUrl(target);
+  const notifyNavigate = useCallback((nextUrl: string, trigger: BrowserNavigationTrigger): void => {
+    onNavigate?.(nextUrl, { trigger, knownEmbedBlocked: isKnownEmbedBlockedUrl(nextUrl) });
+  }, [onNavigate]);
+
+  const navigate = useCallback((target: string, trigger: BrowserNavigationTrigger) => {
+    const normalized = normalizeBrowserNavigationUrl(target);
     if (!normalized) return;
     setUrl(normalized);
     setInputUrl(normalized);
@@ -76,8 +53,8 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
     newHistory.push(normalized);
     setHistory(newHistory);
     setHistoryIdx(newHistory.length - 1);
-    onNavigate?.(normalized);
-  }, [history, historyIdx, onNavigate]);
+    notifyNavigate(normalized, trigger);
+  }, [history, historyIdx, notifyNavigate]);
 
   const goBack = useCallback(() => {
     if (historyIdx > 0) {
@@ -87,9 +64,9 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
       setUrl(nextUrl);
       setInputUrl(nextUrl);
       setIframeFailed(false);
-      onNavigate?.(nextUrl);
+      notifyNavigate(nextUrl, 'history_back');
     }
-  }, [history, historyIdx, onNavigate]);
+  }, [history, historyIdx, notifyNavigate]);
 
   const goForward = useCallback(() => {
     if (historyIdx < history.length - 1) {
@@ -99,9 +76,9 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
       setUrl(nextUrl);
       setInputUrl(nextUrl);
       setIframeFailed(false);
-      onNavigate?.(nextUrl);
+      notifyNavigate(nextUrl, 'history_forward');
     }
-  }, [history, historyIdx, onNavigate]);
+  }, [history, historyIdx, notifyNavigate]);
 
   const reload = useCallback(() => {
     if (iframeRef.current && url) {
@@ -113,7 +90,7 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      navigate(inputUrl);
+      navigate(inputUrl, 'address_bar');
     }
   }, [inputUrl, navigate]);
 
@@ -163,7 +140,7 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
         </div>
         <button
           className="win95-browser-btn"
-          onClick={() => navigate(inputUrl)}
+          onClick={() => navigate(inputUrl, 'go_button')}
           title="Go"
           data-testid="room-browser-go"
         >

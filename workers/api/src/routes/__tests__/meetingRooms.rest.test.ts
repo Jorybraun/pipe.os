@@ -1161,6 +1161,76 @@ describe('meeting room recording living-context route', () => {
       candidateNodeId: node?.id,
     });
 
+    const fakeBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review',
+        actor: 'guest',
+        properties: {
+          source: 'browser_url_claim',
+          windowId: 'browser',
+          url: 'https://example.com/review',
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeBrowserNavigationRes.status).toBe(422);
+
+    const browserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'go_button',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(browserNavigationRes.status).toBe(200);
+
+    const browserNavigationNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_browser_nav'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(browserNavigationNode).toMatchObject({
+      node_type: 'session_browser_nav',
+      source_type: 'meeting_session',
+    });
+    expect(browserNavigationNode?.narrative_text).toContain('Browser navigated to: https://example.com/review?step=1');
+    expect(JSON.parse(browserNavigationNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_browser_window',
+      navigationSource: 'browser_window_client_submit',
+      windowId: 'browser',
+      navigationTrigger: 'go_button',
+      urlHost: 'example.com',
+      urlProtocol: 'https',
+      surface: 'win95',
+      roomPhase: 'connected',
+    });
+
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
 

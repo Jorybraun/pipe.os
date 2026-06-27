@@ -57,6 +57,11 @@ import {
   type RoomFileEvidenceOperation,
 } from './lib/roomFileEvidence';
 import {
+  buildBrowserNavigationEvidence,
+  normalizeBrowserNavigationUrl,
+  type BrowserNavigationTrigger,
+} from './lib/browserNavigationEvidence';
+import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
@@ -607,6 +612,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const updateSharedWindowData = useCallback((
     id: string,
     data: Partial<Record<string, unknown>>,
+    options?: { browserNavigationTrigger?: BrowserNavigationTrigger },
   ): void => {
     wm.updateWindowData(id, data);
     if (room.roomSurface === 'win95') {
@@ -618,10 +624,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
     const currentUrl = data.currentUrl;
     if (typeof currentUrl === 'string') {
-      captureSessionEvent('browser_navigation', currentUrl, roomActor, {
+      const evidence = buildBrowserNavigationEvidence({
+        actor: roomActor,
         windowId: id,
+        url: currentUrl,
+        trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
         surface: room.roomSurface,
+        roomPhase: room.phase,
       });
+      if (evidence) {
+        captureSessionEvent('browser_navigation', evidence.text, roomActor, evidence.properties);
+      }
     }
   }, [captureSessionEvent, room, roomActor, wm]);
 
@@ -1370,6 +1383,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const openBrowserWindow = (url = ''): void => {
+    const currentUrl = url ? normalizeBrowserNavigationUrl(url) ?? '' : '';
     openSharedWindow({
       id: 'browser',
       windowType: 'browser',
@@ -1378,8 +1392,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 60,
       width: 800,
       height: 560,
-      data: { currentUrl: url },
+      data: { currentUrl },
     });
+    if (currentUrl) {
+      const evidence = buildBrowserNavigationEvidence({
+        actor: roomActor,
+        windowId: 'browser',
+        url: currentUrl,
+        trigger: 'open_window_initial_url',
+        surface: room.roomSurface,
+        roomPhase: room.phase,
+      });
+      if (evidence) {
+        captureSessionEvent('browser_navigation', evidence.text, roomActor, evidence.properties);
+      }
+    }
   };
 
   const openTerminalWindow = (): void => {
@@ -1920,7 +1947,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <BrowserWindow
             initialUrl={stringWindowData(win, 'currentUrl') || stringWindowData(win, 'initialUrl')}
             currentUrl={stringWindowData(win, 'currentUrl') || stringWindowData(win, 'initialUrl')}
-            onNavigate={(url) => updateSharedWindowData(win.id, { currentUrl: url })}
+            onNavigate={(url, navigation) => updateSharedWindowData(
+              win.id,
+              { currentUrl: url },
+              { browserNavigationTrigger: navigation.trigger },
+            )}
           />
         );
 
