@@ -30,11 +30,16 @@ import {
   preferredRecordingOptions,
 } from './lib/recording';
 import { buildRecordingLifecycleEvidence } from './lib/recordingEvidence';
+import {
+  buildRoomSurfaceChangeEvidence,
+  canControlSharedRoomSurface,
+} from './lib/roomSurfaceEvidence';
 import { buildCodeEditorOpenEvidence } from './lib/workspaceEvidence';
 import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
+  type RoomSurface,
 } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { StandardLayout } from './components/StandardLayout';
@@ -386,6 +391,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
+  const canControlRoomSurface = canControlSharedRoomSurface(metadata.role);
   const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({
     id: message.id,
     role: message.role === 'HOST' ? 'host' : 'candidate',
@@ -1144,23 +1150,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     );
   }
 
-  const enterWin95Desktop = (): void => {
-    if (metadata.role !== 'HOST') return;
-    room.setRoomSurface('win95');
-    captureSessionEvent('window_focus', '95 Until Infinity desktop', 'host', {
-      surface: 'win95',
-      action: 'enter_desktop',
+  const setSharedRoomSurface = (surface: RoomSurface): void => {
+    if (!canControlRoomSurface || room.roomSurface === surface) return;
+    const evidence = buildRoomSurfaceChangeEvidence({
+      actor: roomActor,
+      previousSurface: room.roomSurface,
+      nextSurface: surface,
+      roomPhase: room.phase,
     });
+    room.setRoomSurface(surface);
+    captureSessionEvent('room_surface_change', evidence.text, roomActor, evidence.properties);
   };
 
-  const exitWin95Desktop = (): void => {
-    if (metadata.role !== 'HOST') return;
-    room.setRoomSurface('standard');
-    captureSessionEvent('window_focus', 'Standard call surface', 'host', {
-      surface: 'standard',
-      action: 'exit_desktop',
-    });
-  };
+  const enterWin95Desktop = (): void => setSharedRoomSurface('win95');
+
+  const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
   const openWorkspaceWindow = (): void => {
     if (!showWorkspacePanel) return;
@@ -1715,7 +1719,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onWindowMaximize={maximizeSharedWindow}
       onWindowMove={moveSharedWindow}
       onWindowMoveEnd={publishSharedWindowMove}
-      canExitDesktop={metadata.role === 'HOST'}
+      canExitDesktop={canControlRoomSurface}
       onExitDesktop={exitWin95Desktop}
       peerCursors={room.peerCursors}
       onCursorMove={room.publishCursorPresence}
@@ -1726,7 +1730,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       renderWindowContent={renderWindowContent}
       recordingLabel={recordingLabel}
       recordingActive={recordingState === 'recording'}
-      canEnterDesktop={metadata.role === 'HOST'}
+      canEnterDesktop={canControlRoomSurface}
       onEnterDesktop={enterWin95Desktop}
     />
   );

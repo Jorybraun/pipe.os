@@ -126,6 +126,10 @@ The controlling product rule remains:
 - Browser recording lifecycle events now include the observed speaker-channel
   map, ICE provider, MIME types, and captured byte counts, with host-end
   auto-stop and manual stop using the same source-backed event path.
+- Both host and guest can switch the shared room between the standard call and
+  95 Until Infinity surfaces. Each browser action emits `room_surface_change`
+  evidence with actor, previous surface, next surface, and room phase, while the
+  Durable Object desktop log remains the authoritative shared-state replay.
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
