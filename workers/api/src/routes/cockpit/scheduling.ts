@@ -1380,6 +1380,7 @@ function contactFirstInterviewSourceText(input: {
   recipientEmail: string;
   meetingType: string;
   interviewType: string;
+  assessmentSetup: ScheduledAssessmentSetupProjection;
   scheduledAt: string | null;
   schedulingProvider: string | null;
   schedulingUrl: string | null;
@@ -1391,6 +1392,11 @@ function contactFirstInterviewSourceText(input: {
     `Recipient email: ${input.recipientEmail}`,
     `Meeting type: ${input.meetingType}`,
     `Interview type: ${input.interviewType}`,
+    `Assessment setup status: ${input.assessmentSetup.status}`,
+    `Assessment setup kind: ${input.assessmentSetup.kind}`,
+    `Assessment setup source: ${input.assessmentSetup.source}`,
+    `Assessment setup blocks positive assessment: ${input.assessmentSetup.blocksPositiveAssessment ? 'yes' : 'no'}`,
+    `Assessment setup message: ${input.assessmentSetup.message ?? 'none'}`,
     `Scheduled at: ${input.scheduledAt ?? 'unscheduled'}`,
     `Scheduling provider: ${input.schedulingProvider ?? 'none'}`,
     `Scheduling URL: ${input.schedulingUrl ?? 'none'}`,
@@ -1408,6 +1414,7 @@ async function persistContactFirstInterviewInviteContext(
     recipientEmail: string;
     meetingType: string;
     interviewType: string;
+    assessmentSetup: ScheduledAssessmentSetupProjection;
     scheduledAt: string | null;
     schedulingProvider: string | null;
     schedulingUrl: string | null;
@@ -1430,6 +1437,10 @@ async function persistContactFirstInterviewInviteContext(
       scheduledInterviewId: input.interviewId,
       meetingType: input.meetingType,
       interviewType: input.interviewType,
+      assessmentSetupStatus: input.assessmentSetup.status,
+      assessmentSetupKind: input.assessmentSetup.kind,
+      assessmentSetupSource: input.assessmentSetup.source,
+      assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
     },
   });
   const artifact = await store.upsertArtifact({
@@ -1457,6 +1468,7 @@ async function persistContactFirstInterviewInviteContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       source: 'contact_first_interview_create',
+      assessmentSetupStatus: input.assessmentSetup.status,
     },
   });
   const span = await store.createSourceSpan({
@@ -1473,6 +1485,7 @@ async function persistContactFirstInterviewInviteContext(
     metadata: {
       scheduledInterviewId: input.interviewId,
       source: 'contact_first_interview_create',
+      assessmentSetupStatus: input.assessmentSetup.status,
     },
   });
   await store.upsertContextRecord({
@@ -1487,6 +1500,11 @@ async function persistContactFirstInterviewInviteContext(
       contactId: input.contactId,
       meetingType: input.meetingType,
       interviewType: input.interviewType,
+      assessmentSetupStatus: input.assessmentSetup.status,
+      assessmentSetupKind: input.assessmentSetup.kind,
+      assessmentSetupSource: input.assessmentSetup.source,
+      assessmentSetupBlocksPositiveAssessment: input.assessmentSetup.blocksPositiveAssessment,
+      assessmentSetupMessage: input.assessmentSetup.message,
     },
     confidence: 1,
     extractionVersion: 'scheduled-interview-create-v1',
@@ -2720,6 +2738,13 @@ schedulingAuth.post('/interviews', async (c) => {
   const now = new Date().toISOString();
   const effectiveMeetingType = meetingType ?? (candidateId ? 'SCREENING_INTERVIEW' : 'DIRECT_VIDEO_CALL');
   const effectiveInterviewType = interviewType ?? 'VIDEO';
+  const assessmentSetup = buildScheduledAssessmentSetup({
+    interviewType: effectiveInterviewType,
+    candidateId: candidateId ?? null,
+    matchedRepoId: matchedRepoId ?? null,
+    githubRepoUrl: githubRepoUrl ?? null,
+    githubPrNumber: githubPrNumber ?? null,
+  });
   const contactId = !candidateId && recipientName && recipientEmail
     ? await ensureRecipientContact(db, userId, { name: recipientName, email: recipientEmail })
     : null;
@@ -2753,6 +2778,7 @@ schedulingAuth.post('/interviews', async (c) => {
       recipientEmail: recipientEmail.trim().toLowerCase(),
       meetingType: effectiveMeetingType,
       interviewType: effectiveInterviewType,
+      assessmentSetup,
       scheduledAt: scheduledAt ?? null,
       schedulingProvider: schedulingProvider ?? null,
       schedulingUrl: schedulingUrl ?? null,
@@ -2778,13 +2804,7 @@ schedulingAuth.post('/interviews', async (c) => {
       matchedRepoId: matchedRepoId ?? null,
       githubRepoUrl: githubRepoUrl ?? null,
       githubPrNumber: githubPrNumber ?? null,
-      assessmentSetup: buildScheduledAssessmentSetup({
-        interviewType: effectiveInterviewType,
-        candidateId: candidateId ?? null,
-        matchedRepoId: matchedRepoId ?? null,
-        githubRepoUrl: githubRepoUrl ?? null,
-        githubPrNumber: githubPrNumber ?? null,
-      }),
+      assessmentSetup,
     },
   }, 201);
 });
@@ -3433,6 +3453,13 @@ schedulingPublic.post('/webhook', async (c) => {
       recipientEmail: candidateEmail,
       meetingType: 'DIRECT_VIDEO_CALL',
       interviewType: 'VIDEO',
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: 'VIDEO',
+        candidateId: null,
+        matchedRepoId: null,
+        githubRepoUrl: null,
+        githubPrNumber: null,
+      }),
       scheduledAt: normalized.scheduledAt,
       schedulingProvider: providerId,
       schedulingUrl: null,

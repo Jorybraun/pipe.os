@@ -1577,6 +1577,7 @@ describe('GET /interviews/:id detail', () => {
       `SELECT cr.record_type,
               cr.predicate,
               cr.narrative,
+              cr.qualifiers_json,
               ss.exact_text
          FROM people p
          JOIN workspace_people wp ON wp.person_id = p.id
@@ -1589,6 +1590,7 @@ describe('GET /interviews/:id detail', () => {
       record_type: string;
       predicate: string | null;
       narrative: string;
+      qualifiers_json: string | null;
       exact_text: string;
     }>;
     expect(graphRows).toHaveLength(1);
@@ -1603,11 +1605,25 @@ describe('GET /interviews/:id detail', () => {
       'Recipient email: edsger@example.com',
       'Meeting type: DIRECT_VIDEO_CALL',
       'Interview type: VIDEO',
+      'Assessment setup status: not_applicable',
+      'Assessment setup kind: not_applicable',
+      'Assessment setup source: not_workspace_assessment',
+      'Assessment setup blocks positive assessment: no',
+      'Assessment setup message: none',
       'Scheduled at: 2026-06-24T18:00:00.000Z',
       'Scheduling provider: none',
       'Scheduling URL: none',
       expect.stringMatching(/^Created at: /),
     ]);
+    expect(JSON.parse(graphRows[0]!.qualifiers_json ?? '{}')).toMatchObject({
+      scheduledInterviewId: body.interview.id,
+      meetingType: 'DIRECT_VIDEO_CALL',
+      interviewType: 'VIDEO',
+      assessmentSetupStatus: 'not_applicable',
+      assessmentSetupKind: 'not_applicable',
+      assessmentSetupSource: 'not_workspace_assessment',
+      assessmentSetupBlocksPositiveAssessment: false,
+    });
 
     const detailResponse = await app.request(`/interviews/${body.interview.id}`);
     expect(detailResponse.status).toBe(200);
@@ -2546,6 +2562,32 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       status: 'waiting_for_candidate_evidence',
       kind: 'auto_match',
       blocksPositiveAssessment: true,
+    });
+
+    const graphRow = sqlite!.prepare(
+      `SELECT cr.qualifiers_json, ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+          AND cr.record_type = 'scheduled_interview_invite'
+        LIMIT 1`,
+    ).get('linus@example.com') as { qualifiers_json: string | null; exact_text: string } | undefined;
+    expect(graphRow?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Interview type: DEV_CONTAINER_CHALLENGE',
+      'Assessment setup status: waiting_for_candidate_evidence',
+      'Assessment setup kind: auto_match',
+      'Assessment setup source: contact_first_invite',
+      'Assessment setup blocks positive assessment: yes',
+      'Assessment setup message: This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+    ]));
+    expect(JSON.parse(graphRow?.qualifiers_json ?? '{}')).toMatchObject({
+      assessmentSetupStatus: 'waiting_for_candidate_evidence',
+      assessmentSetupKind: 'auto_match',
+      assessmentSetupSource: 'contact_first_invite',
+      assessmentSetupBlocksPositiveAssessment: true,
     });
   });
 
