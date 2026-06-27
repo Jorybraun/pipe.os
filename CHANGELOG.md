@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a shared-room workspace state sync event so a host-launched dev workspace appears on the guest's 95 desktop.
 - Added research tasks for the remote OS-agent protocol decision and stream-backed transcript speaker attribution.
 - Recording uploads now include validated speaker-channel metadata, persist it with transcript artifacts, and use it for Deepgram segment attribution before promoting transcript evidence into the living context graph.
+- Tightened standalone CODE_REVIEW RPC coverage so malformed source-backed packet diffs stay in `WAITING_FOR_MATCH` instead of falling through the dev-container challenge branch.
 
 ### Changed — Win95-themed workspace overlay in video room
 
