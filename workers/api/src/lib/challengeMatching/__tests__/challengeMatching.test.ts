@@ -733,6 +733,39 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(result.alignments.every((entry) => entry.pairScore.semanticNarrative === 0)).toBe(true);
   });
 
+  it('does not penalize direct source-backed concept matches when embeddings are absent', () => {
+    const compiled = compile([
+      signal('one', {
+        concepts: ['term:lattice-replay-buffers'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+      }),
+    ]);
+    const packet = challenge('direct-concept-no-embedding', [
+      demand('one', 1, {
+        concepts: ['term:lattice-replay-buffers'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+        embedding: undefined,
+      }),
+    ], { concepts: ['term:lattice-replay-buffers'] });
+
+    const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+
+    expect(result.alignments).toHaveLength(1);
+    expect(result.alignments[0]!.pairScore.semanticNarrative).toBe(0);
+    expect(result.alignments[0]!.pairScore.conceptCorrespondence).toBe(1);
+    expect(result.alignments[0]!.pairScore.total).toBe(1);
+    expect(result.candidateEvidenceAlignment).toBe(1);
+  });
+
   it('makes role discovery optional — a challenge is eligible without role requirements', () => {
     const compiled = compile([
       signal('one', {

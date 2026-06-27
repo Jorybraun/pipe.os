@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — Harden source-backed repo discovery and matching (HAS-86)
 
 - Removed the `jaccardText` text-overlap fallback in `semanticSimilarity` so the `semanticNarrative` scoring dimension contributes zero when embedding evidence is absent instead of fabricating a heuristic text-overlap score.
+- Direct source-backed concept matches are no longer penalized for missing embeddings; absent embedding similarity remains recorded as zero but is excluded from the pair-score denominator.
 - Removed fabricated `roleRequirement: true` and `highWeightRoleRequirement: true` defaults in `materializeChallengePacketForMatching` when no role concepts are provided; demands are now only marked as role requirements when backed by source-evidenced role concept overlap.
 - Made role discovery optional in `alignCandidateToChallenge`: `ROLE_RELEVANCE_BELOW_THRESHOLD` and `NO_HIGH_WEIGHT_ROLE_REQUIREMENT` rejection reasons are only applied when at least one demand carries a role requirement, so challenges remain eligible without role context.
 - Removed the hard-coded `MID` seniority default in `mapSeniorityToDifficulty`; conversion now fails closed when a repo has no source-backed seniority band instead of fabricating a difficulty level.
