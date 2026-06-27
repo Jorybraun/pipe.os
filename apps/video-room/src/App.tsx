@@ -28,13 +28,18 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
-import { useRoomConnection, type RoomClippyPromptDraft, type RoomFile } from './hooks/useRoomConnection';
+import {
+  useRoomConnection,
+  type RoomClippyPromptDraft,
+  type RoomFile,
+} from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useChatMessages } from './hooks/useChatMessages';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
+import type { AgentRoomAction } from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
@@ -957,6 +962,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const openFilesWindow = (): void => {
+    openSharedWindow({
+      id: 'tasks',
+      windowType: 'tasks',
+      title: 'Files',
+      x: 200,
+      y: 120,
+      width: 520,
+      height: 420,
+    });
+  };
+
   const openNotepadWindow = (text?: string): void => {
     const file = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
     openSharedWindow({
@@ -1060,28 +1077,53 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const handleClippyAction = (actionId: string): void => {
+  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent' } = {}): void => {
+    const source = options.source ?? 'prompt';
     switch (actionId) {
       case 'start-recording':
-        captureClippyAction(actionId, 'Clippy action: start recording');
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`);
         void startRecording();
         break;
       case 'launch-workspace':
-        captureClippyAction(actionId, 'Clippy action: launch workspace');
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`);
         openWorkspaceWindow();
         void launchWorkspace();
         break;
       case 'open-workspace':
-        captureClippyAction(actionId, 'Clippy action: open workspace');
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`);
         openWorkspaceWindow();
         break;
       case 'open-terminal':
-        captureClippyAction(actionId, 'Clippy action: open terminal');
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`);
         openTerminalWindow();
+        break;
+      case 'open-browser':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`);
+        openBrowserWindow(options.url ?? '');
+        break;
+      case 'open-files':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`);
+        openFilesWindow();
+        break;
+      case 'open-notepad':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`);
+        openNotepadWindow();
+        break;
+      case 'open-paint':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`);
+        openPaintWindow();
         break;
       default:
         break;
     }
+  };
+
+  const handleClippyAction = (actionId: string): void => {
+    executeRoomAction(actionId);
+  };
+
+  const handleAgentRoomAction = (action: AgentRoomAction): void => {
+    executeRoomAction(action.id, { url: action.url, source: 'agent' });
   };
 
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
@@ -1105,7 +1147,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Chat', x: 560, y: 30, width: 340, height: 400 });
         break;
       case 'tasks':
-        openSharedWindow({ id: 'tasks', windowType: 'tasks', title: 'Files', x: 200, y: 120, width: 520, height: 420 });
+        openFilesWindow();
         break;
       case 'notepad':
         openNotepadWindow();
@@ -1383,6 +1425,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onOpenBrowser={openBrowserWindow}
           onOpenTerminal={openTerminalWindow}
           onAction={handleClippyAction}
+          onAgentRoomAction={handleAgentRoomAction}
         />
       )}
       {room.phase === 'ended' && (

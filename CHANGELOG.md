@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added recruiter room-status SSE updates so guest-waiting/live room state patches the scheduling dashboard without the old 10-second client polling loop.
 - Added shared Clippy prompt events to the video-room Durable Object so proactive assistant guidance is persisted, replayable, and synced across host/guest desktops.
 - Added a shared Win95 room filesystem with durable file snapshots, activity logging, Notepad/Paint autosave, and a synced Files window for opening or deleting shared desktop files.
+- Added a safe Clippy/Devin room-action protocol so the dev-container agent bridge can suggest or execute allow-listed desktop actions such as opening Terminal, Files, Notepad, Paint, Browser, and Workspace.
 
 ### Changed — Win95-themed workspace overlay in video room
 

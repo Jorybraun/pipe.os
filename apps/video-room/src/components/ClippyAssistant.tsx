@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { initAgent } from 'clippyjs';
 import ClippyLoaders from 'clippyjs/agents/clippy';
-import { useAgentConnection } from '../hooks/useAgentConnection';
+import { useAgentConnection, type AgentRoomAction } from '../hooks/useAgentConnection';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
 
@@ -26,6 +26,7 @@ export interface ClippyAssistantProps {
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
   onAction?: (actionId: string) => void;
+  onAgentRoomAction?: (action: AgentRoomAction) => void;
 }
 
 export function ClippyAssistant({
@@ -37,6 +38,7 @@ export function ClippyAssistant({
   onOpenBrowser,
   onOpenTerminal,
   onAction,
+  onAgentRoomAction,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
@@ -44,6 +46,7 @@ export function ClippyAssistant({
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const executedAgentActionsRef = useRef<Set<string>>(new Set());
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -126,6 +129,22 @@ export function ClippyAssistant({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [agentConn.messages]);
 
+  const latestAgentRoomAction = agentConn.roomActions[agentConn.roomActions.length - 1] ?? null;
+  const latestAgentRoomActionSignature = latestAgentRoomAction
+    ? `${latestAgentRoomAction.id}|${latestAgentRoomAction.text ?? ''}|${latestAgentRoomAction.url ?? ''}`
+    : null;
+
+  useEffect(() => {
+    if (!latestAgentRoomAction || !latestAgentRoomAction.autoExecute || !latestAgentRoomActionSignature) return;
+    if (executedAgentActionsRef.current.has(latestAgentRoomActionSignature)) return;
+    executedAgentActionsRef.current.add(latestAgentRoomActionSignature);
+    onAgentRoomAction?.(latestAgentRoomAction);
+  }, [
+    latestAgentRoomAction,
+    latestAgentRoomActionSignature,
+    onAgentRoomAction,
+  ]);
+
   const handleDismiss = useCallback(() => {
     if (agentRef.current) {
       agentRef.current.hide(true, undefined);
@@ -178,10 +197,25 @@ export function ClippyAssistant({
     if (agentRef.current) {
       agentRef.current.animate();
     }
+    if (actionId === 'agent-room-action' && latestAgentRoomAction) {
+      onAgentRoomAction?.(latestAgentRoomAction);
+      return;
+    }
     onAction?.(actionId);
-  }, [onAction]);
+  }, [latestAgentRoomAction, onAction, onAgentRoomAction]);
 
-  const currentPrompt = messages.length > 0 ? messages[messages.length - 1] : null;
+  const agentRoomActionPrompt: ClippyMessage | null = latestAgentRoomAction
+    ? {
+        text: latestAgentRoomAction.text ?? `${agentConn.agentName} suggests: ${latestAgentRoomAction.label}.`,
+        hold: true,
+        actions: [{
+          id: 'agent-room-action',
+          label: latestAgentRoomAction.label,
+        }],
+      }
+    : null;
+
+  const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
 
   const statusLabel: Record<string, string> = {
     idle: 'Ready',

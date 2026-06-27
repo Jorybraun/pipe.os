@@ -98,6 +98,78 @@ function send(ws, msg) {
 
 function broadcast(msg) { for (const ws of clients) send(ws, msg); }
 
+const ROOM_ACTIONS = {
+  'open-browser': { label: 'Open Browser', aliases: ['open browser', 'browser', 'open edge', 'edge'] },
+  'open-terminal': { label: 'Open Terminal', aliases: ['open terminal', 'terminal', 'shell'] },
+  'open-workspace': { label: 'Open Workspace', aliases: ['open workspace', 'workspace', 'editor', 'code server', 'code-server'] },
+  'launch-workspace': { label: 'Launch Workspace', aliases: ['launch workspace', 'start workspace', 'launch container'] },
+  'open-files': { label: 'Open Files', aliases: ['open files', 'files', 'file manager', 'explorer'] },
+  'open-notepad': { label: 'Open Notepad', aliases: ['open notepad', 'notepad', 'notes'] },
+  'open-paint': { label: 'Open Paint', aliases: ['open paint', 'paint', 'ms paint', 'mspaint'] },
+  'start-recording': { label: 'Start Recording', aliases: ['start recording', 'record interview', 'begin recording'] },
+};
+
+function roomActionName(value) {
+  return String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+}
+
+function normalizeRoomAction(value) {
+  const normalized = roomActionName(value);
+  if (ROOM_ACTIONS[normalized]) return normalized;
+  for (const [id, config] of Object.entries(ROOM_ACTIONS)) {
+    if (config.aliases.some((alias) => roomActionName(alias) === normalized)) return id;
+  }
+  return null;
+}
+
+function roomActionFromText(text) {
+  const raw = String(text || '').trim();
+  const lower = raw.toLowerCase();
+  const matches = [];
+  for (const [id, config] of Object.entries(ROOM_ACTIONS)) {
+    for (const alias of config.aliases) {
+      if (lower.includes(alias)) matches.push({ id, config, aliasLength: alias.length });
+    }
+  }
+  matches.sort((a, b) => b.aliasLength - a.aliasLength);
+  const match = matches[0];
+  const actionText = match?.id === 'start-recording'
+    ? 'I can help by starting the recording.'
+    : match?.id === 'launch-workspace'
+      ? 'I can help by launching the workspace.'
+      : match
+        ? 'I can help by opening ' + match.config.label.replace(/^Open\s+/i, '') + '.'
+        : '';
+  return match ? {
+    action: match.id,
+    label: match.config.label,
+    text: actionText,
+    autoExecute: true,
+  } : null;
+}
+
+function emitRoomAction(action) {
+  if (!action || !ROOM_ACTIONS[action.action]) return;
+  broadcast({ type: 'ROOM_ACTION', ...action });
+}
+
+function extractTaggedRoomActions(text) {
+  const actions = [];
+  let cleanText = String(text || '');
+  cleanText = cleanText.replace(/\[\[room_action:([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g, (_match, rawAction, rawLabel) => {
+    const action = normalizeRoomAction(rawAction);
+    if (action) {
+      actions.push({
+        action,
+        label: rawLabel || ROOM_ACTIONS[action].label,
+        text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
+      });
+    }
+    return '';
+  }).trim();
+  return { text: cleanText, actions };
+}
+
 // --- Terminal over WebSocket (PuTTY-style) ---
 function acceptTerminal(req, socket) {
   const key = req.headers['sec-websocket-key'];
@@ -200,7 +272,15 @@ function startAgent() {
     broadcast({ type: 'AGENT_READY', agent: 'devin', capabilities: ['read','write','run','browse'] });
     agentProcess.stdout.on('data', (d) => {
       const text = d.toString().trim();
-      if (text) { agentStatus = 'working'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); broadcast({ type: 'CHAT_RESPONSE', text }); agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); }
+      if (text) {
+        const parsed = extractTaggedRoomActions(text);
+        agentStatus = 'working';
+        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+        if (parsed.text) broadcast({ type: 'CHAT_RESPONSE', text: parsed.text });
+        for (const action of parsed.actions) emitRoomAction(action);
+        agentStatus = 'idle';
+        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      }
     });
     agentProcess.stderr.on('data', (d) => { console.error('[agent-bridge] stderr:', d.toString().trim()); });
     agentProcess.on('exit', () => { agentProcess = null; agentStatus = 'idle'; broadcast({ type: 'AGENT_STATUS', status: agentStatus }); });
@@ -214,6 +294,12 @@ function handleMessage(ws, msg) {
   switch (msg.type) {
     case 'CHAT':
       if (!msg.text || !msg.text.trim()) return;
+      const roomAction = roomActionFromText(msg.text);
+      if (roomAction) {
+        send(ws, { type: 'CHAT_RESPONSE', text: roomAction.text });
+        emitRoomAction(roomAction);
+        return;
+      }
       if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
       if (agentStatus === 'auth_needed') { send(ws, { type: 'CHAT_RESPONSE', text: 'I need to authenticate first! Click the login button.' }); return; }
       if (!agentProcess) { send(ws, { type: 'CHAT_RESPONSE', text: 'Agent not running. Try again.' }); return; }
