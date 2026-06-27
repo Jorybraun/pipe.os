@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-export type AgentStatus = 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
+export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
 export type AgentRoomActionId =
   | 'open-browser'
   | 'open-terminal'
@@ -164,7 +164,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isAgentStatus(value: unknown): value is AgentStatus {
-  return value === 'idle'
+  return value === 'starting'
+    || value === 'idle'
     || value === 'thinking'
     || value === 'working'
     || value === 'auth_needed'
@@ -247,6 +248,8 @@ function parseRoomActions(value: unknown, context: RoomActionParseContext): Agen
 export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
   const name = agentName.trim() || 'devin';
   switch (status) {
+    case 'starting':
+      return `${name} is starting from the real container bridge.`;
     case 'auth_needed':
       return `${name} requires real authentication before it can assist.`;
     case 'thinking':
@@ -434,7 +437,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
 
         ws.onopen = () => {
           setConnected(true);
-          setStatus('idle');
+          setStatus('disconnected');
         };
 
         ws.onmessage = (event) => {

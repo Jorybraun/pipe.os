@@ -9,6 +9,7 @@ const {
   agentDiagnosticSessionEvent,
   agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
+  isAgentAuthFailureText,
 } = require('./agent-diagnostics.js');
 
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
@@ -27,7 +28,8 @@ const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provid
 
 const agentAuthed = Boolean(DEVIN_API_KEY);
 let agentProcess = null;
-let agentStatus = agentAuthed ? 'idle' : 'auth_needed';
+let agentReady = false;
+let agentStatus = agentAuthed ? 'disconnected' : 'auth_needed';
 const clients = new Set();
 let workspaceBaselineReady = false;
 let workspaceScanInFlight = false;
@@ -446,6 +448,24 @@ function devinAuthDiagnosticMessage() {
   });
 }
 
+function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
+  agentReady = false;
+  agentStatus = 'auth_needed';
+  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcast(devinAuthNeededMessage());
+  broadcastAgentDiagnostic(agentDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: 'auth_needed',
+    message: message || DEVIN_AUTH_MESSAGE,
+    diagnosticSource,
+  }));
+  if (agentProcess) {
+    const processToStop = agentProcess;
+    agentProcess = null;
+    processToStop.kill('SIGTERM');
+  }
+}
+
 function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
   const base = String(pipeApiUrl || '').trim();
   const token = String(roomToken || '').trim();
@@ -647,32 +667,59 @@ function devinCommand() {
 function startAgent() {
   if (agentProcess) return;
   if (!agentAuthed) {
-    agentStatus = 'auth_needed';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    broadcast(devinAuthNeededMessage());
-    broadcastAgentDiagnostic(devinAuthDiagnosticMessage());
+    markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
     return;
   }
 
   try {
     const env = { ...process.env };
     if (DEVIN_API_KEY) env.DEVIN_API_KEY = DEVIN_API_KEY;
-    agentProcess = spawn(devinCommand(), [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    agentStatus = 'idle';
+    agentReady = false;
+    agentStatus = 'starting';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
-    void primeAgentWithRoomContext(agentProcess).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('[agent-bridge] room context primer failed:', message);
-      broadcastAgentDiagnostic(agentDiagnosticMessage({
-        agent: AGENT_NAME,
-        status: 'idle',
-        message: `Room context primer failed: ${message}`,
-        diagnosticSource: 'context_primer_error',
-      }));
-    });
+    agentProcess = spawn(devinCommand(), [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const startedProcess = agentProcess;
+    void primeAgentWithRoomContext(startedProcess)
+      .then((delivered) => {
+        if (agentProcess !== startedProcess) return;
+        if (!delivered) {
+          agentReady = false;
+          agentStatus = 'disconnected';
+          broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+          broadcastAgentDiagnostic(agentDiagnosticMessage({
+            agent: AGENT_NAME,
+            status: 'disconnected',
+            message: 'Devin process started but did not accept the room-context primer.',
+            diagnosticSource: 'context_primer_not_delivered',
+          }));
+          return;
+        }
+        agentReady = true;
+        agentStatus = 'idle';
+        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+        broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('[agent-bridge] room context primer failed:', message);
+        if (agentProcess !== startedProcess) return;
+        agentReady = false;
+        agentStatus = 'disconnected';
+        broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+        broadcastAgentDiagnostic(agentDiagnosticMessage({
+          agent: AGENT_NAME,
+          status: 'disconnected',
+          message: `Room context primer failed: ${message}`,
+          diagnosticSource: 'context_primer_error',
+        }));
+      });
     agentProcess.stdout.on('data', (chunk) => {
-      const parsed = extractTaggedRoomActions(chunk.toString());
+      const rawText = chunk.toString();
+      if (isAgentAuthFailureText(rawText)) {
+        markAgentAuthNeeded(rawText, 'agent_stdout_auth_required');
+        return;
+      }
+      const parsed = extractTaggedRoomActions(rawText);
       agentStatus = 'working';
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
       const observedAt = new Date().toISOString();
@@ -692,6 +739,10 @@ function startAgent() {
       const message = chunk.toString().trim();
       if (!message) return;
       console.error('[agent-bridge] devin stderr:', message);
+      if (isAgentAuthFailureText(message)) {
+        markAgentAuthNeeded(message, 'agent_stderr_auth_required');
+        return;
+      }
       broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: agentStatus,
@@ -700,11 +751,13 @@ function startAgent() {
       }));
     });
     agentProcess.on('exit', (code, signal) => {
+      const wasAuthNeeded = agentStatus === 'auth_needed';
       agentProcess = null;
-      agentStatus = 'idle';
+      agentReady = false;
+      agentStatus = wasAuthNeeded ? 'auth_needed' : 'disconnected';
       broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
-        status: code === 0 && !signal ? 'idle' : 'disconnected',
+        status: wasAuthNeeded ? 'auth_needed' : 'disconnected',
         message: `Devin process exited with code ${code === null ? 'null' : code}${signal ? ` and signal ${signal}` : ''}.`,
         diagnosticSource: 'agent_exit',
         exitCode: code,
@@ -714,7 +767,8 @@ function startAgent() {
     });
     agentProcess.on('error', (error) => {
       agentProcess = null;
-      agentStatus = 'idle';
+      agentReady = false;
+      agentStatus = 'disconnected';
       broadcastAgentDiagnostic(agentDiagnosticMessage({
         agent: AGENT_NAME,
         status: 'disconnected',
@@ -750,6 +804,10 @@ async function handleAgentMessage(ws, msg) {
       sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
       return;
     }
+    if (!agentReady) {
+      send(ws, { type: 'ERROR', message: 'Real Devin is still starting. Wait for the bridge to report ready before sending chat.' });
+      return;
+    }
     if (!agentProcess) {
       send(ws, { type: 'ERROR', message: 'Agent is not running.' });
       return;
@@ -767,10 +825,7 @@ async function handleAgentMessage(ws, msg) {
       startAgent();
       return;
     }
-    agentStatus = 'auth_needed';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    broadcast(devinAuthNeededMessage());
-    broadcastAgentDiagnostic(devinAuthDiagnosticMessage());
+    markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
     agentProcess.kill('SIGTERM');
   } else if (msg.type === 'GET_STATUS') {
@@ -792,12 +847,15 @@ function acceptAgent(req, socket) {
   if (!ws) return;
   clients.add(ws);
   send(ws, { type: 'AGENT_STATUS', status: agentStatus });
-  if (agentProcess) {
+  if (agentProcess && agentReady) {
     send(ws, { type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
   }
   if (agentStatus === 'auth_needed') {
     send(ws, devinAuthNeededMessage());
     sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
+  }
+  if (agentAuthed && !agentProcess && agentStatus !== 'auth_needed') {
+    startAgent();
   }
 }
 

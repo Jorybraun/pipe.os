@@ -8,6 +8,7 @@ const {
   agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
+  isAgentAuthFailureText,
   redactDiagnosticText,
 } = diagnostics;
 
@@ -23,6 +24,12 @@ describe('agent diagnostics', () => {
     expect(text).toContain('token=[redacted]');
     expect(text).not.toContain('sk-live-secret');
     expect(text).not.toContain('raw-token');
+  });
+
+  it('classifies Devin auth/login output as auth failure evidence', () => {
+    expect(isAgentAuthFailureText('Please run devin auth login before continuing.')).toBe(true);
+    expect(isAgentAuthFailureText('Authentication failed: invalid credential.')).toBe(true);
+    expect(isAgentAuthFailureText('I inspected the failing test.')).toBe(false);
   });
 
   it('bounds diagnostic text without fabricating missing context', () => {

@@ -293,6 +293,7 @@ export function ClippyAssistant({
   const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
 
   const statusLabel: Record<string, string> = {
+    starting: 'Starting...',
     idle: 'Ready',
     thinking: 'Thinking...',
     working: 'Working...',
@@ -301,16 +302,25 @@ export function ClippyAssistant({
   };
   const unavailableMessage = agentUnavailableMessage
     ?? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.';
-  const canSendToAgent = agentEnabled && agentConn.connected && agentConn.status !== 'auth_needed';
+  const canSendToAgent = agentEnabled
+    && agentConn.connected
+    && agentConn.status !== 'auth_needed'
+    && agentConn.status !== 'starting'
+    && agentConn.status !== 'disconnected'
+    && agentConn.capabilities.length > 0;
   const emptyChatMessage = !agentEnabled
     ? unavailableMessage
     : !agentConn.connected
       ? 'Clippy bridge is reconnecting to the dev container.'
-      : agentConn.status === 'auth_needed'
-        ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
-        : agentConn.capabilities.length === 0
-          ? 'Clippy bridge is ready. Send a message to start the real Devin process.'
-          : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
+      : agentConn.status === 'starting'
+        ? 'Clippy is starting the real Devin process inside the dev container.'
+        : agentConn.status === 'auth_needed'
+          ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
+          : agentConn.status === 'disconnected'
+            ? 'Clippy bridge is connected, but real Devin has not reported ready yet.'
+            : agentConn.capabilities.length === 0
+              ? 'Waiting for real Devin to report ready before chat is enabled.'
+              : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
   const chatAgentName = agentEnabled ? agentConn.agentName : 'devin';
 
   return (

@@ -130,4 +130,31 @@ describe('ClippyAssistant', () => {
     expect(sendMessage).toHaveBeenCalledWith('inspect the repo task');
     expect(onUserChatMessage).toHaveBeenCalledWith(userMessage);
   });
+
+  it('keeps chat disabled while real Devin is starting and before capabilities arrive', async () => {
+    const sendMessage = vi.fn(() => null);
+    mockAgentConnection({
+      connected: true,
+      status: 'starting',
+      capabilities: [],
+      sendMessage,
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+      />,
+    );
+
+    expect((await screen.findByTestId('clippy-chat')).textContent).toContain(
+      'Clippy is starting the real Devin process inside the dev container.',
+    );
+    expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
 });

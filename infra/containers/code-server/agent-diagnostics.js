@@ -39,6 +39,23 @@ function diagnosticTextMetrics(value) {
   };
 }
 
+function isAgentAuthFailureText(value) {
+  const text = String(value || '').toLowerCase();
+  if (!text.trim()) return false;
+  return (
+    (text.includes('auth') || text.includes('login') || text.includes('credential'))
+    && (
+      text.includes('required')
+      || text.includes('failed')
+      || text.includes('invalid')
+      || text.includes('missing')
+      || text.includes('not authenticated')
+      || text.includes('please login')
+      || text.includes('log in')
+    )
+  ) || text.includes('devin auth login');
+}
+
 function normalizedPromptType(value) {
   return PROMPT_TYPES.has(value) ? value : 'chat_prompt';
 }
@@ -210,5 +227,6 @@ module.exports = {
   agentPromptHandoffDiagnosticMessage,
   boundedDiagnosticText,
   diagnosticTextMetrics,
+  isAgentAuthFailureText,
   redactDiagnosticText,
 };

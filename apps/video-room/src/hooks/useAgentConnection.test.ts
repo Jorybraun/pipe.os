@@ -208,6 +208,16 @@ describe('parseAgentBridgeMessage', () => {
   });
 
   it('turns bridge status into explicit evidence text', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_STATUS',
+      status: 'starting',
+    })).toEqual({
+      kind: 'status',
+      status: 'starting',
+    });
+    expect(agentStatusEvidenceText('starting', 'devin')).toBe(
+      'devin is starting from the real container bridge.',
+    );
     expect(agentStatusEvidenceText('auth_needed', 'devin')).toBe(
       'devin requires real authentication before it can assist.',
     );
