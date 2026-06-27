@@ -1161,6 +1161,46 @@ describe('meeting room recording living-context route', () => {
       candidateNodeId: node?.id,
     });
 
+    const beaconSessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window state updated: browser',
+        actor: 'guest',
+        properties: {
+          source: 'window_state_client_submit',
+          windowId: 'browser',
+          statePatch: { x: 120, y: 80 },
+          stateKeys: ['x', 'y'],
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+    expect(beaconSessionEventRes.status).toBe(200);
+    await expect(beaconSessionEventRes.json()).resolves.toMatchObject({
+      captured: true,
+      nodeId: expect.any(String),
+    });
+
+    const beaconNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_update'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(beaconNode?.narrative_text).toContain('Window updated: Window state updated: browser');
+    expect(JSON.parse(beaconNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'window_state_client_submit',
+      windowId: 'browser',
+      surface: 'win95',
+    });
+
     const contextEntities = sqlite.prepare(
       `SELECT entity_type, entity_id, relationship, value_json, metadata_json
          FROM context_record_entities
@@ -1289,6 +1329,70 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       source: 'clippy_agent_chat',
       workspaceSessionId: 'workspace-session-1',
+    });
+  });
+
+  it('returns non-OK when a valid session event cannot be persisted', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-session-persist-failure',
+      'owner-1',
+      'Persist Failure Candidate',
+      'persist-failure@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Persist Failure Candidate',
+        recipientEmail: 'persist-failure@example.com',
+        title: 'Session event persistence failure',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-session-persist-failure',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    sqlite.exec('DROP TABLE candidate_nodes');
+
+    const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window state updated: browser',
+        actor: 'guest',
+        properties: {
+          source: 'window_state_client_submit',
+          windowId: 'browser',
+          statePatch: { x: 120, y: 80 },
+          stateKeys: ['x', 'y'],
+          surface: 'win95',
+        },
+      }),
+    }, env, ctx);
+
+    expect(sessionEventRes.status).toBe(500);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[sessionEvents] Failed to capture event:',
+      expect.any(Error),
+    );
+    consoleError.mockRestore();
+    await expect(sessionEventRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Session event could not be persisted.',
+      },
     });
   });
 

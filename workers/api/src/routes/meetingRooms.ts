@@ -135,6 +135,16 @@ const sessionEventSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 });
 
+async function readJsonRequestBody(c: Context<{ Bindings: Env }>): Promise<unknown> {
+  const text = await c.req.text().catch(() => null);
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 interface RoomWorkspaceInterview {
   interview_type: string | null;
   github_repo_url: string | null;
@@ -1376,7 +1386,7 @@ meetingRooms.all('/:token/agent/:sessionId/auth/*', async (c) => {
 // POST /:token/session-events — capture a session event as a candidate_node
 meetingRooms.post('/:token/session-events', async (c) => {
   const token = c.req.param('token');
-  const parsed = sessionEventSchema.safeParse(await c.req.json().catch(() => null));
+  const parsed = sessionEventSchema.safeParse(await readJsonRequestBody(c));
   if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', 'Invalid session event.');
 
   const { resolveCandidateIdForRoom, captureSessionEvent } = await import('../lib/sessionEvents.js');
@@ -1395,7 +1405,11 @@ meetingRooms.post('/:token/session-events', async (c) => {
   };
 
   const node = await captureSessionEvent(c.env.DB, event, c.env);
-  return c.json({ captured: !!node, nodeId: node?.id ?? null });
+  if (!node) {
+    return apiError(c, 'INTERNAL_ERROR', 'Session event could not be persisted.');
+  }
+
+  return c.json({ captured: true, nodeId: node.id });
 });
 
 // GET /:token/context-graph — retrieve all session events for the candidate
