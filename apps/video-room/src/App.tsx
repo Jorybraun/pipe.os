@@ -777,6 +777,41 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const captureTerminalCommand = useCallback((command: string): void => {
+    captureSessionEvent('terminal_command', command, roomActor, {
+      source: 'container_terminal',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      repoUrl: workspace?.repoUrl ?? null,
+    });
+  }, [
+    captureSessionEvent,
+    room.phase,
+    room.roomSurface,
+    roomActor,
+    workspace?.repoUrl,
+    workspaceSession?.sessionId,
+    workspaceSession?.status,
+  ]);
+  const captureTerminalOutput = useCallback((output: string): void => {
+    captureSessionEvent('terminal_output', output, 'system', {
+      source: 'container_terminal',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+      repoUrl: workspace?.repoUrl ?? null,
+    });
+  }, [
+    captureSessionEvent,
+    room.phase,
+    room.roomSurface,
+    workspace?.repoUrl,
+    workspaceSession?.sessionId,
+    workspaceSession?.status,
+  ]);
 
   const canStartCall = metadata.role === 'HOST' && (
     room.phase === 'peer_connected' || room.phase === 'peer_disconnected'
@@ -1554,6 +1589,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             wsUrl={workspaceSession && hasActiveWorkspace
               ? roomTerminalWsUrl(token, workspaceSession.sessionId)
               : ''}
+            onCommand={captureTerminalCommand}
+            onOutput={captureTerminalOutput}
           />
         );
 

@@ -108,6 +108,9 @@ The controlling product rule remains:
 - Accepted guest join/leave and recording start/stop room lifecycle events now
   persist as source-backed `meeting_session_event` evidence, with recording
   stop captured only when recording evidence was actually active.
+- Terminal windows now capture completed dev-container commands and bounded
+  output chunks as source-backed `meeting_session_event` evidence with
+  workspace session and repo metadata.
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
