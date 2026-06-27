@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented the 95 Until Infinity repo-task matching plan, preserving the Evidence Hypergraph requirements that no positive match or evaluation claim can exist without source refs.
 - Tightened the repo-task final assessment output into evaluated vs diagnostic states so successful evaluations require source-backed submission/evaluation evidence and non-success states require explicit diagnostics.
 - Added `OPEN_SOURCE_BUG_FIX` as a workspace-backed assessment interview mode for scheduling, invite creation, dev-container launch, and candidate assessment routing.
+- 95 Until Infinity room lifecycle now replays Durable Object desktop/chat/file activity into source-backed meeting-session evidence when the host ends the room, instead of waiting for a later context-graph read.
 
 ### Fixed — Calendly scheduling sync and confirmations
 

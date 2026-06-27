@@ -101,6 +101,10 @@ The controlling product rule remains:
 - Candidate assessment routing currently serves it through the existing
   dev-container `CODE_IMPLEMENTATION` runtime.
 - Meeting-room workspace provisioning treats it as a workspace-backed interview.
+- Host room end now replays the authoritative Durable Object desktop, chat,
+  and file activity logs into source-backed `meeting_session_event` evidence,
+  so Win95 room interactions are captured as part of the interview lifecycle
+  instead of only when a graph read is requested later.
 - The full repo-task assessment session, event spine, final evidence bundle, and
   source-backed evaluation report remain pending.
 

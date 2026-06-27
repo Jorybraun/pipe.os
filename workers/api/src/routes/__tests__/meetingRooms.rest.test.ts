@@ -1458,6 +1458,153 @@ describe('meeting room recording living-context route', () => {
     }));
   });
 
+  it('syncs durable room activity into source-backed evidence when the host ends the room', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const activitySnapshot = {
+      desktopActivityLog: [
+        {
+          role: 'HOST',
+          recordedAt: 1700000100000,
+          event: {
+            id: 'evt-enter-95-on-end',
+            clientId: 'host-client',
+            createdAt: 1700000100000,
+            kind: 'SET_ROOM_SURFACE',
+            surface: 'win95',
+          },
+        },
+      ],
+      chatActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000101000,
+          message: {
+            id: 'chat-end-1',
+            clientId: 'guest-client',
+            createdAt: 1700000101000,
+            role: 'GUEST',
+            text: 'I would test the retry branch before touching the queue worker.',
+          },
+        },
+      ],
+      clippyPromptActivityLog: [],
+      fileSystemActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000102000,
+          event: {
+            id: 'fs-end-notes-save',
+            clientId: 'guest-client',
+            createdAt: 1700000102000,
+            kind: 'UPSERT_FILE',
+            file: {
+              id: 'end-notes',
+              name: 'review-notes.txt',
+              kind: 'text',
+              content: 'Candidate plans a focused retry test.',
+              mimeType: 'text/plain',
+              createdAt: 1700000102000,
+              updatedAt: 1700000102000,
+            },
+          },
+        },
+      ],
+    };
+    const doFetch = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/activity-log') {
+        return new Response(JSON.stringify(activitySnapshot), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    env.VIDEO_ROOM = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'INVITED', ?)`,
+    ).run(
+      'scheduled-end-sync',
+      'owner-1',
+      'End Sync Candidate',
+      'end-sync@example.com',
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'End Sync Candidate',
+        recipientEmail: 'end-sync@example.com',
+        title: 'End sync room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-end-sync',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const endedRes = await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'ENDED' }),
+    }, env, ctx);
+    expect(endedRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-end-sync') as { candidate_id: string } | undefined;
+    expect(linked?.candidate_id).toEqual(expect.any(String));
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND source_type = 'meeting_session'
+        ORDER BY captured_at ASC`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string | null;
+    }>;
+    expect(evidenceRows.map((row) => row.node_type)).toEqual([
+      'session_room_surface_change',
+      'session_chat_user',
+      'session_file_change',
+    ]);
+    expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
+      'I would test the retry branch before touching the queue worker.',
+    );
+    expect(JSON.parse(evidenceRows.at(-1)?.extracted_properties_json ?? '{}')).toMatchObject({
+      roomActivitySource: 'durable_object',
+      operation: 'upsert',
+      fileId: 'end-notes',
+      contentPreview: 'Candidate plans a focused retry test.',
+    });
+
+    const contextRows = sqlite.prepare(
+      `SELECT predicate
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+        ORDER BY observed_at ASC`,
+    ).all() as Array<{ predicate: string }>;
+    expect(contextRows.map((row) => row.predicate)).toEqual([
+      'session_event:room_surface_change',
+      'session_event:ai_chat_user',
+      'session_event:file_change',
+    ]);
+    expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://do/activity-log',
+    }));
+  });
+
   it('embeds basic auth in returned dev room links without persisting credentials', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

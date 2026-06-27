@@ -76,6 +76,12 @@ interface ResolvedMeetingRecording {
   recordingKey: string | null;
 }
 
+interface RoomActivityEvidenceSyncResult {
+  captured: number;
+  failed: number;
+  events: number;
+}
+
 const WHISPER_TRANSCRIPTION_TIMEOUT_MS = 30_000;
 const MEETING_ANALYSIS_TIMEOUT_MS = 30_000;
 const E2E_DEEPGRAM_RESPONSE_HEADER = 'X-Pipe-E2E-Deepgram-Response';
@@ -126,6 +132,32 @@ interface RoomWorkspaceInterview {
   github_repo_url: string | null;
   github_pr_number: number | null;
   matched_repo_id: number | null;
+}
+
+async function syncRoomActivityEvidenceForToken(
+  c: Context<{ Bindings: Env }>,
+  token: string,
+): Promise<RoomActivityEvidenceSyncResult | null> {
+  if (!c.env.VIDEO_ROOM) return null;
+
+  try {
+    const {
+      resolveCandidateIdForRoom,
+      syncRoomActivityToSessionEvents,
+    } = await import('../lib/sessionEvents.js');
+    const resolved = await resolveCandidateIdForRoom(c.env.DB, token);
+    if (!resolved?.candidateId) return null;
+    return await syncRoomActivityToSessionEvents(c.env.DB, c.env, {
+      candidateId: resolved.candidateId,
+      sessionId: resolved.sessionId,
+    });
+  } catch (error) {
+    console.error('[meetingRooms] Failed to sync room activity evidence:', {
+      tokenHashPrefix: (await hashRoomToken(token)).slice(0, 12),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 interface RoomWorkspacePayload {
@@ -1250,13 +1282,15 @@ meetingRooms.get('/:token/ws', async (c) => {
 });
 
 meetingRooms.post('/:token/events', async (c) => {
-  const room = await resolveRoom(c.env.DB, c.req.param('token'));
+  const token = c.req.param('token');
+  const room = await resolveRoom(c.env.DB, token);
   if (!room) return apiError(c, 'NOT_FOUND', 'Room link is invalid or expired.');
   const parsed = roomEventSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return apiError(c, 'VALIDATION_ERROR', 'Invalid room event.');
 
   const now = new Date().toISOString();
   const event = parsed.data.event;
+  let sessionEvidence: RoomActivityEvidenceSyncResult | null = null;
   if (event === 'STARTED' && room.role === 'HOST') {
     const statements: D1PreparedStatement[] = [
       c.env.DB.prepare(
@@ -1353,9 +1387,10 @@ meetingRooms.post('/:token/events', async (c) => {
       );
     }
     await c.env.DB.batch(statements);
+    sessionEvidence = await syncRoomActivityEvidenceForToken(c, token);
   }
 
-  return c.json({ accepted: true });
+  return c.json({ accepted: true, sessionEvidence });
 });
 
 meetingRooms.post('/:token/recording', async (c) => {
