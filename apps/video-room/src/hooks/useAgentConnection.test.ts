@@ -37,4 +37,17 @@ describe('parseAgentBridgeMessage', () => {
       },
     });
   });
+
+  it('preserves real Devin auth failure details without inventing an auth URL', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AUTH_NEEDED',
+      agent: 'devin',
+      message: 'Real Devin credentials are required.',
+    })).toEqual({
+      kind: 'auth_needed',
+      agentName: 'devin',
+      authUrl: null,
+      message: 'Real Devin credentials are required.',
+    });
+  });
 });

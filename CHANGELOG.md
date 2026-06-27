@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Devin is now primed with the latest source-backed room context and the safe shared-desktop `[[room_action:*]]` protocol when Clippy starts or forwards chat into the dev-container agent.
 - Clippy/Devin chat prompts and agent replies are now captured as source-marked meeting-session evidence so assistant guidance becomes part of the living context graph.
 - Shared Win95 windows now persist and replay geometry, focus, minimized, and maximized state so host window movement/state changes converge on the guest desktop.
+- Added an explicit "Ask Clippy" control to the Win95 room so candidates can open the Devin-backed Clippy chat without relying on the animated paperclip click target.
+- Removed the unauthenticated Devin auth bypass and local Clippy room-action replies so Clippy only chats and drives the shared desktop through a real Devin process.
 
 ### Changed — Win95-themed workspace overlay in video room
 

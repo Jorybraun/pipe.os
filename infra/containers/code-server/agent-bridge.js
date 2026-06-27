@@ -11,8 +11,9 @@ const AGENT_NAME = process.env.AGENT_TYPE || 'devin';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
+const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
-let agentAuthed = Boolean(DEVIN_API_KEY);
+const agentAuthed = Boolean(DEVIN_API_KEY);
 let agentProcess = null;
 let agentStatus = agentAuthed ? 'idle' : 'auth_needed';
 const clients = new Set();
@@ -39,27 +40,6 @@ function normalizeRoomAction(value) {
     if (config.aliases.some((alias) => roomActionName(alias) === normalized)) return id;
   }
   return null;
-}
-
-function roomActionFromText(text) {
-  const lower = String(text || '').trim().toLowerCase();
-  const matches = [];
-  for (const [id, config] of Object.entries(ROOM_ACTIONS)) {
-    for (const alias of config.aliases) {
-      if (lower.includes(alias)) matches.push({ id, config, aliasLength: alias.length });
-    }
-  }
-  matches.sort((a, b) => b.aliasLength - a.aliasLength);
-  const match = matches[0];
-  if (!match) return null;
-  return {
-    action: match.id,
-    label: match.config.label,
-    text: match.id === 'start-recording'
-      ? 'I can help by starting the recording.'
-      : `I can help by opening ${match.config.label.replace(/^Open\s+/i, '')}.`,
-    autoExecute: true,
-  };
 }
 
 function extractTaggedRoomActions(text) {
@@ -131,6 +111,15 @@ function sendBinary(ws, chunk) {
 
 function broadcast(msg) {
   for (const ws of clients) send(ws, msg);
+}
+
+function devinAuthNeededMessage() {
+  return {
+    type: 'AUTH_NEEDED',
+    authUrl: null,
+    agent: AGENT_NAME,
+    message: DEVIN_AUTH_MESSAGE,
+  };
 }
 
 function roomContextSummaryUrl(pipeApiUrl = PIPE_API_URL, roomToken = ROOM_TOKEN) {
@@ -308,10 +297,10 @@ function devinCommand() {
 
 function startAgent() {
   if (agentProcess) return;
-  if (!agentAuthed && !DEVIN_API_KEY) {
+  if (!agentAuthed) {
     agentStatus = 'auth_needed';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    broadcast({ type: 'AUTH_NEEDED', authUrl: '/start?agent=devin', agent: AGENT_NAME });
+    broadcast(devinAuthNeededMessage());
     return;
   }
 
@@ -357,15 +346,17 @@ async function handleAgentMessage(ws, msg) {
   if (msg.type === 'CHAT') {
     const text = String(msg.text || '').trim();
     if (!text) return;
-    const roomAction = roomActionFromText(text);
-    if (roomAction) {
-      send(ws, { type: 'CHAT_RESPONSE', text: roomAction.text });
-      broadcast({ type: 'ROOM_ACTION', ...roomAction });
+    if (!agentAuthed) {
+      agentStatus = 'auth_needed';
+      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      send(ws, devinAuthNeededMessage());
+      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
       return;
     }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
     if (agentStatus === 'auth_needed') {
-      send(ws, { type: 'CHAT_RESPONSE', text: 'I need Devin authentication first.' });
+      send(ws, devinAuthNeededMessage());
+      send(ws, { type: 'CHAT_RESPONSE', text: DEVIN_AUTH_MESSAGE });
       return;
     }
     if (!agentProcess) {
@@ -381,14 +372,13 @@ async function handleAgentMessage(ws, msg) {
       broadcast({ type: 'AGENT_STATUS', status: agentStatus });
     }
   } else if (msg.type === 'AUTH_START') {
+    if (agentAuthed) {
+      startAgent();
+      return;
+    }
     agentStatus = 'auth_needed';
     broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    broadcast({ type: 'AUTH_NEEDED', authUrl: '/start?agent=devin', agent: AGENT_NAME });
-  } else if (msg.type === 'AUTH_CALLBACK') {
-    agentAuthed = true;
-    agentStatus = 'idle';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-    startAgent();
+    broadcast(devinAuthNeededMessage());
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
     agentProcess.kill('SIGTERM');
   } else if (msg.type === 'GET_STATUS') {
@@ -410,9 +400,11 @@ function acceptAgent(req, socket) {
   if (!ws) return;
   clients.add(ws);
   send(ws, { type: 'AGENT_STATUS', status: agentStatus });
-  send(ws, { type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
+  if (agentProcess) {
+    send(ws, { type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
+  }
   if (agentStatus === 'auth_needed') {
-    send(ws, { type: 'AUTH_NEEDED', authUrl: '/start?agent=devin', agent: AGENT_NAME });
+    send(ws, devinAuthNeededMessage());
   }
 }
 
@@ -497,19 +489,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   if (url.pathname === '/start') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html('<h2>Authenticating Devin...</h2><script>fetch("/callback?simulated=1").then(()=>{document.body.innerHTML="<h2>OK. Close this window.</h2>"})</script>'));
+    res.writeHead(501, { 'Content-Type': 'text/html' });
+    res.end(html(`<h2>Devin auth is not configured</h2><p>${DEVIN_AUTH_MESSAGE}</p>`));
     return;
   }
   if (url.pathname === '/callback') {
-    if (url.searchParams.get('simulated')) {
-      agentAuthed = true;
-      agentStatus = 'idle';
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
-      startAgent();
-    }
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html('<h2>Auth OK. Close this window.</h2>'));
+    res.writeHead(404, { 'Content-Type': 'text/html' });
+    res.end(html('<h2>Devin auth callback is not available</h2>'));
     return;
   }
   if (url.pathname === '/context') {

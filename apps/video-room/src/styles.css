@@ -2698,6 +2698,36 @@ button:focus-visible {
   cursor: default;
 }
 
+.win95-clippy-open-chat {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  z-index: 100001;
+  min-height: 28px;
+  padding: 4px 12px;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+  color: #000;
+  cursor: pointer;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.win95-clippy-open-chat:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+.win95-clippy-open-chat:disabled {
+  color: #777;
+  cursor: default;
+  transform: none;
+}
+
 .win95-clippy-chat {
   position: fixed;
   bottom: 40px;

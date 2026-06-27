@@ -39,6 +39,7 @@ export type ParsedAgentBridgeMessage =
       kind: 'auth_needed';
       agentName: string;
       authUrl: string | null;
+      message: string | null;
     }
   | {
       kind: 'ready';
@@ -67,6 +68,7 @@ export interface AgentConnectionState {
   status: AgentStatus;
   messages: AgentChatMessage[];
   authUrl: string | null;
+  authMessage: string | null;
   agentName: string;
   capabilities: string[];
   roomActions: AgentRoomAction[];
@@ -196,6 +198,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
       kind: 'auth_needed',
       authUrl: stringOrNull(value.authUrl),
       agentName: stringOrNull(value.agent) ?? 'devin',
+      message: stringOrNull(value.message),
     };
   }
   if (value.type === 'AGENT_READY') {
@@ -238,6 +241,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const [status, setStatus] = useState<AgentStatus>('disconnected');
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [agentName, setAgentName] = useState('devin');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [roomActions, setRoomActions] = useState<AgentRoomAction[]>([]);
@@ -272,6 +276,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
               setStatus(parsed.status);
               if (parsed.status !== 'auth_needed') {
                 setAuthUrl(null);
+                setAuthMessage(null);
               }
               break;
             case 'chat':
@@ -286,6 +291,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
             case 'auth_needed':
               setStatus('auth_needed');
               setAuthUrl(parsed.authUrl);
+              setAuthMessage(parsed.message);
               setAgentName(parsed.agentName);
               break;
             case 'ready':
@@ -293,6 +299,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
               setCapabilities(parsed.capabilities);
               setStatus('idle');
               setAuthUrl(null);
+              setAuthMessage(null);
               break;
             case 'file_changed':
               setMessages((prev) => [...prev, {
@@ -376,6 +383,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
     status,
     messages,
     authUrl,
+    authMessage,
     agentName,
     capabilities,
     roomActions,
