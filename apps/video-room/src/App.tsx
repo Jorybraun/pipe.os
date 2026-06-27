@@ -48,6 +48,10 @@ import {
   type CursorPresenceEvidenceState,
 } from './lib/cursorEvidence';
 import {
+  buildMediaControlEvidence,
+  type MediaControlKind,
+} from './lib/mediaControlEvidence';
+import {
   useRoomConnection,
   type RoomClippyPromptDraft,
   type RoomFile,
@@ -1288,6 +1292,29 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
+  const captureMediaControlChange = (control: MediaControlKind, enabled: boolean): void => {
+    const evidence = buildMediaControlEvidence({
+      actor: roomActor,
+      control,
+      enabled,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+    });
+    captureSessionEvent('media_control', evidence.text, roomActor, evidence.properties);
+  };
+
+  const toggleMicrophone = (): void => {
+    const enabled = !room.micEnabled;
+    room.toggleMic();
+    captureMediaControlChange('microphone', enabled);
+  };
+
+  const toggleCamera = (): void => {
+    const enabled = !room.cameraEnabled;
+    room.toggleCamera();
+    captureMediaControlChange('camera', enabled);
+  };
+
   const handleCursorMove = useCallback((position: { x: number; y: number }): void => {
     room.publishCursorPresence(position);
     if (room.roomSurface !== 'win95') return;
@@ -1728,10 +1755,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             </div>
 
             <div className="win95-video-controls">
-              <button className="win95-video-btn" onClick={room.toggleMic} aria-label="Toggle microphone">
+              <button className="win95-video-btn" onClick={toggleMicrophone} aria-label="Toggle microphone">
                 {room.micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
               </button>
-              <button className="win95-video-btn" onClick={room.toggleCamera} aria-label="Toggle camera">
+              <button className="win95-video-btn" onClick={toggleCamera} aria-label="Toggle camera">
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (

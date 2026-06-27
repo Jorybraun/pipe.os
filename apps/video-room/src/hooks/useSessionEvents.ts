@@ -14,6 +14,7 @@ export type SessionEventType =
   | 'window_update'
   | 'window_focus'
   | 'cursor_presence'
+  | 'media_control'
   | 'room_surface_change'
   | 'workspace_state'
   | 'participant_join'

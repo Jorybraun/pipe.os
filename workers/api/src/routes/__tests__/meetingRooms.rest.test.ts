@@ -1417,6 +1417,73 @@ describe('meeting room recording living-context route', () => {
       rawCursorMovesPersisted: false,
     });
 
+    const fakeMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'browser_media_claim',
+          control: 'microphone',
+          enabled: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeMediaControlRes.status).toBe(422);
+
+    const mediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'video_room_media_controls',
+          control: 'microphone',
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(mediaControlRes.status).toBe(200);
+
+    const mediaControlNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_media_control'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(mediaControlNode).toMatchObject({
+      node_type: 'session_media_control',
+      source_type: 'meeting_session',
+    });
+    expect(mediaControlNode?.narrative_text).toContain('Media control changed: Guest turned microphone off');
+    expect(JSON.parse(mediaControlNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'video_room_media_controls',
+      control: 'microphone',
+      enabled: false,
+      action: 'disabled',
+      surface: 'win95',
+      roomPhase: 'connected',
+      controlSurface: 'win95_video_window',
+      rawMediaStreamPersisted: false,
+    });
+
     const fakeCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

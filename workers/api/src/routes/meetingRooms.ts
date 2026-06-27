@@ -120,6 +120,7 @@ const sessionEventSchema = z.object({
     'window_update',
     'window_focus',
     'cursor_presence',
+    'media_control',
     'room_surface_change',
     'workspace_state',
     'participant_join',
@@ -160,6 +161,20 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Cursor presence evidence must be a sampled Win95 browser cursor event with normalized coordinates.',
+      path: ['properties'],
+    });
+  }
+  if (event.type === 'media_control') {
+    const sourceOk = properties.source === 'video_room_media_controls';
+    const controlOk = properties.control === 'microphone' || properties.control === 'camera';
+    const enabledOk = typeof properties.enabled === 'boolean';
+    const surfaceOk = properties.surface === 'standard' || properties.surface === 'win95';
+    const roomPhase = properties.roomPhase;
+    const roomPhaseOk = typeof roomPhase === 'string' && roomPhase.trim().length > 0;
+    if (sourceOk && controlOk && enabledOk && surfaceOk && roomPhaseOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Media control evidence must come from video room controls with control, state, surface, and room phase.',
       path: ['properties'],
     });
   }
