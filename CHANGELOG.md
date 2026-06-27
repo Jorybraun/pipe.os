@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Completed scored CODE_REVIEW sessions now write exact-source transcript and score-report events plus an evaluated assessment report into the assessment evidence spine with idempotent state transitions.
 - 95 Until Infinity room lifecycle now replays Durable Object desktop/chat/file activity into source-backed meeting-session evidence when the host ends the room, instead of waiting for a later context-graph read.
 - 95 Until Infinity room chat now persists as first-class `chat_message` evidence instead of being mislabeled as Clippy/Devin `ai_chat_user` input.
+- 95 Until Infinity room chat now reconciles optimistic local sends with Durable Object ACK/rejection messages, so browser evidence marks client submissions as pending while the shared room log remains the authoritative accepted-chat source.
 - 95 Until Infinity shared Notepad/Paint file replay now adds deterministic content hashes to `file_change` evidence, so desktop-created files have immutable provenance beyond previews.
 - 95 Until Infinity room activity replay now captures synced window state changes such as focus, minimize, maximize, and movement as source-backed `window_update` meeting-session evidence.
 - 95 Until Infinity room lifecycle now captures accepted guest join/leave and recording start/stop events as source-backed meeting-session evidence, without fabricating a recording stop when no recording was active.

@@ -64,6 +64,7 @@ export interface RoomChatMessage {
   createdAt: number;
   role: RoomRole;
   text: string;
+  deliveryStatus?: 'pending' | 'accepted' | 'rejected';
 }
 
 export interface RoomCursorPresence {
@@ -232,7 +233,7 @@ interface RoomConnection {
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
-  publishChatMessage: (text: string) => void;
+  publishChatMessage: (text: string) => RoomChatMessage | null;
   publishCursorPresence: (position: { x: number; y: number }) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface) => void;
@@ -478,6 +479,7 @@ function parseChatMessage(value: unknown): RoomChatMessage | null {
     createdAt: value.createdAt,
     role: value.role,
     text: value.text,
+    deliveryStatus: 'accepted',
   };
 }
 
@@ -488,6 +490,23 @@ function parseChatSnapshot(value: unknown): { messages: RoomChatMessage[] } | nu
       .map(parseChatMessage)
       .filter((entry): entry is RoomChatMessage => entry !== null),
   };
+}
+
+function parseChatRejection(value: unknown): { clientMessageId: string | null } {
+  if (!isRecord(value)) return { clientMessageId: null };
+  return {
+    clientMessageId: typeof value.clientMessageId === 'string' ? value.clientMessageId : null,
+  };
+}
+
+export function mergeRoomChatMessage(
+  previous: RoomChatMessage[],
+  message: RoomChatMessage,
+): RoomChatMessage[] {
+  return sortChatMessages([
+    ...previous.filter((entry) => entry.id !== message.id),
+    message,
+  ]);
 }
 
 function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence | null {
@@ -1058,10 +1077,19 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CHAT_MESSAGE') {
           const chatMessage = parseChatMessage(message.payload);
           if (!chatMessage || chatMessage.clientId === desktopClientIdRef.current) return;
-          setChatMessages((prev) => sortChatMessages([
-            ...prev.filter((entry) => entry.id !== chatMessage.id),
-            chatMessage,
-          ]));
+          setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
+        } else if (message.type === 'ROOM_CHAT_MESSAGE_ACK') {
+          const chatMessage = parseChatMessage(message.payload);
+          if (!chatMessage) return;
+          setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
+        } else if (message.type === 'ROOM_CHAT_MESSAGE_REJECTED') {
+          const rejection = parseChatRejection(message.payload);
+          if (!rejection.clientMessageId) return;
+          setChatMessages((prev) => prev.map((entry) => (
+            entry.id === rejection.clientMessageId
+              ? { ...entry, deliveryStatus: 'rejected' }
+              : entry
+          )));
         } else if (message.type === 'ROOM_CHAT_STATE') {
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;
@@ -1324,9 +1352,9 @@ export function useRoomConnection(
     }
   }, [sendClippyPrompt]);
 
-  const publishChatMessage = useCallback((text: string): void => {
+  const publishChatMessage = useCallback((text: string): RoomChatMessage | null => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return null;
     const message: RoomChatMessage = {
       id: typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
@@ -1335,14 +1363,13 @@ export function useRoomConnection(
       createdAt: Date.now(),
       role,
       text: trimmed,
+      deliveryStatus: 'pending',
     };
-    setChatMessages((prev) => sortChatMessages([
-      ...prev.filter((entry) => entry.id !== message.id),
-      message,
-    ]));
+    setChatMessages((prev) => mergeRoomChatMessage(prev, message));
     if (!sendChatMessage(message)) {
       chatOutboxRef.current.push(message);
     }
+    return message;
   }, [role, sendChatMessage]);
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {

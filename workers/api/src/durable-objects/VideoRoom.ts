@@ -560,6 +560,11 @@ export class VideoRoom {
     };
   }
 
+  private chatClientMessageId(value: unknown): string | null {
+    if (!this.isRecord(value)) return null;
+    return this.isSafeFileText(value.id, 120) ? value.id : null;
+  }
+
   private parseChatMessages(value: unknown): RoomChatMessage[] {
     if (!Array.isArray(value)) return [];
     return value
@@ -1225,6 +1230,7 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_CHAT_MESSAGE_REJECTED',
           reason: 'ROOM_ENDED',
+          payload: { clientMessageId: this.chatClientMessageId(message.payload) },
         }));
         return;
       }
@@ -1233,12 +1239,18 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_CHAT_MESSAGE_REJECTED',
           reason: 'INVALID_MESSAGE',
+          payload: { clientMessageId: this.chatClientMessageId(message.payload) },
         }));
         return;
       }
       const persistedMessage = { ...chatMessage, role: senderRole };
       await this.persistChatMessage(persistedMessage, senderRole);
       await this.recordChatActivity(persistedMessage, senderRole);
+      ws.send(JSON.stringify({
+        type: 'ROOM_CHAT_MESSAGE_ACK',
+        role: senderRole,
+        payload: persistedMessage,
+      }));
       this.broadcastExcept(ws, JSON.stringify({
         type: 'ROOM_CHAT_MESSAGE',
         role: senderRole,

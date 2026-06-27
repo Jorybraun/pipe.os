@@ -397,13 +397,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     role: message.role === 'HOST' ? 'host' : 'candidate',
     text: message.text,
     timestamp: message.createdAt,
+    deliveryStatus: message.deliveryStatus,
   }));
   const sendChatMessage = (text: string): void => {
-    room.publishChatMessage(text);
-    captureSessionEvent('chat_message', text, roomActor, {
-      source: 'room_chat',
+    const message = room.publishChatMessage(text);
+    if (!message) return;
+    captureSessionEvent('chat_message', message.text, roomActor, {
+      source: 'room_chat_client_submit',
       surface: room.roomSurface,
       roomPhase: room.phase,
+      roomMessageId: message.id,
+      clientId: message.clientId,
+      deliveryStatus: message.deliveryStatus ?? 'pending',
     });
   };
 

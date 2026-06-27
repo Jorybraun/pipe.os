@@ -108,6 +108,10 @@ The controlling product rule remains:
 - Shared host/guest room chat is recorded as human `chat_message` evidence,
   while Clippy/Devin chat remains separately classified as `ai_chat_user` and
   `ai_chat_agent` evidence.
+- Browser chat sends are optimistic client submissions until the Durable Object
+  acknowledges or rejects the exact message id. Client-side evidence marks
+  those submissions as pending; the synced Durable Object chat activity log is
+  the authoritative accepted-chat replay source.
 - Shared Notepad/Paint file replay now computes deterministic content hashes
   server-side for `file_change` evidence, preserving immutable provenance even
   when the candidate-created file content is summarized or preview-suppressed.

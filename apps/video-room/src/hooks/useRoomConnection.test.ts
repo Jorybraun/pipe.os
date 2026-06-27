@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { mergePeerCursorPresence, type RoomCursorPresence } from './useRoomConnection';
+import {
+  mergePeerCursorPresence,
+  mergeRoomChatMessage,
+  type RoomChatMessage,
+  type RoomCursorPresence,
+} from './useRoomConnection';
 
 describe('mergePeerCursorPresence', () => {
   it('keeps one fresh cursor per role and uses receive time for presence expiry', () => {
@@ -56,5 +61,25 @@ describe('mergePeerCursorPresence', () => {
         updatedAt: 5000,
       },
     ]);
+  });
+});
+
+describe('mergeRoomChatMessage', () => {
+  it('replaces a pending optimistic message with the accepted room message', () => {
+    const pending: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text: 'Can you see this?',
+      deliveryStatus: 'pending',
+    };
+
+    const accepted: RoomChatMessage = {
+      ...pending,
+      deliveryStatus: 'accepted',
+    };
+
+    expect(mergeRoomChatMessage([pending], accepted)).toEqual([accepted]);
   });
 });

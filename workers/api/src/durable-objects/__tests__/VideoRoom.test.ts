@@ -460,6 +460,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         text: 'Can you see this message?',
       }),
     }));
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE_ACK',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'chat-1',
+        role: 'HOST',
+        text: 'Can you see this message?',
+      }),
+    }));
     expect(storage.get('chatActivityLog')).toEqual([
       expect.objectContaining({
         role: 'HOST',
@@ -469,6 +478,30 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     ]);
+  });
+
+  it('rejects invalid room chat messages with the client message id for reconciliation', async () => {
+    const host = new FakeSocket();
+    const { state, storage } = makeState([[host, 'HOST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-too-large',
+        clientId: 'host-client',
+        createdAt: 42,
+        role: 'HOST',
+        text: 'x'.repeat(2001),
+      },
+    }));
+
+    expect(storage.get('chatMessages')).toBeUndefined();
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE_REJECTED',
+      reason: 'INVALID_MESSAGE',
+      payload: { clientMessageId: 'chat-too-large' },
+    }));
   });
 
   it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
