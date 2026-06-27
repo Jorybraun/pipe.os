@@ -81,8 +81,11 @@ function extractTaggedRoomActions(text) {
       if (action) {
         actions.push({
           action,
+          agent: AGENT_NAME,
           label: rawLabel || ROOM_ACTIONS[action].label,
           text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
+          source: 'agent_stdout',
+          protocol: 'clippy_room_action_tag',
         });
       }
       return '';

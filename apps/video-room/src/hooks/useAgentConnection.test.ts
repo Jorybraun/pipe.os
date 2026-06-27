@@ -15,6 +15,7 @@ describe('parseAgentBridgeMessage', () => {
   it('normalizes Devin room action messages into safe Clippy actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'ROOM_ACTION',
+      agent: 'devin',
       action: 'open_terminal',
       text: 'I can inspect that from the terminal.',
       autoExecute: true,
@@ -24,7 +25,12 @@ describe('parseAgentBridgeMessage', () => {
         id: 'open-terminal',
         label: 'Open Terminal',
         text: 'I can inspect that from the terminal.',
+        url: undefined,
         autoExecute: true,
+        source: 'agent_stdout_action',
+        agentName: 'devin',
+        bridgeEventType: 'ROOM_ACTION',
+        protocol: 'clippy_room_action_tag',
       },
     });
   });
@@ -50,6 +56,9 @@ describe('parseAgentBridgeMessage', () => {
         id: 'open-workspace',
         label: 'Open Workspace',
         text: 'I noticed src/app.ts was modified in the workspace.',
+        source: 'bridge_observation',
+        bridgeEventType: 'FILE_CHANGED',
+        protocol: 'workspace_file_observation',
       },
       fileChange: {
         filePath: 'src/app.ts',

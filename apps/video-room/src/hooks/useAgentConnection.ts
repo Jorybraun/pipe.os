@@ -26,6 +26,10 @@ export interface AgentRoomAction {
   text?: string;
   url?: string;
   autoExecute?: boolean;
+  source?: 'agent_stdout_action' | 'bridge_observation';
+  agentName?: string;
+  bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
+  protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
 }
 
 export interface AgentFileChangeEvent {
@@ -183,7 +187,14 @@ function parseActionUrl(value: unknown): string | undefined {
   return undefined;
 }
 
-function parseRoomAction(value: unknown): AgentRoomAction | null {
+interface RoomActionParseContext {
+  source: AgentRoomAction['source'];
+  bridgeEventType: NonNullable<AgentRoomAction['bridgeEventType']>;
+  protocol: NonNullable<AgentRoomAction['protocol']>;
+  agentName?: string;
+}
+
+function parseRoomAction(value: unknown, context: RoomActionParseContext): AgentRoomAction | null {
   if (!isRecord(value)) return null;
   const id = findRoomActionId(value.action ?? value.id ?? value.name);
   if (!id) return null;
@@ -195,13 +206,17 @@ function parseRoomAction(value: unknown): AgentRoomAction | null {
     text,
     url: parseActionUrl(value.url ?? value.href),
     autoExecute: typeof value.autoExecute === 'boolean' ? value.autoExecute : undefined,
+    source: context.source,
+    agentName: stringOrNull(value.agent) ?? context.agentName,
+    bridgeEventType: context.bridgeEventType,
+    protocol: context.protocol,
   };
 }
 
-function parseRoomActions(value: unknown): AgentRoomAction[] {
+function parseRoomActions(value: unknown, context: RoomActionParseContext): AgentRoomAction[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map(parseRoomAction)
+    .map((entry) => parseRoomAction(entry, context))
     .filter((entry): entry is AgentRoomAction => entry !== null);
 }
 
@@ -231,7 +246,12 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'CHAT_RESPONSE') {
     const text = stringOrNull(value.text);
     if (!text) return { kind: 'ignored' };
-    const actions = parseRoomActions(value.actions);
+    const actions = parseRoomActions(value.actions, {
+      source: 'agent_stdout_action',
+      bridgeEventType: 'CHAT_RESPONSE',
+      protocol: 'bridge_actions_field',
+      agentName: stringOrNull(value.agent) ?? 'devin',
+    });
     return {
       kind: 'chat',
       message: { role: 'agent', text, source: 'agent_stdout' },
@@ -267,6 +287,9 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         id: 'open-workspace',
         label: ROOM_ACTIONS['open-workspace'].label,
         text,
+        source: 'bridge_observation',
+        bridgeEventType: 'FILE_CHANGED',
+        protocol: 'workspace_file_observation',
       },
       fileChange: {
         filePath,
@@ -283,7 +306,12 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'ROOM_ACTION') {
-    const action = parseRoomAction(value);
+    const action = parseRoomAction(value, {
+      source: 'agent_stdout_action',
+      bridgeEventType: 'ROOM_ACTION',
+      protocol: 'clippy_room_action_tag',
+      agentName: stringOrNull(value.agent) ?? 'devin',
+    });
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
   }
   if (value.type === 'ERROR') {

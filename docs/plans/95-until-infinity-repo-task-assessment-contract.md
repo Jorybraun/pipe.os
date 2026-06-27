@@ -149,6 +149,10 @@ The controlling product rule remains:
 - Clippy/Devin chat evidence distinguishes real Devin stdout from bridge
   diagnostics and file-watcher observations, preventing auth-required or
   container-observed facts from being projected as fabricated Devin replies.
+- Clippy/Devin room actions emitted from the real bridge stdout tag protocol
+  now persist origin, bridge event type, action protocol, agent name, and
+  browser execution role in `clippy_action` evidence, so prompt-button actions
+  and real agent-directed desktop actions remain separate.
 - Code-server workspace create/modify/delete events are now observed by the
   container bridge and persisted as source-backed `file_change`
   `meeting_session_event` evidence with path, content hash, file size, and a

@@ -1357,53 +1357,73 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const captureClippyAction = (actionId: string, text: string): void => {
+  const captureClippyAction = (
+    actionId: string,
+    text: string,
+    options: {
+      origin: 'prompt' | 'agent';
+      agentAction?: AgentRoomAction;
+    },
+  ): void => {
     captureSessionEvent('clippy_action', text, roomActor, {
       actionId,
+      origin: options.origin,
+      executedBy: roomActor,
+      actionSource: options.origin === 'agent'
+        ? options.agentAction?.source ?? 'agent_stdout_action'
+        : 'clippy_prompt_ui',
+      agent: options.agentAction?.agentName ?? null,
+      agentActionLabel: options.agentAction?.label ?? null,
+      agentActionText: options.agentAction?.text ?? null,
+      bridgeEventType: options.agentAction?.bridgeEventType ?? null,
+      actionProtocol: options.agentAction?.protocol ?? null,
+      autoExecute: options.agentAction?.autoExecute ?? null,
+      url: options.agentAction?.url ?? null,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
     });
   };
 
-  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent' } = {}): void => {
+  const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
     const source = options.source ?? 'prompt';
+    const actionEvidence = { origin: source, agentAction: options.agentAction } as const;
     switch (actionId) {
       case 'start-recording':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`, actionEvidence);
         void startRecording();
         break;
       case 'stop-recording':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: stop recording`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: stop recording`, actionEvidence);
         void stopRecording();
         break;
       case 'launch-workspace':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`, actionEvidence);
         openWorkspaceWindow();
         void launchWorkspace();
         break;
       case 'open-workspace':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`, actionEvidence);
         openWorkspaceWindow();
         break;
       case 'open-terminal':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`, actionEvidence);
         openTerminalWindow();
         break;
       case 'open-browser':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`, actionEvidence);
         openBrowserWindow(options.url ?? '');
         break;
       case 'open-files':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`, actionEvidence);
         openFilesWindow();
         break;
       case 'open-notepad':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`, actionEvidence);
         openNotepadWindow();
         break;
       case 'open-paint':
-        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`);
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`, actionEvidence);
         openPaintWindow();
         break;
       default:
@@ -1416,7 +1436,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const handleAgentRoomAction = (action: AgentRoomAction): void => {
-    executeRoomAction(action.id, { url: action.url, source: 'agent' });
+    executeRoomAction(action.id, { url: action.url, source: 'agent', agentAction: action });
   };
 
   const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
