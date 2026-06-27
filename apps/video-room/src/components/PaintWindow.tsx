@@ -14,10 +14,13 @@ export interface PaintStroke {
 interface PaintWindowProps {
   strokes: PaintStroke[];
   onChange: (strokes: PaintStroke[]) => void;
+  onPreview?: (strokes: PaintStroke[]) => void;
   saveStatus?: string;
 }
 
 const COLORS = ['#111111', '#e11d48', '#2563eb', '#16a34a', '#facc15', '#ffffff'];
+const MIN_POINT_DISTANCE_PX = 2;
+const PREVIEW_INTERVAL_MS = 120;
 
 function pointerToCanvasPoint(canvas: HTMLCanvasElement, event: React.PointerEvent): PaintPoint {
   const rect = canvas.getBoundingClientRect();
@@ -41,25 +44,61 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: PaintStroke): void {
   ctx.stroke();
 }
 
-export function PaintWindow({ strokes, onChange, saveStatus }: PaintWindowProps): JSX.Element {
+function pointDistanceSquared(a: PaintPoint, b: PaintPoint): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function appendPoint(stroke: PaintStroke, point: PaintPoint, force = false): PaintStroke {
+  const lastPoint = stroke.points[stroke.points.length - 1];
+  if (
+    lastPoint
+    && !force
+    && pointDistanceSquared(lastPoint, point) < MIN_POINT_DISTANCE_PX * MIN_POINT_DISTANCE_PX
+  ) {
+    return stroke;
+  }
+  if (lastPoint && force && lastPoint.x === point.x && lastPoint.y === point.y) {
+    return stroke;
+  }
+  return {
+    ...stroke,
+    points: [...stroke.points, point],
+  };
+}
+
+function redrawCanvas(canvas: HTMLCanvasElement, strokes: PaintStroke[]): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (const stroke of strokes) {
+    drawStroke(ctx, stroke);
+  }
+}
+
+export function PaintWindow({ strokes, onChange, onPreview, saveStatus }: PaintWindowProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [color, setColor] = useState(COLORS[0]);
   const [size, setSize] = useState(4);
   const activeStrokeRef = useRef<PaintStroke | null>(null);
   const strokeBaseRef = useRef<PaintStroke[]>([]);
+  const lastPreviewAtRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (const stroke of strokes) {
-      drawStroke(ctx, stroke);
-    }
+    redrawCanvas(canvas, strokes);
   }, [strokes]);
+
+  const previewStrokes = useCallback((nextStroke: PaintStroke, force = false): void => {
+    const now = Date.now();
+    if (!force && now - lastPreviewAtRef.current < PREVIEW_INTERVAL_MS) return;
+    lastPreviewAtRef.current = now;
+    onPreview?.([...strokeBaseRef.current, nextStroke]);
+  }, [onPreview]);
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
     const canvas = canvasRef.current;
@@ -69,25 +108,42 @@ export function PaintWindow({ strokes, onChange, saveStatus }: PaintWindowProps)
     const stroke = { color, size, points: [point] };
     strokeBaseRef.current = strokes;
     activeStrokeRef.current = stroke;
-    onChange([...strokeBaseRef.current, stroke]);
-  }, [color, onChange, size, strokes]);
+    redrawCanvas(canvas, [...strokeBaseRef.current, stroke]);
+    previewStrokes(stroke, true);
+  }, [color, previewStrokes, size, strokes]);
 
   const handlePointerMove = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
     const canvas = canvasRef.current;
     const activeStroke = activeStrokeRef.current;
     if (!canvas || !activeStroke || event.buttons !== 1) return;
     const point = pointerToCanvasPoint(canvas, event);
-    const updatedStroke = {
-      ...activeStroke,
-      points: [...activeStroke.points, point],
-    };
+    const updatedStroke = appendPoint(activeStroke, point);
+    if (updatedStroke === activeStroke) return;
     activeStrokeRef.current = updatedStroke;
-    onChange([...strokeBaseRef.current, updatedStroke]);
-  }, [onChange]);
+    redrawCanvas(canvas, [...strokeBaseRef.current, updatedStroke]);
+    previewStrokes(updatedStroke);
+  }, [previewStrokes]);
 
-  const endStroke = useCallback((): void => {
+  const endStroke = useCallback((event: React.PointerEvent<HTMLCanvasElement>): void => {
+    const canvas = canvasRef.current;
+    let activeStroke = activeStrokeRef.current;
+    if (!activeStroke) return;
+    if (canvas) {
+      activeStroke = appendPoint(activeStroke, pointerToCanvasPoint(canvas, event), true);
+      redrawCanvas(canvas, [...strokeBaseRef.current, activeStroke]);
+    }
+    const nextStrokes = [...strokeBaseRef.current, activeStroke];
+    previewStrokes(activeStroke, true);
+    onChange(nextStrokes);
     activeStrokeRef.current = null;
-  }, []);
+  }, [onChange, previewStrokes]);
+
+  const clearCanvas = useCallback((): void => {
+    activeStrokeRef.current = null;
+    strokeBaseRef.current = [];
+    onPreview?.([]);
+    onChange([]);
+  }, [onChange, onPreview]);
 
   return (
     <div className="win95-paint">
@@ -114,7 +170,7 @@ export function PaintWindow({ strokes, onChange, saveStatus }: PaintWindowProps)
         </label>
         <button
           className="win95-paint-clear"
-          onClick={() => onChange([])}
+          onClick={clearCanvas}
           type="button"
         >
           Clear

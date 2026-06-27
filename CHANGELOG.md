@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a shared Win95 room filesystem with durable file snapshots, activity logging, Notepad/Paint autosave, and a synced Files window for opening or deleting shared desktop files.
 - Added a safe Clippy/Devin room-action protocol so the dev-container agent bridge can suggest or execute allow-listed desktop actions such as opening Terminal, Files, Notepad, Paint, Browser, and Workspace.
 - Standard video rooms now initialize on the modern call surface, while dev-container challenge rooms initialize directly into the synced 95 desktop and hosts can still switch surfaces during the call.
+- Fixed shared Paint so long strokes are previewed at a controlled cadence and durably committed on pointer release, preventing remote participants from getting stranded on partial drawings.
+- Fixed the Win95 terminal protocol so resize/control messages are not sent to bash as typed text, restoring an interactive container prompt after connect.
+- Added a host stop-recording control that uploads the recording while keeping the call connected, instead of requiring hosts to end the call to stop recording.
 - Fixed a room-surface sync race so a host-triggered switch into 95 mode is not overwritten by an older standard-room snapshot.
 - Renamed the Win95 code workspace affordance from "My Computer" to "VS Code" so candidates see the actual container editor.
 - Added durable synced room chat and live peer cursors to the shared 95 desktop so host and guest can see each other's messages, pointer presence, and desktop actions.

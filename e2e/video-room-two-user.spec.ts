@@ -892,6 +892,7 @@ test.describe('two-user video room', () => {
       await host.getByTestId('clippy-action-start-recording').click();
       await expect(host.getByTestId('recording-state')).toContainText('Recording', { timeout: 10_000 });
       await expect(host.getByTestId('win95-tray-recording')).toContainText('Recording', { timeout: 10_000 });
+      await expect(host.getByTestId('stop-recording')).toBeEnabled();
       const recordingDetail = await waitForMeetingDetail(
         request,
         token,
@@ -909,13 +910,14 @@ test.describe('two-user video room', () => {
         res.url().includes(`/api/v1/meeting-rooms/`) && res.url().endsWith('/recording') && res.status() === 202,
         { timeout: 30_000 },
       );
-      await host.getByTestId('end-call').click();
+      await host.getByTestId('stop-recording').click();
       const uploadRequest = await uploadRequestPromise;
       const contentType = uploadRequest.headers()['content-type'] ?? '';
       expect(contentType).toContain('multipart/form-data');
       await uploadResponsePromise;
 
       await expect(host.getByTestId('recording-save-status')).toContainText('Recording saved', { timeout: 30_000 });
+      await expect(host.getByTestId('call-stage')).toHaveAttribute('data-room-phase', 'connected');
       const savedDetail = await waitForMeetingDetail(
         request,
         token,
@@ -978,6 +980,8 @@ test.describe('two-user video room', () => {
         )
         && entry.sharedConcepts?.includes(scenario.conceptKey)
       )).toBe(true);
+
+      await host.getByTestId('end-call').click();
 
       await page.goto(`${APP_BASE}/candidates/${candidate.id}`);
       const contextTab = page.locator('button').filter({ hasText: /^CONTEXT$/ });

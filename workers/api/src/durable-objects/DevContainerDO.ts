@@ -13,7 +13,7 @@
  * the candidate's iframe hits.
  */
 
-import { Container } from '@cloudflare/containers';
+import { Container, switchPort } from '@cloudflare/containers';
 import type { Env } from '../types';
 import { markError, markExpired, markStatus, markWarned } from '../lib/devContainerSessions';
 
@@ -37,9 +37,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const BRIDGE_PORT = 8080;  // Bridge listens on 8080 (the DO's defaultPort)
-const CODE_SERVER_PORT = 8083;  // code-server moved to 8083, bridge proxies to it
-const WORKSPACE = process.env.WORKSPACE_DIR || '/home/coder/workspace';
+const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
+const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
+const WORKSPACE = process.env.WORKSPACE_DIR || '/workspace';
 const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
 let agentAuthed = false;
 
@@ -185,7 +185,7 @@ function acceptTerminal(req, socket) {
     shell = spawnPty('bash', [], { name: 'xterm-color', cwd: WORKSPACE, env: process.env });
   } else {
     // Fallback: plain bash with pipe stdio (no true PTY but works for basic commands)
-    shell = spawn('bash', ['-l'], { cwd: WORKSPACE, env: process.env, stdio: ['pipe','pipe','pipe'] });
+    shell = spawn('bash', ['-il'], { cwd: WORKSPACE, env: process.env, stdio: ['pipe','pipe','pipe'] });
   }
 
   let buf = Buffer.alloc(0);
@@ -217,7 +217,40 @@ function acceptTerminal(req, socket) {
     try { socket.destroy(); } catch {}
   });
 
-  // WebSocket → shell input
+  function writeShellInput(data) {
+    try {
+      if (shell.stdin) shell.stdin.write(data);
+      else if (shell.write) shell.write(data); // node-pty
+    } catch {}
+  }
+
+  function handleTerminalPayload(payload) {
+    const text = payload.toString();
+    try {
+      const msg = JSON.parse(text);
+      if (msg && msg.type === 'TERMINAL_INPUT' && typeof msg.data === 'string') {
+        writeShellInput(msg.data);
+        return;
+      }
+      if (msg && msg.type === 'TERMINAL_RESIZE') {
+        const cols = Number(msg.cols);
+        const rows = Number(msg.rows);
+        if (
+          Number.isFinite(cols)
+          && Number.isFinite(rows)
+          && cols > 0
+          && rows > 0
+          && shell.resize
+        ) {
+          shell.resize(Math.floor(cols), Math.floor(rows));
+        }
+        return;
+      }
+    } catch {}
+    writeShellInput(payload);
+  }
+
+  // WebSocket → shell input/control messages
   socket.on('data', (chunk) => {
     buf = Buffer.concat([buf, chunk]);
     while (buf.length >= 2) {
@@ -239,10 +272,7 @@ function acceptTerminal(req, socket) {
       buf = buf.subarray(offset + payloadLen);
       if (opcode === 8) { ws.alive = false; try { shell.kill('SIGTERM'); } catch {} socket.destroy(); return; }
       if (opcode === 1 || opcode === 2) {
-        try {
-          if (shell.stdin) shell.stdin.write(payload);
-          else if (shell.write) shell.write(payload); // node-pty
-        } catch {}
+        handleTerminalPayload(payload);
       }
     }
   });
@@ -421,7 +451,7 @@ server.on('upgrade', (req, socket) => {
   }
 });
 
-server.listen(BRIDGE_PORT, '0.0.0.0', () => console.log('[agent-bridge] Router listening on ' + BRIDGE_PORT + ', proxying to code-server on ' + CODE_SERVER_PORT));
+server.listen(BRIDGE_PORT, '0.0.0.0', () => console.log('[agent-bridge] Router listening on ' + BRIDGE_PORT + ', code-server on ' + CODE_SERVER_PORT));
 
 // --- File watcher ---
 try {
@@ -453,8 +483,10 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
   const env: Record<string, string> = {
     SESSION_ID: payload.sessionId,
     PASSWORD: 'pipe',
-    WORKSPACE_DIR: '/home/coder/workspace',
+    WORKSPACE_DIR: '/workspace',
     AGENT_TYPE: payload.agentType || 'devin',
+    AGENT_BRIDGE_PORT: '8081',
+    CODE_SERVER_PORT: '8080',
   };
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
@@ -464,8 +496,18 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
   return env;
 }
 
+function isAgentBridgePath(pathname: string): boolean {
+  return pathname === '/ws'
+    || pathname === '/terminal'
+    || pathname === '/start'
+    || pathname === '/callback'
+    || pathname === '/context'
+    || pathname === '/events';
+}
+
 export class DevContainerDO extends Container<Env> {
-  // Bind container to port 8080 — agent bridge router proxies to code-server on 8083.
+  // Bind the default route to code-server. The agent bridge runs as a sidecar
+  // on 8081 and is reached only for Clippy/terminal/auth endpoints.
   defaultPort = 8080;
   requiredPorts = [8080];
 
@@ -480,13 +522,12 @@ export class DevContainerDO extends Container<Env> {
     if (url.pathname === '/__destroy' && request.method === 'POST') {
       return this.handleDestroy();
     }
-    // Everything else is a proxy passthrough to the code-server container.
-    // Container.fetch forwards to containerFetch which supports HTTP + WS
-    // upgrades — both ends of the socket are managed by the DO.
-    //
     // After DO hibernation `this.envVars` is lost (instance property), so
     // rehydrate from storage before `super.fetch()` kicks off startContainer.
     await this.rehydrateEnvVarsIfMissing();
+    if (isAgentBridgePath(url.pathname)) {
+      return super.fetch(switchPort(request, 8081));
+    }
     return super.fetch(request);
   }
 
@@ -517,11 +558,12 @@ export class DevContainerDO extends Container<Env> {
     this.envVars = buildEnvVars(payload);
 
     try {
-      // Override the entrypoint to clone the repo into /home/coder/workspace
-      // (writable by the coder user) and start code-server.
+      // Override the entrypoint to clone the repo into /workspace and start
+      // code-server directly on the default container port. The Clippy/Devin
+      // bridge is a sidecar so editor readiness does not depend on it.
       // The base codercom/code-server image already has git installed.
       // We use ; (not &&) so code-server starts even if git clone fails.
-      const ws = '/home/coder/workspace';
+      const ws = '/workspace';
       const cloneCmd = payload.repoGitUrl
         ? payload.challengeBranch
           ? `mkdir -p ${ws} && (git clone --depth 1 ${payload.repoGitUrl} ${ws} 2>&1 && cd ${ws} && git fetch origin ${payload.challengeBranch}:challenge-branch 2>&1 && git checkout challenge-branch 2>&1 || echo "CLONE FAILED — check repo URL and network" > ${ws}/.clone-error)`
@@ -531,14 +573,14 @@ export class DevContainerDO extends Container<Env> {
       const agentInstallCmd = agentType === 'devin'
         ? '(curl -fsSL https://cli.devin.ai/install.sh | bash 2>/dev/null || true) &'
         : 'true';
-      // Bridge listens on 8080 (DO's defaultPort), proxies non-agent traffic to code-server on 8083.
-      // /ws → agent chat, /start + /callback → auth, /terminal → PTY shell, everything else → code-server
+      // Bridge listens on 8081 for /ws, /start, /callback, /context, /events,
+      // and /terminal. The editor stays on 8080 for container health/proxy.
       const startBridge = agentType
-        ? `cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js & ${agentInstallCmd}`
+        ? `cat > /tmp/agent-bridge.js << 'BRIDGE_EOF'\n${AGENT_BRIDGE_SCRIPT}\nBRIDGE_EOF\nnode /tmp/agent-bridge.js > /tmp/agent-bridge.log 2>&1 & ${agentInstallCmd}`
         : 'true';
       const entrypoint = ['sh', '-c',
         `${cloneCmd}; ${startBridge}; `
-        + `exec code-server --auth none --bind-addr 0.0.0.0:8083 ${ws}`
+        + `exec code-server --auth none --bind-addr 0.0.0.0:8080 ${ws}`
       ];
 
       await this.startAndWaitForPorts({

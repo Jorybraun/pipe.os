@@ -10,6 +10,7 @@ import {
   PhoneOff,
   RefreshCcw,
   ShieldCheck,
+  Square,
   SquareTerminal,
   Video,
 } from 'lucide-react';
@@ -620,6 +621,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
+  const stopRecording = async (): Promise<void> => {
+    if (metadata.role !== 'HOST' || recordingState !== 'recording' || !recorderRef.current) return;
+    try {
+      captureSessionEvent('recording_stop', 'Recording stopped', 'host');
+      await stopAndUploadRecording();
+    } catch {
+      // stopAndUploadRecording already surfaced the error in state.
+    }
+  };
+
   const endCall = async (): Promise<void> => {
     if (endingRef.current) return;
     endingRef.current = true;
@@ -640,8 +651,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         failed = true;
       }
       try {
-        if (recordingStartedRef.current) {
+        if (recordingStartedRef.current && recorderRef.current) {
           await stopAndUploadRecording();
+        } else if (recordingStartedRef.current && recordingState === 'saved') {
+          setRecordingNotice((notice) => notice ?? 'Recording saved. Transcript processing has started.');
         } else {
           setRecordingNotice('Call ended without a recording.');
         }
@@ -679,6 +692,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     && hasConnectedMedia
     && !recorderRef.current
     && (recordingState === 'idle' || recordingState === 'failed');
+  const canStopRecording = metadata.role === 'HOST'
+    && recordingState === 'recording'
+    && Boolean(recorderRef.current);
   const canAccept = metadata.role === 'GUEST' && room.phase === 'offer_received';
   const isConnecting = room.phase === 'connecting';
   const isOpening = room.phase === 'disconnected';
@@ -694,6 +710,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     failed: 'Save failed',
   }[recordingState];
   const visibleRecordingNotice = recordingError ?? recordingNotice;
+  const inlineRecordingNotice = (
+    recordingState === 'uploading'
+    || recordingState === 'saved'
+    || recordingState === 'failed'
+  )
+    ? visibleRecordingNotice
+    : null;
   const recordingButtonLabel = {
     idle: 'Start recording',
     starting: 'Starting',
@@ -747,9 +770,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       proactiveClippyPrompt = {
         source: 'system',
         targetRoles: ['HOST'],
-        text: "It looks like you're recording the session. Don't forget to end the call when you're done!",
+        text: "It looks like you're recording the session. You can stop recording when you're done.",
         hold: true,
-        actions,
+        actions: [
+          { id: 'stop-recording', label: 'Stop recording', disabled: !canStopRecording },
+          ...(actions ?? []),
+        ],
       };
     } else if (room.phase === 'ended') {
       proactiveClippyPrompt = {
@@ -1052,6 +1078,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const previewPaintStrokes = (strokes: PaintStroke[]): void => {
+    updateSharedWindowData('paint', { strokes });
+  };
+
   const openRoomFile = (file: RoomFile): void => {
     if (file.kind === 'paint') {
       openPaintWindow(parsePaintFileContent(file.content));
@@ -1095,6 +1125,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'start-recording':
         captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: start recording`);
         void startRecording();
+        break;
+      case 'stop-recording':
+        captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: stop recording`);
+        void stopRecording();
         break;
       case 'launch-workspace':
         captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`);
@@ -1239,15 +1273,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
-                <button
-                  className={`win95-video-btn${recordingState === 'recording' ? ' is-recording' : ''}`}
-                  onClick={() => void startRecording()}
-                  disabled={!canStartRecording}
-                  aria-label={recordingButtonLabel}
-                  data-testid="start-recording"
-                >
-                  <Circle size={14} fill={recordingState === 'recording' ? 'currentColor' : 'none'} />
-                </button>
+                recordingState === 'recording' ? (
+                  <button
+                    className="win95-video-btn is-recording"
+                    onClick={() => void stopRecording()}
+                    disabled={!canStopRecording}
+                    aria-label="Stop recording"
+                    data-testid="stop-recording"
+                  >
+                    <Square size={14} fill="currentColor" />
+                  </button>
+                ) : (
+                  <button
+                    className="win95-video-btn"
+                    onClick={() => void startRecording()}
+                    disabled={!canStartRecording}
+                    aria-label={recordingButtonLabel}
+                    data-testid="start-recording"
+                  >
+                    <Circle size={14} fill="none" />
+                  </button>
+                )
               )}
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
                 <span
@@ -1255,6 +1301,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   data-testid="recording-state"
                 >
                   {recordingLabel}
+                </span>
+              )}
+              {metadata.role === 'HOST' && inlineRecordingNotice && (
+                <span className="win95-recording-state" data-testid="recording-save-status">
+                  {inlineRecordingNotice}
                 </span>
               )}
               <button className="win95-video-btn is-hangup" onClick={() => void endCall()} aria-label="End call" data-testid="end-call">
@@ -1376,6 +1427,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           <PaintWindow
             strokes={paintStrokesWindowData(win)}
             onChange={savePaintStrokes}
+            onPreview={previewPaintStrokes}
             saveStatus={`Desktop/${PAINT_FILE_NAME}`}
           />
         );

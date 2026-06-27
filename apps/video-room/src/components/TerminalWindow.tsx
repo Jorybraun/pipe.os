@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
+import { terminalInputMessage, terminalResizeMessage } from '../lib/terminalProtocol';
 
 export interface TerminalWindowProps {
   wsUrl: string;
@@ -60,8 +61,7 @@ export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
 
       ws.onopen = () => {
         term.write('\r\x1b[2KConnected!\r\n');
-        // Send initial terminal size
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        ws.send(terminalResizeMessage(term.cols, term.rows));
       };
 
       ws.onmessage = (event) => {
@@ -86,14 +86,14 @@ export function TerminalWindow({ wsUrl }: TerminalWindowProps): JSX.Element {
     // Terminal input → WebSocket
     const inputDisposable = term.onData((data) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(data);
+        wsRef.current.send(terminalInputMessage(data));
       }
     });
 
     // Resize handling
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }));
+        wsRef.current.send(terminalResizeMessage(cols, rows));
       }
     });
 
