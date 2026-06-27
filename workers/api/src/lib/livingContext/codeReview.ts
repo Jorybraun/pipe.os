@@ -226,7 +226,7 @@ function buildChallengeEvidenceLink(
 
 async function loadChallengeEvidenceLink(
   db: D1Database,
-  input: CodeReviewTranscriptIngestionInput,
+  input: Pick<CodeReviewTranscriptIngestionInput, 'candidateId' | 'challengeId'>,
 ): Promise<ChallengeEvidenceLink> {
   const empty: ChallengeEvidenceLink = { sources: [], entities: [], qualifiers: {} };
   const hasAssignmentTable = await tableExists(db, 'candidate_challenge_assignment');
@@ -828,6 +828,7 @@ export async function ingestCodeReviewScoreReportToLivingContext(
       candidateAttribution: false,
     },
   });
+  const challengeEvidence = await loadChallengeEvidenceLink(db, input);
   await store.upsertContextRecord({
     ingestionKey: `code-review:${input.sessionId}:score-report:${version.id}:context`,
     workspacePersonId,
@@ -842,15 +843,19 @@ export async function ingestCodeReviewScoreReportToLivingContext(
       producer: input.producer,
       producerId: input.producerId ?? null,
       candidateAttribution: false,
+      ...challengeEvidence.qualifiers,
     },
     confidence: null,
     extractionVersion: 'code-review-ingestion-v1',
     observedAt: input.observedAt,
-    sources: [{
-      sourceSpanId: span.id,
-      evidenceRole: 'score_report',
-      exactText: input.scoreReportJson,
-    }],
+    sources: [
+      {
+        sourceSpanId: span.id,
+        evidenceRole: 'score_report',
+        exactText: input.scoreReportJson,
+      },
+      ...challengeEvidence.sources,
+    ],
     entities: [
       {
         entityType: 'code_review_session',
@@ -862,6 +867,7 @@ export async function ingestCodeReviewScoreReportToLivingContext(
         entityId: input.assessmentId,
         relationship: 'assessment',
       },
+      ...challengeEvidence.entities,
     ],
   });
   await store.enqueueProjection({

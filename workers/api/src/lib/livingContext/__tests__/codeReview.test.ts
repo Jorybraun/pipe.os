@@ -293,6 +293,159 @@ describe('code-review living-context ingestion', () => {
     ).get()).toEqual({ count: 2 });
   });
 
+  it('links score report evidence to the selected packet and match decision', async () => {
+    sqlite.prepare(
+      `INSERT INTO qualified_repos (id, github_url, full_name)
+       VALUES (?, ?, ?)`,
+    ).run(46, 'https://github.com/mui/base-ui', 'mui/base-ui');
+    sqlite.prepare(
+      `INSERT INTO candidate_challenge_assignment (
+         id, candidate_id, stage_id, challenge_id, repo_id,
+         github_repo_url, github_pr_number, issue_number, assigned_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assignment-score-1',
+      'candidate-1',
+      'stage-1',
+      'challenge-score-1',
+      46,
+      'https://github.com/mui/base-ui',
+      973,
+      null,
+      '2026-06-13T22:01:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO repo_snapshots (id, repo_id, commit_sha, extractor_version)
+       VALUES (?, ?, ?, ?)`,
+    ).run('snapshot-score-1', 46, 'dddddddddddddddddddddddddddddddddddddddd', 'test-extractor-v1');
+    sqlite.prepare(
+      `INSERT INTO review_challenge_packets (
+         id, repo_snapshot_id, repo_id, pr_number, packet_version, source_hash,
+         language, production_ready, quality_score, demand_families_json,
+         packet_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'packet-score-1',
+      'snapshot-score-1',
+      46,
+      973,
+      'packet-v1',
+      'packet-score-hash-1',
+      'TypeScript',
+      1,
+      0.95,
+      '["ui-event-semantics"]',
+      '{"pullRequest":{"title":"Better handle impatient clicks"}}',
+      1,
+      1,
+    );
+    sqlite.prepare(
+      `INSERT INTO match_runs (
+         id, candidate_id, application_id, role_context_id,
+         candidate_snapshot_id, role_snapshot_id, policy_version, model_version,
+         status, query_json, recalled_packets_json, excluded_packets_json,
+         ranked_results_json, selected_packet_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'match-run-score-1',
+      'candidate-1',
+      null,
+      'role-context-1',
+      'candidate-snapshot-1',
+      'role-snapshot-1',
+      'candidate-safe-matcher-v1',
+      null,
+      'MATCHED',
+      '{}',
+      '[]',
+      '[]',
+      '[]',
+      'packet-score-1',
+      10,
+    );
+
+    await ingestCodeReviewScoreReportToLivingContext(db, {
+      sessionId: 'review-score-1',
+      candidateId: 'candidate-1',
+      challengeId: 'challenge-score-1',
+      assessmentId: 'assessment-score-1',
+      startedAt: '2026-06-13T23:00:00.000Z',
+      scoreReportJson: '{"overall":{"score":88},"evidence":"source-backed"}',
+      observedAt: '2026-06-13T23:20:00.000Z',
+      producer: 'automated_scorer',
+    });
+
+    const record = sqlite.prepare(
+      `SELECT id, qualifiers_json
+         FROM context_records
+        WHERE record_type = 'code_review_score_report'
+        ORDER BY observed_at DESC
+        LIMIT 1`,
+    ).get() as { id: string; qualifiers_json: string };
+    const qualifiers = JSON.parse(record.qualifiers_json) as {
+      selectedReviewChallenge: {
+        assignmentId: string;
+        packetId: string;
+        matchRunId: string;
+        repoUrl: string;
+        prNumber: number;
+      };
+    };
+    expect(qualifiers.selectedReviewChallenge).toMatchObject({
+      assignmentId: 'assignment-score-1',
+      packetId: 'packet-score-1',
+      matchRunId: 'match-run-score-1',
+      repoUrl: 'https://github.com/mui/base-ui',
+      prNumber: 973,
+    });
+
+    const sourceRefs = sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, evidence_role, content_hash
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+        ORDER BY source_ref_type, evidence_role`,
+    ).all(record.id);
+    expect(sourceRefs).toEqual(expect.arrayContaining([
+      {
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: 'packet-score-1',
+        evidence_role: 'selected_review_challenge',
+        content_hash: 'packet-score-hash-1',
+      },
+      {
+        source_ref_type: 'match_run',
+        source_ref_id: 'match-run-score-1',
+        evidence_role: 'repo_match_decision',
+        content_hash: null,
+      },
+      {
+        source_ref_type: 'candidate_challenge_assignment',
+        source_ref_id: 'assignment-score-1',
+        evidence_role: 'challenge_selection',
+        content_hash: null,
+      },
+    ]));
+
+    const entities = sqlite.prepare(
+      `SELECT entity_type, entity_id, relationship
+         FROM context_record_entities
+        WHERE context_record_id = ?
+        ORDER BY entity_type, relationship`,
+    ).all(record.id);
+    expect(entities).toEqual(expect.arrayContaining([
+      {
+        entity_type: 'review_challenge_packet',
+        entity_id: 'packet-score-1',
+        relationship: 'selected_challenge_packet',
+      },
+      {
+        entity_type: 'match_run',
+        entity_id: 'match-run-score-1',
+        relationship: 'selection_decision',
+      },
+    ]));
+  });
+
   it('links completed review transcript evidence to the selected packet and match decision', async () => {
     sqlite.prepare(
       `INSERT INTO qualified_repos (id, github_url, full_name)
