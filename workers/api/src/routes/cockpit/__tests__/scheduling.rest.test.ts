@@ -1331,7 +1331,8 @@ describe('GET /interviews/:id detail', () => {
       DEV_BASIC_AUTH_PASSWORD: 'pipe-dev',
     } as Partial<Env>);
 
-    const schedulingUrl = 'https://calendly.com/pipe/code-review';
+    const schedulingUrl = 'https://pipe:pipe-dev@calendly.com/pipe/code-review';
+    const sanitizedSchedulingUrl = 'https://calendly.com/pipe/code-review';
     const createResponse = await app.request('/interviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1364,10 +1365,13 @@ describe('GET /interviews/:id detail', () => {
       deliveredUrl: string;
       room: { hostUrl: string; guestUrl: string };
     };
-    const personalizedSchedulingUrl = new URL(schedulingUrl);
+    const personalizedSchedulingUrl = new URL(sanitizedSchedulingUrl);
     personalizedSchedulingUrl.searchParams.set('name', 'Grace Hopper');
     personalizedSchedulingUrl.searchParams.set('email', 'grace@example.com');
     personalizedSchedulingUrl.searchParams.set('a1', created.interview.id);
+    personalizedSchedulingUrl.searchParams.set('utm_source', 'pipe');
+    personalizedSchedulingUrl.searchParams.set('utm_campaign', 'scheduled-interview');
+    personalizedSchedulingUrl.searchParams.set('utm_content', created.interview.id);
     const expectedSchedulingUrl = personalizedSchedulingUrl.toString();
 
     expect(inviteBody).toMatchObject({
@@ -1387,6 +1391,7 @@ describe('GET /interviews/:id detail', () => {
       subject: 'Schedule interview — Interview',
     });
     expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
+    expect(sentMessages[0]?.html).toContain(`utm_content=${created.interview.id}`);
     expect(sentMessages[0]?.html).toContain('email=grace%40example.com');
     expect(sentMessages[0]?.html).not.toContain('email=grace%2540example.com');
     expect(sentMessages[0]?.html).not.toContain('pipe:pipe-dev@calendly.com');
@@ -1406,7 +1411,7 @@ describe('GET /interviews/:id detail', () => {
     expect(scheduledRow).toMatchObject({
       meeting_url: inviteBody.meetingUrl,
       scheduling_provider: 'CALENDLY',
-      scheduling_url: schedulingUrl,
+      scheduling_url: sanitizedSchedulingUrl,
     });
 
     const deliverySource = sqlite!.prepare(
@@ -1497,7 +1502,30 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]?.subject).toBe('Schedule interview — Interview');
     expect(inviteBody.deliveredUrl).toContain(`a1=${encodeURIComponent(created.interview.id)}`);
+    expect(inviteBody.deliveredUrl).toContain(`utm_content=${encodeURIComponent(created.interview.id)}`);
     expect(sentMessages[0]?.html).toContain(`a1=${created.interview.id}`);
+    expect(sentMessages[0]?.html).toContain(`utm_content=${created.interview.id}`);
+
+    const distractorResponse = await authApp.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson Duplicate',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl,
+      }),
+    });
+    expect(distractorResponse.status).toBe(201);
+    const distractor = await distractorResponse.json() as { interview: { id: string } };
+    sqlite!.prepare(
+      `UPDATE scheduled_interviews
+          SET created_at = '2030-01-01T00:00:00.000Z',
+              updated_at = '2030-01-01T00:00:00.000Z'
+        WHERE id = ?`,
+    ).run(distractor.interview.id);
 
     const inviteeUri = 'https://api.calendly.com/scheduled_events/event-katherine/invitees/invitee-katherine';
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -1506,7 +1534,7 @@ describe('GET /interviews/:id detail', () => {
           resource: {
             name: 'Katherine Johnson',
             email: 'katherine@example.com',
-            answers: [{ position: 1, value: created.interview.id }],
+            tracking: { utm_content: created.interview.id },
           },
         }));
       }
@@ -1523,6 +1551,11 @@ describe('GET /interviews/:id detail', () => {
         uri: inviteeUri,
         name: 'Katherine Johnson',
         email: 'katherine@example.com',
+        tracking: {
+          utm_source: 'pipe',
+          utm_campaign: 'scheduled-interview',
+          utm_content: created.interview.id,
+        },
         scheduled_event: {
           uri: 'https://api.calendly.com/scheduled_events/event-katherine',
           start_time: '2026-07-03T19:00:00.000Z',
@@ -1580,6 +1613,21 @@ describe('GET /interviews/:id detail', () => {
       external_event_id: 'https://api.calendly.com/scheduled_events/event-katherine',
       sync_source: 'WEBHOOK',
       email_sent_at: expect.any(String),
+    });
+
+    const distractorRow = sqlite!.prepare(
+      `SELECT status, scheduled_at, external_event_id
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(distractor.interview.id) as {
+      status: string;
+      scheduled_at: string | null;
+      external_event_id: string | null;
+    };
+    expect(distractorRow).toEqual({
+      status: 'INVITED',
+      scheduled_at: null,
+      external_event_id: null,
     });
 
     const replayResponse = await publicApp.request('/webhook?connectionId=conn-1', {

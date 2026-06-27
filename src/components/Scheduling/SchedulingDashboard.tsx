@@ -22,6 +22,14 @@ interface InviteResponse {
   emailError?: string;
 }
 
+export function resolveInviteCreationGuestLink(
+  inviteResult: Pick<InviteResponse, 'meetingUrl' | 'schedulingUrl' | 'deliveredUrl'> | null,
+): string | null {
+  // `deliveredUrl` is the candidate email CTA. For Calendly invites it is the
+  // provider booking page, not the Pipe room guest link shown in the UI.
+  return inviteResult?.meetingUrl ?? null;
+}
+
 function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
   if (!scheduledAt) return 'UNSCHEDULED';
 
@@ -407,7 +415,7 @@ export function SchedulingDashboard(): JSX.Element {
           await refetch();
           return {
             id: result.interview.id,
-            meetingUrl: inviteResult?.deliveredUrl ?? inviteResult?.schedulingUrl ?? inviteResult?.meetingUrl ?? data.schedulingUrl ?? null,
+            meetingUrl: resolveInviteCreationGuestLink(inviteResult),
             emailSent: inviteResult?.emailSent ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,

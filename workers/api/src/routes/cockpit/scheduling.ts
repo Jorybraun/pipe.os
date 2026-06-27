@@ -235,7 +235,10 @@ function buildProviderSchedulingInviteUrl(input: {
   recipientName: string | null;
   recipientEmail: string | null;
 }): string {
-  const authenticatedUrl = withDevBasicAuth(input.schedulingUrl, input.env);
+  const authenticatedUrl = sanitizeProviderSchedulingUrl(
+    withDevBasicAuth(input.schedulingUrl, input.env),
+    input.provider,
+  ) ?? input.schedulingUrl;
   if (input.provider !== 'CALENDLY' && input.provider !== 'CAL_COM') {
     return authenticatedUrl;
   }
@@ -249,9 +252,29 @@ function buildProviderSchedulingInviteUrl(input: {
       url.searchParams.set('email', input.recipientEmail.trim().toLowerCase());
     }
     url.searchParams.set('a1', input.interviewId);
+    url.searchParams.set('utm_source', 'pipe');
+    url.searchParams.set('utm_campaign', 'scheduled-interview');
+    url.searchParams.set('utm_content', input.interviewId);
     return url.toString();
   } catch {
     return authenticatedUrl;
+  }
+}
+
+function sanitizeProviderSchedulingUrl(
+  rawUrl: string | null | undefined,
+  provider: string | null | undefined,
+): string | null {
+  if (!rawUrl) return null;
+  if (provider !== 'CALENDLY' && provider !== 'CAL_COM') return rawUrl;
+
+  try {
+    const url = new URL(rawUrl);
+    url.username = '';
+    url.password = '';
+    return url.toString();
+  } catch {
+    return rawUrl;
   }
 }
 
@@ -979,6 +1002,14 @@ interface CalendlyInvitee {
   uri?: string;
   name?: string;
   email?: string;
+  tracking?: {
+    utm_content?: string;
+    utm_term?: string;
+    utm_campaign?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    salesforce_uuid?: string;
+  };
   answers?: Array<{
     position?: number;
     value?: string;
@@ -991,6 +1022,10 @@ interface CalendlyInvitee {
 }
 
 function calendlyInviteeInterviewId(invitee: CalendlyInvitee): string | null {
+  const trackingInterviewId = invitee.tracking?.utm_content?.trim()
+    || invitee.tracking?.utm_term?.trim();
+  if (trackingInterviewId) return trackingInterviewId;
+
   const answer = invitee.answers?.find((item) => item.position === 1 && item.value?.trim());
   if (answer?.value) return answer.value.trim();
 
@@ -1805,11 +1840,14 @@ schedulingAuth.post('/interviews', async (c) => {
     interviewType,
     scheduledAt,
     schedulingProvider,
-    schedulingUrl,
     matchedRepoId,
     githubRepoUrl,
     githubPrNumber,
   } = parsed.data;
+  const schedulingUrl = sanitizeProviderSchedulingUrl(
+    parsed.data.schedulingUrl ?? null,
+    schedulingProvider ?? null,
+  );
 
   let candidate: { id: string; pipeline_id: string | null } | null = null;
   if (candidateId) {
@@ -2442,6 +2480,7 @@ schedulingPublic.post('/webhook', async (c) => {
           resource?: {
             name?: string;
             email?: string;
+            tracking?: CalendlyInvitee['tracking'];
             answers?: Array<{ position: number; value: string }>;
             questions_and_answers?: Array<{ position?: number; question?: string; answer?: string }>;
           };
@@ -3048,6 +3087,7 @@ function normalizeWebhookPayload(
 
     const scheduledEvent = p['scheduled_event'] as Record<string, unknown> | undefined;
     const location = scheduledEvent?.['location'] as Record<string, unknown> | undefined;
+    const tracking = p['tracking'] as CalendlyInvitee['tracking'] | undefined;
 
     return {
       externalEventId: (scheduledEvent?.['uri'] as string) ?? (p['uri'] as string) ?? '',
@@ -3056,7 +3096,7 @@ function normalizeWebhookPayload(
       meetingUrl: (location?.['join_url'] as string) ?? null,
       candidateName: (p['name'] as string) ?? null,
       candidateEmail: (p['email'] as string) ?? null,
-      interviewId: null,
+      interviewId: calendlyInviteeInterviewId({ tracking }),
       inviteeUri: (p['uri'] as string) ?? null,
     };
   }
