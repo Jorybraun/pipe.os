@@ -512,6 +512,13 @@ interface StandaloneReviewMatchResult {
   matchExplanation: CandidateSafeMatchExplanation | null;
 }
 
+interface StandaloneReviewEvidenceReadiness {
+  ready: boolean;
+  reason: string | null;
+  status: string | null;
+  nodeCount: number;
+}
+
 interface PersistedMatchRunRow {
   status: string;
   ranked_results_json: string | null;
@@ -846,6 +853,23 @@ function buildCandidateSafeMatchExplanation(input: {
   };
 }
 
+function contrastSeparationScore(
+  explanation: CandidateSafeMatchExplanation | null | undefined,
+): number | null {
+  const metric = explanation?.assessmentQuality?.metrics.find((entry) =>
+    entry.id === 'contrast_separation'
+  );
+  return typeof metric?.score === 'number' && Number.isFinite(metric.score) ? metric.score : null;
+}
+
+function standaloneAutomaticMatchPasses(
+  explanation: CandidateSafeMatchExplanation | null | undefined,
+): boolean {
+  return explanation?.status === 'MATCHED'
+    && explanation.qualityGate.verdict === 'PASSED'
+    && (contrastSeparationScore(explanation) ?? 0) > 0;
+}
+
 function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {
   if (!explanation) return null;
   const evidence = explanation.evidence.flatMap((entry) => {
@@ -1157,6 +1181,77 @@ async function candidateNeedsCvIntake(db: D1Database, candidateId: string): Prom
   return !row.resume_s3_key && (row.node_count ?? 0) === 0;
 }
 
+async function standaloneReviewEvidenceReadiness(
+  db: D1Database,
+  candidateId: string,
+): Promise<StandaloneReviewEvidenceReadiness> {
+  const row = await db.prepare(
+    `SELECT c.resume_s3_key,
+            ci.status,
+            ci.current_step,
+            ci.error_text,
+            (SELECT COUNT(*)
+               FROM candidate_nodes cn
+              WHERE cn.candidate_id = c.id AND cn.superseded_at IS NULL) AS node_count
+       FROM candidates c
+       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
+      WHERE c.id = ?1`,
+  ).bind(candidateId).first<{
+    resume_s3_key: string | null;
+    status: string | null;
+    current_step: string | null;
+    error_text: string | null;
+    node_count: number;
+  }>();
+
+  if (!row) {
+    return {
+      ready: false,
+      reason: 'candidate not found',
+      status: null,
+      nodeCount: 0,
+    };
+  }
+
+  const nodeCount = row.node_count ?? 0;
+  if (nodeCount <= 0) {
+    return {
+      ready: false,
+      reason: row.resume_s3_key
+        ? 'candidate evidence graph is still being built'
+        : 'candidate CV intake has not completed',
+      status: row.status ?? null,
+      nodeCount,
+    };
+  }
+
+  const status = row.status ?? null;
+  if (status === 'pending' || status === 'profile_generated' || status === 'enriching') {
+    return {
+      ready: false,
+      reason: `candidate ingestion is still ${status}`,
+      status,
+      nodeCount,
+    };
+  }
+
+  if (status === 'failed' && nodeCount <= 0) {
+    return {
+      ready: false,
+      reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
+      status,
+      nodeCount,
+    };
+  }
+
+  return {
+    ready: true,
+    reason: null,
+    status,
+    nodeCount,
+  };
+}
+
 /** True when a pipeline code stage should be gated behind CV intake for this candidate. */
 async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageId: string): Promise<boolean> {
   const assignment = await db.prepare(
@@ -1164,6 +1259,20 @@ async function stageRequiresCvIntake(db: D1Database, candidateId: string, stageI
   ).bind(candidateId, stageId).first<{ id: string }>();
   if (assignment) return false;
   return candidateNeedsCvIntake(db, candidateId);
+}
+
+async function clearStandaloneReviewCachedMatch(
+  db: D1Database,
+  interviewId: string,
+): Promise<void> {
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET matched_repo_id = NULL,
+            github_repo_url = NULL,
+            github_pr_number = NULL,
+            updated_at = ?1
+      WHERE id = ?2`,
+  ).bind(new Date().toISOString(), interviewId).run();
 }
 
 /**
@@ -1184,25 +1293,57 @@ async function matchStandaloneReview(
       interview.github_pr_number,
     );
     if (isSourceBacked) {
-      return {
-        repoUrl: interview.github_repo_url,
-        prNumber: interview.github_pr_number,
-        matchExplanation: await loadCachedStandaloneReviewMatchExplanation(
-          db,
-          candidateId,
-          interview.matched_repo_id,
-          interview.github_pr_number,
-        ) ?? sourceBackedManualReviewExplanation(interview.github_pr_number),
-      };
+      const cachedExplanation = await loadCachedStandaloneReviewMatchExplanation(
+        db,
+        candidateId,
+        interview.matched_repo_id,
+        interview.github_pr_number,
+      );
+      if (cachedExplanation) {
+        if (standaloneAutomaticMatchPasses(cachedExplanation)) {
+          return {
+            repoUrl: interview.github_repo_url,
+            prNumber: interview.github_pr_number,
+            matchExplanation: cachedExplanation,
+          };
+        }
+        console.warn(
+          `[standaloneReview] refreshing cached automatic PR ${interview.github_pr_number} for ${candidateId} because its quality gate is ${cachedExplanation.qualityGate.verdict} and contrast score is ${contrastSeparationScore(cachedExplanation) ?? 'missing'}`,
+        );
+        await clearStandaloneReviewCachedMatch(db, interview.id);
+      } else {
+        return {
+          repoUrl: interview.github_repo_url,
+          prNumber: interview.github_pr_number,
+          matchExplanation: sourceBackedManualReviewExplanation(interview.github_pr_number),
+        };
+      }
+    } else {
+      console.warn(
+        `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+      );
+      await clearStandaloneReviewCachedMatch(db, interview.id);
     }
-    console.warn(
-      `[standaloneReview] ignoring stale cached PR without source-backed graph context for ${candidateId}`,
+  }
+
+  const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+  if (!readiness.ready) {
+    console.log(
+      `[standaloneReview] waiting for candidate evidence before matching ${candidateId}: ${readiness.reason ?? 'not ready'} (status=${readiness.status ?? 'none'}, nodes=${readiness.nodeCount})`,
     );
+    return null;
   }
 
   const match = await matchCandidateToReviewChallenge(db, candidateId);
   if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
     console.log(`[standaloneReview] deterministic matcher returned ${match.status} for ${candidateId}`);
+    return null;
+  }
+  const matchExplanation = sanitizeMatchExplanation(match.explanation);
+  if (!standaloneAutomaticMatchPasses(matchExplanation)) {
+    console.warn(
+      `[standaloneReview] deterministic matcher selected ${match.repoId}#${match.prNumber} for ${candidateId}, but standalone quality gate did not pass (gate=${matchExplanation?.qualityGate.verdict ?? 'missing'}, contrast=${contrastSeparationScore(matchExplanation) ?? 'missing'})`,
+    );
     return null;
   }
   const repo = await db.prepare(
@@ -1218,7 +1359,7 @@ async function matchStandaloneReview(
   return {
     repoUrl: repo.github_url,
     prNumber: match.prNumber,
-    matchExplanation: sanitizeMatchExplanation(match.explanation),
+    matchExplanation,
   };
 }
 
@@ -1681,11 +1822,24 @@ rpcAuth.post('/get-stage-config', async (c) => {
 
   // Pipeline-free candidate (talent pool / standalone code review)
   if (!candidateRow.pipeline_id) {
-    const needsResume = !candidateRow.resume_s3_key;
+    const needsResume = await candidateNeedsCvIntake(c.env.DB, candidateId);
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
 
-    // Standalone code-review interview: once the CV is in, serve the review stage
+    // Standalone code-review interview: once source-backed CV evidence is ready, serve the review stage.
     if (!needsResume && standaloneReview) {
+      const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+      if (!readiness.ready) {
+        return c.json({
+          isComplete: false,
+          stageId: 'standalone-code-review-matching',
+          candidateId,
+          stageTitle: 'Building your personalized challenge',
+          mode: 'ASYNC',
+          timeLimit: null,
+          challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
+          currentIndex: 0,
+        });
+      }
       return c.json({
         isComplete: false,
         stageId: 'standalone-code-review',

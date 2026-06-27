@@ -42,10 +42,24 @@ vi.mock('../lib/neo4j/contextualGraph', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/challengeMatching', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/challengeMatching')>();
+  return {
+    ...actual,
+    matchCandidateToReviewChallenge: vi.fn(async () => ({
+      status: 'NO_ROLE_SAFE_CHALLENGE',
+      repoId: null,
+      prNumber: null,
+      explanation: undefined,
+    })),
+  };
+});
+
 import { AiDeveloperUnavailableError, callImplementerAgent } from '../lib/implementerAgent';
 import { callExplainerAgent } from '../lib/explainerAgent';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
+import { matchCandidateToReviewChallenge } from '../lib/challengeMatching';
 
 // ─── Fake D1 ─────────────────────────────────────────────────────────────────
 
@@ -242,6 +256,125 @@ const SESSION_OTHER_CANDIDATE = {
   candidate_id: 'cand_other',
 };
 
+function sourceBackedPacket(spanId = 'repo-span-auto'): Record<string, unknown> {
+  return {
+    pullRequest: {
+      title: 'Source-backed review PR',
+      author: 'dev',
+      baseSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      headSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      mergedAt: '2026-06-20T12:00:00.000Z',
+      body: 'Source-backed packet body',
+    },
+    demands: [{ sourceSpanIds: [spanId], family: 'frontend_state' }],
+  };
+}
+
+function matchValidator(prNumber: number): Record<string, unknown> {
+  return {
+    agentName: 'source_backed_match_validator',
+    agentVersion: 'v1',
+    mode: 'deterministic',
+    verdict: 'PASSED',
+    rationale: 'The selected PR has source-backed candidate and repository evidence.',
+    checks: [{ id: 'provenance_complete', passed: true, reason: 'Candidate and repo source spans are present.' }],
+    sourceBridge: {
+      prNumber,
+      candidateSourceCount: 1,
+      repoSourceCount: 1,
+      roleSourceCount: 0,
+      alignedDemandCount: 1,
+      stretchCount: 0,
+      provenanceComplete: true,
+    },
+  };
+}
+
+function assessmentQuality(contrastScore: number): Record<string, unknown> {
+  return {
+    verdict: contrastScore > 0 ? 'STRONG' : 'USABLE',
+    score: contrastScore > 0 ? 10 : 8,
+    maxScore: 12,
+    metrics: [
+      {
+        id: 'contrast_separation',
+        label: 'Contrast separation',
+        score: contrastScore,
+        maxScore: 2,
+        reason: contrastScore > 0
+          ? 'The selected PR separates from comparable alternatives.'
+          : 'The selected PR is a near-tie with comparable alternatives.',
+      },
+    ],
+  };
+}
+
+function evidenceAlignment(): Record<string, unknown> {
+  return {
+    atomId: 'atom_frontend_state',
+    demandId: 'demand_frontend_state',
+    purpose: 'frontend state review',
+    pairScore: 0.91,
+    episodeMultiplier: 1,
+    roleSourceRefs: [],
+    candidateSourceRefs: [{
+      sourceRefType: 'candidate_node',
+      locator: 'resume:experience',
+      exactText: 'Built React and TypeScript state-management systems.',
+    }],
+    challengeSourceRefs: [{
+      sourceRefType: 'repo_source_span',
+      locator: 'src/component.tsx:12',
+      exactText: 'React state update code under review.',
+    }],
+  };
+}
+
+function persistedRankedResult(prNumber: number, contrastScore: number): Record<string, unknown> {
+  return {
+    repoId: 973,
+    prNumber,
+    eligible: true,
+    score: contrastScore > 0 ? 10 : 9,
+    alignedDemandCount: 1,
+    stretchCount: 0,
+    alignments: [evidenceAlignment()],
+    assessmentQuality: assessmentQuality(contrastScore),
+    validatorAgent: matchValidator(prNumber),
+  };
+}
+
+function automaticMatchExplanation(prNumber: number, contrastScore: number): Record<string, unknown> {
+  return {
+    status: 'MATCHED',
+    summary: 'Matched one source-backed frontend demand.',
+    score: contrastScore > 0 ? 10 : 9,
+    evidence: [evidenceAlignment()],
+    roleSources: [],
+    candidateSpans: [{
+      atomId: 'atom_frontend_state',
+      demandId: 'demand_frontend_state',
+      purpose: 'frontend state review',
+      sourceRefs: [{
+        sourceRefType: 'candidate_node',
+        locator: 'resume:experience',
+        exactText: 'Built React and TypeScript state-management systems.',
+      }],
+    }],
+    repoSpans: [{
+      atomId: 'atom_frontend_state',
+      demandId: 'demand_frontend_state',
+      sourceRefs: [{
+        sourceRefType: 'repo_source_span',
+        locator: 'src/component.tsx:12',
+        exactText: 'React state update code under review.',
+      }],
+    }],
+    assessmentQuality: assessmentQuality(contrastScore),
+    validatorAgent: matchValidator(prNumber),
+  };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -257,6 +390,77 @@ beforeEach(() => {
   });
   vi.mocked(matchReposForCandidateNeo4j).mockClear();
   vi.mocked(matchReposByGroundedEdges).mockClear();
+  vi.mocked(matchCandidateToReviewChallenge).mockReset();
+  vi.mocked(matchCandidateToReviewChallenge).mockResolvedValue({
+    status: 'NO_ROLE_SAFE_CHALLENGE',
+    repoId: null,
+    prNumber: null,
+    explanation: undefined,
+  } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+});
+
+// ─── POST /rpc/get-stage-config ──────────────────────────────────────────────
+
+describe('POST /rpc/get-stage-config', () => {
+  it('keeps standalone CODE_REVIEW in the matching state until source-backed candidate evidence is ready', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1',
+          },
+        },
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 0 } },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_waiting',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'pending',
+            current_step: 'parse_resume',
+            error_text: null,
+            node_count: 0,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      challenges?: Array<{ type: string; title: string }>;
+    };
+    expect(body.stageId).toBe('standalone-code-review-matching');
+    expect(body.challenges?.[0]).toMatchObject({
+      type: 'WAITING_FOR_MATCH',
+      title: 'Building your personalized challenge',
+    });
+  });
 });
 
 // ─── POST /rpc/get-challenge ─────────────────────────────────────────────────
@@ -509,6 +713,161 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.id).toBe('waiting-for-match');
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
+  });
+
+  it('waits instead of matching standalone CODE_REVIEW while text-intake evidence is still building', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1', node_count: 0 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_waiting',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1',
+            status: 'pending',
+            current_step: 'parse_resume',
+            error_text: null,
+            node_count: 0,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { type: string; id: string };
+    expect(body).toMatchObject({
+      id: 'waiting-for-match',
+      type: 'WAITING_FOR_MATCH',
+    });
+    expect(matchCandidateToReviewChallenge).not.toHaveBeenCalled();
+  });
+
+  it('refreshes weak cached automatic standalone CODE_REVIEW matches before serving a challenge', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 2),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+    const packet = sourceBackedPacket('repo-span-auto');
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 38 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_auto',
+            status: 'INVITED',
+            matched_repo_id: 973,
+            github_repo_url: 'https://github.com/mui/base-ui',
+            github_pr_number: 5110,
+            submission_json: null,
+          },
+        },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'resume.pdf',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 38,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+        { match: 'SELECT owner_id FROM candidates', value: { owner_id: 'owner_1' } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM match_runs',
+          value: [{
+            status: 'MATCHED',
+            ranked_results_json: JSON.stringify([persistedRankedResult(5110, 0)]),
+          }],
+        },
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-auto',
+            path: 'src/component.tsx',
+            exact_text: 'React state update code under review.',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      githubPrNumber?: number | null;
+      matchExplanation?: {
+        assessmentQuality?: { metrics?: Array<{ id: string; score: number }> };
+      };
+    };
+    expect(body.type).toBe('CODE_REVIEW');
+    expect(body.githubPrNumber).toBe(973);
+    expect(body.matchExplanation?.assessmentQuality?.metrics?.find((metric) =>
+      metric.id === 'contrast_separation'
+    )?.score).toBe(2);
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+    expect(db.__calls.some((call) =>
+      call.ran && call.sql.includes('SET matched_repo_id = NULL')
+    )).toBe(true);
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('SET matched_repo_id = ?1')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
   });
 
   it('routes standalone OPEN_SOURCE_BUG_FIX invites into a repo-backed implementation challenge', async () => {

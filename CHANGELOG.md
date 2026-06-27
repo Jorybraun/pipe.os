@@ -81,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interview detail pages now surface CODE_REVIEW match quality and the role/person/repo evidence bridge from the stored match run, so recruiters can inspect why a PR was selected alongside the candidate's review.
 - Completed multi-turn CODE_REVIEW sessions now persist a compact `code_review_judge_examples` artifact for judge-prompt regression, feedback-loop calibration, human labelling, and future cross-model evaluation.
 - Review-packet profile backfills now refresh stale row `source_hash` values whenever packet `contentHash` changes, preventing real source-backed packets from being excluded from automatic repo matching by provenance checks.
+- Standalone CODE_REVIEW now waits for source-backed candidate evidence before automatic repo matching and refreshes weak cached automatic PR selections instead of serving near-tie matches as final challenges.
 - Recruiter CODE_REVIEW score overrides now label the corresponding `code_review_judge_examples` row with the human score report, giving the judge/feedback loop replayable calibration targets from human corrections.
 - Recruiter review-session APIs now expose an owner-scoped CODE_REVIEW judge-example queue, giving the judge/feedback loop a deterministic replay surface for ready and labelled calibration examples.
 - CODE_REVIEW author pushback and automated scoring now honor the configured Kimi provider before falling back to Workers AI, preventing local/prod scorer runs from silently using the wrong LLM path.
