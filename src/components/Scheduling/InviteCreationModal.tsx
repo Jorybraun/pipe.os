@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { X, Copy, Check, Video, Calendar, Code2, GitBranch, Bug } from 'lucide-react';
-import { INTERVIEW_TYPE_LABELS, type InterviewType, type MeetingType, type SchedulingProvider } from '../../lib/scheduling/types';
+import {
+  INTERVIEW_TYPE_LABELS,
+  type AssessmentSetupProjection,
+  type InterviewType,
+  type MeetingType,
+  type SchedulingProvider,
+} from '../../lib/scheduling/types';
 import { useSchedulingConnection } from '../../hooks/useSchedulingConnection';
 
 interface InviteCreationData {
@@ -31,6 +37,7 @@ interface InviteCreationModalProps {
     emailSent?: boolean;
     provider?: string | undefined;
     emailError?: string | undefined;
+    assessmentSetup?: AssessmentSetupProjection | null;
   }>;
   initialInterviewType?: InterviewType;
 }
@@ -41,6 +48,7 @@ interface CreatedInviteState {
   emailSent: boolean | null;
   provider?: string | undefined;
   emailError?: string | undefined;
+  assessmentSetup?: AssessmentSetupProjection | null;
 }
 
 const INTERVIEW_MODES: Array<{
@@ -188,6 +196,9 @@ export function InviteCreationModal({
       ? 'SEND SCHEDULING LINK'
       : 'CREATE ROOM INVITE';
   const linkLabel = workspaceAssessment ? 'Assessment link' : 'Guest link';
+  const localAssessmentSetupMessage = workspaceAssessment && !manualRepoOverride
+    ? 'PIPE will select a source-backed PR only after candidate evidence exists. Until then this invite remains a setup diagnostic, not a positive match.'
+    : null;
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -235,6 +246,7 @@ export function InviteCreationModal({
         emailSent: typeof result.emailSent === 'boolean' ? result.emailSent : null,
         provider: result.provider,
         emailError: result.emailError,
+        assessmentSetup: result.assessmentSetup ?? null,
       });
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Failed to create invite');
@@ -332,6 +344,19 @@ export function InviteCreationModal({
                     ? `${linkLabel} is ready, but email delivery failed. Copy and send it manually.`
                     : `${linkLabel} is ready. Copy it or send it from the interview page.`}
               </div>
+              {createdInvite.assessmentSetup?.message && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: createdInvite.assessmentSetup.blocksPositiveAssessment ? '#fbbf24' : '#93c5fd',
+                    marginBottom: 12,
+                    fontFamily: '"Space Mono", monospace',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {createdInvite.assessmentSetup.message}
+                </div>
+              )}
               <div
                 style={{
                   display: 'flex',
@@ -601,7 +626,7 @@ export function InviteCreationModal({
                   </>
                 ) : (
                   <div style={{ fontSize: 11, color: 'var(--pipe-text-dim)', fontFamily: '"Space Mono", monospace', lineHeight: 1.5, padding: '8px 0' }}>
-                    The matcher will select a source-backed PR challenge based on candidate evidence.
+                    {localAssessmentSetupMessage}
                   </div>
                 )}
               </div>

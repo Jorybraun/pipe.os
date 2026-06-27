@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dev-container workspace launches now pass the Worker `DEVIN_API_KEY` secret into the container as server-side init data for the real Clippy/Devin bridge without exposing the key in candidate-facing room responses.
 - The Clippy/Devin bridge now persists an `auth_required` agent diagnostic as soon as it observes missing real Devin credentials, instead of waiting for a candidate chat attempt before creating source-backed evidence.
 - Matched-repo dev workspaces now surface an explicit `missing_reviewable_task` diagnostic when no PR/task is assigned, and room desktop evidence preserves that setup gap instead of treating a repo-only launch as a completed assessment challenge.
+- Scheduling now returns and displays a rebuildable assessment setup projection for workspace-backed invites, distinguishing concrete PR tasks from missing reviewable tasks and contact-first invites waiting for source-backed candidate evidence.
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
 - Microsoft Edge now detects common sites that block iframe embedding, including Google, and shows an external-open fallback instead of a blank white page.
 - Microsoft Edge back/forward navigation now syncs through the shared desktop and emits `browser_navigation` evidence instead of staying local to one participant.

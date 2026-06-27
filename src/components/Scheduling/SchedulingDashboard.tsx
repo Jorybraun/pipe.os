@@ -7,7 +7,13 @@ import { useApiClient } from '../../hooks/useApiClient';
 import { InterviewCard } from './InterviewCard';
 import { InviteCreationModal } from './InviteCreationModal';
 import { Skeleton } from '../ui/Skeleton';
-import type { InterviewType, MeetingType, ScheduledInterview, SchedulingProvider } from '../../lib/scheduling/types';
+import type {
+  AssessmentSetupProjection,
+  InterviewType,
+  MeetingType,
+  ScheduledInterview,
+  SchedulingProvider,
+} from '../../lib/scheduling/types';
 
 // Timeline grouping
 type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UNSCHEDULED';
@@ -390,7 +396,12 @@ export function SchedulingDashboard(): JSX.Element {
           };
           agentType?: string | null;
         }) => {
-          const result = await api.post<{ interview: { id: string } }>(
+          const result = await api.post<{
+            interview: {
+              id: string;
+              assessmentSetup?: AssessmentSetupProjection | null;
+            };
+          }>(
             '/api/v1/scheduling/interviews',
             data,
           );
@@ -411,6 +422,7 @@ export function SchedulingDashboard(): JSX.Element {
             emailSent: inviteResult?.emailSent ?? false,
             provider: inviteResult?.provider,
             emailError: inviteResult?.emailError ?? inviteError,
+            assessmentSetup: result.interview.assessmentSetup ?? null,
           };
         }}
       />

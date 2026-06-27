@@ -131,6 +131,90 @@ function isWorkspaceAssessmentInterviewType(value: string | null | undefined): v
     || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
+type ScheduledAssessmentSetupStatus =
+  | 'not_applicable'
+  | 'reviewable_task_assigned'
+  | 'missing_reviewable_task'
+  | 'waiting_for_candidate_evidence'
+  | 'waiting_for_source_backed_match';
+
+type ScheduledAssessmentSetupKind =
+  | 'not_applicable'
+  | 'github_pr'
+  | 'matched_repo_without_pr'
+  | 'auto_match';
+
+type ScheduledAssessmentSetupSource =
+  | 'not_workspace_assessment'
+  | 'recruiter_manual_override'
+  | 'matched_repo_id'
+  | 'contact_first_invite'
+  | 'candidate_id';
+
+interface ScheduledAssessmentSetupProjection {
+  status: ScheduledAssessmentSetupStatus;
+  kind: ScheduledAssessmentSetupKind;
+  source: ScheduledAssessmentSetupSource;
+  blocksPositiveAssessment: boolean;
+  message: string | null;
+}
+
+function buildScheduledAssessmentSetup(input: {
+  interviewType: string | null | undefined;
+  candidateId: string | null | undefined;
+  matchedRepoId: number | null | undefined;
+  githubRepoUrl: string | null | undefined;
+  githubPrNumber: number | null | undefined;
+}): ScheduledAssessmentSetupProjection {
+  if (!isWorkspaceAssessmentInterviewType(input.interviewType)) {
+    return {
+      status: 'not_applicable',
+      kind: 'not_applicable',
+      source: 'not_workspace_assessment',
+      blocksPositiveAssessment: false,
+      message: null,
+    };
+  }
+
+  if (input.githubRepoUrl && input.githubPrNumber) {
+    return {
+      status: 'reviewable_task_assigned',
+      kind: 'github_pr',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+      message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
+    };
+  }
+
+  if (input.matchedRepoId) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'matched_repo_without_pr',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: true,
+      message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+    };
+  }
+
+  if (!input.candidateId) {
+    return {
+      status: 'waiting_for_candidate_evidence',
+      kind: 'auto_match',
+      source: 'contact_first_invite',
+      blocksPositiveAssessment: true,
+      message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
+    };
+  }
+
+  return {
+    status: 'waiting_for_source_backed_match',
+    kind: 'auto_match',
+    source: 'candidate_id',
+    blocksPositiveAssessment: true,
+    message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+  };
+}
+
 const createInterviewSchema = z.object({
   candidateId: z.string().min(1).optional(),
   pipelineId: z.string().optional(),
@@ -2291,6 +2375,13 @@ schedulingAuth.get('/interviews', async (c) => {
       matchedRepoId: r.matched_repo_id,
       githubRepoUrl: r.github_repo_url,
       githubPrNumber: r.github_pr_number,
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: r.interview_type,
+        candidateId: r.candidate_id,
+        matchedRepoId: r.matched_repo_id,
+        githubRepoUrl: r.github_repo_url,
+        githubPrNumber: r.github_pr_number,
+      }),
       completedAt: r.completed_at,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -2474,6 +2565,13 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       matchedRepoId: interview.matched_repo_id,
       githubRepoUrl: interview.github_repo_url,
       githubPrNumber: interview.github_pr_number,
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: interview.interview_type,
+        candidateId: interview.candidate_id,
+        matchedRepoId: interview.matched_repo_id,
+        githubRepoUrl: interview.github_repo_url,
+        githubPrNumber: interview.github_pr_number,
+      }),
       submissionJson: interview.submission_json,
       completedAt: interview.completed_at,
       transcriptArtifact: transcriptArtifact ? {
@@ -2680,6 +2778,13 @@ schedulingAuth.post('/interviews', async (c) => {
       matchedRepoId: matchedRepoId ?? null,
       githubRepoUrl: githubRepoUrl ?? null,
       githubPrNumber: githubPrNumber ?? null,
+      assessmentSetup: buildScheduledAssessmentSetup({
+        interviewType: effectiveInterviewType,
+        candidateId: candidateId ?? null,
+        matchedRepoId: matchedRepoId ?? null,
+        githubRepoUrl: githubRepoUrl ?? null,
+        githubPrNumber: githubPrNumber ?? null,
+      }),
     },
   }, 201);
 });

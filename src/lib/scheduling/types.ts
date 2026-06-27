@@ -46,6 +46,34 @@ export const INTERVIEW_TYPE_LABELS = {
   OPEN_SOURCE_BUG_FIX: 'Open-source bug fix',
 } satisfies Record<InterviewType, string>;
 
+export type AssessmentSetupStatus =
+  | 'not_applicable'
+  | 'reviewable_task_assigned'
+  | 'missing_reviewable_task'
+  | 'waiting_for_candidate_evidence'
+  | 'waiting_for_source_backed_match';
+
+export type AssessmentSetupKind =
+  | 'not_applicable'
+  | 'github_pr'
+  | 'matched_repo_without_pr'
+  | 'auto_match';
+
+export type AssessmentSetupSource =
+  | 'not_workspace_assessment'
+  | 'recruiter_manual_override'
+  | 'matched_repo_id'
+  | 'contact_first_invite'
+  | 'candidate_id';
+
+export interface AssessmentSetupProjection {
+  status: AssessmentSetupStatus;
+  kind: AssessmentSetupKind;
+  source: AssessmentSetupSource;
+  blocksPositiveAssessment: boolean;
+  message: string | null;
+}
+
 export interface ScheduledInterview {
   readonly id: string;
   readonly createdAt: string;
@@ -79,6 +107,7 @@ export interface ScheduledInterview {
   matchedRepoId?: number | null;
   githubRepoUrl?: string | null;
   githubPrNumber?: number | null;
+  assessmentSetup?: AssessmentSetupProjection | null;
   submissionJson?: string | null;
   completedAt?: string | null;
   // Room status (enriched from meeting_rooms join)

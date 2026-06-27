@@ -2531,8 +2531,22 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
       }),
     });
     expect(response.status).toBe(201);
-    const body = await response.json() as { interview: { id: string } };
+    const body = await response.json() as {
+      interview: {
+        id: string;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          blocksPositiveAssessment: boolean;
+        };
+      };
+    };
     expect(body.interview.id).toBeDefined();
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'waiting_for_candidate_evidence',
+      kind: 'auto_match',
+      blocksPositiveAssessment: true,
+    });
   });
 
   it('creates a person-first OPEN_SOURCE_BUG_FIX with explicit repo url + PR', async () => {
@@ -2562,6 +2576,12 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         pipelineId: string | null;
         candidateId: string | null;
         contactId: string | null;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+        };
       };
     };
     expect(body.interview.interviewType).toBe('OPEN_SOURCE_BUG_FIX');
@@ -2571,6 +2591,12 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(body.interview.pipelineId).toBeNull();
     expect(body.interview.candidateId).toBeNull();
     expect(body.interview.contactId).not.toBeNull();
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'reviewable_task_assigned',
+      kind: 'github_pr',
+      source: 'recruiter_manual_override',
+      blocksPositiveAssessment: false,
+    });
 
     const row = sqlite!.prepare(
       `SELECT interview_type, matched_repo_id, github_repo_url, github_pr_number,
@@ -2757,10 +2783,28 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     });
     expect(response.status).toBe(201);
     const body = await response.json() as {
-      interview: { id: string; matchedRepoId: number | null; interviewType: string };
+      interview: {
+        id: string;
+        matchedRepoId: number | null;
+        interviewType: string;
+        assessmentSetup: {
+          status: string;
+          kind: string;
+          source: string;
+          blocksPositiveAssessment: boolean;
+          message: string | null;
+        };
+      };
     };
     expect(body.interview.interviewType).toBe('DEV_CONTAINER_CHALLENGE');
     expect(body.interview.matchedRepoId).toBe(7);
+    expect(body.interview.assessmentSetup).toMatchObject({
+      status: 'missing_reviewable_task',
+      kind: 'matched_repo_without_pr',
+      source: 'matched_repo_id',
+      blocksPositiveAssessment: true,
+    });
+    expect(body.interview.assessmentSetup.message).toContain('no GitHub PR or task was assigned');
 
     const row = sqlite!.prepare(
       'SELECT interview_type, matched_repo_id FROM scheduled_interviews WHERE id = ?',

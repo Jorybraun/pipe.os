@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApiClient } from './useApiClient';
 import type { ApiClient } from '../lib/api/client';
-import type { ScheduledInterview, InterviewStatus } from '../lib/scheduling/types';
+import type {
+  AssessmentSetupProjection,
+  ScheduledInterview,
+  InterviewStatus,
+} from '../lib/scheduling/types';
 import { useRoomStatusNotifications } from './useRoomStatusNotifications';
 
 interface UseScheduledInterviewsResult {
@@ -60,6 +64,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           matchedRepoId: number | null;
           githubRepoUrl: string | null;
           githubPrNumber: number | null;
+          assessmentSetup?: AssessmentSetupProjection | null;
           completedAt: string | null;
           createdAt: string;
           updatedAt: string;
@@ -101,6 +106,7 @@ export function useScheduledInterviews(): UseScheduledInterviewsResult {
           matchedRepoId: r.matchedRepoId,
           githubRepoUrl: r.githubRepoUrl,
           githubPrNumber: r.githubPrNumber,
+          assessmentSetup: r.assessmentSetup ?? null,
           completedAt: r.completedAt,
           candidateName: r.candidateName,
           candidateEmail: r.candidateEmail,
