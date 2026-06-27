@@ -292,7 +292,7 @@ describe('sessionEvents', () => {
           text: 'Workspace state changed to READY',
         }),
         expect.objectContaining({
-          type: 'ai_chat_user',
+          type: 'chat_message',
           actor: 'guest',
           text: 'I found the retry bug in the queue worker.',
         }),

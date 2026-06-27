@@ -107,6 +107,7 @@ const roomEventSchema = z.object({
 
 const sessionEventSchema = z.object({
   type: z.enum([
+    'chat_message',
     'ai_chat_user',
     'ai_chat_agent',
     'ai_agent_status',

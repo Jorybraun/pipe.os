@@ -1422,7 +1422,7 @@ describe('meeting room recording living-context route', () => {
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
       'session_room_surface_change',
       'session_workspace_state',
-      'session_chat_user',
+      'session_chat_message',
       'session_clippy_prompt',
       'session_file_change',
     ]);
@@ -1576,7 +1576,7 @@ describe('meeting room recording living-context route', () => {
     }>;
     expect(evidenceRows.map((row) => row.node_type)).toEqual([
       'session_room_surface_change',
-      'session_chat_user',
+      'session_chat_message',
       'session_file_change',
     ]);
     expect(evidenceRows.map((row) => row.narrative_text).join('\n')).toContain(
@@ -1598,7 +1598,7 @@ describe('meeting room recording living-context route', () => {
     ).all() as Array<{ predicate: string }>;
     expect(contextRows.map((row) => row.predicate)).toEqual([
       'session_event:room_surface_change',
-      'session_event:ai_chat_user',
+      'session_event:chat_message',
       'session_event:file_change',
     ]);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({

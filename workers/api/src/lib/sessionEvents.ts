@@ -26,6 +26,7 @@ import {
 import { writeCandidateGraphFireAndForget } from './neo4j/writeCandidateGraph';
 
 export type SessionEventType =
+  | 'chat_message'
   | 'ai_chat_user'
   | 'ai_chat_agent'
   | 'ai_agent_status'
@@ -276,7 +277,7 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   if (messageId) properties.roomMessageId = messageId;
   if (clientId) properties.clientId = clientId;
   return createSessionEvent(input, {
-    type: 'ai_chat_user',
+    type: 'chat_message',
     timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),
     actor: actorFromRoomRole(role),
     text,
@@ -427,6 +428,7 @@ function eventToNodePayload(event: SessionEvent): Omit<CandidateNode, 'id' | 'cr
 
 function mapEventTypeToNodeType(type: SessionEventType): string {
   const mapping: Record<SessionEventType, string> = {
+    chat_message: 'session_chat_message',
     ai_chat_user: 'session_chat_user',
     ai_chat_agent: 'session_chat_agent',
     ai_agent_status: 'session_agent_status',
@@ -455,6 +457,8 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
 function formatEventNarrative(event: SessionEvent): string {
   const time = new Date(event.timestamp * 1000).toISOString();
   switch (event.type) {
+    case 'chat_message':
+      return `[${time}] Room chat message from ${event.actor}: "${event.text}"`;
     case 'ai_chat_user':
       return `[${time}] User asked: "${event.text}"`;
     case 'ai_chat_agent':

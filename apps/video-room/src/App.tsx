@@ -391,7 +391,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }));
   const sendChatMessage = (text: string): void => {
     room.publishChatMessage(text);
-    captureSessionEvent('ai_chat_user', text, roomActor, {
+    captureSessionEvent('chat_message', text, roomActor, {
+      source: 'room_chat',
       surface: room.roomSurface,
       roomPhase: room.phase,
     });
