@@ -125,6 +125,10 @@ type RoomDesktopEvent =
       repoUrl?: string | null;
       githubPrNumber?: number | null;
       matchedRepoId?: number | null;
+      challengeStatus?: string | null;
+      challengeKind?: string | null;
+      challengeSource?: string | null;
+      challengeMessage?: string | null;
       canLaunch?: boolean;
       ttlSeconds?: number | null;
       ttlSource?: string | null;
@@ -427,6 +431,10 @@ export class VideoRoom {
         repoUrl: this.safeTextOrNull(value.repoUrl, 500),
         githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
         matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
+        challengeStatus: this.safeTextOrNull(value.challengeStatus, 80),
+        challengeKind: this.safeTextOrNull(value.challengeKind, 80),
+        challengeSource: this.safeTextOrNull(value.challengeSource, 120),
+        challengeMessage: this.safeTextOrNull(value.challengeMessage, 500),
         canLaunch: this.safeBoolean(value.canLaunch),
         ttlSeconds: this.safeNumberOrNull(value.ttlSeconds),
         ttlSource: this.safeTextOrNull(value.ttlSource, 80),

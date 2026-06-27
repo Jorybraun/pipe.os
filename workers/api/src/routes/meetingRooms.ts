@@ -142,6 +142,27 @@ interface RoomWorkspaceInterview {
   matched_repo_id: number | null;
 }
 
+type RoomWorkspaceChallengeStatus =
+  | 'github_pr_assigned'
+  | 'missing_reviewable_task'
+  | 'not_configured';
+
+type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
+
+type RoomWorkspaceChallengeSource =
+  | 'scheduled_interview.github_pr_number'
+  | 'matched_repo_without_pr'
+  | 'scheduled_repo_without_pr'
+  | 'missing_repo_and_task'
+  | 'workspace_not_enabled';
+
+interface RoomWorkspaceChallengePayload {
+  status: RoomWorkspaceChallengeStatus;
+  kind: RoomWorkspaceChallengeKind;
+  source: RoomWorkspaceChallengeSource;
+  message: string | null;
+}
+
 async function syncRoomActivityEvidenceForToken(
   c: Context<{ Bindings: Env }>,
   token: string,
@@ -277,6 +298,7 @@ interface RoomWorkspacePayload {
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
+  challenge: RoomWorkspaceChallengePayload;
   session: {
     sessionId: string;
     status: string;
@@ -555,6 +577,50 @@ function githubPrChallengeRef(githubPrNumber: number | null): string | null {
   return `refs/pull/${githubPrNumber}/head`;
 }
 
+function buildRoomWorkspaceChallenge(
+  interview: RoomWorkspaceInterview | null,
+  enabled: boolean,
+): RoomWorkspaceChallengePayload {
+  if (!enabled) {
+    return {
+      status: 'not_configured',
+      kind: null,
+      source: 'workspace_not_enabled',
+      message: null,
+    };
+  }
+  if (Number.isInteger(interview?.github_pr_number) && (interview?.github_pr_number ?? 0) > 0) {
+    return {
+      status: 'github_pr_assigned',
+      kind: 'github_pr',
+      source: 'scheduled_interview.github_pr_number',
+      message: null,
+    };
+  }
+  if (interview?.matched_repo_id) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'matched_repo_without_pr',
+      message: 'Matched repository is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+    };
+  }
+  if (interview?.github_repo_url) {
+    return {
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'scheduled_repo_without_pr',
+      message: 'Repository workspace is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+    };
+  }
+  return {
+    status: 'missing_reviewable_task',
+    kind: null,
+    source: 'missing_repo_and_task',
+    message: 'This workspace interview has no repository, GitHub PR, or task assigned yet. Treat this as an assessment setup gap, not candidate evidence.',
+  };
+}
+
 function serializeWorkspaceSession(
   token: string,
   session: DevContainerSessionRow | null,
@@ -609,12 +675,14 @@ async function buildRoomWorkspacePayload(
     interview?.interview_type && WORKSPACE_INTERVIEW_TYPES.has(interview.interview_type),
   );
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
+  const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
   return {
     enabled,
     canLaunch: enabled && room.role === 'HOST',
-    repoUrl: interview?.github_repo_url ?? null,
+    repoUrl,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
+    challenge: buildRoomWorkspaceChallenge(interview, enabled),
     session: serializeWorkspaceSession(token, session),
   };
 }
@@ -1095,6 +1163,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
   const challengeBranch = githubPrChallengeRef(workspace.githubPrNumber);
+  const challenge = workspace.challenge;
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
     sessionId,
@@ -1121,6 +1190,12 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl: effectiveRepoUrl,
         challengeBranch,
+        matchedRepoId: workspace.matchedRepoId,
+        githubPrNumber: workspace.githubPrNumber,
+        challengeStatus: challenge.status,
+        challengeKind: challenge.kind,
+        challengeSource: challenge.source,
+        challengeMessage: challenge.message,
         agentType: 'devin',
         agentApiKey: c.env.DEVIN_API_KEY ?? null,
         pipeApiUrl: c.env.API_BASE_URL
@@ -1138,6 +1213,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
   return c.json({
     workspace: {
       ...workspace,
+      repoUrl: workspace.repoUrl ?? effectiveRepoUrl,
       session: serializeWorkspaceSession(token, session),
     },
   }, 201);

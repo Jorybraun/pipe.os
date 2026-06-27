@@ -11,6 +11,12 @@ const workspace: RoomWorkspace = {
   repoUrl: 'https://github.com/cloudflare/workers-sdk',
   githubPrNumber: 14435,
   matchedRepoId: 42,
+  challenge: {
+    status: 'github_pr_assigned',
+    kind: 'github_pr',
+    source: 'scheduled_interview.github_pr_number',
+    message: null,
+  },
   session: {
     sessionId: 'workspace-session-1',
     status: 'READY',
@@ -46,6 +52,10 @@ describe('buildCodeEditorOpenEvidence', () => {
         repoUrl: 'https://github.com/cloudflare/workers-sdk',
         githubPrNumber: 14435,
         matchedRepoId: 42,
+        challengeStatus: 'github_pr_assigned',
+        challengeKind: 'github_pr',
+        challengeSource: 'scheduled_interview.github_pr_number',
+        challengeMessage: null,
       },
     });
     expect(JSON.stringify(evidence)).not.toContain('secret-token');
@@ -77,6 +87,10 @@ describe('buildWorkspaceStateDesktopEvent', () => {
       repoUrl: 'https://github.com/cloudflare/workers-sdk',
       githubPrNumber: 14435,
       matchedRepoId: 42,
+      challengeStatus: 'github_pr_assigned',
+      challengeKind: 'github_pr',
+      challengeSource: 'scheduled_interview.github_pr_number',
+      challengeMessage: null,
       canLaunch: false,
       ttlSeconds: 3600,
       ttlSource: 'default',
@@ -101,6 +115,34 @@ describe('buildWorkspaceStateDesktopEvent', () => {
       repoUrl: 'https://github.com/example/repo',
       canLaunch: true,
       source: 'error',
+    });
+  });
+
+  it('records a matched repo with no PR as an explicit reviewable-task gap', () => {
+    const event = buildWorkspaceStateDesktopEvent({
+      workspace: {
+        ...workspace,
+        githubPrNumber: null,
+        challenge: {
+          status: 'missing_reviewable_task',
+          kind: 'repo_only',
+          source: 'matched_repo_without_pr',
+          message: 'Matched repository is available, but no GitHub PR or task was assigned.',
+        },
+      },
+      source: 'launch',
+    });
+
+    expect(event).toMatchObject({
+      kind: 'WORKSPACE_STATE_CHANGED',
+      status: 'READY',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      githubPrNumber: null,
+      matchedRepoId: 42,
+      challengeStatus: 'missing_reviewable_task',
+      challengeKind: 'repo_only',
+      challengeSource: 'matched_repo_without_pr',
+      challengeMessage: 'Matched repository is available, but no GitHub PR or task was assigned.',
     });
   });
 });

@@ -181,6 +181,10 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const repoUrl = stringOrNull(event.repoUrl);
     const githubPrNumber = numberOrNull(event.githubPrNumber);
     const matchedRepoId = numberOrNull(event.matchedRepoId);
+    const challengeStatus = stringOrNull(event.challengeStatus);
+    const challengeKind = stringOrNull(event.challengeKind);
+    const challengeSource = stringOrNull(event.challengeSource);
+    const challengeMessage = stringOrNull(event.challengeMessage);
     const ttlSeconds = numberOrNull(event.ttlSeconds);
     const ttlSource = stringOrNull(event.ttlSource);
     const expiresAt = stringOrNull(event.expiresAt);
@@ -190,6 +194,10 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     if (repoUrl) properties.repoUrl = repoUrl;
     if (githubPrNumber !== null) properties.githubPrNumber = githubPrNumber;
     if (matchedRepoId !== null) properties.matchedRepoId = matchedRepoId;
+    if (challengeStatus) properties.challengeStatus = challengeStatus;
+    if (challengeKind) properties.challengeKind = challengeKind;
+    if (challengeSource) properties.challengeSource = challengeSource;
+    if (challengeMessage) properties.challengeMessage = challengeMessage;
     if (typeof event.canLaunch === 'boolean') properties.canLaunch = event.canLaunch;
     if (ttlSeconds !== null) properties.ttlSeconds = ttlSeconds;
     if (ttlSource) properties.ttlSource = ttlSource;

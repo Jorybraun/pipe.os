@@ -886,6 +886,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const workspaceChallengeMessage = workspace?.challenge?.status === 'missing_reviewable_task'
+    ? workspace.challenge.message
+    : null;
   const clippyAgentUnavailableMessage = !hasWorkspaceFeature
     ? 'This room was not configured with a dev workspace. Room chat still goes to people; Clippy/Devin chat requires a real container workspace.'
     : workspaceSession?.status === 'LAUNCHING'
@@ -1215,6 +1218,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     {workspaceLoading ? <Loader2 size={14} className="spin" /> : <SquareTerminal size={14} />}
                     Launch workspace
                   </button>
+                  {workspaceChallengeMessage && (
+                    <p className="prejoin-workspace-diagnostic">{workspaceChallengeMessage}</p>
+                  )}
                   {workspaceError && <p className="prejoin-workspace-error">{workspaceError}</p>}
                 </>
               )}
@@ -1739,7 +1745,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     : workspaceSession?.errorMessage
                       ? workspaceSession.errorMessage
                       : workspaceError
-                        ? workspaceError
+                      ? workspaceError
+                      : workspaceChallengeMessage
+                        ? workspaceChallengeMessage
                         : metadata.role === 'HOST'
                           ? 'Launch a repo into a live code-server workspace for this call.'
                           : 'The host can launch the live code workspace.'}

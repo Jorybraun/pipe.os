@@ -45,12 +45,34 @@ export interface RoomWorkspaceSession {
   errorMessage: string | null;
 }
 
+export type RoomWorkspaceChallengeStatus =
+  | 'github_pr_assigned'
+  | 'missing_reviewable_task'
+  | 'not_configured';
+
+export type RoomWorkspaceChallengeKind = 'github_pr' | 'repo_only' | null;
+
+export type RoomWorkspaceChallengeSource =
+  | 'scheduled_interview.github_pr_number'
+  | 'matched_repo_without_pr'
+  | 'scheduled_repo_without_pr'
+  | 'missing_repo_and_task'
+  | 'workspace_not_enabled';
+
+export interface RoomWorkspaceChallenge {
+  status: RoomWorkspaceChallengeStatus;
+  kind: RoomWorkspaceChallengeKind;
+  source: RoomWorkspaceChallengeSource;
+  message: string | null;
+}
+
 export interface RoomWorkspace {
   enabled: boolean;
   canLaunch: boolean;
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
+  challenge: RoomWorkspaceChallenge;
   session: RoomWorkspaceSession | null;
 }
 

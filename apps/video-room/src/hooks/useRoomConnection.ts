@@ -153,6 +153,10 @@ export type RoomDesktopEvent =
       repoUrl?: string | null;
       githubPrNumber?: number | null;
       matchedRepoId?: number | null;
+      challengeStatus?: string | null;
+      challengeKind?: string | null;
+      challengeSource?: string | null;
+      challengeMessage?: string | null;
       canLaunch?: boolean;
       ttlSeconds?: number | null;
       ttlSource?: string | null;
@@ -198,6 +202,10 @@ export type RoomDesktopEventDraft =
       repoUrl?: string | null;
       githubPrNumber?: number | null;
       matchedRepoId?: number | null;
+      challengeStatus?: string | null;
+      challengeKind?: string | null;
+      challengeSource?: string | null;
+      challengeMessage?: string | null;
       canLaunch?: boolean;
       ttlSeconds?: number | null;
       ttlSource?: string | null;
@@ -425,6 +433,10 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       repoUrl: stringOrNull(value.repoUrl),
       githubPrNumber: numberOrNull(value.githubPrNumber),
       matchedRepoId: numberOrNull(value.matchedRepoId),
+      challengeStatus: stringOrNull(value.challengeStatus),
+      challengeKind: stringOrNull(value.challengeKind),
+      challengeSource: stringOrNull(value.challengeSource),
+      challengeMessage: stringOrNull(value.challengeMessage),
       canLaunch: booleanOrUndefined(value.canLaunch),
       ttlSeconds: numberOrNull(value.ttlSeconds),
       ttlSource: stringOrNull(value.ttlSource),

@@ -690,7 +690,10 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       completed_at TEXT,
       updated_at TEXT
     );
-    CREATE TABLE qualified_repos (id INTEGER PRIMARY KEY);
+    CREATE TABLE qualified_repos (
+      id INTEGER PRIMARY KEY,
+      github_url TEXT
+    );
     CREATE TABLE dev_container_sessions (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL UNIQUE,
@@ -1927,6 +1930,94 @@ describe('meeting room recording living-context route', () => {
       roomToken: created.hostToken,
     }));
     expect(JSON.stringify(body)).not.toContain('test-devin-api-key');
+  });
+
+  it('surfaces a matched repo without a PR as a missing reviewable task diagnostic', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    sqlite.prepare(
+      `INSERT INTO qualified_repos (id, github_url)
+       VALUES (?, ?)`,
+    ).run(987, 'https://github.com/pipe/source-backed-worker');
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, matched_repo_id, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, 'INVITED', ?)`,
+    ).run('scheduled-interview-matched-repo-gap', 987, new Date().toISOString());
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Matched Repo Guest',
+        recipientEmail: 'matched-repo-guest@example.com',
+        title: 'Matched repo challenge gap',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-interview-matched-repo-gap',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        repoUrl: string;
+        githubPrNumber: number | null;
+        matchedRepoId: number;
+        challenge: {
+          status: string;
+          kind: string | null;
+          source: string;
+          message: string | null;
+        };
+        session: { sessionId: string };
+      };
+    };
+
+    expect(body.workspace.repoUrl).toBe('https://github.com/pipe/source-backed-worker');
+    expect(body.workspace.githubPrNumber).toBeNull();
+    expect(body.workspace.matchedRepoId).toBe(987);
+    expect(body.workspace.challenge).toMatchObject({
+      status: 'missing_reviewable_task',
+      kind: 'repo_only',
+      source: 'matched_repo_without_pr',
+    });
+    expect(body.workspace.challenge.message).toContain('no GitHub PR or task was assigned');
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      matchedRepoId: 987,
+      githubPrNumber: null,
+      challengeStatus: 'missing_reviewable_task',
+      challengeKind: 'repo_only',
+      challengeSource: 'matched_repo_without_pr',
+    }));
   });
 
   it('keeps standard meeting rooms off the workspace desktop path', async () => {

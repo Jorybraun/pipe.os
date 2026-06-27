@@ -16,6 +16,10 @@ export interface WorkspaceStateDesktopEvent {
   repoUrl: string | null;
   githubPrNumber: number | null;
   matchedRepoId: number | null;
+  challengeStatus: string | null;
+  challengeKind: string | null;
+  challengeSource: string | null;
+  challengeMessage: string | null;
   canLaunch: boolean;
   ttlSeconds: number | null;
   ttlSource: string | null;
@@ -47,6 +51,10 @@ export function buildCodeEditorOpenEvidence(input: {
       repoUrl: input.workspace?.repoUrl ?? null,
       githubPrNumber: input.workspace?.githubPrNumber ?? null,
       matchedRepoId: input.workspace?.matchedRepoId ?? null,
+      challengeStatus: input.workspace?.challenge?.status ?? null,
+      challengeKind: input.workspace?.challenge?.kind ?? null,
+      challengeSource: input.workspace?.challenge?.source ?? null,
+      challengeMessage: input.workspace?.challenge?.message ?? null,
     },
   };
 }
@@ -67,6 +75,10 @@ export function buildWorkspaceStateDesktopEvent(input: {
     repoUrl: input.workspace?.repoUrl ?? input.fallbackRepoUrl ?? null,
     githubPrNumber: input.workspace?.githubPrNumber ?? null,
     matchedRepoId: input.workspace?.matchedRepoId ?? null,
+    challengeStatus: input.workspace?.challenge?.status ?? null,
+    challengeKind: input.workspace?.challenge?.kind ?? null,
+    challengeSource: input.workspace?.challenge?.source ?? null,
+    challengeMessage: input.workspace?.challenge?.message ?? null,
     canLaunch: Boolean(input.workspace?.canLaunch),
     ttlSeconds: session?.ttlSeconds ?? null,
     ttlSource: session?.ttlSource ?? null,

@@ -898,6 +898,12 @@ button:focus-visible {
   color: var(--ember-hot);
 }
 
+.prejoin-workspace-diagnostic {
+  font: 400 11px/1.45 var(--mono);
+  color: #facc15;
+  margin: 0;
+}
+
 .workspace-refresh {
   display: inline-flex;
   align-items: center;
