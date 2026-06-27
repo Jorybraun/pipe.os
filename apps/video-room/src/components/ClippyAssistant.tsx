@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { initAgent } from 'clippyjs';
 import ClippyLoaders from 'clippyjs/agents/clippy';
-import { useAgentConnection, type AgentChatMessage, type AgentRoomAction } from '../hooks/useAgentConnection';
+import {
+  useAgentConnection,
+  type AgentChatMessage,
+  type AgentRoomAction,
+  type AgentStatus,
+} from '../hooks/useAgentConnection';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
 
@@ -29,6 +34,7 @@ export interface ClippyAssistantProps {
   onAgentRoomAction?: (action: AgentRoomAction) => void;
   onUserChatMessage?: (text: string) => void;
   onAgentChatMessage?: (message: AgentChatMessage) => void;
+  onAgentStatus?: (status: AgentStatus, agentName: string) => void;
 }
 
 export function ClippyAssistant({
@@ -43,6 +49,7 @@ export function ClippyAssistant({
   onAgentRoomAction,
   onUserChatMessage,
   onAgentChatMessage,
+  onAgentStatus,
 }: ClippyAssistantProps) {
   const agentRef = useRef<Agent | null>(null);
   const [ready, setReady] = useState(false);
@@ -52,6 +59,7 @@ export function ClippyAssistant({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
+  const capturedAgentStatusRef = useRef<string | null>(null);
 
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
@@ -143,6 +151,14 @@ export function ClippyAssistant({
       onAgentChatMessage?.(msg);
     }
   }, [agentConn.messages, onAgentChatMessage]);
+
+  useEffect(() => {
+    if (!agentEnabled) return;
+    const signature = `${agentConn.agentName}|${agentConn.status}`;
+    if (capturedAgentStatusRef.current === signature) return;
+    capturedAgentStatusRef.current = signature;
+    onAgentStatus?.(agentConn.status, agentConn.agentName);
+  }, [agentConn.agentName, agentConn.status, agentEnabled, onAgentStatus]);
 
   const latestAgentRoomAction = agentConn.roomActions[agentConn.roomActions.length - 1] ?? null;
   const latestAgentRoomActionSignature = latestAgentRoomAction

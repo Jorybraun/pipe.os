@@ -39,7 +39,12 @@ import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
 import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
-import type { AgentChatMessage, AgentRoomAction } from './hooks/useAgentConnection';
+import {
+  agentStatusEvidenceText,
+  type AgentChatMessage,
+  type AgentRoomAction,
+  type AgentStatus,
+} from './hooks/useAgentConnection';
 import { BrowserWindow } from './components/BrowserWindow';
 import { TerminalWindow } from './components/TerminalWindow';
 import { NotepadWindow } from './components/NotepadWindow';
@@ -1323,6 +1328,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
+  const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
+    captureSessionEvent('ai_agent_status', agentStatusEvidenceText(status, agentName), 'agent', {
+      source: 'clippy_agent_bridge',
+      agent: agentName,
+      status,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
+    });
+  };
+
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
@@ -1653,6 +1670,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onAgentRoomAction={handleAgentRoomAction}
           onUserChatMessage={captureClippyUserChatMessage}
           onAgentChatMessage={captureClippyAgentChatMessage}
+          onAgentStatus={captureClippyAgentStatus}
         />
       )}
       {room.phase === 'ended' && (

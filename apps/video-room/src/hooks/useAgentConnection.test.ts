@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { parseAgentBridgeMessage } from './useAgentConnection';
+import { agentStatusEvidenceText, parseAgentBridgeMessage } from './useAgentConnection';
 
 describe('parseAgentBridgeMessage', () => {
+  it('parses real Devin bridge status without fabricating a chat response', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_STATUS',
+      status: 'auth_needed',
+    })).toEqual({
+      kind: 'status',
+      status: 'auth_needed',
+    });
+  });
+
   it('normalizes Devin room action messages into safe Clippy actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'ROOM_ACTION',
@@ -49,5 +59,17 @@ describe('parseAgentBridgeMessage', () => {
       authUrl: null,
       message: 'Real Devin credentials are required.',
     });
+  });
+
+  it('turns bridge status into explicit evidence text', () => {
+    expect(agentStatusEvidenceText('auth_needed', 'devin')).toBe(
+      'devin requires real authentication before it can assist.',
+    );
+    expect(agentStatusEvidenceText('working', 'devin')).toBe(
+      'devin is working on the candidate request.',
+    );
+    expect(agentStatusEvidenceText('disconnected', 'devin')).toBe(
+      'devin bridge is disconnected.',
+    );
   });
 });

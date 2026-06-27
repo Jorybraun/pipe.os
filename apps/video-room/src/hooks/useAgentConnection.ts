@@ -178,6 +178,24 @@ function parseRoomActions(value: unknown): AgentRoomAction[] {
     .filter((entry): entry is AgentRoomAction => entry !== null);
 }
 
+export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
+  const name = agentName.trim() || 'devin';
+  switch (status) {
+    case 'auth_needed':
+      return `${name} requires real authentication before it can assist.`;
+    case 'thinking':
+      return `${name} is thinking about the candidate request.`;
+    case 'working':
+      return `${name} is working on the candidate request.`;
+    case 'idle':
+      return `${name} is ready.`;
+    case 'disconnected':
+      return `${name} bridge is disconnected.`;
+    default:
+      return `${name} status: ${status}`;
+  }
+}
+
 export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessage {
   if (!isRecord(value)) return { kind: 'ignored' };
   if (value.type === 'AGENT_STATUS') {

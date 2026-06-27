@@ -111,6 +111,9 @@ The controlling product rule remains:
 - Terminal windows now capture completed dev-container commands and bounded
   output chunks as source-backed `meeting_session_event` evidence with
   workspace session and repo metadata.
+- Clippy/Devin bridge status transitions now persist as source-backed
+  `meeting_session_event` evidence, including real auth-required or
+  disconnected states instead of simulated agent availability.
 - The canonical assessment event spine now persists `assessment_sessions`,
   immutable evidence events with exact source refs, state transitions, and
   source-backed evaluation reports.
