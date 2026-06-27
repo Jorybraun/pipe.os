@@ -1414,6 +1414,34 @@ describe('meeting room recording living-context route', () => {
         },
         {
           role: 'HOST',
+          recordedAt: 1700000000500,
+          event: {
+            id: 'evt-browser-move-1',
+            clientId: 'host-client',
+            createdAt: 1700000000500,
+            kind: 'UPDATE_WINDOW_STATE',
+            windowId: 'browser',
+            x: 120,
+            y: 80,
+            focused: true,
+          },
+        },
+        {
+          role: 'HOST',
+          recordedAt: 1700000000600,
+          event: {
+            id: 'evt-browser-move-2',
+            clientId: 'host-client',
+            createdAt: 1700000000600,
+            kind: 'UPDATE_WINDOW_STATE',
+            windowId: 'browser',
+            x: 180,
+            y: 120,
+            focused: true,
+          },
+        },
+        {
+          role: 'HOST',
           recordedAt: 1700000001000,
           event: {
             id: 'evt-workspace-ready',
@@ -1528,6 +1556,8 @@ describe('meeting room recording living-context route', () => {
     };
     expect(graphBody.events.map((event) => event.nodeType)).toEqual([
       'session_room_surface_change',
+      'session_window_update',
+      'session_window_update',
       'session_workspace_state',
       'session_chat_message',
       'session_clippy_prompt',
@@ -1548,7 +1578,20 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(5);
+    expect(nodeCountAfterFirstRead.count).toBe(7);
+    const windowUpdateRows = sqlite.prepare(
+      `SELECT extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND source_type = 'meeting_session'
+          AND node_type = 'session_window_update'
+        ORDER BY captured_at ASC, id ASC`,
+    ).all(graphBody.candidateId) as Array<{ extracted_properties_json: string }>;
+    expect(windowUpdateRows).toHaveLength(2);
+    expect(windowUpdateRows.map((row) => JSON.parse(row.extracted_properties_json).roomEventId).sort()).toEqual([
+      'evt-browser-move-1',
+      'evt-browser-move-2',
+    ]);
 
     const secondGraphRes = await app.request(`/meeting/${created.hostToken}/context-graph`, {
       method: 'GET',
@@ -1559,7 +1602,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(5);
+    expect(nodeCountAfterSecondRead.count).toBe(7);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));

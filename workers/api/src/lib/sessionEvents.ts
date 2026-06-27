@@ -481,6 +481,20 @@ function eventToNodePayload(event: SessionEvent): Omit<CandidateNode, 'id' | 'cr
   };
 }
 
+function sessionEventIngestionKey(event: SessionEvent): string {
+  const properties = jsonObject(event.properties);
+  return [
+    'meeting_session_event_v2',
+    event.candidateId,
+    event.sessionId,
+    event.type,
+    event.actor,
+    String(event.timestamp),
+    event.text,
+    stableJson(properties),
+  ].join('\u0000');
+}
+
 function mapEventTypeToNodeType(type: SessionEventType): string {
   const mapping: Record<SessionEventType, string> = {
     chat_message: 'session_chat_message',
@@ -797,7 +811,9 @@ export async function captureSessionEvent(
 ): Promise<CandidateNode | null> {
   try {
     const payload = eventToNodePayload(event);
-    const node = await insertCandidateNode(db, payload);
+    const node = await insertCandidateNode(db, payload, {
+      ingestionKeyOverride: sessionEventIngestionKey(event),
+    });
     await persistSessionEventContextRecord(db, event, node);
 
     // Fire-and-forget write to Neo4j graph
@@ -832,7 +848,9 @@ export async function captureSessionEvents(
   for (const event of events) {
     try {
       const payload = eventToNodePayload(event);
-      const node = await insertCandidateNode(db, payload);
+      const node = await insertCandidateNode(db, payload, {
+        ingestionKeyOverride: sessionEventIngestionKey(event),
+      });
       await persistSessionEventContextRecord(db, event, node);
       nodes.push(node);
       captured++;

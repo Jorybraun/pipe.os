@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — 95 Until Infinity desktop tools
 
 - Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
+- Meeting-session event replay now keys evidence on stable event properties, preserving distinct repeated Win95 interactions such as multiple browser/window moves while keeping Durable Object replays idempotent.
 - The VideoRoom Durable Object now lets host and guest participants switch the shared room surface, so returning from 95 Until Infinity to the standard call syncs both screens instead of rejecting guest surface changes.
 - Clippy/Devin chat now opens from a Win95 taskbar tray paperclip beside the clock even before the workspace is ready, clearly distinguishes real Devin availability from Room Chat, and lets users restore Clippy after dismissing the prompt.
 - The video-room package now owns its Clippy/Win95 component test harness, preventing duplicate React renderers from invalidating the real-agent chat and taskbar tray tests.
