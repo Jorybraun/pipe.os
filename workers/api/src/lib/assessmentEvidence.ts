@@ -338,11 +338,36 @@ export interface RepoTaskEvaluationDimension {
   gaps: readonly AssessmentDiagnostic[];
 }
 
-export interface FinalRepoTaskAssessmentOutput {
+export interface RepoTaskEvaluationOverall {
+  score: number | null;
+  maxScore: number;
+  recommendation:
+    | 'strong_evidence_to_advance'
+    | 'mixed_evidence_human_review'
+    | 'insufficient_evidence'
+    | 'not_demonstrated';
+  narrative: string;
+  supportingClaims: readonly SourceBackedClaim[];
+}
+
+export interface EvaluatedRepoTaskAssessmentOutput {
+  schemaVersion: 'repo-task-assessment-output-v1';
+  mode: RepoTaskAssessmentMode;
+  status: 'EVALUATED';
+  match: CandidateRepoTaskMatch;
+  submissionSourceRefs: NonEmptyArray<ExactSourceRef>;
+  aiUsage: readonly AiUsageEvidence[];
+  dimensions: NonEmptyArray<RepoTaskEvaluationDimension>;
+  overall: Omit<RepoTaskEvaluationOverall, 'supportingClaims'> & {
+    supportingClaims: NonEmptyArray<SourceBackedClaim>;
+  };
+  diagnostics: readonly AssessmentDiagnostic[];
+}
+
+export interface DiagnosticRepoTaskAssessmentOutput {
   schemaVersion: 'repo-task-assessment-output-v1';
   mode: RepoTaskAssessmentMode;
   status:
-    | 'EVALUATED'
     | 'NEEDS_MORE_EVIDENCE'
     | 'NO_ROLE_SAFE_CHALLENGE'
     | 'PROVENANCE_INCOMPLETE'
@@ -352,19 +377,13 @@ export interface FinalRepoTaskAssessmentOutput {
   submissionSourceRefs: readonly ExactSourceRef[];
   aiUsage: readonly AiUsageEvidence[];
   dimensions: readonly RepoTaskEvaluationDimension[];
-  overall: {
-    score: number | null;
-    maxScore: number;
-    recommendation:
-      | 'strong_evidence_to_advance'
-      | 'mixed_evidence_human_review'
-      | 'insufficient_evidence'
-      | 'not_demonstrated';
-    narrative: string;
-    supportingClaims: readonly SourceBackedClaim[];
-  };
-  diagnostics: readonly AssessmentDiagnostic[];
+  overall: RepoTaskEvaluationOverall;
+  diagnostics: NonEmptyArray<AssessmentDiagnostic>;
 }
+
+export type FinalRepoTaskAssessmentOutput =
+  | EvaluatedRepoTaskAssessmentOutput
+  | DiagnosticRepoTaskAssessmentOutput;
 
 export interface AssessmentEvidencePacket {
   mode: AssessmentMode;
