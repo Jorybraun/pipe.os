@@ -74,11 +74,13 @@ function fakeD1(options: {
   } as unknown as FakeD1;
 }
 
-function fakeStorage(text: string): R2Bucket {
+function fakeStorage(text: string | null): R2Bucket {
   return {
-    get: vi.fn(async () => ({
-      text: async () => text,
-    })),
+    get: vi.fn(async () => text === null
+      ? null
+      : ({
+          text: async () => text,
+        })),
   } as unknown as R2Bucket;
 }
 
@@ -173,6 +175,21 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       && call.sql.includes("current_step = 'retry_queued'")
       && call.params[0] === 'candidate-2'
     )).toBe(true);
+    const retryEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-candidate-2'
+      && call.params[4] === 'ingestion_retry_queued'
+    );
+    expect(retryEventCall).toBeDefined();
+    expect(JSON.parse(retryEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'candidate_rpc',
+      reason: 'stale_workers_ai_model_failure',
+      sourceRef: {
+        type: 'text_intake_r2_object',
+        key: 'text-intake/candidate-2/source',
+      },
+    });
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'candidate-2',
       resumeText: expect.stringContaining('collaborative editors'),
@@ -214,5 +231,59 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
     }));
+    const retryEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-oldest'
+      && call.params[4] === 'ingestion_retry_queued'
+    );
+    expect(retryEventCall).toBeDefined();
+    expect(JSON.parse(retryEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'scheduled_worker',
+      originalErrorText: expect.stringContaining('5028'),
+      sourceRef: {
+        type: 'text_intake_r2_object',
+        key: 'text-intake/oldest/source',
+      },
+    });
+  });
+
+  it('records append-only retry failure evidence when the original source is missing', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db, fakeStorage(null));
+
+    await retryCandidateEvidenceIngestionFromSource(
+      env,
+      'missing-source',
+      'text-intake/missing-source/source',
+      {
+        trigger: 'scheduled_worker',
+        originalErrorText: 'Discovery failed: 5028 deprecated model',
+      },
+    );
+
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('candidate_ingestion')
+      && call.params[0] === 'missing-source'
+      && String(call.params[1]).includes('Retry failed: original text intake source not found')
+    )).toBe(true);
+    const failureEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-missing-source'
+      && call.params[4] === 'ingestion_retry_failed'
+    );
+    expect(failureEventCall).toBeDefined();
+    expect(JSON.parse(failureEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'scheduled_worker',
+      reason: 'stale_workers_ai_model_failure',
+      originalErrorText: 'Discovery failed: 5028 deprecated model',
+      errorText: expect.stringContaining('Retry failed: original text intake source not found'),
+      sourceRef: {
+        type: 'text_intake_r2_object',
+        key: 'text-intake/missing-source/source',
+      },
+    });
   });
 });

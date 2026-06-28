@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
-- Scheduled Worker repair now requeues stale/deprecated Workers AI candidate-discovery failures from the original R2 CV/text source in bounded batches, so old `Challenge needs attention` rows can self-heal without fabricating match evidence.
+- Scheduled Worker repair now requeues stale/deprecated Workers AI candidate-discovery failures from the original R2 CV/text source in bounded batches and writes append-only retry/failure session events, so old `Challenge needs attention` rows can self-heal without fabricating match evidence.
 - Workers AI model routing now remaps all Cloudflare models listed in the 2026-05-30 deprecation catalog before candidate/repo matching inference, preventing stale environment overrides from blocking source-backed challenge discovery.
 - Code-review scoring now rejects missing BARS dimension scores, source evidence, or narrative output instead of defaulting incomplete scorer JSON to midpoint assessments.
 - Candidate discovery no longer defaults missing or malformed `greenfield_ratio` evidence to `0.5`; repo matching prompts now receive `null` unless the model produced a valid source-backed number.

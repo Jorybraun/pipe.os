@@ -202,7 +202,9 @@ The controlling product rule remains:
   both room RPC refresh and the scheduled Worker: the retry reopens the original
   R2 text/PDF source, marks ingestion `retry_queued`, and reruns the normal
   source-backed candidate evidence pipeline instead of clearing errors or
-  fabricating fallback match evidence.
+  fabricating fallback match evidence. Retry queue/failure decisions also write
+  append-only `session_events` entries with the trigger and original source ref
+  so recovery itself is part of the evidence trail.
 - Live peer cursor presence now keeps one receive-timestamped cursor per remote
   role and renders movement with transform-only compositing, so host/guest
   pointer presence stays synced without stale visual trails.
