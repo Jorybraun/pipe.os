@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clippy’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Clippy’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
 - Room Chat’s paperclip launcher now records `clippy_chat_ui` provenance instead of misattributing the Clippy open action to the Win95 taskbar tray.
-- Closing the Clippy chat window now clears the Win95 tray active state and persists a source-backed `clippy_chat_ui` close action instead of disappearing as local-only UI state.
+- Closing the Clippy chat window now only closes the chat panel and persists a source-backed `clippy_chat_ui` close action, keeping the Win95 tray Clippy entrypoint mounted for the next real-agent interaction.
 - Clippy chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Clippy action evidence before opening the shared terminal window.
 - Clippy “Check Devin auth” clicks now emit source-backed human UI action evidence before the bridge re-runs real Devin CLI auth preflight, keeping auth recovery intent separate from bridge diagnostics.
 - Clippy auth-needed chat now includes a real “Check Devin auth” retry after terminal login, reusing the container bridge auth preflight so Devin only becomes ready after the CLI reports a stored login.

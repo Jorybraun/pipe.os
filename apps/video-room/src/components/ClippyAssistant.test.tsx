@@ -116,6 +116,32 @@ describe('ClippyAssistant', () => {
     expect(screen.queryByTestId('clippy-chat')).toBeNull();
   });
 
+  it('keeps the proactive Clippy prompt mounted when only the chat panel closes', async () => {
+    const onChatClose = vi.fn();
+    const onDismiss = vi.fn();
+
+    render(
+      <ClippyAssistant
+        messages={[{ text: 'Need help opening the workspace?', hold: true }]}
+        onDismiss={onDismiss}
+        onChatClose={onChatClose}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={1}
+      />,
+    );
+
+    expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
+    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+
+    fireEvent.click(screen.getByTestId('clippy-chat-close'));
+
+    expect(onChatClose).toHaveBeenCalledTimes(1);
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('clippy-chat')).toBeNull();
+    expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
+  });
+
   it('does not render or enable a fake Devin identity before the bridge reports an agent name', async () => {
     const sendMessage = vi.fn(() => null);
     mockAgentConnection({

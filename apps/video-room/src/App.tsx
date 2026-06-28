@@ -1183,7 +1183,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
   const closeClippyChat = (): void => {
     captureClippyUiAction('close-clippy-chat', 'chat');
-    setClippyVisible(false);
   };
   const dismissClippy = (): void => {
     captureClippyUiAction('dismiss-clippy', 'prompt');
