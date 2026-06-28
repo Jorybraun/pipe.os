@@ -3695,6 +3695,88 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(inviteBody.deliveredUrl).toContain(`/assess/${row.invite_token}`);
   });
 
+  it('delivers distinct assessment links for multiple standalone assessment interviews with the same email', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const firstCreateResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        githubRepoUrl: 'https://github.com/hash-pipe/review-task',
+        githubPrNumber: 42,
+      }),
+    });
+    expect(firstCreateResponse.status).toBe(201);
+    const firstCreated = await firstCreateResponse.json() as {
+      interview: { id: string; candidateId: string | null };
+    };
+    expect(firstCreated.interview.candidateId).toBeNull();
+
+    const secondCreateResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+      }),
+    });
+    expect(secondCreateResponse.status).toBe(201);
+    const secondCreated = await secondCreateResponse.json() as {
+      interview: { id: string; candidateId: string | null };
+    };
+    expect(secondCreated.interview.candidateId).toBeNull();
+
+    const firstInviteResponse = await app.request(`/interviews/${firstCreated.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'katherine@example.com', sendEmail: false }),
+    });
+    expect(firstInviteResponse.status).toBe(200);
+    const firstInvite = await firstInviteResponse.json() as { deliveredUrl: string };
+
+    const secondInviteResponse = await app.request(`/interviews/${secondCreated.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'katherine@example.com', sendEmail: false }),
+    });
+    expect(secondInviteResponse.status).toBe(200);
+    const secondInvite = await secondInviteResponse.json() as { deliveredUrl: string };
+
+    expect(firstInvite.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
+    expect(secondInvite.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
+    expect(firstInvite.deliveredUrl).not.toBe(secondInvite.deliveredUrl);
+
+    const rows = sqlite!.prepare(
+      `SELECT si.id, si.interview_type, si.candidate_id, c.invite_token
+         FROM scheduled_interviews si
+         JOIN candidates c ON c.id = si.candidate_id
+        WHERE lower(c.email) = 'katherine@example.com'
+        ORDER BY si.created_at ASC`,
+    ).all() as Array<{
+      id: string;
+      interview_type: string;
+      candidate_id: string;
+      invite_token: string;
+    }>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.id)).toEqual([
+      firstCreated.interview.id,
+      secondCreated.interview.id,
+    ]);
+    expect(new Set(rows.map((row) => row.invite_token)).size).toBe(2);
+    expect(firstInvite.deliveredUrl).toContain(`/assess/${rows[0]?.invite_token}`);
+    expect(secondInvite.deliveredUrl).toContain(`/assess/${rows[1]?.invite_token}`);
+  });
+
   it('rejects CODE_REVIEW with partial manual repo (url without PR number)', async () => {
     seedDevContainerFixture();
     const app = mountSchedulingApp();

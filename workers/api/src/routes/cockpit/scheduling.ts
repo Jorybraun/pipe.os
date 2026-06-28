@@ -1503,21 +1503,9 @@ async function ensureStandaloneCandidateForInterview(
 ): Promise<{ candidateId: string; inviteToken: string }> {
   const email = recipient.email.trim().toLowerCase();
   const name = recipient.name.trim();
-  const existing = await db
-    .prepare('SELECT id, invite_token FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
-    .bind(ownerId, email)
-    .first<{ id: string; invite_token: string }>();
-
-  if (existing) {
-    // Link the interview to this candidate if not already linked
-    await db
-      .prepare('UPDATE scheduled_interviews SET candidate_id = ?, updated_at = ? WHERE id = ? AND candidate_id IS NULL')
-      .bind(existing.id, new Date().toISOString(), interviewId)
-      .run();
-    const inviteToken = await ensureUsableCandidateInviteToken(db, existing.id, existing.invite_token);
-    return { candidateId: existing.id, inviteToken };
-  }
-
+  // The contact/person graph deduplicates the human by email. A standalone
+  // assessment invite still needs its own candidate/application token so two
+  // active assessment links for the same person do not route to the latest row.
   const candidateId = crypto.randomUUID();
   const inviteToken = crypto.randomUUID();
   const now = new Date().toISOString();
