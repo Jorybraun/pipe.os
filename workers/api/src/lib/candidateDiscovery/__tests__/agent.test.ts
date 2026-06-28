@@ -114,6 +114,64 @@ describe('discoverCandidateProfile', () => {
     expect(result.keyConcepts.seniority).toBeNull();
   });
 
+  it('does not fabricate a greenfield ratio when model output is unsupported', async () => {
+    const provider = makeStubProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['go'],
+        niceToHaveSkills: [],
+        seniority: 'senior',
+        primary_language: 'go',
+        detected_domain: 'infrastructure',
+      },
+      career_context: {
+        company_stages: ['growth'],
+        company_size_exposure: ['200-1000'],
+        tenure_pattern: 'stable',
+        progression_velocity: 'normal',
+        ownership_depth: 'service',
+        system_scale_exposure: ['distributed-systems'],
+        greenfield_ratio: 'unclear',
+      },
+    });
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['Go'] },
+    });
+
+    expect(result.careerContext.greenfield_ratio).toBeNull();
+  });
+
+  it('preserves a source-backed greenfield ratio when the model provides a valid number', async () => {
+    const provider = makeStubProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['go'],
+        niceToHaveSkills: [],
+        seniority: 'senior',
+        primary_language: 'go',
+        detected_domain: 'infrastructure',
+      },
+      career_context: {
+        company_stages: ['growth'],
+        company_size_exposure: ['200-1000'],
+        tenure_pattern: 'stable',
+        progression_velocity: 'normal',
+        ownership_depth: 'service',
+        system_scale_exposure: ['distributed-systems'],
+        greenfield_ratio: 0.75,
+      },
+    });
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['Go'] },
+    });
+
+    expect(result.careerContext.greenfield_ratio).toBe(0.75);
+  });
+
   it('dedupes and normalizes skill arrays', async () => {
     const provider = makeStubProvider({
       candidate_searchable_profile: PROFILE_400,

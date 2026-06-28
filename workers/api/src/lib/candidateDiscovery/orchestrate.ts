@@ -790,7 +790,7 @@ export async function loadDiscoveryResultFromDb(
       progression_velocity: 'unknown' as const,
       ownership_depth: 'unknown' as const,
       system_scale_exposure: [],
-      greenfield_ratio: 0,
+      greenfield_ratio: null,
     }),
     situationSignature: safeJson(row.situation_signature_json, {
       primary_challenge_types: [],

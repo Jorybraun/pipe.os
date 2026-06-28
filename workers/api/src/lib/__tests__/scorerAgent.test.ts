@@ -39,6 +39,14 @@ function workersAiReportJson(): string {
   });
 }
 
+function workersAiReportWithoutDimensionJson(): string {
+  const report = JSON.parse(workersAiReportJson()) as {
+    dimensions: Record<string, unknown>;
+  };
+  delete report.dimensions.ai_direction;
+  return JSON.stringify(report);
+}
+
 function makeAi(responses: Array<unknown | Error>): { ai: Ai; calls: string[] } {
   const calls: string[] = [];
   return {
@@ -102,5 +110,23 @@ describe('scoreReviewSession Workers AI path', () => {
     expect(calls.length).toBe(2);
     expect(calls[0]).toBe('@cf/openai/gpt-oss-20b');
     expect(report.overall.narrative).toContain('reliability');
+  });
+
+  it('rejects missing dimension scores instead of fabricating midpoint scores', async () => {
+    const missingDimension = { response: workersAiReportWithoutDimensionJson() };
+    const { ai } = makeAi([
+      missingDimension,
+      missingDimension,
+      missingDimension,
+      missingDimension,
+    ]);
+
+    await expect(scoreReviewSession({
+      apiKey: '',
+      provider: 'workers-ai',
+      ai,
+      transcript: { rounds: [{ reviewer_comments: [{ body: 'Blocking duplicate writes.' }] }] },
+      groundTruth: [{ id: 1, severity: 'major', description: 'Duplicate writes.' }],
+    })).rejects.toThrow('Missing or invalid required dimension score: ai_direction');
   });
 });

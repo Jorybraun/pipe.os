@@ -92,9 +92,10 @@ and structure.
    - system_scale_exposure: string[] — kinds of systems they've worked on
      (e.g. "monolith", "microservices", "distributed-systems", "high-throughput",
      "event-driven", "serverless"). Infer from architecture descriptions.
-   - greenfield_ratio: number — estimate 0.0–1.0 of how much of their career
-     was spent building new systems vs. maintaining existing ones. Default 0.5
-     if unclear.
+   - greenfield_ratio: number | null — estimate 0.0–1.0 of how much of their
+     career was spent building new systems vs. maintaining existing ones only
+     when the resume explicitly supports it. Use null if unclear; do not
+     default to a midpoint.
 
 4. situation_signature: structured signals for repo matching:
    - primary_challenge_types: string[] (max 5) — kinds of problems they've
@@ -127,7 +128,7 @@ object. The shape is:
     "company_size_exposure": ["10-50", "200-1000"],
     "tenure_pattern": "stable",
     "progression_velocity": "fast",
-    "ownership_depth": "platform-level",
+    "ownership_depth": "platform",
     "system_scale_exposure": ["microservices", "high-throughput"],
     "greenfield_ratio": 0.6
   },

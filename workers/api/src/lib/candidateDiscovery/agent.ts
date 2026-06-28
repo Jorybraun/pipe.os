@@ -40,7 +40,7 @@ export interface CareerContext {
   progression_velocity: 'fast' | 'normal' | 'slow' | 'unknown';
   ownership_depth: 'feature' | 'service' | 'platform' | 'org' | 'unknown';
   system_scale_exposure: string[];
-  greenfield_ratio: number;
+  greenfield_ratio: number | null;
 }
 
 export interface SituationSignature {
@@ -102,8 +102,8 @@ function coerceEnum<T extends string>(value: unknown, valid: Set<T>, fallback: T
   return valid.has(v) ? v : fallback;
 }
 
-function coerceNumberInRange(value: unknown, min: number, max: number, fallback: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+function coerceOptionalNumberInRange(value: unknown, min: number, max: number): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.max(min, Math.min(max, value));
 }
 
@@ -188,7 +188,7 @@ export async function discoverCandidateProfile(
     progression_velocity: coerceEnum(ccRaw.progression_velocity, VALID_PROGRESSION_VELOCITIES, 'unknown'),
     ownership_depth: coerceEnum(ccRaw.ownership_depth, VALID_OWNERSHIP_DEPTHS, 'unknown'),
     system_scale_exposure: coerceStringArray(ccRaw.system_scale_exposure, MAX_ARRAY_LEN),
-    greenfield_ratio: coerceNumberInRange(ccRaw.greenfield_ratio, 0, 1, 0.5),
+    greenfield_ratio: coerceOptionalNumberInRange(ccRaw.greenfield_ratio, 0, 1),
   };
 
   const ssRaw = (parsedResponse.situation_signature ?? {}) as Record<string, unknown>;

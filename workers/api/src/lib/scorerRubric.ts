@@ -510,7 +510,10 @@ export function computeBarsComposite(
   const weights = applyDispositionalWeights(base, dispositionalWeights);
   let sum = 0;
   for (const id of DIMENSION_IDS) {
-    const score = scores[id] ?? 3; // default to midpoint
+    const score = scores[id];
+    if (!Number.isFinite(score) || score < 1 || score > 5) {
+      throw new Error(`[scorerRubric] Missing or invalid BARS dimension score: ${id}`);
+    }
     sum += score * weights[id]!;
   }
   // Convert 1-5 scale to 0-100: (weighted_avg - 1) / 4 * 100

@@ -29,6 +29,7 @@ import {
   computeOverallScore,
   assignBand,
   countReviewerComments,
+  DIMENSION_IDS,
   type PlantedBug,
   type BarsDimensionScores,
   type EffectivenessScore,
@@ -652,8 +653,41 @@ function stringValue(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 }
 
-function dimensionValue(record: Record<string, unknown>, id: DimensionId): number {
-  return clampScore(numberValue(record[id], 3));
+function requiredDimensionValue(record: Record<string, unknown>, id: DimensionId): number {
+  const parsed = Number(record[id]);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 5) {
+    throw new Error(`[scorerAgent] Missing or invalid required dimension score: ${id}`);
+  }
+  return parsed;
+}
+
+function requiredStringValue(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`[scorerAgent] Missing required source evidence field: ${key}`);
+  }
+  return value.trim();
+}
+
+function assertAllDimensionsPresent(dimensions: BarsDimensionScores): void {
+  for (const id of DIMENSION_IDS) {
+    requiredDimensionValue(dimensions, id);
+  }
+}
+
+function buildScorerEvidence(input: {
+  issueSource: Record<string, unknown>;
+  communicationSource?: Record<string, unknown>;
+}): ScorerEvidence {
+  const communicationSource = input.communicationSource ?? input.issueSource;
+  return {
+    issue_identification_evidence: requiredStringValue(input.issueSource, 'issue_identification_evidence'),
+    prioritization_evidence: requiredStringValue(input.issueSource, 'prioritization_evidence'),
+    revision_evaluation_evidence: requiredStringValue(input.issueSource, 'revision_evaluation_evidence'),
+    reasoning_quality_evidence: requiredStringValue(communicationSource, 'reasoning_quality_evidence'),
+    question_formation_evidence: requiredStringValue(communicationSource, 'question_formation_evidence'),
+    ai_direction_evidence: requiredStringValue(communicationSource, 'ai_direction_evidence'),
+  };
 }
 
 function normalizeSinglePassScoreReport(input: {
@@ -665,23 +699,16 @@ function normalizeSinglePassScoreReport(input: {
 }): ScoreReport {
   const dimensionSource = recordOrEmpty(input.raw.dimensions ?? input.raw.scores);
   const dimensions: BarsDimensionScores = {
-    issue_identification: dimensionValue(dimensionSource, 'issue_identification'),
-    prioritization: dimensionValue(dimensionSource, 'prioritization'),
-    revision_evaluation: dimensionValue(dimensionSource, 'revision_evaluation'),
-    reasoning_quality: dimensionValue(dimensionSource, 'reasoning_quality'),
-    question_formation: dimensionValue(dimensionSource, 'question_formation'),
-    ai_direction: dimensionValue(dimensionSource, 'ai_direction'),
+    issue_identification: requiredDimensionValue(dimensionSource, 'issue_identification'),
+    prioritization: requiredDimensionValue(dimensionSource, 'prioritization'),
+    revision_evaluation: requiredDimensionValue(dimensionSource, 'revision_evaluation'),
+    reasoning_quality: requiredDimensionValue(dimensionSource, 'reasoning_quality'),
+    question_formation: requiredDimensionValue(dimensionSource, 'question_formation'),
+    ai_direction: requiredDimensionValue(dimensionSource, 'ai_direction'),
   };
 
   const evidenceRaw = recordOrEmpty(input.raw.evidence);
-  const evidence: ScorerEvidence = {
-    issue_identification_evidence: stringValue(evidenceRaw.issue_identification_evidence),
-    prioritization_evidence: stringValue(evidenceRaw.prioritization_evidence),
-    revision_evaluation_evidence: stringValue(evidenceRaw.revision_evaluation_evidence),
-    reasoning_quality_evidence: stringValue(evidenceRaw.reasoning_quality_evidence),
-    question_formation_evidence: stringValue(evidenceRaw.question_formation_evidence),
-    ai_direction_evidence: stringValue(evidenceRaw.ai_direction_evidence),
-  };
+  const evidence = buildScorerEvidence({ issueSource: evidenceRaw });
 
   const metricsRaw = recordOrEmpty(input.raw.metrics);
   const bugsFound = [...new Set(numberArrayValue(metricsRaw.bugs_found))];
@@ -720,10 +747,7 @@ function normalizeSinglePassScoreReport(input: {
   );
   const band = assignBand(overallScore);
   const overallRaw = recordOrEmpty(input.raw.overall);
-  const narrative = stringValue(
-    overallRaw.narrative,
-    `Overall score: ${overallScore}/100 (${band}). The review was scored from source-backed transcript and PR evidence.`,
-  );
+  const narrative = requiredStringValue(overallRaw, 'narrative');
 
   return {
     dimensions,
@@ -737,8 +761,8 @@ function normalizeSinglePassScoreReport(input: {
       strengths: stringArrayValue(overallRaw.strengths),
       growth_areas: stringArrayValue(overallRaw.growth_areas),
     },
-    scorer_a_summary: stringValue(input.raw.scorer_a_summary, 'Source-backed scoring pass completed.'),
-    scorer_b_summary: stringValue(input.raw.scorer_b_summary, 'Communication scoring pass completed.'),
+    scorer_a_summary: stringValue(input.raw.scorer_a_summary),
+    scorer_b_summary: stringValue(input.raw.scorer_b_summary),
   };
 }
 
@@ -839,30 +863,26 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   const scorerA = extractJson<Record<string, unknown>>(scorerARaw);
   const scorerB = extractJson<Record<string, unknown>>(scorerBRaw);
 
-  // Extract dimension scores (1-5, default to 3 = midpoint)
+  // Extract required dimension scores (1-5). Missing scores fail closed; they
+  // must not become fabricated midpoint assessments.
   // Handle both flat format and nested format (scores.dimension_name)
-  const scoresA = (scorerA.scores ?? scorerA) as Record<string, unknown>;
-  const scoresB = (scorerB.scores ?? scorerB) as Record<string, unknown>;
+  const scoresA = recordOrEmpty(scorerA.scores ?? scorerA);
+  const scoresB = recordOrEmpty(scorerB.scores ?? scorerB);
   const dimensions: BarsDimensionScores = {
-    issue_identification: clampScore(Number(scoresA.issue_identification) || 3),
-    prioritization: clampScore(Number(scoresA.prioritization) || 3),
-    revision_evaluation: clampScore(Number(scoresA.revision_evaluation) || 3),
-    reasoning_quality: clampScore(Number(scoresB.reasoning_quality) || 3),
-    question_formation: clampScore(Number(scoresB.question_formation) || 3),
-    ai_direction: clampScore(Number(scoresB.ai_direction) || 3),
+    issue_identification: requiredDimensionValue(scoresA, 'issue_identification'),
+    prioritization: requiredDimensionValue(scoresA, 'prioritization'),
+    revision_evaluation: requiredDimensionValue(scoresA, 'revision_evaluation'),
+    reasoning_quality: requiredDimensionValue(scoresB, 'reasoning_quality'),
+    question_formation: requiredDimensionValue(scoresB, 'question_formation'),
+    ai_direction: requiredDimensionValue(scoresB, 'ai_direction'),
   };
+  assertAllDimensionsPresent(dimensions);
 
   // Extract evidence
-  const scorerAEvidence = (scorerA.evidence ?? {}) as Record<string, string>;
-  const scorerBEvidence = (scorerB.evidence ?? {}) as Record<string, string>;
-  const evidence: ScorerEvidence = {
-    issue_identification_evidence: scorerAEvidence.issue_identification_evidence ?? '',
-    prioritization_evidence: scorerAEvidence.prioritization_evidence ?? '',
-    revision_evaluation_evidence: scorerAEvidence.revision_evaluation_evidence ?? '',
-    reasoning_quality_evidence: scorerBEvidence.reasoning_quality_evidence ?? '',
-    question_formation_evidence: scorerBEvidence.question_formation_evidence ?? '',
-    ai_direction_evidence: scorerBEvidence.ai_direction_evidence ?? '',
-  };
+  const evidence = buildScorerEvidence({
+    issueSource: recordOrEmpty(scorerA.evidence),
+    communicationSource: recordOrEmpty(scorerB.evidence),
+  });
 
   // Extract metrics from Scorer A
   const metricsRaw = (scorerA.metrics ?? {}) as Record<string, unknown>;
@@ -903,14 +923,10 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   let strengths: string[] = [];
   let growthAreas: string[] = [];
 
-  try {
-    const synthResult = extractJson<Record<string, unknown>>(synthRaw);
-    if (typeof synthResult.narrative === 'string') narrative = synthResult.narrative;
-    if (Array.isArray(synthResult.strengths)) strengths = synthResult.strengths as string[];
-    if (Array.isArray(synthResult.growth_areas)) growthAreas = synthResult.growth_areas as string[];
-  } catch {
-    console.error('[scorerAgent] Failed to parse synthesizer output, using fallback narrative');
-  }
+  const synthResult = extractJson<Record<string, unknown>>(synthRaw);
+  narrative = requiredStringValue(synthResult, 'narrative');
+  if (Array.isArray(synthResult.strengths)) strengths = synthResult.strengths as string[];
+  if (Array.isArray(synthResult.growth_areas)) growthAreas = synthResult.growth_areas as string[];
 
   return {
     dimensions,
@@ -930,8 +946,3 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Clamp a score to the valid 1-5 range. */
-function clampScore(score: number): number {
-  return Math.max(1, Math.min(5, Math.round(score)));
-}
