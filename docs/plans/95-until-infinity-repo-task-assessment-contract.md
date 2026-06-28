@@ -177,6 +177,10 @@ The controlling product rule remains:
   including delivery state, room-context fetch status, and redacted
   fingerprints/lengths for prompt, room context, and candidate message without
   storing the private prompt body.
+- The Win95 Clippy tray remains the persistent "Ask Clippy" entrypoint after a
+  prompt dismissal or chat close, while its active state reflects the actual
+  chat panel open/closed state rather than merely whether the assistant
+  component is mounted.
 - Clippy/Devin bridge diagnostics, prompt handoffs, and real Devin stdout now
   post token-scoped `session-events` directly from the dev container before
   broadcasting to browsers. Browser evidence capture remains a fallback only

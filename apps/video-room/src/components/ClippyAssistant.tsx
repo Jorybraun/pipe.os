@@ -28,6 +28,7 @@ export interface ClippyAssistantProps {
   messages: ClippyMessage[];
   onDismiss: () => void;
   onClippyClick?: () => void;
+  onChatOpen?: () => void;
   onChatClose?: () => void;
   agentWsUrl?: string | null;
   agentEnabled?: boolean;
@@ -53,6 +54,7 @@ export function ClippyAssistant({
   messages,
   onDismiss,
   onClippyClick,
+  onChatOpen,
   onChatClose,
   agentWsUrl,
   agentEnabled = false,
@@ -228,17 +230,26 @@ export function ClippyAssistant({
     if (agentRef.current) {
       agentRef.current.animate();
     }
-    setChatOpen((v) => !v);
+    setChatOpen((v) => {
+      const nextOpen = !v;
+      if (nextOpen) {
+        onChatOpen?.();
+      } else {
+        onChatClose?.();
+      }
+      return nextOpen;
+    });
     onClippyClick?.();
-  }, [onClippyClick]);
+  }, [onChatClose, onChatOpen, onClippyClick]);
 
   const openChat = useCallback(() => {
     if (agentRef.current) {
       agentRef.current.animate();
     }
     setChatOpen(true);
+    onChatOpen?.();
     onClippyClick?.();
-  }, [onClippyClick]);
+  }, [onChatOpen, onClippyClick]);
 
   const closeChat = useCallback(() => {
     setChatOpen(false);

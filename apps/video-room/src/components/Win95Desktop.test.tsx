@@ -76,12 +76,29 @@ describe('Win95Desktop', () => {
     expect(tray.contains(clippy)).toBe(true);
     expect(tray.contains(clock)).toBe(true);
     expect(clippy.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clippy.classList.contains('is-active')).toBe(true);
     expect(clippy.getAttribute('data-clippy-status')).toBe('auth_needed');
     expect(clippy.getAttribute('title')).toBe('Ask Clippy - Authentication required');
     expect(screen.getByTestId('win95-tray-clippy-status').classList.contains('auth_needed')).toBe(true);
 
     fireEvent.click(clippy);
     expect(onClippyClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Clippy tray entry available without marking chat active', () => {
+    render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        onClippyClick={vi.fn()}
+        clippyActive={false}
+        clippyStatus="idle"
+      />,
+    );
+
+    const clippy = screen.getByTestId('win95-tray-clippy');
+    expect(clippy.classList.contains('is-active')).toBe(false);
+    expect(clippy.getAttribute('title')).toBe('Ask Clippy - Ready');
   });
 
   it('reports taskbar window restores with taskbar provenance', () => {

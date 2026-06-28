@@ -58,10 +58,12 @@ describe('ClippyAssistant', () => {
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {
     const onAction = vi.fn();
+    const onChatOpen = vi.fn();
     const { rerender } = render(
       <ClippyAssistant
         messages={[]}
         onDismiss={vi.fn()}
+        onChatOpen={onChatOpen}
         agentEnabled={false}
         agentWsUrl={null}
         agentUnavailableMessage="Launch the VS Code workspace to connect a real agent."
@@ -77,6 +79,7 @@ describe('ClippyAssistant', () => {
       <ClippyAssistant
         messages={[]}
         onDismiss={vi.fn()}
+        onChatOpen={onChatOpen}
         agentEnabled={false}
         agentWsUrl={null}
         agentUnavailableMessage="Launch the VS Code workspace to connect a real agent."
@@ -89,6 +92,7 @@ describe('ClippyAssistant', () => {
     expect((await screen.findByTestId('clippy-chat')).textContent).toContain(
       'Launch the VS Code workspace to connect a real agent.',
     );
+    expect(onChatOpen).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
 
     fireEvent.click(screen.getByTestId('clippy-launch-workspace'));

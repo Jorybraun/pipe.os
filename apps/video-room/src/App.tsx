@@ -368,6 +368,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [clippyVisible, setClippyVisible] = useState(true);
+  const [clippyChatOpen, setClippyChatOpen] = useState(false);
   const [clippyChatRequest, setClippyChatRequest] = useState(0);
   const [startMenuState, setStartMenuState] = useState<{ open: boolean; eventId: string } | null>(null);
   const [clippyAgentStatus, setClippyAgentStatus] = useState<AgentStatus>('disconnected');
@@ -1195,13 +1196,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const openClippyChat = (origin: 'tray' | 'chat' = 'tray'): void => {
     captureClippyUiAction('open-clippy-chat', origin);
     setClippyVisible(true);
+    setClippyChatOpen(true);
     setClippyChatRequest((request) => request + 1);
   };
   const closeClippyChat = (): void => {
     captureClippyUiAction('close-clippy-chat', 'chat');
+    setClippyChatOpen(false);
   };
   const dismissClippy = (): void => {
     captureClippyUiAction('dismiss-clippy', 'prompt');
+    setClippyChatOpen(false);
     setClippyVisible(false);
   };
   const checkDevinAuth = (): void => {
@@ -2473,7 +2477,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingLabel={visibleRecordingLabel}
       recordingActive={visibleRecordingActive}
       onClippyClick={(metadata.features?.clippyEnabled ?? true) ? openClippyChat : undefined}
-      clippyActive={clippyVisible}
+      clippyActive={clippyChatOpen}
       clippyStatus={clippyTrayStatus}
       renderWindowContent={renderWindowContent}
       onWindowClose={closeSharedWindow}
@@ -2515,6 +2519,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         <ClippyAssistant
           messages={clippyMessages}
           onDismiss={dismissClippy}
+          onChatOpen={() => setClippyChatOpen(true)}
           onChatClose={closeClippyChat}
           agentWsUrl={workspaceSession && hasActiveWorkspace
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
