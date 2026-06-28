@@ -242,6 +242,29 @@ setInterval(() => {}, 1000);
     ws.close();
   });
 
+  it('does not treat the Devin login banner as ready when auth is canceled', async () => {
+    const { port } = await startBridge(`
+process.stdin.setEncoding('utf8');
+process.stdin.once('data', () => {
+  process.stdout.write('Welcome to Devin CLI!\\n');
+  setTimeout(() => process.stderr.write('Error: Login canceled\\n'), 50);
+});
+setInterval(() => {}, 1000);
+`, { AGENT_READY_AFTER_PRIMER_MS: '1000' });
+
+    const { ws, messages } = await connectAgent(port);
+    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+    expect(authNeeded).toMatchObject({ agent: 'devin' });
+    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'auth_needed',
+      diagnosticSource: 'agent_stderr_auth_required',
+    }));
+    ws.close();
+  });
+
   it('does not report ready when the real Devin CLI executable is missing', async () => {
     const { port } = await startBridge('', {}, { installFakeDevin: false });
 

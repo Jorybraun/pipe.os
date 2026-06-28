@@ -44,6 +44,9 @@ function isAgentAuthFailureText(value) {
   const text = String(value || '').toLowerCase();
   if (!text.trim()) return false;
   return (
+    text.includes('login canceled')
+    || text.includes('login cancelled')
+    || (
     (text.includes('auth') || text.includes('login') || text.includes('credential'))
     && (
       text.includes('required')
@@ -53,6 +56,7 @@ function isAgentAuthFailureText(value) {
       || text.includes('not authenticated')
       || text.includes('please login')
       || text.includes('log in')
+    )
     )
   ) || text.includes('devin auth login');
 }

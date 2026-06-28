@@ -32,6 +32,7 @@ describe('agent diagnostics', () => {
   it('classifies Devin auth/login output as auth failure evidence', () => {
     expect(isAgentAuthFailureText('Please run devin auth login before continuing.')).toBe(true);
     expect(isAgentAuthFailureText('Authentication failed: invalid credential.')).toBe(true);
+    expect(isAgentAuthFailureText('Error: Login canceled')).toBe(true);
     expect(isAgentAuthFailureText('I inspected the failing test.')).toBe(false);
   });
 

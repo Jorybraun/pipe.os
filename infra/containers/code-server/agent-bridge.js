@@ -900,7 +900,17 @@ function startAgent() {
         markAgentAuthNeeded(rawText, 'agent_stdout_auth_required');
         return;
       }
-      if (rawText.trim()) markAgentReady();
+      if (!agentReady) {
+        if (rawText.trim()) {
+          broadcastAgentDiagnostic(agentDiagnosticMessage({
+            agent: AGENT_NAME,
+            status: agentStatus,
+            message: rawText,
+            diagnosticSource: 'agent_stdout_startup',
+          }));
+        }
+        return;
+      }
       const parsed = extractTaggedRoomActions(rawText);
       agentStatus = 'working';
       broadcastAgentStatus();
