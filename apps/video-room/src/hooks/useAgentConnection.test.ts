@@ -178,6 +178,10 @@ describe('parseAgentBridgeMessage', () => {
       userMessageLength: 18,
       userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
       contextTruncated: false,
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 18,
       persisted: true,
     })).toEqual({
       kind: 'diagnostic',
@@ -201,6 +205,10 @@ describe('parseAgentBridgeMessage', () => {
         userMessageLength: 18,
         userMessageFingerprint: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
         contextTruncated: false,
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptTimestamp: 1782603900000,
+        browserPromptLength: 18,
         persisted: true,
       },
     });

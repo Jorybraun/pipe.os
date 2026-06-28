@@ -77,6 +77,10 @@ describe('agent diagnostics', () => {
       roomContextText: 'Candidate opened VS Code with token=room-secret',
       promptText: 'PIPE room context\nCurrent Clippy chat message: please run the tests TOKEN=hidden',
       userMessage: 'please run the tests TOKEN=hidden',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 35,
       observedAt: '2026-06-27T20:00:00.000Z',
     });
 
@@ -97,6 +101,10 @@ describe('agent diagnostics', () => {
       userMessageLength: expect.any(Number),
       userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
       contextTruncated: false,
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 35,
     });
 
     const serialized = JSON.stringify(message);
@@ -139,6 +147,10 @@ describe('agent diagnostics', () => {
       roomContextText: 'Room context with TOKEN=secret',
       promptText: 'Private prompt with TOKEN=secret',
       userMessage: 'Private user message',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 20,
       observedAt: '2026-06-27T21:00:00.000Z',
     });
 
@@ -160,6 +172,10 @@ describe('agent diagnostics', () => {
         promptFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         roomContextFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
         userMessageFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptTimestamp: 1782603900000,
+        browserPromptLength: 20,
         bridgePersisted: true,
       },
     });

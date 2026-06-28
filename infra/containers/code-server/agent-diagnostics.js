@@ -61,6 +61,16 @@ function normalizedPromptType(value) {
   return PROMPT_TYPES.has(value) ? value : 'chat_prompt';
 }
 
+function safePromptReferenceString(value, maxChars = 240) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  return boundedDiagnosticText(value, maxChars).text || null;
+}
+
+function safePromptReferenceNumber(value) {
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.floor(value));
+}
+
 function safeEvidenceIdPart(value) {
   const normalized = String(value || 'none')
     .trim()
@@ -165,6 +175,10 @@ function agentPromptHandoffDiagnosticMessage({
   roomContextText = '',
   promptText = '',
   userMessage = '',
+  browserPromptId = null,
+  browserPromptFingerprint = null,
+  browserPromptTimestamp = null,
+  browserPromptLength = null,
   observedAt = new Date().toISOString(),
   maxChars = DEFAULT_MAX_CHARS,
 }) {
@@ -175,6 +189,12 @@ function agentPromptHandoffDiagnosticMessage({
   const promptMetrics = diagnosticTextMetrics(promptText);
   const roomContextMetrics = diagnosticTextMetrics(roomContextText);
   const userMessageMetrics = diagnosticTextMetrics(userMessage);
+  const browserPromptReferences = {
+    browserPromptId: safePromptReferenceString(browserPromptId),
+    browserPromptFingerprint: safePromptReferenceString(browserPromptFingerprint, 80),
+    browserPromptTimestamp: safePromptReferenceNumber(browserPromptTimestamp),
+    browserPromptLength: safePromptReferenceNumber(browserPromptLength),
+  };
   const baseMessage = agentDiagnosticMessage({
     agent: safeAgent,
     status,
@@ -198,6 +218,16 @@ function agentPromptHandoffDiagnosticMessage({
     userMessageLength: userMessageMetrics.length,
     userMessageFingerprint: userMessageMetrics.fingerprint,
     contextTruncated: String(roomContextText || '').includes('[PIPE room context truncated]'),
+    ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
+    ...(browserPromptReferences.browserPromptFingerprint
+      ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
+      : {}),
+    ...(browserPromptReferences.browserPromptTimestamp !== null
+      ? { browserPromptTimestamp: browserPromptReferences.browserPromptTimestamp }
+      : {}),
+    ...(browserPromptReferences.browserPromptLength !== null
+      ? { browserPromptLength: browserPromptReferences.browserPromptLength }
+      : {}),
   };
 }
 
@@ -241,6 +271,16 @@ function agentDiagnosticSessionEvent(message) {
       userMessageLength: eventMessage.userMessageLength ?? null,
       userMessageFingerprint: eventMessage.userMessageFingerprint ?? null,
       contextTruncated: eventMessage.contextTruncated ?? null,
+      ...(typeof eventMessage.browserPromptId === 'string' ? { browserPromptId: eventMessage.browserPromptId } : {}),
+      ...(typeof eventMessage.browserPromptFingerprint === 'string'
+        ? { browserPromptFingerprint: eventMessage.browserPromptFingerprint }
+        : {}),
+      ...(Number.isFinite(eventMessage.browserPromptTimestamp)
+        ? { browserPromptTimestamp: Math.max(0, Math.floor(eventMessage.browserPromptTimestamp)) }
+        : {}),
+      ...(Number.isFinite(eventMessage.browserPromptLength)
+        ? { browserPromptLength: Math.max(0, Math.floor(eventMessage.browserPromptLength)) }
+        : {}),
       bridgePersisted: true,
     },
   };

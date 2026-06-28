@@ -674,7 +674,7 @@ async function primeAgentWithRoomContext(targetProcess = agentProcess) {
   return deliveredToAgent;
 }
 
-async function writeAgentChatPrompt(text) {
+async function writeAgentChatPrompt(text, browserPromptRef = {}) {
   const targetProcess = agentProcess;
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
@@ -690,6 +690,10 @@ async function writeAgentChatPrompt(text) {
     roomContextText,
     promptText: prompt,
     userMessage: text,
+    browserPromptId: browserPromptRef.browserPromptId,
+    browserPromptFingerprint: browserPromptRef.browserPromptFingerprint,
+    browserPromptTimestamp: browserPromptRef.browserPromptTimestamp,
+    browserPromptLength: browserPromptRef.browserPromptLength,
   }));
   return deliveredToAgent;
 }
@@ -915,7 +919,12 @@ async function handleAgentMessage(ws, msg) {
     }
     agentStatus = 'thinking';
     broadcastAgentStatus();
-    const sent = await writeAgentChatPrompt(text);
+    const sent = await writeAgentChatPrompt(text, {
+      browserPromptId: msg.browserPromptId,
+      browserPromptFingerprint: msg.browserPromptFingerprint,
+      browserPromptTimestamp: msg.browserPromptTimestamp,
+      browserPromptLength: msg.browserPromptLength,
+    });
     if (!sent) {
       send(ws, { type: 'ERROR', message: 'Agent is not ready to receive messages.' });
       agentStatus = 'idle';

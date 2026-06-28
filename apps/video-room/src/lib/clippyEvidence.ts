@@ -1,6 +1,14 @@
 import type { RoomSurface } from '../hooks/useRoomConnection';
 import type { AgentChatMessage, AgentRoomAction, AgentStatus } from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
+import {
+  buildClippyPromptId,
+  clippyTextFingerprint,
+  normalizedClippyPromptTimestamp,
+  safeClippyEvidenceIdPart as safeEvidenceIdPart,
+} from './clippyPromptIdentity';
+
+export { clippyTextFingerprint } from './clippyPromptIdentity';
 
 export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy';
 export type ClippyUiActionOrigin = 'tray' | 'prompt';
@@ -43,23 +51,6 @@ type ClippyAgentStatusBridgeMessageSource = 'agent_status' | ClippyAgentBridgeMe
 
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
-
-function safeEvidenceIdPart(value: string | null): string {
-  const normalized = (value ?? 'none')
-    .trim()
-    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized || 'none';
-}
-
-export function clippyTextFingerprint(text: string): string {
-  let hash = FNV_32_OFFSET;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, FNV_32_PRIME);
-  }
-  return `clippy_${(hash >>> 0).toString(16).padStart(8, '0')}`;
-}
 
 function clippyUiActionText(actionId: ClippyUiActionId): string {
   switch (actionId) {
@@ -281,9 +272,16 @@ export function buildClippyUserChatEvidence(input: {
   workspaceSessionId: string | null;
   repoUrl: string | null;
 }): ClippyUserChatEvidence {
-  const promptFingerprint = clippyTextFingerprint(input.message.text);
-  const workspacePart = safeEvidenceIdPart(input.workspaceSessionId);
-  const promptId = `${workspacePart}:${input.actor}:prompt:${input.message.timestamp}:${promptFingerprint}`;
+  const promptFingerprint = input.message.browserPromptFingerprint ?? clippyTextFingerprint(input.message.text);
+  const promptTimestamp = input.message.browserPromptTimestamp
+    ?? normalizedClippyPromptTimestamp(input.message.timestamp);
+  const promptId = input.message.browserPromptId ?? buildClippyPromptId({
+    workspaceSessionId: input.workspaceSessionId,
+    actor: input.actor,
+    timestamp: promptTimestamp,
+    promptFingerprint,
+  });
+  const promptLength = input.message.browserPromptLength ?? input.message.text.length;
   return {
     text: input.message.text,
     properties: {
@@ -293,8 +291,8 @@ export function buildClippyUserChatEvidence(input: {
       bridgeProtocol: 'clippy_dev_container_ws',
       promptId,
       promptFingerprint,
-      promptLength: input.message.text.length,
-      promptTimestamp: input.message.timestamp,
+      promptLength,
+      promptTimestamp,
       browserQueuedBridgeMessage: true,
       bridgeDeliveryConfirmed: false,
       agent: null,
@@ -334,6 +332,10 @@ export function buildClippyAgentStatusEvidence(input: {
   userMessageLength?: number | null;
   userMessageFingerprint?: string | null;
   contextTruncated?: boolean | null;
+  browserPromptId?: string | null;
+  browserPromptFingerprint?: string | null;
+  browserPromptTimestamp?: number | null;
+  browserPromptLength?: number | null;
   messageTimestamp?: number | null;
 }): ClippyAgentStatusEvidence {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
@@ -372,6 +374,14 @@ export function buildClippyAgentStatusEvidence(input: {
       userMessageLength: input.userMessageLength ?? null,
       userMessageFingerprint: input.userMessageFingerprint ?? null,
       contextTruncated: input.contextTruncated ?? null,
+      ...(input.browserPromptId ? { browserPromptId: input.browserPromptId } : {}),
+      ...(input.browserPromptFingerprint ? { browserPromptFingerprint: input.browserPromptFingerprint } : {}),
+      ...(input.browserPromptTimestamp !== null && input.browserPromptTimestamp !== undefined
+        ? { browserPromptTimestamp: input.browserPromptTimestamp }
+        : {}),
+      ...(input.browserPromptLength !== null && input.browserPromptLength !== undefined
+        ? { browserPromptLength: input.browserPromptLength }
+        : {}),
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -445,6 +455,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   userMessageLength?: number | null;
   userMessageFingerprint?: string | null;
   contextTruncated?: boolean | null;
+  browserPromptId?: string | null;
+  browserPromptFingerprint?: string | null;
+  browserPromptTimestamp?: number | null;
+  browserPromptLength?: number | null;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
@@ -506,6 +520,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     userMessageLength: input.userMessageLength ?? null,
     userMessageFingerprint: input.userMessageFingerprint ?? null,
     contextTruncated: input.contextTruncated ?? null,
+    browserPromptId: input.browserPromptId ?? null,
+    browserPromptFingerprint: input.browserPromptFingerprint ?? null,
+    browserPromptTimestamp: input.browserPromptTimestamp ?? null,
+    browserPromptLength: input.browserPromptLength ?? null,
     surface: input.surface,
     roomPhase: input.roomPhase,
     workspaceStatus: input.workspaceStatus,

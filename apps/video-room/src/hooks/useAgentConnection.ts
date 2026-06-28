@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  buildClippyBrowserPromptIdentity,
+  type ClippyPromptActor,
+} from '../lib/clippyPromptIdentity';
 
 export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
 export type AgentRoomActionId =
@@ -34,6 +38,10 @@ export interface AgentChatMessage {
   userMessageLength?: number;
   userMessageFingerprint?: string;
   contextTruncated?: boolean;
+  browserPromptId?: string;
+  browserPromptFingerprint?: string;
+  browserPromptTimestamp?: number;
+  browserPromptLength?: number;
 }
 
 export interface AgentRoomAction {
@@ -123,6 +131,8 @@ export interface AgentConnectionState {
 export interface UseAgentConnectionOptions {
   wsUrl: string | null;
   enabled: boolean;
+  promptActor?: ClippyPromptActor;
+  promptWorkspaceSessionId?: string | null;
 }
 
 const ROOM_ACTIONS: Record<AgentRoomActionId, { label: string; aliases: string[] }> = {
@@ -383,6 +393,8 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const promptFingerprint = stringOrNull(value.promptFingerprint);
     const roomContextFingerprint = stringOrNull(value.roomContextFingerprint);
     const userMessageFingerprint = stringOrNull(value.userMessageFingerprint);
+    const browserPromptId = stringOrNull(value.browserPromptId);
+    const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
     if (promptType) message.promptType = promptType;
     if (typeof value.deliveredToAgent === 'boolean') message.deliveredToAgent = value.deliveredToAgent;
     if ('promptLength' in value) {
@@ -402,6 +414,16 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     }
     if (userMessageFingerprint) message.userMessageFingerprint = userMessageFingerprint;
     if (typeof value.contextTruncated === 'boolean') message.contextTruncated = value.contextTruncated;
+    if (browserPromptId) message.browserPromptId = browserPromptId;
+    if (browserPromptFingerprint) message.browserPromptFingerprint = browserPromptFingerprint;
+    if ('browserPromptTimestamp' in value) {
+      const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+      if (browserPromptTimestamp !== undefined) message.browserPromptTimestamp = browserPromptTimestamp;
+    }
+    if ('browserPromptLength' in value) {
+      const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+      if (browserPromptLength !== undefined) message.browserPromptLength = browserPromptLength;
+    }
     return {
       kind: 'diagnostic',
       status,
@@ -412,7 +434,12 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   return { kind: 'ignored' };
 }
 
-export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions) {
+export function useAgentConnection({
+  wsUrl,
+  enabled,
+  promptActor = 'guest',
+  promptWorkspaceSessionId = null,
+}: UseAgentConnectionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<AgentStatus>('disconnected');
@@ -555,16 +582,28 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const sendMessage = useCallback((text: string): AgentChatMessage | null => {
     const trimmed = text.trim();
     if (!trimmed || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return null;
+    const timestamp = Date.now();
+    const promptIdentity = buildClippyBrowserPromptIdentity({
+      text: trimmed,
+      actor: promptActor,
+      timestamp,
+      workspaceSessionId: promptWorkspaceSessionId,
+    });
     const message: AgentChatMessage = {
       role: 'user',
       text: trimmed,
-      timestamp: Date.now(),
+      timestamp,
       source: 'user_submit',
+      ...promptIdentity,
     };
     setMessages((prev) => [...prev, message]);
-    wsRef.current.send(JSON.stringify({ type: 'CHAT', text: trimmed }));
+    wsRef.current.send(JSON.stringify({
+      type: 'CHAT',
+      text: trimmed,
+      ...promptIdentity,
+    }));
     return message;
-  }, []);
+  }, [promptActor, promptWorkspaceSessionId]);
 
   const startAuth = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;

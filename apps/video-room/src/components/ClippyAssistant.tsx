@@ -8,6 +8,7 @@ import {
   type AgentRoomAction,
   type AgentStatus,
 } from '../hooks/useAgentConnection';
+import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
 
@@ -31,6 +32,8 @@ export interface ClippyAssistantProps {
   agentEnabled?: boolean;
   agentUnavailableMessage?: string;
   canLaunchAgentWorkspace?: boolean;
+  promptActor?: ClippyPromptActor;
+  promptWorkspaceSessionId?: string | null;
   openChatRequest?: number;
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
@@ -50,6 +53,8 @@ export function ClippyAssistant({
   agentEnabled = false,
   agentUnavailableMessage,
   canLaunchAgentWorkspace = false,
+  promptActor,
+  promptWorkspaceSessionId,
   openChatRequest,
   onOpenBrowser,
   onOpenTerminal,
@@ -75,6 +80,8 @@ export function ClippyAssistant({
   const agentConn = useAgentConnection({
     wsUrl: agentWsUrl ?? null,
     enabled: agentEnabled,
+    promptActor,
+    promptWorkspaceSessionId,
   });
 
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

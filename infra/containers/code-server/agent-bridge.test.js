@@ -230,7 +230,27 @@ setInterval(() => {}, 1000);
 
     const { ws, messages } = await connectAgent(port);
     await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
-    ws.send(JSON.stringify({ type: 'CHAT', text: 'Please inspect the task.' }));
+    ws.send(JSON.stringify({
+      type: 'CHAT',
+      text: 'Please inspect the task.',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 24,
+    }));
+    const diagnostic = await waitForMessage(messages, (message) => (
+      message.type === 'AGENT_DIAGNOSTIC'
+      && message.diagnosticSource === 'agent_prompt_sent'
+    ));
+    expect(diagnostic).toMatchObject({
+      agent: 'devin',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 24,
+    });
     const response = await waitForMessage(messages, (message) => (
       message.type === 'CHAT_RESPONSE'
       && message.text.includes('Real Devin received the candidate request.')

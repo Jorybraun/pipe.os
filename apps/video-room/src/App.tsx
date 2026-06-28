@@ -1805,6 +1805,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       userMessageLength: message.userMessageLength ?? null,
       userMessageFingerprint: message.userMessageFingerprint ?? null,
       contextTruncated: message.contextTruncated ?? null,
+      browserPromptId: message.browserPromptId ?? null,
+      browserPromptFingerprint: message.browserPromptFingerprint ?? null,
+      browserPromptTimestamp: message.browserPromptTimestamp ?? null,
+      browserPromptLength: message.browserPromptLength ?? null,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
@@ -2220,6 +2224,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           agentEnabled={hasActiveWorkspace}
           agentUnavailableMessage={clippyAgentUnavailableMessage}
           canLaunchAgentWorkspace={canLaunchWorkspace}
+          promptActor={roomActor}
+          promptWorkspaceSessionId={workspaceSession?.sessionId ?? null}
           openChatRequest={clippyChatRequest}
           onOpenBrowser={openBrowserWindow}
           onOpenTerminal={openTerminalWindow}
