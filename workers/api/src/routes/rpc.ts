@@ -45,7 +45,10 @@ import {
   type CandidateSafeMatchStatus,
 } from '../lib/challengeMatching/candidateSafeQualityGate';
 import type { MatchExplanation, RoleSourceReference, SourceRef } from '../lib/challengeMatching';
-import { maybeQueueRetryableStandaloneIngestion } from '../lib/candidateDiscovery/staleWorkersAiRetry';
+import {
+  STALE_WORKERS_AI_RETRY_REASON,
+  maybeQueueRetryableStandaloneIngestion,
+} from '../lib/candidateDiscovery/staleWorkersAiRetry';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -761,7 +764,7 @@ interface StandaloneReviewEvidenceReadiness {
   estimatedCompletionAt: string | null;
 }
 
-const STANDALONE_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
+const STANDALONE_RETRY_REASON = STALE_WORKERS_AI_RETRY_REASON;
 const STANDALONE_EVIDENCE_STALE_AFTER_MS = 10 * 60 * 1000;
 
 interface PersistedMatchRunRow {
@@ -1604,11 +1607,11 @@ async function standaloneReviewEvidenceReadiness(
   };
 }
 
-function retryingStandaloneReviewReadiness(): StandaloneReviewEvidenceReadiness {
+function retryingStandaloneReviewReadiness(reason = STANDALONE_RETRY_REASON): StandaloneReviewEvidenceReadiness {
   return {
     ready: false,
     terminal: false,
-    reason: STANDALONE_RETRY_REASON,
+    reason,
     status: 'pending',
     currentStep: 'retry_queued',
     nodeCount: 0,
@@ -2206,7 +2209,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
     if (!needsResume && standaloneAssessment && !('interview_type' in standaloneAssessment)) {
       const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
       const readiness = retryQueued
-        ? retryingStandaloneReviewReadiness()
+        ? retryingStandaloneReviewReadiness(retryQueued.reason)
         : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
       if (!readiness.ready) {
         return c.json({
@@ -2241,7 +2244,7 @@ rpcAuth.post('/get-stage-config', async (c) => {
       if (!standaloneAssessment.github_repo_url) {
         const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
         const readiness = retryQueued
-          ? retryingStandaloneReviewReadiness()
+          ? retryingStandaloneReviewReadiness(retryQueued.reason)
           : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
         if (!readiness.ready) {
           return c.json({
@@ -2575,8 +2578,9 @@ rpcAuth.post('/get-challenge', async (c) => {
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
       const repoUrl = standaloneAssessment.github_repo_url;
       if (!repoUrl) {
-        if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
-          return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness()));
+        const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+        if (retryQueued) {
+          return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness(retryQueued.reason)));
         }
         const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
         if (!readiness.ready) {
@@ -2609,8 +2613,9 @@ rpcAuth.post('/get-challenge', async (c) => {
       return c.json(INTAKE_CHALLENGE_CONTENT);
     }
 
-    if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
-      return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness()));
+    const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+    if (retryQueued) {
+      return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness(retryQueued.reason)));
     }
 
     const match = await matchStandaloneReview(c.env.DB, candidateId, standaloneAssessment);
@@ -3073,13 +3078,14 @@ rpcAuth.post('/submit-challenge-response', async (c) => {
 
     const standaloneReview = await getPendingStandaloneReview(c.env.DB, candidateId);
     if (standaloneReview) {
-      if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
+      const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+      if (retryQueued) {
         return c.json({
           error: {
             code: 'WAITING_FOR_MATCH',
-            message: 'Candidate evidence ingestion is retrying after a transient model failure.',
+            message: retryQueued.reason,
           },
-          challenge: standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness()),
+          challenge: standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness(retryQueued.reason)),
         }, 409);
       }
 
@@ -3578,7 +3584,8 @@ rpcAuth.get('/ingestion-status', async (c) => {
     return c.json({ status: 'not_started', current_step: null, candidate_searchable_profile: null, key_concepts_json: null, error_text: null, estimated_completion_at: null });
   }
 
-  if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
+  const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+  if (retryQueued) {
     return c.json({
       status: 'pending',
       current_step: 'retry_queued',
@@ -3588,7 +3595,7 @@ rpcAuth.get('/ingestion-status', async (c) => {
       estimated_completion_at: row.estimated_completion_at,
       updated_at: new Date().toISOString(),
       retry_queued: true,
-      retry_reason: STANDALONE_RETRY_REASON,
+      retry_reason: retryQueued.reason,
     });
   }
 

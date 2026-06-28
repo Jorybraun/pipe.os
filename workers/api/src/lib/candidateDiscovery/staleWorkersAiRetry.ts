@@ -8,12 +8,20 @@ import { markIngestionFailed } from './persist';
 const DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT = 3;
 const MAX_STALE_WORKERS_AI_RETRY_LIMIT = 5;
 const MAX_RETRY_EVENT_ERROR_CHARS = 700;
+const STALE_IN_PROGRESS_RETRY_AFTER_MS = 10 * 60 * 1000;
 
 type RetryTrigger = 'candidate_rpc' | 'scheduled_worker';
+type RetryReasonCode = 'stale_workers_ai_model_failure' | 'stalled_candidate_evidence_ingestion';
+
+export const STALE_WORKERS_AI_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
+export const STALLED_INGESTION_RETRY_REASON = 'Retrying candidate evidence ingestion from the original source after the previous run stalled.';
 
 interface RetryContext {
   trigger: RetryTrigger;
+  reasonCode: RetryReasonCode;
   originalErrorText?: string | null;
+  originalStep?: string | null;
+  originalUpdatedAt?: string | null;
 }
 
 interface StaleWorkersAIRow {
@@ -21,6 +29,7 @@ interface StaleWorkersAIRow {
   status: string | null;
   current_step: string | null;
   error_text: string | null;
+  updated_at?: string | null;
 }
 
 interface RetryableCandidateRow extends StaleWorkersAIRow {
@@ -33,6 +42,13 @@ export interface StaleWorkersAIRetryResult {
   queued: number;
   skipped: number;
   failed: number;
+}
+
+export interface QueuedStandaloneIngestionRetry {
+  reason: string;
+  reasonCode: RetryReasonCode;
+  originalStep: string | null;
+  originalUpdatedAt: string | null;
 }
 
 export function isRetryableStaleWorkersAIModelFailure(row: {
@@ -50,6 +66,46 @@ export function isRetryableStaleWorkersAIModelFailure(row: {
   return errorText.includes('5028')
     || errorText.includes('deprecated')
     || errorText.includes('decommissioned');
+}
+
+export function isRetryableStalledInProgressIngestion(row: {
+  status: string | null;
+  current_step: string | null;
+  updated_at?: string | null;
+}, nowMs = Date.now()): boolean {
+  if (row.status !== 'pending') return false;
+  if (!row.current_step || !row.updated_at) return false;
+  const updatedMs = Date.parse(row.updated_at);
+  if (!Number.isFinite(updatedMs)) return false;
+  return nowMs - updatedMs >= STALE_IN_PROGRESS_RETRY_AFTER_MS;
+}
+
+function retryContextForRow(row: StaleWorkersAIRow, trigger: RetryTrigger): (RetryContext & {
+  publicReason: string;
+}) | null {
+  if (isRetryableStaleWorkersAIModelFailure(row)) {
+    return {
+      trigger,
+      reasonCode: 'stale_workers_ai_model_failure',
+      publicReason: STALE_WORKERS_AI_RETRY_REASON,
+      originalErrorText: row.error_text,
+      originalStep: row.current_step,
+      originalUpdatedAt: row.updated_at ?? null,
+    };
+  }
+
+  if (isRetryableStalledInProgressIngestion(row)) {
+    return {
+      trigger,
+      reasonCode: 'stalled_candidate_evidence_ingestion',
+      publicReason: STALLED_INGESTION_RETRY_REASON,
+      originalErrorText: row.error_text,
+      originalStep: row.current_step,
+      originalUpdatedAt: row.updated_at ?? null,
+    };
+  }
+
+  return null;
 }
 
 export async function retryCandidateEvidenceIngestionFromSource(
@@ -125,32 +181,42 @@ export async function maybeQueueRetryableStandaloneIngestion(
   env: Env,
   executionCtx: ExecutionContext | null,
   candidateId: string,
-): Promise<boolean> {
+): Promise<QueuedStandaloneIngestionRetry | null> {
   const row = await env.DB.prepare(
     `SELECT c.resume_s3_key,
             ci.status,
             ci.current_step,
-            ci.error_text
+            ci.error_text,
+            ci.updated_at
        FROM candidates c
        LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
       WHERE c.id = ?1
         /* retryable_standalone_ingestion */`,
   ).bind(candidateId).first<StaleWorkersAIRow>();
 
-  if (!row?.resume_s3_key || !isRetryableStaleWorkersAIModelFailure(row)) {
-    return false;
+  const retryContext = row?.resume_s3_key
+    ? retryContextForRow(row, 'candidate_rpc')
+    : null;
+  if (!row?.resume_s3_key || !retryContext) {
+    return null;
   }
 
   const retryPromise = queueAndRunRetry(env, candidateId, row.resume_s3_key, {
-    trigger: 'candidate_rpc',
-    originalErrorText: row.error_text,
+    trigger: retryContext.trigger,
+    reasonCode: retryContext.reasonCode,
+    originalErrorText: retryContext.originalErrorText,
+    originalStep: retryContext.originalStep,
+    originalUpdatedAt: retryContext.originalUpdatedAt,
   })
     .catch(async (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[standaloneReview] retryable candidate ingestion failed for ${candidateId}:`, msg);
       await markRetryFailed(env, candidateId, row.resume_s3_key!, `Retry failed: ${msg}`, {
-        trigger: 'candidate_rpc',
-        originalErrorText: row.error_text,
+        trigger: retryContext.trigger,
+        reasonCode: retryContext.reasonCode,
+        originalErrorText: retryContext.originalErrorText,
+        originalStep: retryContext.originalStep,
+        originalUpdatedAt: retryContext.originalUpdatedAt,
       });
     });
 
@@ -159,7 +225,12 @@ export async function maybeQueueRetryableStandaloneIngestion(
   } else {
     await retryPromise;
   }
-  return true;
+  return {
+    reason: retryContext.publicReason,
+    reasonCode: retryContext.reasonCode,
+    originalStep: retryContext.originalStep ?? null,
+    originalUpdatedAt: retryContext.originalUpdatedAt ?? null,
+  };
 }
 
 export async function processStaleWorkersAIModelIngestionRetries(
@@ -167,39 +238,55 @@ export async function processStaleWorkersAIModelIngestionRetries(
   limit = DEFAULT_STALE_WORKERS_AI_RETRY_LIMIT,
 ): Promise<StaleWorkersAIRetryResult> {
   const boundedLimit = Math.max(1, Math.min(limit, MAX_STALE_WORKERS_AI_RETRY_LIMIT));
+  const staleCutoff = new Date(Date.now() - STALE_IN_PROGRESS_RETRY_AFTER_MS).toISOString();
   const rows = await env.DB.prepare(
     `SELECT c.id AS candidate_id,
             c.resume_s3_key,
             ci.status,
             ci.current_step,
-            ci.error_text
+            ci.error_text,
+            ci.updated_at
        FROM candidate_ingestion ci
        JOIN candidates c ON c.id = ci.candidate_id
       WHERE c.resume_s3_key IS NOT NULL
-        AND ci.status = 'failed'
-        AND ci.current_step = 'discover_profile'
         AND (
-          ci.error_text LIKE '%5028%'
-          OR lower(ci.error_text) LIKE '%deprecated%'
-          OR lower(ci.error_text) LIKE '%decommissioned%'
+          (
+            ci.status = 'failed'
+            AND ci.current_step = 'discover_profile'
+            AND (
+              ci.error_text LIKE '%5028%'
+              OR lower(ci.error_text) LIKE '%deprecated%'
+              OR lower(ci.error_text) LIKE '%decommissioned%'
+            )
+          )
+          OR (
+            ci.status = 'pending'
+            AND ci.current_step IS NOT NULL
+            AND ci.updated_at IS NOT NULL
+            AND ci.updated_at <= ?1
+          )
         )
       ORDER BY ci.updated_at ASC
-      LIMIT ?1`,
-  ).bind(boundedLimit).all<RetryableCandidateRow>();
+      LIMIT ?2`,
+  ).bind(staleCutoff, boundedLimit).all<RetryableCandidateRow>();
 
   let queued = 0;
   let skipped = 0;
   let failed = 0;
   for (const row of rows.results ?? []) {
-    if (!row.resume_s3_key || !isRetryableStaleWorkersAIModelFailure(row)) {
+    const retryContext = retryContextForRow(row, 'scheduled_worker');
+    if (!row.resume_s3_key || !retryContext) {
       skipped++;
       continue;
     }
 
     try {
       await queueAndRunRetry(env, row.candidate_id, row.resume_s3_key, {
-        trigger: 'scheduled_worker',
-        originalErrorText: row.error_text,
+        trigger: retryContext.trigger,
+        reasonCode: retryContext.reasonCode,
+        originalErrorText: retryContext.originalErrorText,
+        originalStep: retryContext.originalStep,
+        originalUpdatedAt: retryContext.originalUpdatedAt,
       });
       queued++;
     } catch (err) {
@@ -207,8 +294,11 @@ export async function processStaleWorkersAIModelIngestionRetries(
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[staleWorkersAiRetry] retry failed for ${row.candidate_id}:`, msg);
       await markRetryFailed(env, row.candidate_id, row.resume_s3_key, `Retry failed: ${msg}`, {
-        trigger: 'scheduled_worker',
-        originalErrorText: row.error_text,
+        trigger: retryContext.trigger,
+        reasonCode: retryContext.reasonCode,
+        originalErrorText: retryContext.originalErrorText,
+        originalStep: retryContext.originalStep,
+        originalUpdatedAt: retryContext.originalUpdatedAt,
       });
     }
   }
@@ -240,8 +330,10 @@ async function queueAndRunRetry(
 
   await recordRetryEvent(env, candidateId, 'ingestion_retry_queued', resumeS3Key, {
     trigger: context.trigger,
-    reason: 'stale_workers_ai_model_failure',
-    staleFailureStep: 'discover_profile',
+    reason: context.reasonCode,
+    staleFailureStep: context.originalStep ?? 'discover_profile',
+    originalStep: context.originalStep ?? null,
+    originalUpdatedAt: context.originalUpdatedAt ?? null,
     originalErrorText: boundedText(context.originalErrorText),
     queuedAt: now,
   });
@@ -259,8 +351,10 @@ async function markRetryFailed(
   await markIngestionFailed(env.DB, candidateId, message);
   await recordRetryEvent(env, candidateId, 'ingestion_retry_failed', resumeS3Key, {
     trigger: context?.trigger ?? 'candidate_rpc',
-    reason: 'stale_workers_ai_model_failure',
-    staleFailureStep: 'discover_profile',
+    reason: context?.reasonCode ?? 'stale_workers_ai_model_failure',
+    staleFailureStep: context?.originalStep ?? 'discover_profile',
+    originalStep: context?.originalStep ?? null,
+    originalUpdatedAt: context?.originalUpdatedAt ?? null,
     originalErrorText: boundedText(context?.originalErrorText),
     errorText: boundedText(message),
   });

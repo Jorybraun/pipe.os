@@ -182,4 +182,71 @@ describe('GET /rpc/ingestion-status', () => {
       }),
     }));
   });
+
+  it('queues source-backed retry when candidate ingestion stalls before matchable evidence exists', async () => {
+    const resumeText = 'Frontend platform engineer building synchronized interview desktops, dev containers, and source-backed Vitest coverage.';
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidate_ingestion',
+          value: {
+            status: 'pending',
+            current_step: 'decompose_resume',
+            candidate_searchable_profile: null,
+            key_concepts_json: null,
+            error_text: null,
+            estimated_completion_at: null,
+            updated_at: '2026-06-28T18:00:00.000Z',
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stalled-source',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            updated_at: '2026-06-28T18:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const storage = fakeStorage(resumeText);
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/ingestion-status',
+      {
+        method: 'GET',
+        headers: { Authorization: await authHeader() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      status?: string;
+      current_step?: string;
+      error_text?: string | null;
+      retry_queued?: boolean;
+      retry_reason?: string;
+    };
+    expect(body).toMatchObject({
+      status: 'pending',
+      current_step: 'retry_queued',
+      error_text: null,
+      retry_queued: true,
+      retry_reason: 'Retrying candidate evidence ingestion from the original source after the previous run stalled.',
+    });
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/stalled-source');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
+  });
 });

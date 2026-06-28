@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Env } from '../../../types';
 import {
+  STALLED_INGESTION_RETRY_REASON,
   isRetryableStaleWorkersAIModelFailure,
+  isRetryableStalledInProgressIngestion,
   maybeQueueRetryableStandaloneIngestion,
   processStaleWorkersAIModelIngestionRetries,
   retryCandidateEvidenceIngestionFromSource,
@@ -114,6 +116,31 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     })).toBe(false);
   });
 
+  it('classifies only stale in-progress source-backed ingestion as retryable', () => {
+    const now = Date.parse('2026-06-28T21:30:00.000Z');
+
+    expect(isRetryableStalledInProgressIngestion({
+      status: 'pending',
+      current_step: 'decompose_resume',
+      updated_at: '2026-06-28T21:19:59.999Z',
+    }, now)).toBe(true);
+    expect(isRetryableStalledInProgressIngestion({
+      status: 'pending',
+      current_step: 'decompose_resume',
+      updated_at: '2026-06-28T21:20:30.000Z',
+    }, now)).toBe(false);
+    expect(isRetryableStalledInProgressIngestion({
+      status: 'failed',
+      current_step: 'decompose_resume',
+      updated_at: '2026-06-28T21:00:00.000Z',
+    }, now)).toBe(false);
+    expect(isRetryableStalledInProgressIngestion({
+      status: 'pending',
+      current_step: null,
+      updated_at: '2026-06-28T21:00:00.000Z',
+    }, now)).toBe(false);
+  });
+
   it('retries text-intake evidence from the original R2 source', async () => {
     const db = fakeD1();
     const storage = fakeStorage(
@@ -168,7 +195,10 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       'Frontend systems engineer building collaborative editors and deterministic Playwright checks.',
     ));
 
-    await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'candidate-2')).resolves.toBe(true);
+    await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'candidate-2')).resolves.toMatchObject({
+      reasonCode: 'stale_workers_ai_model_failure',
+      originalStep: 'discover_profile',
+    });
 
     expect(db.__calls.some((call) =>
       call.ran
@@ -196,6 +226,50 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     }));
   });
 
+  it('queues and runs a candidate-scoped retry when source-backed ingestion stalls in progress', async () => {
+    const db = fakeD1({
+      first: {
+        resume_s3_key: 'text-intake/stalled/source',
+        status: 'pending',
+        current_step: 'decompose_resume',
+        error_text: null,
+        updated_at: '2026-06-28T18:00:00.000Z',
+      },
+    });
+    const env = buildEnv(db, fakeStorage(
+      'Staff frontend engineer building dev container interviews, synchronized desktop tools, and evidence-backed tests.',
+    ));
+
+    await expect(maybeQueueRetryableStandaloneIngestion(env, null, 'stalled')).resolves.toMatchObject({
+      reason: STALLED_INGESTION_RETRY_REASON,
+      reasonCode: 'stalled_candidate_evidence_ingestion',
+      originalStep: 'decompose_resume',
+      originalUpdatedAt: '2026-06-28T18:00:00.000Z',
+    });
+
+    const retryEventCall = db.__calls.find((call) =>
+      call.ran
+      && call.sql.includes('INSERT INTO session_events')
+      && call.params[1] === 'ingestion-stalled'
+      && call.params[4] === 'ingestion_retry_queued'
+    );
+    expect(retryEventCall).toBeDefined();
+    expect(JSON.parse(retryEventCall!.params[5] as string)).toMatchObject({
+      trigger: 'candidate_rpc',
+      reason: 'stalled_candidate_evidence_ingestion',
+      originalStep: 'decompose_resume',
+      originalUpdatedAt: '2026-06-28T18:00:00.000Z',
+      sourceRef: {
+        type: 'text_intake_r2_object',
+        key: 'text-intake/stalled/source',
+      },
+    });
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'stalled',
+      resumeText: expect.stringContaining('synchronized desktop tools'),
+    }));
+  });
+
   it('cron processes a bounded batch of stale discovery failures', async () => {
     const db = fakeD1({
       all: [
@@ -213,6 +287,14 @@ describe('stale Workers AI candidate-ingestion retry', () => {
           current_step: 'discover_profile',
           error_text: 'Discovery failed: Candidate Discovery response was not a JSON object',
         },
+        {
+          candidate_id: 'stalled',
+          resume_s3_key: 'text-intake/stalled/source',
+          status: 'pending',
+          current_step: 'decompose_resume',
+          error_text: null,
+          updated_at: '2026-06-28T18:00:00.000Z',
+        },
       ],
     });
     const env = buildEnv(db, fakeStorage(
@@ -220,16 +302,19 @@ describe('stale Workers AI candidate-ingestion retry', () => {
     ));
 
     await expect(processStaleWorkersAIModelIngestionRetries(env, 2)).resolves.toEqual({
-      scanned: 2,
-      queued: 1,
+      scanned: 3,
+      queued: 2,
       skipped: 1,
       failed: 0,
     });
     const selectCall = db.__calls.find((call) => call.sql.includes('FROM candidate_ingestion ci'))!;
-    expect(selectCall.params).toEqual([2]);
-    expect(runCandidateIngestion).toHaveBeenCalledTimes(1);
+    expect(selectCall.params[1]).toBe(2);
+    expect(runCandidateIngestion).toHaveBeenCalledTimes(2);
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'oldest',
+    }));
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'stalled',
     }));
     const retryEventCall = db.__calls.find((call) =>
       call.ran
@@ -258,7 +343,9 @@ describe('stale Workers AI candidate-ingestion retry', () => {
       'text-intake/missing-source/source',
       {
         trigger: 'scheduled_worker',
+        reasonCode: 'stale_workers_ai_model_failure',
         originalErrorText: 'Discovery failed: 5028 deprecated model',
+        originalStep: 'discover_profile',
       },
     );
 

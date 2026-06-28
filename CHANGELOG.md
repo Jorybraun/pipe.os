@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Blocked CODE_REVIEW follow-up creation now stores concise evidence questions so recruiters can collect the missing background needed for a fair repo match.
 - Blocked CODE_REVIEW evidence-call creation now also creates a source-backed `TECHNICAL` assessment session and immutable evidence-plan event linked to the original match gap and follow-up interview.
 - Completed CODE_REVIEW evidence-call transcripts now append source-backed response spans to the evidence-plan assessment and emit a ready-for-repo-match-refresh report.
+- Original CODE_REVIEW recruiter details now surface completed evidence-plan follow-up calls as a refresh-ready relationship instead of continuing to show the stale missing-evidence prompt.
 - Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
 - Code-review context-call recommendation persistence now narrows candidate application ids before writing living-context records, restoring Workers type-checks for the scheduling route.
 - Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Role-backed CODE_REVIEW smoke defaults now use selected terms that appear literally in the generated job description, keeping the role-source validation lane executable.
 - Candidate discovery now extracts one balanced JSON object from provider responses that include preamble/trailing text while still rejecting array-shaped or non-JSON output, reducing brittle repo-matching blocks without fabricating evidence.
 - Meeting transcript ingestion now requires explicit `attributed` speaker mode before contact ids can create person attribution, semantic assertions, or candidate signals, preventing diarization-adjacent metadata from becoming person evidence by default.
+- Stale in-progress standalone candidate evidence builds now requeue source-backed ingestion from the original R2 CV/text source and report a stalled-build retry reason instead of blocking repo matching behind a terminal attention state.
 - Scheduled Worker repair now requeues stale/deprecated Workers AI candidate-discovery failures from the original R2 CV/text source in bounded batches and writes append-only retry/failure session events, so old `Challenge needs attention` rows can self-heal without fabricating match evidence.
 - Workers AI model routing now remaps all Cloudflare models listed in the 2026-05-30 deprecation catalog before candidate/repo matching inference, preventing stale environment overrides from blocking source-backed challenge discovery.
 - Code-review scoring now rejects missing BARS dimension scores, source evidence, or narrative output instead of defaulting incomplete scorer JSON to midpoint assessments.
