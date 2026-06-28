@@ -179,7 +179,8 @@ setInterval(() => {}, 1000);
 `, { AGENT_START_READY_TIMEOUT_MS: '2000' });
 
     const { ws, messages } = await connectAgent(port);
-    await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'starting');
+    const startingStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'starting');
+    expect(startingStatus).toMatchObject({ agent: 'devin' });
     await delay(150);
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
 
@@ -197,7 +198,8 @@ setInterval(() => {}, 1000);
 `);
 
     const { ws, messages } = await connectAgent(port);
-    await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'auth_needed');
+    const authStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'auth_needed');
+    expect(authStatus).toMatchObject({ agent: 'devin' });
 
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
     expect(messages).toContainEqual(expect.objectContaining({

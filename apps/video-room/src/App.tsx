@@ -1720,7 +1720,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const evidence = buildClippyAgentMessageSessionEvidence({
       text: message.text,
       source: message.source,
-      agentName: message.agentName ?? 'devin',
+      agentName: message.agentName ?? null,
       agentStatus: message.agentStatus ?? null,
       diagnosticSource: message.diagnosticSource ?? null,
       observedAt: message.observedAt ?? null,
@@ -1749,6 +1749,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
+    if (!agentName.trim()) return;
     const capturedAtMs = Date.now();
     const observedAt = new Date(capturedAtMs).toISOString();
     const evidence = buildClippyAgentStatusEvidence({

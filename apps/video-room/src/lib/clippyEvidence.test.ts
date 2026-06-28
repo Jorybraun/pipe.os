@@ -322,6 +322,19 @@ describe('clippy evidence', () => {
     })).toBeNull();
   });
 
+  it('does not fabricate agent identity when bridge source exists but agent name is missing', () => {
+    expect(buildClippyAgentMessageSessionEvidence({
+      text: 'I inspected the failing test.',
+      source: 'agent_stdout',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782603900000,
+    })).toBeNull();
+  });
+
   it('derives response ids from agent, capture time, and response fingerprint', () => {
     const responseFingerprint = clippyAgentResponseFingerprint('I inspected the failing test.');
     expect(responseFingerprint).toBe('agent_314a13fc');

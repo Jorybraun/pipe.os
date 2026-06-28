@@ -66,6 +66,7 @@ export type ParsedAgentBridgeMessage =
   | {
       kind: 'status';
       status: AgentStatus;
+      agentName: string;
     }
   | {
       kind: 'chat';
@@ -268,7 +269,9 @@ export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'
 export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessage {
   if (!isRecord(value)) return { kind: 'ignored' };
   if (value.type === 'AGENT_STATUS') {
-    return { kind: 'status', status: isAgentStatus(value.status) ? value.status : 'idle' };
+    const agentName = stringOrNull(value.agent);
+    if (!agentName || !isAgentStatus(value.status)) return { kind: 'ignored' };
+    return { kind: 'status', status: value.status, agentName };
   }
   if (value.type === 'CHAT_RESPONSE') {
     const text = stringOrNull(value.text);
@@ -293,17 +296,21 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'AUTH_NEEDED') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     return {
       kind: 'auth_needed',
       authUrl: stringOrNull(value.authUrl),
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
       message: stringOrNull(value.message),
     };
   }
   if (value.type === 'AGENT_READY') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     return {
       kind: 'ready',
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
       capabilities: Array.isArray(value.capabilities)
         ? value.capabilities.filter((entry): entry is string => typeof entry === 'string')
         : [],
@@ -362,7 +369,8 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'AGENT_DIAGNOSTIC') {
     const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
     const status = isAgentStatus(value.status) ? value.status : 'disconnected';
-    const agentName = stringOrNull(value.agent) ?? 'devin';
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     const message: Omit<AgentChatMessage, 'timestamp'> = {
       role: 'agent',
       text,
@@ -419,7 +427,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
-  const [agentName, setAgentName] = useState('devin');
+  const [agentName, setAgentName] = useState('');
   const [capabilities, setCapabilities] = useState<string[]>([]);
   const [roomActions, setRoomActions] = useState<AgentRoomAction[]>([]);
   const [fileChanges, setFileChanges] = useState<AgentFileChangeEvent[]>([]);
@@ -452,6 +460,7 @@ export function useAgentConnection({ wsUrl, enabled }: UseAgentConnectionOptions
           switch (parsed.kind) {
             case 'status':
               setStatus(parsed.status);
+              setAgentName(parsed.agentName);
               if (parsed.status !== 'auth_needed') {
                 setAuthUrl(null);
                 setAuthMessage(null);

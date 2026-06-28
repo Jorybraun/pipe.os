@@ -321,7 +321,7 @@ export function ClippyAssistant({
             : agentConn.capabilities.length === 0
               ? 'Waiting for real Devin to report ready before chat is enabled.'
               : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
-  const chatAgentName = agentEnabled ? agentConn.agentName : 'devin';
+  const chatAgentName = agentEnabled ? agentConn.agentName || 'devin' : 'devin';
 
   return (
     <>
@@ -402,7 +402,7 @@ export function ClippyAssistant({
               className="win95-clippy-chat-auth-btn"
               onClick={handleAuthClick}
             >
-              Authenticate {agentConn.agentName}
+              Authenticate {agentConn.agentName || 'devin'}
             </button>
           )}
 

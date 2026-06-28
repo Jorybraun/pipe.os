@@ -426,11 +426,13 @@ export function buildClippyAgentMessageSessionEvidence(input: {
 }): ClippyAgentMessageSessionEvidence | null {
   if (input.persisted) return null;
   if (!input.text.trim()) return null;
+  const agentName = input.agentName?.trim();
+  if (!agentName) return null;
   const isAgentResponse = input.source === 'agent_stdout';
   if (isAgentResponse && input.observedAt) {
     const evidence = buildClippyAgentChatFallbackEvidence({
       text: input.text,
-      agentName: input.agentName ?? 'devin',
+      agentName,
       observedAt: input.observedAt,
       surface: input.surface,
       roomPhase: input.roomPhase,
@@ -457,7 +459,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     text: isAgentResponse
       ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
       : input.text,
-    agentName: input.agentName ?? 'devin',
+    agentName,
     status: input.agentStatus ?? null,
     diagnosticSource,
     bridgeMessageSource: input.source,

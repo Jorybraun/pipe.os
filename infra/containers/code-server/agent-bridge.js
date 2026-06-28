@@ -476,12 +476,24 @@ function broadcastAgentReady() {
   broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
 }
 
+function agentStatusMessage() {
+  return { type: 'AGENT_STATUS', agent: AGENT_NAME, status: agentStatus };
+}
+
+function broadcastAgentStatus() {
+  broadcast(agentStatusMessage());
+}
+
+function sendAgentStatus(ws) {
+  send(ws, agentStatusMessage());
+}
+
 function markAgentReady() {
   if (agentReady) return;
   clearAgentStartReadyTimer();
   agentReady = true;
   agentStatus = 'idle';
-  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcastAgentStatus();
   broadcastAgentReady();
 }
 
@@ -489,7 +501,7 @@ function markAgentDisconnected(message, diagnosticSource, processToStop = agentP
   clearAgentStartReadyTimer();
   agentReady = false;
   agentStatus = 'disconnected';
-  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcastAgentStatus();
   broadcastAgentDiagnostic(agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'disconnected',
@@ -518,7 +530,7 @@ function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
   clearAgentStartReadyTimer();
   agentReady = false;
   agentStatus = 'auth_needed';
-  broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+  broadcastAgentStatus();
   broadcast(devinAuthNeededMessage());
   broadcastAgentDiagnostic(agentDiagnosticMessage({
     agent: AGENT_NAME,
@@ -743,7 +755,7 @@ function startAgent() {
     if (DEVIN_API_KEY) env.DEVIN_API_KEY = DEVIN_API_KEY;
     agentReady = false;
     agentStatus = 'starting';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    broadcastAgentStatus();
     agentProcess = spawn(devinCommand(), [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
     const startedProcess = agentProcess;
     scheduleAgentStartReadyTimeout(startedProcess);
@@ -777,7 +789,7 @@ function startAgent() {
       if (rawText.trim()) markAgentReady();
       const parsed = extractTaggedRoomActions(rawText);
       agentStatus = 'working';
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
       const observedAt = new Date().toISOString();
       if (parsed.text) {
         broadcastAgentChat({
@@ -789,7 +801,7 @@ function startAgent() {
       }
       for (const action of parsed.actions) broadcastAgentRoomAction(action, observedAt);
       agentStatus = 'idle';
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
     });
     agentProcess.stderr.on('data', (chunk) => {
       const message = chunk.toString().trim();
@@ -821,7 +833,7 @@ function startAgent() {
         exitCode: code,
         signal,
       }));
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
     });
     agentProcess.on('error', (error) => {
       if (agentProcess !== startedProcess && agentProcess !== null) return;
@@ -835,13 +847,13 @@ function startAgent() {
         message: `Devin CLI failed to start inside the container: ${error instanceof Error ? error.message : String(error)}`,
         diagnosticSource: 'agent_process_error',
       }));
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
     });
   } catch (error) {
     clearAgentStartReadyTimer();
     agentReady = false;
     agentStatus = 'disconnected';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    broadcastAgentStatus();
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'disconnected',
@@ -857,7 +869,7 @@ async function handleAgentMessage(ws, msg) {
     if (!text) return;
     if (!agentAuthed) {
       agentStatus = 'auth_needed';
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
       send(ws, devinAuthNeededMessage());
       sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
       return;
@@ -877,12 +889,12 @@ async function handleAgentMessage(ws, msg) {
       return;
     }
     agentStatus = 'thinking';
-    broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+    broadcastAgentStatus();
     const sent = await writeAgentChatPrompt(text);
     if (!sent) {
       send(ws, { type: 'ERROR', message: 'Agent is not ready to receive messages.' });
       agentStatus = 'idle';
-      broadcast({ type: 'AGENT_STATUS', status: agentStatus });
+      broadcastAgentStatus();
     }
   } else if (msg.type === 'AUTH_START') {
     if (agentAuthed) {
@@ -893,7 +905,7 @@ async function handleAgentMessage(ws, msg) {
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
     agentProcess.kill('SIGTERM');
   } else if (msg.type === 'GET_STATUS') {
-    send(ws, { type: 'AGENT_STATUS', status: agentStatus });
+    sendAgentStatus(ws);
   }
 }
 
@@ -910,7 +922,7 @@ function acceptAgent(req, socket) {
   });
   if (!ws) return;
   clients.add(ws);
-  send(ws, { type: 'AGENT_STATUS', status: agentStatus });
+  sendAgentStatus(ws);
   if (agentProcess && agentReady) {
     send(ws, { type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
   }

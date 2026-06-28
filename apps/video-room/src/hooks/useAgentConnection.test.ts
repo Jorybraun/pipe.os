@@ -5,11 +5,20 @@ describe('parseAgentBridgeMessage', () => {
   it('parses real Devin bridge status without fabricating a chat response', () => {
     expect(parseAgentBridgeMessage({
       type: 'AGENT_STATUS',
+      agent: 'devin',
       status: 'auth_needed',
     })).toEqual({
       kind: 'status',
+      agentName: 'devin',
       status: 'auth_needed',
     });
+  });
+
+  it('ignores bridge status without explicit agent identity', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_STATUS',
+      status: 'auth_needed',
+    })).toEqual({ kind: 'ignored' });
   });
 
   it('normalizes Devin room action messages into safe Clippy actions', () => {
@@ -210,9 +219,11 @@ describe('parseAgentBridgeMessage', () => {
   it('turns bridge status into explicit evidence text', () => {
     expect(parseAgentBridgeMessage({
       type: 'AGENT_STATUS',
+      agent: 'devin',
       status: 'starting',
     })).toEqual({
       kind: 'status',
+      agentName: 'devin',
       status: 'starting',
     });
     expect(agentStatusEvidenceText('starting', 'devin')).toBe(
