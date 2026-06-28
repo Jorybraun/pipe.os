@@ -297,6 +297,33 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('does not fabricate Devin identity in direct browser fallback or status builders', () => {
+    expect(buildClippyAgentChatFallbackEvidence({
+      text: 'I inspected the failing test.',
+      agentName: null,
+      observedAt: '2026-06-27T21:05:00.000Z',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782603900000,
+    })).toBeNull();
+
+    expect(buildClippyAgentStatusEvidence({
+      text: 'bridge is starting',
+      agentName: null,
+      status: 'starting',
+      bridgeMessageSource: 'agent_status',
+      observedAt: '2026-06-27T21:12:00.000Z',
+      capturedAtMs: 1782594720000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782594720000,
+    })).toBeNull();
+  });
+
   it('converts browser-observed Devin replies into agent chat evidence only when source metadata is present', () => {
     expect(buildClippyAgentMessageSessionEvidence({
       text: 'I inspected the failing test.',

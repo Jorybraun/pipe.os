@@ -1846,6 +1846,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs,
       messageTimestamp: capturedAtMs,
     });
+    if (!evidence) return;
     const properties = {
       ...evidence.properties,
       durableObjectReplayExpected: true,

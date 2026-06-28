@@ -347,11 +347,12 @@ export function buildClippyAgentStatusEvidence(input: {
   browserPromptTimestamp?: number | null;
   browserPromptLength?: number | null;
   messageTimestamp?: number | null;
-}): ClippyAgentStatusEvidence {
+}): ClippyAgentStatusEvidence | null {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
     ? Math.max(0, Math.round(input.capturedAtMs))
     : 0;
-  const agent = input.agentName?.trim() || 'devin';
+  const agent = input.agentName?.trim();
+  if (!agent) return null;
   return {
     text: input.text,
     properties: {
@@ -415,8 +416,9 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   messageTimestamp: number;
-}): ClippyAgentChatFallbackEvidence {
-  const agent = input.agentName?.trim() || 'devin';
+}): ClippyAgentChatFallbackEvidence | null {
+  const agent = input.agentName?.trim();
+  if (!agent) return null;
   const observedAtMs = Date.parse(input.observedAt);
   const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : input.messageTimestamp;
   const responseFingerprint = clippyAgentResponseFingerprint(input.text);
@@ -507,6 +509,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
       workspaceSessionId: input.workspaceSessionId,
       messageTimestamp: input.messageTimestamp,
     });
+    if (!evidence) return null;
     return {
       eventType: 'ai_chat_agent',
       text: evidence.text,
@@ -556,6 +559,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     workspaceSessionId: input.workspaceSessionId,
     messageTimestamp: input.messageTimestamp,
   });
+  if (!evidence) return null;
   return {
     eventType: 'ai_agent_status',
     text: evidence.text,
