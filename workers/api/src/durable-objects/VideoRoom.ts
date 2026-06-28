@@ -3177,16 +3177,14 @@ export class VideoRoom {
         }));
         return;
       }
-      if (cursor.evidence) {
-        if (!this.hasSourceBackedCursorEvidence(cursor, senderRole)) {
-          ws.send(JSON.stringify({
-            type: 'ROOM_CURSOR_REJECTED',
-            reason: 'MISSING_SOURCE_EVIDENCE',
-          }));
-          return;
-        }
-        await this.recordCursorActivity(cursor, senderRole);
+      if (!this.hasSourceBackedCursorEvidence(cursor, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CURSOR_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
+        }));
+        return;
       }
+      await this.recordCursorActivity(cursor, senderRole);
       const payloadHadRole = this.isRecord(message.payload) && this.isVideoRole(message.payload.role);
       const cursorPayload = payloadHadRole
         ? cursor

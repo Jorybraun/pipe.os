@@ -925,7 +925,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('desktopActivityLog')).toBe(false);
   });
 
-  it('broadcasts live room cursor presence without persisting activity', async () => {
+  it('rejects live room cursor presence without source-backed sample evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -944,17 +944,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
-      type: 'ROOM_CURSOR',
-      role: 'HOST',
-      payload: {
-        clientId: 'host-client',
-        x: 0.25,
-        y: 0.4,
-        updatedAt: 123,
-      },
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
     }));
-    expect(storage.get('desktopActivityLog')).toBeUndefined();
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR',
+    }));
+    expect(storage.get('cursorActivityLog')).toBeUndefined();
   });
 
   it('stores and broadcasts room chat messages for participant replay', async () => {
@@ -1454,7 +1451,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('recordingActivityLog')).toBe(false);
   });
 
-  it('broadcasts raw cursor moves live without persisting cursor evidence', async () => {
+  it('rejects raw cursor moves without source-backed sample evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
     const { state, storage } = makeState([
@@ -1474,14 +1471,12 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
 
-    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
       type: 'ROOM_CURSOR',
-      role: 'GUEST',
-      payload: expect.objectContaining({
-        clientId: 'guest-client',
-        x: 0.42,
-        y: 0.61,
-      }),
     }));
     expect(storage.has('cursorActivityLog')).toBe(false);
   });

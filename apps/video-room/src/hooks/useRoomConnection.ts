@@ -42,6 +42,9 @@ const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d{1,4}:\d{1,4}$/;
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 
 export interface RoomClippyAction {
   id: string;
@@ -534,6 +537,10 @@ function isWindowType(value: unknown): value is WindowType {
 
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function isUnitNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 function stringOrNull(value: unknown): string | null | undefined {
@@ -1287,6 +1294,45 @@ function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence 
   };
 }
 
+export function hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role?: RoomRole): boolean {
+  const evidence = cursor.evidence;
+  if (!isRecord(evidence)) return false;
+  const actor = role === 'HOST' ? 'host' : role === 'GUEST' ? 'guest' : cursor.role === 'HOST' ? 'host' : 'guest';
+  const normalizedX = isUnitNumber(evidence.normalizedX) ? evidence.normalizedX : null;
+  const normalizedY = isUnitNumber(evidence.normalizedY) ? evidence.normalizedY : null;
+  const previousX = evidence.previousNormalizedX;
+  const previousY = evidence.previousNormalizedY;
+  const distance = evidence.distanceFromPrevious;
+  const sampledAtMs = evidence.sampledAtMs;
+  const cursorSampleId = evidence.cursorSampleId;
+  if (normalizedX === null || normalizedY === null) return false;
+  if (previousX !== null && !isUnitNumber(previousX)) return false;
+  if (previousY !== null && !isUnitNumber(previousY)) return false;
+  if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
+    return false;
+  }
+  if (typeof sampledAtMs !== 'number' || !Number.isInteger(sampledAtMs) || sampledAtMs < 0) {
+    return false;
+  }
+  const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
+  return cursor.role === role
+    && evidence.source === 'win95_cursor_presence_client_sample'
+    && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+    && evidence.actor === actor
+    && evidence.surface === 'win95'
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.length > 0
+    && evidence.evidenceSampling === 'presence_sample'
+    && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+    && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+    && evidence.rawCursorMovesPersisted === false
+    && typeof cursorSampleId === 'string'
+    && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
+    && cursorSampleId === expectedSampleId
+    && Math.abs(cursor.x - normalizedX) <= 0.001
+    && Math.abs(cursor.y - normalizedY) <= 0.001;
+}
+
 function isRoomFileKind(value: unknown): value is RoomFileKind {
   return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
 }
@@ -1432,6 +1478,7 @@ export function shouldSendCursorPresence(input: {
   lastSentAtMs: number;
   intervalMs?: number;
 }): boolean {
+  if (!input.hasEvidence) return false;
   if (input.hasEvidence) return true;
   if (input.lastSentAtMs <= 0) return true;
   if (input.nowMs < input.lastSentAtMs) return true;
@@ -2088,7 +2135,11 @@ export function useRoomConnection(
           setTerminalEvents((prev) => [...prev.slice(-199), terminalEvent]);
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
-          if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
+          if (
+            !cursor
+            || cursor.clientId === desktopClientIdRef.current
+            || !hasSourceBackedCursorEvidence(cursor, isRoomRole(message.role) ? message.role : undefined)
+          ) return;
           setPeerCursors((prev) => mergePeerCursorPresence(prev, cursor));
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
           const event = parseFileSystemEvent(message.payload);
@@ -2517,6 +2568,13 @@ export function useRoomConnection(
       updatedAt: now,
       ...(evidence ? { evidence } : {}),
     };
+    if (!hasSourceBackedCursorEvidence(cursor, role)) {
+      console.error('[publishCursorPresence] rejected cursor presence without source-backed evidence:', {
+        role,
+        source: cursor.evidence?.source,
+      });
+      return;
+    }
     sendCursorPresence(cursor);
   }, [role, sendCursorPresence]);
 

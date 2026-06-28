@@ -5,6 +5,7 @@ import {
   applyRoomRecordingStateEvent,
   decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
+  hasSourceBackedCursorEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
@@ -136,12 +137,12 @@ describe('mergePeerCursorPresence', () => {
 });
 
 describe('shouldSendCursorPresence', () => {
-  it('rate-limits raw cursor moves while always preserving source-backed samples', () => {
+  it('rejects raw cursor moves while always preserving source-backed samples', () => {
     expect(shouldSendCursorPresence({
       hasEvidence: false,
       nowMs: 1000,
       lastSentAtMs: 0,
-    })).toBe(true);
+    })).toBe(false);
 
     expect(shouldSendCursorPresence({
       hasEvidence: false,
@@ -153,13 +154,56 @@ describe('shouldSendCursorPresence', () => {
       hasEvidence: false,
       nowMs: 1000 + ROOM_CURSOR_SEND_INTERVAL_MS,
       lastSentAtMs: 1000,
-    })).toBe(true);
+    })).toBe(false);
 
     expect(shouldSendCursorPresence({
       hasEvidence: true,
       nowMs: 1001,
       lastSentAtMs: 1000,
     })).toBe(true);
+  });
+});
+
+describe('hasSourceBackedCursorEvidence', () => {
+  const sourceBackedCursor: RoomCursorPresence = {
+    clientId: 'guest-client',
+    role: 'GUEST',
+    x: 0.42,
+    y: 0.61,
+    updatedAt: 1761592321000,
+    evidence: {
+      source: 'win95_cursor_presence_client_sample',
+      cursorEventSource: 'browser_win95_desktop_pointermove',
+      actor: 'guest',
+      cursorSampleId: 'cursor:guest:1761592321000:420:610',
+      sampledAtMs: 1761592321000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      normalizedX: 0.42,
+      normalizedY: 0.61,
+      previousNormalizedX: null,
+      previousNormalizedY: null,
+      distanceFromPrevious: null,
+      evidenceSampling: 'presence_sample',
+      sampleIntervalMs: 15000,
+      movementThreshold: 0.03,
+      rawCursorMovesPersisted: false,
+    },
+  };
+
+  it('accepts cursor presence only when the Win95 browser sample evidence matches the payload', () => {
+    expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'GUEST')).toBe(true);
+  });
+
+  it('rejects raw cursor presence before it can be sent or rendered', () => {
+    expect(hasSourceBackedCursorEvidence({
+      ...sourceBackedCursor,
+      evidence: undefined,
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('rejects cursor samples attributed to the wrong room actor', () => {
+    expect(hasSourceBackedCursorEvidence(sourceBackedCursor, 'HOST')).toBe(false);
   });
 });
 

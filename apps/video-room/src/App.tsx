@@ -1768,7 +1768,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const handleCursorMove = useCallback((position: { x: number; y: number }): void => {
     if (room.roomSurface !== 'win95') {
-      room.publishCursorPresence(position);
       return;
     }
     const evidence = buildCursorPresenceEvidence({
@@ -1779,8 +1778,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs: Date.now(),
       previous: cursorPresenceEvidenceRef.current,
     });
-    room.publishCursorPresence(position, evidence?.properties);
     if (!evidence) return;
+    room.publishCursorPresence(position, evidence.properties);
     cursorPresenceEvidenceRef.current = evidence.state;
     captureSessionEvent('cursor_presence', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor]);
