@@ -38,6 +38,7 @@ import {
   buildClippyAgentChatFallbackEvidence,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
+  buildClippyUserChatEvidence,
 } from './lib/clippyEvidence';
 import {
   buildCodeEditorOpenEvidence,
@@ -1619,15 +1620,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
-    captureSessionEvent('ai_chat_user', message.text, roomActor, {
-      source: 'clippy_agent_chat_client_submit',
+    const evidence = buildClippyUserChatEvidence({
+      message,
+      actor: roomActor,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
-      deliveryStatus: 'sent_to_bridge',
-      messageTimestamp: message.timestamp,
+      repoUrl: workspace?.repoUrl ?? null,
     });
+    captureSessionEvent('ai_chat_user', evidence.text, roomActor, evidence.properties);
   };
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {

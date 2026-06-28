@@ -3,6 +3,7 @@ import {
   buildClippyAgentChatFallbackEvidence,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
+  buildClippyUserChatEvidence,
 } from './clippyEvidence';
 
 describe('clippy evidence', () => {
@@ -130,6 +131,43 @@ describe('clippy evidence', () => {
         agentActionObservedAt: '2026-06-27T21:10:00.000Z',
         agentActionBridgePersisted: true,
         executionStatus: 'executed',
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
+  it('captures user prompts as browser-to-bridge evidence without claiming an agent response', () => {
+    expect(buildClippyUserChatEvidence({
+      message: {
+        role: 'user',
+        text: 'Can you explain the failing order recovery test?',
+        timestamp: 1782603900000,
+        source: 'user_submit',
+      },
+      actor: 'guest',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      repoUrl: 'https://github.com/acme/orders',
+    })).toMatchObject({
+      text: 'Can you explain the failing order recovery test?',
+      properties: {
+        source: 'clippy_agent_chat_client_submit',
+        agentChatEventSource: 'browser_clippy_chat_window',
+        bridgeMessageType: 'CHAT',
+        bridgeProtocol: 'clippy_dev_container_ws',
+        promptId: expect.stringMatching(/^workspace-123:guest:prompt:1782603900000:clippy_[a-f0-9]{8}$/),
+        promptFingerprint: expect.stringMatching(/^clippy_[a-f0-9]{8}$/),
+        promptLength: 48,
+        promptTimestamp: 1782603900000,
+        deliveredToAgentBridge: true,
+        agent: 'devin',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-123',
+        repoUrl: 'https://github.com/acme/orders',
         agentResponseClaimed: false,
       },
     });

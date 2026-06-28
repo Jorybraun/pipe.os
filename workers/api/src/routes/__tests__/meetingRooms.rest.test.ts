@@ -1999,7 +1999,7 @@ describe('meeting room recording living-context route', () => {
       bridgePersisted: true,
     });
 
-    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeClippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2010,6 +2010,41 @@ describe('meeting room recording living-context route', () => {
           source: 'clippy_agent_chat',
           surface: 'win95',
           workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeClippyUserChatRes.status).toBe(422);
+    await expect(fakeClippyUserChatRes.json()).resolves.toMatchObject({
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid session event.',
+      },
+    });
+
+    const clippyUserChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_user',
+        text: 'Can you explain the failing order recovery test?',
+        actor: 'guest',
+        properties: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 48,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
         },
       }),
     }, env, ctx);
@@ -2091,7 +2126,14 @@ describe('meeting room recording living-context route', () => {
     expect(chatNodes[1]?.narrative_text).toContain('order recovery test');
     expect(JSON.parse(chatNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
-      source: 'clippy_agent_chat',
+      source: 'clippy_agent_chat_client_submit',
+      agentChatEventSource: 'browser_clippy_chat_window',
+      bridgeMessageType: 'CHAT',
+      promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+      promptFingerprint: 'clippy_0123abcd',
+      promptLength: 48,
+      deliveredToAgentBridge: true,
+      agentResponseClaimed: false,
       workspaceSessionId: 'workspace-session-1',
     });
   });

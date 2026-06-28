@@ -1,5 +1,5 @@
 import type { RoomSurface } from '../hooks/useRoomConnection';
-import type { AgentRoomAction } from '../hooks/useAgentConnection';
+import type { AgentChatMessage, AgentRoomAction } from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
 
 export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy';
@@ -17,9 +17,34 @@ export interface ClippyRoomActionExecutionEvidence {
   properties: Record<string, unknown>;
 }
 
+export interface ClippyUserChatEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
+
 export interface ClippyAgentChatFallbackEvidence {
   text: string;
   properties: Record<string, unknown>;
+}
+
+const FNV_32_OFFSET = 0x811c9dc5;
+const FNV_32_PRIME = 0x01000193;
+
+function safeEvidenceIdPart(value: string | null): string {
+  const normalized = (value ?? 'none')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'none';
+}
+
+export function clippyTextFingerprint(text: string): string {
+  let hash = FNV_32_OFFSET;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_32_PRIME);
+  }
+  return `clippy_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 function clippyUiActionText(actionId: ClippyUiActionId): string {
@@ -103,6 +128,41 @@ export function buildClippyRoomActionExecutionEvidence(input: {
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
       workspaceSessionId: input.workspaceSessionId,
+      agentResponseClaimed: false,
+    },
+  };
+}
+
+export function buildClippyUserChatEvidence(input: {
+  message: AgentChatMessage;
+  actor: ClippyEvidenceActor;
+  surface: RoomSurface;
+  roomPhase: RoomPhase;
+  workspaceStatus: string | null;
+  workspaceSessionId: string | null;
+  repoUrl: string | null;
+}): ClippyUserChatEvidence {
+  const promptFingerprint = clippyTextFingerprint(input.message.text);
+  const workspacePart = safeEvidenceIdPart(input.workspaceSessionId);
+  const promptId = `${workspacePart}:${input.actor}:prompt:${input.message.timestamp}:${promptFingerprint}`;
+  return {
+    text: input.message.text,
+    properties: {
+      source: 'clippy_agent_chat_client_submit',
+      agentChatEventSource: 'browser_clippy_chat_window',
+      bridgeMessageType: 'CHAT',
+      bridgeProtocol: 'clippy_dev_container_ws',
+      promptId,
+      promptFingerprint,
+      promptLength: input.message.text.length,
+      promptTimestamp: input.message.timestamp,
+      deliveredToAgentBridge: true,
+      agent: input.message.agentName ?? 'devin',
+      surface: input.surface,
+      roomPhase: input.roomPhase,
+      workspaceStatus: input.workspaceStatus,
+      workspaceSessionId: input.workspaceSessionId,
+      repoUrl: input.repoUrl,
       agentResponseClaimed: false,
     },
   };

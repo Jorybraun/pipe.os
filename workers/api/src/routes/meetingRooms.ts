@@ -103,6 +103,7 @@ const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'S
 const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
+const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
@@ -406,6 +407,42 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Clippy action evidence must come from a recognized Clippy UI or agent bridge source.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'ai_chat_user') {
+    const promptTimestamp = properties.promptTimestamp;
+    const promptFingerprint = properties.promptFingerprint;
+    const workspaceSessionId = properties.workspaceSessionId;
+    const promptId = properties.promptId;
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const sourceOk = properties.source === 'clippy_agent_chat_client_submit'
+      && properties.agentChatEventSource === 'browser_clippy_chat_window';
+    const bridgeOk = properties.bridgeMessageType === 'CHAT'
+      && properties.bridgeProtocol === 'clippy_dev_container_ws'
+      && properties.deliveredToAgentBridge === true
+      && properties.agentResponseClaimed === false;
+    const promptOk = typeof promptTimestamp === 'number'
+      && Number.isFinite(promptTimestamp)
+      && promptTimestamp >= 0
+      && typeof promptFingerprint === 'string'
+      && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+      && typeof properties.promptLength === 'number'
+      && properties.promptLength === event.text.length
+      && typeof promptId === 'string'
+      && typeof workspaceSessionId === 'string'
+      && promptId === `${workspaceSessionId}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (actorOk && sourceOk && bridgeOk && promptOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a delivered bridge CHAT prompt id, fingerprint, length, and workspace context.',
       path: ['properties'],
     });
     return;
