@@ -1254,6 +1254,73 @@ describe('meeting room recording living-context route', () => {
       roomPhase: 'connected',
     });
 
+    const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text: 'I think the retry test should fail before the fix.',
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_claim',
+          roomMessageId: 'chat-message-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeChatRes.status).toBe(422);
+
+    const chatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'chat_message',
+        text: 'I think the retry test should fail before the fix.',
+        actor: 'guest',
+        properties: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'guest',
+          roomMessageId: 'chat-message-1',
+          clientId: 'browser-client-1',
+          messageCreatedAt: 1782602000000,
+          messageLength: 50,
+          deliveryStatus: 'pending',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(chatRes.status).toBe(200);
+
+    const chatNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_chat_message'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(chatNode).toMatchObject({
+      node_type: 'session_chat_message',
+      source_type: 'meeting_session',
+    });
+    expect(chatNode?.narrative_text).toContain(
+      'Room chat message from guest: "I think the retry test should fail before the fix."',
+    );
+    expect(JSON.parse(chatNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_chat_client_submit',
+      chatEventSource: 'browser_room_chat_window',
+      roomMessageId: 'chat-message-1',
+      clientId: 'browser-client-1',
+      deliveryStatus: 'pending',
+      surface: 'win95',
+      roomPhase: 'connected',
+    });
+
     const fakeTerminalCommandRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

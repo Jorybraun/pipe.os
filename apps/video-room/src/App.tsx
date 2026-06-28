@@ -59,6 +59,7 @@ import {
   roomFileEvidenceText,
   type RoomFileEvidenceOperation,
 } from './lib/roomFileEvidence';
+import { buildRoomChatEvidence } from './lib/chatEvidence';
 import {
   buildBrowserNavigationEvidence,
   normalizeBrowserNavigationUrl,
@@ -476,14 +477,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const sendChatMessage = (text: string): void => {
     const message = room.publishChatMessage(text);
     if (!message) return;
-    captureSessionEvent('chat_message', message.text, roomActor, {
-      source: 'room_chat_client_submit',
+    const evidence = buildRoomChatEvidence({
+      message,
+      actor: roomActor,
       surface: room.roomSurface,
       roomPhase: room.phase,
-      roomMessageId: message.id,
-      clientId: message.clientId,
-      deliveryStatus: message.deliveryStatus ?? 'pending',
     });
+    captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
   };
 
   useEffect(() => {

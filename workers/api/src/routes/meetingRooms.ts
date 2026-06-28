@@ -122,6 +122,7 @@ const WINDOW_STATE_ACTIONS = new Set([
   'update',
 ]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
+const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -174,6 +175,29 @@ const sessionEventSchema = z.object({
   const hasRoomSurface = (value: unknown): boolean => typeof value === 'string' && ROOM_SURFACES.has(value);
   const propertyActorMatches = event.actor
     && (properties.actor === undefined || properties.actor === event.actor);
+  if (event.type === 'chat_message') {
+    const sourceOk = properties.source === 'room_chat_client_submit'
+      && properties.chatEventSource === 'browser_room_chat_window';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const messageOk = hasString(properties.roomMessageId)
+      && hasString(properties.clientId)
+      && hasFiniteNonNegativeNumber(properties.messageCreatedAt)
+      && typeof properties.messageLength === 'number'
+      && properties.messageLength === event.text.length
+      && typeof properties.deliveryStatus === 'string'
+      && CHAT_DELIVERY_STATUSES.has(properties.deliveryStatus);
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && typeof properties.durableObjectReplayExpected === 'boolean';
+    if (sourceOk && actorOk && messageOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Room chat evidence must come from browser room chat with message identity, delivery status, surface, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
   if (event.type === 'file_change') {
     if (properties.source === 'win95_shared_file_system') {
       const operation = properties.operation;
