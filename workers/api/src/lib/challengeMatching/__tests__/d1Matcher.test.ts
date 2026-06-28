@@ -1788,6 +1788,230 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(diagnosticSource.exact_text).toContain('"status":"NEEDS_MORE_EVIDENCE"');
   });
 
+  it('uses completed evidence-plan follow-up transcript evidence on the next repo-match rerun', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare('INSERT INTO qualified_repos (id) VALUES (?)').run(973);
+    const data = await buildMuiBaseUiPopoverChallengeFixture();
+    await persistReviewChallengeGraph(
+      createNodeSqliteD1(sqlite),
+      973,
+      data.input,
+      data.packet,
+      data.graph,
+    );
+
+    const first = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+    expect(first.status).toBe('NEEDS_MORE_EVIDENCE');
+    expect(first.repoId).toBeUndefined();
+    expect(first.explanation?.missingEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
+
+    const transcriptText = [
+      'I reviewed React TypeScript popover trigger behavior in usePopoverRoot,',
+      'caught the impatient click timing bug, and asked for a patient click threshold',
+      'regression test with a JavaScript test runner before approval.',
+    ].join(' ');
+    const observedAt = '2026-06-22T19:10:00.000Z';
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-rerun-1',
+      'assessment-session:code-review-evidence-plan:code-review-rerun-1:scheduled-follow-up-1',
+      'scheduled-follow-up-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-rerun-1',
+        contextCallInterviewId: 'scheduled-follow-up-1',
+        matchRunId: first.matchRunId,
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-22T19:00:00.000Z',
+      '2026-06-22T19:00:00.000Z',
+    );
+    sqlite.prepare(
+      `INSERT INTO contacts (
+         id, owner_id, name, email, phone, company, role, type, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+    ).run(
+      'contact-follow-up-1',
+      'workspace-1',
+      'Candidate One',
+      'candidate@example.com',
+      'Frontend systems engineer',
+      'candidate',
+      observedAt,
+      observedAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO meetings (id, owner_id, started_at, ended_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(
+      'meeting-follow-up-1',
+      'workspace-1',
+      '2026-06-22T19:00:00.000Z',
+      observedAt,
+      observedAt,
+    );
+    sqlite.prepare(
+      `INSERT INTO meeting_participants (
+         id, meeting_id, contact_id, role, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'participant-follow-up-1',
+      'meeting-follow-up-1',
+      'contact-follow-up-1',
+      'ATTENDEE',
+      observedAt,
+      observedAt,
+    );
+
+    await ingestMeetingTranscriptToLivingContext(createNodeSqliteD1(sqlite), {
+      meetingId: 'meeting-follow-up-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-follow-up-1',
+      provider: 'test-transcript',
+      startedAt: '2026-06-22T19:00:00.000Z',
+      endedAt: observedAt,
+      personContextMode: 'attributed',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which frontend code-review work should PIPE use as evidence?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          timestampStartMs: 0,
+          timestampEndMs: 1500,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: transcriptText,
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-follow-up-1',
+          timestampStartMs: 2000,
+          timestampEndMs: 8000,
+          confidence: 0.98,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'reviewed',
+        narrative: 'Candidate reviewed React TypeScript popover trigger timing and asked for regression coverage.',
+        objectType: 'source-described code-review evidence',
+        objectValue: { surface: 'React TypeScript popover patient click threshold regression test' },
+        confidence: 0.97,
+        concepts: [
+          {
+            surface: 'popover',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'patient click threshold',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'JavaScript test runner',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'React',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'TypeScript',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
+      }],
+      extractorVersion: 'code-review-evidence-plan-rerun-test-v1',
+    });
+
+    expect(sqlite.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-rerun-1'`,
+    ).get()).toEqual({ state: 'EVALUATED' });
+    expect(sqlite.prepare(
+      `SELECT json_extract(output_json, '$.sourceSpanCount') AS source_span_count
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-rerun-1'`,
+    ).get()).toEqual({ source_span_count: 1 });
+
+    const second = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
+
+    expect(second.status).toBe('MATCHED');
+    expect(second.repoId).toBe(973);
+    expect(second.prNumber).toBe(973);
+    expect(second.explanation?.selectedPr).toEqual({
+      challengeId: data.packet.id,
+      repoId: '973',
+      prNumber: 973,
+      sourceVersion: data.input.repoSnapshot.id,
+    });
+    expect(second.explanation?.missingEvidence).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        scope: 'candidate',
+        reason: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+      }),
+    ]));
+    expect(second.explanation?.candidateSpans.flatMap((span) =>
+      span.sourceRefs.map((source) => source.exactText),
+    )).toContain(transcriptText);
+    const ranked = sqlite.prepare(
+      `SELECT status, selected_packet_id, ranked_results_json
+         FROM match_runs
+        WHERE id = ?`,
+    ).get(second.matchRunId) as {
+      status: string;
+      selected_packet_id: string;
+      ranked_results_json: string;
+    };
+    expect(ranked.status).toBe('MATCHED');
+    expect(ranked.selected_packet_id).toBe(data.packet.id);
+    const [rankedResult] = JSON.parse(ranked.ranked_results_json) as Array<{
+      alignments: Array<{
+        sharedConcepts: string[];
+        candidateSourceRefs: Array<{ exactText?: string; sourceRefType?: string }>;
+      }>;
+    }>;
+    const sharedConcepts = new Set(rankedResult.alignments.flatMap((alignment) => alignment.sharedConcepts));
+    expect(sharedConcepts.has('term:patient-click-threshold')).toBe(true);
+    expect(rankedResult.alignments.some((alignment) =>
+      alignment.candidateSourceRefs.some((ref) =>
+        ref.sourceRefType === 'source_span'
+        && ref.exactText === transcriptText
+      )
+    )).toBe(true);
+  });
+
   it('rejects production-ready packets whose source-backed context projection is missing', async () => {
     seedCandidateEvidence(sqlite);
     const data = await seedProductionReadyPacket(sqlite, 42);
