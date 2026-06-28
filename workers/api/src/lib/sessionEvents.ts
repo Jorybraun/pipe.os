@@ -1355,6 +1355,65 @@ function stringProperty(record: JsonObject, key: string): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function numberProperty(record: JsonObject, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function promptCorrelationRef(
+  properties: JsonObject,
+  idKey: 'promptId' | 'browserPromptId',
+  fingerprintKey: 'promptFingerprint' | 'browserPromptFingerprint',
+  timestampKey: 'promptTimestamp' | 'browserPromptTimestamp',
+  lengthKey: 'promptLength' | 'browserPromptLength',
+): JsonObject | null {
+  const promptId = stringProperty(properties, idKey);
+  if (!promptId) return null;
+
+  const ref: JsonObject = { promptId };
+  const fingerprint = stringProperty(properties, fingerprintKey);
+  if (fingerprint) ref.fingerprint = fingerprint;
+  const timestamp = numberProperty(properties, timestampKey);
+  if (timestamp !== null) ref.timestamp = timestamp;
+  const length = numberProperty(properties, lengthKey);
+  if (length !== null) ref.length = length;
+  return ref;
+}
+
+function sessionEventCorrelationRefs(event: SessionEvent, properties: JsonObject): JsonObject | null {
+  const refs: JsonObject = {};
+
+  const prompt = promptCorrelationRef(
+    properties,
+    'promptId',
+    'promptFingerprint',
+    'promptTimestamp',
+    'promptLength',
+  );
+  if (prompt) refs.prompt = prompt;
+
+  const browserPrompt = promptCorrelationRef(
+    properties,
+    'browserPromptId',
+    'browserPromptFingerprint',
+    'browserPromptTimestamp',
+    'browserPromptLength',
+  );
+  if (browserPrompt) refs.browserPrompt = browserPrompt;
+
+  const agentChatResponseId = stringProperty(properties, 'agentChatResponseId');
+  if (event.type === 'ai_chat_agent' && agentChatResponseId) {
+    refs.agentResponse = { responseId: agentChatResponseId };
+  }
+
+  const clippyActionEventId = stringProperty(properties, 'clippyActionEventId');
+  if (event.type === 'clippy_action' && clippyActionEventId) {
+    refs.clippyAction = { actionEventId: clippyActionEventId };
+  }
+
+  return Object.keys(refs).length > 0 ? refs : null;
+}
+
 function observedAtFromTimestamp(timestamp: number): string {
   if (!Number.isFinite(timestamp) || timestamp < 0) return new Date(0).toISOString();
   return new Date(Math.round(timestamp) * 1000).toISOString();
@@ -1486,6 +1545,7 @@ async function persistSessionEventContextRecord(
 
   const narrative = formatEventNarrative(event);
   const properties = jsonObject(event.properties);
+  const correlationRefs = sessionEventCorrelationRefs(event, properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
@@ -1537,6 +1597,7 @@ async function persistSessionEventContextRecord(
       sessionId: event.sessionId,
       candidateId: event.candidateId,
       properties,
+      ...(correlationRefs ? { correlationRefs } : {}),
       surface: stringProperty(properties, 'surface'),
       source: 'meeting_room_session_events',
     },
@@ -1949,6 +2010,12 @@ function contextPrimaryEventRef(properties: Record<string, unknown> | null): str
   return null;
 }
 
+function contextLinkedPromptRef(properties: Record<string, unknown> | null): string | null {
+  if (!properties) return null;
+  const browserPromptId = stringOrNull(properties.browserPromptId);
+  return browserPromptId ? `linkedPromptId=${browserPromptId}` : null;
+}
+
 function formatContextSourceRef(node: SessionContextNode): string {
   const parts = [
     `node=${node.id}`,
@@ -1960,6 +2027,8 @@ function formatContextSourceRef(node: SessionContextNode): string {
   if (source) parts.push(`source=${source}`);
   const eventRef = contextPrimaryEventRef(node.properties);
   if (eventRef) parts.push(eventRef);
+  const linkedPromptRef = contextLinkedPromptRef(node.properties);
+  if (linkedPromptRef) parts.push(linkedPromptRef);
   return `[source_ref: ${parts.join('; ')}]`;
 }
 

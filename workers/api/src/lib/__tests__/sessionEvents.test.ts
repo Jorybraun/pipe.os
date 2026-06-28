@@ -374,6 +374,27 @@ describe('sessionEvents', () => {
           created_at: 1735689660,
           updated_at: 1735689660,
         },
+        {
+          id: 'node-3',
+          node_type: 'session_chat_agent',
+          narrative_text: '[2025-01-01T00:02:00.000Z] Agent responded: "I inspected the failing test."',
+          extracted_properties_json: JSON.stringify({
+            source: 'clippy_agent_bridge',
+            agentChatResponseId: 'agent-chat:devin:1735689720000:CHAT_RESPONSE:agent_314a13fc',
+            browserPromptId: 'workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd',
+          }),
+          captured_at: 1735689720,
+          source_reference: 'test-session',
+          candidate_id: 'cand-123',
+          embedding_json: null,
+          source_type: 'meeting_session',
+          confidence: 1.0,
+          supersedes: null,
+          superseded_at: null,
+          decomposition_version: 'session-v1',
+          created_at: 1735689720,
+          updated_at: 1735689720,
+        },
       ];
 
       const dbWithResults: any = {
@@ -385,12 +406,13 @@ describe('sessionEvents', () => {
       };
 
       const summary = await getSessionContextSummary(dbWithResults, 'cand-123', 'test-session');
-      expect(summary).toContain('Session Context (2 events)');
+      expect(summary).toContain('Session Context (3 events)');
       expect(summary).toContain('CHAT');
       expect(summary).toContain('User asked');
       expect(summary).toContain('TERMINAL');
       expect(summary).toContain('npm test');
       expect(summary).toContain('[source_ref: node=node-1; type=session_chat_user; session=test-session; capturedAt=2025-01-01T00:00:00.000Z; source=clippy_agent_chat_client_submit; promptId=workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd]');
+      expect(summary).toContain('[source_ref: node=node-3; type=session_chat_agent; session=test-session; capturedAt=2025-01-01T00:02:00.000Z; source=clippy_agent_bridge; agentChatResponseId=agent-chat:devin:1735689720000:CHAT_RESPONSE:agent_314a13fc; linkedPromptId=workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd]');
       expect(summary).toContain('[source_ref: node=node-2; type=session_terminal_command; session=test-session; capturedAt=2025-01-01T00:01:00.000Z; source=container_terminal; terminalCommandId=terminal-workspace-1:command:guest:1735689660000:1:term_0123abcd]');
     });
   });

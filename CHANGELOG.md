@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin agent replies and room-action suggestions now expose normalized browser prompt correlation refs in meeting-session context records and compact agent context summaries, so rebuildable hypergraph projections can join prompt, response, and action evidence without guessing.
 - Clippy/Devin browser prompt correlation refs are now validated across HTTP session ingestion, Durable Object room sync, and replay projections, rejecting malformed agent-output/action evidence instead of accepting loose prompt-link JSON.
 - Real Clippy/Devin stdout responses and room-action suggestions now preserve the browser prompt id that caused the bridge handoff, letting the hypergraph join user chat, stdin delivery diagnostics, agent output, and executed actions without guessing.
 - Clippy CHAT frames now carry a stable browser prompt id into the real dev-container bridge, and bridge handoff diagnostics preserve the same prompt reference after stdin delivery attempts for source-backed hypergraph correlation.

@@ -1957,6 +1957,10 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1782594600000,
           clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
           bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
         },
       }),
     }, env, ctx);
@@ -2040,6 +2044,10 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1782594600000,
           clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
           bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
         },
       }),
     }, env, ctx);
@@ -2089,8 +2097,32 @@ describe('meeting room recording living-context route', () => {
         capturedAtMs: 1782594600000,
         clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
         bridgePersisted: true,
+        browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
       }),
     ]));
+
+    const agentActionContextRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:clippy_action'
+          AND narrative LIKE '%devin suggested room action%'`,
+    ).get() as { qualifiers_json: string } | undefined;
+    expect(JSON.parse(agentActionContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'clippy_action',
+      actor: 'agent',
+      correlationRefs: {
+        browserPrompt: {
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          fingerprint: 'clippy_0123abcd',
+          timestamp: 1782603900000,
+          length: 48,
+        },
+        clippyAction: {
+          actionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+        },
+      },
+    });
 
     const fakeAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
@@ -3079,6 +3111,30 @@ describe('meeting room recording living-context route', () => {
         agentResponseClaimed: true,
       }),
     ]));
+
+    const agentChatContextRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_session_event'
+          AND predicate = 'session_event:ai_chat_agent'
+          AND narrative LIKE '%replay idempotency%'`,
+    ).get() as { qualifiers_json: string } | undefined;
+    expect(JSON.parse(agentChatContextRecord?.qualifiers_json ?? '{}')).toMatchObject({
+      eventType: 'ai_chat_agent',
+      actor: 'agent',
+      correlationRefs: {
+        browserPrompt: {
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          fingerprint: 'clippy_0123abcd',
+          timestamp: 1782603900000,
+          length: 48,
+        },
+        agentResponse: {
+          responseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+        },
+      },
+    });
+
     expect(chatNodes[2]?.narrative_text).toContain('User asked');
     expect(chatNodes[2]?.narrative_text).toContain('order recovery test');
     expect(JSON.parse(chatNodes[2]?.extracted_properties_json ?? '{}')).toMatchObject({
