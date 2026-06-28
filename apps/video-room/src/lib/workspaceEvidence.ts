@@ -8,6 +8,12 @@ export interface CodeEditorOpenEvidence {
   properties: Record<string, unknown>;
 }
 
+export interface CodeServerFileChangeEvidence {
+  eventType: 'code_editor_save' | 'file_change';
+  text: string;
+  properties: Record<string, unknown>;
+}
+
 export interface WorkspaceStateDesktopEvent {
   kind: 'WORKSPACE_STATE_CHANGED';
   actor: RoomEvidenceActor;
@@ -69,6 +75,49 @@ export function buildCodeEditorOpenEvidence(input: {
       challengeSource: input.workspace?.challenge?.source ?? null,
       challengeMessage: input.workspace?.challenge?.message ?? null,
       proxyUrlPersisted: false,
+    },
+  };
+}
+
+export function buildCodeServerFileChangeEvidence(input: {
+  filePath: string;
+  actionName: string;
+  source?: string | null;
+  observedAt?: string | null;
+  sizeBytes?: number | null;
+  contentHash?: string | null;
+  contentPreview?: string | null;
+  persisted?: boolean;
+  workspace: RoomWorkspace | null;
+  surface: RoomEvidenceSurface;
+  roomPhase: RoomPhase;
+}): CodeServerFileChangeEvidence | null {
+  if (input.persisted) return null;
+  if (input.source !== 'code_server_workspace') return null;
+  const filePath = input.filePath.trim();
+  const actionName = input.actionName.trim();
+  if (!filePath || !actionName) return null;
+  const session = input.workspace?.session ?? null;
+  return {
+    eventType: actionName === 'deleted' ? 'file_change' : 'code_editor_save',
+    text: filePath,
+    properties: {
+      source: 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      action: actionName,
+      surface: input.surface,
+      roomPhase: input.roomPhase,
+      workspaceStatus: session?.status ?? null,
+      workspaceSessionId: session?.sessionId ?? null,
+      repoUrl: input.workspace?.repoUrl ?? null,
+      path: filePath,
+      observedAt: input.observedAt ?? null,
+      contentHash: input.contentHash ?? null,
+      sizeBytes: input.sizeBytes ?? null,
+      contentPreview: input.contentPreview ?? null,
+      bridgePersisted: false,
     },
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCodeEditorOpenEvidence,
+  buildCodeServerFileChangeEvidence,
   buildWorkspaceStateDesktopEvent,
 } from './workspaceEvidence';
 import type { RoomWorkspace } from '../types';
@@ -75,6 +76,60 @@ describe('buildCodeEditorOpenEvidence', () => {
       surface: 'standard',
       roomPhase: 'waiting',
       capturedAtMs: 1700000000000,
+    })).toBeNull();
+  });
+});
+
+describe('buildCodeServerFileChangeEvidence', () => {
+  it('builds browser-observed code-server file evidence only from explicit bridge source metadata', () => {
+    expect(buildCodeServerFileChangeEvidence({
+      filePath: 'src/app.ts',
+      actionName: 'modified',
+      source: 'code_server_workspace',
+      observedAt: '2026-06-27T12:00:00.000Z',
+      sizeBytes: 421,
+      contentHash: 'a'.repeat(64),
+      contentPreview: 'export const answer = 42;',
+      persisted: false,
+      workspace,
+      surface: 'win95',
+      roomPhase: 'connected',
+    })).toEqual({
+      eventType: 'code_editor_save',
+      text: 'src/app.ts',
+      properties: {
+        source: 'code_server_workspace',
+        observedBy: 'clippy_agent_bridge',
+        bridgeEventType: 'FILE_CHANGED',
+        editorSurface: 'code-server',
+        action: 'modified',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        path: 'src/app.ts',
+        observedAt: '2026-06-27T12:00:00.000Z',
+        contentHash: 'a'.repeat(64),
+        sizeBytes: 421,
+        contentPreview: 'export const answer = 42;',
+        bridgePersisted: false,
+      },
+    });
+  });
+
+  it('does not fabricate code-server file evidence when bridge source metadata is missing', () => {
+    expect(buildCodeServerFileChangeEvidence({
+      filePath: 'src/app.ts',
+      actionName: 'modified',
+      observedAt: '2026-06-27T12:00:00.000Z',
+      sizeBytes: 421,
+      contentHash: 'a'.repeat(64),
+      contentPreview: 'export const answer = 42;',
+      persisted: false,
+      workspace,
+      surface: 'win95',
+      roomPhase: 'connected',
     })).toBeNull();
   });
 });

@@ -43,6 +43,7 @@ import {
 } from './lib/clippyEvidence';
 import {
   buildCodeEditorOpenEvidence,
+  buildCodeServerFileChangeEvidence,
   buildWorkspaceStateDesktopEvent,
 } from './lib/workspaceEvidence';
 import {
@@ -1792,26 +1793,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyFileChange = (event: AgentFileChangeEvent): void => {
-    if (event.persisted) return;
-    const eventType = event.actionName === 'deleted' ? 'file_change' : 'code_editor_save';
-    captureSessionEvent(eventType, event.filePath, 'system', {
-      source: event.source ?? 'code_server_workspace',
-      observedBy: 'clippy_agent_bridge',
-      bridgeEventType: 'FILE_CHANGED',
-      editorSurface: 'code-server',
-      action: event.actionName,
+    const evidence = buildCodeServerFileChangeEvidence({
+      filePath: event.filePath,
+      actionName: event.actionName,
+      source: event.source,
+      observedAt: event.observedAt,
+      sizeBytes: event.sizeBytes,
+      contentHash: event.contentHash,
+      contentPreview: event.contentPreview,
+      persisted: event.persisted,
+      workspace,
       surface: room.roomSurface,
       roomPhase: room.phase,
-      workspaceStatus: workspaceSession?.status ?? null,
-      workspaceSessionId: workspaceSession?.sessionId ?? null,
-      repoUrl: workspace?.repoUrl ?? null,
-      path: event.filePath,
-      observedAt: event.observedAt ?? null,
-      contentHash: event.contentHash ?? null,
-      sizeBytes: event.sizeBytes ?? null,
-      contentPreview: event.contentPreview ?? null,
-      bridgePersisted: false,
     });
+    if (!evidence) return;
+    captureSessionEvent(evidence.eventType, evidence.text, 'system', evidence.properties);
   };
 
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Browser-observed Devin/code-server file changes now require explicit `code_server_workspace` bridge source metadata before becoming save/delete evidence instead of defaulting missing source fields.
 - Proactive Clippy prompts without browser prompt evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
 - Workspace/dev-container state without browser observer evidence is now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
 - Clippy UI and agent room-action evidence now carries stable action ids and capture timestamps across tray, prompt, browser-executed, and persisted bridge suggestion paths.
