@@ -75,23 +75,23 @@ describe('createCandidateAgentProvider', () => {
     );
   });
 
-  it('remaps deprecated Workers AI Llama 3.1 8B variants before inference', async () => {
+  it('keeps active Workers AI Llama 3.1 8B fast variants intact', async () => {
     const ai = createAi();
     const provider = createGenerationProvider(aiEnv(ai), '@cf/meta/llama-3.1-8b-instruct-fast');
 
     expect(provider).toBeInstanceOf(CloudflareAIProvider);
-    expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+    expect((provider as CloudflareAIProvider).model).toBe('@cf/meta/llama-3.1-8b-instruct-fast');
 
     await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
 
     expect(ai.run).toHaveBeenCalledWith(
-      DEFAULT_CLOUDFLARE_MODEL,
+      '@cf/meta/llama-3.1-8b-instruct-fast',
       expect.objectContaining({
         messages: expect.any(Array),
       }),
     );
     expect(ai.run).not.toHaveBeenCalledWith(
-      '@cf/meta/llama-3.1-8b-instruct-fast',
+      DEFAULT_CLOUDFLARE_MODEL,
       expect.anything(),
     );
   });

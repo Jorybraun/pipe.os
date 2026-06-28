@@ -188,6 +188,21 @@ function parseJsonResponse(raw: string): Record<string, unknown> {
   throw new Error('Candidate Discovery response was not a JSON object');
 }
 
+function modelKeyForProvider(provider: LLMProvider): string {
+  const maybeKeyedProvider = provider as unknown as { getModelKey?: () => string };
+  if (typeof maybeKeyedProvider.getModelKey === 'function') {
+    try {
+      const modelKey = maybeKeyedProvider.getModelKey().trim();
+      if (modelKey.length > 0) return modelKey;
+    } catch {
+      // Fall through to the stable provider model below.
+    }
+  }
+
+  const model = provider.model.trim();
+  return model.length > 0 ? model : provider.name;
+}
+
 export async function discoverCandidateProfile(
   input: DiscoverCandidateProfileInput,
 ): Promise<CandidateDiscoveryResult> {
@@ -268,7 +283,7 @@ export async function discoverCandidateProfile(
     careerContext,
     situationSignature,
     profileVersion: CANDIDATE_DISCOVERY_PROMPT_VERSION,
-    modelUsed: provider.name,
+    modelUsed: modelKeyForProvider(provider),
     rawText,
   };
 }

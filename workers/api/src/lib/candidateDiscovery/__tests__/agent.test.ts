@@ -12,9 +12,24 @@ import type { LLMProvider } from '../../llm/types';
 function makeStubProvider(response: unknown, name = 'stub-gemma'): LLMProvider {
   return {
     name,
+    model: name,
     supportsTools: false,
     async complete() {
       return { content: typeof response === 'string' ? response : JSON.stringify(response) };
+    },
+  };
+}
+
+function makeModelKeyProvider(response: unknown, modelKey: string): LLMProvider & { getModelKey(): string } {
+  return {
+    name: 'cloudflare-ai',
+    model: '@cf/meta/llama-3.1-8b-instruct',
+    supportsTools: false,
+    async complete() {
+      return { content: typeof response === 'string' ? response : JSON.stringify(response) };
+    },
+    getModelKey() {
+      return modelKey;
     },
   };
 }
@@ -57,6 +72,30 @@ describe('discoverCandidateProfile', () => {
     expect(result.keyConcepts.primary_language).toBe('typescript');
     expect(result.profileVersion).toBe('candidate-v3');
     expect(result.modelUsed).toBe('stub-gemma');
+  });
+
+  it('records the exact provider model key when the provider exposes one', async () => {
+    const provider = makeModelKeyProvider({
+      candidate_searchable_profile: PROFILE_400,
+      key_concepts: {
+        mustHaveSkills: ['TypeScript', 'Cloudflare Workers'],
+        niceToHaveSkills: ['Vitest'],
+        seniority: 'senior',
+        primary_language: 'typescript',
+        detected_domain: 'developer-tools',
+      },
+    }, 'workers-ai/@cf/google/gemma-4-26b-a4b-it');
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: {
+        skills: ['TypeScript', 'Cloudflare Workers'],
+        yearsOfExperience: 8,
+      },
+      resumeText: 'Full resume body here...',
+    });
+
+    expect(result.modelUsed).toBe('workers-ai/@cf/google/gemma-4-26b-a4b-it');
   });
 
   it('strips markdown code fences around the JSON response', async () => {
