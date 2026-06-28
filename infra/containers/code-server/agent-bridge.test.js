@@ -269,6 +269,8 @@ setInterval(() => {}, 1000);
           path: 'src-example.ts',
           action: 'created',
           contentPreview: 'export const value = 42;\n',
+          sizeBytes: 25,
+          workspaceRoot: workspaceDir,
           bridgePersisted: true,
         },
       });

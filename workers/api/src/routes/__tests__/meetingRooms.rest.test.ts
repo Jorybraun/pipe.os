@@ -2350,6 +2350,13 @@ describe('meeting room recording living-context route', () => {
           path: 'src/old-orders.ts',
           action: 'deleted',
           observedAt: '2026-06-27T21:07:00.000Z',
+          contentHash: 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+          sizeBytes: 64,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
           bridgePersisted: false,
         },
       }),
@@ -2447,6 +2454,25 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeCodeEditorSaveRes.status).toBe(422);
 
+    const sourceOnlyCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_save',
+        text: 'src/orders.ts',
+        actor: 'system',
+        properties: {
+          source: 'code_server_workspace',
+          observedBy: 'agent_bridge',
+          path: 'src/orders.ts',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          sizeBytes: 128,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyCodeEditorSaveRes.status).toBe(422);
+
     const codeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2464,6 +2490,7 @@ describe('meeting room recording living-context route', () => {
           observedAt: '2026-06-27T21:06:00.000Z',
           contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
           sizeBytes: 128,
+          workspaceRoot: '/workspace',
           bridgePersisted: true,
         },
       }),
@@ -2494,6 +2521,8 @@ describe('meeting room recording living-context route', () => {
       path: 'src/orders.ts',
       action: 'modified',
       contentHash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      sizeBytes: 128,
+      workspaceRoot: '/workspace',
       bridgePersisted: true,
     });
 

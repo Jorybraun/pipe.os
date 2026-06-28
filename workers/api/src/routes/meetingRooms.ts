@@ -142,6 +142,7 @@ const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
+const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -238,14 +239,43 @@ const sessionEventSchema = z.object({
       return;
     }
     if (properties.source === 'code_server_workspace') {
-      const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';
+      const observedBy = properties.observedBy;
+      const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
       const observedAtOk = hasString(properties.observedAt);
+      const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
+        && properties.editorSurface === 'code-server';
       const actionOk = properties.action === 'deleted';
       const pathOk = hasString(properties.path);
-      if (observedByOk && observedAtOk && actionOk && pathOk) return;
+      const hashOk = typeof properties.contentHash === 'string' && SHA256_HEX_RE.test(properties.contentHash);
+      const sizeOk = hasFiniteNonNegativeNumber(properties.sizeBytes);
+      const directBridgeOk = properties.bridgePersisted === true
+        && observedBy === 'agent_bridge'
+        && hasString(properties.workspaceRoot);
+      const browserFallbackOk = properties.bridgePersisted === false
+        && observedBy === 'clippy_agent_bridge'
+        && hasRoomSurface(properties.surface)
+        && hasString(properties.roomPhase)
+        && hasString(properties.workspaceStatus)
+        && hasString(properties.workspaceSessionId)
+        && (
+          properties.repoUrl === null
+          || properties.repoUrl === undefined
+          || hasString(properties.repoUrl)
+        );
+      if (
+        event.actor === 'system'
+        && observedByOk
+        && observedAtOk
+        && bridgeOk
+        && actionOk
+        && pathOk
+        && hashOk
+        && sizeOk
+        && (directBridgeOk || browserFallbackOk)
+      ) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Code-server delete evidence must come from the workspace bridge with path, action, and observation time.',
+        message: 'Code-server delete evidence must come from a FILE_CHANGED workspace bridge event with path, content hash, size, observation time, and direct or browser-fallback provenance.',
         path: ['properties'],
       });
       return;
@@ -816,17 +846,48 @@ const sessionEventSchema = z.object({
   }
   if (event.type === 'code_editor_save') {
     const sourceOk = properties.source === 'code_server_workspace';
-    const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';
+    const observedBy = properties.observedBy;
+    const observedByOk = observedBy === 'agent_bridge' || observedBy === 'clippy_agent_bridge';
+    const bridgeOk = properties.bridgeEventType === 'FILE_CHANGED'
+      && properties.editorSurface === 'code-server';
+    const actionOk = typeof properties.action === 'string'
+      && CODE_SERVER_SAVE_ACTIONS.has(properties.action);
     const pathValue = properties.path;
-    const pathOk = typeof pathValue === 'string' && pathValue.trim().length > 0;
+    const pathOk = typeof pathValue === 'string' && pathValue.trim().length > 0 && event.text === pathValue;
     const hashValue = properties.contentHash;
     const hashOk = typeof hashValue === 'string' && SHA256_HEX_RE.test(hashValue);
+    const sizeOk = hasFiniteNonNegativeNumber(properties.sizeBytes);
     const observedAt = properties.observedAt;
     const observedAtOk = typeof observedAt === 'string' && observedAt.trim().length > 0;
-    if (sourceOk && observedByOk && pathOk && hashOk && observedAtOk) return;
+    const directBridgeOk = properties.bridgePersisted === true
+      && observedBy === 'agent_bridge'
+      && hasString(properties.workspaceRoot);
+    const browserFallbackOk = properties.bridgePersisted === false
+      && observedBy === 'clippy_agent_bridge'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (
+        properties.repoUrl === null
+        || properties.repoUrl === undefined
+        || hasString(properties.repoUrl)
+      );
+    if (
+      event.actor === 'system'
+      && sourceOk
+      && observedByOk
+      && bridgeOk
+      && actionOk
+      && pathOk
+      && hashOk
+      && sizeOk
+      && observedAtOk
+      && (directBridgeOk || browserFallbackOk)
+    ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Code editor save evidence must come from the code-server workspace bridge with path, content hash, and observation time.',
+      message: 'Code editor save evidence must come from a FILE_CHANGED code-server workspace bridge event with path, content hash, size, observation time, and direct or browser-fallback provenance.',
       path: ['properties'],
     });
   }
