@@ -1189,7 +1189,6 @@ describe('meeting room recording living-context route', () => {
         source_ref_type: 'meeting_session_event',
         source_ref_id: node?.id,
         evidence_role: 'source_event',
-        exact_text: 'Microsoft Edge',
       }),
       expect.objectContaining({
         source_ref_type: 'source_span',
@@ -1201,6 +1200,19 @@ describe('meeting room recording living-context route', () => {
     const eventSource = contextSources.find(
       (source) => source.source_ref_type === 'meeting_session_event',
     );
+    expect(JSON.parse(eventSource?.exact_text ?? '{}')).toMatchObject({
+      type: 'window_open',
+      sessionId: node?.source_reference,
+      candidateId: linked?.candidate_id,
+      actor: 'guest',
+      text: 'Microsoft Edge',
+      properties: {
+        actor: 'guest',
+        windowId: 'browser',
+        surface: 'win95',
+      },
+      candidateNodeId: node?.id,
+    });
     expect(eventSource?.content_hash).toEqual(expect.stringMatching(/^content_[a-f0-9]{32}$/));
     expect(JSON.parse(eventSource?.locator_json ?? '{}')).toMatchObject({
       sessionId: node?.source_reference,
@@ -3752,7 +3764,11 @@ describe('meeting room recording living-context route', () => {
           AND csr.source_ref_type = 'meeting_session_event'
         ORDER BY csr.exact_text`,
     ).all() as Array<{ exact_text: string | null }>;
-    expect(contextSources.map((source) => source.exact_text)).toEqual([
+    const sourceEventTexts = contextSources
+      .map((source) => JSON.parse(source.exact_text ?? '{}') as { text?: string })
+      .map((source) => source.text)
+      .sort();
+    expect(sourceEventTexts).toEqual([
       'Guest joined the 95 Until Infinity room',
       'Guest left the 95 Until Infinity room',
       'Recording started for the 95 Until Infinity room',

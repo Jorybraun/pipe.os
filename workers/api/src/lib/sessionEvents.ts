@@ -1033,6 +1033,19 @@ function sessionEventEntities(input: {
   return entities;
 }
 
+function sessionEventSourcePayload(event: SessionEvent, node: CandidateNode): JsonObject {
+  return {
+    type: event.type,
+    sessionId: event.sessionId,
+    candidateId: event.candidateId,
+    timestamp: event.timestamp,
+    actor: event.actor,
+    text: event.text,
+    properties: jsonObject(event.properties),
+    candidateNodeId: node.id,
+  };
+}
+
 async function persistSessionEventContextRecord(
   db: D1Database,
   event: SessionEvent,
@@ -1056,17 +1069,8 @@ async function persistSessionEventContextRecord(
 
   const narrative = formatEventNarrative(event);
   const properties = jsonObject(event.properties);
-  const sourcePayload: JsonObject = {
-    type: event.type,
-    sessionId: event.sessionId,
-    candidateId: event.candidateId,
-    timestamp: event.timestamp,
-    actor: event.actor,
-    text: event.text,
-    properties,
-    candidateNodeId: node.id,
-  };
-  const contentHash = await deterministicEntityId('content', stableJson(sourcePayload));
+  const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
+  const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const sources: ContextRecordSourceInput[] = [
     {
@@ -1081,7 +1085,7 @@ async function persistSessionEventContextRecord(
         actor: event.actor,
         timestamp: event.timestamp,
       },
-      exactText: event.text,
+      exactText: sourceExactText,
       contentHash,
       metadata: {
         nodeType: node.node_type,
@@ -1257,6 +1261,7 @@ async function persistSessionEventAssessmentEvidence(
   const { actorType, actorId } = assessmentActorForSessionEvent(event);
   const narrative = formatEventNarrative(event);
   const properties = jsonObject(event.properties);
+  const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
 
   await store.recordAssessmentEvent({
     sessionId: session.id,
@@ -1285,10 +1290,10 @@ async function persistSessionEventAssessmentEvidence(
         actor: event.actor,
         timestamp: event.timestamp,
       },
-      exactText: event.text,
-      contentHash: await sha256Hex(event.text),
+      exactText: sourceExactText,
+      contentHash: await sha256Hex(sourceExactText),
       metadata: {
-        sourceKind: 'meeting_session_event.context_record',
+        sourceKind: 'meeting_session_event.source_packet',
         candidateNodeType: node.node_type,
         sourceReference: node.source_reference ?? null,
       },

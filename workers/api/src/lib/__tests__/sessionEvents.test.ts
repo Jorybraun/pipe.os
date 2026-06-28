@@ -162,8 +162,22 @@ describe('sessionEvents', () => {
           actor_id: 'devin',
           source_ref_type: 'meeting_session_event',
           source_ref_id: node!.id,
-          exact_text: event.text,
-          content_hash: await sha256Hex(event.text),
+          content_hash: await sha256Hex(eventRows[0]!.exact_text),
+        });
+        expect(JSON.parse(eventRows[0]!.exact_text)).toMatchObject({
+          type: event.type,
+          sessionId: event.sessionId,
+          candidateId: event.candidateId,
+          timestamp: event.timestamp,
+          actor: event.actor,
+          text: event.text,
+          properties: {
+            source: 'clippy_agent_bridge',
+            agentName: 'devin',
+            surface: 'win95',
+            workspaceSessionId: 'workspace-session-1',
+          },
+          candidateNodeId: node!.id,
         });
         expect(eventRows[0]!.narrative).toContain('Agent responded');
 
