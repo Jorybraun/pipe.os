@@ -1682,6 +1682,8 @@ describe('matchCandidateToReviewChallenge', () => {
   afterEach(() => sqlite.close());
 
   it('records NEEDS_MORE_EVIDENCE instead of selecting a generic fallback PR', async () => {
+    sqlite.exec(assessmentLayerMigration);
+
     const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
 
     expect(result.status).toBe('NEEDS_MORE_EVIDENCE');
@@ -1727,6 +1729,61 @@ describe('matchCandidateToReviewChallenge', () => {
       source_ref_id: result.matchRunId,
       evidence_role: 'decision_record',
     });
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT id, mode, state, candidate_id, workspace_id
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:repo-match:${result.matchRunId}`) as {
+      id: string;
+      mode: string;
+      state: string;
+      candidate_id: string;
+      workspace_id: string;
+    };
+    expect(assessmentSession).toMatchObject({
+      mode: 'REPO_MATCHING',
+      state: 'DIAGNOSTIC',
+      candidate_id: 'candidate-1',
+      workspace_id: 'workspace-1',
+    });
+    const assessmentReport = sqlite.prepare(
+      `SELECT id, status, summary
+         FROM assessment_evaluation_reports
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-diagnostic:repo-match:${result.matchRunId}:NEEDS_MORE_EVIDENCE`) as {
+      id: string;
+      status: string;
+      summary: string;
+    };
+    expect(assessmentReport).toMatchObject({
+      status: 'NEEDS_MORE_EVIDENCE',
+      summary: expect.stringContaining('needs more source-backed candidate evidence'),
+    });
+    const diagnosticSource = sqlite.prepare(
+      `SELECT d.code, d.severity, d.retryable,
+              r.source_ref_type, r.source_ref_id, r.evidence_role, r.exact_text
+         FROM assessment_diagnostics d
+         JOIN assessment_diagnostic_source_refs r ON r.diagnostic_id = d.id
+        WHERE d.report_id = ?`,
+    ).get(assessmentReport.id) as {
+      code: string;
+      severity: string;
+      retryable: number;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+    };
+    expect(diagnosticSource).toMatchObject({
+      code: 'NEEDS_MORE_EVIDENCE',
+      severity: 'warning',
+      retryable: 1,
+      source_ref_type: 'match_run',
+      source_ref_id: result.matchRunId,
+      evidence_role: 'decision_record',
+    });
+    expect(diagnosticSource.exact_text).toContain('"status":"NEEDS_MORE_EVIDENCE"');
   });
 
   it('rejects production-ready packets whose source-backed context projection is missing', async () => {
@@ -2416,6 +2473,7 @@ describe('matchCandidateToReviewChallenge', () => {
   });
 
   it('returns NO_ROLE_SAFE_CHALLENGE instead of falling back to a persisted ineligible smallest PR', async () => {
+    sqlite.exec(assessmentLayerMigration);
     seedCandidateEvidence(sqlite);
     seedIneligiblePacket(sqlite);
 
@@ -2464,6 +2522,42 @@ describe('matchCandidateToReviewChallenge', () => {
       }),
     ]);
     expect(JSON.parse(row.ranked_results_json)).toEqual([]);
+    const assessmentSession = sqlite.prepare(
+      `SELECT id, state
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:repo-match:${result.matchRunId}`) as {
+      id: string;
+      state: string;
+    };
+    expect(assessmentSession.state).toBe('DIAGNOSTIC');
+    const assessmentReport = sqlite.prepare(
+      `SELECT id, status, summary
+         FROM assessment_evaluation_reports
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-diagnostic:repo-match:${result.matchRunId}:NO_ROLE_SAFE_CHALLENGE`) as {
+      id: string;
+      status: string;
+      summary: string;
+    };
+    expect(assessmentReport).toMatchObject({
+      status: 'NO_ROLE_SAFE_CHALLENGE',
+      summary: expect.stringContaining('no role-safe review challenge'),
+    });
+    expect(sqlite.prepare(
+      `SELECT d.code, d.severity, d.retryable,
+              r.source_ref_type, r.source_ref_id, r.evidence_role
+         FROM assessment_diagnostics d
+         JOIN assessment_diagnostic_source_refs r ON r.diagnostic_id = d.id
+        WHERE d.report_id = ?`,
+    ).get(assessmentReport.id)).toEqual({
+      code: 'NO_ROLE_SAFE_CHALLENGE',
+      severity: 'blocking',
+      retryable: 0,
+      source_ref_type: 'match_run',
+      source_ref_id: result.matchRunId,
+      evidence_role: 'decision_record',
+    });
   });
 
   it('rejects legacy hand-shaped challenge packets before recall', async () => {

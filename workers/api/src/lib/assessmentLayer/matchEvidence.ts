@@ -1,4 +1,9 @@
-import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput, type AssessmentSessionState } from './persistence';
+import {
+  AssessmentLayerStore,
+  type AssessmentEvaluationStatus,
+  type AssessmentEvidenceSourceRefInput,
+  type AssessmentSessionState,
+} from './persistence';
 import type { RoleSourceReference, SourceRef } from '../challengeMatching/types';
 import { stableJson } from '../livingContext/persistence';
 import type { JsonObject, JsonValue } from '../livingContext/types';
@@ -226,6 +231,93 @@ async function markAssessmentSessionInProgress(input: {
   });
 }
 
+async function markAssessmentSessionDiagnostic(input: {
+  db: D1Database;
+  store: AssessmentLayerStore;
+  sessionId: string;
+  reason: string;
+}): Promise<void> {
+  const state = await currentAssessmentState(input.db, input.sessionId);
+  if (state === null || state === 'DIAGNOSTIC') return;
+  if (state === 'EVALUATED' || state === 'CANCELLED') return;
+  await input.store.transitionAssessmentState({
+    sessionId: input.sessionId,
+    toState: 'DIAGNOSTIC',
+    reason: input.reason,
+    actorType: 'system',
+  });
+}
+
+function diagnosticStatusForMatchStatus(status: string): AssessmentEvaluationStatus | null {
+  if (status === 'NEEDS_MORE_EVIDENCE') return 'NEEDS_MORE_EVIDENCE';
+  if (status === 'NO_ROLE_SAFE_CHALLENGE') return 'NO_ROLE_SAFE_CHALLENGE';
+  return null;
+}
+
+function diagnosticMessageForMatchStatus(status: AssessmentEvaluationStatus): string {
+  if (status === 'NEEDS_MORE_EVIDENCE') {
+    return 'Candidate-to-PR matching needs more source-backed candidate evidence before selecting a review challenge.';
+  }
+  return 'Candidate-to-PR matching found no role-safe review challenge from the available source-backed evidence.';
+}
+
+async function persistMatchDiagnosticReport(input: {
+  store: AssessmentLayerStore;
+  sessionId: string;
+  matchRun: MatchRunEvidenceRow;
+  sourceRef: AssessmentEvidenceSourceRefInput;
+}): Promise<AssessmentEvaluationStatus | null> {
+  const status = diagnosticStatusForMatchStatus(input.matchRun.status);
+  if (!status) return null;
+
+  const message = diagnosticMessageForMatchStatus(status);
+  await input.store.createEvaluationReport({
+    sessionId: input.sessionId,
+    ingestionKey: `assessment-diagnostic:repo-match:${input.matchRun.id}:${status}`,
+    status,
+    summary: message,
+    output: {
+      schemaVersion: 'repo-match-diagnostic-v1',
+      status,
+      matchRunId: input.matchRun.id,
+      candidateId: input.matchRun.candidate_id,
+      roleContextId: input.matchRun.role_context_id,
+      roleSnapshotId: input.matchRun.role_snapshot_id,
+      selectedPacketId: input.matchRun.selected_packet_id,
+    },
+    claims: [],
+    diagnostics: [{
+      id: `diagnostic:repo-match:${input.matchRun.id}:${status}`,
+      code: status,
+      severity: status === 'NEEDS_MORE_EVIDENCE' ? 'warning' : 'blocking',
+      message,
+      retryable: status === 'NEEDS_MORE_EVIDENCE',
+      details: {
+        matchRunId: input.matchRun.id,
+        candidateId: input.matchRun.candidate_id,
+        applicationId: input.matchRun.application_id,
+        roleContextId: input.matchRun.role_context_id,
+        candidateSnapshotId: input.matchRun.candidate_snapshot_id,
+        roleSnapshotId: input.matchRun.role_snapshot_id,
+        policyVersion: input.matchRun.policy_version,
+        modelVersion: input.matchRun.model_version,
+        status: input.matchRun.status,
+        queryJson: input.matchRun.query_json,
+        recalledPacketsJson: input.matchRun.recalled_packets_json,
+        excludedPacketsJson: input.matchRun.excluded_packets_json,
+        rankedResultsJson: input.matchRun.ranked_results_json,
+        selectedPacketId: input.matchRun.selected_packet_id,
+      },
+      sourceRefs: [input.sourceRef],
+      metadata: {
+        sourceKind: 'match_runs.row',
+        diagnosticCode: status,
+      },
+    }],
+  });
+  return status;
+}
+
 async function loadMatchRun(db: D1Database, matchRunId: string): Promise<MatchRunEvidenceRow> {
   const row = await db.prepare(
     `SELECT id, candidate_id, application_id, role_context_id,
@@ -271,26 +363,25 @@ export async function ingestMatchRunAssessmentEvidence(
   const store = new AssessmentLayerStore(db, () => observedAt);
   const snapshot = matchRunSnapshot(matchRun);
   const matchRunExactText = stableJson(snapshot as JsonValue);
-  const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
-    {
-      sourceRefType: 'match_run',
-      sourceRefId: matchRun.id,
-      evidenceRole: 'decision_record',
-      locator: {
-        matchRunId: matchRun.id,
-        candidateId: matchRun.candidate_id,
-        roleSnapshotId: matchRun.role_snapshot_id,
-        status: matchRun.status,
-      },
-      exactText: matchRunExactText,
-      contentHash: await sha256Hex(matchRunExactText),
-      metadata: {
-        sourceKind: 'match_runs.row',
-        policyVersion: matchRun.policy_version,
-        modelVersion: matchRun.model_version,
-      },
+  const matchRunSourceRef: AssessmentEvidenceSourceRefInput = {
+    sourceRefType: 'match_run',
+    sourceRefId: matchRun.id,
+    evidenceRole: 'decision_record',
+    locator: {
+      matchRunId: matchRun.id,
+      candidateId: matchRun.candidate_id,
+      roleSnapshotId: matchRun.role_snapshot_id,
+      status: matchRun.status,
     },
-  ];
+    exactText: matchRunExactText,
+    contentHash: await sha256Hex(matchRunExactText),
+    metadata: {
+      sourceKind: 'match_runs.row',
+      policyVersion: matchRun.policy_version,
+      modelVersion: matchRun.model_version,
+    },
+  };
+  const sourceRefs: AssessmentEvidenceSourceRefInput[] = [matchRunSourceRef];
 
   const packetRef = await selectedPacketSourceRef(matchRun.id, selectedPacket);
   if (packetRef) sourceRefs.push(packetRef);
@@ -344,6 +435,22 @@ export async function ingestMatchRunAssessmentEvidence(
     occurredAt: observedAt,
     sourceRefs,
   });
+
+  const diagnosticStatus = await persistMatchDiagnosticReport({
+    store,
+    sessionId: session.id,
+    matchRun,
+    sourceRef: matchRunSourceRef,
+  });
+  if (diagnosticStatus) {
+    await markAssessmentSessionDiagnostic({
+      db,
+      store,
+      sessionId: session.id,
+      reason: diagnosticMessageForMatchStatus(diagnosticStatus),
+    });
+    return;
+  }
 
   await markAssessmentSessionInProgress({ db, store, sessionId: session.id });
 }
