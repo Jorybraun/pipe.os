@@ -59,6 +59,7 @@ const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
+  'win95_file_system',
   'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',

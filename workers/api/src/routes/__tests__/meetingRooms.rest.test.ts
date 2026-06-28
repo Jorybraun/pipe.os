@@ -1405,6 +1405,35 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(externalOpenBrowserNavigationRes.status).toBe(200);
 
+    const fileLinkBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'file_system_link_open',
+          browserNavigationId: 'browser-navigation:guest:1782601300003:browser:file_system_link_open:nav_54d2c495',
+          capturedAtMs: 1782601300003,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fileLinkBrowserNavigationRes.status).toBe(200);
+
     const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3447,7 +3476,7 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
-  it('persists Win95 Start menu window lifecycle evidence with exact source provenance', async () => {
+  it('persists Win95 source-specific window lifecycle evidence with exact source provenance', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
     const now = new Date().toISOString();
@@ -3525,6 +3554,56 @@ describe('meeting room recording living-context route', () => {
       windowTitle: 'notes.txt - Notepad',
       windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
       capturedAtMs: 1782601800000,
+      surface: 'win95',
+    });
+
+    const fileManagerLifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'notes.txt - Notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_file_system',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+          capturedAtMs: 1782601800100,
+          actor: 'guest',
+          windowId: 'notepad',
+          windowType: 'notepad',
+          windowTitle: 'notes.txt - Notepad',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fileManagerLifecycleRes.status).toBe(200);
+
+    const fileManagerNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_open'
+          AND extracted_properties_json LIKE '%win95_file_system%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(fileManagerNode?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(JSON.parse(fileManagerNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_file_system',
+      lifecycleKind: 'open',
+      actor: 'guest',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800100:open:notepad',
+      capturedAtMs: 1782601800100,
       surface: 'win95',
     });
   });

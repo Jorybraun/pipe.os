@@ -9,6 +9,7 @@ export type BrowserNavigationTrigger =
   | 'history_forward'
   | 'reload_button'
   | 'external_open'
+  | 'file_system_link_open'
   | 'open_window_initial_url'
   | 'shared_state_sync';
 

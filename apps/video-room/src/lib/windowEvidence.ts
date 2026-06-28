@@ -5,6 +5,7 @@ export type WindowEvidenceActor = 'host' | 'guest';
 export type WindowLifecycleKind = 'open' | 'close';
 export type WindowLifecycleSource =
   | 'win95_desktop_ui'
+  | 'win95_file_system'
   | 'win95_start_menu'
   | 'win95_window_chrome'
   | 'win95_taskbar'

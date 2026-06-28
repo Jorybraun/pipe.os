@@ -1806,11 +1806,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       data: { currentUrl },
     }, lifecycleSource);
     if (currentUrl) {
+      const navigationTrigger: BrowserNavigationTrigger = lifecycleSource === 'win95_file_system'
+        ? 'file_system_link_open'
+        : 'open_window_initial_url';
       const evidence = buildBrowserNavigationEvidence({
         actor: roomActor,
         windowId: 'browser',
         url: currentUrl,
-        trigger: 'open_window_initial_url',
+        trigger: navigationTrigger,
         surface: room.roomSurface,
         roomPhase: room.phase,
         capturedAtMs: Date.now(),
@@ -1921,14 +1924,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const openRoomFile = (file: RoomFile): void => {
     if (file.kind === 'paint') {
-      openPaintWindow(parsePaintFileContent(file.content));
+      openPaintWindow(parsePaintFileContent(file.content), 'win95_file_system');
       return;
     }
     if (file.kind === 'link') {
-      openBrowserWindow(file.content);
+      openBrowserWindow(file.content, 'win95_file_system');
       return;
     }
-    openNotepadWindow(file.content);
+    openNotepadWindow(file.content, 'win95_file_system');
   };
 
   const deleteRoomFile = (file: RoomFile): void => {

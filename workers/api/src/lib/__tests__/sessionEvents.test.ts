@@ -1420,7 +1420,7 @@ describe('sessionEvents', () => {
             text: 'Notepad',
             properties: {
               source: 'window_lifecycle_client_submit',
-              lifecycleSource: 'win95_desktop_ui',
+              lifecycleSource: 'win95_file_system',
               lifecycleKind: 'open',
               actor: 'guest',
               windowId: 'notepad',
@@ -1667,6 +1667,15 @@ describe('sessionEvents', () => {
             candidateId: 'cand-assessment',
           });
         }
+        const lifecycleSourcePayload = contextSources.find(
+          (row) => row.source_ref_type === 'room_window_lifecycle',
+        );
+        expect(JSON.parse(lifecycleSourcePayload?.exact_text ?? '{}')).toMatchObject({
+          properties: {
+            lifecycleSource: 'win95_file_system',
+            windowId: 'notepad',
+          },
+        });
 
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash

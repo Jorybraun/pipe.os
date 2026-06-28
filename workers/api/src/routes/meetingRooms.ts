@@ -112,6 +112,7 @@ const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
+  'win95_file_system',
   'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',
@@ -153,6 +154,7 @@ const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'history_forward',
   'reload_button',
   'external_open',
+  'file_system_link_open',
   'open_window_initial_url',
   'shared_state_sync',
 ]);

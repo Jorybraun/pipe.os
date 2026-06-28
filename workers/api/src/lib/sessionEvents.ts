@@ -72,6 +72,7 @@ type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
+  'win95_file_system',
   'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',

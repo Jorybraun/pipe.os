@@ -82,4 +82,24 @@ describe('browser navigation evidence', () => {
       browserNavigationId: 'browser-navigation:host:2000:browser:external_open:nav_c42d69e8',
     });
   });
+
+  it('builds source-specific ids for links opened from the Win95 file manager', () => {
+    const evidence = buildBrowserNavigationEvidence({
+      actor: 'guest',
+      windowId: 'browser',
+      url: 'https://example.com/from-file',
+      trigger: 'file_system_link_open',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 3000,
+    });
+
+    expect(evidence?.properties).toMatchObject({
+      navigationTrigger: 'file_system_link_open',
+      browserNavigationId: expect.stringMatching(
+        /^browser-navigation:guest:3000:browser:file_system_link_open:nav_[a-f0-9]{8}$/,
+      ),
+      durableObjectReplayExpected: true,
+    });
+  });
 });

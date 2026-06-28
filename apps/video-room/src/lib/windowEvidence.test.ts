@@ -114,6 +114,32 @@ describe('window evidence', () => {
     });
   });
 
+  it('preserves the Win95 file manager as the initiator when it opens a shared file', () => {
+    expect(buildWindowLifecycleEvidence({
+      kind: 'open',
+      actor: 'guest',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      source: 'win95_file_system',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 2850,
+    })).toMatchObject({
+      text: 'notes.txt - Notepad',
+      properties: {
+        source: 'window_lifecycle_client_submit',
+        lifecycleKind: 'open',
+        lifecycleSource: 'win95_file_system',
+        windowLifecycleId: 'window-lifecycle:guest:2850:open:notepad',
+        actor: 'guest',
+        windowId: 'notepad',
+        windowType: 'notepad',
+        windowTitle: 'notes.txt - Notepad',
+      },
+    });
+  });
+
   it('builds direct source-backed evidence for Win95 window movement', () => {
     expect(buildWindowStateUpdateEvidence({
       actor: 'guest',
