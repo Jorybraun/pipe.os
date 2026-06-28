@@ -1830,6 +1830,18 @@ export function useRoomConnection(
             setDesktopStartMenuOpen(snapshot.startMenuOpen);
           }
           setDesktopSnapshot(snapshot.windows);
+        } else if (message.type === 'ROOM_DESKTOP_EVENT_REJECTED') {
+          const snapshot = parseDesktopSnapshot(message.payload);
+          pendingLocalSurfaceEventRef.current = null;
+          surfaceEventSeenRef.current = false;
+          if (!snapshot) return;
+          if (snapshot.surface) {
+            setRoomSurfaceState(snapshot.surface);
+          }
+          if (snapshot.startMenuOpen !== undefined) {
+            setDesktopStartMenuOpen(snapshot.startMenuOpen);
+          }
+          setDesktopSnapshot(snapshot.windows);
         } else if (message.type === 'ROOM_CLIPPY_PROMPT') {
           const prompt = parseClippyPrompt(message.payload);
           if (!prompt) return;

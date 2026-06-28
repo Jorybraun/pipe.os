@@ -2262,6 +2262,19 @@ export class VideoRoom {
     return nextWindows;
   }
 
+  private async sendDesktopEventRejected(ws: WebSocket, reason: string): Promise<void> {
+    const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
+    ws.send(JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason,
+      payload: {
+        windows: await this.getDesktopWindows(),
+        surface: this.roomSurface,
+        startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+      },
+    }));
+  }
+
   private async recordDesktopActivity(event: RoomDesktopEvent, role: VideoRole): Promise<void> {
     const previous = this.parseDesktopActivityLog(await this.state.storage.get<unknown>('desktopActivityLog'));
     const next = [
@@ -2735,25 +2748,16 @@ export class VideoRoom {
 
     if (message.type === 'ROOM_DESKTOP_EVENT') {
       if (this.sessionStatus === 'ENDED') {
-        ws.send(JSON.stringify({
-          type: 'ROOM_DESKTOP_EVENT_REJECTED',
-          reason: 'ROOM_ENDED',
-        }));
+        await this.sendDesktopEventRejected(ws, 'ROOM_ENDED');
         return;
       }
       const event = this.parseDesktopEvent(message.payload);
       if (!event) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_DESKTOP_EVENT_REJECTED',
-          reason: 'INVALID_EVENT',
-        }));
+        await this.sendDesktopEventRejected(ws, 'INVALID_EVENT');
         return;
       }
       if (!this.hasSourceBackedDesktopEventEvidence(event, senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_DESKTOP_EVENT_REJECTED',
-          reason: 'MISSING_SOURCE_EVIDENCE',
-        }));
+        await this.sendDesktopEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
         return;
       }
       await this.persistDesktopEvent(event);

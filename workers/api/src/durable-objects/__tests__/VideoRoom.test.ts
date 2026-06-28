@@ -585,6 +585,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
       type: 'ROOM_DESKTOP_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
+      payload: expect.objectContaining({
+        surface: 'standard',
+        startMenuOpen: false,
+        windows: [],
+      }),
     }));
     expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
       type: 'ROOM_DESKTOP_EVENT',
