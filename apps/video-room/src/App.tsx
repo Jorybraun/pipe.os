@@ -1057,6 +1057,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       actor: roomActor,
       surface: room.roomSurface,
       roomPhase: room.phase,
+      capturedAtMs: Date.now(),
     });
     if (!evidence) return;
     const sessionId = typeof evidence.properties.workspaceSessionId === 'string'

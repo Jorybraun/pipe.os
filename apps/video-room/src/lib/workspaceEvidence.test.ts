@@ -37,6 +37,7 @@ describe('buildCodeEditorOpenEvidence', () => {
       actor: 'guest',
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 1700000000000,
     });
 
     expect(evidence).toEqual({
@@ -44,9 +45,11 @@ describe('buildCodeEditorOpenEvidence', () => {
       properties: {
         source: 'code_server_workspace',
         editorEventSource: 'browser_code_server_iframe',
+        codeEditorOpenId: 'code-editor-open:guest:1700000000000:workspace-session-1',
         editor: 'code-server',
         openStatus: 'loaded',
         actor: 'guest',
+        capturedAtMs: 1700000000000,
         surface: 'win95',
         roomPhase: 'connected',
         workspaceSessionId: 'workspace-session-1',
@@ -71,6 +74,7 @@ describe('buildCodeEditorOpenEvidence', () => {
       actor: 'host',
       surface: 'standard',
       roomPhase: 'waiting',
+      capturedAtMs: 1700000000000,
     })).toBeNull();
   });
 });

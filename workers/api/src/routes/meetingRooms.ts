@@ -153,6 +153,7 @@ const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
 const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
+const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:.+$/;
 
 function browserNavigationFingerprint(value: string): string {
   let hash = 0x811c9dc5;
@@ -970,15 +971,25 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'code_editor_open') {
+    const capturedAtMs = properties.capturedAtMs;
+    const workspaceSessionId = properties.workspaceSessionId;
     const sourceOk = properties.source === 'code_server_workspace'
       && properties.editorEventSource === 'browser_code_server_iframe'
       && properties.editor === 'code-server'
       && properties.openStatus === 'loaded';
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const openIdOk = typeof properties.codeEditorOpenId === 'string'
+      && CODE_EDITOR_OPEN_ID_RE.test(properties.codeEditorOpenId)
+      && capturedAtOk
+      && hasString(workspaceSessionId)
+      && properties.codeEditorOpenId === `code-editor-open:${event.actor}:${capturedAtMs}:${workspaceSessionId}`;
     const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
-      && hasString(properties.workspaceSessionId)
+      && hasString(workspaceSessionId)
       && hasString(properties.workspaceStatus)
       && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
     const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
@@ -988,10 +999,10 @@ const sessionEventSchema = z.object({
       && (properties.challengeSource === null || properties.challengeSource === undefined || hasString(properties.challengeSource))
       && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
     const noProxyLeakOk = properties.proxyUrlPersisted === false;
-    if (sourceOk && actorOk && contextOk && challengeOk && noProxyLeakOk) return;
+    if (sourceOk && actorOk && capturedAtOk && openIdOk && contextOk && challengeOk && noProxyLeakOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Code editor open evidence must come from the browser code-server iframe with workspace session context and no persisted proxy URL.',
+      message: 'Code editor open evidence must come from the browser code-server iframe with actor-bound open id, capture timestamp, workspace session context, and no persisted proxy URL.',
       path: ['properties'],
     });
     return;

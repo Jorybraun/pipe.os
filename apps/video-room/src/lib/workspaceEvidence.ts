@@ -37,19 +37,23 @@ export function buildCodeEditorOpenEvidence(input: {
   actor: RoomEvidenceActor;
   surface: RoomEvidenceSurface;
   roomPhase: RoomPhase;
+  capturedAtMs: number;
 }): CodeEditorOpenEvidence | null {
   const session = input.workspace?.session;
   if (!session) return null;
 
   const repoLabel = input.workspace?.repoUrl ?? 'workspace repository';
+  const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
     text: `VS Code workspace opened for ${repoLabel}`,
     properties: {
       source: 'code_server_workspace',
       editorEventSource: 'browser_code_server_iframe',
+      codeEditorOpenId: `code-editor-open:${input.actor}:${capturedAtMs}:${session.sessionId}`,
       editor: 'code-server',
       openStatus: 'loaded',
       actor: input.actor,
+      capturedAtMs,
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceSessionId: session.sessionId,

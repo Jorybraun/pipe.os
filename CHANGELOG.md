@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone CODE_REVIEW matching now derives deterministic source-backed match facets from the candidate's exact CV evidence, preserving repo/domain signals such as Workers/runtime/deployments instead of collapsing rich decomposition evidence into generic TypeScript overlap.
 - Standalone CODE_REVIEW matching keeps derived CV source terms in the concept channel instead of flooding sparse mechanism/domain dimensions, preventing valid Workers-style matches from being rejected as weak.
 - Roleless CODE_REVIEW repo matching now accepts exact, multi-span source-backed candidate/repo alignments at the sparse-decomposition threshold and measures contrast against different repositories instead of same-repo PR near-ties.
+- Candidate atom selection now caps only primary decomposed concepts, so exact CV source terms such as cron, schedules, and workflows can support repo matching without excluding other source-backed atoms.
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Code-server iframe open evidence now carries actor-bound open ids and capture timestamps before entering meeting-session context.
 - Container terminal command/output evidence now carries actor-bound capture ids and timestamps so repeated same-command interactions remain distinct source events.
 - Synced Win95 Notepad/Paint saves and deletes now carry actor-bound file-change ids, capture timestamps, and browser file evidence through Durable Object replay.
 - Workers AI model routing now remaps deprecated Llama 3.1 8B variants before inference so repo/challenge discovery does not fail on stale environment overrides.
