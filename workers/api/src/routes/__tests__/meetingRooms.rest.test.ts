@@ -3229,6 +3229,65 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
+      terminalActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002500,
+          event: {
+            id: 'terminal-command-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000002500,
+            kind: 'COMMAND',
+            text: 'npm test',
+            evidence: {
+              source: 'container_terminal',
+              terminalEventSource: 'browser_terminal_ws',
+              terminalSessionId: 'terminal-workspace-session-1-guest',
+              terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+              terminalCommandSequence: 1,
+              actor: 'guest',
+              capturedAtMs: 1700000002500,
+              commandFingerprint: 'terminal_dc5964d6',
+              commandLength: 8,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002600,
+          event: {
+            id: 'terminal-output-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000002600,
+            kind: 'OUTPUT',
+            text: 'PASS src/app.test.ts\n',
+            evidence: {
+              source: 'container_terminal',
+              terminalEventSource: 'browser_terminal_ws',
+              terminalSessionId: 'terminal-workspace-session-1-guest',
+              terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+              terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002600:1:terminal_4f2d0d8f',
+              terminalOutputSequence: 1,
+              actor: 'system',
+              capturedAtMs: 1700000002600,
+              outputFingerprint: 'terminal_4f2d0d8f',
+              outputLength: 21,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+      ],
       clippyPromptActivityLog: [
         {
           role: 'HOST',
@@ -3345,6 +3404,8 @@ describe('meeting room recording living-context route', () => {
       'session_window_update',
       'session_workspace_state',
       'session_chat_message',
+      'session_terminal_command',
+      'session_terminal_output',
       'session_clippy_prompt',
       'session_file_change',
     ]);
@@ -3378,6 +3439,31 @@ describe('meeting room recording living-context route', () => {
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
     });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_command')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'terminal',
+      source: 'container_terminal',
+      terminalEventSource: 'browser_terminal_ws',
+      terminalSessionId: 'terminal-workspace-session-1-guest',
+      terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+      terminalCommandSequence: 1,
+      actor: 'guest',
+      roomEventId: 'terminal-command-sync',
+      capturedAtMs: 1700000002500,
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_output')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'terminal',
+      source: 'container_terminal',
+      terminalEventSource: 'browser_terminal_ws',
+      terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002600:1:terminal_4f2d0d8f',
+      terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000002500:1:terminal_dc5964d6',
+      actor: 'system',
+      roomEventId: 'terminal-output-sync',
+      capturedAtMs: 1700000002600,
+      workspaceSessionId: 'workspace-session-1',
+    });
     expect(graphBody.events.find((event) => event.nodeType === 'session_clippy_prompt')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       source: 'clippy_prompt_client_submit',
@@ -3403,7 +3489,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(7);
+    expect(nodeCountAfterFirstRead.count).toBe(9);
     const windowUpdateRows = sqlite.prepare(
       `SELECT extracted_properties_json
          FROM candidate_nodes
@@ -3427,7 +3513,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(7);
+    expect(nodeCountAfterSecondRead.count).toBe(9);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));

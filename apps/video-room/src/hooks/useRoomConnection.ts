@@ -82,6 +82,36 @@ export interface RoomChatMessage {
   evidence?: Record<string, unknown>;
 }
 
+export type RoomTerminalEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'COMMAND';
+      text: string;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'OUTPUT';
+      text: string;
+      evidence?: Record<string, unknown>;
+    };
+
+export type RoomTerminalEventDraft =
+  | {
+      kind: 'COMMAND';
+      text: string;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      kind: 'OUTPUT';
+      text: string;
+      evidence?: Record<string, unknown>;
+    };
+
 export interface RoomCursorPresence {
   clientId: string;
   role: RoomRole;
@@ -309,6 +339,7 @@ interface RoomConnection {
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
   clippyPrompt: RoomClippyPrompt | null;
   chatMessages: RoomChatMessage[];
+  terminalEvents: RoomTerminalEvent[];
   peerCursors: RoomCursorPresence[];
   fileSystem: RoomFile[];
   cameraEnabled: boolean;
@@ -323,6 +354,7 @@ interface RoomConnection {
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
   publishChatMessage: (text: string) => RoomChatMessage | null;
+  publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
   publishCursorPresence: (position: { x: number; y: number }) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface, evidence?: Record<string, unknown>) => void;
@@ -659,6 +691,41 @@ function parseChatRejection(value: unknown): { clientMessageId: string | null } 
   };
 }
 
+function parseTerminalEvent(value: unknown): RoomTerminalEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || !Number.isFinite(value.createdAt)
+    || typeof value.text !== 'string'
+    || value.text.length === 0
+  ) {
+    return null;
+  }
+  if (value.kind === 'COMMAND') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'COMMAND',
+      text: value.text,
+      evidence: recordOrUndefined(value.evidence),
+    };
+  }
+  if (value.kind === 'OUTPUT') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'OUTPUT',
+      text: value.text,
+      evidence: recordOrUndefined(value.evidence),
+    };
+  }
+  return null;
+}
+
 export function mergeRoomChatMessage(
   previous: RoomChatMessage[],
   message: RoomChatMessage,
@@ -821,6 +888,7 @@ export function useRoomConnection(
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const [terminalEvents, setTerminalEvents] = useState<RoomTerminalEvent[]>([]);
   const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
   const [fileSystem, setFileSystem] = useState<RoomFile[]>([]);
   const [cameraEnabled, setCameraEnabled] = useState(true);
@@ -843,6 +911,7 @@ export function useRoomConnection(
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
   const chatOutboxRef = useRef<RoomChatMessage[]>([]);
+  const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
   const surfaceEventSeenRef = useRef(false);
   const lastCursorSentAtRef = useRef(0);
@@ -915,6 +984,13 @@ export function useRoomConnection(
     return true;
   }, []);
 
+  const sendTerminalEvent = useCallback((event: RoomTerminalEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_TERMINAL_EVENT', payload: event }));
+    return true;
+  }, []);
+
   const sendCursorPresence = useCallback((cursor: RoomCursorPresence): boolean => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -961,6 +1037,17 @@ export function useRoomConnection(
       }
     }
   }, [sendChatMessage]);
+
+  const flushTerminalOutbox = useCallback((): void => {
+    if (terminalOutboxRef.current.length === 0) return;
+    const pending = terminalOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendTerminalEvent(event)) {
+        terminalOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendTerminalEvent]);
 
   const flushFileSystemOutbox = useCallback((): void => {
     if (fileSystemOutboxRef.current.length === 0) return;
@@ -1128,6 +1215,7 @@ export function useRoomConnection(
         flushDesktopOutbox();
         flushClippyOutbox();
         flushChatOutbox();
+        flushTerminalOutbox();
         flushFileSystemOutbox();
         const peer = peerRef.current;
         if (
@@ -1258,6 +1346,10 @@ export function useRoomConnection(
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;
           setChatMessages(sortChatMessages(snapshot.messages));
+        } else if (message.type === 'ROOM_TERMINAL_EVENT') {
+          const terminalEvent = parseTerminalEvent(message.payload);
+          if (!terminalEvent || terminalEvent.clientId === desktopClientIdRef.current) return;
+          setTerminalEvents((prev) => [...prev.slice(-199), terminalEvent]);
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
           if (!cursor || cursor.clientId === desktopClientIdRef.current) return;
@@ -1307,6 +1399,7 @@ export function useRoomConnection(
     flushClippyOutbox,
     flushDesktopOutbox,
     flushFileSystemOutbox,
+    flushTerminalOutbox,
     role,
     scheduleHostRenegotiation,
     schedulePeerClose,
@@ -1546,6 +1639,23 @@ export function useRoomConnection(
     return message;
   }, [role, roomSurface, sendChatMessage]);
 
+  const publishTerminalEvent = useCallback((draft: RoomTerminalEventDraft): void => {
+    if (draft.text.length === 0) return;
+    const createdAt = Date.now();
+    const event: RoomTerminalEvent = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `terminal-${createdAt}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt,
+    };
+    setTerminalEvents((prev) => [...prev.slice(-199), event]);
+    if (!sendTerminalEvent(event)) {
+      terminalOutboxRef.current.push(event);
+    }
+  }, [sendTerminalEvent]);
+
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
     const now = Date.now();
     if (now - lastCursorSentAtRef.current < 90) return;
@@ -1646,6 +1756,7 @@ export function useRoomConnection(
     desktopSnapshot,
     clippyPrompt,
     chatMessages,
+    terminalEvents,
     peerCursors,
     fileSystem,
     cameraEnabled,
@@ -1660,6 +1771,7 @@ export function useRoomConnection(
     publishDesktopEvent,
     publishClippyPrompt,
     publishChatMessage,
+    publishTerminalEvent,
     publishCursorPresence,
     publishFileSystemEvent,
     setRoomSurface,

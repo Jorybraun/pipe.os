@@ -25,6 +25,8 @@ type VideoRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 type SessionStatus = 'WAITING' | 'CALLING' | 'ACTIVE' | 'ENDED';
 type SignalStatus = SessionStatus | 'LEFT';
 type RoomSurface = 'standard' | 'win95';
+const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
+const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 
 interface SignalMessage {
   type:
@@ -37,6 +39,7 @@ interface SignalMessage {
     | 'ROOM_CLIPPY_PROMPT'
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_CURSOR'
+    | 'ROOM_TERMINAL_EVENT'
     | 'ROOM_FILE_SYSTEM_EVENT';
   role?: VideoRole;
   status?: SignalStatus;
@@ -206,6 +209,30 @@ interface RoomChatMessage {
 
 interface RoomChatActivityEntry {
   message: RoomChatMessage;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomTerminalEvent =
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'COMMAND';
+      text: string;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'OUTPUT';
+      text: string;
+      evidence?: Record<string, unknown>;
+    };
+
+interface RoomTerminalActivityEntry {
+  event: RoomTerminalEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -874,6 +901,176 @@ export class VideoRoom {
       .filter((entry): entry is RoomChatActivityEntry => entry !== null);
   }
 
+  private parseTerminalEvidence(value: unknown): Record<string, unknown> | undefined {
+    if (!this.isRecord(value)) return undefined;
+    const evidence: Record<string, unknown> = {};
+    const source = this.safeTextOrNull(value.source, 80);
+    const terminalEventSource = this.safeTextOrNull(value.terminalEventSource, 120);
+    const terminalSessionId = this.safeTextOrNull(value.terminalSessionId, 200);
+    const terminalCommandId = this.safeTextOrNull(value.terminalCommandId, 260);
+    const terminalOutputChunkId = this.safeTextOrNull(value.terminalOutputChunkId, 260);
+    const commandFingerprint = this.safeTextOrNull(value.commandFingerprint, 80);
+    const outputFingerprint = this.safeTextOrNull(value.outputFingerprint, 80);
+    const actor = value.actor === 'host' || value.actor === 'guest' || value.actor === 'system'
+      ? value.actor
+      : undefined;
+    const surface = this.isRoomSurface(value.surface) ? value.surface : undefined;
+    const roomPhase = this.safeTextOrNull(value.roomPhase, 80);
+    const workspaceStatus = this.safeTextOrNull(value.workspaceStatus, 120);
+    const workspaceSessionId = this.safeTextOrNull(value.workspaceSessionId, 200);
+    const repoUrl = this.safeTextOrNull(value.repoUrl, 2000);
+
+    if (typeof source === 'string') evidence.source = source;
+    if (typeof terminalEventSource === 'string') evidence.terminalEventSource = terminalEventSource;
+    if (typeof terminalSessionId === 'string') evidence.terminalSessionId = terminalSessionId;
+    if (typeof terminalCommandId === 'string' || terminalCommandId === null) {
+      evidence.terminalCommandId = terminalCommandId;
+    }
+    if (typeof terminalOutputChunkId === 'string') evidence.terminalOutputChunkId = terminalOutputChunkId;
+    if (typeof value.terminalCommandSequence === 'number' && Number.isFinite(value.terminalCommandSequence)) {
+      evidence.terminalCommandSequence = value.terminalCommandSequence;
+    }
+    if (typeof value.terminalOutputSequence === 'number' && Number.isFinite(value.terminalOutputSequence)) {
+      evidence.terminalOutputSequence = value.terminalOutputSequence;
+    }
+    if (actor) evidence.actor = actor;
+    if (typeof value.capturedAtMs === 'number' && Number.isFinite(value.capturedAtMs)) {
+      evidence.capturedAtMs = value.capturedAtMs;
+    }
+    if (typeof commandFingerprint === 'string') evidence.commandFingerprint = commandFingerprint;
+    if (typeof value.commandLength === 'number' && Number.isFinite(value.commandLength)) {
+      evidence.commandLength = value.commandLength;
+    }
+    if (typeof outputFingerprint === 'string') evidence.outputFingerprint = outputFingerprint;
+    if (typeof value.outputLength === 'number' && Number.isFinite(value.outputLength)) {
+      evidence.outputLength = value.outputLength;
+    }
+    if (surface) evidence.surface = surface;
+    if (typeof roomPhase === 'string') evidence.roomPhase = roomPhase;
+    if (typeof workspaceStatus === 'string' || workspaceStatus === null) evidence.workspaceStatus = workspaceStatus;
+    if (typeof workspaceSessionId === 'string' || workspaceSessionId === null) {
+      evidence.workspaceSessionId = workspaceSessionId;
+    }
+    if (typeof repoUrl === 'string' || repoUrl === null) evidence.repoUrl = repoUrl;
+    if (typeof value.durableObjectReplayExpected === 'boolean') {
+      evidence.durableObjectReplayExpected = value.durableObjectReplayExpected;
+    }
+    return Object.keys(evidence).length > 0 ? evidence : undefined;
+  }
+
+  private parseTerminalEvent(value: unknown): RoomTerminalEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 160)
+      || !this.isSafeFileText(value.clientId, 160)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || typeof value.text !== 'string'
+      || value.text.length === 0
+      || value.text.length > 8000
+    ) {
+      return null;
+    }
+    if (value.kind === 'COMMAND') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'COMMAND',
+        text: value.text,
+        evidence: this.parseTerminalEvidence(value.evidence),
+      };
+    }
+    if (value.kind === 'OUTPUT') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'OUTPUT',
+        text: value.text,
+        evidence: this.parseTerminalEvidence(value.evidence),
+      };
+    }
+    return null;
+  }
+
+  private hasSourceBackedTerminalEvidence(event: RoomTerminalEvent, role: VideoRole): boolean {
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const senderActor = this.isHostRole(role) ? 'host' : 'guest';
+    const terminalSessionId = typeof evidence.terminalSessionId === 'string'
+      ? evidence.terminalSessionId
+      : null;
+    const capturedAtMs = typeof evidence.capturedAtMs === 'number' && Number.isInteger(evidence.capturedAtMs)
+      ? evidence.capturedAtMs
+      : null;
+    const commonOk = evidence.source === 'container_terminal'
+      && evidence.terminalEventSource === 'browser_terminal_ws'
+      && terminalSessionId !== null
+      && capturedAtMs !== null
+      && capturedAtMs >= 0
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && typeof evidence.roomPhase === 'string'
+      && typeof evidence.workspaceStatus === 'string'
+      && typeof evidence.workspaceSessionId === 'string'
+      && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
+    if (!commonOk) return false;
+
+    if (event.kind === 'COMMAND') {
+      const sequence = evidence.terminalCommandSequence;
+      const fingerprint = evidence.commandFingerprint;
+      return evidence.actor === senderActor
+        && typeof sequence === 'number'
+        && Number.isInteger(sequence)
+        && sequence > 0
+        && typeof fingerprint === 'string'
+        && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+        && evidence.commandLength === event.text.length
+        && evidence.terminalCommandId === `${terminalSessionId}:command:${senderActor}:${capturedAtMs}:${sequence}:${fingerprint}`;
+    }
+
+    const sequence = evidence.terminalOutputSequence;
+    const fingerprint = evidence.outputFingerprint;
+    const commandId = evidence.terminalCommandId;
+    return evidence.actor === 'system'
+      && typeof sequence === 'number'
+      && Number.isInteger(sequence)
+      && sequence > 0
+      && typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+      && evidence.outputLength === event.text.length
+      && evidence.terminalOutputChunkId === `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`
+      && (
+        commandId === null
+        || (
+          typeof commandId === 'string'
+          && commandId.startsWith(`${terminalSessionId}:command:`)
+          && TERMINAL_COMMAND_ID_RE.test(commandId)
+        )
+      );
+  }
+
+  private parseTerminalActivityEntry(value: unknown): RoomTerminalActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseTerminalEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseTerminalActivityLog(value: unknown): RoomTerminalActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseTerminalActivityEntry(entry))
+      .filter((entry): entry is RoomTerminalActivityEntry => entry !== null);
+  }
+
   private isRoomFileKind(value: unknown): value is RoomFileKind {
     return value === 'text' || value === 'paint' || value === 'json' || value === 'link';
   }
@@ -1129,6 +1326,17 @@ export class VideoRoom {
     await this.state.storage.put('chatActivityLog', next);
   }
 
+  private async recordTerminalActivity(event: RoomTerminalEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseTerminalActivityLog(
+      await this.state.storage.get<unknown>('terminalActivityLog'),
+    );
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('terminalActivityLog', next);
+  }
+
   private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
     const files = await this.getRoomFileSystem();
     if (event.kind === 'DELETE_FILE') {
@@ -1303,6 +1511,9 @@ export class VideoRoom {
         ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
+        ),
+        terminalActivityLog: this.parseTerminalActivityLog(
+          await this.state.storage.get<unknown>('terminalActivityLog'),
         ),
         clippyPromptActivityLog: this.parseClippyPromptActivityLog(
           await this.state.storage.get<unknown>('clippyPromptActivityLog'),
@@ -1594,6 +1805,38 @@ export class VideoRoom {
         type: 'ROOM_CHAT_MESSAGE',
         role: senderRole,
         payload: persistedMessage,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_TERMINAL_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_TERMINAL_EVENT_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const terminalEvent = this.parseTerminalEvent(message.payload);
+      if (!terminalEvent) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_TERMINAL_EVENT_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedTerminalEvidence(terminalEvent, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_TERMINAL_EVENT_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
+        }));
+        return;
+      }
+      await this.recordTerminalActivity(terminalEvent, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_TERMINAL_EVENT',
+        role: senderRole,
+        payload: terminalEvent,
       }));
       return;
     }

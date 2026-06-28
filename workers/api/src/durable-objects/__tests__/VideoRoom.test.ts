@@ -1115,6 +1115,152 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('fileSystemActivityLog')).toBe(false);
   });
 
+  it('broadcasts and records source-backed terminal command and output events', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_TERMINAL_EVENT',
+      payload: {
+        id: 'terminal-command-1',
+        clientId: 'guest-client',
+        createdAt: 1700000001000,
+        kind: 'COMMAND',
+        text: 'npm test',
+        evidence: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          terminalCommandSequence: 1,
+          actor: 'guest',
+          capturedAtMs: 1700000001000,
+          commandFingerprint: 'terminal_dc5964d6',
+          commandLength: 8,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_TERMINAL_EVENT',
+      payload: {
+        id: 'terminal-output-1',
+        clientId: 'guest-client',
+        createdAt: 1700000002000,
+        kind: 'OUTPUT',
+        text: 'PASS src/app.test.ts\n',
+        evidence: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+          terminalOutputSequence: 1,
+          actor: 'system',
+          capturedAtMs: 1700000002000,
+          outputFingerprint: 'terminal_4f2d0d8f',
+          outputLength: 21,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'ROOM_TERMINAL_EVENT',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          kind: 'COMMAND',
+          text: 'npm test',
+          evidence: expect.objectContaining({
+            source: 'container_terminal',
+            terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        type: 'ROOM_TERMINAL_EVENT',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          kind: 'OUTPUT',
+          text: 'PASS src/app.test.ts\n',
+          evidence: expect.objectContaining({
+            source: 'container_terminal',
+            terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+          }),
+        }),
+      }),
+    ]));
+    expect(storage.get('terminalActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'terminal-command-1',
+          kind: 'COMMAND',
+        }),
+      }),
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'terminal-output-1',
+          kind: 'OUTPUT',
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects terminal events without browser terminal source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_TERMINAL_EVENT',
+      payload: {
+        id: 'terminal-source-less',
+        clientId: 'guest-client',
+        createdAt: 1700000001000,
+        kind: 'COMMAND',
+        text: 'npm test',
+        evidence: {
+          source: 'terminal_claim',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandSequence: 1,
+          commandLength: 8,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_TERMINAL_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_TERMINAL_EVENT',
+    }));
+    expect(storage.has('terminalActivityLog')).toBe(false);
+  });
+
   it('exposes replayable room activity logs for server-side evidence sync', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -1161,6 +1307,33 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
       },
     }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_TERMINAL_EVENT',
+      payload: {
+        id: 'terminal-command-activity',
+        clientId: 'guest-client',
+        createdAt: 2500,
+        kind: 'COMMAND',
+        text: 'npm test',
+        evidence: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:2500:1:terminal_dc5964d6',
+          terminalCommandSequence: 1,
+          actor: 'guest',
+          capturedAtMs: 2500,
+          commandFingerprint: 'terminal_dc5964d6',
+          commandLength: 8,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_FILE_SYSTEM_EVENT',
       payload: {
@@ -1199,6 +1372,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const body = await response.json() as {
       desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
+      terminalActivityLog: unknown[];
       fileSystemActivityLog: unknown[];
     };
 
@@ -1230,6 +1404,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             deliveryStatus: 'accepted',
             surface: 'win95',
             roomPhase: 'connected',
+          }),
+        }),
+      }),
+    ]);
+    expect(body.terminalActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'terminal-command-activity',
+          kind: 'COMMAND',
+          text: 'npm test',
+          evidence: expect.objectContaining({
+            source: 'container_terminal',
+            terminalEventSource: 'browser_terminal_ws',
           }),
         }),
       }),

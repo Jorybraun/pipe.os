@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Container terminal command/output events now publish into the shared room Durable Object, replay into context graph sync, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.
 - Meeting transcript processing failures now append immutable assessment diagnostics with exact recording/transcription source keys and error provenance instead of living only in the mutable meeting row.
 - 95 Until Infinity room session evidence now stores the full stable browser/bridge event packet as the immutable `meeting_session_event` source text instead of reducing source refs to display text.
 - Dev-container lifecycle rows now append immutable assessment evidence for launch, ready, warning, error, stop, and expiry transitions, preserving the exact D1 session snapshot instead of relying only on browser-observed workspace state.

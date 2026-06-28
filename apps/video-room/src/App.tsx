@@ -307,6 +307,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [enteredRoom, setEnteredRoom] = useState(false);
   const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface);
+  const publishTerminalEvent = room.publishTerminalEvent;
   const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -1034,12 +1035,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
-    activeTerminalCommandIdRef.current = evidence.properties.terminalCommandId;
-    captureSessionEvent('terminal_command', evidence.text, roomActor, evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    activeTerminalCommandIdRef.current = properties.terminalCommandId;
+    captureSessionEvent('terminal_command', evidence.text, roomActor, properties);
+    publishTerminalEvent({
+      kind: 'COMMAND',
+      text: evidence.text,
+      evidence: properties,
+    });
   }, [
     terminalEvidenceContext,
     terminalSessionId,
     captureSessionEvent,
+    publishTerminalEvent,
     roomActor,
   ]);
   const captureTerminalOutput = useCallback((output: string): void => {
@@ -1052,11 +1063,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
-    captureSessionEvent('terminal_output', evidence.text, 'system', evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent('terminal_output', evidence.text, 'system', properties);
+    publishTerminalEvent({
+      kind: 'OUTPUT',
+      text: evidence.text,
+      evidence: properties,
+    });
   }, [
     terminalEvidenceContext,
     terminalSessionId,
     captureSessionEvent,
+    publishTerminalEvent,
   ]);
 
   const captureWorkspaceEditorOpen = useCallback((): void => {

@@ -68,6 +68,8 @@ export interface SessionEvent {
 
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
+const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
+const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -578,6 +580,93 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   });
 }
 
+function isSourceBackedTerminalEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  kind: 'COMMAND' | 'OUTPUT',
+  text: string,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  const terminalSessionId = stringOrNull(evidence.terminalSessionId);
+  const capturedAtMs = numberOrNull(evidence.capturedAtMs);
+  const commonOk = evidence.source === 'container_terminal'
+    && evidence.terminalEventSource === 'browser_terminal_ws'
+    && terminalSessionId !== null
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && stringOrNull(evidence.roomPhase) !== null
+    && stringOrNull(evidence.workspaceStatus) !== null
+    && stringOrNull(evidence.workspaceSessionId) !== null
+    && (evidence.repoUrl === null || evidence.repoUrl === undefined || typeof evidence.repoUrl === 'string');
+  if (!commonOk) return false;
+
+  if (kind === 'COMMAND') {
+    const commandSequence = numberOrNull(evidence.terminalCommandSequence);
+    const fingerprint = stringOrNull(evidence.commandFingerprint);
+    return (actor === 'host' || actor === 'guest')
+      && evidence.actor === actor
+      && commandSequence !== null
+      && Number.isInteger(commandSequence)
+      && commandSequence > 0
+      && fingerprint !== null
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+      && evidence.commandLength === text.length
+      && evidence.terminalCommandId === `${terminalSessionId}:command:${actor}:${capturedAtMs}:${commandSequence}:${fingerprint}`;
+  }
+
+  const outputSequence = numberOrNull(evidence.terminalOutputSequence);
+  const fingerprint = stringOrNull(evidence.outputFingerprint);
+  const commandId = evidence.terminalCommandId;
+  return actor === 'system'
+    && evidence.actor === 'system'
+    && outputSequence !== null
+    && Number.isInteger(outputSequence)
+    && outputSequence > 0
+    && fingerprint !== null
+    && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+    && evidence.outputLength === text.length
+    && evidence.terminalOutputChunkId === `${terminalSessionId}:output:system:${capturedAtMs}:${outputSequence}:${fingerprint}`
+    && (
+      commandId === null
+      || (
+        typeof commandId === 'string'
+        && commandId.startsWith(`${terminalSessionId}:command:`)
+        && TERMINAL_COMMAND_ID_RE.test(commandId)
+      )
+    );
+}
+
+function terminalActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const kind = event.kind === 'COMMAND' || event.kind === 'OUTPUT' ? event.kind : null;
+  const text = typeof event.text === 'string' && event.text.length > 0 ? event.text : null;
+  if (!kind || !text) return null;
+  const role = isRoomActivityRole(value.role) ? value.role : null;
+  const actor = kind === 'OUTPUT' ? 'system' : actorFromRoomRole(role);
+  const evidence = isRecord(event.evidence) ? event.evidence : null;
+  if (!isSourceBackedTerminalEvidence(evidence, actor, kind, text)) return null;
+
+  const properties = {
+    ...roomActivityBaseProperties('terminal', role, value.recordedAt),
+    ...evidence,
+  };
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) properties.roomEventId = eventId;
+  if (clientId) properties.clientId = clientId;
+
+  return createSessionEvent(input, {
+    type: kind === 'COMMAND' ? 'terminal_command' : 'terminal_output',
+    timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+    actor,
+    text,
+    properties,
+  });
+}
+
 function hasSourceBackedClippyPromptEvidence(
   prompt: Record<string, unknown>,
   actor: SessionEvent['actor'],
@@ -763,6 +852,7 @@ export async function roomActivitySnapshotToSessionEvents(
 
   const desktopActivityLog = Array.isArray(snapshot.desktopActivityLog) ? snapshot.desktopActivityLog : [];
   const chatActivityLog = Array.isArray(snapshot.chatActivityLog) ? snapshot.chatActivityLog : [];
+  const terminalActivityLog = Array.isArray(snapshot.terminalActivityLog) ? snapshot.terminalActivityLog : [];
   const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
     ? snapshot.clippyPromptActivityLog
     : [];
@@ -770,6 +860,7 @@ export async function roomActivitySnapshotToSessionEvents(
 
   desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
+  terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
   for (const entry of fileSystemActivityLog) {
     pushMapped(await fileSystemActivityToSessionEvent(input, entry));
