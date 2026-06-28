@@ -21,6 +21,9 @@ export const DEFAULT_CLOUDFLARE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
 const DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS: Record<string, string> = {
   '@cf/meta/llama-3.1-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct-awq': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct-fast': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-8b-instruct-fp8': DEFAULT_CLOUDFLARE_MODEL,
 };
 
 export function normalizeCloudflareAIModel(model: string): string {
