@@ -1385,10 +1385,8 @@ function isRetryableStaleWorkersAIModelFailure(row: {
     || errorText.includes('discovery failed');
   if (!failedDuringDiscovery) return false;
   return errorText.includes('5028')
-    || (
-      errorText.includes('deprecated')
-      && errorText.includes('@cf/meta/llama-3.1-8b-instruct')
-    );
+    || errorText.includes('deprecated')
+    || errorText.includes('decommissioned');
 }
 
 async function retryCandidateEvidenceIngestionFromSource(

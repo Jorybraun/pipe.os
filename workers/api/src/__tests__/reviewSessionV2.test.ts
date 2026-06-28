@@ -722,6 +722,94 @@ describe('POST /rpc/get-stage-config', () => {
     }));
   });
 
+  it('retries generic deprecated Workers AI discovery failures without matching one stale model id', async () => {
+    const resumeText = 'Staff frontend systems engineer building collaborative editors, Cloudflare deployments, state synchronization, and Playwright regression suites.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/future',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/future',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'future_model_retry',
+            status: 'INVITED',
+            created_at: '2026-06-28T08:00:00.000Z',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/future',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/example/future-retired-model: This model was decommissioned. Please use an alternative model.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.stageId).toBe('standalone-dev-container-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/future');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
+  });
+
   it('retries stale Workers AI model failures before standalone dev-container matching', async () => {
     const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
     const storage = {
