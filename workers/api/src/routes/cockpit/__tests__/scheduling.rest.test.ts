@@ -2179,6 +2179,133 @@ describe('GET /interviews/:id detail', () => {
       .toContain('Recipient email: edsger@example.com');
   });
 
+  it('keeps repeated same-email interviews as distinct meetings under one person context', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const createInterview = async (scheduledAt: string): Promise<{
+      id: string;
+      contactId: string;
+      recipientEmail: string;
+    }> => {
+      const response = await app.request('/interviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipientName: 'Ada Lovelace',
+          recipientEmail: 'ADA@example.com',
+          meetingType: 'DIRECT_VIDEO_CALL',
+          interviewType: 'VIDEO',
+          scheduledAt,
+        }),
+      });
+      expect(response.status).toBe(201);
+      const body = await response.json() as {
+        interview: {
+          id: string;
+          contactId: string | null;
+          recipientEmail: string | null;
+        };
+      };
+      expect(body.interview.contactId).toEqual(expect.any(String));
+      expect(body.interview.recipientEmail).toBe('ada@example.com');
+      return {
+        id: body.interview.id,
+        contactId: body.interview.contactId!,
+        recipientEmail: body.interview.recipientEmail!,
+      };
+    };
+
+    const first = await createInterview('2026-06-25T16:00:00.000Z');
+    const second = await createInterview('2026-06-27T18:30:00.000Z');
+
+    expect(second.contactId).toBe(first.contactId);
+    expect(first.id).not.toBe(second.id);
+
+    const firstInvite = await app.request(`/interviews/${first.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.com', sendEmail: false }),
+    });
+    expect(firstInvite.status).toBe(200);
+    const firstInviteBody = await firstInvite.json() as { deliveredUrl: string; meetingUrl: string };
+
+    const secondInvite = await app.request(`/interviews/${second.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'ada@example.com', sendEmail: false }),
+    });
+    expect(secondInvite.status).toBe(200);
+    const secondInviteBody = await secondInvite.json() as { deliveredUrl: string; meetingUrl: string };
+
+    expect(firstInviteBody.deliveredUrl).toBe(firstInviteBody.meetingUrl);
+    expect(secondInviteBody.deliveredUrl).toBe(secondInviteBody.meetingUrl);
+    expect(firstInviteBody.meetingUrl).not.toBe(secondInviteBody.meetingUrl);
+
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM contacts
+        WHERE owner_id = 'owner-1'
+          AND lower(email) = ?`,
+    ).get(first.recipientEmail)).toEqual({ count: 1 });
+
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM workspace_people wp
+         JOIN people p ON p.id = wp.person_id
+        WHERE wp.workspace_id = 'owner-1'
+          AND p.primary_email = ?`,
+    ).get(first.recipientEmail)).toEqual({ count: 1 });
+
+    const scheduledRows = sqlite!.prepare(
+      `SELECT id, recipient_email, scheduled_at, meeting_url
+         FROM scheduled_interviews
+        WHERE owner_id = 'owner-1'
+          AND lower(recipient_email) = ?
+        ORDER BY scheduled_at ASC`,
+    ).all(first.recipientEmail) as Array<{
+      id: string;
+      recipient_email: string;
+      scheduled_at: string;
+      meeting_url: string;
+    }>;
+    expect(scheduledRows.map((row) => row.id)).toEqual([first.id, second.id]);
+    expect(scheduledRows.map((row) => row.meeting_url)).toEqual([
+      firstInviteBody.meetingUrl,
+      secondInviteBody.meetingUrl,
+    ]);
+
+    const meetingRows = sqlite!.prepare(
+      `SELECT m.id, m.scheduled_interview_id, mp.contact_id
+         FROM meetings m
+         JOIN meeting_participants mp ON mp.meeting_id = m.id
+        WHERE m.owner_id = 'owner-1'
+          AND mp.contact_id = ?
+        ORDER BY m.scheduled_at ASC`,
+    ).all(first.contactId) as Array<{
+      id: string;
+      scheduled_interview_id: string;
+      contact_id: string;
+    }>;
+    expect(meetingRows).toHaveLength(2);
+    expect(meetingRows.map((row) => row.scheduled_interview_id)).toEqual([first.id, second.id]);
+
+    const contextCounts = sqlite!.prepare(
+      `SELECT cr.record_type, COUNT(*) AS count
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+        WHERE p.primary_email = ?
+          AND cr.record_type IN ('scheduled_interview_invite', 'scheduled_interview_invite_delivery')
+        GROUP BY cr.record_type
+        ORDER BY cr.record_type ASC`,
+    ).all(first.recipientEmail) as Array<{ record_type: string; count: number }>;
+    expect(contextCounts).toEqual([
+      { record_type: 'scheduled_interview_invite', count: 2 },
+      { record_type: 'scheduled_interview_invite_delivery', count: 2 },
+    ]);
+  });
+
   it('creates a source-backed context call from a blocked code-review match', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();
