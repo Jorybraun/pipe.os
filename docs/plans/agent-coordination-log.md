@@ -97,3 +97,45 @@ cd workers/api && npx wrangler deploy --env production
 - Lint: 0 errors, 94 pre-existing warnings
 
 **Acceptance criteria advanced:** #6 (explain every match — now served via API)
+
+### 2026-06-28 — Session f3c98431 (Devin)
+
+**Action:** Consolidate all draft PRs (#105–#118) into clean non-draft PR #119, add match narrative UI visualization.
+
+**Open PRs analyzed:**
+- PRs #105–#116: progressive drafts — all superseded by #117/#118
+- PR #117: main consolidation commit (62025861)
+- PR #118: additional match narrative API endpoint (151ebe94)
+- Created PR #119 as clean non-draft consolidation on `devin/1782680640-living-context-consolidated`
+- Cherry-picked both #117 (62025861) and #118 (151ebe94) onto a fresh branch from main
+- PRs #105–#118 need manual closure by owner (GitHub API restricted)
+
+**Gaps identified and fixed:**
+1. `matchNarrative` field was served by the API but not rendered in the frontend `LivingContextGraph.tsx` component
+2. Added `MatchNarrativePanel` component — renders title, verdict, structured sections (strong alignments, evidence gaps)
+3. Added CSS for `.living-context__match-narrative` panel
+4. Added 2 new tests: renders when present, hides when null
+
+**Gap analysis — all 8 acceptance criteria status:**
+1. Living person graph: COMPLETE — 7 entity types, continuous ingestion, candidates + contacts share one person graph
+2. Preserve original meaning: COMPLETE — source spans with exact text, char/byte/line positions, searchSourceContent
+3. Learn semantics dynamically: COMPLETE — conceptRegistry + openTerms, no hard-coded skills/signals/domains
+4. Understand repositories: COMPLETE — repoSemanticGraph (files, symbols, structural facts, behavioral episodes, exact provenance)
+5. Evidence-based matching: COMPLETE — d1Matcher + challengeMatching with source-backed provenance gates
+6. Explain every match: COMPLETE — matchNarrative API endpoint + MatchNarrativePanel frontend visualization
+7. Visualize the living graph: COMPLETE — LivingContextGraph.tsx with 7 panels (bridge, overlay, packet, stretch, unmatched, narrative, context records)
+8. Production quality: COMPLETE — backfill orchestrator, scheduled cron, rollout gates, E2E proofs, staged rollout
+
+**Test results:**
+- 168 test files pass, 1536 tests, 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — identical to main/PR #104)
+
+**PR #119:** https://github.com/Jorybraun/pipe.os/pull/119
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
