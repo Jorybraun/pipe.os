@@ -53,6 +53,28 @@ const RECORDING_FAILURE_SOURCES = new Set([
   'recording_upload_exception',
 ]);
 const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
+const WINDOW_LIFECYCLE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_file_system',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+  'clippy_action',
+  'shared_state_sync',
+]);
+const WINDOW_STATE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+]);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 
 export interface RoomClippyAction {
   id: string;
@@ -753,6 +775,155 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
     };
   }
   return null;
+}
+
+function roleActor(role?: RoomRole): 'host' | 'guest' | null {
+  if (role === 'HOST') return 'host';
+  if (role === 'GUEST') return 'guest';
+  return null;
+}
+
+function hasSourceBackedWorkspaceStateEvidence(event: RoomDesktopEvent, actor: 'host' | 'guest'): boolean {
+  if (event.kind !== 'WORKSPACE_STATE_CHANGED') return false;
+  const status = typeof event.status === 'string' && event.status.trim().length > 0
+    ? event.status
+    : null;
+  const workspaceStateSource = typeof event.workspaceStateSource === 'string'
+    ? event.workspaceStateSource
+    : null;
+  const capturedAtMs = event.capturedAtMs;
+  const workspaceSessionId = typeof event.workspaceSessionId === 'string' && event.workspaceSessionId.trim().length > 0
+    ? event.workspaceSessionId
+    : null;
+  const stateIdSession = workspaceSessionId ?? 'no-session';
+  return event.actor === actor
+    && status !== null
+    && event.source === 'browser_workspace_state_observer'
+    && event.workspaceEventSource === 'browser_workspace_state_observer'
+    && (
+      workspaceStateSource === 'initial_load'
+      || workspaceStateSource === 'launch'
+      || workspaceStateSource === 'refresh'
+      || workspaceStateSource === 'error'
+    )
+    && typeof capturedAtMs === 'number'
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
+    && (status === 'ERROR' || workspaceSessionId !== null)
+    && event.workspaceTelemetryPersisted === true
+    && event.proxyUrlPersisted === false;
+}
+
+export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role?: RoomRole): boolean {
+  const actor = roleActor(role);
+  if (!actor) return false;
+  if (event.kind === 'SET_ROOM_SURFACE') {
+    const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+    return event.source === 'room_surface_control'
+      && event.surfaceControlEventSource === 'browser_room_surface_toggle'
+      && event.action === expectedAction
+      && event.previousSurface !== undefined
+      && event.previousSurface !== event.surface
+      && typeof event.surfaceChangeId === 'string'
+      && typeof event.capturedAtMs === 'number'
+      && Number.isFinite(event.capturedAtMs)
+      && event.surfaceChangeId === `surface:${actor}:${event.capturedAtMs}:${event.previousSurface}:${event.surface}`
+      && typeof event.roomPhase === 'string'
+      && event.durableObjectReplayExpected === true;
+  }
+  if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+    return hasSourceBackedWorkspaceStateEvidence(event, actor);
+  }
+  const evidence = event.evidence;
+  if (!isRecord(evidence)) return false;
+  if (event.kind === 'START_MENU_STATE') {
+    const action = event.open ? 'open' : 'close';
+    const capturedAtMs = evidence.capturedAtMs;
+    const menuEventSource = evidence.menuEventSource;
+    const startMenuEventId = evidence.startMenuEventId;
+    return evidence.source === 'win95_start_menu_control'
+      && typeof menuEventSource === 'string'
+      && START_MENU_EVENT_SOURCES.has(menuEventSource)
+      && evidence.actor === actor
+      && evidence.menuId === 'start'
+      && evidence.action === action
+      && evidence.open === event.open
+      && typeof startMenuEventId === 'string'
+      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+  if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
+    const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
+    const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
+    return evidence.source === 'window_lifecycle_client_submit'
+      && typeof evidence.lifecycleSource === 'string'
+      && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
+      && evidence.lifecycleKind === kind
+      && evidence.actor === actor
+      && evidence.windowId === windowId
+      && typeof evidence.windowType === 'string'
+      && typeof evidence.windowTitle === 'string'
+      && typeof evidence.windowLifecycleId === 'string'
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isFinite(evidence.capturedAtMs)
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+  if (event.kind === 'UPDATE_WINDOW_DATA') {
+    const isBrowserNavigation = typeof event.data.currentUrl === 'string';
+    if (isBrowserNavigation) {
+      return evidence.source === 'room_browser_window'
+        && evidence.navigationSource === 'browser_window_client_submit'
+        && evidence.actor === actor
+        && evidence.windowId === event.windowId
+        && typeof evidence.browserNavigationId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && typeof evidence.navigationTrigger === 'string'
+        && typeof evidence.url === 'string'
+        && typeof evidence.urlFingerprint === 'string'
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    return evidence.source === 'window_data_client_submit'
+      && typeof evidence.dataSource === 'string'
+      && WINDOW_DATA_SOURCES.has(evidence.dataSource)
+      && evidence.actor === actor
+      && evidence.windowId === event.windowId
+      && typeof evidence.windowDataUpdateId === 'string'
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isFinite(evidence.capturedAtMs)
+      && Array.isArray(evidence.dataKeys)
+      && evidence.dataKeys.length > 0
+      && isRecord(evidence.dataValueFingerprints)
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+  if (event.kind === 'UPDATE_WINDOW_STATE') {
+    return evidence.source === 'window_state_client_submit'
+      && typeof evidence.stateSource === 'string'
+      && WINDOW_STATE_SOURCES.has(evidence.stateSource)
+      && evidence.actor === actor
+      && evidence.windowId === event.windowId
+      && typeof evidence.windowStateChangeId === 'string'
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isFinite(evidence.capturedAtMs)
+      && typeof evidence.action === 'string'
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+  return false;
 }
 
 function parseDesktopSnapshot(value: unknown): {
@@ -2140,7 +2311,11 @@ export function useRoomConnection(
           closePeer('ended');
         } else if (message.type === 'ROOM_DESKTOP_EVENT') {
           const event = parseDesktopEvent(message.payload);
-          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (
+            !event
+            || event.clientId === desktopClientIdRef.current
+            || !hasSourceBackedDesktopEventEvidence(event, isRoomRole(message.role) ? message.role : undefined)
+          ) return;
           if (event.kind === 'SET_ROOM_SURFACE') {
             surfaceEventSeenRef.current = true;
             pendingLocalSurfaceEventRef.current = null;
@@ -2522,6 +2697,16 @@ export function useRoomConnection(
       clientId: desktopClientIdRef.current,
       createdAt: Date.now(),
     };
+    if (!hasSourceBackedDesktopEventEvidence(event, role)) {
+      console.error('[publishDesktopEvent] rejected desktop event without source-backed evidence:', {
+        kind: event.kind,
+        role,
+        source: event.kind === 'SET_ROOM_SURFACE' || event.kind === 'WORKSPACE_STATE_CHANGED'
+          ? event.source
+          : event.evidence?.source,
+      });
+      return;
+    }
     if (event.kind === 'SET_ROOM_SURFACE') {
       surfaceEventSeenRef.current = true;
       pendingLocalSurfaceEventRef.current = {

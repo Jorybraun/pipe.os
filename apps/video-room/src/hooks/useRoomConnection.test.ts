@@ -6,6 +6,7 @@ import {
   decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedCursorEvidence,
+  hasSourceBackedDesktopEventEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedRecordingStateEvidence,
   hasSourceBackedRoomFileSystemEvidence,
@@ -17,6 +18,7 @@ import {
   type RoomChatMessage,
   type RoomCodeServerFileEvent,
   type RoomCursorPresence,
+  type RoomDesktopEvent,
   type RoomFileSystemEvent,
   type RoomMediaControlEvent,
   type RoomMediaControlState,
@@ -79,6 +81,97 @@ describe('decideRoomSurfaceSnapshot', () => {
       applySnapshot: true,
       clearPendingLocalSurface: true,
     });
+  });
+});
+
+describe('hasSourceBackedDesktopEventEvidence', () => {
+  const surfaceEvent: RoomDesktopEvent = {
+    id: 'surface-event-1',
+    clientId: 'host-client',
+    createdAt: 1700000001000,
+    kind: 'SET_ROOM_SURFACE',
+    surface: 'win95',
+    previousSurface: 'standard',
+    action: 'enter_desktop',
+    source: 'room_surface_control',
+    surfaceControlEventSource: 'browser_room_surface_toggle',
+    surfaceChangeId: 'surface:host:1700000001000:standard:win95',
+    capturedAtMs: 1700000001000,
+    roomPhase: 'connected',
+    durableObjectReplayExpected: true,
+  };
+
+  const startMenuEvent: RoomDesktopEvent = {
+    id: 'start-menu-event-1',
+    clientId: 'guest-client',
+    createdAt: 1700000002000,
+    kind: 'START_MENU_STATE',
+    open: true,
+    evidence: {
+      source: 'win95_start_menu_control',
+      menuEventSource: 'win95_start_button',
+      actor: 'guest',
+      menuId: 'start',
+      action: 'open',
+      open: true,
+      startMenuEventId: 'start-menu:guest:1700000002000:open:win95_start_button',
+      capturedAtMs: 1700000002000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    },
+  };
+
+  const workspaceEvent: RoomDesktopEvent = {
+    id: 'workspace-state-event-1',
+    clientId: 'host-client',
+    createdAt: 1700000003000,
+    kind: 'WORKSPACE_STATE_CHANGED',
+    actor: 'host',
+    workspaceStateEventId: 'workspace-state:host:1700000003000:launch:workspace-session-1:READY',
+    capturedAtMs: 1700000003000,
+    status: 'READY',
+    workspaceSessionId: 'workspace-session-1',
+    repoUrl: 'https://github.com/cloudflare/workers-sdk',
+    source: 'browser_workspace_state_observer',
+    workspaceEventSource: 'browser_workspace_state_observer',
+    workspaceStateSource: 'launch',
+    workspaceTelemetryPersisted: true,
+    proxyUrlPersisted: false,
+  };
+
+  it('accepts surface changes only when browser toggle evidence matches the room actor and transition', () => {
+    expect(hasSourceBackedDesktopEventEvidence(surfaceEvent, 'HOST')).toBe(true);
+  });
+
+  it('rejects source-less surface changes before optimistic desktop mode can change', () => {
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...surfaceEvent,
+      source: undefined,
+      surfaceChangeId: undefined,
+    }, 'HOST')).toBe(false);
+  });
+
+  it('accepts Start menu changes with source-backed Win95 menu evidence', () => {
+    expect(hasSourceBackedDesktopEventEvidence(startMenuEvent, 'GUEST')).toBe(true);
+  });
+
+  it('rejects window lifecycle events without source-backed window evidence', () => {
+    expect(hasSourceBackedDesktopEventEvidence({
+      id: 'open-window-1',
+      clientId: 'guest-client',
+      createdAt: 1700000002500,
+      kind: 'OPEN_WINDOW',
+      window: {
+        id: 'chat',
+        windowType: 'chat',
+        title: 'Chat',
+      },
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('accepts workspace state only when the observer event id and session provenance match', () => {
+    expect(hasSourceBackedDesktopEventEvidence(workspaceEvent, 'HOST')).toBe(true);
   });
 });
 
