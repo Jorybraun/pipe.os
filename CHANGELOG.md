@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Candidate atom selection now caps only primary decomposed concepts, so exact CV source terms such as cron, schedules, and workflows can support repo matching without excluding other source-backed atoms.
 - Workers AI model routing now retries the live default model when Cloudflare reports a stale configured model as deprecated, preserving repo/challenge discovery instead of blocking on old dashboard overrides.
 - Repo-task assessment reports now reject diagnostic-only `EVALUATED` outputs, requiring missing evidence to persist under an explicit diagnostic status instead of masquerading as a completed evaluation.
+- Repo-task assessment evaluation now requires every non-diagnostic claim, including negative outcomes, to cite exact evidence already captured in the same assessment session.
 
 ### Fixed — 95 Until Infinity desktop tools
 

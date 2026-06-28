@@ -302,16 +302,23 @@ function assertSourceRef(sourceRef: AssessmentEvidenceSourceRefInput): void {
   }
 }
 
-function assertExactSourceRef(sourceRef: AssessmentEvidenceSourceRefInput, claimId: string): void {
+function assertExactEvaluationClaimSourceRef(
+  sourceRef: AssessmentEvidenceSourceRefInput,
+  claim: AssessmentEvaluationClaimInput,
+): void {
   assertSourceRef(sourceRef);
-  requireNonEmpty(sourceRef.exactText ?? '', `positive evaluation claim ${claimId} exactText`);
-  requireNonEmpty(sourceRef.contentHash ?? '', `positive evaluation claim ${claimId} contentHash`);
+  requireNonEmpty(sourceRef.exactText ?? '', `${claim.polarity} evaluation claim ${claim.id} exactText`);
+  requireNonEmpty(sourceRef.contentHash ?? '', `${claim.polarity} evaluation claim ${claim.id} contentHash`);
 }
 
 function assertExactEventSourceRef(sourceRef: AssessmentEvidenceSourceRefInput, owner: string): void {
   assertSourceRef(sourceRef);
   requireNonEmpty(sourceRef.exactText ?? '', `${owner} exactText`);
   requireNonEmpty(sourceRef.contentHash ?? '', `${owner} contentHash`);
+}
+
+function claimRequiresSessionBackedSourceRef(claim: AssessmentEvaluationClaimInput): boolean {
+  return claim.polarity !== 'diagnostic';
 }
 
 function diagnosticMetadata(input: AssessmentEvaluationDiagnosticInput): DiagnosticMetadata {
@@ -398,6 +405,7 @@ async function requireClaimSourceBackedBySessionEvent(input: {
   db: D1Database;
   sessionId: string;
   claimId: string;
+  claimPolarity: AssessmentEvaluationClaimPolarity;
   sourceRef: AssessmentEvidenceSourceRefInput;
 }): Promise<void> {
   const evidenceRole = input.sourceRef.evidenceRole ?? 'support';
@@ -425,7 +433,7 @@ async function requireClaimSourceBackedBySessionEvent(input: {
   ).first<{ event_id: string }>();
   if (!row) {
     throw new Error(
-      `positive evaluation claim ${input.claimId} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
+      `${input.claimPolarity} evaluation claim ${input.claimId} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
     );
   }
 }
@@ -633,16 +641,18 @@ export class AssessmentLayerStore {
       requireNonEmpty(claim.id, 'claim.id');
       requireNonEmpty(claim.dimension, `claim ${claim.id} dimension`);
       requireNonEmpty(claim.narrative, `claim ${claim.id} narrative`);
-      if (claim.polarity === 'positive' && claim.sourceRefs.length === 0) {
-        throw new Error(`positive evaluation claim ${claim.id} requires at least one exact source ref`);
+      const requiresSessionBackedSourceRef = claimRequiresSessionBackedSourceRef(claim);
+      if (requiresSessionBackedSourceRef && claim.sourceRefs.length === 0) {
+        throw new Error(`${claim.polarity} evaluation claim ${claim.id} requires at least one exact source ref`);
       }
       for (const sourceRef of claim.sourceRefs) {
-        if (claim.polarity === 'positive') {
-          assertExactSourceRef(sourceRef, claim.id);
+        if (requiresSessionBackedSourceRef) {
+          assertExactEvaluationClaimSourceRef(sourceRef, claim);
           await requireClaimSourceBackedBySessionEvent({
             db: this.#db,
             sessionId: session.id,
             claimId: claim.id,
+            claimPolarity: claim.polarity,
             sourceRef,
           });
         } else {

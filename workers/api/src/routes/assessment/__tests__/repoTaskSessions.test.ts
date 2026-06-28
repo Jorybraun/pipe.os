@@ -495,6 +495,133 @@ describe('repo task assessment session routes', () => {
     ).get(session.id)).toEqual({ state: 'DIAGNOSTIC' });
   });
 
+  it('requires negative evaluation claims to cite captured session evidence', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:negative-claim-provenance',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-negative-claim',
+    });
+    const failedTestText = 'npm test\nFAIL src/popover.test.ts\nExpected cleanupStaleHandler to be called.';
+
+    const unsupportedNegativeReport = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:unsupported-negative',
+        status: 'EVALUATED',
+        summary: 'Candidate submitted a fix but tests still failed.',
+        output: { schemaVersion: 'repo-task-assessment-output-v1' },
+        claims: [{
+          id: 'claim-tests-failed-without-source',
+          polarity: 'negative',
+          dimension: 'verification',
+          narrative: 'The submitted fix did not pass the relevant test suite.',
+          sourceRefs: [],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+
+    expect(unsupportedNegativeReport.status).toBe(400);
+    const unsupportedNegativeBody = await unsupportedNegativeReport.json() as {
+      error: { message: string };
+    };
+    expect(unsupportedNegativeBody.error.message).toContain(
+      'negative evaluation claim claim-tests-failed-without-source requires at least one exact source ref',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+
+    const forgedNegativeReport = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:forged-negative',
+        status: 'EVALUATED',
+        summary: 'Candidate submitted a fix but tests still failed.',
+        output: { schemaVersion: 'repo-task-assessment-output-v1' },
+        claims: [{
+          id: 'claim-tests-failed-forged',
+          polarity: 'negative',
+          dimension: 'verification',
+          narrative: 'The submitted fix did not pass the relevant test suite.',
+          sourceRefs: [await sourceRef('test_run', 'test-forged', failedTestText)],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+
+    expect(forgedNegativeReport.status).toBe(400);
+    const forgedNegativeBody = await forgedNegativeReport.json() as {
+      error: { message: string };
+    };
+    expect(forgedNegativeBody.error.message).toContain(
+      'negative evaluation claim claim-tests-failed-forged source ref test_run:test-forged is not backed by assessment session evidence',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+
+    const testRunSourceRef = await sourceRef('test_run', 'test-failure-1', failedTestText);
+    expect((await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:failed-test-run',
+        kind: 'test_run',
+        actorType: 'dev_container',
+        actorId: 'workspace-negative-claim',
+        narrative: 'Candidate ran the verification suite and it failed.',
+        payload: { command: 'npm test', exitCode: 1 },
+        sourceRefs: [testRunSourceRef],
+      }),
+      env,
+    )).status).toBe(201);
+
+    const reportResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:source-backed-negative',
+        status: 'EVALUATED',
+        summary: 'Candidate submitted a fix but the captured test run still failed.',
+        output: { schemaVersion: 'repo-task-assessment-output-v1' },
+        claims: [{
+          id: 'claim-tests-failed',
+          polarity: 'negative',
+          dimension: 'verification',
+          narrative: 'The submitted fix did not pass the relevant test suite.',
+          sourceRefs: [testRunSourceRef],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+
+    expect(reportResponse.status).toBe(201);
+    const reportBody = await reportResponse.json() as {
+      report: { id: string; status: string };
+    };
+    expect(reportBody.report.status).toBe('EVALUATED');
+    expect(sqlite.prepare(
+      `SELECT polarity, dimension, narrative
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?`,
+    ).get(reportBody.report.id)).toEqual({
+      polarity: 'negative',
+      dimension: 'verification',
+      narrative: 'The submitted fix did not pass the relevant test suite.',
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text
+         FROM assessment_claim_source_refs
+        WHERE claim_id = ?`,
+    ).get('claim-tests-failed')).toEqual({
+      source_ref_type: 'test_run',
+      source_ref_id: 'test-failure-1',
+      exact_text: failedTestText,
+    });
+  });
+
   it('rejects diagnostic-only reports marked as evaluated', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:diagnostic-only-evaluated',
