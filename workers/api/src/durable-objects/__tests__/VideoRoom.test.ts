@@ -501,6 +501,98 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('persists and broadcasts source-backed Win95 Start menu state', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-guest-start-menu-open',
+        clientId: 'guest-client',
+        createdAt: 3,
+        kind: 'START_MENU_STATE',
+        open: true,
+        evidence: {
+          source: 'win95_start_menu_control',
+          menuEventSource: 'win95_start_button',
+          actor: 'guest',
+          menuId: 'start',
+          action: 'open',
+          open: true,
+          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+          capturedAtMs: 3000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(storage.get('desktopStartMenuOpen')).toBe(true);
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        kind: 'START_MENU_STATE',
+        open: true,
+        evidence: expect.objectContaining({
+          source: 'win95_start_menu_control',
+          startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+        }),
+      }),
+    }));
+    expect(storage.get('desktopActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'evt-guest-start-menu-open',
+          kind: 'START_MENU_STATE',
+          open: true,
+          evidence: expect.objectContaining({
+            startMenuEventId: 'start-menu:guest:3000:open:win95_start_button',
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects Win95 Start menu state without source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-source-less-start-menu',
+        clientId: 'guest-client',
+        createdAt: 3.5,
+        kind: 'START_MENU_STATE',
+        open: true,
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+    }));
+    expect(storage.has('desktopStartMenuOpen')).toBe(false);
+    expect(storage.has('desktopActivityLog')).toBe(false);
+  });
+
   it('rejects shared room surface changes without browser source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

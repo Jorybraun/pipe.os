@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Win95 Start menu open/close now syncs between room participants and replays as source-backed `desktop_menu_toggle` evidence instead of staying local-only UI state.
 - Win95 Start menu launches now persist `win95_start_menu` lifecycle/state evidence instead of being misattributed to desktop icon interactions.
 - Win95 window state evidence now preserves whether focus/minimize/restore came from the taskbar, desktop icon, or window chrome instead of collapsing every update to window chrome.
 - Clippy-opened Win95 tool windows now persist `window_open` lifecycle evidence with `lifecycleSource: clippy_action` instead of misattributing those opens to direct desktop UI clicks.

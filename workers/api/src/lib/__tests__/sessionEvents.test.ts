@@ -442,6 +442,41 @@ describe('sessionEvents', () => {
             },
           },
           {
+            role: 'GUEST',
+            recordedAt: 1700000001300,
+            event: {
+              id: 'evt-start-menu-open',
+              clientId: 'guest-client',
+              createdAt: 1700000001300,
+              kind: 'START_MENU_STATE',
+              open: true,
+              evidence: {
+                source: 'win95_start_menu_control',
+                menuEventSource: 'win95_start_button',
+                actor: 'guest',
+                menuId: 'start',
+                action: 'open',
+                open: true,
+                startMenuEventId: 'start-menu:guest:1700000001300:open:win95_start_button',
+                capturedAtMs: 1700000001300,
+                surface: 'win95',
+                roomPhase: 'connected',
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000001350,
+            event: {
+              id: 'evt-source-less-start-menu',
+              clientId: 'guest-client',
+              createdAt: 1700000001350,
+              kind: 'START_MENU_STATE',
+              open: false,
+            },
+          },
+          {
             role: 'HOST',
             recordedAt: 1700000001000,
             event: {
@@ -1124,6 +1159,29 @@ describe('sessionEvents', () => {
           }),
         }),
         expect.objectContaining({
+          type: 'desktop_menu_toggle',
+          actor: 'guest',
+          text: 'Start menu opened',
+          candidateId: 'cand-room',
+          sessionId: 'meeting--room-sync',
+          timestamp: 1700000001,
+          properties: expect.objectContaining({
+            roomActivitySource: 'durable_object',
+            roomActivityKind: 'desktop',
+            source: 'win95_start_menu_control',
+            menuEventSource: 'win95_start_button',
+            actor: 'guest',
+            menuId: 'start',
+            action: 'open',
+            open: true,
+            startMenuEventId: 'start-menu:guest:1700000001300:open:win95_start_button',
+            capturedAtMs: 1700000001300,
+            surface: 'win95',
+            roomPhase: 'connected',
+            durableObjectReplayExpected: true,
+          }),
+        }),
+        expect.objectContaining({
           type: 'window_update',
           actor: 'guest',
           text: 'Window state updated: browser',
@@ -1308,7 +1366,11 @@ describe('sessionEvents', () => {
           text: 'notes.txt',
         }),
       ]);
-      expect(events[2]!.properties).toMatchObject({
+      const restoredWindowEvent = events.find((event) => (
+        event.type === 'window_update'
+        && event.properties?.windowStateChangeId === 'window-state:guest:1700000001500:browser:restore_or_focus'
+      ));
+      expect(restoredWindowEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'window_state_client_submit',
         stateSource: 'win95_taskbar',
@@ -1417,6 +1479,7 @@ describe('sessionEvents', () => {
       ]));
       for (const fallbackSource of [
         'room_surface_durable_object',
+        'start_menu_durable_object',
         'window_lifecycle_durable_object',
         'browser_navigation_durable_object',
         'window_data_durable_object',

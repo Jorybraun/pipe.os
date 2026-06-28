@@ -46,6 +46,7 @@ export type SessionEventType =
   | 'cursor_presence'
   | 'media_control'
   | 'room_surface_change'
+  | 'desktop_menu_toggle'
   | 'workspace_state'
   | 'participant_join'
   | 'participant_leave'
@@ -98,6 +99,12 @@ const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enable
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -372,6 +379,35 @@ function hasSourceBackedRoomSurfaceEvidence(
     && event.durableObjectReplayExpected === true;
 }
 
+function hasSourceBackedStartMenuEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  open: boolean,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  if (actor !== 'host' && actor !== 'guest') return false;
+  const action = open ? 'open' : 'close';
+  const menuEventSource = stringOrNull(evidence.menuEventSource);
+  const startMenuEventId = stringOrNull(evidence.startMenuEventId);
+  const capturedAtMs = numberOrNull(evidence.capturedAtMs);
+  return evidence.source === 'win95_start_menu_control'
+    && menuEventSource !== null
+    && START_MENU_EVENT_SOURCES.has(menuEventSource)
+    && evidence.actor === actor
+    && evidence.menuId === 'start'
+    && evidence.action === action
+    && evidence.open === open
+    && startMenuEventId !== null
+    && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+    && evidence.surface === 'win95'
+    && stringOrNull(evidence.roomPhase) !== null
+    && evidence.durableObjectReplayExpected === true;
+}
+
 function hasSourceBackedWorkspaceStateEvidence(
   event: Record<string, unknown>,
   actor: SessionEvent['actor'],
@@ -500,6 +536,25 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
       actor,
       text: `Workspace state changed to ${status}`,
       properties,
+    });
+  }
+
+  if (event.kind === 'START_MENU_STATE') {
+    if (typeof event.open !== 'boolean') return null;
+    const evidence = isRecord(event.evidence) ? event.evidence : null;
+    if (!hasSourceBackedStartMenuEvidence(evidence, actor, event.open)) return null;
+    return createSessionEvent(input, {
+      type: 'desktop_menu_toggle',
+      timestamp,
+      actor,
+      text: event.open ? 'Start menu opened' : 'Start menu closed',
+      properties: {
+        ...base,
+        ...evidence,
+        open: event.open,
+        menuId: 'start',
+        action: event.open ? 'open' : 'close',
+      },
     });
   }
 
@@ -1447,6 +1502,7 @@ function mapEventTypeToNodeType(type: SessionEventType): string {
     cursor_presence: 'session_cursor_presence',
     media_control: 'session_media_control',
     room_surface_change: 'session_room_surface_change',
+    desktop_menu_toggle: 'session_desktop_menu_toggle',
     workspace_state: 'session_workspace_state',
     participant_join: 'session_participant_join',
     participant_leave: 'session_participant_leave',
@@ -1492,6 +1548,8 @@ function formatEventNarrative(event: SessionEvent): string {
     case 'media_control':
       return `[${time}] Media control changed: ${event.text}`;
     case 'room_surface_change':
+      return `[${time}] ${event.text}`;
+    case 'desktop_menu_toggle':
       return `[${time}] ${event.text}`;
     case 'workspace_state':
       return `[${time}] ${event.text}`;
@@ -1602,6 +1660,11 @@ function sessionEventCorrelationRefs(event: SessionEvent, properties: JsonObject
     refs.clippyAction = { actionEventId: clippyActionEventId };
   }
 
+  const startMenuEventId = stringProperty(properties, 'startMenuEventId');
+  if (event.type === 'desktop_menu_toggle' && startMenuEventId) {
+    refs.startMenu = { eventId: startMenuEventId };
+  }
+
   return Object.keys(refs).length > 0 ? refs : null;
 }
 
@@ -1685,6 +1748,15 @@ function sessionEventEntities(input: {
       metadata: {
         windowType: stringProperty(properties, 'windowType'),
       },
+    });
+  }
+
+  const menuId = stringProperty(properties, 'menuId');
+  if (menuId) {
+    entities.push({
+      entityType: 'room_menu',
+      entityId: menuId,
+      relationship: 'affected_menu',
     });
   }
 
@@ -1835,6 +1907,7 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
     case 'cursor_presence':
     case 'media_control':
     case 'room_surface_change':
+    case 'desktop_menu_toggle':
     case 'participant_join':
     case 'participant_leave':
     default:
@@ -2170,6 +2243,7 @@ export interface SessionContextNode {
 const CONTEXT_SOURCE_REF_KEYS = [
   'roomMessageId',
   'roomEventId',
+  'startMenuEventId',
   'workspaceStateEventId',
   'windowEventId',
   'windowDataUpdateId',

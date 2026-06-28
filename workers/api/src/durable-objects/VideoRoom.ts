@@ -54,6 +54,12 @@ const WINDOW_STATE_SOURCES = new Set([
   'win95_window_chrome',
   'win95_taskbar',
 ]);
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 
 interface SignalMessage {
   type:
@@ -157,6 +163,14 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'OPEN_WINDOW';
       window: RoomDesktopWindow;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
+      kind: 'START_MENU_STATE';
+      open: boolean;
       evidence?: Record<string, unknown>;
     }
   | {
@@ -582,6 +596,16 @@ export class VideoRoom {
           : undefined,
       };
     }
+    if (value.kind === 'START_MENU_STATE' && typeof value.open === 'boolean') {
+      return {
+        id: value.id,
+        clientId: value.clientId,
+        createdAt: value.createdAt,
+        kind: 'START_MENU_STATE',
+        open: value.open,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+      };
+    }
     if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
       return {
         id: value.id,
@@ -721,6 +745,28 @@ export class VideoRoom {
     }
     const evidence = event.evidence;
     if (!this.isRecord(evidence)) return false;
+    if (event.kind === 'START_MENU_STATE') {
+      const action = event.open ? 'open' : 'close';
+      const capturedAtMs = evidence.capturedAtMs;
+      const menuEventSource = evidence.menuEventSource;
+      const startMenuEventId = evidence.startMenuEventId;
+      return evidence.source === 'win95_start_menu_control'
+        && typeof menuEventSource === 'string'
+        && START_MENU_EVENT_SOURCES.has(menuEventSource)
+        && evidence.actor === actor
+        && evidence.menuId === 'start'
+        && evidence.action === action
+        && evidence.open === event.open
+        && typeof startMenuEventId === 'string'
+        && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+        && typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0
+        && startMenuEventId === `start-menu:${actor}:${capturedAtMs}:${action}:${menuEventSource}`
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
     if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
       const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
       const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
@@ -1944,6 +1990,10 @@ export class VideoRoom {
       await this.persistRoomSurface(event.surface);
       return this.getDesktopWindows();
     }
+    if (event.kind === 'START_MENU_STATE') {
+      await this.state.storage.put('desktopStartMenuOpen', event.open);
+      return this.getDesktopWindows();
+    }
     const windows = await this.getDesktopWindows();
     if (event.kind === 'OPEN_WINDOW') {
       const withoutExisting = windows.filter((windowConfig) => windowConfig.id !== event.window.id);
@@ -2301,9 +2351,14 @@ export class VideoRoom {
       }));
 
       const desktopWindows = await this.getDesktopWindows();
+      const desktopStartMenuOpen = await this.state.storage.get<unknown>('desktopStartMenuOpen');
       server.send(JSON.stringify({
         type: 'ROOM_DESKTOP_STATE',
-        payload: { windows: desktopWindows, surface: this.roomSurface },
+        payload: {
+          windows: desktopWindows,
+          surface: this.roomSurface,
+          startMenuOpen: typeof desktopStartMenuOpen === 'boolean' ? desktopStartMenuOpen : false,
+        },
       }));
 
       const currentClippyPrompt = await this.getCurrentClippyPrompt();

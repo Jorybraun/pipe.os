@@ -16,6 +16,7 @@ export type SessionEventType =
   | 'cursor_presence'
   | 'media_control'
   | 'room_surface_change'
+  | 'desktop_menu_toggle'
   | 'workspace_state'
   | 'clippy_prompt'
   | 'clippy_action'

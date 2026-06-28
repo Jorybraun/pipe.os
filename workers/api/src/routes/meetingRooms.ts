@@ -156,6 +156,12 @@ const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'e
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const START_MENU_EVENT_SOURCES = new Set([
+  'win95_start_button',
+  'win95_desktop_click',
+  'win95_start_menu_item',
+]);
+const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
@@ -230,6 +236,7 @@ const sessionEventSchema = z.object({
     'cursor_presence',
     'media_control',
     'room_surface_change',
+    'desktop_menu_toggle',
     'workspace_state',
     'participant_join',
     'participant_leave',
@@ -571,6 +578,37 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Room surface evidence must come from a browser room surface toggle with actor, previous/next surface, stable event id, timestamp, action, replay expectation, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'desktop_menu_toggle') {
+    const sourceOk = properties.source === 'win95_start_menu_control';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSource = properties.menuEventSource;
+    const eventSourceOk = typeof eventSource === 'string' && START_MENU_EVENT_SOURCES.has(eventSource);
+    const open = properties.open;
+    const expectedAction = open === true ? 'open' : open === false ? 'close' : null;
+    const menuOk = properties.menuId === 'start' && typeof open === 'boolean';
+    const actionOk = expectedAction !== null
+      && properties.action === expectedAction
+      && event.text === (open ? 'Start menu opened' : 'Start menu closed');
+    const capturedAtMs = properties.capturedAtMs;
+    const startMenuEventId = properties.startMenuEventId;
+    const idOk = typeof startMenuEventId === 'string'
+      && START_MENU_EVENT_ID_RE.test(startMenuEventId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && startMenuEventId === `start-menu:${event.actor}:${capturedAtMs}:${expectedAction}:${eventSource}`;
+    const contextOk = properties.surface === 'win95'
+      && hasString(properties.roomPhase)
+      && properties.durableObjectReplayExpected === true;
+    if (sourceOk && actorOk && eventSourceOk && menuOk && actionOk && idOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Start menu evidence must come from a Win95 desktop menu control with actor, source, stable event id, timestamp, action, surface, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;

@@ -63,6 +63,10 @@ import {
   type MediaControlKind,
 } from './lib/mediaControlEvidence';
 import {
+  buildStartMenuStateEvidence,
+  type StartMenuEventSource,
+} from './lib/startMenuEvidence';
+import {
   buildRoomFileEvidence,
   roomFileEvidenceText,
   type RoomFileEvidence,
@@ -364,6 +368,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [clippyVisible, setClippyVisible] = useState(true);
   const [clippyChatRequest, setClippyChatRequest] = useState(0);
+  const [startMenuState, setStartMenuState] = useState<{ open: boolean; eventId: string } | null>(null);
   const [clippyAgentStatus, setClippyAgentStatus] = useState<AgentStatus>('disconnected');
   const [queuedTerminalCommand, setQueuedTerminalCommand] = useState<string | null>(null);
   const [queuedTerminalCommandRequest, setQueuedTerminalCommandRequest] = useState(0);
@@ -593,6 +598,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [enteredRoom, room.desktopSnapshot]);
 
   useEffect(() => {
+    if (!enteredRoom || room.desktopStartMenuOpen === null) return;
+    setStartMenuState({
+      open: room.desktopStartMenuOpen,
+      eventId: `snapshot:${room.desktopStartMenuOpen ? 'open' : 'closed'}`,
+    });
+  }, [enteredRoom, room.desktopStartMenuOpen]);
+
+  useEffect(() => {
     if (!enteredRoom) return;
     for (const event of room.desktopEvents) {
       if (processedDesktopEventsRef.current.has(event.id)) continue;
@@ -601,6 +614,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         continue;
       } else if (event.kind === 'WORKSPACE_STATE_CHANGED') {
         void refreshWorkspace();
+      } else if (event.kind === 'START_MENU_STATE') {
+        setStartMenuState({ open: event.open, eventId: event.id });
       } else if (event.kind === 'OPEN_WINDOW') {
         wm.openWindow(event.window);
       } else if (event.kind === 'CLOSE_WINDOW') {
@@ -1502,6 +1517,27 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
+  const publishStartMenuStateChange = useCallback((
+    open: boolean,
+    eventSource: StartMenuEventSource,
+  ): void => {
+    if (room.roomSurface !== 'win95') return;
+    const evidence = buildStartMenuStateEvidence({
+      actor: roomActor,
+      open,
+      eventSource,
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      capturedAtMs: Date.now(),
+    });
+    room.publishDesktopEvent({
+      kind: 'START_MENU_STATE',
+      open,
+      evidence: evidence.properties,
+    });
+    captureSessionEvent('desktop_menu_toggle', evidence.text, roomActor, evidence.properties);
+  }, [captureSessionEvent, room, roomActor]);
+
   const captureMediaControlChange = (
     control: MediaControlKind,
     previousEnabled: boolean,
@@ -2342,6 +2378,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       onWindowMoveEnd={publishSharedWindowMove}
       canExitDesktop={canControlRoomSurface}
       onExitDesktop={exitWin95Desktop}
+      startMenuState={startMenuState}
+      onStartMenuStateChange={publishStartMenuStateChange}
       peerCursors={room.peerCursors}
       onCursorMove={handleCursorMove}
     />

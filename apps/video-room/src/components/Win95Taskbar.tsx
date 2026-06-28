@@ -80,7 +80,10 @@ export function Win95Taskbar({
     <div className="win95-taskbar" data-testid="win95-taskbar">
       <button
         className={`win95-start-btn ${startMenuOpen ? 'is-active' : ''}`}
-        onClick={onStartClick}
+        onClick={(event) => {
+          event.stopPropagation();
+          onStartClick();
+        }}
         data-testid="win95-start-btn"
       >
         <span className="win95-start-logo">95∞</span>

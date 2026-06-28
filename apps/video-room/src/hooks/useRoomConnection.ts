@@ -239,6 +239,14 @@ export type RoomDesktopEvent =
       id: string;
       clientId: string;
       createdAt: number;
+      kind: 'START_MENU_STATE';
+      open: boolean;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      id: string;
+      clientId: string;
+      createdAt: number;
       kind: 'CLOSE_WINDOW';
       windowId: string;
       evidence?: Record<string, unknown>;
@@ -313,6 +321,11 @@ export type RoomDesktopEventDraft =
   | {
       kind: 'OPEN_WINDOW';
       window: RoomDesktopWindowConfig;
+      evidence?: Record<string, unknown>;
+    }
+  | {
+      kind: 'START_MENU_STATE';
+      open: boolean;
       evidence?: Record<string, unknown>;
     }
   | {
@@ -405,6 +418,7 @@ interface RoomConnection {
   roomSurface: RoomSurface;
   desktopEvents: RoomDesktopEvent[];
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
+  desktopStartMenuOpen: boolean | null;
   clippyPrompt: RoomClippyPrompt | null;
   clippyInteractionEvents: RoomClippyInteractionEvent[];
   chatMessages: RoomChatMessage[];
@@ -553,6 +567,16 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       durableObjectReplayExpected: booleanOrUndefined(value.durableObjectReplayExpected),
     };
   }
+  if (value.kind === 'START_MENU_STATE' && typeof value.open === 'boolean') {
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      kind: 'START_MENU_STATE',
+      open: value.open,
+      evidence: recordOrUndefined(value.evidence),
+    };
+  }
   if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
     return {
       id: value.id,
@@ -644,6 +668,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
 function parseDesktopSnapshot(value: unknown): {
   windows: RoomDesktopWindowConfig[];
   surface?: RoomSurface;
+  startMenuOpen?: boolean;
 } | null {
   if (!isRecord(value) || !Array.isArray(value.windows)) return null;
   const windows: RoomDesktopWindowConfig[] = [];
@@ -654,6 +679,7 @@ function parseDesktopSnapshot(value: unknown): {
   return {
     windows,
     surface: isRoomSurface(value.surface) ? value.surface : undefined,
+    startMenuOpen: typeof value.startMenuOpen === 'boolean' ? value.startMenuOpen : undefined,
   };
 }
 
@@ -1116,6 +1142,7 @@ export function useRoomConnection(
   const [roomSurface, setRoomSurfaceState] = useState<RoomSurface>(initialSurface);
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
+  const [desktopStartMenuOpen, setDesktopStartMenuOpen] = useState<boolean | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
   const [clippyInteractionEvents, setClippyInteractionEvents] = useState<RoomClippyInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
@@ -1166,6 +1193,7 @@ export function useRoomConnection(
     if (!active) {
       surfaceEventSeenRef.current = false;
       setRoomSurfaceState(initialSurface);
+      setDesktopStartMenuOpen(null);
     }
   }, [active, initialSurface]);
 
@@ -1606,6 +1634,8 @@ export function useRoomConnection(
           if (event.kind === 'SET_ROOM_SURFACE') {
             surfaceEventSeenRef.current = true;
             setRoomSurfaceState(event.surface);
+          } else if (event.kind === 'START_MENU_STATE') {
+            setDesktopStartMenuOpen(event.open);
           }
           setDesktopEvents((prev) => [...prev.slice(-99), event]);
         } else if (message.type === 'ROOM_DESKTOP_STATE') {
@@ -1613,6 +1643,9 @@ export function useRoomConnection(
           if (!snapshot) return;
           if (snapshot.surface && !surfaceEventSeenRef.current) {
             setRoomSurfaceState(snapshot.surface);
+          }
+          if (snapshot.startMenuOpen !== undefined) {
+            setDesktopStartMenuOpen(snapshot.startMenuOpen);
           }
           setDesktopSnapshot(snapshot.windows);
         } else if (message.type === 'ROOM_CLIPPY_PROMPT') {
@@ -1925,6 +1958,8 @@ export function useRoomConnection(
     if (event.kind === 'SET_ROOM_SURFACE') {
       surfaceEventSeenRef.current = true;
       setRoomSurfaceState(event.surface);
+    } else if (event.kind === 'START_MENU_STATE') {
+      setDesktopStartMenuOpen(event.open);
     }
     if (!sendDesktopEvent(event)) {
       desktopOutboxRef.current.push(event);
@@ -2147,6 +2182,7 @@ export function useRoomConnection(
     roomSurface,
     desktopEvents,
     desktopSnapshot,
+    desktopStartMenuOpen,
     clippyPrompt,
     clippyInteractionEvents,
     chatMessages,

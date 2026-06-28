@@ -1,4 +1,4 @@
-import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   FileText,
   FolderOpen,
@@ -14,6 +14,7 @@ import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 import type { RoomCursorPresence } from '../hooks/useRoomConnection';
 import type { WindowStateSource, WindowUiLaunchSource } from '../lib/windowEvidence';
+import type { StartMenuEventSource } from '../lib/startMenuEvidence';
 
 interface DesktopIcon {
   windowType: WindowType;
@@ -51,6 +52,8 @@ interface Win95DesktopProps {
   onWindowMoveEnd?: (id: string, x: number, y: number) => void;
   canExitDesktop?: boolean;
   onExitDesktop?: () => void;
+  startMenuState?: { open: boolean; eventId: string } | null;
+  onStartMenuStateChange?: (open: boolean, source: StartMenuEventSource) => void;
   peerCursors?: RoomCursorPresence[];
   onCursorMove?: (position: { x: number; y: number }) => void;
 }
@@ -73,14 +76,29 @@ export function Win95Desktop({
   onWindowMoveEnd,
   canExitDesktop = false,
   onExitDesktop,
+  startMenuState,
+  onStartMenuStateChange,
   peerCursors = [],
   onCursorMove,
 }: Win95DesktopProps): JSX.Element {
   const [startMenuOpen, setStartMenuOpen] = useState(false);
 
+  useEffect(() => {
+    if (!startMenuState) return;
+    setStartMenuOpen(startMenuState.open);
+  }, [startMenuState?.eventId, startMenuState?.open]);
+
+  const setStartMenuOpenWithEvidence = useCallback((
+    open: boolean,
+    source: StartMenuEventSource,
+  ): void => {
+    setStartMenuOpen(open);
+    onStartMenuStateChange?.(open, source);
+  }, [onStartMenuStateChange]);
+
   const handleStartClick = useCallback((): void => {
-    setStartMenuOpen((v) => !v);
-  }, []);
+    setStartMenuOpenWithEvidence(!startMenuOpen, 'win95_start_button');
+  }, [setStartMenuOpenWithEvidence, startMenuOpen]);
 
   const handleWindowClick = useCallback(
     (win: WindowState): void => {
@@ -128,7 +146,9 @@ export function Win95Desktop({
           y: (event.clientY - rect.top) / rect.height,
         });
       }}
-      onClick={() => startMenuOpen && setStartMenuOpen(false)}
+      onClick={() => {
+        if (startMenuOpen) setStartMenuOpenWithEvidence(false, 'win95_desktop_click');
+      }}
     >
       <div className="win95-peer-cursors" aria-hidden="true">
         {peerCursors.map((cursor) => {
@@ -192,7 +212,7 @@ export function Win95Desktop({
                   className="win95-start-menu-item"
                   onClick={() => {
                     handleIconDoubleClick(icon.windowType, 'win95_start_menu');
-                    setStartMenuOpen(false);
+                    setStartMenuOpenWithEvidence(false, 'win95_start_menu_item');
                   }}
                 >
                   <Icon size={16} />
@@ -205,7 +225,7 @@ export function Win95Desktop({
               className="win95-start-menu-item"
               onClick={() => {
                 if (canExitDesktop) onExitDesktop?.();
-                setStartMenuOpen(false);
+                setStartMenuOpenWithEvidence(false, 'win95_start_menu_item');
               }}
             >
               <SquareTerminal size={16} />

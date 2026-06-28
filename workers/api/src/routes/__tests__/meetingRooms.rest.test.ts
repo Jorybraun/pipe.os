@@ -1735,6 +1735,73 @@ describe('meeting room recording living-context route', () => {
       durableObjectReplayExpected: true,
     });
 
+    const sourceOnlyStartMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'desktop_menu_toggle',
+        text: 'Start menu opened',
+        actor: 'guest',
+        properties: {
+          source: 'win95_start_menu_control',
+          menuEventSource: 'win95_start_button',
+          actor: 'guest',
+          menuId: 'start',
+          action: 'open',
+          open: true,
+          surface: 'win95',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyStartMenuRes.status).toBe(422);
+
+    const startMenuRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'desktop_menu_toggle',
+        text: 'Start menu opened',
+        actor: 'guest',
+        properties: {
+          source: 'win95_start_menu_control',
+          menuEventSource: 'win95_start_button',
+          actor: 'guest',
+          menuId: 'start',
+          action: 'open',
+          open: true,
+          startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
+          capturedAtMs: 1782601520000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(startMenuRes.status).toBe(200);
+
+    const startMenuNode = sqlite.prepare(
+      `SELECT node_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_desktop_menu_toggle'
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(JSON.parse(startMenuNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'win95_start_menu_control',
+      menuEventSource: 'win95_start_button',
+      startMenuEventId: 'start-menu:guest:1782601520000:open:win95_start_button',
+      menuId: 'start',
+      action: 'open',
+      open: true,
+      surface: 'win95',
+      durableObjectReplayExpected: true,
+    });
+
     const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

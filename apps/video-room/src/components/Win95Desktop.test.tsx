@@ -115,12 +115,14 @@ describe('Win95Desktop', () => {
 
   it('reports Start menu app launches with Start menu provenance', () => {
     const onIconDoubleClick = vi.fn();
+    const onStartMenuStateChange = vi.fn();
 
     render(
       <Win95Desktop
         wm={makeWindowManager()}
         renderWindowContent={() => null}
         onIconDoubleClick={onIconDoubleClick}
+        onStartMenuStateChange={onStartMenuStateChange}
       />,
     );
 
@@ -128,5 +130,47 @@ describe('Win95Desktop', () => {
     fireEvent.click(within(screen.getByTestId('win95-start-menu')).getByRole('button', { name: 'Notepad' }));
 
     expect(onIconDoubleClick).toHaveBeenCalledWith('notepad', 'win95_start_menu');
+    expect(onStartMenuStateChange).toHaveBeenNthCalledWith(1, true, 'win95_start_button');
+    expect(onStartMenuStateChange).toHaveBeenNthCalledWith(2, false, 'win95_start_menu_item');
+  });
+
+  it('reports desktop-click Start menu closes with desktop provenance', () => {
+    const onStartMenuStateChange = vi.fn();
+
+    render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        onStartMenuStateChange={onStartMenuStateChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('win95-start-btn'));
+    fireEvent.click(screen.getByTestId('win95-desktop'));
+
+    expect(onStartMenuStateChange).toHaveBeenNthCalledWith(1, true, 'win95_start_button');
+    expect(onStartMenuStateChange).toHaveBeenNthCalledWith(2, false, 'win95_desktop_click');
+  });
+
+  it('applies shared Start menu state from the room', () => {
+    const { rerender } = render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        startMenuState={{ open: false, eventId: 'snapshot:false' }}
+      />,
+    );
+
+    expect(screen.queryByTestId('win95-start-menu')).toBeNull();
+
+    rerender(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        startMenuState={{ open: true, eventId: 'evt-remote-start-open' }}
+      />,
+    );
+
+    expect(screen.getByTestId('win95-start-menu')).not.toBeNull();
   });
 });
