@@ -1412,6 +1412,107 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('terminalActivityLog')).toBe(false);
   });
 
+  it('broadcasts and records source-backed code-server file events', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+      payload: {
+        id: 'code-file-save-1',
+        clientId: 'guest-client',
+        createdAt: 1782604100000,
+        eventType: 'code_editor_save',
+        actor: 'system',
+        text: 'src/app.ts',
+        evidence: {
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          action: 'modified',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          path: 'src/app.ts',
+          observedAt: '2026-06-27T20:01:40.000Z',
+          contentHash: 'a'.repeat(64),
+          sizeBytes: 421,
+          contentPreview: 'export const answer = 42;',
+          bridgePersisted: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        eventType: 'code_editor_save',
+        actor: 'system',
+        text: 'src/app.ts',
+        evidence: expect.objectContaining({
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          contentHash: 'a'.repeat(64),
+        }),
+      }),
+    }));
+    expect(storage.get('codeServerFileActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'code-file-save-1',
+          eventType: 'code_editor_save',
+          text: 'src/app.ts',
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects code-server file events without source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+      payload: {
+        id: 'code-file-fake',
+        clientId: 'guest-client',
+        createdAt: 1782604100000,
+        eventType: 'code_editor_save',
+        actor: 'system',
+        text: 'src/app.ts',
+        evidence: {
+          source: 'editor_claim',
+          path: 'src/app.ts',
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+    }));
+    expect(storage.has('codeServerFileActivityLog')).toBe(false);
+  });
+
   it('exposes replayable room activity logs for server-side evidence sync', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -1490,6 +1591,36 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+      payload: {
+        id: 'code-file-activity',
+        clientId: 'guest-client',
+        createdAt: 2450,
+        eventType: 'code_editor_save',
+        actor: 'system',
+        text: 'src/app.ts',
+        evidence: {
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          action: 'modified',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          path: 'src/app.ts',
+          observedAt: '2026-06-27T20:01:40.000Z',
+          contentHash: 'a'.repeat(64),
+          sizeBytes: 421,
+          contentPreview: 'export const answer = 42;',
+          bridgePersisted: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_TERMINAL_EVENT',
       payload: {
         id: 'terminal-command-activity',
@@ -1555,6 +1686,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
       clippyInteractionActivityLog: unknown[];
+      codeServerFileActivityLog: unknown[];
       terminalActivityLog: unknown[];
       fileSystemActivityLog: unknown[];
     };
@@ -1601,6 +1733,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           evidence: expect.objectContaining({
             source: 'clippy_agent_chat_client_submit',
             agentChatEventSource: 'browser_clippy_chat_window',
+          }),
+        }),
+      }),
+    ]);
+    expect(body.codeServerFileActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'code-file-activity',
+          eventType: 'code_editor_save',
+          text: 'src/app.ts',
+          evidence: expect.objectContaining({
+            source: 'code_server_workspace',
+            observedBy: 'clippy_agent_bridge',
           }),
         }),
       }),

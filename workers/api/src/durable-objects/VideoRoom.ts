@@ -34,6 +34,8 @@ const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 
 interface SignalMessage {
   type:
@@ -47,6 +49,7 @@ interface SignalMessage {
     | 'ROOM_CLIPPY_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_CURSOR'
+    | 'ROOM_CODE_SERVER_FILE_EVENT'
     | 'ROOM_TERMINAL_EVENT'
     | 'ROOM_FILE_SYSTEM_EVENT';
   role?: VideoRole;
@@ -244,6 +247,24 @@ interface RoomChatMessage {
 
 interface RoomChatActivityEntry {
   message: RoomChatMessage;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomCodeServerFileEventType = 'code_editor_save' | 'file_change';
+
+interface RoomCodeServerFileEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  eventType: RoomCodeServerFileEventType;
+  actor: 'system';
+  text: string;
+  evidence?: Record<string, unknown>;
+}
+
+interface RoomCodeServerFileActivityEntry {
+  event: RoomCodeServerFileEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -1176,6 +1197,89 @@ export class VideoRoom {
       .filter((entry): entry is RoomChatActivityEntry => entry !== null);
   }
 
+  private isRoomCodeServerFileEventType(value: unknown): value is RoomCodeServerFileEventType {
+    return value === 'code_editor_save' || value === 'file_change';
+  }
+
+  private parseCodeServerFileEvent(value: unknown): RoomCodeServerFileEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 160)
+      || !this.isSafeFileText(value.clientId, 160)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !this.isRoomCodeServerFileEventType(value.eventType)
+      || value.actor !== 'system'
+      || typeof value.text !== 'string'
+      || value.text.trim().length === 0
+      || value.text.length > 2000
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      eventType: value.eventType,
+      actor: 'system',
+      text: value.text,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private hasSourceBackedCodeServerFileEvidence(event: RoomCodeServerFileEvent): boolean {
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const commonOk = event.actor === 'system'
+      && evidence.source === 'code_server_workspace'
+      && evidence.observedBy === 'clippy_agent_bridge'
+      && evidence.bridgeEventType === 'FILE_CHANGED'
+      && evidence.editorSurface === 'code-server'
+      && typeof evidence.path === 'string'
+      && evidence.path.trim().length > 0
+      && event.text === evidence.path
+      && typeof evidence.contentHash === 'string'
+      && SHA256_HEX_RE.test(evidence.contentHash)
+      && typeof evidence.sizeBytes === 'number'
+      && Number.isFinite(evidence.sizeBytes)
+      && evidence.sizeBytes >= 0
+      && typeof evidence.observedAt === 'string'
+      && evidence.observedAt.trim().length > 0
+      && evidence.bridgePersisted === false
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && typeof evidence.roomPhase === 'string'
+      && typeof evidence.workspaceStatus === 'string'
+      && typeof evidence.workspaceSessionId === 'string'
+      && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string')
+      && evidence.durableObjectReplayExpected === true;
+    if (!commonOk) return false;
+    if (event.eventType === 'code_editor_save') {
+      return typeof evidence.action === 'string' && CODE_SERVER_SAVE_ACTIONS.has(evidence.action);
+    }
+    return evidence.action === 'deleted';
+  }
+
+  private parseCodeServerFileActivityEntry(value: unknown): RoomCodeServerFileActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseCodeServerFileEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseCodeServerFileActivityLog(value: unknown): RoomCodeServerFileActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseCodeServerFileActivityEntry(entry))
+      .filter((entry): entry is RoomCodeServerFileActivityEntry => entry !== null);
+  }
+
   private parseTerminalEvidence(value: unknown): Record<string, unknown> | undefined {
     if (!this.isRecord(value)) return undefined;
     const evidence: Record<string, unknown> = {};
@@ -1615,6 +1719,17 @@ export class VideoRoom {
     await this.state.storage.put('chatActivityLog', next);
   }
 
+  private async recordCodeServerFileActivity(event: RoomCodeServerFileEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseCodeServerFileActivityLog(
+      await this.state.storage.get<unknown>('codeServerFileActivityLog'),
+    );
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('codeServerFileActivityLog', next);
+  }
+
   private async recordTerminalActivity(event: RoomTerminalEvent, role: VideoRole): Promise<void> {
     const previous = this.parseTerminalActivityLog(
       await this.state.storage.get<unknown>('terminalActivityLog'),
@@ -1800,6 +1915,9 @@ export class VideoRoom {
         ),
         chatActivityLog: this.parseChatActivityLog(
           await this.state.storage.get<unknown>('chatActivityLog'),
+        ),
+        codeServerFileActivityLog: this.parseCodeServerFileActivityLog(
+          await this.state.storage.get<unknown>('codeServerFileActivityLog'),
         ),
         terminalActivityLog: this.parseTerminalActivityLog(
           await this.state.storage.get<unknown>('terminalActivityLog'),
@@ -2129,6 +2247,38 @@ export class VideoRoom {
         type: 'ROOM_CHAT_MESSAGE',
         role: senderRole,
         payload: persistedMessage,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_CODE_SERVER_FILE_EVENT') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CODE_SERVER_FILE_EVENT_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const event = this.parseCodeServerFileEvent(message.payload);
+      if (!event) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CODE_SERVER_FILE_EVENT_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedCodeServerFileEvidence(event)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CODE_SERVER_FILE_EVENT_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
+        }));
+        return;
+      }
+      await this.recordCodeServerFileActivity(event, senderRole);
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_CODE_SERVER_FILE_EVENT',
+        role: senderRole,
+        payload: event,
       }));
       return;
     }

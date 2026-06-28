@@ -3229,6 +3229,39 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
+      codeServerFileActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000002400,
+          event: {
+            id: 'code-file-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000002400,
+            eventType: 'code_editor_save',
+            actor: 'system',
+            text: 'src/app.ts',
+            evidence: {
+              source: 'code_server_workspace',
+              observedBy: 'clippy_agent_bridge',
+              bridgeEventType: 'FILE_CHANGED',
+              editorSurface: 'code-server',
+              action: 'modified',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              path: 'src/app.ts',
+              observedAt: '2026-06-27T20:01:40.000Z',
+              contentHash: 'a'.repeat(64),
+              sizeBytes: 421,
+              contentPreview: 'export const answer = 42;',
+              bridgePersisted: false,
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+      ],
       terminalActivityLog: [
         {
           role: 'GUEST',
@@ -3468,6 +3501,7 @@ describe('meeting room recording living-context route', () => {
       'session_window_update',
       'session_workspace_state',
       'session_chat_message',
+      'session_code_editor_save',
       'session_terminal_command',
       'session_terminal_output',
       'session_agent_status',
@@ -3504,6 +3538,21 @@ describe('meeting room recording living-context route', () => {
       surface: 'win95',
       roomPhase: 'connected',
       durableObjectReplayExpected: true,
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_code_editor_save')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'code_server_file',
+      source: 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      action: 'modified',
+      path: 'src/app.ts',
+      contentHash: 'a'.repeat(64),
+      sizeBytes: 421,
+      bridgePersisted: false,
+      roomEventId: 'code-file-sync',
+      workspaceSessionId: 'workspace-session-1',
     });
     expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_command')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
@@ -3578,7 +3627,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(11);
+    expect(nodeCountAfterFirstRead.count).toBe(12);
     const windowUpdateRows = sqlite.prepare(
       `SELECT extracted_properties_json
          FROM candidate_nodes
@@ -3602,7 +3651,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(11);
+    expect(nodeCountAfterSecondRead.count).toBe(12);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));

@@ -309,6 +309,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface);
   const publishTerminalEvent = room.publishTerminalEvent;
   const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
+  const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
   const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -1855,7 +1856,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       roomPhase: room.phase,
     });
     if (!evidence) return;
-    captureSessionEvent(evidence.eventType, evidence.text, 'system', evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent(evidence.eventType, evidence.text, 'system', properties);
+    publishCodeServerFileEvent({
+      eventType: evidence.eventType,
+      actor: 'system',
+      text: evidence.text,
+      evidence: properties,
+    });
   };
 
   const handleDesktopIconDoubleClick = (windowType: WindowType): void => {

@@ -77,6 +77,8 @@ const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -596,6 +598,66 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   });
 }
 
+function isSourceBackedCodeServerFileEvidence(
+  eventType: unknown,
+  text: string,
+  evidence: Record<string, unknown> | null,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  const commonOk = evidence.source === 'code_server_workspace'
+    && evidence.observedBy === 'clippy_agent_bridge'
+    && evidence.bridgeEventType === 'FILE_CHANGED'
+    && evidence.editorSurface === 'code-server'
+    && typeof evidence.path === 'string'
+    && evidence.path.trim().length > 0
+    && text === evidence.path
+    && typeof evidence.contentHash === 'string'
+    && SHA256_HEX_RE.test(evidence.contentHash)
+    && typeof evidence.sizeBytes === 'number'
+    && Number.isFinite(evidence.sizeBytes)
+    && evidence.sizeBytes >= 0
+    && stringOrNull(evidence.observedAt) !== null
+    && evidence.bridgePersisted === false
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && stringOrNull(evidence.roomPhase) !== null
+    && stringOrNull(evidence.workspaceStatus) !== null
+    && stringOrNull(evidence.workspaceSessionId) !== null
+    && (evidence.repoUrl === null || evidence.repoUrl === undefined || typeof evidence.repoUrl === 'string')
+    && evidence.durableObjectReplayExpected === true;
+  if (!commonOk) return false;
+  if (eventType === 'code_editor_save') {
+    return typeof evidence.action === 'string' && CODE_SERVER_SAVE_ACTIONS.has(evidence.action);
+  }
+  return eventType === 'file_change' && evidence.action === 'deleted';
+}
+
+function codeServerFileActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const eventType = stringOrNull(event.eventType) as SessionEventType | null;
+  if (eventType !== 'code_editor_save' && eventType !== 'file_change') return null;
+  const text = stringOrNull(event.text);
+  if (!text) return null;
+  const evidence = isRecord(event.evidence) ? event.evidence : null;
+  if (!isSourceBackedCodeServerFileEvidence(eventType, text, evidence)) return null;
+  const role = isRoomActivityRole(value.role) ? value.role : null;
+  const properties = {
+    ...roomActivityBaseProperties('code_server_file', role, value.recordedAt),
+    ...evidence,
+  };
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) properties.roomEventId = eventId;
+  if (clientId) properties.clientId = clientId;
+  return createSessionEvent(input, {
+    type: eventType,
+    timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+    actor: 'system',
+    text,
+    properties,
+  });
+}
+
 function isSourceBackedTerminalEvidence(
   evidence: Record<string, unknown> | null,
   actor: SessionEvent['actor'],
@@ -1077,6 +1139,9 @@ export async function roomActivitySnapshotToSessionEvents(
 
   const desktopActivityLog = Array.isArray(snapshot.desktopActivityLog) ? snapshot.desktopActivityLog : [];
   const chatActivityLog = Array.isArray(snapshot.chatActivityLog) ? snapshot.chatActivityLog : [];
+  const codeServerFileActivityLog = Array.isArray(snapshot.codeServerFileActivityLog)
+    ? snapshot.codeServerFileActivityLog
+    : [];
   const terminalActivityLog = Array.isArray(snapshot.terminalActivityLog) ? snapshot.terminalActivityLog : [];
   const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
     ? snapshot.clippyPromptActivityLog
@@ -1088,6 +1153,7 @@ export async function roomActivitySnapshotToSessionEvents(
 
   desktopActivityLog.forEach((entry) => pushMapped(desktopActivityToSessionEvent(input, entry)));
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
+  codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
   clippyInteractionActivityLog.forEach((entry) => pushMapped(clippyInteractionActivityToSessionEvent(input, entry)));
