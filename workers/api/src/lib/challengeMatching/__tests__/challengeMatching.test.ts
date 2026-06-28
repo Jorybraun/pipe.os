@@ -1306,6 +1306,80 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).not.toBe('WEAK');
   });
 
+  it('accepts sparse exact source-backed evidence when a role-backed PR is strongly role-relevant', () => {
+    const compiled = compile([
+      signal('use-popover-root', {
+        concepts: ['term:use-popover-root'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+      signal('patient-click-threshold', {
+        concepts: ['term:patient-click-threshold'],
+        problems: [],
+        mechanisms: [],
+        domains: [],
+        businessObjects: [],
+        ownershipActions: [],
+      }),
+    ]);
+    const packet = challenge('role-backed-sparse-exact', [
+      demand('source', 1 / 6, {
+        concepts: ['term:use-popover-root'],
+        roleRequirement: true,
+        highWeightRoleRequirement: true,
+      }),
+      demand('threshold', 1 / 6, {
+        concepts: ['term:patient-click-threshold'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('rendered-trigger', 1 / 6, {
+        concepts: ['term:rendered-trigger-id-ownership'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('javascript-test', 1 / 6, {
+        concepts: ['term:javascript-test-runner-regression-tests'],
+        roleRequirement: true,
+        highWeightRoleRequirement: false,
+      }),
+      demand('calls', 1 / 6, {
+        concepts: ['term:click-enabled-timeout-ref'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+      demand('contains', 1 / 6, {
+        concepts: ['term:popover-trigger'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      concepts: [
+        'term:use-popover-root',
+        'term:patient-click-threshold',
+        'term:rendered-trigger-id-ownership',
+        'term:javascript-test-runner-regression-tests',
+        'term:click-enabled-timeout-ref',
+        'term:popover-trigger',
+      ],
+    });
+
+    const alignment = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
+    const ranked = rankReviewChallenges(compiled.query, [alignment]);
+    const explanation = explainChallengeMatch(alignment);
+
+    expect(alignment.candidateEvidenceAlignment).toBeGreaterThanOrEqual(0.10);
+    expect(alignment.candidateEvidenceAlignment).toBeLessThan(0.50);
+    expect(alignment.roleRelevance).toBeGreaterThanOrEqual(0.60);
+    expect(alignment.eligible).toBe(true);
+    expect(alignment.rejectionReasons).toEqual([]);
+    expect(ranked.status).toBe('MATCHED');
+    expect(explanation.assessmentQuality.verdict).toBe('USABLE');
+  });
+
   it('accepts exact source-backed symbol evidence for roleless standalone review when corpus has one strong packet', () => {
     const compiled = compile([
       signal('use-popover-root', {
@@ -1371,7 +1445,7 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     expect(explanation.assessmentQuality.verdict).toBe('USABLE');
   });
 
-  it('still enforces role relevance when role requirements are present', () => {
+  it('still enforces role relevance when role-backed demand coverage is weak', () => {
     const compiled = compile([
       signal('one', {
         concepts: ['domain:payments'],
@@ -1381,18 +1455,18 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     ]);
     const packet = challenge('role-required', [
       demand('one', 0.5, {
-        concepts: ['domain:payments'],
-        problems: ['chargeback'],
-        mechanisms: ['idempotency-key'],
+        concepts: ['domain:role-only'],
+        problems: ['role-specific-review'],
+        mechanisms: ['role-specific-mechanism'],
         roleRequirement: true,
-        highWeightRoleRequirement: true,
+        highWeightRoleRequirement: false,
       }),
       demand('two', 0.5, {
         family: 'second-family',
-        concepts: ['domain:fraud'],
-        problems: ['false-positive'],
-        mechanisms: ['rate-limiting'],
-        roleRequirement: true,
+        concepts: ['domain:payments'],
+        problems: ['chargeback'],
+        mechanisms: ['idempotency-key'],
+        roleRequirement: false,
         highWeightRoleRequirement: false,
       }),
     ]);
@@ -1400,6 +1474,7 @@ describe('fake semantics and fallback removal (HAS-86)', () => {
     const result = alignCandidateToChallenge({ query: compiled.query, challenge: packet });
 
     expect(result.eligible).toBe(false);
+    expect(result.roleRelevance).toBeLessThan(0.60);
     expect(result.rejectionReasons).toContain('ROLE_RELEVANCE_BELOW_THRESHOLD');
   });
 

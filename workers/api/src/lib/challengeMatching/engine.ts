@@ -677,12 +677,13 @@ function nonGenericAlignment(
     || intersects(alignment.atom.businessObjects, alignment.demand.businessObjects);
 }
 
-function rolelessExactSourceBackedAlignment(input: {
+function sourceBackedSparseAlignment(input: {
   alignments: DemandAlignment[];
   candidateEvidenceAlignment: number;
   challengeQuality: number;
   contextualSpecificity: number;
   hasRoleRequirements: boolean;
+  roleRelevance: number;
   hasNonGenericAlignment: boolean;
   provenanceComplete: boolean;
   stretchCount: number;
@@ -698,7 +699,12 @@ function rolelessExactSourceBackedAlignment(input: {
     && input.alignments.length >= 2
     && candidateSourceCount >= 2
     && repoSourceCount >= 1;
-  return !input.hasRoleRequirements
+  const roleGatePasses = !input.hasRoleRequirements
+    || (
+      input.roleRelevance >= 0.60
+      && input.alignments.length >= 2
+    );
+  return roleGatePasses
     && input.alignments.length > 0
     && repoSourceCount >= 1
     && (directExactFloorPasses || sparseMultiSpanFloorPasses)
@@ -748,14 +754,26 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
   }).sort((a, b) => a.demand.id.localeCompare(b.demand.id) || a.atom.id.localeCompare(b.atom.id));
 
   const totalDemandWeight = demands.reduce((sum, demand) => sum + clamp01(demand.weight), 0);
+  const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
+  const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
   const candidateEvidenceAlignment = totalDemandWeight === 0
     ? 0
     : clamp01(alignments.reduce((sum, entry) => sum + entry.weightedScore, 0) / totalDemandWeight);
-  const roleRelevance = weightedCoverage(
+  const candidateRoleCoverage = weightedCoverage(
     alignments,
     demands,
     (demand) => Boolean(demand.roleRequirement),
   );
+  const roleDemandCoverage = totalDemandWeight === 0
+    ? 0
+    : clamp01(
+        demands
+          .filter((demand) => Boolean(demand.roleRequirement))
+          .reduce((sum, demand) => sum + clamp01(demand.weight), 0) / totalDemandWeight,
+      );
+  const roleRelevance = hasRoleRequirements
+    ? Math.max(candidateRoleCoverage, roleDemandCoverage)
+    : candidateRoleCoverage;
   const contextualSpecificity = clamp01(input.challenge.quality.contextualSpecificity);
   const challengeQuality = clamp01(input.challenge.quality.deterministic);
   const validationWeight = alignments
@@ -788,27 +806,26 @@ export function alignCandidateToChallenge(input: AlignCandidateToChallengeInput)
     + validationDeepeningValue * 0.10,
   );
 
-  const hasRoleRequirements = demands.some((demand) => demand.roleRequirement);
-  const hasHighWeightRoleRequirements = demands.some((demand) => demand.highWeightRoleRequirement);
   const candidateAlignmentThreshold = hasRoleRequirements ? 0.50 : 0.45;
-  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+  const exactSourceBackedSparse = sourceBackedSparseAlignment({
     alignments,
     candidateEvidenceAlignment,
     challengeQuality,
     contextualSpecificity,
     hasRoleRequirements,
+    roleRelevance,
     hasNonGenericAlignment: hasNonGeneric,
     provenanceComplete,
     stretchCount: stretches.length,
   });
   const rejectionReasons: string[] = [];
   if (!challengePassesGuardrails(input.challenge, input.query.roleGuardrails)) rejectionReasons.push('ROLE_GUARDRAIL_FAILED');
-  if (candidateEvidenceAlignment < candidateAlignmentThreshold && !exactSourceBackedRoleless) {
+  if (candidateEvidenceAlignment < candidateAlignmentThreshold && !exactSourceBackedSparse) {
     rejectionReasons.push('CANDIDATE_ALIGNMENT_BELOW_THRESHOLD');
   }
   if (hasRoleRequirements && roleRelevance < 0.60) rejectionReasons.push('ROLE_RELEVANCE_BELOW_THRESHOLD');
   if (challengeQuality < 0.70) rejectionReasons.push('CHALLENGE_QUALITY_BELOW_THRESHOLD');
-  if (demandFamilies.size < 2 && !exactSourceBackedRoleless) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
+  if (demandFamilies.size < 2 && !exactSourceBackedSparse) rejectionReasons.push('INSUFFICIENT_DEMAND_FAMILIES');
   if (!hasNonGeneric) rejectionReasons.push('NO_NON_GENERIC_ALIGNMENT');
   if (hasHighWeightRoleRequirements && !hasHighWeightRoleRequirement) rejectionReasons.push('NO_HIGH_WEIGHT_ROLE_REQUIREMENT');
   if (!provenanceComplete) rejectionReasons.push('INCOMPLETE_PROVENANCE');
@@ -915,12 +932,13 @@ function buildAssessmentQuality(
     : null;
   const candidateStrongThreshold = hasRoleRequirements ? 0.75 : 0.60;
   const candidateUsableThreshold = hasRoleRequirements ? 0.50 : 0.45;
-  const exactSourceBackedRoleless = rolelessExactSourceBackedAlignment({
+  const exactSourceBackedSparse = sourceBackedSparseAlignment({
     alignments: alignment.alignments,
     candidateEvidenceAlignment: alignment.candidateEvidenceAlignment,
     challengeQuality: alignment.challengeQuality,
     contextualSpecificity: alignment.contextualSpecificity,
     hasRoleRequirements,
+    roleRelevance: alignment.roleRelevance,
     hasNonGenericAlignment: alignment.hasNonGenericAlignment,
     provenanceComplete: alignment.provenanceComplete,
     stretchCount: alignment.stretchCount,
@@ -935,9 +953,9 @@ function buildAssessmentQuality(
     {
       id: 'skill_stack_overlap',
       label: 'Skill/stack overlap',
-      score: candidateOverlapScore === 0 && exactSourceBackedRoleless ? 1 : candidateOverlapScore,
+      score: candidateOverlapScore === 0 && exactSourceBackedSparse ? 1 : candidateOverlapScore,
       maxScore: 2,
-      reason: exactSourceBackedRoleless && candidateOverlapScore === 0
+      reason: exactSourceBackedSparse && candidateOverlapScore === 0
         ? `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight, with exact source-backed symbol overlap.`
         : `Candidate source evidence covers ${percent(alignment.candidateEvidenceAlignment)} of the selected PR demand weight.`,
     },
@@ -955,7 +973,7 @@ function buildAssessmentQuality(
     {
       id: 'pr_reviewability',
       label: 'PR reviewability',
-      score: alignment.challengeQuality >= 0.85 && (demandFamilies.size >= 2 || exactSourceBackedRoleless)
+      score: alignment.challengeQuality >= 0.85 && (demandFamilies.size >= 2 || exactSourceBackedSparse)
         ? 2
         : alignment.challengeQuality >= 0.70 && demandFamilies.size >= 1
           ? 1
