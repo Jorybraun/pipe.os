@@ -78,6 +78,7 @@ import {
   normalizeBrowserNavigationUrl,
   type BrowserNavigationTrigger,
 } from './lib/browserNavigationEvidence';
+import { sharedWindowIdsMissingFromSnapshot } from './lib/desktopSnapshot';
 import {
   useRoomConnection,
   type RoomChatMessage,
@@ -380,6 +381,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const recordingSpeakerMetadataRef = useRef<RecordingSpeakerMetadata | null>(null);
   const autoAcceptingRef = useRef(false);
   const processedDesktopEventsRef = useRef<Set<string>>(new Set());
+  const sharedDesktopWindowIdsRef = useRef<Set<string>>(new Set());
   const endingRef = useRef(false);
   const deviceRequestRef = useRef(0);
   const callStartedRef = useRef(false);
@@ -582,7 +584,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   useEffect(() => {
     if (!enteredRoom || !room.desktopSnapshot) return;
+    const staleSharedWindowIds = sharedWindowIdsMissingFromSnapshot({
+      windows: wm.windows,
+      snapshot: room.desktopSnapshot,
+      sharedWindowIds: sharedDesktopWindowIdsRef.current,
+    });
+    for (const windowId of staleSharedWindowIds) {
+      sharedDesktopWindowIdsRef.current.delete(windowId);
+      wm.closeWindow(windowId);
+    }
     for (const windowConfig of room.desktopSnapshot) {
+      sharedDesktopWindowIdsRef.current.add(windowConfig.id);
       wm.openWindow(windowConfig);
       wm.applyWindowState(windowConfig.id, {
         x: windowConfig.x,
@@ -617,8 +629,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       } else if (event.kind === 'START_MENU_STATE') {
         setStartMenuState({ open: event.open, eventId: event.id });
       } else if (event.kind === 'OPEN_WINDOW') {
+        sharedDesktopWindowIdsRef.current.add(event.window.id);
         wm.openWindow(event.window);
       } else if (event.kind === 'CLOSE_WINDOW') {
+        sharedDesktopWindowIdsRef.current.delete(event.windowId);
         wm.closeWindow(event.windowId);
       } else if (event.kind === 'UPDATE_WINDOW_STATE') {
         wm.applyWindowState(event.windowId, {
@@ -676,6 +690,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs,
     });
     if (room.roomSurface === 'win95') {
+      sharedDesktopWindowIdsRef.current.add(config.id);
       room.publishDesktopEvent({ kind: 'OPEN_WINDOW', window: config, evidence: evidence.properties });
     }
     captureSessionEvent('window_open', evidence.text, roomActor, evidence.properties);
@@ -697,6 +712,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs,
     });
     if (room.roomSurface === 'win95') {
+      sharedDesktopWindowIdsRef.current.delete(id);
       room.publishDesktopEvent({ kind: 'CLOSE_WINDOW', windowId: id, evidence: evidence.properties });
     }
     captureSessionEvent('window_close', evidence.text, roomActor, evidence.properties);
