@@ -40,6 +40,16 @@ describe('createCandidateAgentProvider', () => {
     expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
   });
 
+  it('remaps stale shared Workers AI env overrides before candidate inference', () => {
+    const provider = createCandidateAgentProvider({
+      AI: createAi(),
+      CLOUDFLARE_AI_MODEL: '@cf/meta/llama-3.1-8b-instruct-awq',
+    });
+
+    expect(provider).toBeInstanceOf(CloudflareAIProvider);
+    expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+  });
+
   it('remaps deprecated Workers AI Llama 3.1 8B variants before inference', async () => {
     const ai = createAi();
     const provider = createGenerationProvider(aiEnv(ai), '@cf/meta/llama-3.1-8b-instruct-fast');
@@ -59,6 +69,37 @@ describe('createCandidateAgentProvider', () => {
       '@cf/meta/llama-3.1-8b-instruct-fast',
       expect.anything(),
     );
+  });
+
+  it('retries the current default once when Workers AI reports a configured model is deprecated at runtime', async () => {
+    const ai = {
+      run: vi.fn()
+        .mockRejectedValueOnce(new Error('5028: This model was deprecated on 2026-05-30. Please use an alternative model.'))
+        .mockResolvedValueOnce({
+          response: '{"ok":true}',
+          usage: { prompt_tokens: 7, completion_tokens: 5 },
+        }),
+    } as unknown as Ai;
+    const provider = createGenerationProvider(aiEnv(ai), '@cf/example/newly-deprecated-model');
+
+    expect(provider).toBeInstanceOf(CloudflareAIProvider);
+    expect((provider as CloudflareAIProvider).model).toBe('@cf/example/newly-deprecated-model');
+
+    const completion = await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
+
+    expect(completion?.content).toBe('{"ok":true}');
+    expect(ai.run).toHaveBeenNthCalledWith(
+      1,
+      '@cf/example/newly-deprecated-model',
+      expect.objectContaining({ messages: expect.any(Array) }),
+    );
+    expect(ai.run).toHaveBeenNthCalledWith(
+      2,
+      DEFAULT_CLOUDFLARE_MODEL,
+      expect.objectContaining({ messages: expect.any(Array) }),
+    );
+    expect((provider as CloudflareAIProvider).getModelKey()).toBe(`workers-ai/${DEFAULT_CLOUDFLARE_MODEL}`);
+    expect((provider as CloudflareAIProvider).getLastUsage()).toEqual({ inputTokens: 7, outputTokens: 5 });
   });
 });
 
