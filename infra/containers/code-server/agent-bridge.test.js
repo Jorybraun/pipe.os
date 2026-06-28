@@ -108,7 +108,7 @@ async function startBridge(scriptBody, extraEnv = {}, options = {}) {
       env: {
         ...process.env,
         PATH: bridgePathEnv,
-        DEVIN_API_KEY: 'test-devin-key',
+        DEVIN_API_KEY: '',
         AGENT_TYPE: 'devin',
         AGENT_BRIDGE_PORT: String(port),
         CODE_SERVER_PORT: String(codeServerPort),
@@ -130,6 +130,80 @@ async function startBridge(scriptBody, extraEnv = {}, options = {}) {
   child.on('exit', () => bridgeProcesses.delete(child));
   await waitForHealth(port, output);
   return { child, port, workspaceDir };
+}
+
+async function startFakeDevinApiServer() {
+  const requests = [];
+  const messages = [];
+  const port = await freePort();
+  let sessionCreated = false;
+  let messageCounter = 0;
+  const server = createServer((req, res) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
+    req.on('end', () => {
+      const jsonBody = body ? JSON.parse(body) : null;
+      requests.push({ method: req.method, url: req.url, body: jsonBody });
+
+      if (req.method === 'GET' && req.url === '/v3/self') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ org_id: 'org_123' }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/v3/organizations/org_123/sessions') {
+        sessionCreated = true;
+        messages.push({
+          event_id: 'primer-user',
+          role: 'user',
+          message: jsonBody?.prompt ?? '',
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ session_id: 'devin-session-1' }));
+        return;
+      }
+
+      if (req.method === 'POST' && req.url === '/v3/organizations/org_123/sessions/devin-session-1/messages') {
+        messageCounter += 1;
+        messages.push({
+          event_id: `user-${messageCounter}`,
+          role: 'user',
+          message: jsonBody?.message ?? '',
+        });
+        messages.push({
+          event_id: `devin-${messageCounter}`,
+          role: 'assistant',
+          message: 'I can help from the real Devin API session. [[room_action:open-workspace|Open VS Code]]',
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ accepted: true }));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url?.startsWith('/v3/organizations/org_123/sessions/devin-session-1/messages')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ messages }));
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'not found', sessionCreated }));
+    });
+  });
+
+  await new Promise((resolve, reject) => {
+    server.on('error', reject);
+    server.listen(port, '127.0.0.1', resolve);
+  });
+
+  return {
+    requests,
+    url: `http://127.0.0.1:${port}/v3`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
 }
 
 async function startSessionEventCaptureServer() {
@@ -243,12 +317,102 @@ setInterval(() => {}, 1000);
     ws.close();
   });
 
+  it('reports AGENT_READY after creating a real Devin API session with the service token', async () => {
+    const apiServer = await startFakeDevinApiServer();
+    const captureServer = await startSessionEventCaptureServer();
+    try {
+      const { port } = await startBridge('', {
+        DEVIN_API_KEY: 'test-devin-service-token',
+        DEVIN_API_BASE_URL: apiServer.url,
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+        DEVIN_API_RESPONSE_TIMEOUT_MS: '1000',
+        DEVIN_API_POLL_INTERVAL_MS: '25',
+      }, { installFakeDevin: false });
+
+      const { ws, messages } = await connectAgent(port);
+      const ready = await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+      expect(ready).toMatchObject({
+        agent: 'devin',
+        capabilities: ['read', 'write', 'run', 'browse'],
+      });
+      expect(apiServer.requests.some((request) => request.method === 'GET' && request.url === '/v3/self')).toBe(true);
+      expect(apiServer.requests.some((request) => (
+        request.method === 'POST'
+        && request.url === '/v3/organizations/org_123/sessions'
+      ))).toBe(true);
+
+      ws.send(JSON.stringify({
+        type: 'CHAT',
+        text: 'Please inspect the repo.',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptTimestamp: 1782603900000,
+        browserPromptLength: 24,
+      }));
+
+      const response = await waitForMessage(messages, (message) => (
+        message.type === 'CHAT_RESPONSE'
+        && message.source === 'agent_api_response'
+      ));
+      expect(response).toMatchObject({
+        agent: 'devin',
+        text: 'I can help from the real Devin API session.',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptTimestamp: 1782603900000,
+        browserPromptLength: 24,
+      });
+
+      const roomAction = await waitForMessage(messages, (message) => (
+        message.type === 'ROOM_ACTION'
+        && message.source === 'agent_api_response'
+      ));
+      expect(roomAction).toMatchObject({
+        agent: 'devin',
+        action: 'open-workspace',
+        protocol: 'clippy_room_action_tag',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      });
+
+      const chatEvent = captureServer.events.find((event) => event.type === 'ai_chat_agent');
+      expect(chatEvent).toMatchObject({
+        type: 'ai_chat_agent',
+        text: 'I can help from the real Devin API session.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_api_response',
+          bridgePersisted: true,
+        },
+      });
+      const actionEvent = captureServer.events.find((event) => event.type === 'clippy_action');
+      expect(actionEvent).toMatchObject({
+        type: 'clippy_action',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          actionSource: 'agent_api_response',
+          actionProtocol: 'clippy_room_action_tag',
+          bridgeEventType: 'ROOM_ACTION',
+        },
+      });
+      ws.close();
+    } finally {
+      await apiServer.close();
+      await captureServer.close();
+    }
+  });
+
   it('does not treat DEVIN_API_KEY as Devin CLI login', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', () => process.stdout.write('This should not start without CLI auth.\\n'));
 setInterval(() => {}, 1000);
 `, {
+      DEVIN_API_KEY: 'test-devin-service-token',
+      DEVIN_API_BASE_URL: 'http://127.0.0.1:9/v3',
       FAKE_DEVIN_AUTH_STATUS: 'not_logged_in',
     });
 

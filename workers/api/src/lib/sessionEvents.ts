@@ -93,7 +93,7 @@ const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
-const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
+const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
@@ -1244,7 +1244,10 @@ function isSourceBackedClippyInteractionEvidence(
     return actor === 'agent'
       && evidence.source === 'clippy_agent_bridge'
       && evidence.bridgeEventType === 'CHAT_RESPONSE'
-      && evidence.bridgeMessageSource === 'agent_stdout'
+      && (
+        evidence.bridgeMessageSource === 'agent_stdout'
+        || evidence.bridgeMessageSource === 'agent_api_response'
+      )
       && stringOrNull(evidence.observedAt) !== null
       && capturedAtMs !== null
       && Number.isInteger(capturedAtMs)
@@ -1348,13 +1351,13 @@ function isSourceBackedClippyInteractionEvidence(
         && evidence.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = actor === 'agent'
         && executionStatus === 'suggested'
-        && evidence.actionSource === 'agent_stdout'
+        && (evidence.actionSource === 'agent_stdout' || evidence.actionSource === 'agent_api_response')
         && stringOrNull(evidence.observedAt) !== null
         && typeof evidence.bridgePersisted === 'boolean';
       const executedOk = (actor === 'host' || actor === 'guest')
         && executionStatus === 'executed'
         && evidence.executedBy === actor
-        && evidence.actionSource === 'agent_stdout_action'
+        && (evidence.actionSource === 'agent_stdout_action' || evidence.actionSource === 'agent_api_response_action')
         && stringOrNull(evidence.agentActionObservedAt) !== null
         && typeof evidence.agentActionBridgePersisted === 'boolean'
         && roomContextOk
@@ -2448,7 +2451,8 @@ async function chatTextSourceRef(input: {
   if (input.event.type === 'ai_chat_agent') {
     if (input.properties.source !== 'clippy_agent_bridge') return null;
     if (input.properties.bridgeEventType !== 'CHAT_RESPONSE') return null;
-    if (input.properties.bridgeMessageSource !== 'agent_stdout') return null;
+    const bridgeMessageSource = stringProperty(input.properties, 'bridgeMessageSource');
+    if (bridgeMessageSource !== 'agent_stdout' && bridgeMessageSource !== 'agent_api_response') return null;
     if (input.event.actor !== 'agent') return null;
     const agent = stringProperty(input.properties, 'agent');
     const agentChatResponseId = stringProperty(input.properties, 'agentChatResponseId');
@@ -2477,8 +2481,10 @@ async function chatTextSourceRef(input: {
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
       metadata: {
-        sourceKind: 'clippy.agent_stdout_response',
-        bridgeMessageSource: 'agent_stdout',
+        sourceKind: bridgeMessageSource === 'agent_api_response'
+          ? 'clippy.agent_api_response'
+          : 'clippy.agent_stdout_response',
+        bridgeMessageSource,
         responseFingerprint,
         responseLength,
         bridgePersisted: input.properties.bridgePersisted === true,

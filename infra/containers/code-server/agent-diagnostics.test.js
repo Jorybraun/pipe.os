@@ -265,6 +265,30 @@ describe('agent diagnostics', () => {
     });
   });
 
+  it('builds source-backed session events for real Devin API responses', () => {
+    expect(agentChatSessionEvent({
+      agent: 'devin',
+      text: 'I inspected the failing test.',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      bridgeMessageSource: 'agent_api_response',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 24,
+    })).toMatchObject({
+      type: 'ai_chat_agent',
+      text: 'I inspected the failing test.',
+      actor: 'agent',
+      properties: {
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_api_response',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      },
+    });
+  });
+
   it('builds source-backed session events for real Devin room action suggestions', () => {
     expect(agentRoomActionSessionEvent({
       agent: 'devin',

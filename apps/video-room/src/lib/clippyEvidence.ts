@@ -143,6 +143,7 @@ export function buildClippyAgentChatResponseId(input: {
 
 function isClippyAgentBridgeMessageSource(value: unknown): value is ClippyAgentBridgeMessageSource {
   return value === 'agent_stdout'
+    || value === 'agent_api_response'
     || value === 'bridge_diagnostic'
     || value === 'bridge_observation';
 }
@@ -159,7 +160,7 @@ function isSourceBackedAgentRoomAction(
   action: AgentRoomAction | undefined,
   actionId: string,
 ): action is AgentRoomAction & {
-  source: 'agent_stdout_action';
+  source: 'agent_stdout_action' | 'agent_api_response_action';
   agentName: string;
   bridgeEventType: 'ROOM_ACTION';
   protocol: 'clippy_room_action_tag';
@@ -168,7 +169,7 @@ function isSourceBackedAgentRoomAction(
 } {
   return Boolean(action)
     && action?.id === actionId
-    && action.source === 'agent_stdout_action'
+    && (action.source === 'agent_stdout_action' || action.source === 'agent_api_response_action')
     && typeof action.agentName === 'string'
     && action.agentName.trim().length > 0
     && action.bridgeEventType === 'ROOM_ACTION'
@@ -431,6 +432,7 @@ export function buildClippyAgentStatusEvidence(input: {
 export function buildClippyAgentChatFallbackEvidence(input: {
   text: string;
   agentName: string | null;
+  bridgeMessageSource?: 'agent_stdout' | 'agent_api_response';
   observedAt: string;
   browserPromptId?: string | null;
   browserPromptFingerprint?: string | null;
@@ -455,7 +457,7 @@ export function buildClippyAgentChatFallbackEvidence(input: {
       source: 'clippy_agent_bridge',
       agent,
       bridgeEventType: 'CHAT_RESPONSE',
-      bridgeMessageSource: 'agent_stdout',
+      bridgeMessageSource: input.bridgeMessageSource ?? 'agent_stdout',
       observedAt: input.observedAt,
       capturedAtMs,
       agentChatResponseId: buildClippyAgentChatResponseId({
@@ -521,11 +523,12 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   if (!text) return null;
   const agentName = input.agentName?.trim();
   if (!agentName) return null;
-  const isAgentResponse = input.source === 'agent_stdout';
+  const isAgentResponse = input.source === 'agent_stdout' || input.source === 'agent_api_response';
   if (isAgentResponse && input.observedAt) {
     const evidence = buildClippyAgentChatFallbackEvidence({
       text,
       agentName,
+      bridgeMessageSource: input.source,
       observedAt: input.observedAt,
       browserPromptId: input.browserPromptId ?? null,
       browserPromptFingerprint: input.browserPromptFingerprint ?? null,

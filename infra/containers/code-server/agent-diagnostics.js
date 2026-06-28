@@ -188,6 +188,7 @@ function agentPromptHandoffDiagnosticMessage({
   agent = null,
   status = 'thinking',
   promptType = 'chat_prompt',
+  deliveryTarget = 'process_stdin',
   deliveredToAgent = false,
   roomContextStatus = null,
   roomContextText = '',
@@ -204,6 +205,9 @@ function agentPromptHandoffDiagnosticMessage({
   if (!safeAgent) return null;
   const safePromptType = normalizedPromptType(promptType);
   const promptLabel = safePromptType === 'context_primer' ? 'context primer' : 'chat prompt';
+  const targetLabel = deliveryTarget === 'devin_api_session'
+    ? 'Devin API session'
+    : 'process stdin';
   const delivered = deliveredToAgent === true;
   const promptMetrics = diagnosticTextMetrics(promptText);
   const roomContextMetrics = diagnosticTextMetrics(roomContextText);
@@ -217,7 +221,7 @@ function agentPromptHandoffDiagnosticMessage({
   const baseMessage = agentDiagnosticMessage({
     agent: safeAgent,
     status,
-    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to process stdin.`,
+    message: `${safeAgent} ${promptLabel} ${delivered ? 'delivered' : 'was not delivered'} to ${targetLabel}.`,
     diagnosticSource: safePromptType === 'context_primer'
       ? 'agent_context_primer_sent'
       : 'agent_prompt_sent',
@@ -228,6 +232,7 @@ function agentPromptHandoffDiagnosticMessage({
   return {
     ...baseMessage,
     promptType: safePromptType,
+    deliveryTarget: targetLabel,
     deliveredToAgent: delivered,
     promptLength: promptMetrics.length,
     promptFingerprint: promptMetrics.fingerprint,
@@ -282,6 +287,7 @@ function agentDiagnosticSessionEvent(message) {
       signal: eventMessage.signal ?? null,
       truncated: eventMessage.truncated ?? null,
       promptType: eventMessage.promptType ?? null,
+      deliveryTarget: eventMessage.deliveryTarget ?? null,
       deliveredToAgent: eventMessage.deliveredToAgent ?? null,
       promptLength: eventMessage.promptLength ?? null,
       promptFingerprint: eventMessage.promptFingerprint ?? null,
@@ -311,6 +317,7 @@ function agentChatSessionEvent({
   text,
   observedAt = new Date().toISOString(),
   actionCount = 0,
+  bridgeMessageSource = 'agent_stdout',
   browserPromptId = null,
   browserPromptFingerprint = null,
   browserPromptTimestamp = null,
@@ -336,7 +343,7 @@ function agentChatSessionEvent({
       source: 'clippy_agent_bridge',
       agent: safeAgent,
       bridgeEventType: 'CHAT_RESPONSE',
-      bridgeMessageSource: 'agent_stdout',
+      bridgeMessageSource,
       observedAt,
       capturedAtMs,
       agentChatResponseId: agentChatResponseId({
@@ -379,7 +386,11 @@ function agentRoomActionSessionEvent({
   const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, null, 120);
   const actionSource = safeActionString(rawAction.source, null, 120);
   const actionProtocol = safeActionString(rawAction.protocol, null, 120);
-  if (!actionId || actionSource !== 'agent_stdout' || actionProtocol !== 'clippy_room_action_tag') {
+  if (
+    !actionId
+    || (actionSource !== 'agent_stdout' && actionSource !== 'agent_api_response')
+    || actionProtocol !== 'clippy_room_action_tag'
+  ) {
     return null;
   }
   const browserPromptReferences = {

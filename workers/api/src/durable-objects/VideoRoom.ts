@@ -34,7 +34,7 @@ const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[0-9a-f]{8}$/;
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
-const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
+const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
@@ -1125,7 +1125,10 @@ export class VideoRoom {
       return event.actor === 'agent'
         && evidence.source === 'clippy_agent_bridge'
         && evidence.bridgeEventType === 'CHAT_RESPONSE'
-        && evidence.bridgeMessageSource === 'agent_stdout'
+        && (
+          evidence.bridgeMessageSource === 'agent_stdout'
+          || evidence.bridgeMessageSource === 'agent_api_response'
+        )
         && typeof evidence.observedAt === 'string'
         && capturedAtMs !== null
         && capturedAtMs >= 0
@@ -1235,14 +1238,14 @@ export class VideoRoom {
           && evidence.bridgeEventType === 'ROOM_ACTION';
         const suggestedOk = event.actor === 'agent'
           && executionStatus === 'suggested'
-          && evidence.actionSource === 'agent_stdout'
+          && (evidence.actionSource === 'agent_stdout' || evidence.actionSource === 'agent_api_response')
           && typeof evidence.observedAt === 'string'
           && typeof evidence.bridgePersisted === 'boolean';
         const executedOk = (event.actor === 'host' || event.actor === 'guest')
           && event.actor === senderActor
           && executionStatus === 'executed'
           && evidence.executedBy === event.actor
-          && evidence.actionSource === 'agent_stdout_action'
+          && (evidence.actionSource === 'agent_stdout_action' || evidence.actionSource === 'agent_api_response_action')
           && typeof evidence.agentActionObservedAt === 'string'
           && typeof evidence.agentActionBridgePersisted === 'boolean'
           && roomContextOk

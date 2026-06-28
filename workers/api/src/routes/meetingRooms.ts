@@ -142,8 +142,8 @@ const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', '
 const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
 const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_chat_ui|clippy_agent_bridge):(tray|prompt|chat|agent):(opened|closed|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
-const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
-const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
+const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout', 'agent_api_response']);
+const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout|agent_api_response):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
@@ -754,13 +754,13 @@ const sessionEventSchema = z.object({
         && properties.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = event.actor === 'agent'
         && properties.executionStatus === 'suggested'
-        && properties.actionSource === 'agent_stdout'
+        && (properties.actionSource === 'agent_stdout' || properties.actionSource === 'agent_api_response')
         && hasString(properties.observedAt)
         && typeof properties.bridgePersisted === 'boolean';
       const executedOk = (event.actor === 'host' || event.actor === 'guest')
         && properties.executionStatus === 'executed'
         && properties.executedBy === event.actor
-        && properties.actionSource === 'agent_stdout_action'
+        && (properties.actionSource === 'agent_stdout_action' || properties.actionSource === 'agent_api_response_action')
         && hasString(properties.agentActionObservedAt)
         && typeof properties.agentActionBridgePersisted === 'boolean'
         && surfaceContextOk
@@ -967,7 +967,10 @@ const sessionEventSchema = z.object({
     const actorOk = event.actor === 'agent';
     const agentOk = hasString(properties.agent);
     const chatResponseOk = properties.bridgeEventType === 'CHAT_RESPONSE'
-      && properties.bridgeMessageSource === 'agent_stdout';
+      && (
+        properties.bridgeMessageSource === 'agent_stdout'
+        || properties.bridgeMessageSource === 'agent_api_response'
+      );
     const observedAt = properties.observedAt;
     const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
     const capturedAtOk = typeof capturedAtMs === 'number'

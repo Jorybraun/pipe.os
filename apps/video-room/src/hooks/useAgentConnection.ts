@@ -20,7 +20,7 @@ export interface AgentChatMessage {
   role: 'user' | 'agent';
   text: string;
   timestamp: number;
-  source?: 'user_submit' | 'agent_stdout' | 'bridge_diagnostic' | 'bridge_observation';
+  source?: 'user_submit' | 'agent_stdout' | 'agent_api_response' | 'bridge_diagnostic' | 'bridge_observation';
   agentName?: string;
   agentStatus?: AgentStatus;
   diagnosticSource?: string;
@@ -51,7 +51,7 @@ export interface AgentRoomAction {
   text?: string;
   url?: string;
   autoExecute?: boolean;
-  source?: 'agent_stdout_action' | 'bridge_observation';
+  source?: 'agent_stdout_action' | 'agent_api_response_action' | 'bridge_observation';
   agentName?: string;
   bridgeEventType?: 'CHAT_RESPONSE' | 'FILE_CHANGED' | 'ROOM_ACTION';
   protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
@@ -293,7 +293,12 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'CHAT_RESPONSE') {
     const text = redactAgentDiagnosticText(value.text);
     if (!text) return { kind: 'ignored' };
-    if (value.source !== 'agent_stdout') return { kind: 'ignored' };
+    const source = value.source === 'agent_api_response'
+      ? 'agent_api_response'
+      : value.source === 'agent_stdout'
+        ? 'agent_stdout'
+        : null;
+    if (!source) return { kind: 'ignored' };
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
     const browserPromptId = stringOrNull(value.browserPromptId);
@@ -305,7 +310,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
       message: {
         role: 'agent',
         text,
-        source: 'agent_stdout',
+        source,
         agentName,
         observedAt: stringOrNull(value.observedAt) ?? undefined,
         persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
@@ -371,8 +376,11 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'ROOM_ACTION') {
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
+    const source = value.source === 'agent_api_response'
+      ? 'agent_api_response_action'
+      : 'agent_stdout_action';
     const action = parseRoomAction(value, {
-      source: 'agent_stdout_action',
+      source,
       bridgeEventType: 'ROOM_ACTION',
       protocol: 'clippy_room_action_tag',
       agentName,

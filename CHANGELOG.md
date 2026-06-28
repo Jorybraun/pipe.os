@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin can now use a real Devin service-user API session from the dev-container bridge, preserving API replies and room-action suggestions as `agent_api_response` source-backed evidence instead of requiring CLI login or relabeling API output as stdout.
 - Candidate dev-container launches now pass the real Devin bridge configuration into the server-side container init payload without returning secrets to the browser, keeping Clippy chat eligible for real-agent operation outside meeting-room launches.
 - Dev-container expiry/manual teardown now marks intentional container stops before destroy, preventing normal `EXPIRED` sessions from retaining false "container stopped unexpectedly" diagnostics in UI and evidence projections.
 - Clippy/Devin bridge diagnostics, auth/status messages, room-action text, and real stdout fallback evidence now redact service tokens, bearer tokens, room tokens, and secret query parameters before browser evidence, Durable Object broadcast/storage, or session-event persistence; secret-bearing agent chat is rejected instead of rewriting fingerprinted evidence.

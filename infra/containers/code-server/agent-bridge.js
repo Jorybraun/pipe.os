@@ -31,10 +31,16 @@ const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
 const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 3000, 25);
+const DEVIN_API_BASE_URL = String(process.env.DEVIN_API_BASE_URL || 'https://api.devin.ai/v3').replace(/\/+$/, '');
+const DEVIN_API_KEY = String(process.env.DEVIN_API_KEY || '').trim();
+const DEVIN_ORG_ID = String(process.env.DEVIN_ORG_ID || '').trim();
+const DEVIN_API_RESPONSE_TIMEOUT_MS = positiveIntEnv('DEVIN_API_RESPONSE_TIMEOUT_MS', 45000, 1000);
+const DEVIN_API_POLL_INTERVAL_MS = positiveIntEnv('DEVIN_API_POLL_INTERVAL_MS', 2500, 250);
 const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
 
 let agentAuthed = false;
 let agentProcess = null;
+let agentRuntime = 'none';
 let agentReady = false;
 let agentStatus = AGENT_NAME ? 'disconnected' : 'disconnected';
 const clients = new Set();
@@ -47,6 +53,8 @@ let workspaceScanInFlight = false;
 let workspaceWatcherTimer = null;
 let workspaceSnapshot = new Map();
 const pendingAgentChatPromptRefs = [];
+let devinApiSession = null;
+const devinApiSeenMessageIds = new Set();
 
 const WORKSPACE_IGNORED_DIRS = new Set([
   '.git',
@@ -93,7 +101,7 @@ function normalizeRoomAction(value) {
   return null;
 }
 
-function extractTaggedRoomActions(text) {
+function extractTaggedRoomActions(text, source = 'agent_stdout') {
   const actions = [];
   const cleanText = String(text || '').replace(
     /\[\[room_action:([a-zA-Z0-9_-]+)(?:\|([^\]]+))?\]\]/g,
@@ -105,7 +113,7 @@ function extractTaggedRoomActions(text) {
           agent: AGENT_NAME,
           label: rawLabel || ROOM_ACTIONS[action].label,
           text: rawLabel ? String(rawLabel) : ROOM_ACTIONS[action].label,
-          source: 'agent_stdout',
+          source,
           protocol: 'clippy_room_action_tag',
         });
       }
@@ -272,15 +280,16 @@ function sendAgentDiagnostic(ws, message) {
     });
 }
 
-function broadcastAgentChat(message) {
+function broadcastAgentChat(message, bridgeMessageSource = 'agent_stdout') {
   if (!message) return;
   const safeMessage = {
     ...message,
     text: redactDiagnosticText(message.text),
+    bridgeMessageSource,
   };
   void captureAgentChatEvidence(safeMessage)
     .then((persisted) => {
-      broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...safeMessage, persisted });
+      broadcast({ type: 'CHAT_RESPONSE', source: bridgeMessageSource, ...safeMessage, persisted });
     });
 }
 
@@ -575,6 +584,8 @@ function markAgentReady() {
 function markAgentDisconnected(message, diagnosticSource, processToStop = agentProcess) {
   clearAgentStartupTimers();
   clearPendingPromptRefs();
+  if (agentRuntime === 'api') clearDevinApiSession();
+  agentRuntime = 'none';
   agentReady = false;
   agentStatus = 'disconnected';
   broadcastAgentStatus();
@@ -613,6 +624,8 @@ function scheduleAgentPrimerReady(targetProcess) {
 
 function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
   clearAgentStartupTimers();
+  if (agentRuntime === 'api') clearDevinApiSession();
+  agentRuntime = 'none';
   lastAuthMessage = message || DEVIN_AUTH_MESSAGE;
   lastAuthDiagnosticSource = diagnosticSource;
   agentReady = false;
@@ -714,6 +727,280 @@ function buildAgentContextPrompt(roomContext, userMessage = '') {
   return `${parts.join('\n')}\n`;
 }
 
+function clearDevinApiSession() {
+  devinApiSession = null;
+  devinApiSeenMessageIds.clear();
+}
+
+function devinApiHeaders() {
+  return {
+    Authorization: `Bearer ${DEVIN_API_KEY}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  };
+}
+
+function devinApiUrl(pathname, params = {}) {
+  const url = new URL(`${DEVIN_API_BASE_URL}${pathname.startsWith('/') ? pathname : `/${pathname}`}`);
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url.toString();
+}
+
+async function devinApiRequest(pathname, {
+  method = 'GET',
+  body = undefined,
+  params = {},
+  timeoutMs = 15000,
+} = {}) {
+  if (!DEVIN_API_KEY) {
+    throw new Error('DEVIN_API_KEY is not configured.');
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(devinApiUrl(pathname, params), {
+      method,
+      headers: devinApiHeaders(),
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const parsed = text ? JSON.parse(text) : null;
+    if (!response.ok) {
+      const detail = parsed && typeof parsed === 'object'
+        ? JSON.stringify(parsed).slice(0, 500)
+        : text.slice(0, 500);
+      throw new Error(`Devin API ${method} ${pathname} failed with ${response.status}: ${redactDiagnosticText(detail)}`);
+    }
+    return parsed;
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      throw new Error(`Devin API ${method} ${pathname} timed out after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function stringField(value, names) {
+  if (!value || typeof value !== 'object') return null;
+  for (const name of names) {
+    const candidate = value[name];
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return null;
+}
+
+async function resolveDevinOrgId() {
+  if (DEVIN_ORG_ID) return DEVIN_ORG_ID;
+  const self = await devinApiRequest('/self', { timeoutMs: 10000 });
+  const orgId = stringField(self, ['org_id', 'organization_id', 'orgId', 'organizationId']);
+  if (!orgId) {
+    throw new Error('Devin API /self did not return an organization id for this service token.');
+  }
+  return orgId;
+}
+
+function devinApiSessionId(value) {
+  return stringField(value, ['session_id', 'id', 'devin_id', 'devinId']);
+}
+
+function devinApiMessagesFromResponse(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== 'object') return [];
+  for (const key of ['messages', 'items', 'data', 'results']) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return [];
+}
+
+function devinApiMessageId(value) {
+  return stringField(value, ['event_id', 'id', 'message_id', 'messageId'])
+    || `message:${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+}
+
+function devinApiMessageText(value) {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return null;
+  const direct = stringField(value, ['message', 'text', 'content']);
+  if (direct) return direct;
+  const nested = value.message || value.content;
+  if (nested && typeof nested === 'object') {
+    return stringField(nested, ['text', 'content', 'message']);
+  }
+  return null;
+}
+
+function devinApiMessageAuthor(value) {
+  if (!value || typeof value !== 'object') return null;
+  return stringField(value, ['role', 'source', 'sender', 'author', 'from', 'speaker']);
+}
+
+function isUserAuthoredDevinApiMessage(value) {
+  const author = devinApiMessageAuthor(value);
+  if (!author) return false;
+  return ['user', 'human', 'client', 'customer', 'requester'].includes(author.toLowerCase());
+}
+
+function isAgentAuthoredDevinApiMessage(value) {
+  const author = devinApiMessageAuthor(value);
+  if (!author) return false;
+  return ['devin', 'assistant', 'agent', 'ai', 'system'].includes(author.toLowerCase());
+}
+
+async function listDevinApiMessages() {
+  if (!devinApiSession) return [];
+  const response = await devinApiRequest(
+    `/organizations/${encodeURIComponent(devinApiSession.orgId)}/sessions/${encodeURIComponent(devinApiSession.sessionId)}/messages`,
+    {
+      params: { limit: 100 },
+      timeoutMs: 15000,
+    },
+  );
+  return devinApiMessagesFromResponse(response);
+}
+
+async function seedDevinApiSeenMessages() {
+  const messages = await listDevinApiMessages().catch((error) => {
+    broadcastAgentDiagnostic(agentDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: agentStatus,
+      message: `Devin API session message seed failed: ${error instanceof Error ? error.message : String(error)}`,
+      diagnosticSource: 'devin_api_messages_seed_failed',
+    }));
+    return [];
+  });
+  for (const message of messages) {
+    devinApiSeenMessageIds.add(devinApiMessageId(message));
+  }
+}
+
+function shouldAcceptDevinApiMessage(message, sentPrompt) {
+  const text = devinApiMessageText(message);
+  if (!text) return false;
+  const trimmedPrompt = String(sentPrompt || '').trim();
+  if (trimmedPrompt && text.trim() === trimmedPrompt) return false;
+  if (text.includes('PIPE room context') || text.includes('Current Clippy chat message:')) return false;
+  if (isUserAuthoredDevinApiMessage(message)) return false;
+  return isAgentAuthoredDevinApiMessage(message) || !devinApiMessageAuthor(message);
+}
+
+async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
+  if (!devinApiSession) return false;
+  const deadline = Date.now() + DEVIN_API_RESPONSE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const messages = await listDevinApiMessages();
+    const accepted = [];
+    for (const message of messages) {
+      const id = devinApiMessageId(message);
+      if (devinApiSeenMessageIds.has(id)) continue;
+      devinApiSeenMessageIds.add(id);
+      if (shouldAcceptDevinApiMessage(message, sentPrompt)) accepted.push(message);
+    }
+    if (accepted.length > 0) {
+      for (const message of accepted) {
+        const rawText = devinApiMessageText(message);
+        if (!rawText) continue;
+        const parsed = extractTaggedRoomActions(rawText, 'agent_api_response');
+        const observedAt = new Date().toISOString();
+        const responsePromptRef = parsed.text || parsed.actions.length > 0
+          ? takePromptRefForAgentResponse()
+          : {};
+        if (parsed.text) {
+          broadcastAgentChat({
+            agent: AGENT_NAME,
+            text: parsed.text,
+            observedAt,
+            actionCount: parsed.actions.length,
+            ...responsePromptRef,
+          }, 'agent_api_response');
+        }
+        for (const action of parsed.actions) {
+          broadcastAgentRoomAction({ ...action, ...responsePromptRef }, observedAt);
+        }
+      }
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, DEVIN_API_POLL_INTERVAL_MS));
+  }
+  broadcastAgentDiagnostic(agentDiagnosticMessage({
+    agent: AGENT_NAME,
+    status: 'idle',
+    message: `Devin API accepted the Clippy message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
+    diagnosticSource: 'devin_api_response_timeout',
+  }));
+  return false;
+}
+
+async function startDevinApiAgent() {
+  if (!DEVIN_API_KEY) return false;
+
+  agentRuntime = 'api';
+  agentReady = false;
+  agentStatus = 'starting';
+  broadcastAgentStatus();
+
+  try {
+    const orgId = await resolveDevinOrgId();
+    const context = await fetchRoomContextSummary();
+    const prompt = `${buildAgentContextPrompt(context.text)}Do not begin work yet. Wait for explicit Clippy chat messages before taking action.\n`;
+    const response = await devinApiRequest(
+      `/organizations/${encodeURIComponent(orgId)}/sessions`,
+      {
+        method: 'POST',
+        body: {
+          prompt,
+          tags: ['pipe-os', '95-until-infinity', 'clippy'],
+        },
+        timeoutMs: 30000,
+      },
+    );
+    const sessionId = devinApiSessionId(response);
+    if (!sessionId) {
+      throw new Error('Devin API session create response did not include a session id.');
+    }
+    devinApiSession = { orgId, sessionId };
+    await seedDevinApiSeenMessages();
+    agentAuthed = true;
+    broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: agentStatus,
+      promptType: 'context_primer',
+      deliveryTarget: 'devin_api_session',
+      deliveredToAgent: true,
+      roomContextStatus: context.status,
+      roomContextText: compactAgentContext(context.text),
+      promptText: prompt,
+    }));
+    broadcastAgentDiagnostic(agentDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: 'idle',
+      message: 'Devin API session created and ready for Clippy chat.',
+      diagnosticSource: 'devin_api_session_ready',
+    }));
+    markAgentReady();
+    return true;
+  } catch (error) {
+    clearDevinApiSession();
+    agentRuntime = 'none';
+    agentAuthed = false;
+    agentReady = false;
+    agentStatus = 'disconnected';
+    broadcastAgentStatus();
+    broadcastAgentDiagnostic(agentDiagnosticMessage({
+      agent: AGENT_NAME,
+      status: 'disconnected',
+      message: `Devin API bridge could not start: ${error instanceof Error ? error.message : String(error)}`,
+      diagnosticSource: 'devin_api_start_failed',
+    }));
+    return false;
+  }
+}
+
 function writeToCurrentAgentProcess(targetProcess, prompt) {
   if (!agentProcess || targetProcess !== agentProcess) return false;
   if (!agentProcess.stdin || agentProcess.stdin.destroyed || agentProcess.stdin.writableEnded) return false;
@@ -740,6 +1027,56 @@ async function primeAgentWithRoomContext(targetProcess = agentProcess) {
 }
 
 async function writeAgentChatPrompt(text, browserPromptRef = {}) {
+  if (agentRuntime === 'api' && devinApiSession) {
+    const context = await fetchRoomContextSummary();
+    const roomContextText = compactAgentContext(context.text);
+    const prompt = buildAgentContextPrompt(context.text, text);
+    agentStatus = 'thinking';
+    broadcastAgentStatus();
+    try {
+      await devinApiRequest(
+        `/organizations/${encodeURIComponent(devinApiSession.orgId)}/sessions/${encodeURIComponent(devinApiSession.sessionId)}/messages`,
+        {
+          method: 'POST',
+          body: { message: prompt },
+          timeoutMs: 15000,
+        },
+      );
+      enqueuePromptRefForNextAgentResponse(browserPromptRef);
+      broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: agentStatus,
+        promptType: 'chat_prompt',
+        deliveryTarget: 'devin_api_session',
+        deliveredToAgent: true,
+        roomContextStatus: context.status,
+        roomContextText,
+        promptText: prompt,
+        userMessage: text,
+        browserPromptId: browserPromptRef.browserPromptId,
+        browserPromptFingerprint: browserPromptRef.browserPromptFingerprint,
+        browserPromptTimestamp: browserPromptRef.browserPromptTimestamp,
+        browserPromptLength: browserPromptRef.browserPromptLength,
+      }));
+      agentStatus = 'working';
+      broadcastAgentStatus();
+      const responded = await pollDevinApiForResponse(prompt, browserPromptRef);
+      agentStatus = 'idle';
+      broadcastAgentStatus();
+      return responded;
+    } catch (error) {
+      agentStatus = 'idle';
+      broadcastAgentStatus();
+      broadcastAgentDiagnostic(agentDiagnosticMessage({
+        agent: AGENT_NAME,
+        status: 'idle',
+        message: `Devin API chat delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+        diagnosticSource: 'devin_api_chat_failed',
+      }));
+      return false;
+    }
+  }
+
   const targetProcess = agentProcess;
   if (!targetProcess) return false;
   const context = await fetchRoomContextSummary();
@@ -905,8 +1242,8 @@ function checkDevinCliAuth(command) {
   };
 }
 
-function startAgent() {
-  if (agentProcess) return;
+async function startAgent() {
+  if (agentProcess || devinApiSession || agentReady) return;
   if (!AGENT_NAME) {
     agentReady = false;
     agentStatus = 'disconnected';
@@ -915,6 +1252,11 @@ function startAgent() {
   }
 
   try {
+    if (DEVIN_API_KEY) {
+      const startedApiAgent = await startDevinApiAgent();
+      if (startedApiAgent) return;
+    }
+
     const command = devinCommand();
     const authStatus = checkDevinCliAuth(command);
     agentAuthed = authStatus.ok;
@@ -935,6 +1277,7 @@ function startAgent() {
       return;
     }
     const env = { ...process.env };
+    agentRuntime = 'cli';
     agentReady = false;
     agentStatus = 'starting';
     broadcastAgentStatus();
@@ -1023,6 +1366,7 @@ function startAgent() {
       clearAgentStartupTimers();
       const wasAuthNeeded = agentStatus === 'auth_needed';
       agentProcess = null;
+      agentRuntime = 'none';
       clearPendingPromptRefs();
       agentReady = false;
       agentStatus = wasAuthNeeded ? 'auth_needed' : 'disconnected';
@@ -1040,6 +1384,7 @@ function startAgent() {
       if (agentProcess !== startedProcess && agentProcess !== null) return;
       clearAgentStartupTimers();
       agentProcess = null;
+      agentRuntime = 'none';
       clearPendingPromptRefs();
       agentReady = false;
       agentStatus = 'disconnected';
@@ -1053,6 +1398,7 @@ function startAgent() {
     });
   } catch (error) {
     clearAgentStartupTimers();
+    agentRuntime = 'none';
     agentReady = false;
     agentStatus = 'disconnected';
     broadcastAgentStatus();
@@ -1073,8 +1419,8 @@ async function handleAgentMessage(ws, msg) {
       send(ws, { type: 'ERROR', message: AGENT_UNCONFIGURED_MESSAGE });
       return;
     }
-    if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
-    if (!agentProcess && agentStatus === 'disconnected') {
+    if (!agentProcess && !devinApiSession && !agentReady && agentStatus !== 'auth_needed') await startAgent();
+    if (!agentProcess && !devinApiSession && !agentReady && agentStatus === 'disconnected') {
       send(ws, { type: 'ERROR', message: `${AGENT_NAME} is not available. Check bridge diagnostics before sending chat.` });
       return;
     }
@@ -1087,7 +1433,7 @@ async function handleAgentMessage(ws, msg) {
       send(ws, { type: 'ERROR', message: `${AGENT_NAME} is still starting. Wait for the bridge to report ready before sending chat.` });
       return;
     }
-    if (!agentProcess) {
+    if (!agentProcess && !devinApiSession) {
       send(ws, { type: 'ERROR', message: 'Agent is not running.' });
       return;
     }
@@ -1105,13 +1451,21 @@ async function handleAgentMessage(ws, msg) {
       return;
     }
     if (agentAuthed) {
-      startAgent();
+      await startAgent();
       return;
     }
-    startAgent();
-  } else if (msg.type === 'AGENT_STOP' && agentProcess) {
+    await startAgent();
+  } else if (msg.type === 'AGENT_STOP' && (agentProcess || devinApiSession)) {
     clearPendingPromptRefs();
-    agentProcess.kill('SIGTERM');
+    if (agentProcess) {
+      agentProcess.kill('SIGTERM');
+      return;
+    }
+    clearDevinApiSession();
+    agentRuntime = 'none';
+    agentReady = false;
+    agentStatus = 'disconnected';
+    broadcastAgentStatus();
   } else if (msg.type === 'GET_STATUS') {
     sendAgentStatus(ws);
   }
@@ -1131,15 +1485,15 @@ function acceptAgent(req, socket) {
   if (!ws) return;
   clients.add(ws);
   sendAgentStatus(ws);
-  if (agentProcess && agentReady) {
+  if (agentReady) {
     send(ws, { type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
   }
   if (agentStatus === 'auth_needed') {
     send(ws, devinAuthNeededMessage());
     sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
   }
-  if (AGENT_NAME && !agentProcess && agentStatus !== 'auth_needed') {
-    startAgent();
+  if (AGENT_NAME && !agentProcess && !devinApiSession && !agentReady && agentStatus !== 'auth_needed') {
+    void startAgent();
   }
 }
 
