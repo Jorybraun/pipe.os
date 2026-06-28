@@ -37,6 +37,17 @@ function compactPreview(content: string, fileKind: RoomFileKind): string | undef
     : trimmed;
 }
 
+function exactContentProperty(
+  content: string,
+  fileKind: RoomFileKind,
+  operation: RoomFileEvidenceOperation,
+): Record<string, string> {
+  const prefix = operation === 'delete' ? 'deletedContent' : 'content';
+  if (fileKind === 'text') return { [`${prefix}ExactText`]: content };
+  if (fileKind === 'paint') return { [`${prefix}ExactJson`]: content };
+  return {};
+}
+
 function filePath(file: RoomFileEvidenceInput['file']): string | null {
   const path = file.metadata?.path;
   return typeof path === 'string' && path.trim().length > 0 ? path : null;
@@ -79,6 +90,7 @@ export async function buildRoomFileEvidence(input: RoomFileEvidenceInput): Promi
         ...sharedProperties,
         deletedContentLength: input.file.content.length,
         deletedContentHash: contentHash,
+        ...exactContentProperty(input.file.content, input.file.kind, input.operation),
         deletedFileCreatedAt: input.file.createdAt,
         deletedFileUpdatedAt: input.file.updatedAt,
         ...(preview ? { deletedContentPreview: preview } : {}),
@@ -92,6 +104,7 @@ export async function buildRoomFileEvidence(input: RoomFileEvidenceInput): Promi
       ...sharedProperties,
       contentLength: input.file.content.length,
       contentHash,
+      ...exactContentProperty(input.file.content, input.file.kind, input.operation),
       fileCreatedAt: input.file.createdAt,
       fileUpdatedAt: input.file.updatedAt,
       ...(preview ? { contentPreview: preview } : {}),

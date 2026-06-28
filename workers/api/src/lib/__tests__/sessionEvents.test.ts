@@ -373,6 +373,107 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves exact Win95 Paint JSON as source refs without requiring previews', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const exactJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
+        const event: SessionEvent = {
+          type: 'file_change',
+          sessionId: 'meeting-session-paint-content',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604310,
+          actor: 'host',
+          text: 'Sketch.pipe-paint',
+          properties: {
+            source: 'win95_shared_file_system',
+            fileEventSource: 'browser_client_submit',
+            fileChangeId: 'file:host:1782604310000:upsert:paint',
+            actor: 'host',
+            operation: 'upsert',
+            fileId: 'paint',
+            fileName: 'Sketch.pipe-paint',
+            fileKind: 'paint',
+            surface: 'win95',
+            roomPhase: 'connected',
+            capturedAtMs: 1782604310000,
+            durableObjectReplayExpected: true,
+            contentLength: exactJson.length,
+            contentHash: 'content_fedcba9876543210fedcba9876543210',
+            contentExactJson: exactJson,
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+
+        const contextSource = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash, csr.locator_json, csr.metadata_json
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type = 'room_file_content'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+          locator_json: string;
+          metadata_json: string;
+        } | undefined;
+
+        expect(contextSource).toMatchObject({
+          source_ref_type: 'room_file_content',
+          source_ref_id: `${node!.id}:upsert:paint`,
+          evidence_role: 'file_content',
+          exact_text: exactJson,
+          content_hash: await sha256Hex(exactJson),
+        });
+        expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
+          sessionId: 'meeting-session-paint-content',
+          candidateId: 'cand-assessment',
+          candidateNodeId: node!.id,
+          fileId: 'paint',
+          fileName: 'Sketch.pipe-paint',
+          fileChangeId: 'file:host:1782604310000:upsert:paint',
+          operation: 'upsert',
+        });
+        expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
+          sourceKind: 'win95_shared_file_system.paint_content',
+          fileKind: 'paint',
+          operation: 'upsert',
+          exactContentKey: 'contentExactJson',
+        });
+
+        const assessmentSource = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash, metadata_json
+             FROM assessment_event_source_refs
+            WHERE source_ref_type = 'room_file_content'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+          metadata_json: string;
+        } | undefined;
+        expect(assessmentSource).toMatchObject({
+          source_ref_type: 'room_file_content',
+          source_ref_id: `${node!.id}:upsert:paint`,
+          evidence_role: 'file_content',
+          exact_text: exactJson,
+          content_hash: await sha256Hex(exactJson),
+        });
+        expect(JSON.parse(assessmentSource?.metadata_json ?? '{}')).toMatchObject({
+          sourceKind: 'win95_shared_file_system.paint_content',
+          exactContentKey: 'contentExactJson',
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves exact terminal command and output text as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
@@ -2567,9 +2668,76 @@ describe('sessionEvents', () => {
             role: 'GUEST',
             recordedAt: 1700000006000,
             event: {
-              id: 'fs-source-less-save',
+              id: 'fs-paint-save',
               clientId: 'guest-client',
               createdAt: 1700000006000,
+              kind: 'UPSERT_FILE',
+              file: {
+                id: 'paint',
+                name: 'Sketch.pipe-paint',
+                kind: 'paint',
+                content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
+                mimeType: 'application/json',
+                createdAt: 1700000006000,
+                updatedAt: 1700000006000,
+              },
+              evidence: {
+                source: 'win95_shared_file_system',
+                fileEventSource: 'browser_client_submit',
+                fileChangeId: 'file:guest:1700000006000:upsert:paint',
+                actor: 'guest',
+                operation: 'upsert',
+                fileId: 'paint',
+                fileName: 'Sketch.pipe-paint',
+                fileKind: 'paint',
+                surface: 'win95',
+                roomPhase: 'connected',
+                capturedAtMs: 1700000006000,
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000007000,
+            event: {
+              id: 'fs-paint-delete',
+              clientId: 'guest-client',
+              createdAt: 1700000007000,
+              kind: 'DELETE_FILE',
+              fileId: 'paint',
+              file: {
+                id: 'paint',
+                name: 'Sketch.pipe-paint',
+                kind: 'paint',
+                content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
+                mimeType: 'application/json',
+                createdAt: 1700000006000,
+                updatedAt: 1700000006000,
+              },
+              evidence: {
+                source: 'win95_shared_file_system',
+                fileEventSource: 'browser_client_submit',
+                fileChangeId: 'file:guest:1700000007000:delete:paint',
+                actor: 'guest',
+                operation: 'delete',
+                fileId: 'paint',
+                fileName: 'Sketch.pipe-paint',
+                fileKind: 'paint',
+                surface: 'win95',
+                roomPhase: 'connected',
+                capturedAtMs: 1700000007000,
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000008000,
+            event: {
+              id: 'fs-source-less-save',
+              clientId: 'guest-client',
+              createdAt: 1700000008000,
               kind: 'UPSERT_FILE',
               file: {
                 id: 'source-less-notes',
@@ -2577,8 +2745,8 @@ describe('sessionEvents', () => {
                 kind: 'text',
                 content: 'This should not become graph evidence.',
                 mimeType: 'text/plain',
-                createdAt: 1700000006000,
-                updatedAt: 1700000006000,
+                createdAt: 1700000008000,
+                updatedAt: 1700000008000,
               },
             },
           },
@@ -2832,6 +3000,16 @@ describe('sessionEvents', () => {
           actor: 'guest',
           text: 'notes.txt',
         }),
+        expect.objectContaining({
+          type: 'file_change',
+          actor: 'guest',
+          text: 'Sketch.pipe-paint',
+        }),
+        expect.objectContaining({
+          type: 'file_change',
+          actor: 'guest',
+          text: 'Sketch.pipe-paint',
+        }),
       ]);
       const restoredWindowEvent = events.find((event) => (
         event.type === 'window_update'
@@ -2904,6 +3082,55 @@ describe('sessionEvents', () => {
         deletedContentExactText: 'Candidate identified retry bug evidence.',
       });
       expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      const paintJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
+      const upsertPaintEvent = events.find((event) => (
+        event.type === 'file_change'
+        && event.actor === 'guest'
+        && event.properties?.fileChangeId === 'file:guest:1700000006000:upsert:paint'
+      ));
+      expect(upsertPaintEvent?.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        source: 'win95_shared_file_system',
+        fileEventSource: 'browser_client_submit',
+        fileChangeId: 'file:guest:1700000006000:upsert:paint',
+        actor: 'guest',
+        operation: 'upsert',
+        fileId: 'paint',
+        fileName: 'Sketch.pipe-paint',
+        fileKind: 'paint',
+        surface: 'win95',
+        roomPhase: 'connected',
+        capturedAtMs: 1700000006000,
+        durableObjectReplayExpected: true,
+        contentLength: paintJson.length,
+        contentExactJson: paintJson,
+      });
+      expect(upsertPaintEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(upsertPaintEvent?.properties).not.toHaveProperty('contentPreview');
+      const deletePaintEvent = events.find((event) => (
+        event.type === 'file_change'
+        && event.actor === 'guest'
+        && event.properties?.fileChangeId === 'file:guest:1700000007000:delete:paint'
+      ));
+      expect(deletePaintEvent?.properties).toMatchObject({
+        roomActivitySource: 'durable_object',
+        source: 'win95_shared_file_system',
+        fileEventSource: 'browser_client_submit',
+        fileChangeId: 'file:guest:1700000007000:delete:paint',
+        actor: 'guest',
+        operation: 'delete',
+        fileId: 'paint',
+        fileName: 'Sketch.pipe-paint',
+        fileKind: 'paint',
+        surface: 'win95',
+        roomPhase: 'connected',
+        capturedAtMs: 1700000007000,
+        durableObjectReplayExpected: true,
+        deletedContentLength: paintJson.length,
+        deletedContentExactJson: paintJson,
+      });
+      expect(deletePaintEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(deletePaintEvent?.properties).not.toHaveProperty('deletedContentPreview');
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'clippy_action',

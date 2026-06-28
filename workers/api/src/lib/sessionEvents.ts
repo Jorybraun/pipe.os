@@ -1574,6 +1574,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
       const preview = compactPreview(file.content);
       if (preview && fileKind !== 'paint') properties.contentPreview = preview;
       if (fileKind === 'text') properties.contentExactText = file.content;
+      if (fileKind === 'paint') properties.contentExactJson = file.content;
     }
     return createSessionEvent(input, {
       type: 'file_change',
@@ -1614,6 +1615,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
         const preview = compactPreview(file.content);
         if (preview && fileKind !== 'paint') properties.deletedContentPreview = preview;
         if (fileKind === 'text') properties.deletedContentExactText = file.content;
+        if (fileKind === 'paint') properties.deletedContentExactJson = file.content;
       }
       const createdAt = numberOrNull(file.createdAt);
       const updatedAt = numberOrNull(file.updatedAt);
@@ -2329,17 +2331,19 @@ function sessionEventSourcePayload(event: SessionEvent, node: CandidateNode): Js
 
 type SessionEventExactSourceRef = ContextRecordSourceInput & AssessmentEvidenceSourceRefInput;
 
-async function roomTextFileContentSourceRef(input: {
+async function roomFileContentSourceRef(input: {
   event: SessionEvent;
   node: CandidateNode;
   properties: JsonObject;
 }): Promise<SessionEventExactSourceRef | null> {
   if (input.event.type !== 'file_change') return null;
   const fileKind = stringProperty(input.properties, 'fileKind');
-  if (fileKind !== 'text') return null;
+  if (fileKind !== 'text' && fileKind !== 'paint') return null;
   const operation = stringProperty(input.properties, 'operation');
   if (operation !== 'upsert' && operation !== 'delete') return null;
-  const exactTextKey = operation === 'delete' ? 'deletedContentExactText' : 'contentExactText';
+  const exactTextKey = fileKind === 'paint'
+    ? (operation === 'delete' ? 'deletedContentExactJson' : 'contentExactJson')
+    : (operation === 'delete' ? 'deletedContentExactText' : 'contentExactText');
   const exactText = stringProperty(input.properties, exactTextKey);
   if (!exactText) return null;
   const fileId = stringProperty(input.properties, 'fileId');
@@ -2364,9 +2368,10 @@ async function roomTextFileContentSourceRef(input: {
     exactText,
     contentHash: await sha256Hex(exactText),
     metadata: {
-      sourceKind: 'win95_shared_file_system.text_content',
+      sourceKind: `win95_shared_file_system.${fileKind}_content`,
       fileKind,
       operation,
+      exactContentKey: exactTextKey,
     },
   };
 }
@@ -3304,7 +3309,7 @@ async function persistSessionEventContextRecord(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
-  const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
@@ -3509,7 +3514,7 @@ async function persistSessionEventAssessmentEvidence(
   const narrative = formatEventNarrative(event);
   const properties = jsonObject(event.properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
-  const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const roomFileContentSource = await roomFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });

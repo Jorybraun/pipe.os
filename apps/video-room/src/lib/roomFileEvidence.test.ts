@@ -37,6 +37,7 @@ describe('buildRoomFileEvidence', () => {
         capturedAtMs: 1700000000000,
         contentLength: 36,
         contentPreview: 'Candidate writes a replay test plan.',
+        contentExactText: 'Candidate writes a replay test plan.',
         mimeType: 'text/plain',
         path: 'Desktop/Notes.txt',
         fileCreatedAt: 1699999999000,
@@ -47,7 +48,45 @@ describe('buildRoomFileEvidence', () => {
     expect(evidence.properties.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
   });
 
+  it('captures Paint saves with exact JSON provenance but no preview', async () => {
+    const paintJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
+    const evidence = await buildRoomFileEvidence({
+      actor: 'guest',
+      operation: 'upsert',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 1700000000500,
+      file: {
+        id: 'desktop-paint',
+        name: 'Sketch.pipe-paint',
+        kind: 'paint',
+        content: paintJson,
+        mimeType: 'application/json',
+        metadata: { app: 'paint', path: 'Desktop/Sketch.pipe-paint' },
+        createdAt: 1699999999000,
+        updatedAt: 1700000000500,
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      text: 'Sketch.pipe-paint',
+      properties: {
+        source: 'win95_shared_file_system',
+        fileEventSource: 'browser_client_submit',
+        fileChangeId: 'file:guest:1700000000500:upsert:desktop-paint',
+        operation: 'upsert',
+        fileId: 'desktop-paint',
+        fileKind: 'paint',
+        contentLength: paintJson.length,
+        contentExactJson: paintJson,
+      },
+    });
+    expect(evidence.properties.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+    expect(evidence.properties).not.toHaveProperty('contentPreview');
+  });
+
   it('captures Paint deletes without storing raw paint previews', async () => {
+    const paintJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
     const evidence = await buildRoomFileEvidence({
       actor: 'host',
       operation: 'delete',
@@ -58,7 +97,7 @@ describe('buildRoomFileEvidence', () => {
         id: 'desktop-paint',
         name: 'Sketch.pipe-paint',
         kind: 'paint',
-        content: '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]',
+        content: paintJson,
         mimeType: 'application/json',
         metadata: { app: 'paint', path: 'Desktop/Sketch.pipe-paint' },
         createdAt: 1699999999000,
@@ -77,7 +116,8 @@ describe('buildRoomFileEvidence', () => {
         fileId: 'desktop-paint',
         fileKind: 'paint',
         capturedAtMs: 1700000001000,
-        deletedContentLength: 64,
+        deletedContentLength: paintJson.length,
+        deletedContentExactJson: paintJson,
         deletedFileCreatedAt: 1699999999000,
         deletedFileUpdatedAt: 1700000000500,
       },
