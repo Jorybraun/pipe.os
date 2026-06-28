@@ -788,6 +788,7 @@ describe('repo task assessment session routes', () => {
         },
         claims: [],
         diagnostics: [{
+          id: 'diagnostic:missing-task-packet',
           code: 'MISSING_REPO_TASK_PACKET',
           severity: 'blocking',
           message: 'No reviewable repository task packet was assigned.',
@@ -802,6 +803,17 @@ describe('repo task assessment session routes', () => {
       report: { id: string; contextRecordId: string; status: string };
     };
     expect(reportBody.report.status).toBe('PROVENANCE_INCOMPLETE');
+    const storedReport = sqlite.prepare(
+      `SELECT diagnostics_json
+         FROM assessment_evaluation_reports
+        WHERE id = ?`,
+    ).get(reportBody.report.id) as { diagnostics_json: string };
+    expect(JSON.parse(storedReport.diagnostics_json)).toEqual([expect.objectContaining({
+      id: 'diagnostic:missing-task-packet',
+      code: 'MISSING_REPO_TASK_PACKET',
+      severity: 'blocking',
+      message: 'No reviewable repository task packet was assigned.',
+    })]);
     expect(sqlite.prepare(
       `SELECT dsr.source_ref_type, dsr.source_ref_id, dsr.exact_text
          FROM assessment_diagnostic_source_refs dsr

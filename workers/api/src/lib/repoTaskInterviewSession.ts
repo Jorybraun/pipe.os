@@ -263,6 +263,7 @@ function normalizeDiagnostics(
   diagnostics: readonly AssessmentDiagnosticInput[],
 ): AssessmentEvaluationDiagnosticInput[] {
   return diagnostics.map((diagnostic) => ({
+    ...(diagnostic.id ? { id: diagnostic.id } : {}),
     code: diagnostic.code,
     severity: diagnostic.severity,
     message: diagnostic.message,
