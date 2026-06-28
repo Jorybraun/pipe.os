@@ -51,6 +51,7 @@ import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
+import { runScheduledBackfill } from './lib/livingContext/backfillScheduled';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
 
 // Unified Agent Runtime plugin registration (ADR-034)
@@ -327,5 +328,8 @@ export default {
   fetch: app.fetch,
   scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(processProjectionOutbox(env));
+    ctx.waitUntil(runScheduledBackfill(env).catch((err) => {
+      console.error('[scheduled] backfill error:', err);
+    }));
   },
 };

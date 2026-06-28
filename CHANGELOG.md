@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Native resume ingestion + scheduled backfill
+
+- Added `ingestResumeToLivingContext()` for native resume-to-living-context ingestion — splits resume text into structural sections, creates per-section source spans with exact char/byte/line positions, dynamically learns concepts, creates signal evidence at appropriate evidence levels, and enqueues neo4j projections. Fully idempotent. Supports pre-extracted LLM semantic assertions. (criteria #1, #2, #3)
+- Added `splitResumeIntoSections()` — detects uppercase heading patterns to split resume text into typed sections (summary, experience, education, skills, etc.), with paragraph-based fallback.
+- Added `runScheduledBackfill()` — scheduled backfill runner with 4 dependency-ordered tasks (candidates → contacts → resumes → projection drain), cursor-based batch processing, gated by `living_context_backfill` rollout gate. Wired to Workers cron `scheduled` event. (criterion #8)
+- Added 14 new tests in `resumeIngestion.test.ts` verifying idempotency, source span creation, concept extraction, signal evidence, context records, and projection job enqueue.
+
 ### Added — Orchestrated backfills and rebuildable projections (criterion #8 hardening)
 
 - Wired `BackfillOrchestrator` into `backfillLivingContext.ts` — all 7 entity backfill tasks (candidates, contacts, candidateNodes, meetings, cultureSessions, phoneCalls, codeReviewSessions) now track D1-persisted checkpoint cursors with dependency ordering. Interrupted runs resume from the last committed cursor instead of re-processing from the start.
 - Added `scheduleFullProjectionRebuild()` to the projection module — enqueues rebuild jobs for all workspace persons through the projection outbox. D1 remains the source of truth; Neo4j projections can be deleted and reconstructed at any time.
 - Added `POST /api/v1/internal/living-context-rebuild-projections` endpoint for triggering a full projection rebuild via the outbox cron.
 - Added 2 new tests for projection rebuild endpoint; test suite now at 1515 tests across 166 files, 0 failures.
-
 ### Added — Staged rollout proof (criterion #8 completion)
 
 - Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.
