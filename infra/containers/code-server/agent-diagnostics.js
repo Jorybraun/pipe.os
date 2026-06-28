@@ -60,6 +60,32 @@ function normalizedPromptType(value) {
   return PROMPT_TYPES.has(value) ? value : 'chat_prompt';
 }
 
+function safeEvidenceIdPart(value) {
+  const normalized = String(value || 'none')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'none';
+}
+
+function agentStatusEventId({
+  agent = 'devin',
+  capturedAtMs = 0,
+  bridgeMessageSource = 'bridge_diagnostic',
+  status = null,
+  diagnosticSource = null,
+}) {
+  const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
+  return [
+    'agent-status',
+    safeEvidenceIdPart(agent),
+    String(captured),
+    safeEvidenceIdPart(bridgeMessageSource),
+    safeEvidenceIdPart(status),
+    safeEvidenceIdPart(diagnosticSource),
+  ].join(':');
+}
+
 function agentDiagnosticMessage({
   agent = 'devin',
   status = 'disconnected',
@@ -131,17 +157,31 @@ function agentPromptHandoffDiagnosticMessage({
 
 function agentDiagnosticSessionEvent(message) {
   const eventMessage = message && typeof message === 'object' ? message : {};
+  const agent = String(eventMessage.agent || 'devin');
+  const observedAt = eventMessage.observedAt ?? null;
+  const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
+  const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
+  const status = eventMessage.status ?? null;
+  const diagnosticSource = eventMessage.diagnosticSource ?? null;
   return {
     type: 'ai_agent_status',
     text: String(eventMessage.message || 'Agent bridge diagnostic.'),
     actor: 'agent',
     properties: {
       source: 'clippy_agent_bridge',
-      agent: String(eventMessage.agent || 'devin'),
-      status: eventMessage.status ?? null,
-      diagnosticSource: eventMessage.diagnosticSource ?? null,
+      agent,
+      status,
+      diagnosticSource,
       bridgeMessageSource: 'bridge_diagnostic',
-      observedAt: eventMessage.observedAt ?? null,
+      observedAt,
+      capturedAtMs,
+      agentStatusEventId: agentStatusEventId({
+        agent,
+        capturedAtMs,
+        bridgeMessageSource: 'bridge_diagnostic',
+        status,
+        diagnosticSource,
+      }),
       exitCode: eventMessage.exitCode ?? null,
       signal: eventMessage.signal ?? null,
       truncated: eventMessage.truncated ?? null,

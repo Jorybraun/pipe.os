@@ -131,6 +131,7 @@ const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']
 const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
+const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -163,6 +164,14 @@ function browserNavigationFingerprint(value: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return `nav_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function safeEvidenceIdPart(value: unknown): string {
+  const normalized = (typeof value === 'string' ? value : 'none')
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'none';
 }
 
 const roomEventSchema = z.object({
@@ -799,6 +808,8 @@ const sessionEventSchema = z.object({
   if (event.type === 'ai_agent_status') {
     const bridgeMessageSource = properties.bridgeMessageSource;
     const status = properties.status;
+    const capturedAtMs = properties.capturedAtMs;
+    const diagnosticSource = properties.diagnosticSource;
     const statusOk = status === null
       || status === undefined
       || (typeof status === 'string' && AGENT_STATUSES.has(status));
@@ -806,8 +817,17 @@ const sessionEventSchema = z.object({
     const actorOk = event.actor === 'agent';
     const agentOk = hasString(properties.agent);
     const observedOk = hasString(properties.observedAt);
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
     const bridgeMessageOk = typeof bridgeMessageSource === 'string'
       && AGENT_STATUS_MESSAGE_SOURCES.has(bridgeMessageSource);
+    const expectedStatusEventId = bridgeMessageOk && capturedAtOk && agentOk
+      ? `agent-status:${safeEvidenceIdPart(properties.agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(typeof status === 'string' ? status : null)}:${safeEvidenceIdPart(typeof diagnosticSource === 'string' ? diagnosticSource : null)}`
+      : null;
+    const statusIdOk = typeof properties.agentStatusEventId === 'string'
+      && AGENT_STATUS_EVENT_ID_RE.test(properties.agentStatusEventId)
+      && properties.agentStatusEventId === expectedStatusEventId;
     const browserObservationOk = properties.agentStatusEventSource === 'browser_clippy_agent_ws'
       && hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
@@ -815,23 +835,25 @@ const sessionEventSchema = z.object({
       && properties.agentResponseClaimed === false
       && (
         (bridgeMessageSource === 'agent_status' && typeof status === 'string' && AGENT_STATUSES.has(status))
-        || (bridgeMessageSource !== 'agent_status' && hasString(properties.diagnosticSource))
+        || (bridgeMessageSource !== 'agent_status' && hasString(diagnosticSource))
       );
     const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
       && properties.bridgePersisted === true
-      && hasString(properties.diagnosticSource);
+      && hasString(diagnosticSource);
     if (
       sourceOk
       && actorOk
       && agentOk
       && statusOk
       && observedOk
+      && capturedAtOk
+      && statusIdOk
       && bridgeMessageOk
       && (browserObservationOk || persistedDiagnosticOk)
     ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent status evidence must come from the Clippy/Devin bridge with observed status or persisted diagnostic provenance.',
+      message: 'Agent status evidence must come from the Clippy/Devin bridge with stable status id, capture timestamp, and observed status or persisted diagnostic provenance.',
       path: ['properties'],
     });
     return;

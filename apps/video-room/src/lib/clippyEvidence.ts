@@ -1,5 +1,5 @@
 import type { RoomSurface } from '../hooks/useRoomConnection';
-import type { AgentChatMessage, AgentRoomAction } from '../hooks/useAgentConnection';
+import type { AgentChatMessage, AgentRoomAction, AgentStatus } from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
 
 export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy';
@@ -26,6 +26,13 @@ export interface ClippyAgentChatFallbackEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
+
+export interface ClippyAgentStatusEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
+
+type ClippyAgentStatusBridgeMessageSource = 'agent_status' | NonNullable<AgentChatMessage['source']>;
 
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
@@ -60,6 +67,23 @@ function clippyUiActionText(actionId: ClippyUiActionId): string {
 
 function clippyUiActionStatus(actionId: ClippyUiActionId): string {
   return actionId === 'open-clippy-chat' ? 'opened' : 'dismissed';
+}
+
+export function buildClippyAgentStatusEventId(input: {
+  agentName: string | null;
+  capturedAtMs: number;
+  bridgeMessageSource: string | null;
+  status: string | null;
+  diagnosticSource?: string | null;
+}): string {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
+  const agent = safeEvidenceIdPart(input.agentName);
+  const bridgeMessageSource = safeEvidenceIdPart(input.bridgeMessageSource);
+  const status = safeEvidenceIdPart(input.status);
+  const diagnosticSource = safeEvidenceIdPart(input.diagnosticSource ?? null);
+  return `agent-status:${agent}:${capturedAtMs}:${bridgeMessageSource}:${status}:${diagnosticSource}`;
 }
 
 export function buildClippyUiActionEvidence(input: {
@@ -163,6 +187,80 @@ export function buildClippyUserChatEvidence(input: {
       workspaceStatus: input.workspaceStatus,
       workspaceSessionId: input.workspaceSessionId,
       repoUrl: input.repoUrl,
+      agentResponseClaimed: false,
+    },
+  };
+}
+
+export function buildClippyAgentStatusEvidence(input: {
+  text: string;
+  agentName: string | null;
+  status: AgentStatus | null;
+  bridgeMessageSource: ClippyAgentStatusBridgeMessageSource;
+  observedAt: string;
+  capturedAtMs: number;
+  surface: RoomSurface;
+  roomPhase: RoomPhase;
+  workspaceStatus: string | null;
+  workspaceSessionId: string | null;
+  diagnosticSource?: string | null;
+  exitCode?: number | null;
+  signal?: string | null;
+  truncated?: boolean | null;
+  bridgePersisted?: boolean | null;
+  promptType?: string | null;
+  deliveredToAgent?: boolean | null;
+  promptLength?: number | null;
+  promptFingerprint?: string | null;
+  roomContextStatus?: number | null;
+  roomContextLength?: number | null;
+  roomContextFingerprint?: string | null;
+  userMessageLength?: number | null;
+  userMessageFingerprint?: string | null;
+  contextTruncated?: boolean | null;
+  messageTimestamp?: number | null;
+}): ClippyAgentStatusEvidence {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
+  const agent = input.agentName?.trim() || 'devin';
+  return {
+    text: input.text,
+    properties: {
+      source: 'clippy_agent_bridge',
+      agentStatusEventSource: 'browser_clippy_agent_ws',
+      agent,
+      status: input.status,
+      diagnosticSource: input.diagnosticSource ?? null,
+      bridgeMessageSource: input.bridgeMessageSource,
+      observedAt: input.observedAt,
+      capturedAtMs,
+      agentStatusEventId: buildClippyAgentStatusEventId({
+        agentName: agent,
+        capturedAtMs,
+        bridgeMessageSource: input.bridgeMessageSource,
+        status: input.status,
+        diagnosticSource: input.diagnosticSource ?? null,
+      }),
+      exitCode: input.exitCode ?? null,
+      signal: input.signal ?? null,
+      truncated: input.truncated ?? null,
+      bridgePersisted: input.bridgePersisted ?? null,
+      promptType: input.promptType ?? null,
+      deliveredToAgent: input.deliveredToAgent ?? null,
+      promptLength: input.promptLength ?? null,
+      promptFingerprint: input.promptFingerprint ?? null,
+      roomContextStatus: input.roomContextStatus ?? null,
+      roomContextLength: input.roomContextLength ?? null,
+      roomContextFingerprint: input.roomContextFingerprint ?? null,
+      userMessageLength: input.userMessageLength ?? null,
+      userMessageFingerprint: input.userMessageFingerprint ?? null,
+      contextTruncated: input.contextTruncated ?? null,
+      surface: input.surface,
+      roomPhase: input.roomPhase,
+      workspaceStatus: input.workspaceStatus,
+      workspaceSessionId: input.workspaceSessionId,
+      messageTimestamp: input.messageTimestamp ?? capturedAtMs,
       agentResponseClaimed: false,
     },
   };

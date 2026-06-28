@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClippyAgentChatFallbackEvidence,
+  buildClippyAgentStatusEvidence,
+  buildClippyAgentStatusEventId,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
   buildClippyUserChatEvidence,
@@ -201,5 +203,64 @@ describe('clippy evidence', () => {
         agentResponseClaimed: true,
       },
     });
+  });
+
+  it('builds stable source-backed status evidence for browser-observed Devin bridge states', () => {
+    expect(buildClippyAgentStatusEvidence({
+      text: 'devin is starting from the real container bridge.',
+      agentName: 'devin',
+      status: 'starting',
+      bridgeMessageSource: 'agent_status',
+      observedAt: '2026-06-27T21:12:00.000Z',
+      capturedAtMs: 1782594720000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782594720000,
+    })).toEqual({
+      text: 'devin is starting from the real container bridge.',
+      properties: {
+        source: 'clippy_agent_bridge',
+        agentStatusEventSource: 'browser_clippy_agent_ws',
+        agent: 'devin',
+        status: 'starting',
+        diagnosticSource: null,
+        bridgeMessageSource: 'agent_status',
+        observedAt: '2026-06-27T21:12:00.000Z',
+        capturedAtMs: 1782594720000,
+        agentStatusEventId: 'agent-status:devin:1782594720000:agent_status:starting:none',
+        exitCode: null,
+        signal: null,
+        truncated: null,
+        bridgePersisted: null,
+        promptType: null,
+        deliveredToAgent: null,
+        promptLength: null,
+        promptFingerprint: null,
+        roomContextStatus: null,
+        roomContextLength: null,
+        roomContextFingerprint: null,
+        userMessageLength: null,
+        userMessageFingerprint: null,
+        contextTruncated: null,
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-123',
+        messageTimestamp: 1782594720000,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
+  it('derives status ids from agent, source, status, diagnostic, and capture time', () => {
+    expect(buildClippyAgentStatusEventId({
+      agentName: 'devin',
+      capturedAtMs: 1782604380000,
+      bridgeMessageSource: 'bridge_diagnostic',
+      status: 'thinking',
+      diagnosticSource: 'agent_prompt_sent',
+    })).toBe('agent-status:devin:1782604380000:bridge_diagnostic:thinking:agent_prompt_sent');
   });
 });

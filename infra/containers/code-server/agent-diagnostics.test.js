@@ -151,6 +151,8 @@ describe('agent diagnostics', () => {
         diagnosticSource: 'agent_prompt_sent',
         bridgeMessageSource: 'bridge_diagnostic',
         observedAt: '2026-06-27T21:00:00.000Z',
+        capturedAtMs: 1782594000000,
+        agentStatusEventId: 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:agent_prompt_sent',
         promptType: 'chat_prompt',
         deliveredToAgent: true,
         promptFingerprint: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),

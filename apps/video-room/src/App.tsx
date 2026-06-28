@@ -36,6 +36,7 @@ import {
 } from './lib/roomSurfaceEvidence';
 import {
   buildClippyAgentChatFallbackEvidence,
+  buildClippyAgentStatusEvidence,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
   buildClippyUserChatEvidence,
@@ -1733,16 +1734,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
       : message.text;
     const observedAt = message.observedAt ?? new Date().toISOString();
-    captureSessionEvent('ai_agent_status', diagnosticText, 'agent', {
-      source: 'clippy_agent_bridge',
-      agentStatusEventSource: 'browser_clippy_agent_ws',
-      agent: message.agentName ?? 'devin',
+    const observedAtMs = Date.parse(observedAt);
+    const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : message.timestamp;
+    const diagnosticSource = isAgentResponse
+      ? 'agent_response_missing_source_metadata'
+      : message.diagnosticSource ?? message.source ?? null;
+    const evidence = buildClippyAgentStatusEvidence({
+      text: diagnosticText,
+      agentName: message.agentName ?? 'devin',
       status: message.agentStatus ?? null,
-      diagnosticSource: isAgentResponse
-        ? 'agent_response_missing_source_metadata'
-        : message.diagnosticSource ?? message.source,
-      bridgeMessageSource: message.source,
+      diagnosticSource,
+      bridgeMessageSource: message.source ?? 'bridge_diagnostic',
       observedAt,
+      capturedAtMs,
       exitCode: message.exitCode ?? null,
       signal: message.signal ?? null,
       truncated: message.truncated ?? null,
@@ -1762,16 +1766,16 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       messageTimestamp: message.timestamp,
-      agentResponseClaimed: false,
     });
+    captureSessionEvent('ai_agent_status', evidence.text, 'agent', evidence.properties);
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
-    const observedAt = new Date().toISOString();
-    captureSessionEvent('ai_agent_status', agentStatusEvidenceText(status, agentName), 'agent', {
-      source: 'clippy_agent_bridge',
-      agentStatusEventSource: 'browser_clippy_agent_ws',
-      agent: agentName,
+    const capturedAtMs = Date.now();
+    const observedAt = new Date(capturedAtMs).toISOString();
+    const evidence = buildClippyAgentStatusEvidence({
+      text: agentStatusEvidenceText(status, agentName),
+      agentName,
       status,
       bridgeMessageSource: 'agent_status',
       observedAt,
@@ -1779,9 +1783,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
-      messageTimestamp: Date.now(),
-      agentResponseClaimed: false,
+      capturedAtMs,
+      messageTimestamp: capturedAtMs,
     });
+    captureSessionEvent('ai_agent_status', evidence.text, 'agent', evidence.properties);
   };
 
   const captureClippyFileChange = (event: AgentFileChangeEvent): void => {

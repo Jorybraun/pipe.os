@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin agent status evidence now carries stable bridge status ids and capture timestamps across browser-observed states and persisted container diagnostics.
 - Workspace-state evidence now carries actor-bound observer ids and capture timestamps through Durable Object replay, normalizes room replay ids, and preserves that source context before becoming meeting-session context.
 - Code-server iframe open evidence now carries actor-bound open ids and capture timestamps before entering meeting-session context.
 - Container terminal command/output evidence now carries actor-bound capture ids and timestamps so repeated same-command interactions remain distinct source events.
