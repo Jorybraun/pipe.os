@@ -1927,6 +1927,62 @@ function sessionEventEntities(input: {
     });
   }
 
+  const roomMessageId = stringProperty(properties, 'roomMessageId');
+  if (roomMessageId) {
+    entities.push({
+      entityType: 'room_message',
+      entityId: roomMessageId,
+      relationship: 'source_message',
+      metadata: {
+        actor: event.actor,
+        clientId: stringProperty(properties, 'clientId'),
+        deliveryStatus: stringProperty(properties, 'deliveryStatus'),
+        messageLength: numberProperty(properties, 'messageLength'),
+      },
+    });
+  }
+
+  const promptId = stringProperty(properties, 'promptId');
+  if (promptId) {
+    entities.push({
+      entityType: 'clippy_prompt',
+      entityId: promptId,
+      relationship: event.type === 'ai_chat_user' ? 'source_prompt' : 'prompt_event',
+      metadata: {
+        actor: event.actor,
+        promptLength: numberProperty(properties, 'promptLength'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+      },
+    });
+  }
+
+  const browserPromptId = stringProperty(properties, 'browserPromptId');
+  if (browserPromptId) {
+    entities.push({
+      entityType: 'clippy_prompt',
+      entityId: browserPromptId,
+      relationship: 'linked_prompt',
+      metadata: {
+        promptLength: numberProperty(properties, 'browserPromptLength'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+      },
+    });
+  }
+
+  const agentChatResponseId = stringProperty(properties, 'agentChatResponseId');
+  if (agentChatResponseId) {
+    entities.push({
+      entityType: 'agent_chat_response',
+      entityId: agentChatResponseId,
+      relationship: 'source_response',
+      metadata: {
+        agent: stringProperty(properties, 'agent'),
+        responseLength: numberProperty(properties, 'responseLength'),
+        linkedPromptId: browserPromptId,
+      },
+    });
+  }
+
   const fileId = stringProperty(properties, 'fileId');
   if (fileId) {
     entities.push({
@@ -2061,6 +2117,173 @@ async function roomTextFileContentSourceRef(input: {
       operation,
     },
   };
+}
+
+async function chatTextSourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<SessionEventExactSourceRef | null> {
+  if (input.event.text.trim().length === 0) return null;
+
+  if (input.event.type === 'chat_message') {
+    if (input.properties.source !== 'room_chat_client_submit') return null;
+    if (input.properties.chatEventSource !== 'browser_room_chat_window') return null;
+    if (input.event.actor !== 'host' && input.event.actor !== 'guest') return null;
+    const roomMessageId = stringProperty(input.properties, 'roomMessageId');
+    const clientId = stringProperty(input.properties, 'clientId');
+    const deliveryStatus = stringProperty(input.properties, 'deliveryStatus');
+    const messageLength = numberProperty(input.properties, 'messageLength');
+    if (!roomMessageId || !clientId || !deliveryStatus || !CHAT_DELIVERY_STATUSES.has(deliveryStatus)) return null;
+    if (messageLength !== input.event.text.length) return null;
+    if (input.properties.durableObjectReplayExpected !== true) return null;
+    return {
+      sourceRefType: 'room_chat_message',
+      sourceRefId: roomMessageId,
+      evidenceRole: 'room_chat_message',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        actor: input.event.actor,
+        roomMessageId,
+        clientId,
+        deliveryStatus,
+        messageCreatedAt: numberProperty(input.properties, 'messageCreatedAt'),
+        surface: stringProperty(input.properties, 'surface'),
+        roomPhase: stringProperty(input.properties, 'roomPhase'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: 'room_chat.message',
+        chatEventSource: 'browser_room_chat_window',
+        deliveryStatus,
+        messageLength,
+      },
+    };
+  }
+
+  if (input.event.type === 'clippy_prompt') {
+    if (input.properties.source !== 'clippy_prompt_client_submit') return null;
+    if (input.properties.promptEventSource !== 'browser_proactive_clippy_prompt') return null;
+    const promptId = stringProperty(input.properties, 'promptId');
+    const promptLength = numberProperty(input.properties, 'promptLength');
+    if (!promptId || promptLength !== input.event.text.length) return null;
+    if (input.event.actor !== 'host') return null;
+    return {
+      sourceRefType: 'clippy_proactive_prompt',
+      sourceRefId: promptId,
+      evidenceRole: 'clippy_proactive_prompt',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        promptId,
+        clientId: stringProperty(input.properties, 'clientId'),
+        promptTrigger: stringProperty(input.properties, 'promptTrigger'),
+        promptCreatedAt: numberProperty(input.properties, 'promptCreatedAt'),
+        surface: stringProperty(input.properties, 'surface'),
+        roomPhase: stringProperty(input.properties, 'roomPhase'),
+        workspaceSessionId: stringProperty(input.properties, 'workspaceSessionId'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: 'clippy.proactive_prompt',
+        promptEventSource: 'browser_proactive_clippy_prompt',
+        promptLength,
+        agentResponseClaimed: input.properties.agentResponseClaimed === true,
+      },
+    };
+  }
+
+  if (input.event.type === 'ai_chat_user') {
+    if (input.properties.source !== 'clippy_agent_chat_client_submit') return null;
+    if (input.properties.agentChatEventSource !== 'browser_clippy_chat_window') return null;
+    if (input.event.actor !== 'host' && input.event.actor !== 'guest') return null;
+    const promptId = stringProperty(input.properties, 'promptId');
+    const promptTimestamp = numberProperty(input.properties, 'promptTimestamp');
+    const promptFingerprint = stringProperty(input.properties, 'promptFingerprint');
+    const workspaceSessionId = stringProperty(input.properties, 'workspaceSessionId');
+    const promptLength = numberProperty(input.properties, 'promptLength');
+    if (!promptId || promptLength !== input.event.text.length) return null;
+    if (promptTimestamp === null || promptTimestamp < 0 || !Number.isInteger(promptTimestamp)) return null;
+    if (!promptFingerprint || !CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)) return null;
+    if (!workspaceSessionId || promptId !== `${workspaceSessionId}:${input.event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`) return null;
+    if (input.properties.agentResponseClaimed !== false || input.properties.deliveredToAgentBridge === true) return null;
+    return {
+      sourceRefType: 'clippy_user_prompt',
+      sourceRefId: promptId,
+      evidenceRole: 'clippy_user_prompt',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        actor: input.event.actor,
+        promptId,
+        promptTimestamp,
+        workspaceSessionId,
+        repoUrl: stringProperty(input.properties, 'repoUrl'),
+        surface: stringProperty(input.properties, 'surface'),
+        roomPhase: stringProperty(input.properties, 'roomPhase'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: 'clippy.user_prompt',
+        agentChatEventSource: 'browser_clippy_chat_window',
+        bridgeMessageType: stringProperty(input.properties, 'bridgeMessageType'),
+        bridgeProtocol: stringProperty(input.properties, 'bridgeProtocol'),
+        promptFingerprint,
+        promptLength,
+      },
+    };
+  }
+
+  if (input.event.type === 'ai_chat_agent') {
+    if (input.properties.source !== 'clippy_agent_bridge') return null;
+    if (input.properties.bridgeEventType !== 'CHAT_RESPONSE') return null;
+    if (input.properties.bridgeMessageSource !== 'agent_stdout') return null;
+    if (input.event.actor !== 'agent') return null;
+    const agent = stringProperty(input.properties, 'agent');
+    const agentChatResponseId = stringProperty(input.properties, 'agentChatResponseId');
+    const capturedAtMs = numberProperty(input.properties, 'capturedAtMs');
+    const responseFingerprint = stringProperty(input.properties, 'responseFingerprint');
+    const responseLength = numberProperty(input.properties, 'responseLength');
+    if (!agent || !agentChatResponseId || responseLength !== input.event.text.length) return null;
+    if (capturedAtMs === null || capturedAtMs < 0 || !Number.isInteger(capturedAtMs)) return null;
+    if (!responseFingerprint || !AGENT_CHAT_RESPONSE_FINGERPRINT_RE.test(responseFingerprint)) return null;
+    if (!AGENT_CHAT_RESPONSE_ID_RE.test(agentChatResponseId)) return null;
+    if (agentChatResponseId !== `agent-chat:${safeEvidenceIdPart(agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`) return null;
+    return {
+      sourceRefType: 'clippy_agent_response',
+      sourceRefId: agentChatResponseId,
+      evidenceRole: 'clippy_agent_response',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        agent,
+        agentChatResponseId,
+        observedAt: stringProperty(input.properties, 'observedAt'),
+        capturedAtMs,
+        browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: 'clippy.agent_stdout_response',
+        bridgeMessageSource: 'agent_stdout',
+        responseFingerprint,
+        responseLength,
+        bridgePersisted: input.properties.bridgePersisted === true,
+        persistenceFallback: stringProperty(input.properties, 'persistenceFallback'),
+      },
+    };
+  }
+
+  return null;
 }
 
 async function terminalTextSourceRef(input: {
@@ -2276,6 +2499,7 @@ async function persistSessionEventContextRecord(
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
@@ -2301,6 +2525,7 @@ async function persistSessionEventContextRecord(
     },
   ];
   if (roomFileContentSource) sources.push(roomFileContentSource);
+  if (chatTextSource) sources.push(chatTextSource);
   if (terminalTextSource) sources.push(terminalTextSource);
   if (codeServerFileSource) sources.push(codeServerFileSource);
   if (sourceSpanId) {
@@ -2475,6 +2700,7 @@ async function persistSessionEventAssessmentEvidence(
   const properties = jsonObject(event.properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const chatTextSource = await chatTextSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
@@ -2499,6 +2725,7 @@ async function persistSessionEventAssessmentEvidence(
       },
     },
     ...(roomFileContentSource ? [roomFileContentSource] : []),
+    ...(chatTextSource ? [chatTextSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
     ...(codeServerFileSource ? [codeServerFileSource] : []),
   ];

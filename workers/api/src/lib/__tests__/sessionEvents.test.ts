@@ -592,6 +592,235 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves exact room chat and Clippy chat turns as source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const promptText = 'Can you inspect the failing test?';
+        const promptId = 'workspace-session-1:guest:prompt:1782604600000:clippy_0123abcd';
+        const agentText = 'I inspected the failing test.';
+        const agentResponseId = 'agent-chat:devin:1782604610000:CHAT_RESPONSE:agent_314a13fc';
+        const events: SessionEvent[] = [
+          {
+            type: 'chat_message',
+            sessionId: 'meeting-session-chat-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604580,
+            actor: 'guest',
+            text: 'Can we look at the retry bug first?',
+            properties: {
+              source: 'room_chat_client_submit',
+              chatEventSource: 'browser_room_chat_window',
+              actor: 'guest',
+              roomMessageId: 'chat-guest-1',
+              clientId: 'guest-client',
+              messageCreatedAt: 1782604580000,
+              messageLength: 'Can we look at the retry bug first?'.length,
+              deliveryStatus: 'accepted',
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'clippy_prompt',
+            sessionId: 'meeting-session-chat-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604590,
+            actor: 'host',
+            text: 'Would you like to open the workspace?',
+            properties: {
+              source: 'clippy_prompt_client_submit',
+              promptId: 'clippy-proactive-host-1',
+              clientId: 'host-client',
+              promptSource: 'host',
+              promptEventSource: 'browser_proactive_clippy_prompt',
+              promptTrigger: 'host_waiting_prepare_workspace',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              agentResponseClaimed: false,
+              promptCreatedAt: 1782604590000,
+              promptLength: 'Would you like to open the workspace?'.length,
+            },
+          },
+          {
+            type: 'ai_chat_user',
+            sessionId: 'meeting-session-chat-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604600,
+            actor: 'guest',
+            text: promptText,
+            properties: {
+              source: 'clippy_agent_chat_client_submit',
+              agentChatEventSource: 'browser_clippy_chat_window',
+              bridgeMessageType: 'CHAT',
+              bridgeProtocol: 'clippy_dev_container_ws',
+              browserQueuedBridgeMessage: true,
+              bridgeDeliveryConfirmed: false,
+              deliveredToAgentBridge: false,
+              agentResponseClaimed: false,
+              agent: null,
+              actor: 'guest',
+              promptId,
+              promptTimestamp: 1782604600000,
+              promptFingerprint: 'clippy_0123abcd',
+              promptLength: promptText.length,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'ai_chat_agent',
+            sessionId: 'meeting-session-chat-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604610,
+            actor: 'agent',
+            text: agentText,
+            properties: {
+              source: 'clippy_agent_bridge',
+              bridgeEventType: 'CHAT_RESPONSE',
+              bridgeMessageSource: 'agent_stdout',
+              observedAt: '2026-06-27T20:10:10.000Z',
+              capturedAtMs: 1782604610000,
+              agent: 'devin',
+              responseFingerprint: 'agent_314a13fc',
+              responseLength: agentText.length,
+              agentChatResponseId: agentResponseId,
+              browserPromptId: promptId,
+              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptTimestamp: 1782604600000,
+              browserPromptLength: promptText.length,
+              bridgePersisted: true,
+              actionCount: 0,
+              durableObjectReplayExpected: true,
+            },
+          },
+        ];
+
+        const nodes = [];
+        for (const event of events) {
+          nodes.push(await captureSessionEvent(realDb, event));
+        }
+        expect(nodes.every((node) => node !== null)).toBe(true);
+
+        const contextSources = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type IN (
+                'room_chat_message',
+                'clippy_proactive_prompt',
+                'clippy_user_prompt',
+                'clippy_agent_response'
+              )
+            ORDER BY csr.source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+
+        expect(contextSources).toEqual([
+          {
+            source_ref_type: 'clippy_agent_response',
+            source_ref_id: agentResponseId,
+            evidence_role: 'clippy_agent_response',
+            exact_text: agentText,
+            content_hash: await sha256Hex(agentText),
+          },
+          {
+            source_ref_type: 'clippy_proactive_prompt',
+            source_ref_id: 'clippy-proactive-host-1',
+            evidence_role: 'clippy_proactive_prompt',
+            exact_text: 'Would you like to open the workspace?',
+            content_hash: await sha256Hex('Would you like to open the workspace?'),
+          },
+          {
+            source_ref_type: 'clippy_user_prompt',
+            source_ref_id: promptId,
+            evidence_role: 'clippy_user_prompt',
+            exact_text: promptText,
+            content_hash: await sha256Hex(promptText),
+          },
+          {
+            source_ref_type: 'room_chat_message',
+            source_ref_id: 'chat-guest-1',
+            evidence_role: 'room_chat_message',
+            exact_text: 'Can we look at the retry bug first?',
+            content_hash: await sha256Hex('Can we look at the retry bug first?'),
+          },
+        ]);
+
+        const assessmentSources = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type IN (
+              'room_chat_message',
+              'clippy_proactive_prompt',
+              'clippy_user_prompt',
+              'clippy_agent_response'
+            )
+            ORDER BY source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(assessmentSources).toEqual(contextSources);
+
+        const entities = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship
+             FROM context_record_entities
+            WHERE entity_type IN ('room_message', 'clippy_prompt', 'agent_chat_response')
+            ORDER BY entity_type, relationship, entity_id`,
+        ).all() as Array<{
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+        }>;
+        expect(entities).toEqual(expect.arrayContaining([
+          {
+            entity_type: 'room_message',
+            entity_id: 'chat-guest-1',
+            relationship: 'source_message',
+          },
+          {
+            entity_type: 'clippy_prompt',
+            entity_id: 'clippy-proactive-host-1',
+            relationship: 'prompt_event',
+          },
+          {
+            entity_type: 'clippy_prompt',
+            entity_id: promptId,
+            relationship: 'source_prompt',
+          },
+          {
+            entity_type: 'clippy_prompt',
+            entity_id: promptId,
+            relationship: 'linked_prompt',
+          },
+          {
+            entity_type: 'agent_chat_response',
+            entity_id: agentResponseId,
+            relationship: 'source_response',
+          },
+        ]));
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
