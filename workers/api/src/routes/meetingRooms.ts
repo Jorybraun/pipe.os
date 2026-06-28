@@ -151,6 +151,7 @@ const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
 const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
+const FILE_CHANGE_ID_RE = /^file:(host|guest):\d+:(upsert|delete):[^:]+$/;
 
 function browserNavigationFingerprint(value: string): string {
   let hash = 0x811c9dc5;
@@ -231,12 +232,25 @@ const sessionEventSchema = z.object({
     if (properties.source === 'win95_shared_file_system') {
       const operation = properties.operation;
       const operationOk = operation === 'upsert' || operation === 'delete';
+      const capturedAtMs = properties.capturedAtMs;
+      const capturedAtOk = typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0;
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && propertyActorMatches;
+      const fileChangeIdOk = typeof properties.fileChangeId === 'string'
+        && FILE_CHANGE_ID_RE.test(properties.fileChangeId)
+        && operationOk
+        && capturedAtOk
+        && hasString(properties.fileId)
+        && properties.fileChangeId === `file:${event.actor}:${capturedAtMs}:${operation}:${properties.fileId}`;
       const sharedOk = properties.fileEventSource === 'browser_client_submit'
         && hasString(properties.fileId)
         && hasString(properties.fileName)
         && hasString(properties.fileKind)
         && properties.surface === 'win95'
-        && hasString(properties.roomPhase);
+        && hasString(properties.roomPhase)
+        && typeof properties.durableObjectReplayExpected === 'boolean';
       const upsertOk = operation === 'upsert'
         && typeof properties.contentHash === 'string'
         && LIVING_CONTENT_HASH_RE.test(properties.contentHash)
@@ -247,10 +261,10 @@ const sessionEventSchema = z.object({
         && LIVING_CONTENT_HASH_RE.test(properties.deletedContentHash)
         && hasFiniteNonNegativeNumber(properties.deletedContentLength)
         && hasFiniteNonNegativeNumber(properties.deletedFileUpdatedAt);
-      if (operationOk && sharedOk && (upsertOk || deleteOk)) return;
+      if (actorOk && fileChangeIdOk && sharedOk && (upsertOk || deleteOk)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Win95 file-change evidence must include browser source, file identity, operation, content hash, and file timestamps.',
+        message: 'Win95 file-change evidence must include browser source, actor-bound file-change id, capture timestamp, file identity, operation, content hash, and file timestamps.',
         path: ['properties'],
       });
       return;

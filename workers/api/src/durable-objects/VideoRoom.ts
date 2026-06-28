@@ -226,6 +226,7 @@ type RoomFileSystemEvent =
       createdAt: number;
       kind: 'UPSERT_FILE';
       file: RoomFile;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -234,6 +235,7 @@ type RoomFileSystemEvent =
       kind: 'DELETE_FILE';
       fileId: string;
       file?: RoomFile;
+      evidence?: Record<string, unknown>;
     };
 
 interface RoomFileSystemActivityEntry {
@@ -757,6 +759,7 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'UPSERT_FILE',
         file,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
     }
     if (value.kind === 'DELETE_FILE' && this.isSafeFileText(value.fileId, 120)) {
@@ -768,6 +771,7 @@ export class VideoRoom {
         kind: 'DELETE_FILE',
         fileId: value.fileId,
         file: file ?? undefined,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
     }
     return null;
@@ -790,11 +794,8 @@ export class VideoRoom {
     const deletedFile = files.find((file) => file.id === event.fileId);
     if (!deletedFile) {
       return {
-        id: event.id,
-        clientId: event.clientId,
-        createdAt: event.createdAt,
-        kind: 'DELETE_FILE',
-        fileId: event.fileId,
+        ...event,
+        file: undefined,
       };
     }
     return { ...event, file: deletedFile };

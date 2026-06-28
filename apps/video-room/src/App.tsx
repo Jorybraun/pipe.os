@@ -60,6 +60,7 @@ import {
 import {
   buildRoomFileEvidence,
   roomFileEvidenceText,
+  type RoomFileEvidence,
   type RoomFileEvidenceOperation,
 } from './lib/roomFileEvidence';
 import { buildRoomChatEvidence } from './lib/chatEvidence';
@@ -1405,16 +1406,31 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureMediaControlChange('camera', previousEnabled, enabled);
   };
 
-  const captureRoomFileChange = (operation: RoomFileEvidenceOperation, file: RoomFile): void => {
+  const publishAndCaptureRoomFileChange = (operation: RoomFileEvidenceOperation, file: RoomFile): void => {
     const text = roomFileEvidenceText(roomActor, operation, file.name);
+    const capturedAtMs = Date.now();
+    const publishWithEvidence = (evidence?: RoomFileEvidence): void => {
+      const eventEvidence = evidence?.properties;
+      if (operation === 'delete') {
+        room.publishFileSystemEvent({
+          kind: 'DELETE_FILE',
+          fileId: file.id,
+          file,
+          evidence: eventEvidence,
+        });
+        return;
+      }
+      room.publishFileSystemEvent({ kind: 'UPSERT_FILE', file, evidence: eventEvidence });
+    };
     void buildRoomFileEvidence({
       actor: roomActor,
       operation,
       file,
       surface: room.roomSurface,
       roomPhase: room.phase,
-      capturedAtMs: Date.now(),
+      capturedAtMs,
     }).then((evidence) => {
+      publishWithEvidence(evidence);
       captureSessionEvent('file_change', text, roomActor, evidence.properties);
     }).catch((error: unknown) => {
       console.error('[Room] Failed to build source-backed room file evidence:', {
@@ -1422,6 +1438,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         fileId: file.id,
         error: error instanceof Error ? error.message : String(error),
       });
+      publishWithEvidence();
     });
   };
 
@@ -1549,8 +1566,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       updatedAt: now,
       updatedBy: metadata.role,
     };
-    room.publishFileSystemEvent({ kind: 'UPSERT_FILE', file });
-    captureRoomFileChange('upsert', file);
+    publishAndCaptureRoomFileChange('upsert', file);
   };
 
   const savePaintItems = (strokes: PaintCanvasItem[]): void => {
@@ -1568,8 +1584,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       updatedAt: now,
       updatedBy: metadata.role,
     };
-    room.publishFileSystemEvent({ kind: 'UPSERT_FILE', file });
-    captureRoomFileChange('upsert', file);
+    publishAndCaptureRoomFileChange('upsert', file);
   };
 
   const previewPaintItems = (strokes: PaintCanvasItem[]): void => {
@@ -1589,14 +1604,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const deleteRoomFile = (file: RoomFile): void => {
-    room.publishFileSystemEvent({ kind: 'DELETE_FILE', fileId: file.id });
     if (file.id === NOTEPAD_FILE_ID) {
       wm.updateWindowData('notepad', { text: '' });
     }
     if (file.id === PAINT_FILE_ID) {
       wm.updateWindowData('paint', { strokes: [] });
     }
-    captureRoomFileChange('delete', file);
+    publishAndCaptureRoomFileChange('delete', file);
   };
 
   const captureClippyAction = (

@@ -13,7 +13,7 @@ interface RoomFileEvidenceInput {
   capturedAtMs: number;
 }
 
-interface RoomFileEvidence {
+export interface RoomFileEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
@@ -53,9 +53,11 @@ export async function buildRoomFileEvidence(input: RoomFileEvidenceInput): Promi
   const contentHash = await deterministicContentHash(input.file.content);
   const preview = compactPreview(input.file.content, input.file.kind);
   const path = filePath(input.file);
+  const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   const sharedProperties: Record<string, unknown> = {
     source: 'win95_shared_file_system',
     fileEventSource: 'browser_client_submit',
+    fileChangeId: `file:${input.actor}:${capturedAtMs}:${input.operation}:${input.file.id}`,
     actor: input.actor,
     operation: input.operation,
     action: input.operation,
@@ -64,7 +66,7 @@ export async function buildRoomFileEvidence(input: RoomFileEvidenceInput): Promi
     fileKind: input.file.kind,
     surface: input.surface,
     roomPhase: input.roomPhase,
-    capturedAtMs: input.capturedAtMs,
+    capturedAtMs,
     durableObjectReplayExpected: input.surface === 'win95',
   };
   if (input.file.mimeType) sharedProperties.mimeType = input.file.mimeType;

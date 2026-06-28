@@ -2414,6 +2414,7 @@ describe('meeting room recording living-context route', () => {
           source: 'win95_shared_file_system',
           fileEventSource: 'browser_client_submit',
           actor: 'guest',
+          fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
           operation: 'upsert',
           fileId: 'desktop-notes',
           fileName: 'Notes.txt',
@@ -2422,6 +2423,7 @@ describe('meeting room recording living-context route', () => {
           path: 'Desktop/Notes.txt',
           surface: 'win95',
           roomPhase: 'connected',
+          capturedAtMs: 1700000001100,
           contentLength: 31,
           contentHash: 'content_0123456789abcdef0123456789abcdef',
           contentPreview: 'Candidate noted retry evidence.',
@@ -2453,10 +2455,12 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       source: 'win95_shared_file_system',
       fileEventSource: 'browser_client_submit',
+      fileChangeId: 'file:guest:1700000001100:upsert:desktop-notes',
       operation: 'upsert',
       fileId: 'desktop-notes',
       fileName: 'Notes.txt',
       contentHash: 'content_0123456789abcdef0123456789abcdef',
+      capturedAtMs: 1700000001100,
       durableObjectReplayExpected: true,
     });
 

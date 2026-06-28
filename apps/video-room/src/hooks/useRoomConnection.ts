@@ -267,6 +267,7 @@ export type RoomFileSystemEvent =
       createdAt: number;
       kind: 'UPSERT_FILE';
       file: RoomFile;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -275,16 +276,20 @@ export type RoomFileSystemEvent =
       kind: 'DELETE_FILE';
       fileId: string;
       file?: RoomFile;
+      evidence?: Record<string, unknown>;
     };
 
 export type RoomFileSystemEventDraft =
   | {
       kind: 'UPSERT_FILE';
       file: RoomFileDraft;
+      evidence?: Record<string, unknown>;
     }
   | {
       kind: 'DELETE_FILE';
       fileId: string;
+      file?: RoomFile;
+      evidence?: Record<string, unknown>;
     };
 
 interface RoomConnection {
@@ -719,6 +724,7 @@ function parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
       createdAt: value.createdAt,
       kind: 'UPSERT_FILE',
       file,
+      evidence: recordOrUndefined(value.evidence),
     };
   }
   if (value.kind === 'DELETE_FILE' && typeof value.fileId === 'string') {
@@ -730,6 +736,7 @@ function parseFileSystemEvent(value: unknown): RoomFileSystemEvent | null {
       kind: 'DELETE_FILE',
       fileId: value.fileId,
       file: file ?? undefined,
+      evidence: recordOrUndefined(value.evidence),
     };
   }
   return null;
@@ -1558,6 +1565,7 @@ export function useRoomConnection(
             updatedAt: draft.file.updatedAt ?? createdAt,
             updatedBy: role,
           },
+          evidence: draft.evidence,
         }
       : {
           id: `fs-${createdAt}-${Math.random().toString(36).slice(2)}`,
@@ -1565,6 +1573,8 @@ export function useRoomConnection(
           createdAt,
           kind: 'DELETE_FILE',
           fileId: draft.fileId,
+          file: draft.file,
+          evidence: draft.evidence,
         };
     setFileSystem((prev) => applyFileSystemEvent(prev, event));
     if (!sendFileSystemEvent(event)) {

@@ -441,7 +441,12 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const role = isRoomActivityRole(value.role) ? value.role : null;
-  const properties = roomActivityBaseProperties('file_system', role, value.recordedAt);
+  const evidence = isRecord(event.evidence) ? event.evidence : null;
+  const properties = {
+    ...roomActivityBaseProperties('file_system', role, value.recordedAt),
+    ...(evidence ?? {}),
+  };
+  if (!evidence) properties.source = 'file_system_durable_object';
   const eventId = stringOrNull(event.id);
   const clientId = stringOrNull(event.clientId);
   if (eventId) properties.roomEventId = eventId;

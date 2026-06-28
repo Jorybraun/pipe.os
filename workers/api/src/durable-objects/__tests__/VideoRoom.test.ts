@@ -696,6 +696,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           createdAt: 4,
           updatedAt: 4,
         },
+        evidence: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          fileChangeId: 'file:host:4:upsert:desktop-notes',
+          actor: 'host',
+          operation: 'upsert',
+          fileId: 'desktop-notes',
+          fileName: 'notes.txt',
+          fileKind: 'text',
+          surface: 'win95',
+          roomPhase: 'connected',
+          capturedAtMs: 4,
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -718,6 +732,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'desktop-notes',
           name: 'notes.txt',
         }),
+        evidence: expect.objectContaining({
+          source: 'win95_shared_file_system',
+          fileChangeId: 'file:host:4:upsert:desktop-notes',
+        }),
       }),
     }));
     expect(storage.get('fileSystemActivityLog')).toEqual([
@@ -726,6 +744,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'fs-save-notes',
           kind: 'UPSERT_FILE',
+          evidence: expect.objectContaining({
+            source: 'win95_shared_file_system',
+            fileChangeId: 'file:host:4:upsert:desktop-notes',
+          }),
         }),
       }),
     ]);
@@ -738,6 +760,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 5,
         kind: 'DELETE_FILE',
         fileId: 'desktop-notes',
+        evidence: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          fileChangeId: 'file:guest:5:delete:desktop-notes',
+          actor: 'guest',
+          operation: 'delete',
+          fileId: 'desktop-notes',
+          fileName: 'notes.txt',
+          fileKind: 'text',
+          surface: 'win95',
+          roomPhase: 'connected',
+          capturedAtMs: 5,
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -752,6 +788,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'desktop-notes',
           name: 'notes.txt',
           content: 'Candidate asked about testing strategy.',
+        }),
+        evidence: expect.objectContaining({
+          source: 'win95_shared_file_system',
+          fileChangeId: 'file:guest:5:delete:desktop-notes',
         }),
       }),
     }));
@@ -773,6 +813,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             id: 'desktop-notes',
             name: 'notes.txt',
             content: 'Candidate asked about testing strategy.',
+          }),
+          evidence: expect.objectContaining({
+            source: 'win95_shared_file_system',
+            fileChangeId: 'file:guest:5:delete:desktop-notes',
           }),
         }),
       }),
@@ -824,6 +868,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           createdAt: 3000,
           updatedAt: 3000,
         },
+        evidence: {
+          source: 'win95_shared_file_system',
+          fileEventSource: 'browser_client_submit',
+          fileChangeId: 'file:host:3000:upsert:notepad',
+          actor: 'host',
+          operation: 'upsert',
+          fileId: 'notepad',
+          fileName: 'notes.txt',
+          fileKind: 'text',
+          surface: 'win95',
+          roomPhase: 'connected',
+          capturedAtMs: 3000,
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -860,6 +918,10 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'fs-notes-save',
           kind: 'UPSERT_FILE',
+          evidence: expect.objectContaining({
+            source: 'win95_shared_file_system',
+            fileChangeId: 'file:host:3000:upsert:notepad',
+          }),
         }),
       }),
     ]);
