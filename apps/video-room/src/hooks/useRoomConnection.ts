@@ -1043,6 +1043,10 @@ function parseClippyInteractionEvent(value: unknown): RoomClippyInteractionEvent
   };
 }
 
+function isRoomChatDeliveryStatus(value: unknown): value is NonNullable<RoomChatMessage['deliveryStatus']> {
+  return value === 'pending' || value === 'accepted' || value === 'rejected';
+}
+
 function parseChatMessage(value: unknown): RoomChatMessage | null {
   if (!isRecord(value)) return null;
   if (
@@ -1056,11 +1060,7 @@ function parseChatMessage(value: unknown): RoomChatMessage | null {
   ) {
     return null;
   }
-  const deliveryStatus = value.deliveryStatus === 'pending'
-    || value.deliveryStatus === 'accepted'
-    || value.deliveryStatus === 'rejected'
-    ? value.deliveryStatus
-    : 'accepted';
+  const deliveryStatus = isRoomChatDeliveryStatus(value.deliveryStatus) ? value.deliveryStatus : 'accepted';
   return {
     id: value.id,
     clientId: value.clientId,
@@ -1079,6 +1079,44 @@ function parseChatSnapshot(value: unknown): { messages: RoomChatMessage[] } | nu
       .map(parseChatMessage)
       .filter((entry): entry is RoomChatMessage => entry !== null),
   };
+}
+
+export function hasSourceBackedChatEvidence(
+  message: RoomChatMessage,
+  role: RoomRole,
+  expectedStatus: NonNullable<RoomChatMessage['deliveryStatus']> = 'accepted',
+): boolean {
+  const evidence = message.evidence;
+  if (!isRecord(evidence)) return false;
+  const actor = role === 'HOST' ? 'host' : 'guest';
+  const messageCreatedAt = evidence.messageCreatedAt;
+  const messageLength = evidence.messageLength;
+  const deliveryStatus = message.deliveryStatus ?? expectedStatus;
+  return message.role === role
+    && evidence.source === 'room_chat_client_submit'
+    && evidence.chatEventSource === 'browser_room_chat_window'
+    && evidence.actor === actor
+    && evidence.roomMessageId === message.id
+    && evidence.clientId === message.clientId
+    && messageCreatedAt === message.createdAt
+    && typeof messageCreatedAt === 'number'
+    && Number.isFinite(messageCreatedAt)
+    && messageCreatedAt >= 0
+    && messageLength === message.text.length
+    && typeof messageLength === 'number'
+    && deliveryStatus === expectedStatus
+    && evidence.deliveryStatus === expectedStatus
+    && isRoomSurface(evidence.surface)
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.trim().length > 0
+    && evidence.durableObjectReplayExpected === true
+    && (
+      expectedStatus !== 'rejected'
+      || (
+        typeof evidence.deliveryRejectionReason === 'string'
+        && evidence.deliveryRejectionReason.trim().length > 0
+      )
+    );
 }
 
 function parseChatRejection(value: unknown, reason: unknown): RoomChatRejection {
@@ -2371,11 +2409,18 @@ export function useRoomConnection(
           setClippyInteractionEvents((prev) => [...prev.slice(-199), event]);
         } else if (message.type === 'ROOM_CHAT_MESSAGE') {
           const chatMessage = parseChatMessage(message.payload);
-          if (!chatMessage || chatMessage.clientId === desktopClientIdRef.current) return;
+          if (
+            !chatMessage
+            || chatMessage.clientId === desktopClientIdRef.current
+            || !hasSourceBackedChatEvidence(chatMessage, isRoomRole(message.role) ? message.role : chatMessage.role)
+          ) return;
           setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
         } else if (message.type === 'ROOM_CHAT_MESSAGE_ACK') {
           const chatMessage = parseChatMessage(message.payload);
-          if (!chatMessage) return;
+          if (
+            !chatMessage
+            || !hasSourceBackedChatEvidence(chatMessage, isRoomRole(message.role) ? message.role : chatMessage.role)
+          ) return;
           setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
           chatDeliveryEvidenceRef.current?.(chatMessage);
         } else if (message.type === 'ROOM_CHAT_MESSAGE_REJECTED') {
@@ -2392,7 +2437,9 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_CHAT_STATE') {
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;
-          setChatMessages(sortChatMessages(snapshot.messages));
+          setChatMessages(sortChatMessages(
+            snapshot.messages.filter((entry) => hasSourceBackedChatEvidence(entry, entry.role)),
+          ));
         } else if (message.type === 'ROOM_MEDIA_CONTROL') {
           const event = parseMediaControlEvent(message.payload);
           if (
@@ -2758,12 +2805,14 @@ export function useRoomConnection(
   const publishChatMessage = useCallback((text: string): RoomChatMessage | null => {
     const trimmed = text.trim();
     if (!trimmed) return null;
+    const id = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const createdAt = Date.now();
     const message: RoomChatMessage = {
-      id: typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id,
       clientId: desktopClientIdRef.current,
-      createdAt: Date.now(),
+      createdAt,
       role,
       text: trimmed,
       deliveryStatus: 'pending',
@@ -2771,6 +2820,9 @@ export function useRoomConnection(
         source: 'room_chat_client_submit',
         chatEventSource: 'browser_room_chat_window',
         actor: role === 'HOST' ? 'host' : 'guest',
+        roomMessageId: id,
+        clientId: desktopClientIdRef.current,
+        messageCreatedAt: createdAt,
         messageLength: trimmed.length,
         deliveryStatus: 'pending',
         surface: roomSurface,
@@ -2778,6 +2830,13 @@ export function useRoomConnection(
         durableObjectReplayExpected: true,
       },
     };
+    if (!hasSourceBackedChatEvidence(message, role, 'pending')) {
+      console.error('[useRoomConnection] refused source-thin chat message:', {
+        role,
+        messageId: message.id,
+      });
+      return null;
+    }
     setChatMessages((prev) => mergeRoomChatMessage(prev, message));
     if (!sendChatMessage(message)) {
       chatOutboxRef.current.push(message);

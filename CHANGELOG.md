@@ -10,8 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - CODE_REVIEW repo matching now has a regression proving completed evidence-plan transcript evidence can move a candidate from `NEEDS_MORE_EVIDENCE` to a source-backed real PR match with the follow-up answer cited in the match run.
-- Standalone workspace-assessment intake now preserves one shared person identity by email while creating distinct candidate invite tokens and scheduled-interview records for repeated same-email CODE_REVIEW/dev-container/open-source assessments.
-- Candidate intake confirmation now displays and copies the scheduling endpoint's delivered invite URL, so assessment invites surface `/assess/...` links instead of accidentally preferring the video room URL.
 - CODE_REVIEW evidence refresh now refuses to rerun matching with the same already-tried evidence report, preventing stale follow-up evidence from creating repeated matcher attempts without new source-backed context.
 - CODE_REVIEW recruiter evidence refresh cards now distinguish "new evidence ready" from "evidence tried, still insufficient," listing remaining match gaps and changing the rerun CTA to require new evidence after a failed refresh.
 - CODE_REVIEW evidence-plan transcript capture now treats only candidate/guest answer spans as refresh-ready evidence, while the route regression proves the completed follow-up answer grows the same candidate/person graph used for repo matching.
@@ -90,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Room Chat messages now require source-backed browser chat evidence with stable room message ids, client ids, timestamps, lengths, delivery status, surface, and room phase before local optimistic display, peer replay, ACK handling, or room snapshot hydration.
 - Meeting transcript evidence now preserves the origin of speaker metadata, distinguishing browser-uploaded channel maps from R2 custom metadata recovered during transcript retry, so speaker attribution remains source-backed across processing passes.
 - Rejected Room Chat sends now preserve the Durable Object rejection reason in browser evidence and exact source-ref metadata, so failed chat delivery is explainable instead of only marked as not sent.
 - Deleting shared Win95 Notepad/Paint files now clears any open editor window through the shared desktop data channel with `win95_file_delete_sync` provenance, keeping both participants in sync instead of leaving stale local window content.

@@ -1146,12 +1146,6 @@ const createStandaloneCandidateSchema = z.object({
   }
 });
 
-function isWorkspaceAssessmentInterviewType(value: string | undefined): boolean {
-  return value === 'CODE_REVIEW'
-    || value === 'DEV_CONTAINER_CHALLENGE'
-    || value === 'OPEN_SOURCE_BUG_FIX';
-}
-
 async function sha256Hex(text: string): Promise<string> {
   const bytes = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
@@ -1311,14 +1305,11 @@ candidateOps.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'Name contains invalid characters');
   }
 
-  // Roleless contacts are one person by email, but each workspace assessment
-  // invite needs its own candidate token so /assess routes to that interaction.
-  const existing = isWorkspaceAssessmentInterviewType(interviewType)
-    ? null
-    : await db
-      .prepare('SELECT id, invite_token, status FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
-      .bind(userId, email)
-      .first<{ id: string; invite_token: string; status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' }>();
+  // Duplicate-email guard scoped to owner (no pipeline scope)
+  const existing = await db
+    .prepare('SELECT id, invite_token, status FROM candidates WHERE owner_id = ? AND email = ? AND pipeline_id IS NULL')
+    .bind(userId, email)
+    .first<{ id: string; invite_token: string; status: 'INVITED' | 'IN_PROGRESS' | 'COMPLETED' }>();
 
   const id = existing?.id ?? crypto.randomUUID();
   const inviteToken = existing

@@ -6,6 +6,7 @@ import {
   decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedCursorEvidence,
+  hasSourceBackedChatEvidence,
   hasSourceBackedDesktopEventEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedRecordingStateEvidence,
@@ -438,6 +439,102 @@ describe('hasSourceBackedRecordingStateEvidence', () => {
 });
 
 describe('mergeRoomChatMessage', () => {
+  it('accepts source-backed optimistic chat evidence before Durable Object ACK', () => {
+    const text = 'Can you see this?';
+    const pending: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text,
+      deliveryStatus: 'pending',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        actor: 'host',
+        roomMessageId: 'chat-1',
+        clientId: 'host-client',
+        messageCreatedAt: 1000,
+        messageLength: text.length,
+        deliveryStatus: 'pending',
+        surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedChatEvidence(pending, 'HOST', 'pending')).toBe(true);
+  });
+
+  it('accepts source-backed room chat messages after Durable Object ACK', () => {
+    const text = 'Can you see this?';
+    const accepted: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text,
+      deliveryStatus: 'accepted',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        actor: 'host',
+        roomMessageId: 'chat-1',
+        clientId: 'host-client',
+        messageCreatedAt: 1000,
+        messageLength: text.length,
+        deliveryStatus: 'accepted',
+        surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedChatEvidence(accepted, 'HOST')).toBe(true);
+  });
+
+  it('rejects room chat evidence missing stable message identity', () => {
+    const text = 'Can you see this?';
+    const accepted: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text,
+      deliveryStatus: 'accepted',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        actor: 'host',
+        clientId: 'host-client',
+        messageCreatedAt: 1000,
+        messageLength: text.length,
+        deliveryStatus: 'accepted',
+        surface: 'win95',
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedChatEvidence(accepted, 'HOST')).toBe(false);
+  });
+
+  it('rejects source-less room chat messages', () => {
+    const accepted: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text: 'Can you see this?',
+      deliveryStatus: 'accepted',
+      evidence: {
+        deliveryStatus: 'accepted',
+      },
+    };
+
+    expect(hasSourceBackedChatEvidence(accepted, 'HOST')).toBe(false);
+  });
+
   it('replaces a pending optimistic message with the accepted room message', () => {
     const pending: RoomChatMessage = {
       id: 'chat-1',
