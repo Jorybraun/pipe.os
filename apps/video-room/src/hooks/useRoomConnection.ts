@@ -173,6 +173,9 @@ export type RoomDesktopEvent =
       clientId: string;
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
+      actor?: 'host' | 'guest';
+      workspaceStateEventId?: string;
+      capturedAtMs?: number;
       status?: string | null;
       workspaceSessionId?: string | null;
       errorMessage?: string | null;
@@ -238,6 +241,9 @@ export type RoomDesktopEventDraft =
     }
   | {
       kind: 'WORKSPACE_STATE_CHANGED';
+      actor?: 'host' | 'guest';
+      workspaceStateEventId?: string;
+      capturedAtMs?: number;
       status?: string | null;
       workspaceSessionId?: string | null;
       errorMessage?: string | null;
@@ -492,6 +498,9 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       clientId: value.clientId,
       createdAt: value.createdAt,
       kind: 'WORKSPACE_STATE_CHANGED',
+      actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
+      workspaceStateEventId: stringOrNull(value.workspaceStateEventId),
+      capturedAtMs: numberOrNull(value.capturedAtMs) ?? undefined,
       status: typeof value.status === 'string' ? value.status : null,
       workspaceSessionId: stringOrNull(value.workspaceSessionId),
       errorMessage: stringOrNull(value.errorMessage),

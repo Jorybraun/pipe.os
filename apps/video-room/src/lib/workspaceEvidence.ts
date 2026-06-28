@@ -10,6 +10,9 @@ export interface CodeEditorOpenEvidence {
 
 export interface WorkspaceStateDesktopEvent {
   kind: 'WORKSPACE_STATE_CHANGED';
+  actor: RoomEvidenceActor;
+  workspaceStateEventId: string;
+  capturedAtMs: number;
   status: string | null;
   workspaceSessionId: string | null;
   errorMessage: string | null;
@@ -72,16 +75,26 @@ export function buildCodeEditorOpenEvidence(input: {
 
 export function buildWorkspaceStateDesktopEvent(input: {
   workspace: RoomWorkspace | null;
+  actor: RoomEvidenceActor;
   source: 'initial_load' | 'launch' | 'refresh' | 'error';
+  capturedAtMs: number;
   fallbackRepoUrl?: string | null;
   errorMessage?: string | null;
 }): WorkspaceStateDesktopEvent {
   const session = input.workspace?.session ?? null;
   const errorMessage = session?.errorMessage ?? input.errorMessage ?? null;
+  const status = session?.status ?? (errorMessage ? 'ERROR' : null);
+  const workspaceSessionId = session?.sessionId ?? null;
+  const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
+  const stateIdSession = workspaceSessionId ?? 'no-session';
+  const stateIdStatus = status ?? 'unknown';
   return {
     kind: 'WORKSPACE_STATE_CHANGED',
-    status: session?.status ?? (errorMessage ? 'ERROR' : null),
-    workspaceSessionId: session?.sessionId ?? null,
+    actor: input.actor,
+    workspaceStateEventId: `workspace-state:${input.actor}:${capturedAtMs}:${input.source}:${stateIdSession}:${stateIdStatus}`,
+    capturedAtMs,
+    status,
+    workspaceSessionId,
     errorMessage,
     repoUrl: input.workspace?.repoUrl ?? input.fallbackRepoUrl ?? null,
     githubPrNumber: input.workspace?.githubPrNumber ?? null,

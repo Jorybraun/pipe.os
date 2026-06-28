@@ -401,15 +401,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!nextWorkspace && !options.errorMessage) return;
     const event = buildWorkspaceStateDesktopEvent({
       workspace: nextWorkspace,
+      actor: roomActor,
       source,
+      capturedAtMs: Date.now(),
       fallbackRepoUrl: options.fallbackRepoUrl,
       errorMessage: options.errorMessage,
     });
-    const signature = JSON.stringify(event);
+    const signatureEvent: Record<string, unknown> = { ...event };
+    delete signatureEvent.workspaceStateEventId;
+    delete signatureEvent.capturedAtMs;
+    const signature = JSON.stringify(signatureEvent);
     if (publishedWorkspaceStateSignatureRef.current === signature) return;
     publishedWorkspaceStateSignatureRef.current = signature;
     room.publishDesktopEvent(event);
-  }, [metadata.role, room.publishDesktopEvent]);
+  }, [metadata.role, room.publishDesktopEvent, roomActor]);
 
   useEffect(() => {
     const initialWorkspace = metadata.workspace ?? null;

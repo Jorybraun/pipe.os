@@ -213,6 +213,9 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const ttlSeconds = numberOrNull(event.ttlSeconds);
     const ttlSource = stringOrNull(event.ttlSource);
     const expiresAt = stringOrNull(event.expiresAt);
+    const workspaceStateEventId = stringOrNull(event.workspaceStateEventId);
+    const capturedAtMs = numberOrNull(event.capturedAtMs);
+    const eventActor = stringOrNull(event.actor);
     const source = stringOrNull(event.source);
     const workspaceEventSource = stringOrNull(event.workspaceEventSource)
       ?? (source && !WORKSPACE_STATE_SOURCES.has(source) ? source : null);
@@ -231,6 +234,9 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     if (ttlSeconds !== null) properties.ttlSeconds = ttlSeconds;
     if (ttlSource) properties.ttlSource = ttlSource;
     if (expiresAt) properties.expiresAt = expiresAt;
+    if (eventActor === 'host' || eventActor === 'guest') properties.actor = eventActor;
+    if (workspaceStateEventId) properties.workspaceStateEventId = workspaceStateEventId;
+    if (capturedAtMs !== null) properties.capturedAtMs = capturedAtMs;
     if (typeof event.expiringSoon === 'boolean') properties.expiringSoon = event.expiringSoon;
     if (workspaceEventSource) properties.workspaceEventSource = workspaceEventSource;
     if (workspaceStateSource) properties.workspaceStateSource = workspaceStateSource;

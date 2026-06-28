@@ -146,6 +146,7 @@ const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
+const WORKSPACE_STATE_EVENT_ID_RE = /^workspace-state:(host|guest):\d+:(initial_load|launch|refresh|error):[^:]+:.+$/;
 const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
 const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
 const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
@@ -538,20 +539,34 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'workspace_state') {
+    const capturedAtMs = properties.capturedAtMs;
+    const workspaceSessionId = properties.workspaceSessionId;
+    const workspaceStatus = properties.workspaceStatus;
+    const workspaceStateSource = properties.workspaceStateSource;
     const sourceOk = properties.source === 'workspace_state_client_submit'
       && properties.workspaceEventSource === 'browser_workspace_state_observer';
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && propertyActorMatches;
-    const statusOk = hasString(properties.workspaceStatus);
-    const stateSourceOk = typeof properties.workspaceStateSource === 'string'
-      && WORKSPACE_STATE_SOURCES.has(properties.workspaceStateSource);
-    const sessionOk = properties.workspaceStatus === 'ERROR'
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const statusOk = hasString(workspaceStatus);
+    const stateSourceOk = typeof workspaceStateSource === 'string'
+      && WORKSPACE_STATE_SOURCES.has(workspaceStateSource);
+    const stateIdSession = hasString(workspaceSessionId) ? workspaceSessionId : 'no-session';
+    const stateIdOk = typeof properties.workspaceStateEventId === 'string'
+      && WORKSPACE_STATE_EVENT_ID_RE.test(properties.workspaceStateEventId)
+      && capturedAtOk
+      && statusOk
+      && stateSourceOk
+      && properties.workspaceStateEventId === `workspace-state:${event.actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${workspaceStatus}`;
+    const sessionOk = workspaceStatus === 'ERROR'
       ? (
-          properties.workspaceSessionId === null
-          || properties.workspaceSessionId === undefined
-          || hasString(properties.workspaceSessionId)
+          workspaceSessionId === null
+          || workspaceSessionId === undefined
+          || hasString(workspaceSessionId)
         )
-      : hasString(properties.workspaceSessionId);
+      : hasString(workspaceSessionId);
     const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
       && (properties.matchedRepoId === null || properties.matchedRepoId === undefined || hasFiniteNonNegativeNumber(properties.matchedRepoId))
       && (properties.challengeStatus === null || properties.challengeStatus === undefined || hasString(properties.challengeStatus))
@@ -560,10 +575,10 @@ const sessionEventSchema = z.object({
       && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
     const lifecycleOk = properties.workspaceTelemetryPersisted === true
       && properties.proxyUrlPersisted === false;
-    if (sourceOk && actorOk && statusOk && stateSourceOk && sessionOk && challengeOk && lifecycleOk) return;
+    if (sourceOk && actorOk && capturedAtOk && stateIdOk && statusOk && stateSourceOk && sessionOk && challengeOk && lifecycleOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Workspace-state evidence must come from the browser workspace observer with workspace source, status/session context, challenge diagnostics, and no persisted proxy URL.',
+      message: 'Workspace-state evidence must come from the browser workspace observer with actor-bound state id, capture timestamp, status/session context, challenge diagnostics, and no persisted proxy URL.',
       path: ['properties'],
     });
     return;

@@ -131,6 +131,9 @@ type RoomDesktopEvent =
       clientId: string;
       createdAt: number;
       kind: 'WORKSPACE_STATE_CHANGED';
+      actor?: 'host' | 'guest';
+      workspaceStateEventId?: string;
+      capturedAtMs?: number;
       status?: string | null;
       workspaceSessionId?: string | null;
       errorMessage?: string | null;
@@ -466,6 +469,9 @@ export class VideoRoom {
         clientId: value.clientId,
         createdAt: value.createdAt,
         kind: 'WORKSPACE_STATE_CHANGED',
+        actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
+        workspaceStateEventId: this.safeTextOrNull(value.workspaceStateEventId, 240) ?? undefined,
+        capturedAtMs: this.safeNumberOrNull(value.capturedAtMs) ?? undefined,
         status,
         workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
         errorMessage: this.safeTextOrNull(value.errorMessage, 500),

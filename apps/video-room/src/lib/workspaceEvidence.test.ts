@@ -83,11 +83,16 @@ describe('buildWorkspaceStateDesktopEvent', () => {
   it('builds source-backed workspace state without leaking proxy URLs', () => {
     const event = buildWorkspaceStateDesktopEvent({
       workspace,
+      actor: 'host',
       source: 'launch',
+      capturedAtMs: 1700000000000,
     });
 
     expect(event).toEqual({
       kind: 'WORKSPACE_STATE_CHANGED',
+      actor: 'host',
+      workspaceStateEventId: 'workspace-state:host:1700000000000:launch:workspace-session-1:READY',
+      capturedAtMs: 1700000000000,
       status: 'READY',
       workspaceSessionId: 'workspace-session-1',
       errorMessage: null,
@@ -116,10 +121,15 @@ describe('buildWorkspaceStateDesktopEvent', () => {
   it('records explicit launch errors as diagnostic workspace state', () => {
     expect(buildWorkspaceStateDesktopEvent({
       workspace: { ...workspace, session: null, repoUrl: null, canLaunch: true },
+      actor: 'host',
       source: 'error',
+      capturedAtMs: 1700000005000,
       fallbackRepoUrl: 'https://github.com/example/repo',
       errorMessage: 'Container start failed',
     })).toMatchObject({
+      actor: 'host',
+      workspaceStateEventId: 'workspace-state:host:1700000005000:error:no-session:ERROR',
+      capturedAtMs: 1700000005000,
       status: 'ERROR',
       workspaceSessionId: null,
       errorMessage: 'Container start failed',
@@ -145,11 +155,16 @@ describe('buildWorkspaceStateDesktopEvent', () => {
           message: 'Matched repository is available, but no GitHub PR or task was assigned.',
         },
       },
+      actor: 'host',
       source: 'launch',
+      capturedAtMs: 1700000010000,
     });
 
     expect(event).toMatchObject({
       kind: 'WORKSPACE_STATE_CHANGED',
+      actor: 'host',
+      workspaceStateEventId: 'workspace-state:host:1700000010000:launch:workspace-session-1:READY',
+      capturedAtMs: 1700000010000,
       status: 'READY',
       repoUrl: 'https://github.com/cloudflare/workers-sdk',
       githubPrNumber: null,
