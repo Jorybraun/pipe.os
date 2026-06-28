@@ -55,12 +55,13 @@ export async function uploadRecording(
   speakerMetadata?: RecordingSpeakerMetadata,
 ): Promise<{ accepted: boolean; transcriptStatus?: string }> {
   if (transcriptionAudio && transcriptionAudio.size > 0) {
+    if (!speakerMetadata) {
+      throw new Error('Speaker metadata is required when uploading transcription audio.');
+    }
     const body = new FormData();
     body.append('recording', recording, 'recording.webm');
     body.append('transcriptionAudio', transcriptionAudio, 'transcription-audio.webm');
-    if (speakerMetadata) {
-      body.append('speakerMetadata', JSON.stringify(speakerMetadata));
-    }
+    body.append('speakerMetadata', JSON.stringify(speakerMetadata));
     const response = await fetch(apiUrl(`/api/v1/meeting-rooms/${token}/recording`), {
       method: 'POST',
       body,

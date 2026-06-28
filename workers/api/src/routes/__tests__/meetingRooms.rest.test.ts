@@ -363,6 +363,27 @@ function installDeepgramFetchWithReversedChannels(
   })));
 }
 
+function defaultRecordingSpeakerMetadataForTest(): {
+  version: 1;
+  transcriptionAudio: {
+    channelLayout: string;
+    channelCount: number;
+    channels: Array<{ channel: number; role: 'host' | 'guest'; source: 'local' | 'remote' }>;
+  };
+} {
+  return {
+    version: 1,
+    transcriptionAudio: {
+      channelLayout: 'host-local-guest-remote-v1',
+      channelCount: 2,
+      channels: [
+        { channel: 0, role: 'host', source: 'local' },
+        { channel: 1, role: 'guest', source: 'remote' },
+      ],
+    },
+  };
+}
+
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
@@ -4428,13 +4449,21 @@ describe('meeting room recording living-context route', () => {
       completed_at: null,
     });
 
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+    form.append('speakerMetadata', JSON.stringify(defaultRecordingSpeakerMetadataForTest()));
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'audio/webm',
-        'Content-Length': '3',
-      },
-      body: new Uint8Array([1, 2, 3]),
+      body: form,
     }, env, ctx);
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
@@ -4772,6 +4801,60 @@ describe('meeting room recording living-context route', () => {
     ]);
   });
 
+  it('rejects separate transcription audio without explicit speaker metadata', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Missing Metadata Person',
+        recipientEmail: 'missing-speaker-metadata@example.com',
+        title: 'Missing speaker metadata interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'STARTED' }),
+    }, env, ctx);
+    await app.request(`/meeting/${created.hostToken}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'RECORDING_STARTED' }),
+    }, env, ctx);
+
+    const form = new FormData();
+    form.append(
+      'recording',
+      new Blob([new Uint8Array([4, 5, 6])], { type: 'video/webm' }),
+      'recording.webm',
+    );
+    form.append(
+      'transcriptionAudio',
+      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
+      'transcription-audio.webm',
+    );
+
+    const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
+      method: 'POST',
+      body: form,
+    }, env, ctx);
+    expect(recordingRes.status).toBe(422);
+    await expect(recordingRes.json()).resolves.toMatchObject({
+      error: {
+        message: 'Speaker metadata is required when uploading separate transcription audio.',
+      },
+    });
+  });
+
   it('uses recording-route transcript evidence to select a source-backed PR challenge', async () => {
     env.AI = createMatchingFakeAi();
     const app = mountApp();
@@ -4826,6 +4909,7 @@ describe('meeting room recording living-context route', () => {
       new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
       'transcription-audio.webm',
     );
+    form.append('speakerMetadata', JSON.stringify(defaultRecordingSpeakerMetadataForTest()));
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
       body: form,
@@ -4972,6 +5056,11 @@ describe('meeting room recording living-context route', () => {
     });
     await env.STORAGE.put(transcriptionKey, new Uint8Array([1, 2, 3]), {
       httpMetadata: { contentType: 'audio/webm' },
+      customMetadata: {
+        speakerMetadata: JSON.stringify(defaultRecordingSpeakerMetadataForTest()),
+        speakerMetadataVersion: '1',
+        speakerChannelLayout: 'host-local-guest-remote-v1',
+      },
     });
     sqlite.prepare(
       `UPDATE meetings
@@ -5062,20 +5151,13 @@ describe('meeting room recording living-context route', () => {
       body: JSON.stringify({ event: 'RECORDING_STARTED' }),
     }, env, ctx);
 
-    const form = new FormData();
-    form.append(
-      'recording',
-      new Blob([new Uint8Array([9, 9, 9])], { type: 'video/webm' }),
-      'recording.webm',
-    );
-    form.append(
-      'transcriptionAudio',
-      new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' }),
-      'transcription-audio.webm',
-    );
     const recordingRes = await app.request(`/meeting/${created.hostToken}/recording`, {
       method: 'POST',
-      body: form,
+      headers: {
+        'Content-Type': 'video/webm',
+        'Content-Length': '3',
+      },
+      body: new Uint8Array([9, 9, 9]),
     }, env, ctx);
     expect(recordingRes.status).toBe(202);
     await waitUntilAll();
