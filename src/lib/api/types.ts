@@ -945,6 +945,18 @@ export interface StandaloneReviewPacketDetail {
   quality: StandaloneReviewPacketQuality | null;
 }
 
+export interface MatchNarrativeSection {
+  heading: string;
+  items: string[];
+}
+
+export interface StandaloneReviewMatchNarrative {
+  title: string;
+  verdict: string;
+  sections: MatchNarrativeSection[];
+  plainText: string;
+}
+
 export interface StandaloneReviewMatchRecord {
   interviewId: string;
   interviewStatus: string;
@@ -964,6 +976,7 @@ export interface StandaloneReviewMatchRecord {
   stretchAreas: StandaloneReviewStretchArea[];
   unmatchedDemandIds: string[];
   gaps: string[];
+  matchNarrative: StandaloneReviewMatchNarrative | null;
   diagnostics: StandaloneReviewDiagnostics;
   packet: StandaloneReviewPacketDetail | null;
   submitted: boolean;
