@@ -12,6 +12,9 @@
  *   - candidates_to_living_context: backfill all candidates missing LC identity
  *   - contacts_to_living_context: backfill all contacts missing LC identity
  *   - resumes_to_living_context: native resume ingestion for all candidates with resumes
+ *   - meetings_to_living_context: ingest meeting transcripts into person graphs
+ *   - phone_calls_to_living_context: ingest phone call recordings/transcripts
+ *   - code_reviews_to_living_context: ingest code review session transcripts + score reports
  *   - projection_outbox_drain: process pending neo4j projection jobs
  */
 
@@ -20,6 +23,16 @@ import { BackfillOrchestrator } from './backfillOrchestrator';
 import type { BackfillTaskDefinition, BackfillOrchestratorStatus } from './backfillOrchestrator';
 import { ensureCandidateLivingContext, ensureContactLivingContext } from './compatibility';
 import { ingestResumeToLivingContext } from './resumeIngestion';
+import {
+  ingestMeetingTranscriptToLivingContext,
+  parseStoredMeetingTranscript,
+} from './meetingTranscript';
+import { ingestPhoneCallToLivingContext, ingestPhoneRecruiterNote } from './phoneCall';
+import {
+  ingestCodeReviewTranscriptToLivingContext,
+  ingestCodeReviewScoreReportToLivingContext,
+} from './codeReview';
+import type { CodeReviewTranscript } from './codeReview';
 import { processProjectionOutbox } from './projection';
 import { checkGate } from './rolloutEnforcement';
 
@@ -42,9 +55,31 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: ['candidates_to_living_context'],
   },
   {
+    taskKey: 'meetings_to_living_context',
+    description: 'Ingest meeting transcripts into contact/candidate person graphs with per-segment source spans',
+    dependsOn: ['contacts_to_living_context'],
+  },
+  {
+    taskKey: 'phone_calls_to_living_context',
+    description: 'Ingest phone call recordings and transcripts into candidate person graphs',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
+    taskKey: 'code_reviews_to_living_context',
+    description: 'Ingest code review session transcripts and score reports into candidate person graphs',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
     taskKey: 'projection_outbox_drain',
     description: 'Process all pending neo4j projection outbox jobs',
-    dependsOn: ['candidates_to_living_context', 'contacts_to_living_context', 'resumes_to_living_context'],
+    dependsOn: [
+      'candidates_to_living_context',
+      'contacts_to_living_context',
+      'resumes_to_living_context',
+      'meetings_to_living_context',
+      'phone_calls_to_living_context',
+      'code_reviews_to_living_context',
+    ],
   },
 ];
 
@@ -55,6 +90,45 @@ interface CandidateRow {
 
 interface ContactRow {
   id: string;
+}
+
+interface MeetingRow {
+  id: string;
+  owner_id: string;
+  transcript_json: string;
+  transcript_summary: string | null;
+  recording_r2_key: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+}
+
+interface PhoneCallRow {
+  id: string;
+  candidate_id: string;
+  owner_id: string;
+  direction: string;
+  twilio_call_sid: string | null;
+  duration_seconds: number | null;
+  recording_s3_key: string | null;
+  transcription: string | null;
+  transcription_status: string | null;
+  recruiter_notes: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  updated_at: string;
+}
+
+interface CodeReviewSessionRow {
+  id: string;
+  candidate_id: string;
+  challenge_id: string;
+  assessment_id: string;
+  implementer_persona: string;
+  status: string;
+  transcript: string | null;
+  score_report: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface BackfillBatchResult {
@@ -203,6 +277,194 @@ async function backfillResumesBatch(
   };
 }
 
+async function backfillMeetingsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const rows = await db.prepare(
+    `SELECT m.id, m.owner_id, m.transcript_json, m.transcript_summary,
+            m.recording_r2_key, m.started_at, m.ended_at
+     FROM meetings m
+     WHERE m.transcript_json IS NOT NULL AND m.transcript_json != ''
+       AND NOT EXISTS (
+         SELECT 1 FROM interactions i
+         WHERE i.interaction_type = 'meeting'
+           AND i.external_reference = m.id
+       )
+       AND (?1 IS NULL OR m.id > ?1)
+     ORDER BY m.id
+     LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<MeetingRow>();
+
+  const meetings = rows.results ?? [];
+  if (meetings.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const row of meetings) {
+    try {
+      const { transcript, segments } = parseStoredMeetingTranscript(row.transcript_json);
+      await ingestMeetingTranscriptToLivingContext(db, {
+        meetingId: row.id,
+        ownerId: row.owner_id,
+        transcript,
+        segments,
+        summary: row.transcript_summary,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        recordingKey: row.recording_r2_key,
+        provider: 'scheduled-backfill',
+      });
+      processed++;
+    } catch (err) {
+      console.error('[backfill] meeting LC failed:', row.id, err);
+      failed++;
+    }
+    lastId = row.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: meetings.length < BATCH_SIZE };
+}
+
+async function backfillPhoneCallsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const rows = await db.prepare(
+    `SELECT pc.id, pc.candidate_id, pc.owner_id, pc.direction,
+            pc.twilio_call_sid, pc.duration_seconds, pc.recording_s3_key,
+            pc.transcription, pc.transcription_status, pc.recruiter_notes,
+            pc.started_at, pc.ended_at, pc.updated_at
+     FROM phone_calls pc
+     WHERE (pc.transcription IS NOT NULL OR pc.recording_s3_key IS NOT NULL OR pc.recruiter_notes IS NOT NULL)
+       AND NOT EXISTS (
+         SELECT 1 FROM interactions i
+         WHERE i.interaction_type = 'phone_call'
+           AND i.external_reference = pc.id
+       )
+       AND (?1 IS NULL OR pc.id > ?1)
+     ORDER BY pc.id
+     LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<PhoneCallRow>();
+
+  const calls = rows.results ?? [];
+  if (calls.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const row of calls) {
+    try {
+      await ingestPhoneCallToLivingContext(db, {
+        callId: row.id,
+        candidateId: row.candidate_id,
+        direction: row.direction,
+        startedAt: row.started_at,
+        endedAt: row.ended_at,
+        twilioCallSid: row.twilio_call_sid,
+        recording: row.recording_s3_key
+          ? { storageKey: row.recording_s3_key, durationSeconds: row.duration_seconds }
+          : null,
+        transcript: row.transcription,
+        transcriptProvider: row.transcription_status === 'COMPLETED'
+          ? 'scheduled-backfill'
+          : null,
+      });
+      if (row.recruiter_notes) {
+        await ingestPhoneRecruiterNote(db, {
+          callId: row.id,
+          candidateId: row.candidate_id,
+          direction: row.direction,
+          note: row.recruiter_notes,
+          observedAt: row.updated_at,
+          recruiterActorId: row.owner_id,
+          startedAt: row.started_at,
+          endedAt: row.ended_at,
+        });
+      }
+      processed++;
+    } catch (err) {
+      console.error('[backfill] phone call LC failed:', row.id, err);
+      failed++;
+    }
+    lastId = row.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: calls.length < BATCH_SIZE };
+}
+
+async function backfillCodeReviewsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const rows = await db.prepare(
+    `SELECT crs.id, crs.candidate_id, crs.challenge_id, crs.assessment_id,
+            crs.implementer_persona, crs.status, crs.transcript, crs.score_report,
+            crs.created_at, crs.updated_at
+     FROM code_review_sessions crs
+     WHERE crs.status IN ('verdict_submitted', 'scoring', 'scored')
+       AND NOT EXISTS (
+         SELECT 1 FROM interactions i
+         WHERE i.interaction_type = 'code_review'
+           AND i.external_reference = crs.id
+       )
+       AND (?1 IS NULL OR crs.id > ?1)
+     ORDER BY crs.id
+     LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<CodeReviewSessionRow>();
+
+  const sessions = rows.results ?? [];
+  if (sessions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const row of sessions) {
+    try {
+      const transcript: CodeReviewTranscript = row.transcript
+        ? JSON.parse(row.transcript) as CodeReviewTranscript
+        : { rounds: [] };
+      await ingestCodeReviewTranscriptToLivingContext(db, {
+        sessionId: row.id,
+        candidateId: row.candidate_id,
+        challengeId: row.challenge_id,
+        assessmentId: row.assessment_id,
+        transcript,
+        status: row.status,
+        implementerPersona: row.implementer_persona,
+        startedAt: row.created_at,
+        endedAt: ['verdict_submitted', 'scoring', 'scored'].includes(row.status)
+          ? row.updated_at
+          : null,
+        observedAt: row.updated_at,
+      });
+      if (row.score_report) {
+        await ingestCodeReviewScoreReportToLivingContext(db, {
+          sessionId: row.id,
+          candidateId: row.candidate_id,
+          challengeId: row.challenge_id,
+          assessmentId: row.assessment_id,
+          scoreReportJson: row.score_report,
+          observedAt: row.updated_at,
+          producer: 'automated_scorer',
+          startedAt: row.created_at,
+        });
+      }
+      processed++;
+    } catch (err) {
+      console.error('[backfill] code review LC failed:', row.id, err);
+      failed++;
+    }
+    lastId = row.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
+}
+
 export interface BackfillScheduledResult {
   gateEnabled: boolean;
   status: BackfillOrchestratorStatus;
@@ -253,6 +515,15 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'resumes_to_living_context':
           result = await backfillResumesBatch(db, cursor);
+          break;
+        case 'meetings_to_living_context':
+          result = await backfillMeetingsBatch(db, cursor);
+          break;
+        case 'phone_calls_to_living_context':
+          result = await backfillPhoneCallsBatch(db, cursor);
+          break;
+        case 'code_reviews_to_living_context':
+          result = await backfillCodeReviewsBatch(db, cursor);
           break;
         case 'projection_outbox_drain': {
           const projResult = await processProjectionOutbox(env);

@@ -369,3 +369,42 @@ All 4 CI failures on PR #110 are identical to those on main:
 - BackfillOrchestrator built but not wired into actual backfill script → FIXED: wired into all 7 entity tasks with checkpoint-based resume
 - Projection module has upsert/delete but no explicit rebuild path → FIXED: added `scheduleFullProjectionRebuild()` + POST endpoint
 - Test suite: 166 files, 1515 tests, 0 failures, 0 typecheck errors, 0 lint errors
+
+### 2026-06-28 — Session d4c2e63b (Devin)
+
+**Action:** Consolidate all open PRs (#105–#114) into single PR, extend scheduled backfill to cover all entity types.
+
+**Open PRs analyzed:**
+- PRs #105-#114 — all aligned with goal, progressively consolidating each other
+- PR #112 adds: orchestrated backfills + rebuildable projections
+- PR #114 adds: native resume ingestion + scheduled backfill runner
+- Created PR #115 consolidating #112 + #114 (the two with unique content beyond base)
+- Closed PRs #105-#114 (attempted — blocked by auth, owner should close manually)
+
+**Changes made:**
+1. Created consolidated branch cherry-picking #112 content + #114 unique commit
+2. Resolved CHANGELOG merge conflict (both entries preserved)
+3. Extended `backfillScheduled.ts` with 3 new production tasks:
+   - `meetings_to_living_context`: ingests stored transcript_json via parseStoredMeetingTranscript
+   - `phone_calls_to_living_context`: ingests transcriptions, recordings, recruiter notes
+   - `code_reviews_to_living_context`: ingests session transcripts + score reports
+4. Updated projection_outbox_drain dependencies to wait for all 6 ingestion tasks
+
+**Test results:**
+- 167 test files, 1529 tests pass, 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors
+
+**CI note:** Same 4 pre-existing infra failures as main (BlobNotFound — runner billing issue)
+
+**Acceptance criteria advanced:**
+- #1 (Living person graph): scheduled backfill now covers ALL entity types continuously
+- #8 (Production quality): complete dependency-ordered backfill with checkpoint resume
+
+**PR:** #115 (draft, awaiting owner merge)
+
+**Next priorities:**
+1. Owner: merge PR #115, close PRs #105-#114
+2. Owner: apply D1 migrations + deploy worker to production
+3. Enable `living_context_backfill` rollout gate (internal_only → canary → GA)
+4. Fix CI infra (runner billing/BlobNotFound issue)

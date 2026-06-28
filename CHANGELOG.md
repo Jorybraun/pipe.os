@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Complete scheduled backfill for all entity types (criterion #1/#8)
+
+- Extended `runScheduledBackfill()` with 3 new dependency-ordered tasks: `meetings_to_living_context`, `phone_calls_to_living_context`, `code_reviews_to_living_context`. The scheduled cron now covers all 7 entity types that accumulate person context (candidates, contacts, resumes, meetings, phone calls, code reviews). Projection outbox drains after all ingestion tasks complete.
+- Meeting backfill ingests stored `transcript_json` via `parseStoredMeetingTranscript` → `ingestMeetingTranscriptToLivingContext`, creating per-segment source spans with exact positions.
+- Phone call backfill ingests transcriptions, recordings, and recruiter notes via `ingestPhoneCallToLivingContext` + `ingestPhoneRecruiterNote`.
+- Code review backfill ingests completed session transcripts and score reports via `ingestCodeReviewTranscriptToLivingContext` + `ingestCodeReviewScoreReportToLivingContext`.
+
 ### Added — Native resume ingestion + scheduled backfill
 
 - Added `ingestResumeToLivingContext()` for native resume-to-living-context ingestion — splits resume text into structural sections, creates per-section source spans with exact char/byte/line positions, dynamically learns concepts, creates signal evidence at appropriate evidence levels, and enqueues neo4j projections. Fully idempotent. Supports pre-extracted LLM semantic assertions. (criteria #1, #2, #3)
