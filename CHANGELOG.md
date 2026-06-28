@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Staged rollout proof (criterion #8 completion)
+
+- Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.
+- Expert-labelled evaluation corpus fixture with reviewer provenance (reviewerId, reviewArtifactId, contentHash, rubricVersion) passes both standard and production corpus validation.
+
+### Added — Production infrastructure for living context graph
+
+- Added D1 migrations `0104_backfill_checkpoints`, `0105_rollout_gates`, `0106_rollout_gate_audit_log` for idempotent backfill tracking, feature rollout gates, and immutable gate transition audit trail.
+- Added `BackfillOrchestrator` with dependency-aware multi-task checkpoint tracking — tasks resume from the last committed cursor on restart (criterion #8 deterministic idempotent backfills).
+- Added `rolloutEnforcement` module with `checkGate()`, `requireGate()` middleware, `gatedField()`, `updateGateStage()`, `listGates()`, and `queryAuditLog()` — D1-backed feature rollout gates with 60-second in-memory cache and immutable audit trail (criterion #8 staged rollout).
+- Added `formatMatchNarrative()` for recruiter-facing human-readable match explanations — classifies evidence as strong/moderate/partial, separates stretch areas from gaps, links to source locators (criterion #6 explain every match).
+- Added `GET /api/v1/internal/living-context-health` endpoint for per-subsystem health checks: required tables, rollout gates, backfill orchestrator status, projection outbox health (criterion #8 production quality).
+- Added proof test suites: `backfillOrchestrator.test.ts` (8 tests), `rolloutEnforcement.test.ts` (6 tests), `matchNarrative.test.ts` (6 tests), `livingContextHealth.test.ts` (2 tests) — 22 new tests for production infrastructure.
+
+### Added — Living context graph & match explanation completeness
+
+- Added `searchSourceContent()` to the living context read model for cross-artifact semantic source search (criterion #2). Searches all source spans linked to a workspace person, falls back to assertion narratives when no spans match, and returns hits with citing assertions, context records, and concept keys.
+- Added `GET /api/v1/contacts/:id/living-context/search?q=...` and `GET /api/v1/candidates/:candidateId/living-context/search?q=...` endpoints for recruiter-facing source content search.
+- Surfaced `stretchAreas` and `unmatchedDemandIds` through the standalone review match API and frontend types (criteria #6/#7). Each alignment now includes its `stretch` field (dimension, atomConcept, demandConcept), and the match record exposes derived stretch areas and unmatched demand IDs.
+- Added `StretchAreasPanel` and `UnmatchedDemandsPanel` UI components to the living context graph visualization, rendering stretch dimensions with source refs and unmatched PR demands with concept keys.
+- Added `GET /api/v1/internal/rollout-gate?stage=shadow|canary|production` endpoint for live rollout readiness checks against the staged acceptance thresholds (criterion #8).
+- Added proof test suites: `searchSourceContent.test.ts` (9 tests), `rolloutGate.test.ts` (7 tests), `matchExplanation.test.ts` (4 tests) — validating criteria #2, #5/#6, and #8.
+
+### Fixed — Test suite stabilization
+
+- Migrated `backfillLivingContext.ts` from `node:sqlite` to `better-sqlite3` with D1-style `?N` param rewriting, fixing `No such built-in module` on Node 20.
+- Added missing `packet_json` column to `checkReviewChallengeGraphReadiness` test fixtures, fixing `no such column: rcp.packet_json` schema mismatch.
+- Added `it.skipIf(!hasGo)` guard to Go parser test in `sourceAnalysis.test.ts` so CI skips gracefully when Go toolchain is absent.
+
+### Added — Full-pipeline E2E proof test
+
+- Added `fullPipelineE2E.test.ts` exercising the complete lifecycle across all 8 acceptance criteria in a single coherent test: contact creation → meeting transcript ingestion → identity unification → dynamic concept learning → repo semantic graph → source-backed PR challenge → evidence-based matching → match narrative generation → source content search → read model verification → backfill orchestrator checkpointing with dependency ordering.
+- Added determinism proof test verifying that re-running matching with identical data yields identical results (criterion #8).
+
+### Fixed — CI stabilization
+
+- Fixed `resolveDevContainerApiBase` to return `http://localhost:8787` for localhost when runtimeLocation is provided, fixing failing frontend test.
+- Suppressed pre-existing lint errors: `no-control-regex` in ANSI escape regex (`terminalProtocol.ts`), `no-constant-condition` in SSE reader loop (`useRoomStatusNotifications.ts`).
+
 ### Fixed — 95 Until Infinity desktop tools
 
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
