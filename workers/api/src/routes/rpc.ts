@@ -2096,9 +2096,30 @@ rpcAuth.post('/get-stage-config', async (c) => {
       });
     }
 
-    // Standalone dev-container challenge interview: once the CV is in, serve the challenge stage
+    // Standalone dev-container challenge interview: once the CV is in, serve
+    // the challenge stage. When the repo has not been assigned yet, candidate
+    // evidence is still required for source-backed matching.
     if (!needsResume && standaloneAssessment && 'interview_type' in standaloneAssessment) {
       const isOpenSourceBugFix = standaloneAssessment.interview_type === 'OPEN_SOURCE_BUG_FIX';
+      if (!standaloneAssessment.github_repo_url) {
+        const retryQueued = await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId);
+        const readiness = retryQueued
+          ? retryingStandaloneReviewReadiness()
+          : await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+        if (!readiness.ready) {
+          return c.json({
+            isComplete: false,
+            stageId: 'standalone-dev-container-matching',
+            candidateId,
+            stageTitle: isOpenSourceBugFix ? 'Open Source Bug Fix' : 'Dev Container Challenge',
+            mode: 'ASYNC',
+            timeLimit: null,
+            challenges: [{ type: 'WAITING_FOR_MATCH', order: 0, title: 'Building your personalized challenge' }],
+            currentIndex: 0,
+            waitingChallenge: standaloneWaitingChallengeForReadiness(readiness),
+          });
+        }
+      }
       return c.json({
         isComplete: false,
         stageId: 'standalone-dev-container',
@@ -2417,6 +2438,13 @@ rpcAuth.post('/get-challenge', async (c) => {
     if (standaloneAssessment && 'interview_type' in standaloneAssessment) {
       const repoUrl = standaloneAssessment.github_repo_url;
       if (!repoUrl) {
+        if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
+          return c.json(standaloneWaitingChallengeForReadiness(retryingStandaloneReviewReadiness()));
+        }
+        const readiness = await standaloneReviewEvidenceReadiness(c.env.DB, candidateId);
+        if (!readiness.ready) {
+          return c.json(standaloneWaitingChallengeForReadiness(readiness));
+        }
         return c.json(standaloneWaitingChallenge({
           reason: 'A source-backed repository has not been assigned to this challenge yet.',
         }));

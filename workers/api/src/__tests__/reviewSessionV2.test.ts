@@ -721,6 +721,99 @@ describe('POST /rpc/get-stage-config', () => {
       }),
     }));
   });
+
+  it('retries stale Workers AI model failures before standalone dev-container matching', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/old',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'dev_retry',
+            status: 'INVITED',
+            created_at: '2026-06-27T22:00:00.000Z',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.stageId).toBe('standalone-dev-container-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
+  });
 });
 
 // ─── POST /rpc/submit-challenge-response ─────────────────────────────────────
@@ -1392,6 +1485,85 @@ describe('POST /rpc/get-challenge', () => {
     expect(body.githubRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
     expect(body.githubPrNumber).toBe(101);
     expect(body.devContainerRepoUrl).toBe('https://github.com/hash-pipe/open-source-task');
+  });
+
+  it('retries stale Workers AI model failures before serving unassigned standalone implementation challenges', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'text-intake/cand_1/old', node_count: 0 } },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: null,
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: {
+            id: 'open_source_retry',
+            status: 'INVITED',
+            interview_type: 'OPEN_SOURCE_BUG_FIX',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      config?: { state?: string; reason?: string };
+    };
+    expect(body.type).toBe('WAITING_FOR_MATCH');
+    expect(body.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+    }));
   });
 
   it('returns match proof for a manual standalone CODE_REVIEW source-backed PR', async () => {

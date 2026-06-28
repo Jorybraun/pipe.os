@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Standalone dev-container and open-source bug-fix interviews now requeue source-backed candidate ingestion from the original CV/text source after stale Workers AI model failures before claiming repo matching is blocked.
 - Non-matching candidate-to-PR outcomes now persist `REPO_MATCHING` assessment diagnostics and move the assessment session to `DIAGNOSTIC` instead of leaving missing-evidence states as active progress.
 - Candidate-to-PR match runs now append immutable `REPO_MATCHING` assessment evidence with exact `match_runs`, selected packet, role, candidate, and repo source refs instead of existing only as a rebuildable context projection.
 - CODE_REVIEW scoring now uses a resilient single-pass Workers AI scorer with current model fallbacks, retries stale `scoring` sessions from the scheduled Worker backlog, and persists the full score report on both `review_sessions` and `challenge_submissions`.
