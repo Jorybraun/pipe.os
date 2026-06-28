@@ -286,9 +286,13 @@ export function ClippyAssistant({
     onAction?.(actionId);
   }, [latestAgentRoomAction, onAction, onAgentRoomAction]);
 
+  const reportedAgentName = agentConn.agentName.trim();
+  const agentDisplayName = reportedAgentName || 'the real agent';
+
   const agentRoomActionPrompt: ClippyMessage | null = latestAgentRoomAction
     ? {
-        text: latestAgentRoomAction.text ?? `${agentConn.agentName} suggests: ${latestAgentRoomAction.label}.`,
+        text: latestAgentRoomAction.text
+          ?? `${reportedAgentName || 'The connected agent'} suggests: ${latestAgentRoomAction.label}.`,
         hold: true,
         actions: [{
           id: 'agent-room-action',
@@ -308,27 +312,30 @@ export function ClippyAssistant({
     disconnected: 'Disconnected',
   };
   const unavailableMessage = agentUnavailableMessage
-    ?? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.';
+    ?? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge reports an agent identity.';
   const canSendToAgent = agentEnabled
     && agentConn.connected
     && agentConn.status !== 'auth_needed'
     && agentConn.status !== 'starting'
     && agentConn.status !== 'disconnected'
+    && reportedAgentName.length > 0
     && agentConn.capabilities.length > 0;
   const emptyChatMessage = !agentEnabled
     ? unavailableMessage
     : !agentConn.connected
       ? 'Clippy bridge is reconnecting to the dev container.'
       : agentConn.status === 'starting'
-        ? 'Clippy is starting the real Devin process inside the dev container.'
+        ? `Clippy is starting ${agentDisplayName} inside the dev container.`
         : agentConn.status === 'auth_needed'
-          ? agentConn.authMessage ?? 'Devin is not authenticated in this container. Real Devin credentials are required before Clippy can chat.'
+          ? agentConn.authMessage ?? `${agentDisplayName} is not authenticated in this container. Real credentials are required before Clippy can chat.`
           : agentConn.status === 'disconnected'
-            ? 'Clippy bridge is connected, but real Devin has not reported ready yet.'
-            : agentConn.capabilities.length === 0
-              ? 'Waiting for real Devin to report ready before chat is enabled.'
-              : 'Connected to Devin. Ask Clippy about the code or the interview workspace.';
-  const chatAgentName = agentEnabled ? agentConn.agentName || 'devin' : 'devin';
+            ? 'Clippy bridge is connected, but no real agent has reported ready yet.'
+            : reportedAgentName.length === 0
+              ? 'Waiting for the container bridge to report a real agent identity before chat is enabled.'
+              : agentConn.capabilities.length === 0
+                ? `Waiting for ${agentDisplayName} to report ready before chat is enabled.`
+                : `Connected to ${agentDisplayName}. Ask Clippy about the code or the interview workspace.`;
+  const chatAgentName = agentEnabled ? agentDisplayName : 'agent bridge';
 
   return (
     <>
@@ -409,7 +416,7 @@ export function ClippyAssistant({
               className="win95-clippy-chat-auth-btn"
               onClick={handleAuthClick}
             >
-              Authenticate {agentConn.agentName || 'devin'}
+              Authenticate {agentDisplayName}
             </button>
           )}
 
@@ -441,7 +448,7 @@ export function ClippyAssistant({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSendChat();
               }}
-              placeholder={agentEnabled ? 'Ask Clippy...' : 'Ask Clippy when Devin is connected...'}
+              placeholder={agentEnabled ? 'Ask Clippy...' : 'Ask Clippy when a real agent is connected...'}
               disabled={!canSendToAgent}
               data-testid="clippy-chat-input"
             />

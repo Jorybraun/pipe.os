@@ -979,14 +979,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     ? workspace.challenge.message
     : null;
   const clippyAgentUnavailableMessage = !hasWorkspaceFeature
-    ? 'This room was not configured with a dev workspace. Room chat still goes to people; Clippy/Devin chat requires a real container workspace.'
+    ? 'This room was not configured with a dev workspace. Room chat still goes to people; Clippy agent chat requires a real container workspace.'
     : workspaceSession?.status === 'LAUNCHING'
-      ? 'The VS Code workspace is starting. Clippy will connect to real Devin when the container bridge is ready.'
+      ? 'The VS Code workspace is starting. Clippy will connect when the container bridge reports a real agent identity.'
       : workspaceSession?.status === 'ERROR'
-        ? `The VS Code workspace failed: ${workspaceSession.errorMessage ?? workspaceError ?? 'container startup did not complete'}. Clippy/Devin chat stays disabled until the workspace is relaunched.`
+        ? `The VS Code workspace failed: ${workspaceSession.errorMessage ?? workspaceError ?? 'container startup did not complete'}. Clippy agent chat stays disabled until the workspace is relaunched.`
         : metadata.role === 'HOST' && canLaunchWorkspace
-          ? 'Launch the VS Code workspace to connect real Devin. Clippy chat stays disabled until the container bridge is connected.'
-          : 'The host needs to launch the VS Code workspace before Clippy can connect to real Devin.';
+          ? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge is connected.'
+          : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
   const captureClippyUiAction = (
     actionId: 'open-clippy-chat' | 'dismiss-clippy',
     origin: 'tray' | 'prompt',

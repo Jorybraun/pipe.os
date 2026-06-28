@@ -64,7 +64,7 @@ describe('ClippyAssistant', () => {
         onDismiss={vi.fn()}
         agentEnabled={false}
         agentWsUrl={null}
-        agentUnavailableMessage="Launch the VS Code workspace to connect real Devin."
+        agentUnavailableMessage="Launch the VS Code workspace to connect a real agent."
         canLaunchAgentWorkspace
         openChatRequest={0}
         onAction={onAction}
@@ -79,7 +79,7 @@ describe('ClippyAssistant', () => {
         onDismiss={vi.fn()}
         agentEnabled={false}
         agentWsUrl={null}
-        agentUnavailableMessage="Launch the VS Code workspace to connect real Devin."
+        agentUnavailableMessage="Launch the VS Code workspace to connect a real agent."
         canLaunchAgentWorkspace
         openChatRequest={1}
         onAction={onAction}
@@ -87,12 +87,47 @@ describe('ClippyAssistant', () => {
     );
 
     expect((await screen.findByTestId('clippy-chat')).textContent).toContain(
-      'Launch the VS Code workspace to connect real Devin.',
+      'Launch the VS Code workspace to connect a real agent.',
     );
     expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
 
     fireEvent.click(screen.getByTestId('clippy-launch-workspace'));
     expect(onAction).toHaveBeenCalledWith('launch-workspace');
+  });
+
+  it('does not render or enable a fake Devin identity before the bridge reports an agent name', async () => {
+    const sendMessage = vi.fn(() => null);
+    mockAgentConnection({
+      connected: true,
+      status: 'idle',
+      agentName: '',
+      capabilities: ['chat'],
+      sendMessage,
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+      />,
+    );
+
+    const chat = await screen.findByTestId('clippy-chat');
+    expect(chat.textContent).toContain(
+      'Waiting for the container bridge to report a real agent identity before chat is enabled.',
+    );
+    expect(chat.textContent).not.toContain('Devin');
+    expect(chat.textContent).not.toContain('devin');
+    expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
+
+    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+      target: { value: 'inspect the repo task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('sends chat only through the connected Devin bridge', async () => {
@@ -131,7 +166,7 @@ describe('ClippyAssistant', () => {
     expect(onUserChatMessage).toHaveBeenCalledWith(userMessage);
   });
 
-  it('keeps chat disabled while real Devin is starting and before capabilities arrive', async () => {
+  it('keeps chat disabled while the real bridge agent is starting and before capabilities arrive', async () => {
     const sendMessage = vi.fn(() => null);
     mockAgentConnection({
       connected: true,
@@ -151,7 +186,7 @@ describe('ClippyAssistant', () => {
     );
 
     expect((await screen.findByTestId('clippy-chat')).textContent).toContain(
-      'Clippy is starting the real Devin process inside the dev container.',
+      'Clippy is starting devin inside the dev container.',
     );
     expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);

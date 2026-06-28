@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy chat UI now waits for an explicit container bridge agent identity before enabling chat or naming Devin, preventing the room surface from visually implying a fake agent is connected.
 - Browser-side Clippy/Devin evidence builders now fail closed when bridge agent identity is missing, preventing room clients from defaulting source-less fallback/status evidence to `devin`.
 - Clippy/Devin container diagnostics now fail closed when agent identity is missing, preventing the bridge helper from fabricating `devin` on source-less diagnostics, chat responses, or room-action evidence.
 - Clippy/Devin agent replies and room-action suggestions now expose normalized browser prompt correlation refs in meeting-session context records and compact agent context summaries, so rebuildable hypergraph projections can join prompt, response, and action evidence without guessing.
