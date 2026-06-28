@@ -239,13 +239,6 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   };
 }
 
-function parseRoomActions(value: unknown, context: RoomActionParseContext): AgentRoomAction[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => parseRoomAction(entry, context))
-    .filter((entry): entry is AgentRoomAction => entry !== null);
-}
-
 export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
   const name = agentName.trim() || 'devin';
   switch (status) {
@@ -279,12 +272,6 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if (value.source !== 'agent_stdout') return { kind: 'ignored' };
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
-    const actions = parseRoomActions(value.actions, {
-      source: 'agent_stdout_action',
-      bridgeEventType: 'CHAT_RESPONSE',
-      protocol: 'bridge_actions_field',
-      agentName,
-    });
     return {
       kind: 'chat',
       message: {
@@ -295,7 +282,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         observedAt: stringOrNull(value.observedAt) ?? undefined,
         persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
       },
-      actions: actions.length > 0 ? actions : undefined,
+      actions: undefined,
     };
   }
   if (value.type === 'AUTH_NEEDED') {

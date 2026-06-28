@@ -150,6 +150,29 @@ function observedAtFromMessageTimestamp(value: number): string {
   return new Date(normalizedTimestamp(value)).toISOString();
 }
 
+function isSourceBackedAgentRoomAction(
+  action: AgentRoomAction | undefined,
+  actionId: string,
+): action is AgentRoomAction & {
+  source: 'agent_stdout_action';
+  agentName: string;
+  bridgeEventType: 'ROOM_ACTION';
+  protocol: 'clippy_room_action_tag';
+  observedAt: string;
+  persisted: boolean;
+} {
+  return Boolean(action)
+    && action?.id === actionId
+    && action.source === 'agent_stdout_action'
+    && typeof action.agentName === 'string'
+    && action.agentName.trim().length > 0
+    && action.bridgeEventType === 'ROOM_ACTION'
+    && action.protocol === 'clippy_room_action_tag'
+    && typeof action.observedAt === 'string'
+    && action.observedAt.trim().length > 0
+    && typeof action.persisted === 'boolean';
+}
+
 export function buildClippyUiActionEvidence(input: {
   actionId: ClippyUiActionId;
   origin: ClippyUiActionOrigin;
@@ -186,7 +209,7 @@ export function buildClippyUiActionEvidence(input: {
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
       workspaceSessionId: input.workspaceSessionId,
-      agent: 'devin',
+      agent: null,
       agentWorkspaceReady: input.agentWorkspaceReady,
       agentResponseClaimed: false,
     },
@@ -204,8 +227,11 @@ export function buildClippyRoomActionExecutionEvidence(input: {
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
-}): ClippyRoomActionExecutionEvidence {
-  const agent = input.agentAction?.agentName ?? 'devin';
+}): ClippyRoomActionExecutionEvidence | null {
+  if (input.origin === 'agent' && !isSourceBackedAgentRoomAction(input.agentAction, input.actionId)) {
+    return null;
+  }
+  const agent = input.origin === 'agent' ? input.agentAction?.agentName ?? null : null;
   const source = input.origin === 'agent' ? 'clippy_agent_bridge' : 'clippy_prompt_ui';
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {

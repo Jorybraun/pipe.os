@@ -228,6 +228,34 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
+  it('does not turn CHAT_RESPONSE action arrays into executable desktop actions', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      source: 'agent_stdout',
+      text: 'I can open the terminal if you want.',
+      agent: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      persisted: true,
+      actions: [{
+        action: 'open_terminal',
+        label: 'Open Terminal',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        persisted: true,
+      }],
+    })).toEqual({
+      kind: 'chat',
+      message: {
+        role: 'agent',
+        text: 'I can open the terminal if you want.',
+        source: 'agent_stdout',
+        agentName: 'devin',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        persisted: true,
+      },
+      actions: undefined,
+    });
+  });
+
   it('ignores bridge chat responses without explicit agent identity', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',

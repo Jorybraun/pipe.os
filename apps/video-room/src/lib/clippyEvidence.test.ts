@@ -39,7 +39,7 @@ describe('clippy evidence', () => {
         roomPhase: 'connected',
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-123',
-        agent: 'devin',
+        agent: null,
         agentWorkspaceReady: true,
         agentResponseClaimed: false,
       },
@@ -91,7 +91,7 @@ describe('clippy evidence', () => {
         origin: 'prompt',
         executedBy: 'host',
         actionSource: 'clippy_prompt_ui',
-        agent: 'devin',
+        agent: null,
         agentActionLabel: null,
         agentActionText: null,
         bridgeEventType: null,
@@ -110,6 +110,46 @@ describe('clippy evidence', () => {
         agentResponseClaimed: false,
       },
     });
+  });
+
+  it('rejects agent-origin room executions without a real bridge action packet', () => {
+    expect(buildClippyRoomActionExecutionEvidence({
+      actionId: 'open-terminal',
+      text: 'Agent action: open terminal',
+      origin: 'agent',
+      actor: 'guest',
+      capturedAtMs: 1782594660000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+    })).toBeNull();
+  });
+
+  it('rejects legacy chat-response action arrays as executable Devin room actions', () => {
+    expect(buildClippyRoomActionExecutionEvidence({
+      actionId: 'open-terminal',
+      text: 'Agent action: open terminal',
+      origin: 'agent',
+      actor: 'guest',
+      capturedAtMs: 1782594660000,
+      agentAction: {
+        id: 'open-terminal',
+        label: 'Open Terminal',
+        text: 'Open a terminal to inspect the failing tests.',
+        source: 'agent_stdout_action',
+        agentName: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        protocol: 'bridge_actions_field',
+        observedAt: '2026-06-27T21:10:00.000Z',
+        persisted: true,
+        autoExecute: false,
+      },
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+    })).toBeNull();
   });
 
   it('links executed agent suggestions back to the real bridge action', () => {
