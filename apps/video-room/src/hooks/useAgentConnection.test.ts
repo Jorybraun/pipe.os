@@ -68,6 +68,36 @@ describe('parseAgentBridgeMessage', () => {
     });
   });
 
+  it('preserves Devin API run references on room action messages', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'ROOM_ACTION',
+      source: 'agent_api_response',
+      agent: 'devin',
+      action: 'open-workspace',
+      text: 'Open the workspace so I can inspect the repository.',
+      observedAt: '2026-06-27T21:10:00.000Z',
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
+      persisted: true,
+    })).toMatchObject({
+      kind: 'room_action',
+      action: {
+        id: 'open-workspace',
+        source: 'agent_api_response_action',
+        agentName: 'devin',
+        bridgeEventType: 'ROOM_ACTION',
+        protocol: 'clippy_room_action_tag',
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
+        persisted: true,
+      },
+    });
+  });
+
   it('turns container file changes into an actionable workspace suggestion', () => {
     expect(parseAgentBridgeMessage({
       type: 'FILE_CHANGED',
@@ -222,6 +252,10 @@ describe('parseAgentBridgeMessage', () => {
       browserPromptFingerprint: 'clippy_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 18,
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
       persisted: true,
     })).toEqual({
       kind: 'diagnostic',
@@ -249,6 +283,10 @@ describe('parseAgentBridgeMessage', () => {
         browserPromptFingerprint: 'clippy_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 18,
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
         persisted: true,
       },
     });
@@ -278,6 +316,36 @@ describe('parseAgentBridgeMessage', () => {
         browserPromptFingerprint: 'clippy_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
+        persisted: true,
+      },
+      actions: undefined,
+    });
+  });
+
+  it('preserves Devin API run references on chat responses', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      source: 'agent_api_response',
+      text: 'I inspected the failing test.',
+      agent: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
+      persisted: true,
+    })).toEqual({
+      kind: 'chat',
+      message: {
+        role: 'agent',
+        text: 'I inspected the failing test.',
+        source: 'agent_api_response',
+        agentName: 'devin',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
         persisted: true,
       },
       actions: undefined,

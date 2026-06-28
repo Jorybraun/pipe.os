@@ -91,6 +91,29 @@ function safeAgentName(value) {
   return normalized || null;
 }
 
+function safeAgentRunString(value, maxChars = 240) {
+  if (typeof value !== 'string' || value.trim().length === 0) return null;
+  return boundedDiagnosticText(value, maxChars).text || null;
+}
+
+function agentRunReferences({
+  agentRuntime = null,
+  agentRunProvider = null,
+  agentRunId = null,
+  agentRunExternalSessionHash = null,
+} = {}) {
+  const safeRuntime = safeAgentRunString(agentRuntime, 80);
+  const safeProvider = safeAgentRunString(agentRunProvider, 120);
+  const safeRunId = safeAgentRunString(agentRunId, 240);
+  const safeExternalSessionHash = safeAgentRunString(agentRunExternalSessionHash, 120);
+  return {
+    ...(safeRuntime ? { agentRuntime: safeRuntime } : {}),
+    ...(safeProvider ? { agentRunProvider: safeProvider } : {}),
+    ...(safeRunId ? { agentRunId: safeRunId } : {}),
+    ...(safeExternalSessionHash ? { agentRunExternalSessionHash: safeExternalSessionHash } : {}),
+  };
+}
+
 function agentStatusEventId({
   agent = null,
   capturedAtMs = 0,
@@ -166,6 +189,10 @@ function agentDiagnosticMessage({
   observedAt = new Date().toISOString(),
   exitCode = null,
   signal = null,
+  agentRuntime = null,
+  agentRunProvider = null,
+  agentRunId = null,
+  agentRunExternalSessionHash = null,
   maxChars = DEFAULT_MAX_CHARS,
 } = {}) {
   const safeAgent = safeAgentName(agent);
@@ -181,6 +208,12 @@ function agentDiagnosticMessage({
     exitCode,
     signal,
     truncated: bounded.truncated,
+    ...agentRunReferences({
+      agentRuntime,
+      agentRunProvider,
+      agentRunId,
+      agentRunExternalSessionHash,
+    }),
   };
 }
 
@@ -198,6 +231,10 @@ function agentPromptHandoffDiagnosticMessage({
   browserPromptFingerprint = null,
   browserPromptTimestamp = null,
   browserPromptLength = null,
+  agentRuntime = null,
+  agentRunProvider = null,
+  agentRunId = null,
+  agentRunExternalSessionHash = null,
   observedAt = new Date().toISOString(),
   maxChars = DEFAULT_MAX_CHARS,
 } = {}) {
@@ -226,6 +263,10 @@ function agentPromptHandoffDiagnosticMessage({
       ? 'agent_context_primer_sent'
       : 'agent_prompt_sent',
     observedAt,
+    agentRuntime,
+    agentRunProvider,
+    agentRunId,
+    agentRunExternalSessionHash,
     maxChars,
   });
 
@@ -242,6 +283,12 @@ function agentPromptHandoffDiagnosticMessage({
     userMessageLength: userMessageMetrics.length,
     userMessageFingerprint: userMessageMetrics.fingerprint,
     contextTruncated: String(roomContextText || '').includes('[PIPE room context truncated]'),
+    ...agentRunReferences({
+      agentRuntime,
+      agentRunProvider,
+      agentRunId,
+      agentRunExternalSessionHash,
+    }),
     ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
     ...(browserPromptReferences.browserPromptFingerprint
       ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
@@ -297,6 +344,12 @@ function agentDiagnosticSessionEvent(message) {
       userMessageLength: eventMessage.userMessageLength ?? null,
       userMessageFingerprint: eventMessage.userMessageFingerprint ?? null,
       contextTruncated: eventMessage.contextTruncated ?? null,
+      ...agentRunReferences({
+        agentRuntime: eventMessage.agentRuntime,
+        agentRunProvider: eventMessage.agentRunProvider,
+        agentRunId: eventMessage.agentRunId,
+        agentRunExternalSessionHash: eventMessage.agentRunExternalSessionHash,
+      }),
       ...(typeof eventMessage.browserPromptId === 'string' ? { browserPromptId: eventMessage.browserPromptId } : {}),
       ...(typeof eventMessage.browserPromptFingerprint === 'string'
         ? { browserPromptFingerprint: eventMessage.browserPromptFingerprint }
@@ -322,6 +375,10 @@ function agentChatSessionEvent({
   browserPromptFingerprint = null,
   browserPromptTimestamp = null,
   browserPromptLength = null,
+  agentRuntime = null,
+  agentRunProvider = null,
+  agentRunId = null,
+  agentRunExternalSessionHash = null,
 } = {}) {
   const responseText = redactDiagnosticText(text);
   const safeAgent = safeAgentName(agent);
@@ -354,6 +411,12 @@ function agentChatSessionEvent({
       responseFingerprint,
       responseLength: responseText.length,
       actionCount: Number.isFinite(actionCount) ? Math.max(0, Math.floor(actionCount)) : 0,
+      ...agentRunReferences({
+        agentRuntime,
+        agentRunProvider,
+        agentRunId,
+        agentRunExternalSessionHash,
+      }),
       ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
       ...(browserPromptReferences.browserPromptFingerprint
         ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
@@ -418,6 +481,12 @@ function agentRoomActionSessionEvent({
       agentActionText: safeActionString(rawAction.text, null, 1000),
       autoExecute: typeof rawAction.autoExecute === 'boolean' ? rawAction.autoExecute : null,
       url: safeActionString(rawAction.url ?? rawAction.href, null, 2048),
+      ...agentRunReferences({
+        agentRuntime: rawAction.agentRuntime,
+        agentRunProvider: rawAction.agentRunProvider,
+        agentRunId: rawAction.agentRunId,
+        agentRunExternalSessionHash: rawAction.agentRunExternalSessionHash,
+      }),
       ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
       ...(browserPromptReferences.browserPromptFingerprint
         ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }

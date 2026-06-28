@@ -891,7 +891,7 @@ describe('sessionEvents', () => {
             properties: {
               source: 'clippy_agent_bridge',
               bridgeEventType: 'CHAT_RESPONSE',
-              bridgeMessageSource: 'agent_stdout',
+              bridgeMessageSource: 'agent_api_response',
               observedAt: '2026-06-27T20:10:10.000Z',
               capturedAtMs: 1782604610000,
               agent: 'devin',
@@ -903,6 +903,10 @@ describe('sessionEvents', () => {
               browserPromptTimestamp: 1782604600000,
               browserPromptLength: promptText.length,
               bridgePersisted: true,
+              agentRuntime: 'api',
+              agentRunProvider: 'devin_api',
+              agentRunId: 'devin-api:1234abcd',
+              agentRunExternalSessionHash: 'sha256:1234abcd',
               actionCount: 0,
               durableObjectReplayExpected: true,
             },
@@ -975,6 +979,25 @@ describe('sessionEvents', () => {
           },
         ]);
 
+        const agentResponseSource = sqlite.prepare(
+          `SELECT locator_json, metadata_json
+             FROM context_record_source_refs
+            WHERE source_ref_type = 'clippy_agent_response'
+              AND source_ref_id = ?`,
+        ).get(agentResponseId) as {
+          locator_json: string;
+          metadata_json: string;
+        };
+        expect(JSON.parse(agentResponseSource.locator_json)).toMatchObject({
+          agentRuntime: 'api',
+          agentRunProvider: 'devin_api',
+          agentRunId: 'devin-api:1234abcd',
+        });
+        expect(JSON.parse(agentResponseSource.metadata_json)).toMatchObject({
+          sourceKind: 'clippy.agent_api_response',
+          agentRunExternalSessionHash: 'sha256:1234abcd',
+        });
+
         const assessmentSources = sqlite.prepare(
           `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
              FROM assessment_event_source_refs
@@ -994,6 +1017,25 @@ describe('sessionEvents', () => {
           content_hash: string;
         }>;
         expect(assessmentSources).toEqual(contextSources);
+
+        const assessmentAgentResponseSource = sqlite.prepare(
+          `SELECT locator_json, metadata_json
+             FROM assessment_event_source_refs
+            WHERE source_ref_type = 'clippy_agent_response'
+              AND source_ref_id = ?`,
+        ).get(agentResponseId) as {
+          locator_json: string;
+          metadata_json: string;
+        };
+        expect(JSON.parse(assessmentAgentResponseSource.locator_json)).toMatchObject({
+          agentRuntime: 'api',
+          agentRunProvider: 'devin_api',
+          agentRunId: 'devin-api:1234abcd',
+        });
+        expect(JSON.parse(assessmentAgentResponseSource.metadata_json)).toMatchObject({
+          sourceKind: 'clippy.agent_api_response',
+          agentRunExternalSessionHash: 'sha256:1234abcd',
+        });
 
         const entities = sqlite.prepare(
           `SELECT entity_type, entity_id, relationship

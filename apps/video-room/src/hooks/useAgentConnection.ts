@@ -52,6 +52,10 @@ export interface AgentChatMessage {
   browserPromptFingerprint?: string;
   browserPromptTimestamp?: number;
   browserPromptLength?: number;
+  agentRuntime?: string;
+  agentRunProvider?: string;
+  agentRunId?: string;
+  agentRunExternalSessionHash?: string;
   deliveryStatus?: AgentPromptDeliveryStatus;
   blockedReason?: AgentPromptBlockedReason;
 }
@@ -72,6 +76,10 @@ export interface AgentRoomAction {
   browserPromptFingerprint?: string;
   browserPromptTimestamp?: number;
   browserPromptLength?: number;
+  agentRuntime?: string;
+  agentRunProvider?: string;
+  agentRunId?: string;
+  agentRunExternalSessionHash?: string;
 }
 
 export interface AgentFileChangeEvent {
@@ -254,6 +262,10 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
   const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
   const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+  const agentRuntime = stringOrNull(value.agentRuntime);
+  const agentRunProvider = stringOrNull(value.agentRunProvider);
+  const agentRunId = stringOrNull(value.agentRunId);
+  const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
   return {
     id,
     label,
@@ -270,6 +282,10 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
     ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
     ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
     ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
+    ...(agentRuntime ? { agentRuntime } : {}),
+    ...(agentRunProvider ? { agentRunProvider } : {}),
+    ...(agentRunId ? { agentRunId } : {}),
+    ...(agentRunExternalSessionHash ? { agentRunExternalSessionHash } : {}),
   };
 }
 
@@ -316,6 +332,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
     const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
     const browserPromptLength = numberOrUndefined(value.browserPromptLength);
+    const agentRuntime = stringOrNull(value.agentRuntime);
+    const agentRunProvider = stringOrNull(value.agentRunProvider);
+    const agentRunId = stringOrNull(value.agentRunId);
+    const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
     return {
       kind: 'chat',
       message: {
@@ -329,6 +349,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
         ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
         ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
+        ...(agentRuntime ? { agentRuntime } : {}),
+        ...(agentRunProvider ? { agentRunProvider } : {}),
+        ...(agentRunId ? { agentRunId } : {}),
+        ...(agentRunExternalSessionHash ? { agentRunExternalSessionHash } : {}),
       },
       actions: undefined,
     };
@@ -436,6 +460,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const userMessageFingerprint = stringOrNull(value.userMessageFingerprint);
     const browserPromptId = stringOrNull(value.browserPromptId);
     const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+    const agentRuntime = stringOrNull(value.agentRuntime);
+    const agentRunProvider = stringOrNull(value.agentRunProvider);
+    const agentRunId = stringOrNull(value.agentRunId);
+    const agentRunExternalSessionHash = stringOrNull(value.agentRunExternalSessionHash);
     if (promptType) message.promptType = promptType;
     if (typeof value.deliveredToAgent === 'boolean') message.deliveredToAgent = value.deliveredToAgent;
     if ('promptLength' in value) {
@@ -457,6 +485,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if (typeof value.contextTruncated === 'boolean') message.contextTruncated = value.contextTruncated;
     if (browserPromptId) message.browserPromptId = browserPromptId;
     if (browserPromptFingerprint) message.browserPromptFingerprint = browserPromptFingerprint;
+    if (agentRuntime) message.agentRuntime = agentRuntime;
+    if (agentRunProvider) message.agentRunProvider = agentRunProvider;
+    if (agentRunId) message.agentRunId = agentRunId;
+    if (agentRunExternalSessionHash) message.agentRunExternalSessionHash = agentRunExternalSessionHash;
     if ('browserPromptTimestamp' in value) {
       const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
       if (browserPromptTimestamp !== undefined) message.browserPromptTimestamp = browserPromptTimestamp;

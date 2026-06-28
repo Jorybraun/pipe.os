@@ -392,6 +392,10 @@ export function buildClippyAgentStatusEvidence(input: {
   browserPromptFingerprint?: string | null;
   browserPromptTimestamp?: number | null;
   browserPromptLength?: number | null;
+  agentRuntime?: string | null;
+  agentRunProvider?: string | null;
+  agentRunId?: string | null;
+  agentRunExternalSessionHash?: string | null;
   messageTimestamp?: number | null;
 }): ClippyAgentStatusEvidence | null {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
@@ -441,6 +445,12 @@ export function buildClippyAgentStatusEvidence(input: {
       ...(input.browserPromptLength !== null && input.browserPromptLength !== undefined
         ? { browserPromptLength: input.browserPromptLength }
         : {}),
+      ...(input.agentRuntime ? { agentRuntime: input.agentRuntime } : {}),
+      ...(input.agentRunProvider ? { agentRunProvider: input.agentRunProvider } : {}),
+      ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
+      ...(input.agentRunExternalSessionHash
+        ? { agentRunExternalSessionHash: input.agentRunExternalSessionHash }
+        : {}),
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -460,6 +470,10 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   browserPromptFingerprint?: string | null;
   browserPromptTimestamp?: number | null;
   browserPromptLength?: number | null;
+  agentRuntime?: string | null;
+  agentRunProvider?: string | null;
+  agentRunId?: string | null;
+  agentRunExternalSessionHash?: string | null;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
@@ -499,6 +513,12 @@ export function buildClippyAgentChatFallbackEvidence(input: {
       ...(input.browserPromptLength !== null && input.browserPromptLength !== undefined
         ? { browserPromptLength: input.browserPromptLength }
         : {}),
+      ...(input.agentRuntime ? { agentRuntime: input.agentRuntime } : {}),
+      ...(input.agentRunProvider ? { agentRunProvider: input.agentRunProvider } : {}),
+      ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
+      ...(input.agentRunExternalSessionHash
+        ? { agentRunExternalSessionHash: input.agentRunExternalSessionHash }
+        : {}),
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -534,6 +554,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   browserPromptFingerprint?: string | null;
   browserPromptTimestamp?: number | null;
   browserPromptLength?: number | null;
+  agentRuntime?: string | null;
+  agentRunProvider?: string | null;
+  agentRunId?: string | null;
+  agentRunExternalSessionHash?: string | null;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
@@ -556,6 +580,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
       browserPromptFingerprint: input.browserPromptFingerprint ?? null,
       browserPromptTimestamp: input.browserPromptTimestamp ?? null,
       browserPromptLength: input.browserPromptLength ?? null,
+      agentRuntime: input.agentRuntime ?? null,
+      agentRunProvider: input.agentRunProvider ?? null,
+      agentRunId: input.agentRunId ?? null,
+      agentRunExternalSessionHash: input.agentRunExternalSessionHash ?? null,
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -606,6 +634,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     browserPromptFingerprint: input.browserPromptFingerprint ?? null,
     browserPromptTimestamp: input.browserPromptTimestamp ?? null,
     browserPromptLength: input.browserPromptLength ?? null,
+    agentRuntime: input.agentRuntime ?? null,
+    agentRunProvider: input.agentRunProvider ?? null,
+    agentRunId: input.agentRunId ?? null,
+    agentRunExternalSessionHash: input.agentRunExternalSessionHash ?? null,
     surface: input.surface,
     roomPhase: input.roomPhase,
     workspaceStatus: input.workspaceStatus,

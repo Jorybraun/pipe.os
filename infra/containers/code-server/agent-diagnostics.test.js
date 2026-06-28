@@ -126,6 +126,10 @@ describe('agent diagnostics', () => {
       browserPromptFingerprint: 'clippy_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 35,
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
       observedAt: '2026-06-27T20:00:00.000Z',
     });
 
@@ -150,6 +154,10 @@ describe('agent diagnostics', () => {
       browserPromptFingerprint: 'clippy_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 35,
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
     });
 
     const serialized = JSON.stringify(message);
@@ -196,6 +204,10 @@ describe('agent diagnostics', () => {
       browserPromptFingerprint: 'clippy_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 20,
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
       observedAt: '2026-06-27T21:00:00.000Z',
     });
 
@@ -221,6 +233,10 @@ describe('agent diagnostics', () => {
         browserPromptFingerprint: 'clippy_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 20,
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
         bridgePersisted: true,
       },
     });
@@ -275,6 +291,10 @@ describe('agent diagnostics', () => {
       browserPromptFingerprint: 'clippy_0123abcd',
       browserPromptTimestamp: 1782603900000,
       browserPromptLength: 24,
+      agentRuntime: 'api',
+      agentRunProvider: 'devin_api',
+      agentRunId: 'devin-api:1234abcd',
+      agentRunExternalSessionHash: 'sha256:1234abcd',
     })).toMatchObject({
       type: 'ai_chat_agent',
       text: 'I inspected the failing test.',
@@ -285,6 +305,10 @@ describe('agent diagnostics', () => {
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_api_response',
         browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
       },
     });
   });
@@ -303,6 +327,10 @@ describe('agent diagnostics', () => {
         browserPromptFingerprint: 'clippy_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
       },
       observedAt: '2026-06-27T21:10:00.000Z',
     })).toEqual({
@@ -326,6 +354,10 @@ describe('agent diagnostics', () => {
         browserPromptFingerprint: 'clippy_0123abcd',
         browserPromptTimestamp: 1782603900000,
         browserPromptLength: 24,
+        agentRuntime: 'api',
+        agentRunProvider: 'devin_api',
+        agentRunId: 'devin-api:1234abcd',
+        agentRunExternalSessionHash: 'sha256:1234abcd',
         observedAt: '2026-06-27T21:10:00.000Z',
         capturedAtMs: 1782594600000,
         clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',

@@ -2538,6 +2538,9 @@ async function chatTextSourceRef(input: {
         observedAt: stringProperty(input.properties, 'observedAt'),
         capturedAtMs,
         browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+        agentRuntime: stringProperty(input.properties, 'agentRuntime'),
+        agentRunProvider: stringProperty(input.properties, 'agentRunProvider'),
+        agentRunId: stringProperty(input.properties, 'agentRunId'),
       },
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
@@ -2550,6 +2553,7 @@ async function chatTextSourceRef(input: {
         responseLength,
         bridgePersisted: input.properties.bridgePersisted === true,
         persistenceFallback: stringProperty(input.properties, 'persistenceFallback'),
+        agentRunExternalSessionHash: stringProperty(input.properties, 'agentRunExternalSessionHash'),
       },
     };
   }
@@ -2599,6 +2603,9 @@ async function chatTextSourceRef(input: {
         diagnosticSource,
         bridgeMessageSource,
         browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+        agentRuntime: stringProperty(input.properties, 'agentRuntime'),
+        agentRunProvider: stringProperty(input.properties, 'agentRunProvider'),
+        agentRunId: stringProperty(input.properties, 'agentRunId'),
       },
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
@@ -2611,6 +2618,7 @@ async function chatTextSourceRef(input: {
         bridgePersisted: input.properties.bridgePersisted === true,
         promptType: stringProperty(input.properties, 'promptType'),
         deliveredToAgent: input.properties.deliveredToAgent === true,
+        agentRunExternalSessionHash: stringProperty(input.properties, 'agentRunExternalSessionHash'),
       },
     };
   }
@@ -2663,6 +2671,9 @@ async function clippyActionSourceRef(input: {
       observedAt: stringProperty(input.properties, 'observedAt'),
       agentActionObservedAt: stringProperty(input.properties, 'agentActionObservedAt'),
       browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+      agentRuntime: stringProperty(input.properties, 'agentRuntime'),
+      agentRunProvider: stringProperty(input.properties, 'agentRunProvider'),
+      agentRunId: stringProperty(input.properties, 'agentRunId'),
       workspaceSessionId: stringProperty(input.properties, 'workspaceSessionId'),
       surface: stringProperty(input.properties, 'surface'),
       roomPhase: stringProperty(input.properties, 'roomPhase'),
@@ -2680,6 +2691,7 @@ async function clippyActionSourceRef(input: {
       agentActionBridgePersisted: typeof input.properties.agentActionBridgePersisted === 'boolean'
         ? input.properties.agentActionBridgePersisted
         : null,
+      agentRunExternalSessionHash: stringProperty(input.properties, 'agentRunExternalSessionHash'),
       agentResponseClaimed: input.properties.agentResponseClaimed === true,
       durableObjectReplayExpected: input.properties.durableObjectReplayExpected === true,
     },

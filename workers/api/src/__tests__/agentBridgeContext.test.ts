@@ -35,9 +35,18 @@ describe('dev-container agent bridge context endpoint', () => {
 
   it('persists missing-Devin-auth as a bridge diagnostic before any fake agent chat can occur', () => {
     expect(bridgeSource).toContain('function devinAuthDiagnosticMessage()');
-    expect(bridgeSource).toContain("diagnosticSource: 'auth_required'");
+    expect(bridgeSource).toContain("let lastAuthDiagnosticSource = 'auth_required';");
+    expect(bridgeSource).toContain('diagnosticSource: lastAuthDiagnosticSource');
     expect(bridgeSource).toContain('broadcastAgentDiagnostic(agentDiagnosticMessage({');
     expect(bridgeSource).toContain('sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());');
+  });
+
+  it('records Devin API responses with a hashed provider run reference', () => {
+    expect(bridgeSource).toContain('function devinApiAgentRunReference');
+    expect(bridgeSource).toContain("agentRunProvider: 'devin_api'");
+    expect(bridgeSource).toContain('agentRunExternalSessionHash: `sha256:${sessionHash}`');
+    expect(bridgeSource).toContain("broadcastAgentChat({\n            agent: AGENT_NAME");
+    expect(bridgeSource).toContain("}, 'agent_api_response');");
   });
 
   it('observes real code-server workspace file changes as source-backed room events', () => {

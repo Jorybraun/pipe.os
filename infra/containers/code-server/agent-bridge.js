@@ -809,6 +809,20 @@ function devinApiSessionId(value) {
   return stringField(value, ['session_id', 'id', 'devin_id', 'devinId']);
 }
 
+function devinApiAgentRunReference(session = devinApiSession) {
+  if (!session || !session.orgId || !session.sessionId) return {};
+  const sessionHash = crypto
+    .createHash('sha256')
+    .update(`${session.orgId}:${session.sessionId}`)
+    .digest('hex');
+  return {
+    agentRuntime: 'api',
+    agentRunProvider: 'devin_api',
+    agentRunId: `devin-api:${sessionHash.slice(0, 32)}`,
+    agentRunExternalSessionHash: `sha256:${sessionHash}`,
+  };
+}
+
 function devinApiMessagesFromResponse(value) {
   if (Array.isArray(value)) return value;
   if (!value || typeof value !== 'object') return [];
@@ -866,11 +880,13 @@ async function listDevinApiMessages() {
 
 async function seedDevinApiSeenMessages() {
   const messages = await listDevinApiMessages().catch((error) => {
+    const agentRunRef = devinApiAgentRunReference();
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: agentStatus,
       message: `Devin API session message seed failed: ${error instanceof Error ? error.message : String(error)}`,
       diagnosticSource: 'devin_api_messages_seed_failed',
+      ...agentRunRef,
     }));
     return [];
   });
@@ -907,6 +923,7 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
         if (!rawText) continue;
         const parsed = extractTaggedRoomActions(rawText, 'agent_api_response');
         const observedAt = new Date().toISOString();
+        const agentRunRef = devinApiAgentRunReference();
         const responsePromptRef = parsed.text || parsed.actions.length > 0
           ? takePromptRefForAgentResponse()
           : {};
@@ -916,11 +933,12 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
             text: parsed.text,
             observedAt,
             actionCount: parsed.actions.length,
+            ...agentRunRef,
             ...responsePromptRef,
           }, 'agent_api_response');
         }
         for (const action of parsed.actions) {
-          broadcastAgentRoomAction({ ...action, ...responsePromptRef }, observedAt);
+          broadcastAgentRoomAction({ ...action, ...agentRunRef, ...responsePromptRef }, observedAt);
         }
       }
       return true;
@@ -932,6 +950,7 @@ async function pollDevinApiForResponse(sentPrompt, browserPromptRef) {
     status: 'idle',
     message: `Devin API accepted the Clippy message but did not return a new assistant message within ${DEVIN_API_RESPONSE_TIMEOUT_MS}ms.`,
     diagnosticSource: 'devin_api_response_timeout',
+    ...devinApiAgentRunReference(),
   }));
   return false;
 }
@@ -964,6 +983,7 @@ async function startDevinApiAgent() {
       throw new Error('Devin API session create response did not include a session id.');
     }
     devinApiSession = { orgId, sessionId };
+    const agentRunRef = devinApiAgentRunReference();
     await seedDevinApiSeenMessages();
     agentAuthed = true;
     broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
@@ -975,12 +995,14 @@ async function startDevinApiAgent() {
       roomContextStatus: context.status,
       roomContextText: compactAgentContext(context.text),
       promptText: prompt,
+      ...agentRunRef,
     }));
     broadcastAgentDiagnostic(agentDiagnosticMessage({
       agent: AGENT_NAME,
       status: 'idle',
       message: 'Devin API session created and ready for Clippy chat.',
       diagnosticSource: 'devin_api_session_ready',
+      ...agentRunRef,
     }));
     markAgentReady();
     return true;
@@ -1031,6 +1053,7 @@ async function writeAgentChatPrompt(text, browserPromptRef = {}) {
     const context = await fetchRoomContextSummary();
     const roomContextText = compactAgentContext(context.text);
     const prompt = buildAgentContextPrompt(context.text, text);
+    const agentRunRef = devinApiAgentRunReference();
     agentStatus = 'thinking';
     broadcastAgentStatus();
     try {
@@ -1057,6 +1080,7 @@ async function writeAgentChatPrompt(text, browserPromptRef = {}) {
         browserPromptFingerprint: browserPromptRef.browserPromptFingerprint,
         browserPromptTimestamp: browserPromptRef.browserPromptTimestamp,
         browserPromptLength: browserPromptRef.browserPromptLength,
+        ...agentRunRef,
       }));
       agentStatus = 'working';
       broadcastAgentStatus();
@@ -1072,6 +1096,7 @@ async function writeAgentChatPrompt(text, browserPromptRef = {}) {
         status: 'idle',
         message: `Devin API chat delivery failed: ${error instanceof Error ? error.message : String(error)}`,
         diagnosticSource: 'devin_api_chat_failed',
+        ...agentRunRef,
       }));
       return false;
     }
