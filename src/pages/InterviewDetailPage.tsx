@@ -28,6 +28,7 @@ import type {
   TranscriptArtifact,
   TranscriptEntry,
 } from '../lib/scheduling/types';
+import type { LivingContextInteraction } from '../lib/api/types';
 import {
   contextRecordTitle,
   contextRecordTypeLabel,
@@ -333,6 +334,28 @@ function parseCodeReviewSubmission(raw: string | null | undefined): CodeReviewSu
 
 function countLabel(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function interactionTypeLabel(interaction: LivingContextInteraction): string {
+  return titleCaseToken(interaction.interactionType);
+}
+
+function interactionEvidenceCounts(interaction: LivingContextInteraction): string {
+  const parts = [
+    interaction.artifactIds.length > 0
+      ? countLabel(interaction.artifactIds.length, 'source artifact')
+      : null,
+    interaction.contextRecordIds.length > 0
+      ? countLabel(interaction.contextRecordIds.length, 'learned record')
+      : null,
+    interaction.assertionIds.length > 0
+      ? countLabel(interaction.assertionIds.length, 'claim')
+      : null,
+    interaction.signalKeys.length > 0
+      ? countLabel(interaction.signalKeys.length, 'signal')
+      : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(' · ') : 'No extracted evidence yet';
 }
 
 function codeReviewVerdictLabel(
@@ -1020,6 +1043,7 @@ export default function InterviewDetailPage(): JSX.Element {
     : interview.status;
   const contextSummary = interview.livingContext?.summary ?? null;
   const contextRecords = interview.livingContext?.contextRecords ?? [];
+  const contextInteractions = interview.livingContext?.interactions.slice(0, 4) ?? [];
   const hasLivingContextEvidence = Boolean(
     contextSummary && (
       contextSummary.interactionCount > 0
@@ -1543,6 +1567,27 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={CONTEXT_METRIC_LABEL}>claims</span>
                 </div>
               </div>
+              {contextInteractions.length > 0 && (
+                <div data-testid="interview-person-context-timeline" style={PERSON_CONTEXT_TIMELINE}>
+                  <div style={FIELD_LABEL}>Evidence timeline</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {contextInteractions.map((interaction) => (
+                      <div key={interaction.id} style={CONTEXT_RECORD}>
+                        <div style={TRANSCRIPT_ROLE}>{interactionTypeLabel(interaction)}</div>
+                        <div style={TRANSCRIPT_TEXT}>
+                          {formatDate(interaction.startedAt ?? interaction.createdAt)}
+                        </div>
+                        {interaction.externalReference && (
+                          <div style={CONTEXT_RECORD_NARRATIVE}>{interaction.externalReference}</div>
+                        )}
+                        <div style={CONTEXT_RECORD_NARRATIVE}>
+                          {interactionEvidenceCounts(interaction)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {contextRecords.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {contextRecords.slice(0, 3).map((record) => {
@@ -2398,6 +2443,12 @@ const CONTEXT_METRIC_LABEL: CSSProperties = {
   fontWeight: 700,
   letterSpacing: '0.12em',
   textTransform: 'uppercase',
+};
+
+const PERSON_CONTEXT_TIMELINE: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  marginBottom: 14,
 };
 
 const CONTEXT_RECORD: CSSProperties = {

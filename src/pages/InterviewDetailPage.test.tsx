@@ -434,6 +434,92 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
   });
 
+  it('shows the person evidence timeline from living context interactions', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        livingContext: {
+          person: {
+            personId: 'person-graph-1',
+            workspacePersonId: 'workspace-person-1',
+            applicationId: 'application-1',
+            displayName: 'Ada Candidate',
+            primaryEmail: 'ada@example.com',
+            primaryPhone: null,
+            relationshipSummary: null,
+            applicationStatus: null,
+            pipelineId: null,
+            roles: [],
+          },
+          summary: {
+            interactionCount: 3,
+            artifactCount: 4,
+            contextRecordCount: 2,
+            assertionCount: 1,
+            signalCount: 1,
+            sourceSpanCount: 5,
+          },
+          interactions: [
+            {
+              id: 'interaction-evidence-call',
+              interactionType: 'code_review_context_call_recommendation',
+              externalReference: 'interview-code-review-blocked',
+              startedAt: '2026-06-24T15:30:00.000Z',
+              endedAt: null,
+              createdAt: '2026-06-24T15:30:00.000Z',
+              updatedAt: '2026-06-24T15:30:00.000Z',
+              metadata: {
+                matchStatus: 'NEEDS_MORE_EVIDENCE',
+                contextCallInterviewId: 'context-call-1',
+              },
+              artifactIds: ['artifact-1'],
+              contextRecordIds: ['record-1'],
+              assertionIds: [],
+              signalKeys: ['term:react-review'],
+            },
+            {
+              id: 'interaction-invite',
+              interactionType: 'scheduled_interview_invite_delivery',
+              externalReference: 'interview-1',
+              startedAt: '2026-06-23T00:00:00.000Z',
+              endedAt: null,
+              createdAt: '2026-06-23T00:00:00.000Z',
+              updatedAt: '2026-06-23T00:00:00.000Z',
+              metadata: {
+                emailSent: true,
+                deliveredUrl: 'https://app-dev.hire-pipe.com/assess/token',
+              },
+              artifactIds: ['artifact-2'],
+              contextRecordIds: ['record-2'],
+              assertionIds: ['assertion-1'],
+              signalKeys: [],
+            },
+          ],
+          artifacts: [],
+          contextRecords: [],
+          assertions: [],
+          signals: [],
+          relationships: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const timeline = screen.getByTestId('interview-person-context-timeline');
+    expect(timeline).toHaveTextContent('Evidence timeline');
+    expect(timeline).toHaveTextContent('Code Review Context Call Recommendation');
+    expect(timeline).toHaveTextContent('Scheduled Interview Invite Delivery');
+    expect(timeline).toHaveTextContent('interview-code-review-blocked');
+    expect(timeline).toHaveTextContent('1 source artifact');
+    expect(timeline).toHaveTextContent('1 learned record');
+    expect(timeline).toHaveTextContent('1 signal');
+    expect(timeline).toHaveTextContent('interview-1');
+    expect(timeline).toHaveTextContent('1 claim');
+  });
+
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
