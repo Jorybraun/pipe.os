@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Blocked CODE_REVIEW evidence-call creation now also creates a source-backed `TECHNICAL` assessment session and immutable evidence-plan event linked to the original match gap and follow-up interview.
 - Completed CODE_REVIEW evidence-call transcripts now append source-backed response spans to the evidence-plan assessment and emit a ready-for-repo-match-refresh report.
 - Original CODE_REVIEW recruiter details now surface completed evidence-plan follow-up calls as a refresh-ready relationship instead of continuing to show the stale missing-evidence prompt.
+- Recruiters can now rerun deterministic CODE_REVIEW repo matching from completed evidence-plan follow-up calls, persisting the refreshed real repo/PR assignment only when the matcher returns a source-backed match.
 - CODE_REVIEW context-call refresh state now passes the scheduled interview id through match-detail loading, restoring Worker type-checks for the evidence-plan refresh route.
 - Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
 - Code-review context-call recommendation persistence now narrows candidate application ids before writing living-context records, restoring Workers type-checks for the scheduling route.

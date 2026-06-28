@@ -19,6 +19,7 @@ import {
   ensureContactLivingContext,
   LivingContextStore,
 } from '../../../lib/livingContext';
+import * as d1Matcher from '../../../lib/challengeMatching/d1Matcher';
 import type { Env, Variables } from '../../../types';
 import {
   canInterviewStatusTransition,
@@ -187,6 +188,7 @@ describe('GET /interviews/:id detail', () => {
   let sqlite: BetterSqliteDb | null = null;
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     sqlite?.close();
     sqlite = null;
@@ -1176,6 +1178,188 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       completedAt: '2026-06-22T19:00:00.000Z',
       updatedAt: '2026-06-22T19:01:00.000Z',
+    });
+  });
+
+  it('refuses CODE_REVIEW match refresh until completed follow-up evidence exists', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-not-ready', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    const matchSpy = vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge');
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-not-ready/code-review-match/refresh', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(409);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error).toMatchObject({
+      code: 'CONFLICT',
+      message: 'A completed evidence-plan follow-up is required before refreshing repo matching.',
+    });
+    expect(matchSpy).not.toHaveBeenCalled();
+  });
+
+  it('reruns CODE_REVIEW matching from completed evidence and persists the refreshed PR assignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-run', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO qualified_repos (id, github_url)
+      VALUES (77, 'https://github.com/pipe-labs/orders')
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-refresh-314', 'snapshot-orders', 77, 314, 1,
+        0.91, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-refresh-run',
+        'assessment-session:code-review-evidence-plan:interview-code-review-refresh-run:context-call-refresh-run',
+        'context-call-refresh-run', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-refresh-run',
+      contextCallInterviewId: 'context-call-refresh-run',
+      matchRunId: 'match-run-before-refresh',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-refresh-run',
+        'assessment-report:code-review-evidence-plan:assessment-plan-refresh-run:ready',
+        'assessment-plan-refresh-run', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 2 source-backed transcript spans for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      )
+    `).run(JSON.stringify({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-refresh-run',
+      contextCallInterviewId: 'context-call-refresh-run',
+      matchRunId: 'match-run-before-refresh',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      sourceSpanCount: 2,
+    }));
+    vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
+      sqlite!.prepare(`
+        INSERT INTO match_runs (
+          id, candidate_id, role_snapshot_id, status, ranked_results_json,
+          selected_packet_id, query_json, created_at
+        ) VALUES (
+          'match-run-after-refresh', 'candidate-1', 'standalone-code-review-v1',
+          'MATCHED', ?, 'packet-refresh-314', '{}', '2026-06-22T19:02:00.000Z'
+        )
+      `).run(JSON.stringify([{
+        rank: 1,
+        challengeId: 'packet-refresh-314',
+        repoId: '77',
+        prNumber: 314,
+        score: 0.91,
+        alignedDemandCount: 2,
+        stretchCount: 0,
+        provenanceComplete: true,
+        eligible: true,
+        assessmentQuality: null,
+        reviewProfile: null,
+        validatorAgent: null,
+        alignments: [],
+        rejectionReasons: [],
+      }]));
+      return {
+        status: 'MATCHED',
+        matchRunId: 'match-run-after-refresh',
+        repoId: 77,
+        prNumber: 314,
+      };
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-run/code-review-match/refresh', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      refreshed: boolean;
+      status: string;
+      matchRunId: string;
+      repoId: number;
+      repoUrl: string;
+      prNumber: number;
+      codeReviewMatch: { status: string; matchRunId: string | null } | null;
+    };
+    expect(body).toMatchObject({
+      refreshed: true,
+      status: 'MATCHED',
+      matchRunId: 'match-run-after-refresh',
+      repoId: 77,
+      repoUrl: 'https://github.com/pipe-labs/orders',
+      prNumber: 314,
+      codeReviewMatch: {
+        status: 'MATCHED',
+        matchRunId: 'match-run-after-refresh',
+      },
+    });
+    const row = sqlite!.prepare(
+      `SELECT matched_repo_id, github_repo_url, github_pr_number
+         FROM scheduled_interviews
+        WHERE id = 'interview-code-review-refresh-run'`,
+    ).get() as {
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    };
+    expect(row).toEqual({
+      matched_repo_id: 77,
+      github_repo_url: 'https://github.com/pipe-labs/orders',
+      github_pr_number: 314,
     });
   });
 

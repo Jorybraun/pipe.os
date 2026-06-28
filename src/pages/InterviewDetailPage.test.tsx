@@ -470,8 +470,94 @@ describe('InterviewDetailPage', () => {
     expect(refresh).toHaveTextContent('Ready to refresh repo match');
     expect(refresh).toHaveTextContent('Evidence call captured 3 source-backed transcript spans for repo-match refresh.');
     expect(refresh).toHaveTextContent('3 source-backed transcript spans are linked to this original code-review match.');
+    expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('REFRESH REPO MATCH');
     expect(screen.getByTestId('interview-code-review-open-evidence-call')).toHaveTextContent('OPEN EVIDENCE CALL');
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
+  });
+
+  it('refreshes the code-review match from captured follow-up evidence', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [],
+          evidenceRefresh: {
+            status: 'READY_FOR_REPO_MATCH_REFRESH',
+            assessmentSessionId: 'assessment-plan-refresh-ready',
+            contextCallInterviewId: 'context-call-refresh-ready',
+            reportId: 'assessment-report-refresh-ready',
+            summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
+            sourceSpanCount: 3,
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            completedAt: '2026-06-22T19:00:00.000Z',
+            updatedAt: '2026-06-22T19:01:00.000Z',
+          },
+        },
+      }),
+    });
+    mocks.api.post.mockResolvedValueOnce({
+      refreshed: true,
+      status: 'MATCHED',
+      matchRunId: 'match-run-after-refresh',
+      repoId: 77,
+      repoUrl: 'https://github.com/pipe-labs/orders',
+      prNumber: 314,
+      codeReviewMatch: {
+        status: 'MATCHED',
+        matchRunId: 'match-run-after-refresh',
+        packetId: 'packet-refresh-314',
+        summary: 'Matched 2 source-backed demands (0 stretch).',
+        score: 0.91,
+        assessmentQuality: null,
+        reviewProfile: null,
+        validatorAgent: null,
+        roleSources: [],
+        evidence: [],
+        evidenceHyperedges: [],
+        gaps: [],
+        evidencePlan: [],
+        evidenceRefresh: {
+          status: 'READY_FOR_REPO_MATCH_REFRESH',
+          assessmentSessionId: 'assessment-plan-refresh-ready',
+          contextCallInterviewId: 'context-call-refresh-ready',
+          reportId: 'assessment-report-refresh-ready',
+          summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
+          sourceSpanCount: 3,
+          matchRunId: 'match-run-blocked-1',
+          matchStatus: 'NEEDS_MORE_EVIDENCE',
+          completedAt: '2026-06-22T19:00:00.000Z',
+          updatedAt: '2026-06-22T19:01:00.000Z',
+        },
+      },
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    fireEvent.click(screen.getByTestId('interview-code-review-refresh-match-cta'));
+    await flushAsyncUpdates();
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/code-review-match/refresh',
+      {},
+    );
+    expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('MATCHED');
+    expect(screen.getByTestId('interview-code-review-match')).toHaveTextContent('MATCHED');
+    expect(screen.getByText('Repo match refreshed from captured evidence.')).toBeTruthy();
   });
 
   it('creates a linked context call from a blocked code-review match', async () => {

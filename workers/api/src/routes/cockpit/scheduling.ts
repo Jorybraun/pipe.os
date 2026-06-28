@@ -34,6 +34,9 @@ import {
   loadContactLivingContext,
 } from '../../lib/livingContext';
 import { AssessmentLayerStore } from '../../lib/assessmentLayer/persistence';
+import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
+import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
+import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -1301,6 +1304,61 @@ async function loadCodeReviewEvidenceRefresh(
   }
 
   return null;
+}
+
+function parseRoleContextVersion(rcdJson: string | null): string | null {
+  if (!rcdJson) return null;
+  try {
+    const parsed = JSON.parse(rcdJson) as { rcd_version?: unknown };
+    return typeof parsed.rcd_version === 'string' ? parsed.rcd_version : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadScheduledCodeReviewMatchOptions(
+  db: D1Database,
+  pipelineId: string | null,
+): Promise<CandidateReviewChallengeOptions> {
+  if (!pipelineId) return {};
+  if (!await tableExists(db, 'role_contexts')) return {};
+
+  const roleContext = await db.prepare(
+    `SELECT id, rcd_json, job_description_md, non_negotiable_skills_json
+       FROM role_contexts
+      WHERE pipeline_id = ?1
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+  ).bind(pipelineId).first<{
+    id: string;
+    rcd_json: string | null;
+    job_description_md: string | null;
+    non_negotiable_skills_json: string | null;
+  }>();
+  if (!roleContext) return {};
+
+  const roleSemantics = await loadRoleChallengeSemantics(db, {
+    ...roleContext,
+    rcd_version: parseRoleContextVersion(roleContext.rcd_json),
+  });
+
+  return {
+    roleContextId: roleContext.id,
+    roleSnapshotId: roleSemantics.roleSnapshotId,
+    roleConcepts: roleSemantics.relevantConcepts,
+    requiredConcepts: roleSemantics.requiredConcepts,
+    conceptResolverVersion: roleSemantics.resolverVersion,
+    roleSourceReferences: roleSemantics.sources.map((source) => ({
+      entityId: source.roleNodeId,
+      locator: source.sourceSection ?? 'role_context',
+      conceptKeys: source.conceptKeys,
+      sourceRefType: source.sourceRefType,
+      sourceRefId: source.sourceRefId,
+      sourceSpanId: source.sourceSpanId,
+      exactText: source.exactText,
+      contentHash: source.contentHash,
+    })),
+  };
 }
 
 async function loadScheduledCodeReviewMatchDetail(
@@ -3437,6 +3495,99 @@ schedulingAuth.post('/interviews/:id/context-call', async (c) => {
       recruiterNotes,
     },
   }, 201);
+});
+
+// POST /interviews/:id/code-review-match/refresh — rerun deterministic PR matching after evidence call completion
+schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const source = await db.prepare(
+    `SELECT si.id, si.candidate_id, si.pipeline_id, si.interview_type,
+            si.matched_repo_id, si.github_repo_url, si.github_pr_number
+       FROM scheduled_interviews si
+      WHERE si.id = ?1 AND si.owner_id = ?2`,
+  ).bind(id, userId).first<{
+    id: string;
+    candidate_id: string | null;
+    pipeline_id: string | null;
+    interview_type: string | null;
+    matched_repo_id: number | null;
+    github_repo_url: string | null;
+    github_pr_number: number | null;
+  }>();
+
+  if (!source) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+  if (source.interview_type !== 'CODE_REVIEW') {
+    return apiError(c, 'VALIDATION_ERROR', 'Only code-review interviews can refresh repo matching.');
+  }
+  if (!source.candidate_id) {
+    return apiError(c, 'VALIDATION_ERROR', 'A candidate-backed interview is required before refreshing repo matching.');
+  }
+
+  const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
+  if (!evidenceRefresh) {
+    return apiError(c, 'CONFLICT', 'A completed evidence-plan follow-up is required before refreshing repo matching.');
+  }
+
+  const matchOptions = await loadScheduledCodeReviewMatchOptions(db, source.pipeline_id);
+  const match = await d1Matcher.matchCandidateToReviewChallenge(db, source.candidate_id, matchOptions);
+  if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
+    const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
+      id: source.id,
+      candidate_id: source.candidate_id,
+      interview_type: source.interview_type,
+      matched_repo_id: source.matched_repo_id,
+      github_repo_url: source.github_repo_url,
+      github_pr_number: source.github_pr_number,
+    });
+
+    return c.json({
+      refreshed: false,
+      status: match.status,
+      matchRunId: match.matchRunId,
+      evidenceRefresh,
+      codeReviewMatch,
+    });
+  }
+
+  const repo = await db.prepare(
+    `SELECT github_url FROM qualified_repos WHERE id = ?1`,
+  ).bind(match.repoId).first<{ github_url: string | null }>();
+  if (!repo?.github_url) {
+    return apiError(c, 'CONFLICT', 'The refreshed match selected a repository that is not available.');
+  }
+
+  const now = new Date().toISOString();
+  await db.prepare(
+    `UPDATE scheduled_interviews
+        SET matched_repo_id = ?1,
+            github_repo_url = ?2,
+            github_pr_number = ?3,
+            updated_at = ?4
+      WHERE id = ?5 AND owner_id = ?6`,
+  ).bind(match.repoId, repo.github_url, match.prNumber, now, source.id, userId).run();
+
+  const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, {
+    id: source.id,
+    candidate_id: source.candidate_id,
+    interview_type: source.interview_type,
+    matched_repo_id: match.repoId,
+    github_repo_url: repo.github_url,
+    github_pr_number: match.prNumber,
+  });
+
+  return c.json({
+    refreshed: true,
+    status: match.status,
+    matchRunId: match.matchRunId,
+    repoId: match.repoId,
+    repoUrl: repo.github_url,
+    prNumber: match.prNumber,
+    evidenceRefresh,
+    codeReviewMatch,
+  });
 });
 
 // PATCH /interviews/:id — update interview

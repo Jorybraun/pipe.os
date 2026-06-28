@@ -73,6 +73,16 @@ interface ContextCallResponse {
   };
 }
 
+interface CodeReviewMatchRefreshResponse {
+  refreshed: boolean;
+  status: string;
+  matchRunId: string;
+  repoId?: number;
+  repoUrl?: string;
+  prNumber?: number;
+  codeReviewMatch: CodeReviewMatchDetail | null;
+}
+
 interface CodeReviewAnnotationDetail {
   file: string;
   line: number | null;
@@ -591,6 +601,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
   const [contextCallError, setContextCallError] = useState<string | null>(null);
   const [isCreatingContextCall, setIsCreatingContextCall] = useState(false);
+  const [matchRefreshError, setMatchRefreshError] = useState<string | null>(null);
+  const [matchRefreshNotice, setMatchRefreshNotice] = useState<string | null>(null);
+  const [isRefreshingMatch, setIsRefreshingMatch] = useState(false);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -775,6 +788,37 @@ export default function InterviewDetailPage(): JSX.Element {
       setIsCreatingContextCall(false);
     }
   }, [api, interview, navigate]);
+
+  const refreshCodeReviewMatch = useCallback(async () => {
+    if (!interview) return;
+    setMatchRefreshError(null);
+    setMatchRefreshNotice(null);
+    setIsRefreshingMatch(true);
+    try {
+      const result = await api.post<CodeReviewMatchRefreshResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/code-review-match/refresh`,
+        {},
+      );
+      setInterview((current) => current
+        ? {
+            ...current,
+            matchedRepoId: result.repoId ?? current.matchedRepoId ?? null,
+            githubRepoUrl: result.repoUrl ?? current.githubRepoUrl ?? null,
+            githubPrNumber: result.prNumber ?? current.githubPrNumber ?? null,
+            codeReviewMatch: result.codeReviewMatch ?? current.codeReviewMatch ?? null,
+          }
+        : current);
+      if (result.refreshed) {
+        setMatchRefreshNotice('Repo match refreshed from captured evidence.');
+      } else {
+        setMatchRefreshError(`Refresh ran, but matcher returned ${titleCaseToken(result.status)}.`);
+      }
+    } catch (err) {
+      setMatchRefreshError(err instanceof Error ? err.message : 'Unable to refresh repo matching');
+    } finally {
+      setIsRefreshingMatch(false);
+    }
+  }, [api, interview]);
 
   const saveWorkspaceConfig = useCallback(async () => {
     if (!interview) return;
@@ -1122,6 +1166,17 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
                   </div>
+                  <button
+                    data-testid="interview-code-review-refresh-match-cta"
+                    onClick={() => void refreshCodeReviewMatch()}
+                    disabled={isRefreshingMatch}
+                    style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                  >
+                    {isRefreshingMatch
+                      ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                      : <Network size={14} />}
+                    REFRESH REPO MATCH
+                  </button>
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (
                     <button
                       data-testid="interview-code-review-open-evidence-call"
@@ -1132,6 +1187,8 @@ export default function InterviewDetailPage(): JSX.Element {
                       OPEN EVIDENCE CALL
                     </button>
                   )}
+                  {matchRefreshNotice && <div style={SUCCESS_NOTE}>{matchRefreshNotice}</div>}
+                  {matchRefreshError && <div style={ERROR_NOTE}>{matchRefreshError}</div>}
                 </div>
               )}
               {shouldShowEvidencePlan && (
