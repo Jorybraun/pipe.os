@@ -126,6 +126,7 @@ const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'ma
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
 const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
+const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -384,6 +385,40 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Workspace-state evidence must come from the browser workspace observer with workspace source, status/session context, challenge diagnostics, and no persisted proxy URL.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'clippy_prompt') {
+    const promptCreatedAt = properties.promptCreatedAt;
+    const sourceOk = properties.source === 'clippy_prompt_client_submit'
+      && typeof properties.promptEventSource === 'string'
+      && CLIPPY_PROMPT_EVENT_SOURCES.has(properties.promptEventSource);
+    const actorOk = (event.actor === 'host' || event.actor === 'agent')
+      && (properties.actor === undefined || properties.actor === event.actor);
+    const promptOk = hasString(properties.promptId)
+      && hasString(properties.clientId)
+      && typeof promptCreatedAt === 'number'
+      && Number.isFinite(promptCreatedAt)
+      && promptCreatedAt >= 0
+      && typeof properties.promptLength === 'number'
+      && properties.promptLength === event.text.length
+      && hasString(properties.promptTrigger)
+      && hasString(properties.promptSource);
+    const browserPromptOk = properties.promptEventSource === 'browser_proactive_clippy_prompt'
+      && event.actor === 'host'
+      && properties.agentResponseClaimed === false
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase);
+    const agentPromptOk = properties.promptEventSource === 'clippy_agent_bridge'
+      && event.actor === 'agent'
+      && properties.bridgeEventType === 'CLIPPY_PROMPT'
+      && hasString(properties.observedAt)
+      && typeof properties.bridgePersisted === 'boolean';
+    if (sourceOk && actorOk && promptOk && (browserPromptOk || agentPromptOk)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy prompt evidence must come from the browser proactive prompt flow or real agent bridge with prompt identity, trigger, length, source, and room context.',
       path: ['properties'],
     });
     return;

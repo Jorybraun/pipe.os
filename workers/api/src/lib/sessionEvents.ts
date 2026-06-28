@@ -340,9 +340,27 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   const promptId = stringOrNull(prompt.id);
   const clientId = stringOrNull(prompt.clientId);
   const promptSource = stringOrNull(prompt.source);
+  const promptEventSource = stringOrNull(prompt.promptEventSource);
+  const promptTrigger = stringOrNull(prompt.promptTrigger);
+  const surface = stringOrNull(prompt.surface);
+  const roomPhase = stringOrNull(prompt.roomPhase);
+  const workspaceStatus = stringOrNull(prompt.workspaceStatus);
+  const workspaceSessionId = stringOrNull(prompt.workspaceSessionId);
+  properties.source = 'clippy_prompt_durable_object';
   if (promptId) properties.promptId = promptId;
   if (clientId) properties.clientId = clientId;
   if (promptSource) properties.promptSource = promptSource;
+  if (promptEventSource) properties.promptEventSource = promptEventSource;
+  if (promptTrigger) properties.promptTrigger = promptTrigger;
+  if (surface) properties.surface = surface;
+  if (roomPhase) properties.roomPhase = roomPhase;
+  if (workspaceStatus) properties.workspaceStatus = workspaceStatus;
+  if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
+  if (typeof prompt.agentResponseClaimed === 'boolean') {
+    properties.agentResponseClaimed = prompt.agentResponseClaimed;
+  }
+  properties.promptCreatedAt = numberOrNull(prompt.createdAt);
+  properties.promptLength = text.length;
   if (typeof prompt.hold === 'boolean') properties.hold = prompt.hold;
   if (Array.isArray(prompt.targetRoles)) properties.targetRoles = prompt.targetRoles.filter(isRoomActivityRole);
   if (Array.isArray(prompt.actions)) {
@@ -351,6 +369,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
       .map((action) => ({
         id: stringOrNull(action.id),
         label: stringOrNull(action.label),
+        disabled: typeof action.disabled === 'boolean' ? action.disabled : undefined,
       }))
       .filter((action) => action.id && action.label);
   }

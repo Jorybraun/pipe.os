@@ -1666,6 +1666,75 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
+    const fakeClippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_prompt',
+        text: 'Would you like to start recording?',
+        actor: 'host',
+        properties: {
+          promptId: 'prompt-start-recording',
+          clientId: 'host-client',
+          promptSource: 'system',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeClippyPromptRes.status).toBe(422);
+
+    const clippyPromptRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_prompt',
+        text: 'Would you like to start recording?',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_client_submit',
+          promptEventSource: 'browser_proactive_clippy_prompt',
+          promptTrigger: 'recording_start_suggestion',
+          actor: 'host',
+          promptId: 'prompt-start-recording',
+          clientId: 'host-client',
+          promptCreatedAt: 1782601501000,
+          promptLength: 'Would you like to start recording?'.length,
+          promptSource: 'system',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          agentResponseClaimed: false,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyPromptRes.status).toBe(200);
+
+    const clippyPromptNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_clippy_prompt'
+          AND extracted_properties_json LIKE '%clippy_prompt_client_submit%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(clippyPromptNode).toMatchObject({
+      node_type: 'session_clippy_prompt',
+      source_type: 'meeting_session',
+    });
+    expect(clippyPromptNode?.narrative_text).toContain('Clippy prompted');
+    expect(JSON.parse(clippyPromptNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'clippy_prompt_client_submit',
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptTrigger: 'recording_start_suggestion',
+      promptId: 'prompt-start-recording',
+      promptLength: 'Would you like to start recording?'.length,
+      agentResponseClaimed: false,
+    });
+
     const fakeClippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2553,6 +2622,13 @@ describe('meeting room recording living-context route', () => {
             clientId: 'host-client',
             createdAt: 1700000003000,
             source: 'system',
+            promptEventSource: 'browser_proactive_clippy_prompt',
+            promptTrigger: 'host_waiting_prepare_workspace',
+            surface: 'win95',
+            roomPhase: 'connected',
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            agentResponseClaimed: false,
             text: 'Would you like to open the workspace?',
             actions: [{ id: 'open-workspace', label: 'Open workspace' }],
           },
@@ -2654,6 +2730,19 @@ describe('meeting room recording living-context route', () => {
       proxyUrlPersisted: false,
       workspaceStatus: 'READY',
       workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_clippy_prompt')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      source: 'clippy_prompt_durable_object',
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptTrigger: 'host_waiting_prepare_workspace',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      agentResponseClaimed: false,
+      promptCreatedAt: 1700000003000,
+      promptLength: 'Would you like to open the workspace?'.length,
     });
     expect(graphBody.events.at(-1)?.properties).toMatchObject({
       roomActivitySource: 'durable_object',

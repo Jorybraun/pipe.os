@@ -577,6 +577,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'host-client',
         createdAt: 3,
         source: 'system',
+        promptEventSource: 'browser_proactive_clippy_prompt',
+        promptTrigger: 'recording_start_suggestion',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        agentResponseClaimed: false,
         targetRoles: ['HOST'],
         text: "It looks like you're starting an interview. Would you like to begin recording?",
         hold: true,
@@ -590,6 +597,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       id: 'clippy-recording',
       clientId: 'host-client',
       source: 'system',
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      promptTrigger: 'recording_start_suggestion',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      agentResponseClaimed: false,
       targetRoles: ['HOST'],
       text: "It looks like you're starting an interview. Would you like to begin recording?",
       actions: [
@@ -601,6 +615,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       role: 'HOST',
       payload: expect.objectContaining({
         id: 'clippy-recording',
+        promptEventSource: 'browser_proactive_clippy_prompt',
+        promptTrigger: 'recording_start_suggestion',
         text: "It looks like you're starting an interview. Would you like to begin recording?",
       }),
     }));
@@ -609,6 +625,9 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         role: 'HOST',
         prompt: expect.objectContaining({
           id: 'clippy-recording',
+          promptEventSource: 'browser_proactive_clippy_prompt',
+          promptTrigger: 'recording_start_suggestion',
+          agentResponseClaimed: false,
         }),
       }),
     ]);

@@ -161,6 +161,13 @@ interface RoomClippyPrompt {
   createdAt: number;
   source: RoomClippyPromptSource;
   text: string;
+  promptEventSource?: 'browser_proactive_clippy_prompt' | 'clippy_agent_bridge';
+  promptTrigger?: string;
+  surface?: RoomSurface;
+  roomPhase?: string;
+  workspaceStatus?: string | null;
+  workspaceSessionId?: string | null;
+  agentResponseClaimed?: boolean;
   hold?: boolean;
   targetRoles?: VideoRole[];
   actions?: RoomClippyAction[];
@@ -520,6 +527,15 @@ export class VideoRoom {
       createdAt: value.createdAt,
       source: this.isRoomClippyPromptSource(value.source) ? value.source : 'system',
       text: value.text,
+      promptEventSource: value.promptEventSource === 'browser_proactive_clippy_prompt' || value.promptEventSource === 'clippy_agent_bridge'
+        ? value.promptEventSource
+        : undefined,
+      promptTrigger: this.safeTextOrNull(value.promptTrigger, 120) ?? undefined,
+      surface: this.isRoomSurface(value.surface) ? value.surface : undefined,
+      roomPhase: this.safeTextOrNull(value.roomPhase, 80) ?? undefined,
+      workspaceStatus: this.safeTextOrNull(value.workspaceStatus, 80),
+      workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
+      agentResponseClaimed: this.safeBoolean(value.agentResponseClaimed),
       hold: typeof value.hold === 'boolean' ? value.hold : undefined,
       targetRoles: targetRoles && targetRoles.length > 0 ? [...new Set(targetRoles)] : undefined,
       actions: actions && actions.length > 0 ? actions : undefined,

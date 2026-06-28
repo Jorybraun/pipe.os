@@ -1106,6 +1106,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!room.remoteStream && metadata.role === 'HOST' && workspaceActions.length > 0) {
       proactiveClippyPrompt = {
         source: 'system',
+        promptTrigger: 'host_waiting_prepare_workspace',
         targetRoles: ['HOST'],
         text: "It looks like you're waiting for your guest. Would you like to prepare the dev workspace while you wait?",
         hold: true,
@@ -1114,6 +1115,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } else if (!room.remoteStream && metadata.role === 'HOST') {
       proactiveClippyPrompt = {
         source: 'system',
+        promptTrigger: 'host_waiting_guest',
         targetRoles: ['HOST'],
         text: "It looks like you're waiting for your guest. I'll keep the desktop ready while they join.",
         hold: true,
@@ -1121,6 +1123,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } else if (room.remoteStream && recordingState === 'idle' && metadata.role === 'HOST') {
       proactiveClippyPrompt = {
         source: 'system',
+        promptTrigger: 'recording_start_suggestion',
         targetRoles: ['HOST'],
         text: "It looks like you're starting an interview. Would you like to begin recording?",
         hold: true,
@@ -1135,6 +1138,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : undefined;
       proactiveClippyPrompt = {
         source: 'system',
+        promptTrigger: 'recording_active_guidance',
         targetRoles: ['HOST'],
         text: "It looks like you're recording the session. You can stop recording when you're done.",
         hold: true,
@@ -1146,16 +1150,35 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     } else if (room.phase === 'ended') {
       proactiveClippyPrompt = {
         source: 'system',
+        promptTrigger: 'room_ended_notice',
         targetRoles: ['HOST', 'GUEST'],
         text: "It looks like the call has ended. You can close this window now.",
         hold: true,
       };
     }
   }
+  if (proactiveClippyPrompt) {
+    proactiveClippyPrompt = {
+      ...proactiveClippyPrompt,
+      promptEventSource: 'browser_proactive_clippy_prompt',
+      surface: room.roomSurface,
+      roomPhase: room.phase,
+      workspaceStatus: workspace?.session?.status ?? null,
+      workspaceSessionId: workspace?.session?.sessionId ?? null,
+      agentResponseClaimed: false,
+    };
+  }
 
   const proactiveClippyPromptSignature = proactiveClippyPrompt
     ? JSON.stringify({
         source: proactiveClippyPrompt.source,
+        promptEventSource: proactiveClippyPrompt.promptEventSource,
+        promptTrigger: proactiveClippyPrompt.promptTrigger,
+        surface: proactiveClippyPrompt.surface,
+        roomPhase: proactiveClippyPrompt.roomPhase,
+        workspaceStatus: proactiveClippyPrompt.workspaceStatus,
+        workspaceSessionId: proactiveClippyPrompt.workspaceSessionId,
+        agentResponseClaimed: proactiveClippyPrompt.agentResponseClaimed,
         targetRoles: proactiveClippyPrompt.targetRoles,
         text: proactiveClippyPrompt.text,
         hold: proactiveClippyPrompt.hold ?? false,

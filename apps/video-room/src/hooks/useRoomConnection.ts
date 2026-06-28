@@ -45,6 +45,13 @@ export interface RoomClippyPrompt {
   createdAt: number;
   source: RoomClippyPromptSource;
   text: string;
+  promptEventSource?: 'browser_proactive_clippy_prompt' | 'clippy_agent_bridge';
+  promptTrigger?: string;
+  surface?: RoomSurface;
+  roomPhase?: string;
+  workspaceStatus?: string | null;
+  workspaceSessionId?: string | null;
+  agentResponseClaimed?: boolean;
   hold?: boolean;
   targetRoles?: RoomRole[];
   actions?: RoomClippyAction[];
@@ -53,6 +60,13 @@ export interface RoomClippyPrompt {
 export interface RoomClippyPromptDraft {
   source?: RoomClippyPromptSource;
   text: string;
+  promptEventSource?: 'browser_proactive_clippy_prompt' | 'clippy_agent_bridge';
+  promptTrigger?: string;
+  surface?: RoomSurface;
+  roomPhase?: string;
+  workspaceStatus?: string | null;
+  workspaceSessionId?: string | null;
+  agentResponseClaimed?: boolean;
   hold?: boolean;
   targetRoles?: RoomRole[];
   actions?: RoomClippyAction[];
@@ -525,6 +539,17 @@ function parseClippyPrompt(value: unknown): RoomClippyPrompt | null {
     createdAt: value.createdAt,
     source: isRoomClippyPromptSource(value.source) ? value.source : 'system',
     text: value.text,
+    promptEventSource: value.promptEventSource === 'browser_proactive_clippy_prompt' || value.promptEventSource === 'clippy_agent_bridge'
+      ? value.promptEventSource
+      : undefined,
+    promptTrigger: typeof value.promptTrigger === 'string' && value.promptTrigger.length <= 120
+      ? value.promptTrigger
+      : undefined,
+    surface: isRoomSurface(value.surface) ? value.surface : undefined,
+    roomPhase: typeof value.roomPhase === 'string' && value.roomPhase.length <= 80 ? value.roomPhase : undefined,
+    workspaceStatus: stringOrNull(value.workspaceStatus),
+    workspaceSessionId: stringOrNull(value.workspaceSessionId),
+    agentResponseClaimed: booleanOrUndefined(value.agentResponseClaimed),
     hold: typeof value.hold === 'boolean' ? value.hold : undefined,
     targetRoles: targetRoles && targetRoles.length > 0 ? targetRoles : undefined,
     actions: actions && actions.length > 0 ? actions : undefined,
