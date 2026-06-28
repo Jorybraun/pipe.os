@@ -248,6 +248,7 @@ async function captureAgentRoomActionEvidence(action, observedAt) {
 }
 
 function broadcastAgentDiagnostic(message) {
+  if (!message) return;
   void captureAgentDiagnosticEvidence(message)
     .then((persisted) => {
       broadcast({ ...message, persisted });
@@ -255,6 +256,7 @@ function broadcastAgentDiagnostic(message) {
 }
 
 function sendAgentDiagnostic(ws, message) {
+  if (!message) return;
   void captureAgentDiagnosticEvidence(message)
     .then((persisted) => {
       send(ws, { ...message, persisted });
@@ -262,6 +264,7 @@ function sendAgentDiagnostic(ws, message) {
 }
 
 function broadcastAgentChat(message) {
+  if (!message) return;
   void captureAgentChatEvidence(message)
     .then((persisted) => {
       broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...message, persisted });
@@ -302,6 +305,7 @@ function clearPendingPromptRefs() {
 }
 
 function broadcastAgentRoomAction(action, observedAt) {
+  if (!action) return;
   void captureAgentRoomActionEvidence(action, observedAt)
     .then((persisted) => {
       broadcast({ type: 'ROOM_ACTION', ...action, observedAt, persisted });

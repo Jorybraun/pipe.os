@@ -79,17 +79,24 @@ function safeEvidenceIdPart(value) {
   return normalized || 'none';
 }
 
+function safeAgentName(value) {
+  const normalized = String(value || '').trim();
+  return normalized || null;
+}
+
 function agentStatusEventId({
-  agent = 'devin',
+  agent = null,
   capturedAtMs = 0,
   bridgeMessageSource = 'bridge_diagnostic',
   status = null,
   diagnosticSource = null,
 }) {
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   return [
     'agent-status',
-    safeEvidenceIdPart(agent),
+    safeEvidenceIdPart(safeAgent),
     String(captured),
     safeEvidenceIdPart(bridgeMessageSource),
     safeEvidenceIdPart(status),
@@ -108,14 +115,16 @@ function agentResponseFingerprint(value) {
 }
 
 function agentChatResponseId({
-  agent = 'devin',
+  agent = null,
   capturedAtMs = 0,
   responseFingerprint = 'agent_00000000',
 }) {
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   return [
     'agent-chat',
-    safeEvidenceIdPart(agent),
+    safeEvidenceIdPart(safeAgent),
     String(captured),
     'CHAT_RESPONSE',
     safeEvidenceIdPart(responseFingerprint),
@@ -143,7 +152,7 @@ function clippyActionEventId({
 }
 
 function agentDiagnosticMessage({
-  agent = 'devin',
+  agent = null,
   status = 'disconnected',
   message,
   diagnosticSource,
@@ -151,11 +160,13 @@ function agentDiagnosticMessage({
   exitCode = null,
   signal = null,
   maxChars = DEFAULT_MAX_CHARS,
-}) {
+} = {}) {
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const bounded = boundedDiagnosticText(message, maxChars);
   return {
     type: 'AGENT_DIAGNOSTIC',
-    agent,
+    agent: safeAgent,
     status,
     message: bounded.text || 'Agent bridge diagnostic.',
     diagnosticSource,
@@ -167,7 +178,7 @@ function agentDiagnosticMessage({
 }
 
 function agentPromptHandoffDiagnosticMessage({
-  agent = 'devin',
+  agent = null,
   status = 'thinking',
   promptType = 'chat_prompt',
   deliveredToAgent = false,
@@ -181,8 +192,9 @@ function agentPromptHandoffDiagnosticMessage({
   browserPromptLength = null,
   observedAt = new Date().toISOString(),
   maxChars = DEFAULT_MAX_CHARS,
-}) {
-  const safeAgent = String(agent || 'devin').trim() || 'devin';
+} = {}) {
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const safePromptType = normalizedPromptType(promptType);
   const promptLabel = safePromptType === 'context_primer' ? 'context primer' : 'chat prompt';
   const delivered = deliveredToAgent === true;
@@ -233,7 +245,8 @@ function agentPromptHandoffDiagnosticMessage({
 
 function agentDiagnosticSessionEvent(message) {
   const eventMessage = message && typeof message === 'object' ? message : {};
-  const agent = String(eventMessage.agent || 'devin');
+  const agent = safeAgentName(eventMessage.agent);
+  if (!agent) return null;
   const observedAt = eventMessage.observedAt ?? null;
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
@@ -287,7 +300,7 @@ function agentDiagnosticSessionEvent(message) {
 }
 
 function agentChatSessionEvent({
-  agent = 'devin',
+  agent = null,
   text,
   observedAt = new Date().toISOString(),
   actionCount = 0,
@@ -295,9 +308,10 @@ function agentChatSessionEvent({
   browserPromptFingerprint = null,
   browserPromptTimestamp = null,
   browserPromptLength = null,
-}) {
+} = {}) {
   const responseText = String(text || '');
-  const safeAgent = String(agent || 'devin');
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   const responseFingerprint = agentResponseFingerprint(responseText);
@@ -348,11 +362,12 @@ function safeActionString(value, fallback = null, maxChars = DEFAULT_MAX_CHARS) 
 }
 
 function agentRoomActionSessionEvent({
-  agent = 'devin',
+  agent = null,
   action,
   observedAt = new Date().toISOString(),
-}) {
-  const safeAgent = String(agent || 'devin');
+} = {}) {
+  const safeAgent = safeAgentName(agent);
+  if (!safeAgent) return null;
   const rawAction = action && typeof action === 'object' ? action : {};
   const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, null, 120);
   const actionSource = safeActionString(rawAction.source, null, 120);

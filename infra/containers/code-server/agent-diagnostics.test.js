@@ -45,6 +45,47 @@ describe('agent diagnostics', () => {
     });
   });
 
+  it('does not fabricate Devin identity for agent evidence without an explicit agent', () => {
+    expect(agentDiagnosticMessage({
+      status: 'disconnected',
+      message: 'process exited',
+      diagnosticSource: 'agent_exit',
+      observedAt: '2026-06-27T19:00:00.000Z',
+    })).toBeNull();
+
+    expect(agentPromptHandoffDiagnosticMessage({
+      status: 'thinking',
+      promptType: 'chat_prompt',
+      deliveredToAgent: true,
+      roomContextStatus: 200,
+      roomContextText: 'Room context',
+      promptText: 'Prompt text',
+      observedAt: '2026-06-27T20:00:00.000Z',
+    })).toBeNull();
+
+    expect(agentDiagnosticSessionEvent({
+      type: 'AGENT_DIAGNOSTIC',
+      status: 'idle',
+      message: 'source-less diagnostic',
+      diagnosticSource: 'agent_stdout',
+      observedAt: '2026-06-27T21:00:00.000Z',
+    })).toBeNull();
+
+    expect(agentChatSessionEvent({
+      text: 'I inspected the failing test.',
+      observedAt: '2026-06-27T21:05:00.000Z',
+    })).toBeNull();
+
+    expect(agentRoomActionSessionEvent({
+      action: {
+        action: 'open-terminal',
+        source: 'agent_stdout',
+        protocol: 'clippy_room_action_tag',
+      },
+      observedAt: '2026-06-27T21:10:00.000Z',
+    })).toBeNull();
+  });
+
   it('builds source-marked agent diagnostic messages', () => {
     expect(agentDiagnosticMessage({
       agent: 'devin',
