@@ -18,4 +18,5 @@ export {
   loadInteractionLivingContext,
   loadMeetingTranscriptContext,
   searchTranscriptSourceSpans,
+  searchSourceContent,
 } from './readModel';
