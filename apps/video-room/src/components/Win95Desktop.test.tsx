@@ -24,7 +24,7 @@ function makeWindowManager(): WindowManagerApi {
 }
 
 describe('Win95Desktop', () => {
-  it('renders peer cursors with desktop-relative clamped transform inputs instead of left/top trails', () => {
+  it('renders peer cursors with desktop-relative clamped positions', () => {
     render(
       <Win95Desktop
         wm={makeWindowManager()}
@@ -51,12 +51,10 @@ describe('Win95Desktop', () => {
     const guestCursor = screen.getByTestId('room-peer-cursor-guest');
     const hostCursor = screen.getByTestId('room-peer-cursor-host');
 
-    expect(guestCursor.style.left).toBe('');
-    expect(guestCursor.style.top).toBe('');
-    expect(guestCursor.style.getPropertyValue('--room-cursor-x')).toBe('1.5%');
-    expect(guestCursor.style.getPropertyValue('--room-cursor-y')).toBe('96%');
-    expect(hostCursor.style.getPropertyValue('--room-cursor-x')).toBe('50%');
-    expect(hostCursor.style.getPropertyValue('--room-cursor-y')).toBe('25%');
+    expect(guestCursor.style.left).toBe('1.5%');
+    expect(guestCursor.style.top).toBe('96%');
+    expect(hostCursor.style.left).toBe('50%');
+    expect(hostCursor.style.top).toBe('25%');
   });
 
   it('renders Clippy as a system tray button beside the clock', () => {
