@@ -152,6 +152,24 @@ function createSessionEvent(
   };
 }
 
+function isSourceBackedRoomFileEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  operation: 'upsert' | 'delete',
+  fileId: string,
+): evidence is Record<string, unknown> {
+  return evidence !== null
+    && (actor === 'host' || actor === 'guest')
+    && evidence.source === 'win95_shared_file_system'
+    && evidence.fileEventSource === 'browser_client_submit'
+    && evidence.actor === actor
+    && evidence.operation === operation
+    && evidence.fileId === fileId
+    && typeof evidence.fileChangeId === 'string'
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs);
+}
+
 function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
@@ -457,16 +475,11 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
   const role = isRoomActivityRole(value.role) ? value.role : null;
+  const actor = actorFromRoomRole(role);
   const evidence = isRecord(event.evidence) ? event.evidence : null;
-  const properties = {
-    ...roomActivityBaseProperties('file_system', role, value.recordedAt),
-    ...(evidence ?? {}),
-  };
-  if (!evidence) properties.source = 'file_system_durable_object';
+  const base = roomActivityBaseProperties('file_system', role, value.recordedAt);
   const eventId = stringOrNull(event.id);
   const clientId = stringOrNull(event.clientId);
-  if (eventId) properties.roomEventId = eventId;
-  if (clientId) properties.clientId = clientId;
 
   if (event.kind === 'UPSERT_FILE' && isRecord(event.file)) {
     const file = event.file;
@@ -474,6 +487,13 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
     const name = stringOrNull(file.name);
     const fileKind = stringOrNull(file.kind);
     if (!fileId || !name || !fileKind) return null;
+    if (!isSourceBackedRoomFileEvidence(evidence, actor, 'upsert', fileId)) return null;
+    const properties = {
+      ...base,
+      ...evidence,
+    };
+    if (eventId) properties.roomEventId = eventId;
+    if (clientId) properties.clientId = clientId;
     properties.operation = 'upsert';
     properties.fileId = fileId;
     properties.fileName = name;
@@ -489,7 +509,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
     return createSessionEvent(input, {
       type: 'file_change',
       timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
-      actor: actorFromRoomRole(role),
+      actor,
       text: name,
       properties,
     });
@@ -498,6 +518,13 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
   if (event.kind === 'DELETE_FILE') {
     const fileId = stringOrNull(event.fileId);
     if (!fileId) return null;
+    if (!isSourceBackedRoomFileEvidence(evidence, actor, 'delete', fileId)) return null;
+    const properties = {
+      ...base,
+      ...evidence,
+    };
+    if (eventId) properties.roomEventId = eventId;
+    if (clientId) properties.clientId = clientId;
     properties.operation = 'delete';
     properties.fileId = fileId;
     let text = fileId;
@@ -526,7 +553,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
     return createSessionEvent(input, {
       type: 'file_change',
       timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
-      actor: actorFromRoomRole(role),
+      actor,
       text,
       properties,
     });

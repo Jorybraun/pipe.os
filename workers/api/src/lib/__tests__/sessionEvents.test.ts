@@ -434,6 +434,25 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000006000,
+            event: {
+              id: 'fs-source-less-save',
+              clientId: 'guest-client',
+              createdAt: 1700000006000,
+              kind: 'UPSERT_FILE',
+              file: {
+                id: 'source-less-notes',
+                name: 'source-less-notes.txt',
+                kind: 'text',
+                content: 'This should not become graph evidence.',
+                mimeType: 'text/plain',
+                createdAt: 1700000006000,
+                updatedAt: 1700000006000,
+              },
+            },
+          },
         ],
       }, {
         candidateId: 'cand-room',
@@ -625,6 +644,15 @@ describe('sessionEvents', () => {
         deletedContentPreview: 'Candidate identified retry bug evidence.',
       });
       expect(events[8]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'file_change',
+          text: 'source-less-notes.txt',
+          properties: expect.objectContaining({
+            source: 'file_system_durable_object',
+          }),
+        }),
+      ]));
     });
   });
 

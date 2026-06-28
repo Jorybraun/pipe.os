@@ -863,6 +863,46 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('rejects shared room filesystem edits without browser source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+      payload: {
+        id: 'fs-source-less-save',
+        clientId: 'host-client',
+        createdAt: 6,
+        kind: 'UPSERT_FILE',
+        file: {
+          id: 'desktop-source-less-notes',
+          name: 'source-less-notes.txt',
+          kind: 'text',
+          content: 'This should not become graph evidence.',
+          mimeType: 'text/plain',
+          metadata: { app: 'notepad' },
+          createdAt: 6,
+          updatedAt: 6,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_FILE_SYSTEM_EVENT',
+    }));
+    expect(storage.has('roomFileSystem')).toBe(false);
+    expect(storage.has('fileSystemActivityLog')).toBe(false);
+  });
+
   it('exposes replayable room activity logs for server-side evidence sync', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

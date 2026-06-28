@@ -862,6 +862,25 @@ export class VideoRoom {
     return { ...event, file: deletedFile };
   }
 
+  private hasSourceBackedFileEvidence(event: RoomFileSystemEvent, role: VideoRole): boolean {
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
+    const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
+    return evidence.source === 'win95_shared_file_system'
+      && evidence.fileEventSource === 'browser_client_submit'
+      && evidence.actor === actor
+      && evidence.operation === operation
+      && evidence.fileId === fileId
+      && typeof evidence.fileChangeId === 'string'
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isFinite(evidence.capturedAtMs)
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.durableObjectReplayExpected === true;
+  }
+
   private parseFileSystemActivityEntry(value: unknown): RoomFileSystemActivityEntry | null {
     if (!this.isRecord(value)) return null;
     const event = this.parseFileSystemEvent(value.event);
@@ -1447,6 +1466,13 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
           reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedFileEvidence(event, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
