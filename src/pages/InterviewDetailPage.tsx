@@ -1160,11 +1160,17 @@ export default function InterviewDetailPage(): JSX.Element {
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
               {codeReviewEvidenceRefresh && (
                 <div data-testid="interview-code-review-evidence-refresh" style={DECISION_FOLLOW_UP}>
-                  <div style={FIELD_LABEL}>Evidence captured</div>
-                  <div style={DECISION_PLAN_SIGNAL}>Ready to refresh repo match</div>
-                  <div>{codeReviewEvidenceRefresh.summary}</div>
+                  <div style={FIELD_LABEL}>New evidence is ready</div>
+                  <div style={DECISION_PLAN_SIGNAL}>Rerun repo matching</div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
-                    {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
+                    Use the new source-backed spans to try PR selection again.
+                  </div>
+                  <div style={DECISION_FOLLOW_UP_ITEM}>
+                    <div style={FIELD_LABEL}>Captured follow-up assessment</div>
+                    <div>{codeReviewEvidenceRefresh.summary}</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>
+                      {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
+                    </div>
                   </div>
                   <button
                     data-testid="interview-code-review-refresh-match-cta"
@@ -1175,7 +1181,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     {isRefreshingMatch
                       ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                       : <Network size={14} />}
-                    REFRESH REPO MATCH
+                    RERUN REPO MATCH
                   </button>
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (
                     <button
@@ -1194,14 +1200,23 @@ export default function InterviewDetailPage(): JSX.Element {
               {shouldShowEvidencePlan && (
                 <div data-testid="interview-code-review-evidence-plan" style={DECISION_FOLLOW_UP}>
                   <div style={FIELD_LABEL}>Resolve missing evidence</div>
+                  <div style={DECISION_PLAN_SIGNAL}>Plan a follow-up assessment</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>
+                    Ask one targeted question and capture the answer as source evidence. Use the answer to rerun repo matching.
+                  </div>
+                  <div style={FIELD_LABEL}>Recommended next step</div>
                   <div style={DECISION_FOLLOW_UP_LIST}>
                     {codeReviewEvidencePlan.map((item) => (
                       <div key={item.id} style={DECISION_FOLLOW_UP_ITEM}>
+                        <div style={FIELD_LABEL}>What PIPE needs</div>
                         <div style={DECISION_PLAN_SIGNAL}>{item.missingSignal}</div>
+                        <div style={FIELD_LABEL}>What to ask</div>
                         <div>{item.question}</div>
+                        <div style={FIELD_LABEL}>Why it matters</div>
                         <div style={CONTEXT_RECORD_NARRATIVE}>{item.whyItMatters}</div>
+                        <div style={FIELD_LABEL}>What good evidence looks like</div>
                         <div style={CONTEXT_RECORD_NARRATIVE}>
-                          Expected evidence: {item.expectedEvidence}
+                          {item.expectedEvidence}
                         </div>
                       </div>
                     ))}
@@ -1215,7 +1230,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     {isCreatingContextCall
                       ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                       : <CalendarCheck size={14} />}
-                    CREATE EVIDENCE CALL
+                    CREATE FOLLOW-UP ASSESSMENT
                   </button>
                   {contextCallError && <div style={ERROR_NOTE}>{contextCallError}</div>}
                 </div>
@@ -2239,14 +2254,18 @@ const DECISION_FOLLOW_UP: CSSProperties = {
 
 const DECISION_FOLLOW_UP_LIST: CSSProperties = {
   display: 'grid',
-  gap: 7,
+  gap: 10,
   margin: 0,
-  paddingLeft: 20,
+  padding: 0,
 };
 
 const DECISION_FOLLOW_UP_ITEM: CSSProperties = {
   display: 'grid',
-  gap: 5,
+  gap: 7,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
   color: 'var(--pipe-text)',
   fontSize: 13,
   lineHeight: 1.55,

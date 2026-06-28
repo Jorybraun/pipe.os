@@ -409,10 +409,16 @@ describe('InterviewDetailPage', () => {
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
     const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
     expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
+    expect(evidencePlan).toHaveTextContent('Recommended next step');
+    expect(evidencePlan).toHaveTextContent('Plan a follow-up assessment');
+    expect(evidencePlan).toHaveTextContent('Use the answer to rerun repo matching.');
+    expect(evidencePlan).toHaveTextContent('What PIPE needs');
     expect(evidencePlan).toHaveTextContent('Source-backed candidate work evidence');
+    expect(evidencePlan).toHaveTextContent('What to ask');
     expect(evidencePlan).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(evidencePlan).toHaveTextContent('What good evidence looks like');
     expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
-    expect(evidencePlan).toHaveTextContent('CREATE EVIDENCE CALL');
+    expect(evidencePlan).toHaveTextContent('CREATE FOLLOW-UP ASSESSMENT');
   });
 
   it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {
@@ -466,11 +472,13 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const refresh = screen.getByTestId('interview-code-review-evidence-refresh');
-    expect(refresh).toHaveTextContent('Evidence captured');
-    expect(refresh).toHaveTextContent('Ready to refresh repo match');
+    expect(refresh).toHaveTextContent('New evidence is ready');
+    expect(refresh).toHaveTextContent('Rerun repo matching');
+    expect(refresh).toHaveTextContent('Captured follow-up assessment');
     expect(refresh).toHaveTextContent('Evidence call captured 3 source-backed transcript spans for repo-match refresh.');
     expect(refresh).toHaveTextContent('3 source-backed transcript spans are linked to this original code-review match.');
-    expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('REFRESH REPO MATCH');
+    expect(refresh).toHaveTextContent('Use the new source-backed spans to try PR selection again.');
+    expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('RERUN REPO MATCH');
     expect(screen.getByTestId('interview-code-review-open-evidence-call')).toHaveTextContent('OPEN EVIDENCE CALL');
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
