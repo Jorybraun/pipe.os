@@ -135,6 +135,10 @@ type RoomDesktopEvent =
       expiresAt?: string | null;
       expiringSoon?: boolean;
       source?: string;
+      workspaceEventSource?: string;
+      workspaceStateSource?: string;
+      workspaceTelemetryPersisted?: boolean;
+      proxyUrlPersisted?: boolean;
     };
 
 interface RoomDesktopActivityEntry {
@@ -441,6 +445,10 @@ export class VideoRoom {
         expiresAt: this.safeTextOrNull(value.expiresAt, 80),
         expiringSoon: this.safeBoolean(value.expiringSoon),
         source: this.safeTextOrNull(value.source, 80) ?? undefined,
+        workspaceEventSource: this.safeTextOrNull(value.workspaceEventSource, 80) ?? undefined,
+        workspaceStateSource: this.safeTextOrNull(value.workspaceStateSource, 80) ?? undefined,
+        workspaceTelemetryPersisted: this.safeBoolean(value.workspaceTelemetryPersisted),
+        proxyUrlPersisted: this.safeBoolean(value.proxyUrlPersisted),
       };
     }
     return null;

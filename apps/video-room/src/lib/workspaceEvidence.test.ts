@@ -99,7 +99,11 @@ describe('buildWorkspaceStateDesktopEvent', () => {
       ttlSource: 'default',
       expiresAt: '2026-06-27T20:00:00.000Z',
       expiringSoon: false,
-      source: 'launch',
+      source: 'browser_workspace_state_observer',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'launch',
+      workspaceTelemetryPersisted: true,
+      proxyUrlPersisted: false,
     });
     expect(JSON.stringify(event)).not.toContain('secret-token');
     expect(JSON.stringify(event)).not.toContain('proxyPath');
@@ -117,7 +121,11 @@ describe('buildWorkspaceStateDesktopEvent', () => {
       errorMessage: 'Container start failed',
       repoUrl: 'https://github.com/example/repo',
       canLaunch: true,
-      source: 'error',
+      source: 'browser_workspace_state_observer',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'error',
+      workspaceTelemetryPersisted: true,
+      proxyUrlPersisted: false,
     });
   });
 

@@ -62,6 +62,7 @@ export interface SessionEvent {
 }
 
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
+const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -177,7 +178,11 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
 
   if (event.kind === 'WORKSPACE_STATE_CHANGED') {
     const status = stringOrNull(event.status) ?? 'unknown';
-    const properties: Record<string, unknown> = { ...base, workspaceStatus: status };
+    const properties: Record<string, unknown> = {
+      ...base,
+      source: 'workspace_state_durable_object',
+      workspaceStatus: status,
+    };
     const workspaceSessionId = stringOrNull(event.workspaceSessionId);
     const errorMessage = stringOrNull(event.errorMessage);
     const repoUrl = stringOrNull(event.repoUrl);
@@ -191,6 +196,10 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const ttlSource = stringOrNull(event.ttlSource);
     const expiresAt = stringOrNull(event.expiresAt);
     const source = stringOrNull(event.source);
+    const workspaceEventSource = stringOrNull(event.workspaceEventSource)
+      ?? (source && !WORKSPACE_STATE_SOURCES.has(source) ? source : null);
+    const workspaceStateSource = stringOrNull(event.workspaceStateSource)
+      ?? (source && WORKSPACE_STATE_SOURCES.has(source) ? source : null);
     if (workspaceSessionId) properties.workspaceSessionId = workspaceSessionId;
     if (errorMessage) properties.errorMessage = errorMessage;
     if (repoUrl) properties.repoUrl = repoUrl;
@@ -205,7 +214,12 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     if (ttlSource) properties.ttlSource = ttlSource;
     if (expiresAt) properties.expiresAt = expiresAt;
     if (typeof event.expiringSoon === 'boolean') properties.expiringSoon = event.expiringSoon;
-    if (source) properties.source = source;
+    if (workspaceEventSource) properties.workspaceEventSource = workspaceEventSource;
+    if (workspaceStateSource) properties.workspaceStateSource = workspaceStateSource;
+    if (typeof event.workspaceTelemetryPersisted === 'boolean') {
+      properties.workspaceTelemetryPersisted = event.workspaceTelemetryPersisted;
+    }
+    if (typeof event.proxyUrlPersisted === 'boolean') properties.proxyUrlPersisted = event.proxyUrlPersisted;
     return createSessionEvent(input, {
       type: 'workspace_state',
       timestamp,

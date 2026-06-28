@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Workspace-state evidence now separates browser observer provenance from launch/refresh/error lifecycle source, preserves that metadata through Durable Object replay, and rejects source-less direct workspace-state claims.
 - Code-server editor-open evidence now requires browser iframe load provenance, workspace session context, and an explicit no-proxy-URL persistence marker before entering the meeting-session graph.
 - Recording start/stop evidence now requires host browser MediaRecorder provenance, lifecycle kind, speaker-channel metadata, and upload source facts before entering the meeting-session graph.
 - Clippy/Devin user prompts now require source-backed browser chat evidence with bridge delivery, prompt ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.

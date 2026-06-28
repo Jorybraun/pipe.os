@@ -25,7 +25,11 @@ export interface WorkspaceStateDesktopEvent {
   ttlSource: string | null;
   expiresAt: string | null;
   expiringSoon: boolean;
-  source: string;
+  source: 'browser_workspace_state_observer';
+  workspaceEventSource: 'browser_workspace_state_observer';
+  workspaceStateSource: 'initial_load' | 'launch' | 'refresh' | 'error';
+  workspaceTelemetryPersisted: true;
+  proxyUrlPersisted: false;
 }
 
 export function buildCodeEditorOpenEvidence(input: {
@@ -87,6 +91,10 @@ export function buildWorkspaceStateDesktopEvent(input: {
     ttlSource: session?.ttlSource ?? null,
     expiresAt: session?.expiresAt ?? null,
     expiringSoon: Boolean(session?.expiringSoon),
-    source: input.source,
+    source: 'browser_workspace_state_observer',
+    workspaceEventSource: 'browser_workspace_state_observer',
+    workspaceStateSource: input.source,
+    workspaceTelemetryPersisted: true,
+    proxyUrlPersisted: false,
   };
 }

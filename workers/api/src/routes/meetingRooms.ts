@@ -134,6 +134,7 @@ const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'open_window_initial_url',
   'shared_state_sync',
 ]);
+const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -352,6 +353,37 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Room surface evidence must come from shared room surface controls with actor, previous surface, next surface, action, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'workspace_state') {
+    const sourceOk = properties.source === 'workspace_state_client_submit'
+      && properties.workspaceEventSource === 'browser_workspace_state_observer';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const statusOk = hasString(properties.workspaceStatus);
+    const stateSourceOk = typeof properties.workspaceStateSource === 'string'
+      && WORKSPACE_STATE_SOURCES.has(properties.workspaceStateSource);
+    const sessionOk = properties.workspaceStatus === 'ERROR'
+      ? (
+          properties.workspaceSessionId === null
+          || properties.workspaceSessionId === undefined
+          || hasString(properties.workspaceSessionId)
+        )
+      : hasString(properties.workspaceSessionId);
+    const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
+      && (properties.matchedRepoId === null || properties.matchedRepoId === undefined || hasFiniteNonNegativeNumber(properties.matchedRepoId))
+      && (properties.challengeStatus === null || properties.challengeStatus === undefined || hasString(properties.challengeStatus))
+      && (properties.challengeKind === null || properties.challengeKind === undefined || hasString(properties.challengeKind))
+      && (properties.challengeSource === null || properties.challengeSource === undefined || hasString(properties.challengeSource))
+      && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
+    const lifecycleOk = properties.workspaceTelemetryPersisted === true
+      && properties.proxyUrlPersisted === false;
+    if (sourceOk && actorOk && statusOk && stateSourceOk && sessionOk && challengeOk && lifecycleOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Workspace-state evidence must come from the browser workspace observer with workspace source, status/session context, challenge diagnostics, and no persisted proxy URL.',
       path: ['properties'],
     });
     return;

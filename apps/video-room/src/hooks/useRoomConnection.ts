@@ -163,6 +163,10 @@ export type RoomDesktopEvent =
       expiresAt?: string | null;
       expiringSoon?: boolean;
       source?: string;
+      workspaceEventSource?: string;
+      workspaceStateSource?: string;
+      workspaceTelemetryPersisted?: boolean;
+      proxyUrlPersisted?: boolean;
     };
 
 export type RoomDesktopEventDraft =
@@ -212,6 +216,10 @@ export type RoomDesktopEventDraft =
       expiresAt?: string | null;
       expiringSoon?: boolean;
       source?: string;
+      workspaceEventSource?: string;
+      workspaceStateSource?: string;
+      workspaceTelemetryPersisted?: boolean;
+      proxyUrlPersisted?: boolean;
     };
 
 export type RoomFileSystemEvent =
@@ -443,6 +451,14 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       expiresAt: stringOrNull(value.expiresAt),
       expiringSoon: booleanOrUndefined(value.expiringSoon),
       source: typeof value.source === 'string' && value.source.length <= 80 ? value.source : undefined,
+      workspaceEventSource: typeof value.workspaceEventSource === 'string' && value.workspaceEventSource.length <= 80
+        ? value.workspaceEventSource
+        : undefined,
+      workspaceStateSource: typeof value.workspaceStateSource === 'string' && value.workspaceStateSource.length <= 80
+        ? value.workspaceStateSource
+        : undefined,
+      workspaceTelemetryPersisted: booleanOrUndefined(value.workspaceTelemetryPersisted),
+      proxyUrlPersisted: booleanOrUndefined(value.proxyUrlPersisted),
     };
   }
   return null;

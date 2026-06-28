@@ -1566,6 +1566,77 @@ describe('meeting room recording living-context route', () => {
       surface: 'win95',
     });
 
+    const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'workspace_state',
+        text: 'Workspace state changed to READY',
+        actor: 'host',
+        properties: {
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeWorkspaceStateRes.status).toBe(422);
+
+    const workspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'workspace_state',
+        text: 'Workspace state changed to READY',
+        actor: 'host',
+        properties: {
+          source: 'workspace_state_client_submit',
+          workspaceEventSource: 'browser_workspace_state_observer',
+          workspaceStateSource: 'launch',
+          actor: 'host',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/acme/orders',
+          githubPrNumber: 42,
+          matchedRepoId: 12,
+          challengeStatus: 'github_pr_assigned',
+          challengeKind: 'github_pr',
+          challengeSource: 'scheduled_interview.github_pr_number',
+          challengeMessage: null,
+          workspaceTelemetryPersisted: true,
+          proxyUrlPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(workspaceStateRes.status).toBe(200);
+
+    const workspaceStateNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_workspace_state'
+          AND extracted_properties_json LIKE '%workspace_state_client_submit%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(workspaceStateNode).toMatchObject({
+      node_type: 'session_workspace_state',
+      source_type: 'meeting_session',
+    });
+    expect(workspaceStateNode?.narrative_text).toContain('Workspace state changed to READY');
+    const workspaceStateProperties = JSON.parse(workspaceStateNode?.extracted_properties_json ?? '{}') as Record<string, unknown>;
+    expect(workspaceStateProperties).toMatchObject({
+      actor: 'host',
+      source: 'workspace_state_client_submit',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'launch',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      proxyUrlPersisted: false,
+    });
+    expect(JSON.stringify(workspaceStateProperties)).not.toContain('/workspace/proxy/');
+
     const contextEntities = sqlite.prepare(
       `SELECT entity_type, entity_id, relationship, value_json, metadata_json
          FROM context_record_entities
@@ -2441,6 +2512,22 @@ describe('meeting room recording living-context route', () => {
             createdAt: 1700000001000,
             kind: 'WORKSPACE_STATE_CHANGED',
             status: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+            githubPrNumber: 14435,
+            matchedRepoId: 42,
+            challengeStatus: 'github_pr_assigned',
+            challengeKind: 'github_pr',
+            challengeSource: 'scheduled_interview.github_pr_number',
+            challengeMessage: null,
+            ttlSeconds: 3600,
+            ttlSource: 'default',
+            expiringSoon: false,
+            source: 'browser_workspace_state_observer',
+            workspaceEventSource: 'browser_workspace_state_observer',
+            workspaceStateSource: 'launch',
+            workspaceTelemetryPersisted: true,
+            proxyUrlPersisted: false,
           },
         },
       ],
@@ -2558,6 +2645,16 @@ describe('meeting room recording living-context route', () => {
     expect(graphBody.events.map((event) => event.narrativeText).join('\n')).toContain(
       'I found the retry bug in the queue worker.',
     );
+    expect(graphBody.events.find((event) => event.nodeType === 'session_workspace_state')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      source: 'workspace_state_durable_object',
+      workspaceEventSource: 'browser_workspace_state_observer',
+      workspaceStateSource: 'launch',
+      workspaceTelemetryPersisted: true,
+      proxyUrlPersisted: false,
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+    });
     expect(graphBody.events.at(-1)?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       operation: 'upsert',

@@ -383,7 +383,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         ttlSeconds: 3600,
         ttlSource: 'default',
         expiringSoon: false,
-        source: 'launch',
+        source: 'browser_workspace_state_observer',
+        workspaceEventSource: 'browser_workspace_state_observer',
+        workspaceStateSource: 'launch',
+        workspaceTelemetryPersisted: true,
+        proxyUrlPersisted: false,
       },
     }));
 
@@ -408,7 +412,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         challengeKind: 'github_pr',
         challengeSource: 'scheduled_interview.github_pr_number',
         challengeMessage: null,
-        source: 'launch',
+        source: 'browser_workspace_state_observer',
+        workspaceEventSource: 'browser_workspace_state_observer',
+        workspaceStateSource: 'launch',
+        workspaceTelemetryPersisted: true,
+        proxyUrlPersisted: false,
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
@@ -429,7 +437,11 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           ttlSeconds: 3600,
           ttlSource: 'default',
           expiringSoon: false,
-          source: 'launch',
+          source: 'browser_workspace_state_observer',
+          workspaceEventSource: 'browser_workspace_state_observer',
+          workspaceStateSource: 'launch',
+          workspaceTelemetryPersisted: true,
+          proxyUrlPersisted: false,
         }),
       }),
     ]);
