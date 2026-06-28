@@ -3,6 +3,8 @@ import type { RoomPhase, RoomWorkspace } from '../types';
 export type RoomEvidenceActor = 'host' | 'guest';
 export type RoomEvidenceSurface = 'standard' | 'win95';
 
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
 export interface CodeEditorOpenEvidence {
   text: string;
   properties: Record<string, unknown>;
@@ -98,6 +100,18 @@ export function buildCodeServerFileChangeEvidence(input: {
   const actionName = input.actionName.trim();
   if (!filePath || !actionName) return null;
   const session = input.workspace?.session ?? null;
+  if (!session?.status || !session.sessionId) return null;
+  const observedAt = input.observedAt?.trim() ?? '';
+  if (!observedAt) return null;
+  if (
+    typeof input.sizeBytes !== 'number'
+    || !Number.isFinite(input.sizeBytes)
+    || input.sizeBytes < 0
+  ) {
+    return null;
+  }
+  const contentHash = input.contentHash?.trim() ?? '';
+  if (!SHA256_HEX_RE.test(contentHash)) return null;
   return {
     eventType: actionName === 'deleted' ? 'file_change' : 'code_editor_save',
     text: filePath,
@@ -109,13 +123,13 @@ export function buildCodeServerFileChangeEvidence(input: {
       action: actionName,
       surface: input.surface,
       roomPhase: input.roomPhase,
-      workspaceStatus: session?.status ?? null,
-      workspaceSessionId: session?.sessionId ?? null,
+      workspaceStatus: session.status,
+      workspaceSessionId: session.sessionId,
       repoUrl: input.workspace?.repoUrl ?? null,
       path: filePath,
-      observedAt: input.observedAt ?? null,
-      contentHash: input.contentHash ?? null,
-      sizeBytes: input.sizeBytes ?? null,
+      observedAt,
+      contentHash,
+      sizeBytes: input.sizeBytes,
       contentPreview: input.contentPreview ?? null,
       bridgePersisted: false,
     },

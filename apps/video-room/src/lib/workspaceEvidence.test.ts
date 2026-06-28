@@ -132,6 +132,43 @@ describe('buildCodeServerFileChangeEvidence', () => {
       roomPhase: 'connected',
     })).toBeNull();
   });
+
+  it('does not build browser-observed code-server file evidence that Durable Object replay would reject', () => {
+    const base = {
+      filePath: 'src/app.ts',
+      actionName: 'modified',
+      source: 'code_server_workspace',
+      observedAt: '2026-06-27T12:00:00.000Z',
+      sizeBytes: 421,
+      contentHash: 'a'.repeat(64),
+      contentPreview: 'export const answer = 42;',
+      persisted: false,
+      workspace,
+      surface: 'win95' as const,
+      roomPhase: 'connected' as const,
+    };
+
+    expect(buildCodeServerFileChangeEvidence({
+      ...base,
+      workspace: { ...workspace, session: null },
+    })).toBeNull();
+    expect(buildCodeServerFileChangeEvidence({
+      ...base,
+      observedAt: null,
+    })).toBeNull();
+    expect(buildCodeServerFileChangeEvidence({
+      ...base,
+      sizeBytes: null,
+    })).toBeNull();
+    expect(buildCodeServerFileChangeEvidence({
+      ...base,
+      contentHash: null,
+    })).toBeNull();
+    expect(buildCodeServerFileChangeEvidence({
+      ...base,
+      contentHash: 'not-a-sha256',
+    })).toBeNull();
+  });
 });
 
 describe('buildWorkspaceStateDesktopEvent', () => {
