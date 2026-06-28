@@ -23,6 +23,15 @@ import {
   searchSourceContent,
 } from '../../lib/livingContext';
 import {
+  formatMatchNarrative,
+  type MatchNarrative,
+} from '../../lib/challengeMatching/matchNarrative';
+import type {
+  MatchExplanation,
+  SourceRef as MatchSourceRef,
+  RoleSourceReference,
+} from '../../lib/challengeMatching/types';
+import {
   hasSourceBackedReviewPacket,
   loadSourceBackedReviewPacketById,
 } from '../../lib/review/sourceBackedReviewDiff';
@@ -199,6 +208,96 @@ interface StandaloneReviewRankedResult {
   stretchAreas: StandaloneReviewStretchArea[];
   unmatchedDemandIds: string[];
   rejectionReasons: string[];
+}
+
+interface StandaloneReviewMatchNarrative {
+  title: string;
+  verdict: string;
+  sections: Array<{ heading: string; items: string[] }>;
+  plainText: string;
+}
+
+function toMatchSourceRef(ref: StandaloneReviewSourceRef): MatchSourceRef {
+  return {
+    artifactId: ref.artifactId,
+    artifactVersion: ref.artifactVersion,
+    contentHash: ref.contentHash,
+    startOffset: ref.startOffset,
+    endOffset: ref.endOffset,
+    sourceRefType: ref.sourceRefType,
+    sourceRefId: ref.sourceRefId,
+    sourceSpanId: ref.sourceSpanId,
+    locator: ref.locator,
+    exactText: ref.exactText,
+  };
+}
+
+function toRoleSourceReference(ref: StandaloneReviewRoleSource): RoleSourceReference {
+  return {
+    entityId: ref.entityId,
+    locator: ref.locator,
+    conceptKeys: ref.conceptKeys,
+    sourceRefType: ref.sourceRefType,
+    sourceRefId: ref.sourceRefId,
+    sourceSpanId: ref.sourceSpanId,
+    exactText: ref.exactText,
+    contentHash: ref.contentHash,
+  };
+}
+
+function buildNarrativeFromResult(
+  matchStatus: StandaloneReviewMatchStatus,
+  result: StandaloneReviewRankedResult | null,
+  gaps: string[],
+): StandaloneReviewMatchNarrative | null {
+  if (!result && matchStatus === 'PENDING_INTAKE') return null;
+  const status: MatchExplanation['status'] = matchStatus === 'PENDING_INTAKE'
+    ? 'NEEDS_MORE_EVIDENCE'
+    : matchStatus;
+  const explanation: MatchExplanation = {
+    status,
+    challengeId: result?.challengeId,
+    repoId: result?.repoId,
+    prNumber: result?.prNumber,
+    score: result?.score ?? 0,
+    summary: '',
+    evidence: (result?.alignments ?? []).map((a) => ({
+      atomId: a.atomId,
+      demandId: a.demandId,
+      purpose: (a.purpose ?? 'validation') as 'validation' | 'deepening',
+      pairScore: a.pairScore,
+      episodeMultiplier: 1,
+      stretch: a.stretch
+        ? { atomConcept: a.stretch.atomConcept, demandConcept: a.stretch.demandConcept, dimension: a.stretch.dimension as 'technology' | 'mechanism' | 'domain' | 'scale' | 'review_practice' }
+        : undefined,
+      roleSourceRefs: a.roleSourceRefs.map(toRoleSourceReference),
+      candidateSourceRefs: a.candidateSourceRefs.map(toMatchSourceRef),
+      challengeSourceRefs: a.challengeSourceRefs.map(toMatchSourceRef),
+    })),
+    candidateSpans: [],
+    repoSpans: [],
+    roleSources: [],
+    rejectedPackets: [],
+    missingEvidence: gaps.map((reason) => ({ scope: 'candidate' as const, reason })),
+    stretchAreas: (result?.stretchAreas ?? []).map((s) => ({
+      atomId: s.atomId,
+      demandId: s.demandId,
+      atomConcept: s.atomConcept,
+      demandConcept: s.demandConcept,
+      dimension: s.dimension as 'technology' | 'mechanism' | 'domain' | 'scale' | 'review_practice',
+      candidateSourceRefs: s.candidateSourceRefs.map(toMatchSourceRef),
+      challengeSourceRefs: s.challengeSourceRefs.map(toMatchSourceRef),
+    })),
+    unmatchedDemandIds: result?.unmatchedDemandIds ?? [],
+    rejectionReasons: result?.rejectionReasons ?? [],
+  };
+  const narrative = formatMatchNarrative(explanation);
+  return {
+    title: narrative.title,
+    verdict: narrative.verdict,
+    sections: narrative.sections,
+    plainText: narrative.plainText,
+  };
 }
 
 interface StandaloneReviewPacketMetadata {
@@ -1513,6 +1612,70 @@ candidateOps.get('/:candidateId/living-context/search', async (c) => {
   return c.json(result);
 });
 
+// GET /:candidateId/living-context/match-narrative — recruiter-facing match narrative
+candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const latestRun = await db.prepare(
+    `SELECT id, status, ranked_results_json, excluded_packets_json, query_json, selected_packet_id
+       FROM match_runs
+      WHERE candidate_id = ?1
+        AND role_snapshot_id = 'standalone-code-review-v1'
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<{
+    id: string;
+    status: 'MATCHED' | 'NEEDS_MORE_EVIDENCE' | 'NO_ROLE_SAFE_CHALLENGE' | 'FAILED';
+    ranked_results_json: string | null;
+    excluded_packets_json: string | null;
+    query_json: string | null;
+    selected_packet_id: string | null;
+  }>();
+
+  if (!latestRun) {
+    return c.json({
+      candidateId,
+      matchRunId: null,
+      narrative: null,
+    });
+  }
+
+  const roleSources = parseStandaloneReviewRoleSourcesFromQuery(latestRun.query_json);
+  const rankedResults = parseStandaloneReviewRankedResults(
+    latestRun.ranked_results_json,
+    roleSources,
+  );
+  const selectedResult = rankedResults.find((r) =>
+    r.challengeId === latestRun.selected_packet_id
+  ) ?? rankedResults.find((r) => r.rank === 1)
+    ?? rankedResults.find((r) => r.eligible)
+    ?? rankedResults[0]
+    ?? null;
+
+  const matchStatus: StandaloneReviewMatchStatus = latestRun.status === 'MATCHED'
+    || latestRun.status === 'NEEDS_MORE_EVIDENCE'
+    || latestRun.status === 'NO_ROLE_SAFE_CHALLENGE'
+      ? latestRun.status
+      : 'PENDING_INTAKE';
+
+  const narrative = buildNarrativeFromResult(matchStatus, selectedResult, []);
+  return c.json({
+    candidateId,
+    matchRunId: latestRun.id,
+    narrative,
+  });
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
@@ -1954,6 +2117,7 @@ candidateOps.get('/:candidateId', async (c) => {
     stretchAreas: StandaloneReviewStretchArea[];
     unmatchedDemandIds: string[];
     gaps: string[];
+    matchNarrative: StandaloneReviewMatchNarrative | null;
     diagnostics: StandaloneReviewDiagnostics;
     packet: StandaloneReviewPacketDetail | null;
     submitted: boolean;
@@ -2108,6 +2272,8 @@ candidateOps.get('/:candidateId', async (c) => {
       );
       const selectedStretchAreas = selectedResultForDisplay?.stretchAreas ?? [];
       const selectedUnmatchedDemandIds = selectedResultForDisplay?.unmatchedDemandIds ?? [];
+      const allGaps = [...graphContextGaps, ...summary.gaps];
+      const matchNarrative = buildNarrativeFromResult(matchStatus, selectedResultForDisplay, allGaps);
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
         interviewStatus: standaloneInterview.status,
@@ -2126,7 +2292,8 @@ candidateOps.get('/:candidateId', async (c) => {
         roleSources,
         stretchAreas: selectedStretchAreas,
         unmatchedDemandIds: selectedUnmatchedDemandIds,
-        gaps: [...graphContextGaps, ...summary.gaps],
+        gaps: allGaps,
+        matchNarrative,
         diagnostics,
         packet: selectedPacketDetail,
         submitted: standaloneInterview.submission_json !== null,

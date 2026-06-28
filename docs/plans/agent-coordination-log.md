@@ -76,3 +76,24 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-28 — Session 990da13c (Devin)
+
+**Action:** Gap analysis on PR #117 + add match narrative API endpoint.
+
+**Gap identified:**
+- `formatMatchNarrative` was fully implemented and tested in `challengeMatching/matchNarrative.ts`, but never exposed via an API endpoint. Recruiters had no way to fetch the human-readable match narrative from the frontend.
+
+**Changes made:**
+1. Added `GET /api/v1/candidates/:id/living-context/match-narrative` endpoint — loads latest match run, reconstructs `MatchExplanation` from stored `ranked_results_json`, generates recruiter-facing narrative via `formatMatchNarrative`
+2. Wired `matchNarrative` field into the candidate profile response (`standaloneReviewMatch` object)
+3. Added `buildNarrativeFromResult` bridge function converting stored `StandaloneReviewRankedResult` → `MatchExplanation` → `MatchNarrative`
+4. Added `StandaloneReviewMatchNarrative` and `MatchNarrativeSection` frontend types
+5. Added 7 new tests covering narrative generation, strength classification, stretch areas, evidence gaps, and all match statuses
+
+**Test results:**
+- 168 test files pass, 1536 tests, 0 failures (+1 file, +7 tests)
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**Acceptance criteria advanced:** #6 (explain every match — now served via API)

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match narrative API endpoint (criterion #6)
+
+- Added `GET /api/v1/candidates/:id/living-context/match-narrative` endpoint serving recruiter-facing human-readable match narratives with strength-classified evidence alignments, stretch areas, and evidence gaps linked to original source locators.
+- Wired `matchNarrative` field into the candidate profile response (`standaloneReviewMatch` object) so the frontend can display match narratives inline without a separate API call.
+- Added `buildNarrativeFromResult` bridge function that reconstructs `MatchExplanation` from stored `ranked_results_json` data and generates narratives via the existing `formatMatchNarrative` formatter.
+- Added `StandaloneReviewMatchNarrative` and `MatchNarrativeSection` frontend types.
+- 7 new tests covering narrative generation, strength classification, stretch areas, evidence gaps, and all match statuses (168 files, 1536 tests, 0 failures).
+
 ### Added — Complete scheduled backfill for all entity types (criterion #1/#8)
 
 - Extended `runScheduledBackfill()` with 3 new dependency-ordered tasks: `meetings_to_living_context`, `phone_calls_to_living_context`, `code_reviews_to_living_context`. The scheduled cron now covers all 7 entity types that accumulate person context (candidates, contacts, resumes, meetings, phone calls, code reviews). Projection outbox drains after all ingestion tasks complete.
