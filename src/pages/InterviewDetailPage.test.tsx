@@ -822,6 +822,12 @@ describe('InterviewDetailPage', () => {
     );
     expect(screen.getByText('Refresh ran, but matcher returned NEEDS MORE EVIDENCE.')).toBeTruthy();
     expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('NEEDS MORE EVIDENCE');
+    const refresh = screen.getByTestId('interview-code-review-evidence-refresh');
+    expect(refresh).toHaveTextContent('Evidence tried, still insufficient');
+    expect(refresh).toHaveTextContent('Capture another concrete source-backed answer before rerunning.');
+    expect(refresh).toHaveTextContent('Still missing');
+    expect(refresh).toHaveTextContent('NO SCOREABLE SOURCE BACKED CANDIDATE EVIDENCE');
+    expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('RERUN AFTER NEW EVIDENCE');
   });
 
   it('shows the source-backed follow-up assessment plan on created context-call interviews', async () => {

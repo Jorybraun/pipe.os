@@ -1101,6 +1101,15 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewEvidenceRefreshUsed = Boolean(
     codeReviewEvidenceRefresh && codeReviewMatch?.status === 'MATCHED',
   );
+  const codeReviewEvidenceRefreshStillMissing = Boolean(
+    codeReviewEvidenceRefresh
+      && !codeReviewEvidenceRefreshUsed
+      && codeReviewMatch?.status
+      && codeReviewMatch.status !== 'MATCHED'
+      && codeReviewMatch.matchRunId
+      && codeReviewEvidenceRefresh.matchRunId
+      && codeReviewMatch.matchRunId !== codeReviewEvidenceRefresh.matchRunId,
+  );
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
     && !codeReviewEvidenceRefresh
     && !codeReviewEvidenceFollowUp;
@@ -1331,15 +1340,25 @@ export default function InterviewDetailPage(): JSX.Element {
               {codeReviewEvidenceRefresh && (
                 <div data-testid="interview-code-review-evidence-refresh" style={DECISION_FOLLOW_UP}>
                   <div style={FIELD_LABEL}>
-                    {codeReviewEvidenceRefreshUsed ? 'Evidence used for current match' : 'New evidence is ready'}
+                    {codeReviewEvidenceRefreshUsed
+                      ? 'Evidence used for current match'
+                      : codeReviewEvidenceRefreshStillMissing
+                        ? 'Evidence tried, still insufficient'
+                        : 'New evidence is ready'}
                   </div>
                   <div style={DECISION_PLAN_SIGNAL}>
-                    {codeReviewEvidenceRefreshUsed ? 'Current PR assignment is evidence-backed' : 'Rerun repo matching'}
+                    {codeReviewEvidenceRefreshUsed
+                      ? 'Current PR assignment is evidence-backed'
+                      : codeReviewEvidenceRefreshStillMissing
+                        ? 'Capture another concrete source-backed answer before rerunning.'
+                        : 'Rerun repo matching'}
                   </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     {codeReviewEvidenceRefreshUsed
                       ? 'These source-backed follow-up spans were used to select the current PR assignment.'
-                      : 'Use the new source-backed spans to try PR selection again.'}
+                      : codeReviewEvidenceRefreshStillMissing
+                        ? 'The last rerun used these source-backed spans but still did not find a confident repo/PR assignment.'
+                        : 'Use the new source-backed spans to try PR selection again.'}
                   </div>
                   <div style={DECISION_FOLLOW_UP_ITEM}>
                     <div style={FIELD_LABEL}>Captured follow-up assessment</div>
@@ -1360,6 +1379,16 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                   )}
+                  {codeReviewEvidenceRefreshStillMissing && (codeReviewMatch?.gaps.length ?? 0) > 0 && (
+                    <div style={DECISION_FOLLOW_UP_ITEM}>
+                      <div style={FIELD_LABEL}>Still missing</div>
+                      <div style={TAG_ROW}>
+                        {codeReviewMatch?.gaps.slice(0, 3).map((gap) => (
+                          <span key={gap} style={TAG}>{titleCaseToken(gap)}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {!codeReviewEvidenceRefreshUsed && (
                     <button
                       data-testid="interview-code-review-refresh-match-cta"
@@ -1370,7 +1399,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       {isRefreshingMatch
                         ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                         : <Network size={14} />}
-                      RERUN REPO MATCH
+                      {codeReviewEvidenceRefreshStillMissing ? 'RERUN AFTER NEW EVIDENCE' : 'RERUN REPO MATCH'}
                     </button>
                   )}
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (
