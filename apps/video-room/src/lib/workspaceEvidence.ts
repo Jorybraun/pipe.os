@@ -42,7 +42,9 @@ export function buildCodeEditorOpenEvidence(input: {
     text: `VS Code workspace opened for ${repoLabel}`,
     properties: {
       source: 'code_server_workspace',
+      editorEventSource: 'browser_code_server_iframe',
       editor: 'code-server',
+      openStatus: 'loaded',
       actor: input.actor,
       surface: input.surface,
       roomPhase: input.roomPhase,
@@ -55,6 +57,7 @@ export function buildCodeEditorOpenEvidence(input: {
       challengeKind: input.workspace?.challenge?.kind ?? null,
       challengeSource: input.workspace?.challenge?.source ?? null,
       challengeMessage: input.workspace?.challenge?.message ?? null,
+      proxyUrlPersisted: false,
     },
   };
 }

@@ -586,6 +586,33 @@ const sessionEventSchema = z.object({
     });
     return;
   }
+  if (event.type === 'code_editor_open') {
+    const sourceOk = properties.source === 'code_server_workspace'
+      && properties.editorEventSource === 'browser_code_server_iframe'
+      && properties.editor === 'code-server'
+      && properties.openStatus === 'loaded';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceSessionId)
+      && hasString(properties.workspaceStatus)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    const challengeOk = (properties.githubPrNumber === null || properties.githubPrNumber === undefined || hasFiniteNonNegativeNumber(properties.githubPrNumber))
+      && (properties.matchedRepoId === null || properties.matchedRepoId === undefined || hasFiniteNonNegativeNumber(properties.matchedRepoId))
+      && (properties.challengeStatus === null || properties.challengeStatus === undefined || hasString(properties.challengeStatus))
+      && (properties.challengeKind === null || properties.challengeKind === undefined || hasString(properties.challengeKind))
+      && (properties.challengeSource === null || properties.challengeSource === undefined || hasString(properties.challengeSource))
+      && (properties.challengeMessage === null || properties.challengeMessage === undefined || hasString(properties.challengeMessage));
+    const noProxyLeakOk = properties.proxyUrlPersisted === false;
+    if (sourceOk && actorOk && contextOk && challengeOk && noProxyLeakOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Code editor open evidence must come from the browser code-server iframe with workspace session context and no persisted proxy URL.',
+      path: ['properties'],
+    });
+    return;
+  }
   if (event.type === 'code_editor_save') {
     const sourceOk = properties.source === 'code_server_workspace';
     const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';

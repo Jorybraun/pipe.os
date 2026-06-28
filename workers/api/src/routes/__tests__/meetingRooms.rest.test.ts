@@ -2039,6 +2039,81 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(codeServerDeleteRes.status).toBe(200);
 
+    const fakeCodeEditorOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_open',
+        text: 'VS Code workspace opened for https://github.com/acme/orders',
+        actor: 'guest',
+        properties: {
+          source: 'code_server_workspace',
+          editor: 'code-server',
+          workspaceSessionId: 'workspace-session-1',
+          workspaceStatus: 'READY',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeCodeEditorOpenRes.status).toBe(422);
+
+    const codeEditorOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'code_editor_open',
+        text: 'VS Code workspace opened for https://github.com/acme/orders',
+        actor: 'guest',
+        properties: {
+          source: 'code_server_workspace',
+          editorEventSource: 'browser_code_server_iframe',
+          editor: 'code-server',
+          openStatus: 'loaded',
+          actor: 'guest',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceSessionId: 'workspace-session-1',
+          workspaceStatus: 'READY',
+          repoUrl: 'https://github.com/acme/orders',
+          githubPrNumber: 42,
+          matchedRepoId: 12,
+          challengeStatus: 'github_pr_assigned',
+          challengeKind: 'github_pr',
+          challengeSource: 'scheduled_interview.github_pr_number',
+          challengeMessage: null,
+          proxyUrlPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(codeEditorOpenRes.status).toBe(200);
+
+    const codeEditorOpenNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_code_editor_open'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(codeEditorOpenNode).toMatchObject({
+      node_type: 'session_code_editor_open',
+      source_type: 'meeting_session',
+    });
+    expect(codeEditorOpenNode?.narrative_text).toContain('Opened in editor');
+    const codeEditorOpenProperties = JSON.parse(codeEditorOpenNode?.extracted_properties_json ?? '{}') as Record<string, unknown>;
+    expect(codeEditorOpenProperties).toMatchObject({
+      actor: 'guest',
+      source: 'code_server_workspace',
+      editorEventSource: 'browser_code_server_iframe',
+      editor: 'code-server',
+      openStatus: 'loaded',
+      workspaceSessionId: 'workspace-session-1',
+      workspaceStatus: 'READY',
+      proxyUrlPersisted: false,
+    });
+    expect(JSON.stringify(codeEditorOpenProperties)).not.toContain('/workspace/proxy/');
+
     const fakeCodeEditorSaveRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

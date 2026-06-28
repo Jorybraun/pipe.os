@@ -43,7 +43,9 @@ describe('buildCodeEditorOpenEvidence', () => {
       text: 'VS Code workspace opened for https://github.com/cloudflare/workers-sdk',
       properties: {
         source: 'code_server_workspace',
+        editorEventSource: 'browser_code_server_iframe',
         editor: 'code-server',
+        openStatus: 'loaded',
         actor: 'guest',
         surface: 'win95',
         roomPhase: 'connected',
@@ -56,6 +58,7 @@ describe('buildCodeEditorOpenEvidence', () => {
         challengeKind: 'github_pr',
         challengeSource: 'scheduled_interview.github_pr_number',
         challengeMessage: null,
+        proxyUrlPersisted: false,
       },
     });
     expect(JSON.stringify(evidence)).not.toContain('secret-token');
