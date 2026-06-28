@@ -960,6 +960,20 @@ describe('repo task assessment session routes', () => {
         WHERE report_id = ? AND polarity = 'positive'`,
     ).get(reportBody.report.id)).toEqual({ count: 2 });
     expect(sqlite.prepare(
+      `SELECT id, confidence FROM assessment_evaluation_claims
+        WHERE report_id = ?
+        ORDER BY id`,
+    ).all(reportBody.report.id)).toEqual([
+      {
+        id: 'claim-code-fix',
+        confidence: 0.87,
+      },
+      {
+        id: 'claim-rationale',
+        confidence: 0.82,
+      },
+    ]);
+    expect(sqlite.prepare(
       `SELECT source_ref_type, source_ref_id, exact_text
          FROM assessment_claim_source_refs
         WHERE claim_id = ?

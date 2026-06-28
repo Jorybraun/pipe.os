@@ -254,6 +254,7 @@ function normalizeClaims(
     polarity: claim.polarity,
     dimension: claim.dimension,
     narrative: claim.narrative,
+    confidence: claim.confidence,
     sourceRefs: claim.sourceRefs ?? [],
   }));
 }
