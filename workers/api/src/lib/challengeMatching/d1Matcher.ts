@@ -22,7 +22,7 @@ import {
   type ChallengePacket as RepoChallengePacket,
 } from '../repoSemanticGraph';
 import { LivingContextStore } from '../livingContext/persistence';
-import { openSemanticTerm } from '../livingContext/openTerms';
+import { normalizeOpenTermSurface, openSemanticTerm } from '../livingContext/openTerms';
 import { ensureCandidateLivingContext } from '../livingContext/compatibility';
 import type {
   ContextRecordConceptInput,
@@ -183,6 +183,194 @@ function conceptsFromRow(row: CandidateEvidenceRow): string[] {
   }
 }
 
+const CANDIDATE_SIGNAL_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'by',
+  'for',
+  'from',
+  'has',
+  'in',
+  'is',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+  'years',
+]);
+
+const CANDIDATE_MECHANISM_SEGMENTS = new Set([
+  'api',
+  'apis',
+  'configuration',
+  'cron',
+  'deploy',
+  'deployment',
+  'deployments',
+  'kv',
+  'queue',
+  'queues',
+  'request',
+  'routing',
+  'runtime',
+  'schedule',
+  'schedules',
+  'sdk',
+  'serverless',
+  'source',
+  'sourcemap',
+  'stack',
+  'test',
+  'tests',
+  'tooling',
+  'trigger',
+  'triggers',
+  'workflow',
+  'workflows',
+  'wrangler',
+]);
+
+const CANDIDATE_DOMAIN_SEGMENTS = new Set([
+  'cloud',
+  'cloudflare',
+  'developer',
+  'edge',
+  'infrastructure',
+  'platform',
+  'platforms',
+  'serverless',
+  'worker',
+  'workers',
+  'wrangler',
+]);
+
+const CANDIDATE_PROBLEM_SEGMENTS = new Set([
+  'crash',
+  'error',
+  'errors',
+  'failed',
+  'failure',
+  'failures',
+  'latency',
+  'regression',
+  'reliability',
+  'timeout',
+  'timeouts',
+]);
+
+function canonicalTerm(surface: string): string | null {
+  const term = openSemanticTerm(surface);
+  return term?.canonicalKey ?? null;
+}
+
+function termSegments(canonicalKey: string): string[] {
+  return canonicalKey
+    .replace(/^term:/, '')
+    .split(/[^a-z0-9+#.]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function addCanonicalTerm(terms: Set<string>, surface: string): void {
+  const term = canonicalTerm(surface);
+  if (term) terms.add(term);
+}
+
+function sourceTextOpenTerms(text: string, limit = 48): string[] {
+  const tokens = normalizeOpenTermSurface(text)
+    .split(' ')
+    .map((token) => token.replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, ''))
+    .filter((token) =>
+      (token.length >= 3 || token === 'kv')
+      && !CANDIDATE_SIGNAL_STOPWORDS.has(token)
+      && !/^\d+$/.test(token)
+    );
+
+  const terms = new Set<string>();
+  for (const token of tokens) {
+    addCanonicalTerm(terms, token);
+    if (terms.size >= limit) return [...terms];
+  }
+
+  for (let size = 4; size >= 2; size -= 1) {
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+      const phrase = tokens.slice(index, index + size);
+      if (!phrase.some((segment) => segment.length >= 4)) continue;
+      addCanonicalTerm(terms, phrase.join(' '));
+      if (terms.size >= limit) return [...terms];
+    }
+  }
+
+  return [...terms];
+}
+
+export function deriveCandidateSignalFacets(input: {
+  narrative: string;
+  exactText: string;
+  concepts: string[];
+}): Pick<CandidateSignal, 'concepts' | 'problems' | 'mechanisms' | 'domains' | 'businessObjects' | 'ownershipActions'> {
+  const sourceText = `${input.exactText}\n${input.narrative}`;
+  const textTerms = sourceTextOpenTerms(sourceText);
+  const concepts = new Set(input.concepts.length > 0 ? input.concepts : textTerms);
+  const facetTerms = new Set([...input.concepts, ...textTerms]);
+  const problems = new Set<string>();
+  const mechanisms = new Set<string>();
+  const domains = new Set<string>();
+  const businessObjects = new Set<string>();
+  const ownershipActions = new Set<string>();
+
+  for (const term of facetTerms) {
+    const segments = termSegments(term);
+    const hasProblemSegment = segments.some((segment) => CANDIDATE_PROBLEM_SEGMENTS.has(segment));
+    const hasMechanismSegment = segments.some((segment) => CANDIDATE_MECHANISM_SEGMENTS.has(segment));
+    const hasDomainSegment = segments.some((segment) => CANDIDATE_DOMAIN_SEGMENTS.has(segment));
+
+    if (hasProblemSegment) {
+      problems.add(term);
+    }
+    if (hasMechanismSegment) {
+      mechanisms.add(term);
+    }
+    if (hasDomainSegment) {
+      domains.add(term);
+    }
+    if (
+      segments.length >= 2
+      && (hasMechanismSegment || hasDomainSegment || hasProblemSegment)
+      && !segments.every((segment) => CANDIDATE_SIGNAL_STOPWORDS.has(segment))
+    ) {
+      businessObjects.add(term);
+    }
+  }
+
+  return {
+    concepts: [...concepts].sort(),
+    problems: [...problems].sort(),
+    mechanisms: [...mechanisms].sort(),
+    domains: [...domains].sort(),
+    businessObjects: [...businessObjects].sort(),
+    ownershipActions: [...ownershipActions].sort(),
+  };
+}
+
+function shouldDeriveCandidateSignalFacets(row: CandidateEvidenceRow): boolean {
+  try {
+    const qualifiers = JSON.parse(row.qualifiers_json) as {
+      extractedProperties?: unknown;
+    };
+    return typeof qualifiers.extractedProperties === 'string';
+  } catch {
+    return false;
+  }
+}
+
 function candidateEvidenceId(row: CandidateEvidenceRow): string {
   return row.assertion_id ?? row.context_record_id ?? row.source_span_id;
 }
@@ -283,6 +471,20 @@ async function loadCandidateSignals(
     const purpose: QueryPurpose = 'validation';
     const id = row.concept_key ? `${baseId}:${row.concept_key}` : baseId;
     const sourceRef = candidateSourceRef(row);
+    const facets = shouldDeriveCandidateSignalFacets(row)
+      ? deriveCandidateSignalFacets({
+          narrative: row.narrative,
+          exactText: row.exact_text,
+          concepts,
+        })
+      : {
+          concepts,
+          problems: [],
+          mechanisms: [],
+          domains: [],
+          businessObjects: [],
+          ownershipActions: [],
+        };
     const dedupeKey = [
       id,
       sourceRef.sourceSpanId ?? sourceRef.sourceRefId ?? sourceRef.locator ?? '',
@@ -301,7 +503,12 @@ async function loadCandidateSignals(
         ? row.strength * row.concept_weight
         : null,
       confidence: row.confidence,
-      concepts,
+      concepts: facets.concepts,
+      problems: facets.problems,
+      mechanisms: facets.mechanisms,
+      domains: facets.domains,
+      businessObjects: facets.businessObjects,
+      ownershipActions: facets.ownershipActions,
       sourceRefs: [sourceRef],
     };
     signals.push(signal);

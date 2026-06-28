@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Candidate repo matching
+
+- Standalone CODE_REVIEW matching now derives deterministic source-backed match facets from the candidate's exact CV evidence, preserving repo/domain signals such as Workers/runtime/deployments instead of collapsing rich decomposition evidence into generic TypeScript overlap.
+
 ### Fixed — 95 Until Infinity desktop tools
 
 - Clippy/Devin user prompts now require source-backed browser chat evidence with bridge delivery, prompt ids, fingerprints, lengths, and workspace context before entering the meeting-session graph.

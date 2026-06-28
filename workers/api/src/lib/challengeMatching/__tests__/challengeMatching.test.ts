@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignCandidateToChallenge,
   compileCandidateMatchQuery,
+  deriveCandidateSignalFacets,
   explainChallengeMatch,
   rankReviewChallenges,
   recallReviewChallenges,
@@ -446,6 +447,102 @@ describe('recallReviewChallenges', () => {
 });
 
 describe('alignCandidateToChallenge', () => {
+  it('derives source-backed candidate facets for repo-specific standalone matching', () => {
+    const facets = deriveCandidateSignalFacets({
+      concepts: ['term:typescript-sdk'],
+      narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
+      exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+    });
+
+    expect(facets.concepts).toEqual(['term:typescript-sdk']);
+    expect(facets.mechanisms).toEqual(expect.arrayContaining([
+      'term:runtime',
+      'term:routing',
+      'term:kv',
+      'term:queues',
+      'term:serverless',
+      'term:deployments',
+    ]));
+    expect(facets.domains).toEqual(expect.arrayContaining([
+      'term:cloudflare',
+      'term:workers',
+      'term:serverless',
+    ]));
+  });
+
+  it('uses decomposed source facets to prefer Workers SDK over generic TypeScript UI packets', () => {
+    const facets = deriveCandidateSignalFacets({
+      concepts: ['term:typescript-sdk'],
+      narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
+      exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
+    });
+    const compiled = compileCandidateMatchQuery({
+      candidateSnapshotId: 'candidate-cloudflare',
+      roleSnapshotId: 'standalone-code-review-v1',
+      signals: [
+        signal('cloudflare-workers', {
+          concepts: facets.concepts,
+          problems: facets.problems,
+          mechanisms: facets.mechanisms,
+          domains: facets.domains,
+          businessObjects: facets.businessObjects,
+          ownershipActions: facets.ownershipActions,
+        }),
+      ],
+      roleGuardrails: {
+        requiredLanguages: ['typescript'],
+        genericConcepts: ['term:typescript'],
+      },
+    });
+    const workersPacket = challenge('workers-sdk', [
+      demand('workers-sdk', 1, {
+        concepts: ['term:typescript', 'term:workers-sdk', 'term:deploy'],
+        mechanisms: ['term:deploy', 'term:runtime'],
+        domains: ['term:workers-sdk', 'term:serverless'],
+        businessObjects: ['term:deploy', 'term:runtime'],
+        ownershipActions: ['term:modified'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      repoId: '79',
+      concepts: ['term:typescript', 'term:workers-sdk', 'term:deploy'],
+      quality: { deterministic: 0.9, contextualSpecificity: 1 },
+    });
+    const genericUiPacket = challenge('base-ui', [
+      demand('base-ui', 1, {
+        concepts: ['term:typescript', 'term:active-trigger-id'],
+        mechanisms: ['term:active-trigger-id'],
+        domains: ['term:base-ui', 'term:react'],
+        businessObjects: ['term:active-trigger-id'],
+        ownershipActions: ['term:modified'],
+        roleRequirement: false,
+        highWeightRoleRequirement: false,
+      }),
+    ], {
+      repoId: '973',
+      concepts: ['term:typescript', 'term:active-trigger-id'],
+      quality: { deterministic: 0.9, contextualSpecificity: 1 },
+    });
+
+    const workersAlignment = alignCandidateToChallenge({
+      query: compiled.query,
+      challenge: workersPacket,
+    });
+    const genericAlignment = alignCandidateToChallenge({
+      query: compiled.query,
+      challenge: genericUiPacket,
+    });
+    const ranked = rankReviewChallenges(compiled.query, [genericAlignment, workersAlignment]);
+
+    expect(workersAlignment.hasNonGenericAlignment).toBe(true);
+    expect(workersAlignment.eligible).toBe(true);
+    expect(genericAlignment.eligible).toBe(false);
+    expect(genericAlignment.rejectionReasons).toContain('NO_NON_GENERIC_ALIGNMENT');
+    expect(ranked.status).toBe('MATCHED');
+    expect(ranked.matches[0]!.alignment.challenge.repoId).toBe('79');
+  });
+
   it('rejects generic keyword overlap without non-generic correspondence', () => {
     const compiled = compile([
       signal('generic', {
