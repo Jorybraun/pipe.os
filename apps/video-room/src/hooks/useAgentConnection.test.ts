@@ -99,11 +99,14 @@ describe('parseAgentBridgeMessage', () => {
   });
 
   it('turns container file changes into an actionable workspace suggestion', () => {
+    const contentHash = 'a'.repeat(64);
+
     expect(parseAgentBridgeMessage({
       type: 'FILE_CHANGED',
+      source: 'code_server_workspace',
       path: 'src/app.ts',
       action: 'modified',
-      contentHash: 'sha256-source-hash',
+      contentHash,
       sizeBytes: 421,
       contentPreview: 'export const answer = 42;',
       observedAt: '2026-06-27T12:00:00.000Z',
@@ -126,14 +129,51 @@ describe('parseAgentBridgeMessage', () => {
       fileChange: {
         filePath: 'src/app.ts',
         actionName: 'modified',
-        contentHash: 'sha256-source-hash',
+        contentHash,
         sizeBytes: 421,
         contentPreview: 'export const answer = 42;',
         observedAt: '2026-06-27T12:00:00.000Z',
-        source: undefined,
+        source: 'code_server_workspace',
         persisted: false,
       },
     });
+  });
+
+  it('ignores file change observations without code-server source provenance', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'FILE_CHANGED',
+      path: 'src/app.ts',
+      action: 'modified',
+      contentHash: 'a'.repeat(64),
+      sizeBytes: 421,
+      observedAt: '2026-06-27T12:00:00.000Z',
+      persisted: false,
+    })).toEqual({ kind: 'ignored' });
+  });
+
+  it('ignores file change observations without a source-backed content hash', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'FILE_CHANGED',
+      source: 'code_server_workspace',
+      path: 'src/app.ts',
+      action: 'modified',
+      contentHash: 'sha256-source-hash',
+      sizeBytes: 421,
+      observedAt: '2026-06-27T12:00:00.000Z',
+      persisted: false,
+    })).toEqual({ kind: 'ignored' });
+  });
+
+  it('ignores file change observations with unknown persistence state', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'FILE_CHANGED',
+      source: 'code_server_workspace',
+      path: 'src/app.ts',
+      action: 'modified',
+      contentHash: 'a'.repeat(64),
+      sizeBytes: 421,
+      observedAt: '2026-06-27T12:00:00.000Z',
+    })).toEqual({ kind: 'ignored' });
   });
 
   it('preserves real Devin auth failure details without inventing an auth URL', () => {

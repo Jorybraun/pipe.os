@@ -194,6 +194,8 @@ const ROOM_ACTIONS: Record<AgentRoomActionId, { label: string; aliases: string[]
   },
 };
 
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -379,8 +381,26 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'FILE_CHANGED') {
-    const filePath = stringOrNull(value.path ?? value.filePath) ?? 'a workspace file';
-    const actionName = stringOrNull(value.action ?? value.operation) ?? 'changed';
+    const filePath = stringOrNull(value.path ?? value.filePath);
+    const actionName = stringOrNull(value.action ?? value.operation);
+    const source = stringOrNull(value.source);
+    const observedAt = stringOrNull(value.observedAt);
+    const sizeBytes = numberOrUndefined(value.sizeBytes);
+    const contentHash = stringOrNull(value.contentHash);
+    const persisted = typeof value.persisted === 'boolean' ? value.persisted : null;
+    if (
+      !filePath
+      || !actionName
+      || source !== 'code_server_workspace'
+      || !observedAt
+      || typeof sizeBytes !== 'number'
+      || sizeBytes < 0
+      || !contentHash
+      || !SHA256_HEX_RE.test(contentHash)
+      || persisted === null
+    ) {
+      return { kind: 'ignored' };
+    }
     const text = `I noticed ${filePath} was ${actionName} in the workspace.`;
     const contentPreview = stringOrNull(value.contentPreview);
     return {
@@ -397,14 +417,14 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
       fileChange: {
         filePath,
         actionName,
-        observedAt: stringOrNull(value.observedAt) ?? undefined,
-        source: stringOrNull(value.source) ?? undefined,
-        sizeBytes: numberOrUndefined(value.sizeBytes),
-        contentHash: stringOrNull(value.contentHash) ?? undefined,
+        observedAt,
+        source,
+        sizeBytes,
+        contentHash,
         contentPreview: contentPreview && contentPreview.length <= 4000
           ? contentPreview
           : contentPreview?.slice(0, 4000),
-        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+        persisted,
       },
     };
   }
