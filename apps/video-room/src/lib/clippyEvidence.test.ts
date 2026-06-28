@@ -72,6 +72,34 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures Devin auth rechecks as human prompt UI evidence', () => {
+    expect(buildClippyUiActionEvidence({
+      actionId: 'check-devin-auth',
+      origin: 'prompt',
+      actor: 'guest',
+      capturedAtMs: 1782594120000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      agentWorkspaceReady: true,
+    })).toMatchObject({
+      text: 'Clippy requested a real Devin CLI auth recheck',
+      properties: {
+        source: 'clippy_prompt_ui',
+        actionId: 'check-devin-auth',
+        origin: 'prompt',
+        executedBy: 'guest',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594120000,
+        clippyActionEventId: 'clippy-action:guest:1782594120000:clippy_prompt_ui:prompt:executed:check-devin-auth',
+        agent: null,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
   it('captures prompt-button executions as source-backed UI evidence', () => {
     expect(buildClippyRoomActionExecutionEvidence({
       actionId: 'start-recording',

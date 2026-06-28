@@ -38,6 +38,7 @@ export interface ClippyAssistantProps {
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
   onOpenAuthTerminal?: () => void;
+  onCheckAuth?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
   onUserChatMessage?: (message: AgentChatMessage) => void;
@@ -60,6 +61,7 @@ export function ClippyAssistant({
   onOpenBrowser,
   onOpenTerminal,
   onOpenAuthTerminal,
+  onCheckAuth,
   onAction,
   onAgentRoomAction,
   onUserChatMessage,
@@ -271,11 +273,12 @@ export function ClippyAssistant({
   }, [chatInput, agentConn, onUserChatMessage]);
 
   const handleAuthClick = useCallback(() => {
+    onCheckAuth?.();
     if (agentConn.authUrl && onOpenBrowser) {
       onOpenBrowser(agentConn.authUrl);
     }
     agentConn.startAuth();
-  }, [agentConn, onOpenBrowser]);
+  }, [agentConn, onCheckAuth, onOpenBrowser]);
 
   const handleAuthTerminalClick = useCallback(() => {
     if (agentRef.current) {

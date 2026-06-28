@@ -1039,7 +1039,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [hasActiveWorkspace, workspaceSession?.sessionId]);
   const captureClippyUiAction = (
-    actionId: 'open-clippy-chat' | 'dismiss-clippy',
+    actionId: 'open-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth',
     origin: 'tray' | 'prompt',
   ): void => {
     const evidence = buildClippyUiActionEvidence({
@@ -1073,6 +1073,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const dismissClippy = (): void => {
     captureClippyUiAction('dismiss-clippy', 'prompt');
     setClippyVisible(false);
+  };
+  const checkDevinAuth = (): void => {
+    captureClippyUiAction('check-devin-auth', 'prompt');
   };
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
@@ -2334,6 +2337,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           onOpenBrowser={openBrowserWindow}
           onOpenTerminal={openTerminalWindow}
           onOpenAuthTerminal={openDevinAuthTerminal}
+          onCheckAuth={checkDevinAuth}
           onAction={handleClippyAction}
           onAgentRoomAction={handleAgentRoomAction}
           onUserChatMessage={captureClippyUserChatMessage}

@@ -10,7 +10,7 @@ import {
 
 export { clippyTextFingerprint } from './clippyPromptIdentity';
 
-export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy';
+export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth';
 export type ClippyUiActionOrigin = 'tray' | 'prompt';
 export type ClippyRoomActionOrigin = 'prompt' | 'agent';
 export type ClippyEvidenceActor = 'host' | 'guest';
@@ -58,13 +58,17 @@ function clippyUiActionText(actionId: ClippyUiActionId): string {
       return 'Clippy chat opened from the Win95 taskbar tray';
     case 'dismiss-clippy':
       return 'Clippy prompt dismissed';
+    case 'check-devin-auth':
+      return 'Clippy requested a real Devin CLI auth recheck';
     default:
       return 'Clippy UI action';
   }
 }
 
 function clippyUiActionStatus(actionId: ClippyUiActionId): string {
-  return actionId === 'open-clippy-chat' ? 'opened' : 'dismissed';
+  if (actionId === 'open-clippy-chat') return 'opened';
+  if (actionId === 'dismiss-clippy') return 'dismissed';
+  return 'executed';
 }
 
 export function buildClippyActionEventId(input: {
