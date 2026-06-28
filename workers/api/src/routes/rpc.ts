@@ -80,18 +80,30 @@ interface GateResult {
   syntheticChallenge?: WaitingChallenge;
 }
 
-function waitingForMatch(reason: string): GateResult {
+function waitingForMatch(
+  reason: string,
+  options: {
+    terminal?: boolean;
+    diagnostics?: WaitingChallengeDiagnostics;
+  } = {},
+): GateResult {
+  const terminal = options.terminal === true;
   return {
     blocked: true,
     reason,
     syntheticChallenge: {
       id: 'waiting-for-match',
       type: 'WAITING_FOR_MATCH',
-      title: 'Building your personalized challenge',
-      instructions: 'We are analyzing source-backed candidate evidence to find the best open-source project match.',
+      title: terminal ? 'Challenge needs attention' : 'Building your personalized challenge',
+      instructions: terminal
+        ? reason
+        : 'We are analyzing source-backed candidate evidence to find the best open-source project match.',
       config: {
-        autoRefresh: true,
+        autoRefresh: !terminal,
         refreshIntervalSeconds: 30,
+        state: terminal ? 'blocked' : 'pending',
+        reason,
+        diagnostics: options.diagnostics,
       },
     },
   };
@@ -199,14 +211,28 @@ async function checkMatchingGate(
       })),
     });
     if (match.status !== 'MATCHED' || !match.repoId || !match.prNumber) {
-      return waitingForMatch(`Deterministic challenge matcher returned ${match.status}`);
+      const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+      return waitingForMatch(`Deterministic challenge matcher returned ${match.status}`, {
+        terminal: true,
+        diagnostics: {
+          ...diagnosticsForStandaloneReviewReadiness(readiness),
+          phase: 'repo_matching',
+        },
+      });
     }
 
     const repo = await db.prepare(
       `SELECT github_url FROM qualified_repos WHERE id = ?1`,
     ).bind(match.repoId).first<{ github_url: string | null }>();
     if (!repo?.github_url) {
-      return waitingForMatch('Matched challenge repository is unavailable');
+      const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
+      return waitingForMatch('Matched challenge repository is unavailable', {
+        terminal: true,
+        diagnostics: {
+          ...diagnosticsForStandaloneReviewReadiness(readiness),
+          phase: 'repo_matching',
+        },
+      });
     }
 
     await upsertCandidateChallengeAssignment(db, {

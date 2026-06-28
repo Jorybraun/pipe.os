@@ -302,6 +302,152 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves exact terminal command and output text as source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const terminalSessionId = 'terminal-workspace-session-1-guest';
+        const terminalCommandId = `${terminalSessionId}:command:guest:1782604400000:1:terminal_dc5964d6`;
+        const terminalOutputChunkId = `${terminalSessionId}:output:system:1782604410000:1:terminal_4f2d0d8f`;
+        const commandText = 'npm test -- --runInBand';
+        const outputText = 'FAIL src/sessionEvents.test.ts\nExpected source-backed terminal refs.';
+        const commandEvent: SessionEvent = {
+          type: 'terminal_command',
+          sessionId: 'meeting-session-terminal',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604400,
+          actor: 'guest',
+          text: commandText,
+          properties: {
+            source: 'container_terminal',
+            terminalEventSource: 'browser_terminal_ws',
+            terminalSessionId,
+            terminalCommandId,
+            terminalCommandSequence: 1,
+            actor: 'guest',
+            capturedAtMs: 1782604400000,
+            commandFingerprint: 'terminal_dc5964d6',
+            commandLength: commandText.length,
+            surface: 'win95',
+            roomPhase: 'connected',
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          },
+        };
+        const outputEvent: SessionEvent = {
+          type: 'terminal_output',
+          sessionId: 'meeting-session-terminal',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604410,
+          actor: 'system',
+          text: outputText,
+          properties: {
+            source: 'container_terminal',
+            terminalEventSource: 'browser_terminal_ws',
+            terminalSessionId,
+            terminalCommandId,
+            terminalOutputChunkId,
+            terminalOutputSequence: 1,
+            actor: 'system',
+            capturedAtMs: 1782604410000,
+            outputFingerprint: 'terminal_4f2d0d8f',
+            outputLength: outputText.length,
+            surface: 'win95',
+            roomPhase: 'connected',
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          },
+        };
+
+        const commandNode = await captureSessionEvent(realDb, commandEvent);
+        const outputNode = await captureSessionEvent(realDb, outputEvent);
+        expect(commandNode).not.toBeNull();
+        expect(outputNode).not.toBeNull();
+
+        const contextSources = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type IN ('terminal_command', 'terminal_output')
+            ORDER BY csr.source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(contextSources).toEqual([
+          {
+            source_ref_type: 'terminal_command',
+            source_ref_id: terminalCommandId,
+            evidence_role: 'terminal_command',
+            exact_text: commandText,
+            content_hash: await sha256Hex(commandText),
+          },
+          {
+            source_ref_type: 'terminal_output',
+            source_ref_id: terminalOutputChunkId,
+            evidence_role: 'terminal_output',
+            exact_text: outputText,
+            content_hash: await sha256Hex(outputText),
+          },
+        ]);
+
+        const assessmentSources = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type IN ('terminal_command', 'terminal_output')
+            ORDER BY source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(assessmentSources).toEqual(contextSources);
+
+        const terminalEntities = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship
+             FROM context_record_entities
+            WHERE entity_type IN ('terminal_session', 'terminal_command', 'terminal_output_chunk')
+            ORDER BY entity_type, relationship`,
+        ).all() as Array<{
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+        }>;
+        expect(terminalEntities).toEqual(expect.arrayContaining([
+          {
+            entity_type: 'terminal_session',
+            entity_id: terminalSessionId,
+            relationship: 'terminal_session',
+          },
+          {
+            entity_type: 'terminal_command',
+            entity_id: terminalCommandId,
+            relationship: 'source_command',
+          },
+          {
+            entity_type: 'terminal_command',
+            entity_id: terminalCommandId,
+            relationship: 'related_command',
+          },
+          {
+            entity_type: 'terminal_output_chunk',
+            entity_id: terminalOutputChunkId,
+            relationship: 'source_output',
+          },
+        ]));
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

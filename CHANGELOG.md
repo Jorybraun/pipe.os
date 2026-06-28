@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Standalone CODE_REVIEW matching now blocks stale non-progressing evidence ingestion with candidate-safe diagnostics instead of polling forever behind the generic matching screen, and ingestion step heartbeats update `updated_at` for reliable freshness checks.
+- Role-backed CODE_REVIEW matching now converts terminal deterministic no-match outcomes into blocked repo-matching diagnostics instead of repeatedly polling a generic matching screen.
 - The CODE_REVIEW app-dev full-submit smoke now polls D1 for durable review-session score reports, challenge-submission scores/reports, and assessment scores so scoring regressions fail the reliability gate.
 - Role-backed CODE_REVIEW smoke defaults now use selected terms that appear literally in the generated job description, keeping the role-source validation lane executable.
 - Candidate discovery now extracts one balanced JSON object from provider responses that include preamble/trailing text while still rejecting array-shaped or non-JSON output, reducing brittle repo-matching blocks without fabricating evidence.
@@ -46,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Container terminal commands and output chunks now preserve direct `terminal_command` / `terminal_output` exact-text source refs in living-context and assessment evidence, so terminal activity can be cited without unpacking the broader room event packet.
 - Win95 text-file changes now preserve exact Notepad content as `room_file_content` source refs in both living-context and assessment evidence, so file-change graph records can cite the original note text instead of only a preview/hash.
 - Room chat evidence now fails closed unless Durable Object messages and replayed room activity carry browser chat source, stable message identity, actor, delivery status, surface, room phase, and exact message length, preventing forged chat claims from entering meeting-session evidence.
 - Code-server file-change evidence now fails closed unless bridge metadata includes a real workspace session, observed timestamp, SHA-256 content hash, and size, preventing browser-only events that room replay would reject.

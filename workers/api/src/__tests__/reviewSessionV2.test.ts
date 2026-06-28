@@ -721,6 +721,121 @@ describe('POST /rpc/get-stage-config', () => {
     });
   });
 
+  it('blocks role-backed CODE_REVIEW no-match outcomes with repo-matching diagnostics', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: 'pipe_1',
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            raw_node_count: 16,
+            node_count: 16,
+          },
+        },
+        {
+          match: 'SELECT match_philosophy FROM pipeline_match_config',
+          value: { match_philosophy: 'tailored' },
+        },
+        {
+          match: 'FROM role_contexts',
+          value: {
+            id: 'role_ctx_1',
+            persona_json: null,
+            rcd_json: JSON.stringify({ rcd_version: 'simple-jd-v1' }),
+            job_description_md: 'React TypeScript usePopoverRoot rendered trigger id ownership.',
+            non_negotiable_skills_json: JSON.stringify(['React', 'TypeScript', 'usePopoverRoot']),
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/role-backed',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            estimated_completion_at: '2026-06-28T16:59:40.000Z',
+            updated_at: '2026-06-28T16:59:23.000Z',
+            raw_node_count: 16,
+            node_count: 16,
+          },
+        },
+      ],
+      allResponders: [
+        {
+          match: 'FROM stages s',
+          value: [{
+            stage_id: 'stage_code_review',
+            stage_title: 'Code Review',
+            stage_order: 0,
+            stage_mode: 'ASYNC',
+            time_limit: null,
+            screening_input_mode: null,
+            video_config: null,
+            challenge_id: 'challenge_code_review',
+            challenge_type: 'CODE_REVIEW',
+            challenge_title: 'Code Review',
+            challenge_order: 0,
+            challenge_config: '{}',
+            challenge_instructions: 'Review the matched PR.',
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeader('cand_1', 'pipe_1') },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      challenges?: Array<{ type: string }>;
+      waitingChallenge?: {
+        config?: {
+          state?: string;
+          autoRefresh?: boolean;
+          reason?: string;
+          diagnostics?: {
+            phase?: string;
+            ingestionStatus?: string | null;
+            currentStep?: string | null;
+            matchableNodeCount?: number;
+          };
+        };
+      };
+    };
+    expect(body.stageId).toBe('stage_code_review');
+    expect(body.challenges?.[0]?.type).toBe('WAITING_FOR_MATCH');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'blocked',
+      autoRefresh: false,
+      reason: 'Deterministic challenge matcher returned NO_ROLE_SAFE_CHALLENGE',
+      diagnostics: {
+        phase: 'repo_matching',
+        ingestionStatus: 'pending',
+        currentStep: 'decompose_resume',
+        matchableNodeCount: 16,
+      },
+    });
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
+  });
+
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
     const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
     const storage = {

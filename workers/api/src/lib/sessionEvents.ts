@@ -1941,6 +1941,44 @@ function sessionEventEntities(input: {
     });
   }
 
+  const terminalSessionId = stringProperty(properties, 'terminalSessionId');
+  if (terminalSessionId) {
+    entities.push({
+      entityType: 'terminal_session',
+      entityId: terminalSessionId,
+      relationship: 'terminal_session',
+      metadata: {
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        repoUrl: stringProperty(properties, 'repoUrl'),
+      },
+    });
+  }
+
+  const terminalCommandId = stringProperty(properties, 'terminalCommandId');
+  if (terminalCommandId) {
+    entities.push({
+      entityType: 'terminal_command',
+      entityId: terminalCommandId,
+      relationship: event.type === 'terminal_output' ? 'related_command' : 'source_command',
+      metadata: {
+        terminalSessionId,
+      },
+    });
+  }
+
+  const terminalOutputChunkId = stringProperty(properties, 'terminalOutputChunkId');
+  if (terminalOutputChunkId) {
+    entities.push({
+      entityType: 'terminal_output_chunk',
+      entityId: terminalOutputChunkId,
+      relationship: 'source_output',
+      metadata: {
+        terminalSessionId,
+        terminalCommandId,
+      },
+    });
+  }
+
   return entities;
 }
 
@@ -1957,11 +1995,13 @@ function sessionEventSourcePayload(event: SessionEvent, node: CandidateNode): Js
   };
 }
 
+type SessionEventExactSourceRef = ContextRecordSourceInput & AssessmentEvidenceSourceRefInput;
+
 async function roomTextFileContentSourceRef(input: {
   event: SessionEvent;
   node: CandidateNode;
   properties: JsonObject;
-}): Promise<(ContextRecordSourceInput & AssessmentEvidenceSourceRefInput) | null> {
+}): Promise<SessionEventExactSourceRef | null> {
   if (input.event.type !== 'file_change') return null;
   const fileKind = stringProperty(input.properties, 'fileKind');
   if (fileKind !== 'text') return null;
@@ -1999,6 +2039,80 @@ async function roomTextFileContentSourceRef(input: {
   };
 }
 
+async function terminalTextSourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<SessionEventExactSourceRef | null> {
+  if (input.event.type !== 'terminal_command' && input.event.type !== 'terminal_output') return null;
+  if (input.properties.source !== 'container_terminal') return null;
+  if (input.properties.terminalEventSource !== 'browser_terminal_ws') return null;
+  const terminalSessionId = stringProperty(input.properties, 'terminalSessionId');
+  if (!terminalSessionId || input.event.text.trim().length === 0) return null;
+  const workspaceSessionId = stringProperty(input.properties, 'workspaceSessionId');
+  const repoUrl = stringProperty(input.properties, 'repoUrl');
+  const capturedAtMs = numberProperty(input.properties, 'capturedAtMs');
+
+  if (input.event.type === 'terminal_command') {
+    const terminalCommandId = stringProperty(input.properties, 'terminalCommandId');
+    if (!terminalCommandId || (input.event.actor !== 'host' && input.event.actor !== 'guest')) return null;
+    return {
+      sourceRefType: 'terminal_command',
+      sourceRefId: terminalCommandId,
+      evidenceRole: 'terminal_command',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        terminalSessionId,
+        terminalCommandId,
+        workspaceSessionId,
+        repoUrl,
+        capturedAtMs,
+        commandSequence: numberProperty(input.properties, 'terminalCommandSequence'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: 'container_terminal.command',
+        terminalEventSource: 'browser_terminal_ws',
+        actor: input.event.actor,
+        commandFingerprint: stringProperty(input.properties, 'commandFingerprint'),
+        commandLength: numberProperty(input.properties, 'commandLength') ?? input.event.text.length,
+      },
+    };
+  }
+
+  const terminalOutputChunkId = stringProperty(input.properties, 'terminalOutputChunkId');
+  if (!terminalOutputChunkId || input.event.actor !== 'system') return null;
+  return {
+    sourceRefType: 'terminal_output',
+    sourceRefId: terminalOutputChunkId,
+    evidenceRole: 'terminal_output',
+    locator: {
+      sessionId: input.event.sessionId,
+      candidateId: input.event.candidateId,
+      candidateNodeId: input.node.id,
+      terminalSessionId,
+      terminalCommandId: stringProperty(input.properties, 'terminalCommandId'),
+      terminalOutputChunkId,
+      workspaceSessionId,
+      repoUrl,
+      capturedAtMs,
+      outputSequence: numberProperty(input.properties, 'terminalOutputSequence'),
+    },
+    exactText: input.event.text,
+    contentHash: await sha256Hex(input.event.text),
+    metadata: {
+      sourceKind: 'container_terminal.output',
+      terminalEventSource: 'browser_terminal_ws',
+      actor: 'system',
+      outputFingerprint: stringProperty(input.properties, 'outputFingerprint'),
+      outputLength: numberProperty(input.properties, 'outputLength') ?? input.event.text.length,
+    },
+  };
+}
+
 async function persistSessionEventContextRecord(
   db: D1Database,
   event: SessionEvent,
@@ -2027,6 +2141,7 @@ async function persistSessionEventContextRecord(
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -2050,6 +2165,7 @@ async function persistSessionEventContextRecord(
     },
   ];
   if (roomFileContentSource) sources.push(roomFileContentSource);
+  if (terminalTextSource) sources.push(terminalTextSource);
   if (sourceSpanId) {
     sources.push({
       sourceSpanId,
@@ -2222,7 +2338,8 @@ async function persistSessionEventAssessmentEvidence(
   const properties = jsonObject(event.properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
-  const sourceRefs = [
+  const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
+  const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
     {
       sourceRefType: 'meeting_session_event',
       sourceRefId: node.id,
@@ -2244,6 +2361,7 @@ async function persistSessionEventAssessmentEvidence(
       },
     },
     ...(roomFileContentSource ? [roomFileContentSource] : []),
+    ...(terminalTextSource ? [terminalTextSource] : []),
   ];
 
   await store.recordAssessmentEvent({
