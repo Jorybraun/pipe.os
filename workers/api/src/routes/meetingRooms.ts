@@ -690,7 +690,7 @@ const sessionEventSchema = z.object({
       if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Clippy UI action evidence must come from tray or prompt UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
+        message: 'Clippy UI action evidence must come from tray, prompt, or chat UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no agent attribution.',
         path: ['properties'],
       });
       return;

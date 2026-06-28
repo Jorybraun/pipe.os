@@ -46,6 +46,39 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures room-chat Clippy opens as chat-window UI actions', () => {
+    expect(buildClippyUiActionEvidence({
+      actionId: 'open-clippy-chat',
+      origin: 'chat',
+      actor: 'host',
+      capturedAtMs: 1782594010000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      agentWorkspaceReady: true,
+    })).toEqual({
+      text: 'Clippy chat opened from the room chat window',
+      properties: {
+        source: 'clippy_chat_ui',
+        actionId: 'open-clippy-chat',
+        origin: 'chat',
+        executedBy: 'host',
+        actionSource: 'clippy_chat_window',
+        executionStatus: 'opened',
+        capturedAtMs: 1782594010000,
+        clippyActionEventId: 'clippy-action:host:1782594010000:clippy_chat_ui:chat:opened:open-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-123',
+        agent: null,
+        agentWorkspaceReady: true,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
   it('captures chat-window closes as human UI actions without claiming a Devin response', () => {
     expect(buildClippyUiActionEvidence({
       actionId: 'close-clippy-chat',

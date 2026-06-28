@@ -54,10 +54,12 @@ type ClippyAgentStatusBridgeMessageSource = 'agent_status' | ClippyAgentBridgeMe
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
 
-function clippyUiActionText(actionId: ClippyUiActionId): string {
+function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOrigin): string {
   switch (actionId) {
     case 'open-clippy-chat':
-      return 'Clippy chat opened from the Win95 taskbar tray';
+      return origin === 'chat'
+        ? 'Clippy chat opened from the room chat window'
+        : 'Clippy chat opened from the Win95 taskbar tray';
     case 'close-clippy-chat':
       return 'Clippy chat window closed';
     case 'dismiss-clippy':
@@ -197,7 +199,7 @@ export function buildClippyUiActionEvidence(input: {
   const executionStatus = clippyUiActionStatus(input.actionId) as ClippyActionExecutionStatus;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
-    text: clippyUiActionText(input.actionId),
+    text: clippyUiActionText(input.actionId, input.origin),
     properties: {
       source,
       actionId: input.actionId,

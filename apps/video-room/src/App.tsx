@@ -1065,8 +1065,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       evidence: properties,
     });
   };
-  const openClippyChat = (): void => {
-    captureClippyUiAction('open-clippy-chat', 'tray');
+  const openClippyChat = (origin: 'tray' | 'chat' = 'tray'): void => {
+    captureClippyUiAction('open-clippy-chat', origin);
     setClippyVisible(true);
     setClippyChatRequest((request) => request + 1);
   };
@@ -2217,7 +2217,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             onSend={(text) => sendChatMessage(text)}
             currentUserRole={metadata.role}
             onAskClippy={(metadata.features?.clippyEnabled ?? true) && usesWin95Desktop
-              ? openClippyChat
+              ? () => openClippyChat('chat')
               : undefined}
           />
         );
