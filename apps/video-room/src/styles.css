@@ -1763,7 +1763,7 @@ button:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 5px;
-  transform: translate3d(var(--room-cursor-x, 0vw), var(--room-cursor-y, 0dvh), 0);
+  transform: translate3d(var(--room-cursor-x, 0%), var(--room-cursor-y, 0%), 0);
   will-change: transform;
   backface-visibility: hidden;
 }

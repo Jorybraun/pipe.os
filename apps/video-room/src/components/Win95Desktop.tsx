@@ -120,8 +120,8 @@ export function Win95Desktop({
           const x = Math.min(0.985, Math.max(0.015, cursor.x));
           const y = Math.min(0.96, Math.max(0.015, cursor.y));
           const cursorStyle = {
-            '--room-cursor-x': `${x * 100}vw`,
-            '--room-cursor-y': `${y * 100}dvh`,
+            '--room-cursor-x': `${x * 100}%`,
+            '--room-cursor-y': `${y * 100}%`,
           } as CSSProperties;
           return (
             <div
