@@ -520,12 +520,28 @@ export class RepoTaskInterviewSessionStore {
       toState: 'DIAGNOSTIC',
       reason: diagnostic.message,
     });
+    const row = await this.db.prepare(
+      `SELECT id, session_id, report_id, code, severity
+         FROM assessment_diagnostics
+        WHERE report_id = ?1
+          AND code = ?2
+          AND severity = ?3
+          AND message = ?4
+        LIMIT 1`,
+    ).bind(report.id, diagnostic.code, diagnostic.severity, diagnostic.message).first<{
+      id: string;
+      session_id: string;
+      report_id: string | null;
+      code: string;
+      severity: AssessmentDiagnosticSeverity;
+    }>();
+    if (!row) throw new Error(`assessment diagnostic ${diagnostic.code} was not persisted`);
     return {
-      id: report.id,
-      sessionId: context.sessionId,
-      reportId: context.reportId,
-      code: diagnostic.code,
-      severity: diagnostic.severity,
+      id: row.id,
+      sessionId: row.session_id,
+      reportId: row.report_id,
+      code: row.code,
+      severity: row.severity,
     };
   }
 

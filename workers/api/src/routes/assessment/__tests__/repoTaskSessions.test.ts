@@ -479,17 +479,31 @@ describe('repo task assessment session routes', () => {
       env,
     );
     expect(diagnosticResponse.status).toBe(201);
+    const diagnosticBody = await diagnosticResponse.json() as {
+      diagnostic: { id: string; reportId: string | null; code: string; severity: string };
+    };
 
-    expect(sqlite.prepare(
-      `SELECT code, severity, provider, retryable, message
+    const persistedDiagnostic = sqlite.prepare(
+      `SELECT id, report_id, code, severity, provider, retryable, message
          FROM assessment_diagnostics WHERE session_id = ?`,
-    ).get(session.id)).toEqual({
+    ).get(session.id);
+    expect(persistedDiagnostic).toEqual({
+      id: diagnosticBody.diagnostic.id,
+      report_id: diagnosticBody.diagnostic.reportId,
       code: 'AI_DEVELOPER_UNAVAILABLE',
       severity: 'blocking',
       provider: 'openai',
       retryable: 1,
       message: 'AI developer provider was not configured for this environment.',
     });
+    expect(diagnosticBody.diagnostic).toMatchObject({
+      code: 'AI_DEVELOPER_UNAVAILABLE',
+      severity: 'blocking',
+    });
+    expect(diagnosticBody.diagnostic.reportId).toBeTruthy();
+    expect(sqlite.prepare(
+      `SELECT status FROM assessment_evaluation_reports WHERE id = ?`,
+    ).get(diagnosticBody.diagnostic.reportId)).toEqual({ status: 'AI_DEVELOPER_UNAVAILABLE' });
     expect(sqlite.prepare(
       'SELECT state FROM assessment_sessions WHERE id = ?',
     ).get(session.id)).toEqual({ state: 'DIAGNOSTIC' });
