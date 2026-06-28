@@ -85,6 +85,7 @@ const WINDOW_STATE_SOURCES = new Set([
   'win95_window_chrome',
   'win95_taskbar',
 ]);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
@@ -369,7 +370,8 @@ function hasSourceBackedWindowDataEvidence(
   return evidence !== null
     && (actor === 'host' || actor === 'guest')
     && evidence.source === 'window_data_client_submit'
-    && evidence.dataSource === 'win95_window_data_sync'
+    && typeof evidence.dataSource === 'string'
+    && WINDOW_DATA_SOURCES.has(evidence.dataSource)
     && evidence.actor === actor
     && evidence.windowId === windowId
     && typeof evidence.windowDataUpdateId === 'string'

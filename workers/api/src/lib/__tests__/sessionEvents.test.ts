@@ -1805,6 +1805,72 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves file-delete-sourced window data clears as direct source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const event: SessionEvent = {
+          type: 'window_update',
+          sessionId: 'meeting-session-file-delete-clear',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604900,
+          actor: 'guest',
+          text: 'Window data updated: notepad',
+          properties: {
+            source: 'window_data_client_submit',
+            dataSource: 'win95_file_delete_sync',
+            actor: 'guest',
+            windowId: 'notepad',
+            action: 'edit_text',
+            windowDataUpdateId: 'window-data:guest:1782604900000:notepad:edit_text',
+            capturedAtMs: 1782604900000,
+            surface: 'win95',
+            roomPhase: 'connected',
+            dataKeys: ['text'],
+            dataValueFingerprints: { text: 'data_12345678' },
+            durableObjectReplayExpected: true,
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+
+        const contextSource = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM context_record_source_refs
+            WHERE source_ref_type = 'room_window_data_update'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        } | undefined;
+        expect(contextSource).toMatchObject({
+          source_ref_type: 'room_window_data_update',
+          source_ref_id: 'window-data:guest:1782604900000:notepad:edit_text',
+          evidence_role: 'window_text_update',
+        });
+        expect(contextSource?.content_hash).toBe(await sha256Hex(contextSource?.exact_text ?? ''));
+        expect(JSON.parse(contextSource?.exact_text ?? '{}')).toMatchObject({
+          sourceRefType: 'room_window_data_update',
+          sourceRefId: 'window-data:guest:1782604900000:notepad:edit_text',
+          properties: {
+            dataSource: 'win95_file_delete_sync',
+            windowId: 'notepad',
+          },
+        });
+
+        const assessmentSource = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type = 'room_window_data_update'`,
+        ).get();
+        expect(assessmentSource).toEqual(contextSource);
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('should handle errors gracefully', async () => {
       const badDb: any = {
         prepare: vi.fn(() => {

@@ -54,6 +54,7 @@ import {
   buildWindowDataUpdateEvidence,
   buildWindowLifecycleEvidence,
   buildWindowStateUpdateEvidence,
+  type WindowDataSource,
   type WindowLifecycleSource,
   type WindowStateSource,
   type WindowUiLaunchSource,
@@ -727,7 +728,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const updateSharedWindowData = useCallback((
     id: string,
     data: Partial<Record<string, unknown>>,
-    options?: { browserNavigationTrigger?: BrowserNavigationTrigger },
+    options?: {
+      browserNavigationTrigger?: BrowserNavigationTrigger;
+      windowDataSource?: WindowDataSource;
+    },
   ): void => {
     wm.updateWindowData(id, data);
     const currentUrl = data.currentUrl;
@@ -749,6 +753,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           actor: roomActor,
           windowId: id,
           data,
+          dataSource: options?.windowDataSource,
           surface: room.roomSurface,
           roomPhase: room.phase,
           capturedAtMs,
@@ -1936,10 +1941,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const deleteRoomFile = (file: RoomFile): void => {
     if (file.id === NOTEPAD_FILE_ID) {
-      wm.updateWindowData('notepad', { text: '' });
+      if (wm.windows.some((entry) => entry.id === 'notepad')) {
+        updateSharedWindowData('notepad', { text: '' }, { windowDataSource: 'win95_file_delete_sync' });
+      }
     }
     if (file.id === PAINT_FILE_ID) {
-      wm.updateWindowData('paint', { strokes: [] });
+      if (wm.windows.some((entry) => entry.id === 'paint')) {
+        updateSharedWindowData('paint', { strokes: [] }, { windowDataSource: 'win95_file_delete_sync' });
+      }
     }
     publishAndCaptureRoomFileChange('delete', file);
   };

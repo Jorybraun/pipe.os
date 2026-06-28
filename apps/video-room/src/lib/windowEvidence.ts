@@ -19,6 +19,9 @@ export type WindowStateSource =
 export type WindowUiLaunchSource =
   | 'win95_desktop_ui'
   | 'win95_start_menu';
+export type WindowDataSource =
+  | 'win95_window_data_sync'
+  | 'win95_file_delete_sync';
 
 export interface WindowLifecycleEvidence {
   text: string;
@@ -178,6 +181,7 @@ export function buildWindowDataUpdateEvidence(input: {
   actor: WindowEvidenceActor;
   windowId: string;
   data: Record<string, unknown>;
+  dataSource?: WindowDataSource;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   capturedAtMs: number;
@@ -199,7 +203,7 @@ export function buildWindowDataUpdateEvidence(input: {
     text: `Window data updated: ${input.windowId}`,
     properties: {
       source: 'window_data_client_submit',
-      dataSource: 'win95_window_data_sync',
+      dataSource: input.dataSource ?? 'win95_window_data_sync',
       actor: input.actor,
       windowId: input.windowId,
       action,

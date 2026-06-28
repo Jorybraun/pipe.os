@@ -72,6 +72,7 @@ const WINDOW_STATE_SOURCES = new Set([
   'win95_window_chrome',
   'win95_taskbar',
 ]);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
 const START_MENU_EVENT_SOURCES = new Set([
   'win95_start_button',
   'win95_desktop_click',
@@ -858,7 +859,8 @@ export class VideoRoom {
           && evidence.durableObjectReplayExpected === true;
       }
       return evidence.source === 'window_data_client_submit'
-        && evidence.dataSource === 'win95_window_data_sync'
+        && typeof evidence.dataSource === 'string'
+        && WINDOW_DATA_SOURCES.has(evidence.dataSource)
         && evidence.actor === actor
         && evidence.windowId === event.windowId
         && typeof evidence.windowDataUpdateId === 'string'

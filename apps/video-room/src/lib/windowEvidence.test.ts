@@ -246,6 +246,33 @@ describe('window evidence', () => {
     });
   });
 
+  it('preserves file-delete provenance when clearing an open Notepad window', () => {
+    expect(buildWindowDataUpdateEvidence({
+      actor: 'guest',
+      windowId: 'notepad',
+      data: { text: '' },
+      dataSource: 'win95_file_delete_sync',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 6500,
+    })).toMatchObject({
+      text: 'Window data updated: notepad',
+      properties: {
+        source: 'window_data_client_submit',
+        dataSource: 'win95_file_delete_sync',
+        actor: 'guest',
+        windowId: 'notepad',
+        action: 'edit_text',
+        windowDataUpdateId: 'window-data:guest:6500:notepad:edit_text',
+        dataKeys: ['text'],
+        dataValueFingerprints: {
+          text: expect.stringMatching(/^data_[a-f0-9]{8}$/),
+        },
+        durableObjectReplayExpected: true,
+      },
+    });
+  });
+
   it('builds bounded source-backed evidence for Paint data changes', () => {
     expect(buildWindowDataUpdateEvidence({
       actor: 'host',

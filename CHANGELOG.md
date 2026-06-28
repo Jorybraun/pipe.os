@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Deleting shared Win95 Notepad/Paint files now clears any open editor window through the shared desktop data channel with `win95_file_delete_sync` provenance, keeping both participants in sync instead of leaving stale local window content.
 - Win95 file-manager opens now preserve `win95_file_system` lifecycle provenance, and `.link` file opens emit source-specific browser navigation evidence instead of being flattened into generic desktop launches.
 - Win95 browser reload and external-open clicks now emit source-backed browser navigation evidence, so repeated or blocked-site browsing remains synced and replayable across shared desktop sessions.
 - Clippy/Devin bridge evidence now carries a hashed Devin API run reference through prompt handoffs, API responses, room actions, browser fallbacks, and source refs so real agent interactions remain joinable without exposing raw provider session ids.

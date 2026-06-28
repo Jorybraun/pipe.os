@@ -370,6 +370,95 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('accepts file-delete-sourced shared window data clears', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-open-notepad',
+        clientId: 'host-client',
+        createdAt: 1,
+        kind: 'OPEN_WINDOW',
+        window: {
+          id: 'notepad',
+          windowType: 'notepad',
+          title: 'notes.txt - Notepad',
+          x: 100,
+          y: 60,
+          width: 520,
+          height: 420,
+          data: { text: 'Candidate wrote a note.' },
+        },
+        evidence: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_file_system',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:host:1:open:notepad',
+          capturedAtMs: 1,
+          actor: 'host',
+          windowId: 'notepad',
+          windowType: 'notepad',
+          windowTitle: 'notes.txt - Notepad',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-delete-clears-notepad',
+        clientId: 'host-client',
+        createdAt: 2,
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: 'notepad',
+        data: { text: '' },
+        evidence: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_file_delete_sync',
+          actor: 'host',
+          windowId: 'notepad',
+          action: 'edit_text',
+          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
+          capturedAtMs: 2,
+          surface: 'win95',
+          roomPhase: 'connected',
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_12345678' },
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'notepad',
+        data: { text: '' },
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: 'notepad',
+        evidence: expect.objectContaining({
+          dataSource: 'win95_file_delete_sync',
+          windowDataUpdateId: 'window-data:host:2:notepad:edit_text',
+        }),
+      }),
+    }));
+  });
+
   it('rejects shared desktop window events without browser source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

@@ -3743,6 +3743,31 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(validRes.status).toBe(200);
 
+    const deleteClearRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_file_delete_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+          capturedAtMs: 1782601700100,
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_12345678' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(deleteClearRes.status).toBe(200);
+
     const linked = sqlite.prepare(
       'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
     ).get('scheduled-window-data-evidence') as { candidate_id: string } | undefined;
@@ -3766,6 +3791,30 @@ describe('meeting room recording living-context route', () => {
       capturedAtMs: 1782601700000,
       dataKeys: ['text'],
       dataValueFingerprints: { text: 'data_81a94acf' },
+    });
+
+    const deleteClearNode = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type = 'session_window_update'
+          AND extracted_properties_json LIKE '%win95_file_delete_sync%'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(deleteClearNode?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(JSON.parse(deleteClearNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_data_client_submit',
+      dataSource: 'win95_file_delete_sync',
+      actor: 'guest',
+      windowId: 'notepad',
+      action: 'edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700100:notepad:edit_text',
+      capturedAtMs: 1782601700100,
+      dataKeys: ['text'],
+      dataValueFingerprints: { text: 'data_12345678' },
     });
   });
 
