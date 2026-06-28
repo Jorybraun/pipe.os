@@ -26,6 +26,7 @@ import type {
   StandaloneReviewPacketQualityGate,
   StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
+  StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
 import { buildLivingContextBranches } from '../../lib/livingContextTree';
@@ -823,6 +824,110 @@ function RepoPacketPanel({
   );
 }
 
+function StretchAreasPanel({
+  stretchAreas,
+}: {
+  stretchAreas: StandaloneReviewStretchArea[];
+}): JSX.Element | null {
+  if (stretchAreas.length === 0) return null;
+  return (
+    <section
+      className="living-context__stretch-areas"
+      aria-label="Stretch areas"
+      data-testid="stretch-areas-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Stretch areas</div>
+          <div className="living-context__eyebrow">
+            {stretchAreas.length} demand{stretchAreas.length === 1 ? '' : 's'} matched via adjacent experience
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {stretchAreas.map((area) => (
+          <article
+            key={`${area.atomId}:${area.demandId}`}
+            className="living-context__stretch-row"
+            data-testid="stretch-area-row"
+          >
+            <div className="living-context__stretch-head">
+              <span className="living-context__stretch-dimension">{titleCase(area.dimension)}</span>
+              <span className="living-context__stretch-concepts">
+                {area.atomConcept} → {area.demandConcept}
+              </span>
+            </div>
+            <div className="living-context__repo-source-grid">
+              <ReviewSourceList label="Candidate source" sources={area.candidateSourceRefs} />
+              <ReviewSourceList label="PR demand source" sources={area.challengeSourceRefs} />
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function UnmatchedDemandsPanel({
+  unmatchedDemandIds,
+  packet,
+}: {
+  unmatchedDemandIds: string[];
+  packet: StandaloneReviewPacketDetail | null;
+}): JSX.Element | null {
+  if (unmatchedDemandIds.length === 0) return null;
+  const demandDetails = packet?.demands.filter((demand) =>
+    unmatchedDemandIds.includes(demand.id)
+  ) ?? [];
+  return (
+    <section
+      className="living-context__unmatched-demands"
+      aria-label="Unmatched demands"
+      data-testid="unmatched-demands-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">Unmatched demands</div>
+          <div className="living-context__eyebrow">
+            {unmatchedDemandIds.length} PR demand{unmatchedDemandIds.length === 1 ? '' : 's'} without candidate evidence
+          </div>
+        </div>
+      </div>
+      <div className="living-context__diagnostic-list">
+        {demandDetails.length > 0 ? (
+          demandDetails.map((demand) => (
+            <div
+              key={demand.id}
+              className="living-context__diagnostic-row"
+              data-testid="unmatched-demand-row"
+            >
+              <strong>{demand.id}</strong>
+              <span className="living-context__concept">{demand.family}</span>
+              {demand.narrative && <p>{demand.narrative}</p>}
+              {demand.conceptKeys.length > 0 && (
+                <div className="living-context__concepts">
+                  {demand.conceptKeys.slice(0, 5).map((concept) => (
+                    <span key={`${demand.id}:${concept}`} className="living-context__concept">
+                      {concept}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        ) : (
+          unmatchedDemandIds.map((demandId) => (
+            <div key={demandId} className="living-context__diagnostic-row">
+              <strong>{demandId}</strong>
+              <span className="living-context__missing-evidence">No candidate alignment</span>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -979,6 +1084,13 @@ function StandaloneReviewMatchPanel({
       <RepositoryOverlayPanel match={match} />
 
       <RepoPacketPanel match={match} />
+
+      <StretchAreasPanel stretchAreas={match.stretchAreas} />
+
+      <UnmatchedDemandsPanel
+        unmatchedDemandIds={match.unmatchedDemandIds}
+        packet={match.packet}
+      />
 
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
