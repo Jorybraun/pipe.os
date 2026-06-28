@@ -65,6 +65,7 @@ describe('Win95Desktop', () => {
         renderWindowContent={() => null}
         onClippyClick={onClippyClick}
         clippyActive
+        clippyStatus="auth_needed"
       />,
     );
 
@@ -75,6 +76,9 @@ describe('Win95Desktop', () => {
     expect(tray.contains(clippy)).toBe(true);
     expect(tray.contains(clock)).toBe(true);
     expect(clippy.compareDocumentPosition(clock) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clippy.getAttribute('data-clippy-status')).toBe('auth_needed');
+    expect(clippy.getAttribute('title')).toBe('Ask Clippy - Authentication required');
+    expect(screen.getByTestId('win95-tray-clippy-status').classList.contains('auth_needed')).toBe(true);
 
     fireEvent.click(clippy);
     expect(onClippyClick).toHaveBeenCalledTimes(1);

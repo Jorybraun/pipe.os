@@ -2103,6 +2103,7 @@ button:focus-visible {
 }
 
 .win95-tray-button {
+  position: relative;
   width: 24px;
   height: 24px;
   display: inline-flex;
@@ -2114,6 +2115,37 @@ button:focus-visible {
   background: #c0c0c0;
   color: #000;
   cursor: pointer;
+}
+
+.win95-tray-status-dot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #000;
+  background: #808080;
+  pointer-events: none;
+}
+
+.win95-tray-status-dot.idle {
+  background: #00a000;
+}
+
+.win95-tray-status-dot.starting,
+.win95-tray-status-dot.thinking,
+.win95-tray-status-dot.working {
+  background: #ffcc00;
+  animation: clippy-pulse 1s infinite;
+}
+
+.win95-tray-status-dot.auth_needed {
+  background: #cc0000;
+}
+
+.win95-tray-status-dot.disconnected,
+.win95-tray-status-dot.unavailable {
+  background: #808080;
 }
 
 .win95-tray-button:active,

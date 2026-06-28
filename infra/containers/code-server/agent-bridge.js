@@ -1,6 +1,6 @@
 const http = require('http');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -15,7 +15,6 @@ const {
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
 const WORKSPACE = process.env.WORKSPACE_DIR || '/workspace';
-const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
 const REQUESTED_AGENT_NAME = String(process.env.AGENT_TYPE || '').trim();
 const SUPPORTED_AGENT_TYPES = new Set(['devin']);
 const AGENT_NAME = SUPPORTED_AGENT_TYPES.has(REQUESTED_AGENT_NAME) ? REQUESTED_AGENT_NAME : '';
@@ -31,15 +30,17 @@ const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
 const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 3000, 25);
-const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
+const DEVIN_AUTH_MESSAGE = 'Devin CLI is not logged in inside this container. Authenticate the real Devin CLI before using Clippy chat.';
 
-const agentAuthed = Boolean(AGENT_NAME) && Boolean(DEVIN_API_KEY);
+let agentAuthed = false;
 let agentProcess = null;
 let agentReady = false;
-let agentStatus = AGENT_NAME ? (agentAuthed ? 'disconnected' : 'auth_needed') : 'disconnected';
+let agentStatus = AGENT_NAME ? 'disconnected' : 'disconnected';
 const clients = new Set();
 let agentStartReadyTimer = null;
 let agentPrimerReadyTimer = null;
+let lastAuthMessage = DEVIN_AUTH_MESSAGE;
+let lastAuthDiagnosticSource = 'auth_required';
 let workspaceBaselineReady = false;
 let workspaceScanInFlight = false;
 let workspaceWatcherTimer = null;
@@ -496,13 +497,13 @@ function startWorkspaceWatcher() {
   }, WORKSPACE_SCAN_INTERVAL_MS);
 }
 
-function devinAuthNeededMessage() {
+function devinAuthNeededMessage(message = lastAuthMessage) {
   if (!AGENT_NAME) return null;
   return {
     type: 'AUTH_NEEDED',
     authUrl: null,
     agent: AGENT_NAME,
-    message: DEVIN_AUTH_MESSAGE,
+    message: message || DEVIN_AUTH_MESSAGE,
   };
 }
 
@@ -510,8 +511,8 @@ function devinAuthDiagnosticMessage() {
   return agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'auth_needed',
-    message: DEVIN_AUTH_MESSAGE,
-    diagnosticSource: 'auth_required',
+    message: lastAuthMessage || DEVIN_AUTH_MESSAGE,
+    diagnosticSource: lastAuthDiagnosticSource || 'auth_required',
   });
 }
 
@@ -600,14 +601,16 @@ function scheduleAgentPrimerReady(targetProcess) {
 
 function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
   clearAgentStartupTimers();
+  lastAuthMessage = message || DEVIN_AUTH_MESSAGE;
+  lastAuthDiagnosticSource = diagnosticSource;
   agentReady = false;
   agentStatus = 'auth_needed';
   broadcastAgentStatus();
-  broadcast(devinAuthNeededMessage());
+  broadcast(devinAuthNeededMessage(lastAuthMessage));
   broadcastAgentDiagnostic(agentDiagnosticMessage({
     agent: AGENT_NAME,
     status: 'auth_needed',
-    message: message || DEVIN_AUTH_MESSAGE,
+    message: lastAuthMessage,
     diagnosticSource,
   }));
   if (agentProcess) {
@@ -840,6 +843,56 @@ function devinCommand() {
   return candidates.find(isExecutable) || executableFromPath('devin');
 }
 
+function summarizeDevinAuthStatusOutput(value) {
+  const text = String(value || '').trim();
+  if (!text) return DEVIN_AUTH_MESSAGE;
+  return text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3).join(' ');
+}
+
+function checkDevinCliAuth(command) {
+  if (!command) {
+    return {
+      ok: false,
+      message: 'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+      diagnosticSource: 'agent_cli_missing',
+    };
+  }
+  const result = spawnSync(command, ['auth', 'status'], {
+    cwd: WORKSPACE,
+    env: process.env,
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`.trim();
+  if (result.error) {
+    return {
+      ok: false,
+      message: `Devin auth status check failed: ${result.error.message}`,
+      diagnosticSource: 'devin_auth_status_error',
+    };
+  }
+  const normalized = output.toLowerCase();
+  if (normalized.includes('not logged in') || normalized.includes('run `devin auth login`')) {
+    return {
+      ok: false,
+      message: `${summarizeDevinAuthStatusOutput(output)} Use the container terminal to run \`devin auth login --force-manual-token-flow\`, or bake verified Devin CLI credentials into the container.`,
+      diagnosticSource: 'devin_auth_status_not_logged_in',
+    };
+  }
+  if (normalized.includes('logged in')) {
+    return {
+      ok: true,
+      message: 'Devin CLI auth status confirmed a stored login.',
+      diagnosticSource: 'devin_auth_status_logged_in',
+    };
+  }
+  return {
+    ok: false,
+    message: `Devin auth status was inconclusive: ${summarizeDevinAuthStatusOutput(output)}`,
+    diagnosticSource: 'devin_auth_status_unknown',
+  };
+}
+
 function startAgent() {
   if (agentProcess) return;
   if (!AGENT_NAME) {
@@ -848,13 +901,19 @@ function startAgent() {
     broadcastAgentStatus();
     return;
   }
-  if (!agentAuthed) {
-    markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
-    return;
-  }
 
   try {
     const command = devinCommand();
+    const authStatus = checkDevinCliAuth(command);
+    agentAuthed = authStatus.ok;
+    if (!authStatus.ok) {
+      if (authStatus.diagnosticSource === 'agent_cli_missing') {
+        markAgentDisconnected(authStatus.message, authStatus.diagnosticSource, null);
+        return;
+      }
+      markAgentAuthNeeded(authStatus.message, authStatus.diagnosticSource);
+      return;
+    }
     if (!command) {
       markAgentDisconnected(
         'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
@@ -864,7 +923,6 @@ function startAgent() {
       return;
     }
     const env = { ...process.env };
-    if (DEVIN_API_KEY) env.DEVIN_API_KEY = DEVIN_API_KEY;
     agentReady = false;
     agentStatus = 'starting';
     broadcastAgentStatus();
@@ -1003,13 +1061,6 @@ async function handleAgentMessage(ws, msg) {
       send(ws, { type: 'ERROR', message: AGENT_UNCONFIGURED_MESSAGE });
       return;
     }
-    if (!agentAuthed) {
-      agentStatus = 'auth_needed';
-      broadcastAgentStatus();
-      send(ws, devinAuthNeededMessage());
-      sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
-      return;
-    }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
     if (!agentProcess && agentStatus === 'disconnected') {
       send(ws, { type: 'ERROR', message: `${AGENT_NAME} is not available. Check bridge diagnostics before sending chat.` });
@@ -1045,7 +1096,7 @@ async function handleAgentMessage(ws, msg) {
       startAgent();
       return;
     }
-    markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
+    startAgent();
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
     clearPendingPromptRefs();
     agentProcess.kill('SIGTERM');
@@ -1075,7 +1126,7 @@ function acceptAgent(req, socket) {
     send(ws, devinAuthNeededMessage());
     sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());
   }
-  if (agentAuthed && !agentProcess && agentStatus !== 'auth_needed') {
+  if (AGENT_NAME && !agentProcess && agentStatus !== 'auth_needed') {
     startAgent();
   }
 }

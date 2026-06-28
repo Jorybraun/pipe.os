@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { FileText, FolderOpen, Globe, Monitor, MessageSquare, Palette, Paperclip, Video, SquareTerminal } from 'lucide-react';
 import type { WindowState, WindowType } from '../hooks/useWindowManager';
+import type { AgentStatus } from '../hooks/useAgentConnection';
+
+export type ClippyTrayStatus = AgentStatus | 'unavailable';
 
 interface Win95TaskbarProps {
   windows: WindowState[];
@@ -11,6 +14,7 @@ interface Win95TaskbarProps {
   recordingActive?: boolean;
   onClippyClick?: () => void;
   clippyActive?: boolean;
+  clippyStatus?: ClippyTrayStatus;
 }
 
 const WINDOW_ICONS: Record<WindowType, typeof Video> = {
@@ -34,6 +38,26 @@ function formatClock(d: Date): string {
   return `${h12}:${m.toString().padStart(2, '0')} ${ampm}`;
 }
 
+function clippyStatusLabel(status: ClippyTrayStatus): string {
+  switch (status) {
+    case 'idle':
+      return 'Ready';
+    case 'starting':
+      return 'Starting';
+    case 'thinking':
+      return 'Thinking';
+    case 'working':
+      return 'Working';
+    case 'auth_needed':
+      return 'Authentication required';
+    case 'disconnected':
+      return 'Disconnected';
+    case 'unavailable':
+    default:
+      return 'Workspace required';
+  }
+}
+
 export function Win95Taskbar({
   windows,
   onStartClick,
@@ -43,6 +67,7 @@ export function Win95Taskbar({
   recordingActive,
   onClippyClick,
   clippyActive = false,
+  clippyStatus = 'unavailable',
 }: Win95TaskbarProps): JSX.Element {
   const [now, setNow] = useState(new Date());
 
@@ -84,11 +109,17 @@ export function Win95Taskbar({
             type="button"
             className={`win95-tray-button${clippyActive ? ' is-active' : ''}`}
             onClick={onClippyClick}
-            title="Ask Clippy"
+            title={`Ask Clippy - ${clippyStatusLabel(clippyStatus)}`}
             aria-label="Ask Clippy"
+            data-clippy-status={clippyStatus}
             data-testid="win95-tray-clippy"
           >
             <Paperclip size={15} />
+            <span
+              className={`win95-tray-status-dot ${clippyStatus}`}
+              aria-hidden="true"
+              data-testid="win95-tray-clippy-status"
+            />
           </button>
         )}
         {recordingActive && (

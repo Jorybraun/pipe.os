@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin now preflights real `devin auth status` before starting the CLI, treats service API keys as insufficient for CLI login, surfaces precise auth-needed diagnostics, and shows the live agent state on the Win95 tray icon beside the clock.
 - Clippy/Devin bridge readiness now requires an actual Devin CLI executable in the dev-container image, passes optional `DEVIN_ORG_ID` into room-scoped containers, and emits real missing-CLI/auth-needed diagnostics instead of reporting `AGENT_READY` when Devin is absent or login is canceled.
 - Dev-container Durable Object lifecycle hooks now persist source-backed `SLEEPING`, wake-to-`READY`, and unexpected-stop/error diagnostics, keeping Clippy availability and workspace evidence aligned with the real container state.
 - Sampled Win95 peer-cursor movements now publish source-backed cursor evidence through the room Durable Object, while raw pointer moves stay live-only and are excluded from replay.

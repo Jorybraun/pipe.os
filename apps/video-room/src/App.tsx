@@ -82,6 +82,7 @@ import {
 import { useWindowManager } from './hooks/useWindowManager';
 import { StandardLayout } from './components/StandardLayout';
 import { Win95Desktop } from './components/Win95Desktop';
+import type { ClippyTrayStatus } from './components/Win95Taskbar';
 import { ChatWindow, type ChatMessage } from './components/ChatWindow';
 import { ClippyAssistant, type ClippyAction, type ClippyMessage } from './components/ClippyAssistant';
 import {
@@ -359,6 +360,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [clippyVisible, setClippyVisible] = useState(true);
   const [clippyChatRequest, setClippyChatRequest] = useState(0);
+  const [clippyAgentStatus, setClippyAgentStatus] = useState<AgentStatus>('disconnected');
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -1008,6 +1010,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const showWorkspacePanel = hasWorkspaceFeature;
   const needsRepoUrl = canLaunchWorkspace && !workspace?.repoUrl;
   const hasActiveWorkspace = workspaceSession?.status === 'READY' || workspaceSession?.status === 'SLEEPING';
+  const clippyTrayStatus: ClippyTrayStatus = !hasWorkspaceFeature
+    ? 'unavailable'
+    : !hasActiveWorkspace
+      ? workspaceSession?.status === 'LAUNCHING'
+        ? 'starting'
+        : 'unavailable'
+      : clippyAgentStatus;
   const workspaceChallengeMessage = workspace?.challenge?.status === 'missing_reviewable_task'
     ? workspace.challenge.message
     : null;
@@ -1020,6 +1029,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : metadata.role === 'HOST' && canLaunchWorkspace
           ? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge is connected.'
           : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
+  useEffect(() => {
+    if (!hasActiveWorkspace) {
+      setClippyAgentStatus('disconnected');
+    }
+  }, [hasActiveWorkspace, workspaceSession?.sessionId]);
   const captureClippyUiAction = (
     actionId: 'open-clippy-chat' | 'dismiss-clippy',
     origin: 'tray' | 'prompt',
@@ -1879,6 +1893,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
+    setClippyAgentStatus(status);
     if (!agentName.trim()) return;
     const capturedAtMs = Date.now();
     const observedAt = new Date(capturedAtMs).toISOString();
@@ -2249,6 +2264,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={recordingState === 'recording'}
       onClippyClick={(metadata.features?.clippyEnabled ?? true) ? openClippyChat : undefined}
       clippyActive={clippyVisible}
+      clippyStatus={clippyTrayStatus}
       renderWindowContent={renderWindowContent}
       onWindowClose={closeSharedWindow}
       onWindowFocus={focusSharedWindow}

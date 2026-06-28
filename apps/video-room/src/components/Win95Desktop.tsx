@@ -9,6 +9,7 @@ import {
   MessageSquare,
 } from 'lucide-react';
 import { Win95Taskbar } from './Win95Taskbar';
+import type { ClippyTrayStatus } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 import type { RoomCursorPresence } from '../hooks/useRoomConnection';
@@ -38,6 +39,7 @@ interface Win95DesktopProps {
   recordingActive?: boolean;
   onClippyClick?: () => void;
   clippyActive?: boolean;
+  clippyStatus?: ClippyTrayStatus;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
   onWindowFocus?: (id: string) => void;
@@ -59,6 +61,7 @@ export function Win95Desktop({
   recordingActive,
   onClippyClick,
   clippyActive,
+  clippyStatus,
   renderWindowContent,
   onWindowClose,
   onWindowFocus,
@@ -232,6 +235,7 @@ export function Win95Desktop({
         recordingActive={recordingActive}
         onClippyClick={onClippyClick}
         clippyActive={clippyActive}
+        clippyStatus={clippyStatus}
       />
     </div>
   );

@@ -50,7 +50,18 @@ async function writeFakeDevin(scriptBody) {
   const binDir = path.join(root, 'bin');
   mkdirSync(binDir);
   const devinPath = path.join(binDir, 'devin');
-  writeFileSync(devinPath, `#!/usr/bin/env node\n${scriptBody}\n`);
+  writeFileSync(devinPath, `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if (args[0] === 'auth' && args[1] === 'status') {
+  if (process.env.FAKE_DEVIN_AUTH_STATUS === 'not_logged_in') {
+    process.stdout.write('Not logged in.\\n  Credentials path: /tmp/devin-test/credentials.toml\\nRun \`devin auth login\` to authenticate.\\n');
+    process.exit(0);
+  }
+  process.stdout.write('Logged in as test-devin-user.\\n');
+  process.exit(0);
+}
+${scriptBody}
+`);
   await chmod(devinPath, 0o755);
   return { root, binDir };
 }
@@ -221,6 +232,52 @@ setInterval(() => {}, 1000);
     ws.close();
   });
 
+  it('does not treat DEVIN_API_KEY as Devin CLI login', async () => {
+    const { port } = await startBridge(`
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', () => process.stdout.write('This should not start without CLI auth.\\n'));
+setInterval(() => {}, 1000);
+`, {
+      FAKE_DEVIN_AUTH_STATUS: 'not_logged_in',
+    });
+
+    const { ws, messages } = await connectAgent(port);
+    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+
+    expect(authNeeded).toMatchObject({
+      agent: 'devin',
+      message: expect.stringContaining('Not logged in.'),
+    });
+    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+    const authStatusDiagnostic = await waitForMessage(
+      messages,
+      (message) => (
+        message.type === 'AGENT_DIAGNOSTIC'
+        && message.diagnosticSource === 'devin_auth_status_not_logged_in'
+      ),
+    );
+    expect(authStatusDiagnostic).toMatchObject({
+      agent: 'devin',
+      status: 'auth_needed',
+      message: expect.stringContaining('devin auth login --force-manual-token-flow'),
+    });
+
+    ws.send(JSON.stringify({ type: 'CHAT', text: 'hello?' }));
+    const repeatedAuth = await waitForMessage(
+      messages,
+      (message) => (
+        message.type === 'AGENT_DIAGNOSTIC'
+        && message.diagnosticSource === 'devin_auth_status_not_logged_in'
+      ),
+    );
+    expect(repeatedAuth).toBeTruthy();
+    expect(messages.some((message) => (
+      message.type === 'CHAT_RESPONSE'
+      && String(message.text || '').includes('This should not start')
+    ))).toBe(false);
+    ws.close();
+  });
+
   it('turns Devin auth output into auth_needed instead of ready', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
@@ -256,12 +313,17 @@ setInterval(() => {}, 1000);
     const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
     expect(authNeeded).toMatchObject({ agent: 'devin' });
     expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
-    expect(messages).toContainEqual(expect.objectContaining({
-      type: 'AGENT_DIAGNOSTIC',
+    const authDiagnostic = await waitForMessage(
+      messages,
+      (message) => (
+        message.type === 'AGENT_DIAGNOSTIC'
+        && message.diagnosticSource === 'agent_stderr_auth_required'
+      ),
+    );
+    expect(authDiagnostic).toMatchObject({
       agent: 'devin',
       status: 'auth_needed',
-      diagnosticSource: 'agent_stderr_auth_required',
-    }));
+    });
     ws.close();
   });
 
