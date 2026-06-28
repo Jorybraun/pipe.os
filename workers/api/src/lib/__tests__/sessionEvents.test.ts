@@ -964,6 +964,390 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves source-backed desktop, video, and workspace activity as direct source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const events: SessionEvent[] = [
+          {
+            type: 'room_surface_change',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604800,
+            actor: 'host',
+            text: 'Room surface changed to 95 Until Infinity desktop',
+            properties: {
+              source: 'room_surface_control',
+              surfaceControlEventSource: 'browser_room_surface_toggle',
+              actor: 'host',
+              surfaceChangeId: 'surface:host:1782604800000:standard:win95',
+              capturedAtMs: 1782604800000,
+              previousSurface: 'standard',
+              surface: 'win95',
+              action: 'enter_desktop',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'desktop_menu_toggle',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604801,
+            actor: 'guest',
+            text: 'Start menu opened',
+            properties: {
+              source: 'win95_start_menu_control',
+              menuEventSource: 'win95_start_button',
+              actor: 'guest',
+              menuId: 'start',
+              action: 'open',
+              open: true,
+              startMenuEventId: 'start-menu:guest:1782604801000:open:win95_start_button',
+              capturedAtMs: 1782604801000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'browser_navigation',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604802,
+            actor: 'guest',
+            text: 'https://github.com/cloudflare/workers-sdk/pull/14435',
+            properties: {
+              source: 'room_browser_window',
+              navigationSource: 'browser_window_client_submit',
+              actor: 'guest',
+              windowId: 'browser',
+              browserNavigationId: 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495',
+              capturedAtMs: 1782604802000,
+              url: 'https://github.com/cloudflare/workers-sdk/pull/14435',
+              urlFingerprint: 'nav_54d2c495',
+              urlHost: 'github.com',
+              urlProtocol: 'https',
+              navigationTrigger: 'go_button',
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'window_open',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604803,
+            actor: 'guest',
+            text: 'Notepad',
+            properties: {
+              source: 'window_lifecycle_client_submit',
+              lifecycleSource: 'win95_desktop_ui',
+              lifecycleKind: 'open',
+              actor: 'guest',
+              windowId: 'notepad',
+              windowType: 'notepad',
+              windowTitle: 'Notepad',
+              windowLifecycleId: 'window-lifecycle:guest:1782604803000:open:notepad',
+              capturedAtMs: 1782604803000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'window_update',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604804,
+            actor: 'guest',
+            text: 'Window state updated: notepad',
+            properties: {
+              source: 'window_state_client_submit',
+              stateSource: 'win95_window_chrome',
+              actor: 'guest',
+              windowId: 'notepad',
+              action: 'move',
+              windowStateChangeId: 'window-state:guest:1782604804000:notepad:move',
+              capturedAtMs: 1782604804000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              statePatch: { x: 120, y: 160 },
+              stateKeys: ['x', 'y'],
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'window_update',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604805,
+            actor: 'guest',
+            text: 'Window data updated: notepad',
+            properties: {
+              source: 'window_data_client_submit',
+              dataSource: 'win95_window_data_sync',
+              actor: 'guest',
+              windowId: 'notepad',
+              action: 'edit_text',
+              windowDataUpdateId: 'window-data:guest:1782604805000:notepad:edit_text',
+              capturedAtMs: 1782604805000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              dataKeys: ['text'],
+              dataValueFingerprints: { text: 'data_81a94acf' },
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'cursor_presence',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604806,
+            actor: 'guest',
+            text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+            properties: {
+              source: 'win95_cursor_presence_client_sample',
+              cursorEventSource: 'browser_win95_desktop_pointermove',
+              actor: 'guest',
+              cursorSampleId: 'cursor:guest:1782604806000:420:610',
+              sampledAtMs: 1782604806000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              normalizedX: 0.42,
+              normalizedY: 0.61,
+              previousNormalizedX: null,
+              previousNormalizedY: null,
+              distanceFromPrevious: null,
+              evidenceSampling: 'presence_sample',
+              sampleIntervalMs: 15000,
+              movementThreshold: 0.03,
+              rawCursorMovesPersisted: false,
+            },
+          },
+          {
+            type: 'media_control',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604807,
+            actor: 'guest',
+            text: 'Guest turned microphone off',
+            properties: {
+              source: 'video_room_media_controls',
+              mediaControlEventSource: 'browser_video_control_button',
+              actor: 'guest',
+              mediaControlId: 'media:guest:microphone:1782604807000:disabled',
+              capturedAtMs: 1782604807000,
+              control: 'microphone',
+              previousEnabled: true,
+              enabled: false,
+              action: 'disabled',
+              surface: 'win95',
+              roomPhase: 'connected',
+              controlSurface: 'win95_video_window',
+              controlAction: 'toggle',
+              mediaSource: 'local_media_stream',
+              rawMediaStreamPersisted: false,
+            },
+          },
+          {
+            type: 'recording_start',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604808,
+            actor: 'host',
+            text: 'Recording started',
+            properties: {
+              source: 'video_room_recording',
+              recordingEventSource: 'browser_media_recorder',
+              recordingStateEventSource: 'browser_media_recorder_state_sync',
+              actor: 'host',
+              recordingLifecycleKind: 'start',
+              recordingStateEventId: 'recording:host:1782604808000:start:recording',
+              capturedAtMs: 1782604808000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              recordingStatus: 'recording',
+              recordingActive: true,
+              durableObjectReplayExpected: true,
+              iceProvider: 'cloudflare',
+              hasTranscriptionAudio: true,
+              speakerMetadataVersion: 1,
+              speakerChannelLayout: 'host-local-guest-remote-v1',
+              speakerChannelCount: 2,
+              speakerChannels: [
+                { channel: 0, role: 'host', source: 'local' },
+                { channel: 1, role: 'guest', source: 'remote' },
+              ],
+            },
+          },
+          {
+            type: 'workspace_state',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604809,
+            actor: 'host',
+            text: 'Workspace state changed to READY',
+            properties: {
+              source: 'browser_workspace_state_observer',
+              workspaceEventSource: 'browser_workspace_state_observer',
+              workspaceStateSource: 'launch',
+              actor: 'host',
+              workspaceStatus: 'READY',
+              workspaceStateEventId: 'workspace-state:host:1782604809000:launch:workspace-session-1:READY',
+              capturedAtMs: 1782604809000,
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              githubPrNumber: 14435,
+              matchedRepoId: 42,
+              challengeStatus: 'github_pr_assigned',
+              challengeKind: 'github_pr',
+              challengeSource: 'scheduled_interview.github_pr_number',
+              ttlSeconds: 3600,
+              ttlSource: 'default',
+              expiringSoon: false,
+              workspaceTelemetryPersisted: true,
+              proxyUrlPersisted: false,
+            },
+          },
+          {
+            type: 'code_editor_open',
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604810,
+            actor: 'guest',
+            text: 'VS Code workspace opened for https://github.com/cloudflare/workers-sdk',
+            properties: {
+              source: 'code_server_workspace',
+              editorEventSource: 'browser_code_server_iframe',
+              codeEditorOpenId: 'code-editor-open:guest:1782604810000:workspace-session-1',
+              editor: 'code-server',
+              openStatus: 'loaded',
+              actor: 'guest',
+              capturedAtMs: 1782604810000,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceSessionId: 'workspace-session-1',
+              workspaceStatus: 'READY',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              githubPrNumber: 14435,
+              matchedRepoId: 42,
+              challengeStatus: 'github_pr_assigned',
+              challengeKind: 'github_pr',
+              challengeSource: 'scheduled_interview.github_pr_number',
+              challengeMessage: null,
+              proxyUrlPersisted: false,
+            },
+          },
+        ];
+
+        for (const event of events) {
+          expect(await captureSessionEvent(realDb, event)).not.toBeNull();
+        }
+
+        const expectedRefs = [
+          ['code_server_editor_open', 'code-editor-open:guest:1782604810000:workspace-session-1', 'code_editor_open'],
+          ['dev_container_workspace_state', 'workspace-state:host:1782604809000:launch:workspace-session-1:READY', 'workspace_state'],
+          ['room_browser_navigation', 'browser-navigation:guest:1782604802000:browser:go_button:nav_54d2c495', 'browser_navigation'],
+          ['room_cursor_presence_sample', 'cursor:guest:1782604806000:420:610', 'cursor_presence_sample'],
+          ['room_media_control', 'media:guest:microphone:1782604807000:disabled', 'microphone_disabled'],
+          ['room_recording_state', 'recording:host:1782604808000:start:recording', 'recording_start'],
+          ['room_surface_change', 'surface:host:1782604800000:standard:win95', 'room_surface_transition'],
+          ['room_window_data_update', 'window-data:guest:1782604805000:notepad:edit_text', 'window_text_update'],
+          ['room_window_lifecycle', 'window-lifecycle:guest:1782604803000:open:notepad', 'window_open'],
+          ['room_window_state_change', 'window-state:guest:1782604804000:notepad:move', 'window_state_change'],
+          ['win95_start_menu_state', 'start-menu:guest:1782604801000:open:win95_start_button', 'start_menu_opened'],
+        ];
+
+        const sourceTypes = expectedRefs.map(([sourceRefType]) => `'${sourceRefType}'`).join(',');
+        const contextSources = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type IN (${sourceTypes})
+            ORDER BY csr.source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(contextSources.map((row) => [
+          row.source_ref_type,
+          row.source_ref_id,
+          row.evidence_role,
+        ])).toEqual(expectedRefs);
+        for (const row of contextSources) {
+          expect(row.content_hash).toBe(await sha256Hex(row.exact_text));
+          expect(JSON.parse(row.exact_text)).toMatchObject({
+            sourceRefType: row.source_ref_type,
+            sourceRefId: row.source_ref_id,
+            sessionId: 'meeting-session-room-activity',
+            candidateId: 'cand-assessment',
+          });
+        }
+
+        const assessmentSources = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type IN (${sourceTypes})
+            ORDER BY source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(assessmentSources).toEqual(contextSources);
+
+        const entities = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship
+             FROM context_record_entities
+            WHERE entity_type IN (
+              'room_surface_change',
+              'start_menu_event',
+              'room_browser_navigation',
+              'room_window_lifecycle',
+              'room_window_state_change',
+              'room_window_data_update',
+              'room_cursor_sample',
+              'room_media_control',
+              'room_recording_state',
+              'workspace_state_event',
+              'code_editor_open'
+            )
+            ORDER BY entity_type`,
+        ).all() as Array<{
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+        }>;
+        expect(entities).toEqual(expect.arrayContaining([
+          {
+            entity_type: 'room_media_control',
+            entity_id: 'media:guest:microphone:1782604807000:disabled',
+            relationship: 'source_media_control',
+          },
+          {
+            entity_type: 'room_cursor_sample',
+            entity_id: 'cursor:guest:1782604806000:420:610',
+            relationship: 'source_cursor_sample',
+          },
+          {
+            entity_type: 'workspace_state_event',
+            entity_id: 'workspace-state:host:1782604809000:launch:workspace-session-1:READY',
+            relationship: 'source_workspace_state',
+          },
+        ]));
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

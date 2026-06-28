@@ -108,6 +108,7 @@ const START_MENU_EVENT_SOURCES = new Set([
   'win95_start_menu_item',
 ]);
 const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:[a-zA-Z0-9:_-]+$/;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -1918,6 +1919,159 @@ function sessionEventEntities(input: {
     });
   }
 
+  const surfaceChangeId = stringProperty(properties, 'surfaceChangeId');
+  if (surfaceChangeId) {
+    entities.push({
+      entityType: 'room_surface_change',
+      entityId: surfaceChangeId,
+      relationship: 'source_surface_transition',
+      metadata: {
+        previousSurface: stringProperty(properties, 'previousSurface'),
+        nextSurface: stringProperty(properties, 'surface'),
+        action: stringProperty(properties, 'action'),
+      },
+    });
+  }
+
+  const startMenuEventId = stringProperty(properties, 'startMenuEventId');
+  if (startMenuEventId) {
+    entities.push({
+      entityType: 'start_menu_event',
+      entityId: startMenuEventId,
+      relationship: 'source_menu_event',
+      metadata: {
+        action: stringProperty(properties, 'action'),
+        menuEventSource: stringProperty(properties, 'menuEventSource'),
+      },
+    });
+  }
+
+  const windowLifecycleId = stringProperty(properties, 'windowLifecycleId');
+  if (windowLifecycleId) {
+    entities.push({
+      entityType: 'room_window_lifecycle',
+      entityId: windowLifecycleId,
+      relationship: 'source_window_lifecycle',
+      metadata: {
+        lifecycleKind: stringProperty(properties, 'lifecycleKind'),
+        lifecycleSource: stringProperty(properties, 'lifecycleSource'),
+        windowId,
+      },
+    });
+  }
+
+  const windowStateChangeId = stringProperty(properties, 'windowStateChangeId');
+  if (windowStateChangeId) {
+    entities.push({
+      entityType: 'room_window_state_change',
+      entityId: windowStateChangeId,
+      relationship: 'source_window_state',
+      metadata: {
+        action: stringProperty(properties, 'action'),
+        stateSource: stringProperty(properties, 'stateSource'),
+        windowId,
+      },
+    });
+  }
+
+  const windowDataUpdateId = stringProperty(properties, 'windowDataUpdateId');
+  if (windowDataUpdateId) {
+    entities.push({
+      entityType: 'room_window_data_update',
+      entityId: windowDataUpdateId,
+      relationship: 'source_window_data',
+      metadata: {
+        action: stringProperty(properties, 'action'),
+        dataSource: stringProperty(properties, 'dataSource'),
+        windowId,
+      },
+    });
+  }
+
+  const browserNavigationId = stringProperty(properties, 'browserNavigationId');
+  if (browserNavigationId) {
+    entities.push({
+      entityType: 'room_browser_navigation',
+      entityId: browserNavigationId,
+      relationship: 'source_navigation',
+      metadata: {
+        windowId,
+        urlHost: stringProperty(properties, 'urlHost'),
+        navigationTrigger: stringProperty(properties, 'navigationTrigger'),
+      },
+    });
+  }
+
+  const mediaControlId = stringProperty(properties, 'mediaControlId');
+  if (mediaControlId) {
+    entities.push({
+      entityType: 'room_media_control',
+      entityId: mediaControlId,
+      relationship: 'source_media_control',
+      metadata: {
+        control: stringProperty(properties, 'control'),
+        action: stringProperty(properties, 'action'),
+        controlSurface: stringProperty(properties, 'controlSurface'),
+      },
+    });
+  }
+
+  const cursorSampleId = stringProperty(properties, 'cursorSampleId');
+  if (cursorSampleId) {
+    entities.push({
+      entityType: 'room_cursor_sample',
+      entityId: cursorSampleId,
+      relationship: 'source_cursor_sample',
+      metadata: {
+        normalizedX: numberProperty(properties, 'normalizedX'),
+        normalizedY: numberProperty(properties, 'normalizedY'),
+        sampledAtMs: numberProperty(properties, 'sampledAtMs'),
+      },
+    });
+  }
+
+  const recordingStateEventId = stringProperty(properties, 'recordingStateEventId');
+  if (recordingStateEventId) {
+    entities.push({
+      entityType: 'room_recording_state',
+      entityId: recordingStateEventId,
+      relationship: 'source_recording_state',
+      metadata: {
+        lifecycleKind: stringProperty(properties, 'recordingLifecycleKind'),
+        recordingStatus: stringProperty(properties, 'recordingStatus'),
+        hasTranscriptionAudio: properties.hasTranscriptionAudio === true,
+      },
+    });
+  }
+
+  const workspaceStateEventId = stringProperty(properties, 'workspaceStateEventId');
+  if (workspaceStateEventId) {
+    entities.push({
+      entityType: 'workspace_state_event',
+      entityId: workspaceStateEventId,
+      relationship: 'source_workspace_state',
+      metadata: {
+        workspaceStatus: stringProperty(properties, 'workspaceStatus'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        challengeStatus: stringProperty(properties, 'challengeStatus'),
+      },
+    });
+  }
+
+  const codeEditorOpenId = stringProperty(properties, 'codeEditorOpenId');
+  if (codeEditorOpenId) {
+    entities.push({
+      entityType: 'code_editor_open',
+      entityId: codeEditorOpenId,
+      relationship: 'source_editor_open',
+      metadata: {
+        editor: stringProperty(properties, 'editor'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        repoUrl: stringProperty(properties, 'repoUrl'),
+      },
+    });
+  }
+
   const actionId = stringProperty(properties, 'actionId');
   if (actionId) {
     entities.push({
@@ -2483,6 +2637,38 @@ function codeServerFileObservationIsSourceBacked(
   return false;
 }
 
+function codeEditorOpenIsSourceBacked(
+  event: SessionEvent,
+  properties: JsonObject,
+): boolean {
+  if (event.type !== 'code_editor_open') return false;
+  if (properties.source !== 'code_server_workspace') return false;
+  if (properties.editorEventSource !== 'browser_code_server_iframe') return false;
+  if (properties.editor !== 'code-server') return false;
+  if (properties.openStatus !== 'loaded') return false;
+  if (properties.actor !== event.actor || (event.actor !== 'host' && event.actor !== 'guest')) return false;
+  const codeEditorOpenId = stringProperty(properties, 'codeEditorOpenId');
+  const capturedAtMs = numberProperty(properties, 'capturedAtMs');
+  const workspaceSessionId = stringProperty(properties, 'workspaceSessionId');
+  const workspaceStatus = stringProperty(properties, 'workspaceStatus');
+  const roomPhase = stringProperty(properties, 'roomPhase');
+  const surface = stringProperty(properties, 'surface');
+  const repoUrl = stringProperty(properties, 'repoUrl');
+  const expectedText = `VS Code workspace opened for ${repoUrl ?? 'workspace repository'}`;
+  return codeEditorOpenId !== null
+    && CODE_EDITOR_OPEN_ID_RE.test(codeEditorOpenId)
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && workspaceSessionId !== null
+    && codeEditorOpenId === `code-editor-open:${event.actor}:${capturedAtMs}:${workspaceSessionId}`
+    && workspaceStatus !== null
+    && (surface === 'standard' || surface === 'win95')
+    && roomPhase !== null
+    && properties.proxyUrlPersisted === false
+    && event.text === expectedText;
+}
+
 async function codeServerFileObservationSourceRef(input: {
   event: SessionEvent;
   node: CandidateNode;
@@ -2556,6 +2742,382 @@ async function codeServerFileObservationSourceRef(input: {
   };
 }
 
+interface DirectRoomActivitySourceSpec {
+  sourceRefType: string;
+  sourceRefId: string;
+  evidenceRole: string;
+  sourceKind: string;
+  locator: JsonObject;
+  metadata?: JsonObject;
+}
+
+function directRoomActivitySourceSpec(
+  event: SessionEvent,
+  node: CandidateNode,
+  properties: JsonObject,
+): DirectRoomActivitySourceSpec | null {
+  const baseLocator: JsonObject = {
+    sessionId: event.sessionId,
+    candidateId: event.candidateId,
+    candidateNodeId: node.id,
+    eventType: event.type,
+    actor: event.actor,
+    timestamp: event.timestamp,
+    surface: stringProperty(properties, 'surface'),
+    roomPhase: stringProperty(properties, 'roomPhase'),
+    capturedAtMs: numberProperty(properties, 'capturedAtMs'),
+    roomEventId: stringProperty(properties, 'roomEventId'),
+    clientId: stringProperty(properties, 'clientId'),
+  };
+
+  if (event.type === 'room_surface_change') {
+    const surface = stringProperty(properties, 'surface');
+    const surfaceChangeId = stringProperty(properties, 'surfaceChangeId');
+    if (!surface || !surfaceChangeId || !hasSourceBackedRoomSurfaceEvidence(properties, event.actor, surface)) return null;
+    return {
+      sourceRefType: 'room_surface_change',
+      sourceRefId: surfaceChangeId,
+      evidenceRole: 'room_surface_transition',
+      sourceKind: 'room.surface_control',
+      locator: {
+        ...baseLocator,
+        surfaceChangeId,
+        previousSurface: stringProperty(properties, 'previousSurface'),
+        nextSurface: surface,
+        action: stringProperty(properties, 'action'),
+      },
+    };
+  }
+
+  if (event.type === 'desktop_menu_toggle') {
+    const open = properties.open;
+    const startMenuEventId = stringProperty(properties, 'startMenuEventId');
+    if (typeof open !== 'boolean' || !startMenuEventId || !hasSourceBackedStartMenuEvidence(properties, event.actor, open)) {
+      return null;
+    }
+    return {
+      sourceRefType: 'win95_start_menu_state',
+      sourceRefId: startMenuEventId,
+      evidenceRole: open ? 'start_menu_opened' : 'start_menu_closed',
+      sourceKind: 'win95.start_menu_control',
+      locator: {
+        ...baseLocator,
+        startMenuEventId,
+        menuId: stringProperty(properties, 'menuId'),
+        menuEventSource: stringProperty(properties, 'menuEventSource'),
+        action: stringProperty(properties, 'action'),
+        open,
+      },
+    };
+  }
+
+  if (event.type === 'browser_navigation') {
+    const windowId = stringProperty(properties, 'windowId');
+    const browserNavigationId = stringProperty(properties, 'browserNavigationId');
+    if (!windowId || !browserNavigationId || !hasSourceBackedBrowserNavigationEvidence(properties, event.actor, windowId)) {
+      return null;
+    }
+    return {
+      sourceRefType: 'room_browser_navigation',
+      sourceRefId: browserNavigationId,
+      evidenceRole: 'browser_navigation',
+      sourceKind: 'win95.browser_navigation',
+      locator: {
+        ...baseLocator,
+        browserNavigationId,
+        windowId,
+        url: stringProperty(properties, 'url') ?? event.text,
+        urlHost: stringProperty(properties, 'urlHost'),
+        urlProtocol: stringProperty(properties, 'urlProtocol'),
+        navigationTrigger: stringProperty(properties, 'navigationTrigger'),
+      },
+    };
+  }
+
+  if (event.type === 'window_open' || event.type === 'window_close') {
+    const windowId = stringProperty(properties, 'windowId');
+    const windowLifecycleId = stringProperty(properties, 'windowLifecycleId');
+    const lifecycleKind = event.type === 'window_open' ? 'open' : 'close';
+    if (
+      !windowId
+      || !windowLifecycleId
+      || !hasSourceBackedWindowLifecycleEvidence(properties, event.actor, lifecycleKind, windowId)
+    ) {
+      return null;
+    }
+    return {
+      sourceRefType: 'room_window_lifecycle',
+      sourceRefId: windowLifecycleId,
+      evidenceRole: event.type,
+      sourceKind: 'win95.window_lifecycle',
+      locator: {
+        ...baseLocator,
+        windowLifecycleId,
+        lifecycleKind,
+        lifecycleSource: stringProperty(properties, 'lifecycleSource'),
+        windowId,
+        windowType: stringProperty(properties, 'windowType'),
+        windowTitle: stringProperty(properties, 'windowTitle'),
+      },
+    };
+  }
+
+  if (event.type === 'window_update') {
+    const windowId = stringProperty(properties, 'windowId');
+    if (!windowId) return null;
+    if (properties.source === 'window_data_client_submit') {
+      const windowDataUpdateId = stringProperty(properties, 'windowDataUpdateId');
+      if (!windowDataUpdateId || !hasSourceBackedWindowDataEvidence(properties, event.actor, windowId)) return null;
+      return {
+        sourceRefType: 'room_window_data_update',
+        sourceRefId: windowDataUpdateId,
+        evidenceRole: stringProperty(properties, 'action') === 'edit_text'
+          ? 'window_text_update'
+          : 'window_data_update',
+        sourceKind: 'win95.window_data_sync',
+        locator: {
+          ...baseLocator,
+          windowDataUpdateId,
+          windowId,
+          action: stringProperty(properties, 'action'),
+          dataSource: stringProperty(properties, 'dataSource'),
+          dataKeys: Array.isArray(properties.dataKeys) ? properties.dataKeys : [],
+          dataValueFingerprints: isRecord(properties.dataValueFingerprints)
+            ? jsonValue(properties.dataValueFingerprints) ?? null
+            : null,
+        },
+      };
+    }
+    if (properties.source === 'window_state_client_submit') {
+      const windowStateChangeId = stringProperty(properties, 'windowStateChangeId');
+      if (!windowStateChangeId || !hasSourceBackedWindowStateEvidence(properties, event.actor, windowId)) return null;
+      return {
+        sourceRefType: 'room_window_state_change',
+        sourceRefId: windowStateChangeId,
+        evidenceRole: 'window_state_change',
+        sourceKind: 'win95.window_state_sync',
+        locator: {
+          ...baseLocator,
+          windowStateChangeId,
+          windowId,
+          action: stringProperty(properties, 'action'),
+          stateSource: stringProperty(properties, 'stateSource'),
+          stateKeys: Array.isArray(properties.stateKeys) ? properties.stateKeys : [],
+          statePatch: isRecord(properties.statePatch) ? jsonValue(properties.statePatch) ?? null : null,
+        },
+      };
+    }
+  }
+
+  if (event.type === 'cursor_presence') {
+    const normalizedX = numberProperty(properties, 'normalizedX');
+    const normalizedY = numberProperty(properties, 'normalizedY');
+    const cursorSampleId = stringProperty(properties, 'cursorSampleId');
+    if (
+      normalizedX === null
+      || normalizedY === null
+      || !cursorSampleId
+      || !isSourceBackedCursorEvidence(properties, event.actor, normalizedX, normalizedY)
+    ) {
+      return null;
+    }
+    return {
+      sourceRefType: 'room_cursor_presence_sample',
+      sourceRefId: cursorSampleId,
+      evidenceRole: 'cursor_presence_sample',
+      sourceKind: 'win95.cursor_presence_sample',
+      locator: {
+        ...baseLocator,
+        cursorSampleId,
+        sampledAtMs: numberProperty(properties, 'sampledAtMs'),
+        normalizedX,
+        normalizedY,
+        evidenceSampling: stringProperty(properties, 'evidenceSampling'),
+        rawCursorMovesPersisted: properties.rawCursorMovesPersisted === true,
+      },
+      metadata: {
+        sampleIntervalMs: numberProperty(properties, 'sampleIntervalMs'),
+        movementThreshold: numberProperty(properties, 'movementThreshold'),
+        distanceFromPrevious: numberProperty(properties, 'distanceFromPrevious'),
+      },
+    };
+  }
+
+  if (event.type === 'media_control') {
+    const control = stringProperty(properties, 'control');
+    const previousEnabled = properties.previousEnabled;
+    const enabled = properties.enabled;
+    const mediaControlId = stringProperty(properties, 'mediaControlId');
+    if (
+      !control
+      || typeof previousEnabled !== 'boolean'
+      || typeof enabled !== 'boolean'
+      || !mediaControlId
+      || !isSourceBackedMediaControlEvidence(properties, event.actor, control, previousEnabled, enabled)
+    ) {
+      return null;
+    }
+    return {
+      sourceRefType: 'room_media_control',
+      sourceRefId: mediaControlId,
+      evidenceRole: `${control}_${enabled ? 'enabled' : 'disabled'}`,
+      sourceKind: 'video_room.media_control',
+      locator: {
+        ...baseLocator,
+        mediaControlId,
+        control,
+        previousEnabled,
+        enabled,
+        action: stringProperty(properties, 'action'),
+        controlSurface: stringProperty(properties, 'controlSurface'),
+      },
+      metadata: {
+        mediaSource: stringProperty(properties, 'mediaSource'),
+        rawMediaStreamPersisted: properties.rawMediaStreamPersisted === true,
+      },
+    };
+  }
+
+  if (event.type === 'recording_start' || event.type === 'recording_stop') {
+    const lifecycleKind = stringProperty(properties, 'recordingLifecycleKind');
+    const status = stringProperty(properties, 'recordingStatus');
+    const active = properties.recordingActive;
+    const recordingStateEventId = stringProperty(properties, 'recordingStateEventId');
+    if (
+      (lifecycleKind !== 'start' && lifecycleKind !== 'stop')
+      || (status !== 'recording' && status !== 'uploading' && status !== 'saved' && status !== 'failed')
+      || typeof active !== 'boolean'
+      || !recordingStateEventId
+      || !isSourceBackedRecordingStateEvidence(properties, lifecycleKind, status, active)
+    ) {
+      return null;
+    }
+    return {
+      sourceRefType: 'room_recording_state',
+      sourceRefId: recordingStateEventId,
+      evidenceRole: event.type,
+      sourceKind: 'video_room.recording_state',
+      locator: {
+        ...baseLocator,
+        recordingStateEventId,
+        lifecycleKind,
+        recordingStatus: status,
+        recordingActive: active,
+        speakerChannelLayout: stringProperty(properties, 'speakerChannelLayout'),
+        speakerChannelCount: numberProperty(properties, 'speakerChannelCount'),
+      },
+      metadata: {
+        recordingEventSource: stringProperty(properties, 'recordingEventSource'),
+        recordingStateEventSource: stringProperty(properties, 'recordingStateEventSource'),
+        hasTranscriptionAudio: properties.hasTranscriptionAudio === true,
+        speakerMetadataVersion: numberProperty(properties, 'speakerMetadataVersion'),
+      },
+    };
+  }
+
+  if (event.type === 'workspace_state') {
+    const status = stringProperty(properties, 'workspaceStatus');
+    const workspaceStateEventId = stringProperty(properties, 'workspaceStateEventId');
+    if (!status || !workspaceStateEventId || !hasSourceBackedWorkspaceStateEvidence(properties, event.actor, status)) {
+      return null;
+    }
+    return {
+      sourceRefType: 'dev_container_workspace_state',
+      sourceRefId: workspaceStateEventId,
+      evidenceRole: 'workspace_state',
+      sourceKind: 'dev_container.workspace_state',
+      locator: {
+        ...baseLocator,
+        workspaceStateEventId,
+        workspaceStatus: status,
+        workspaceStateSource: stringProperty(properties, 'workspaceStateSource'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        repoUrl: stringProperty(properties, 'repoUrl'),
+        githubPrNumber: numberProperty(properties, 'githubPrNumber'),
+        matchedRepoId: numberProperty(properties, 'matchedRepoId'),
+        challengeStatus: stringProperty(properties, 'challengeStatus'),
+        challengeKind: stringProperty(properties, 'challengeKind'),
+      },
+      metadata: {
+        workspaceTelemetryPersisted: properties.workspaceTelemetryPersisted === true,
+        proxyUrlPersisted: properties.proxyUrlPersisted === true,
+        ttlSeconds: numberProperty(properties, 'ttlSeconds'),
+        ttlSource: stringProperty(properties, 'ttlSource'),
+        expiringSoon: properties.expiringSoon === true,
+      },
+    };
+  }
+
+  if (event.type === 'code_editor_open') {
+    const codeEditorOpenId = stringProperty(properties, 'codeEditorOpenId');
+    if (!codeEditorOpenId || !codeEditorOpenIsSourceBacked(event, properties)) return null;
+    return {
+      sourceRefType: 'code_server_editor_open',
+      sourceRefId: codeEditorOpenId,
+      evidenceRole: 'code_editor_open',
+      sourceKind: 'code_server.editor_open',
+      locator: {
+        ...baseLocator,
+        codeEditorOpenId,
+        editor: stringProperty(properties, 'editor'),
+        openStatus: stringProperty(properties, 'openStatus'),
+        workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        workspaceStatus: stringProperty(properties, 'workspaceStatus'),
+        repoUrl: stringProperty(properties, 'repoUrl'),
+        githubPrNumber: numberProperty(properties, 'githubPrNumber'),
+        matchedRepoId: numberProperty(properties, 'matchedRepoId'),
+        challengeStatus: stringProperty(properties, 'challengeStatus'),
+        challengeKind: stringProperty(properties, 'challengeKind'),
+      },
+      metadata: {
+        editorEventSource: stringProperty(properties, 'editorEventSource'),
+        proxyUrlPersisted: properties.proxyUrlPersisted === true,
+      },
+    };
+  }
+
+  return null;
+}
+
+async function directRoomActivitySourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<SessionEventExactSourceRef | null> {
+  const spec = directRoomActivitySourceSpec(input.event, input.node, input.properties);
+  if (!spec) return null;
+
+  const exactText = stableJson({
+    sourceKind: spec.sourceKind,
+    sourceRefType: spec.sourceRefType,
+    sourceRefId: spec.sourceRefId,
+    eventType: input.event.type,
+    sessionId: input.event.sessionId,
+    candidateId: input.event.candidateId,
+    candidateNodeId: input.node.id,
+    actor: input.event.actor,
+    timestamp: input.event.timestamp,
+    text: input.event.text,
+    properties: input.properties,
+  });
+
+  return {
+    sourceRefType: spec.sourceRefType,
+    sourceRefId: spec.sourceRefId,
+    evidenceRole: spec.evidenceRole,
+    locator: spec.locator,
+    exactText,
+    contentHash: await sha256Hex(exactText),
+    metadata: {
+      sourceKind: spec.sourceKind,
+      eventType: input.event.type,
+      actor: input.event.actor,
+      durableObjectReplayExpected: input.properties.durableObjectReplayExpected === true,
+      ...spec.metadata,
+    },
+  };
+}
+
 async function persistSessionEventContextRecord(
   db: D1Database,
   event: SessionEvent,
@@ -2588,6 +3150,7 @@ async function persistSessionEventContextRecord(
   const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
+  const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -2615,6 +3178,7 @@ async function persistSessionEventContextRecord(
   if (clippyActionSource) sources.push(clippyActionSource);
   if (terminalTextSource) sources.push(terminalTextSource);
   if (codeServerFileSource) sources.push(codeServerFileSource);
+  if (directRoomActivitySource) sources.push(directRoomActivitySource);
   if (sourceSpanId) {
     sources.push({
       sourceSpanId,
@@ -2791,6 +3355,7 @@ async function persistSessionEventAssessmentEvidence(
   const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
+  const directRoomActivitySource = await directRoomActivitySourceRef({ event, node, properties });
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -2817,6 +3382,7 @@ async function persistSessionEventAssessmentEvidence(
     ...(clippyActionSource ? [clippyActionSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
     ...(codeServerFileSource ? [codeServerFileSource] : []),
+    ...(directRoomActivitySource ? [directRoomActivitySource] : []),
   ];
 
   await store.recordAssessmentEvent({

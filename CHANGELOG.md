@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Source-backed 95 room surface changes, Start menu toggles, browser navigation, window lifecycle/data/state updates, cursor samples, media controls, recording state, workspace state, and code-server opens now emit direct source refs and graph entities in living-context and assessment evidence instead of only the broad meeting-session event packet.
 - Clippy UI actions and real bridge room-action suggestions now preserve direct `clippy_ui_action` / `clippy_agent_room_action` exact-text source refs in living-context and assessment evidence, so tray clicks, chat closes, auth intents, and agent suggestions are citeable without unpacking the broader room event packet.
 - Room chat, proactive Clippy prompts, Clippy user prompts, and real agent stdout replies now preserve direct exact-text source refs in living-context and assessment evidence, so chat turns can be cited without unpacking the broader room event packet.
 - Code-server file saves/deletes now preserve direct `code_server_file_observation` source refs in living-context and assessment evidence, keeping observed path/action/hash/size/preview/workspace provenance citeable without pretending the full file body was captured.
