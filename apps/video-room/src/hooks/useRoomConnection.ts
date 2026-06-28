@@ -1280,6 +1280,30 @@ function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): Ro
   ]);
 }
 
+export function hasSourceBackedRoomFileSystemEvidence(
+  event: RoomFileSystemEvent,
+  role?: RoomRole,
+): boolean {
+  const evidence = event.evidence;
+  if (!isRecord(evidence)) return false;
+  const actor = role === 'HOST' ? 'host' : role === 'GUEST' ? 'guest' : evidence.actor;
+  const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
+  const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
+  return evidence.source === 'win95_shared_file_system'
+    && evidence.fileEventSource === 'browser_client_submit'
+    && evidence.actor === actor
+    && evidence.operation === operation
+    && evidence.fileId === fileId
+    && typeof evidence.fileChangeId === 'string'
+    && evidence.fileChangeId.trim().length > 0
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs)
+    && evidence.surface === 'win95'
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.trim().length > 0
+    && evidence.durableObjectReplayExpected === true;
+}
+
 export function mergePeerCursorPresence(
   previous: RoomCursorPresence[],
   cursor: RoomCursorPresence,
@@ -1955,7 +1979,14 @@ export function useRoomConnection(
           setPeerCursors((prev) => mergePeerCursorPresence(prev, cursor));
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
           const event = parseFileSystemEvent(message.payload);
-          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (
+            !event
+            || event.clientId === desktopClientIdRef.current
+            || !hasSourceBackedRoomFileSystemEvidence(
+              event,
+              isRoomRole(message.role) ? message.role : undefined,
+            )
+          ) return;
           setFileSystem((prev) => applyFileSystemEvent(prev, event));
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT_REJECTED') {
           const snapshot = parseFileSystemSnapshot(message.payload);
@@ -2402,6 +2433,15 @@ export function useRoomConnection(
           file: draft.file,
           evidence: draft.evidence,
         };
+    if (!hasSourceBackedRoomFileSystemEvidence(event, role)) {
+      console.error('[publishFileSystemEvent] rejected file system event without source-backed evidence:', {
+        kind: event.kind,
+        fileId: event.kind === 'DELETE_FILE' ? event.fileId : event.file.id,
+        actor: role,
+        source: event.evidence?.source,
+      });
+      return;
+    }
     setFileSystem((prev) => applyFileSystemEvent(prev, event));
     if (!sendFileSystemEvent(event)) {
       fileSystemOutboxRef.current.push(event);

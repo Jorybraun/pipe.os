@@ -4,12 +4,14 @@ import {
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
   decideRoomSurfaceSnapshot,
+  hasSourceBackedRoomFileSystemEvidence,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
   ROOM_CURSOR_SEND_INTERVAL_MS,
   shouldSendCursorPresence,
   type RoomChatMessage,
   type RoomCursorPresence,
+  type RoomFileSystemEvent,
   type RoomMediaControlState,
 } from './useRoomConnection';
 
@@ -290,5 +292,53 @@ describe('applyRoomMediaControlEvent', () => {
         updatedAt: 2000,
       },
     ]);
+  });
+});
+
+describe('hasSourceBackedRoomFileSystemEvidence', () => {
+  const sourceBackedUpsert: RoomFileSystemEvent = {
+    id: 'fs-save-notes',
+    clientId: 'host-client',
+    createdAt: 4,
+    kind: 'UPSERT_FILE',
+    file: {
+      id: 'desktop-notes',
+      name: 'notes.txt',
+      kind: 'text',
+      content: 'Candidate asked about testing strategy.',
+      mimeType: 'text/plain',
+      createdAt: 4,
+      updatedAt: 4,
+      updatedBy: 'HOST',
+    },
+    evidence: {
+      source: 'win95_shared_file_system',
+      fileEventSource: 'browser_client_submit',
+      fileChangeId: 'file:host:4:upsert:desktop-notes',
+      actor: 'host',
+      operation: 'upsert',
+      fileId: 'desktop-notes',
+      fileName: 'notes.txt',
+      fileKind: 'text',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 4,
+      durableObjectReplayExpected: true,
+    },
+  };
+
+  it('accepts Win95 file mutations only when browser evidence matches the event and actor', () => {
+    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'HOST')).toBe(true);
+  });
+
+  it('rejects source-less file mutations before optimistic local state can change', () => {
+    expect(hasSourceBackedRoomFileSystemEvidence({
+      ...sourceBackedUpsert,
+      evidence: undefined,
+    }, 'HOST')).toBe(false);
+  });
+
+  it('rejects file mutations attributed to the wrong room actor', () => {
+    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'GUEST')).toBe(false);
   });
 });
