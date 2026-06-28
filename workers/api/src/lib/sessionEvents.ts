@@ -24,6 +24,11 @@ import {
   type JsonValue,
 } from './livingContext';
 import { writeCandidateGraphFireAndForget } from './neo4j/writeCandidateGraph';
+import {
+  AssessmentLayerStore,
+  type AssessmentActorType,
+  type AssessmentSessionState,
+} from './assessmentLayer/persistence';
 
 export type SessionEventType =
   | 'chat_message'
@@ -114,6 +119,19 @@ function compactPreview(value: unknown, maxLength = 1000): string | undefined {
   const text = value.trim();
   if (!text) return undefined;
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
 }
 
 function roomActivityBaseProperties(
@@ -1115,6 +1133,171 @@ async function persistSessionEventContextRecord(
   });
 }
 
+function assessmentEventKindForSessionEvent(type: SessionEventType): string {
+  switch (type) {
+    case 'chat_message':
+      return 'message';
+    case 'ai_chat_user':
+    case 'ai_chat_agent':
+    case 'ai_agent_status':
+    case 'clippy_prompt':
+    case 'clippy_action':
+      return 'ai_interaction';
+    case 'terminal_command':
+    case 'terminal_output':
+      return 'terminal_output';
+    case 'recording_start':
+    case 'recording_stop':
+      return 'transcript_span';
+    case 'file_change':
+    case 'workspace_state':
+    case 'code_editor_open':
+    case 'code_editor_save':
+      return 'dev_container_event';
+    case 'browser_navigation':
+    case 'window_open':
+    case 'window_close':
+    case 'window_update':
+    case 'window_focus':
+    case 'cursor_presence':
+    case 'media_control':
+    case 'room_surface_change':
+    case 'participant_join':
+    case 'participant_leave':
+    default:
+      return 'tool_usage';
+  }
+}
+
+function assessmentActorForSessionEvent(event: SessionEvent): { actorType: AssessmentActorType; actorId: string | null } {
+  const properties = jsonObject(event.properties);
+  const source = stringProperty(properties, 'source');
+  const agentName = stringProperty(properties, 'agentName') ?? 'devin';
+
+  if (event.type === 'ai_chat_agent' || event.type === 'ai_agent_status') {
+    return { actorType: 'devin', actorId: agentName };
+  }
+
+  if (event.type === 'clippy_prompt') {
+    return { actorType: 'clippy', actorId: 'clippy' };
+  }
+
+  if (event.type === 'clippy_action') {
+    return source === 'clippy_agent_bridge'
+      ? { actorType: 'devin', actorId: agentName }
+      : { actorType: 'clippy', actorId: 'clippy' };
+  }
+
+  if (event.actor === 'guest') return { actorType: 'candidate', actorId: event.candidateId };
+  if (event.actor === 'host') return { actorType: 'recruiter', actorId: 'host' };
+  if (event.actor === 'agent') return { actorType: 'ai_agent', actorId: agentName };
+  if (
+    event.type === 'workspace_state'
+    || event.type === 'code_editor_open'
+    || event.type === 'code_editor_save'
+    || (
+      event.type === 'file_change'
+      && (source === 'code_server_workspace' || stringProperty(properties, 'observedBy') === 'agent_bridge')
+    )
+  ) {
+    return { actorType: 'dev_container', actorId: stringProperty(properties, 'workspaceSessionId') };
+  }
+
+  return { actorType: 'system', actorId: null };
+}
+
+async function currentAssessmentState(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentSessionState | null> {
+  const row = await db.prepare(
+    'SELECT state FROM assessment_sessions WHERE id = ?1',
+  ).bind(sessionId).first<{ state: AssessmentSessionState }>();
+  return row?.state ?? null;
+}
+
+async function markAssessmentSessionInProgress(input: {
+  db: D1Database;
+  store: AssessmentLayerStore;
+  sessionId: string;
+}): Promise<void> {
+  const state = await currentAssessmentState(input.db, input.sessionId);
+  if (state !== 'INTAKE') return;
+  await input.store.transitionAssessmentState({
+    sessionId: input.sessionId,
+    toState: 'IN_PROGRESS',
+    reason: '95 Until Infinity room session event captured as assessment evidence.',
+    actorType: 'system',
+  });
+}
+
+async function persistSessionEventAssessmentEvidence(
+  db: D1Database,
+  event: SessionEvent,
+  node: CandidateNode,
+): Promise<void> {
+  if (!await tableExists(db, 'assessment_sessions')) return;
+
+  const observedAt = observedAtFromTimestamp(event.timestamp);
+  const store = new AssessmentLayerStore(db, () => observedAt);
+  const session = await store.createAssessmentSession({
+    ingestionKey: `assessment-session:95-room:${event.candidateId}:${event.sessionId}`,
+    interviewId: event.sessionId,
+    mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+    candidateId: event.candidateId,
+    workspaceId: null,
+    createdBy: 'meeting-room-session-events',
+    metadata: {
+      meetingSessionId: event.sessionId,
+      surface: stringProperty(jsonObject(event.properties), 'surface'),
+      source: 'meeting_room_session_events',
+      assessmentSurface: '95_until_infinity',
+    },
+  });
+  const { actorType, actorId } = assessmentActorForSessionEvent(event);
+  const narrative = formatEventNarrative(event);
+  const properties = jsonObject(event.properties);
+
+  await store.recordAssessmentEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:95-room:${node.id}`,
+    kind: assessmentEventKindForSessionEvent(event.type),
+    actorType,
+    actorId,
+    narrative,
+    payload: {
+      sessionEventType: event.type,
+      meetingSessionId: event.sessionId,
+      candidateNodeId: node.id,
+      actor: event.actor,
+      properties,
+    },
+    occurredAt: observedAt,
+    sourceRefs: [{
+      sourceRefType: 'meeting_session_event',
+      sourceRefId: node.id,
+      evidenceRole: 'source_event',
+      locator: {
+        sessionId: event.sessionId,
+        candidateId: event.candidateId,
+        candidateNodeId: node.id,
+        eventType: event.type,
+        actor: event.actor,
+        timestamp: event.timestamp,
+      },
+      exactText: event.text,
+      contentHash: await sha256Hex(event.text),
+      metadata: {
+        sourceKind: 'meeting_session_event.context_record',
+        candidateNodeType: node.node_type,
+        sourceReference: node.source_reference ?? null,
+      },
+    }],
+  });
+
+  await markAssessmentSessionInProgress({ db, store, sessionId: session.id });
+}
+
 /**
  * Persist a session event into D1 as both compatibility candidate_node data and
  * a source-backed meeting_session_event context record, then mirror to Neo4j.
@@ -1130,6 +1313,7 @@ export async function captureSessionEvent(
       ingestionKeyOverride: sessionEventIngestionKey(event),
     });
     await persistSessionEventContextRecord(db, event, node);
+    await persistSessionEventAssessmentEvidence(db, event, node);
 
     // Fire-and-forget write to Neo4j graph
     if (env?.NEO4J_URI && env?.NEO4J_PASSWORD) {
@@ -1167,6 +1351,7 @@ export async function captureSessionEvents(
         ingestionKeyOverride: sessionEventIngestionKey(event),
       });
       await persistSessionEventContextRecord(db, event, node);
+      await persistSessionEventAssessmentEvidence(db, event, node);
       nodes.push(node);
       captured++;
     } catch {

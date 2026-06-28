@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Meeting-room session events, including Clippy/Devin interactions, now append exact-source immutable `NINETY_FIVE_UNTIL_INFINITY_ROOM` assessment evidence events alongside candidate/context projections.
 - Clippy/Devin bridge readiness now marks a real container agent ready after it accepts the source-backed room-context primer, so quiet Devin CLI starts do not leave Clippy chat permanently disabled, and raw chat bridge packets now include explicit `agent_stdout` provenance.
 - Clippy/Devin bridge status and browser agent evidence now require explicit bridge-provided agent identity instead of defaulting source-less status/messages to `devin`.
 - Browser-observed Clippy/Devin agent messages now require explicit bridge source metadata before becoming agent chat/status evidence instead of defaulting source-less messages to bridge diagnostics.

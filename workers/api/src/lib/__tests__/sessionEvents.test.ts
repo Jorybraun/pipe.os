@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import Database from 'better-sqlite3';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD1';
 import {
   captureSessionEvent,
   getSessionContextGraph,
@@ -7,6 +10,27 @@ import {
   resolveCandidateIdForRoom,
   type SessionEvent,
 } from '../sessionEvents';
+
+const candidateNodesMigrationSql = readFileSync(
+  new URL('../../../migrations/0052_candidate_nodes.sql', import.meta.url),
+  'utf8',
+);
+const candidateNodeIdempotencyMigrationSql = readFileSync(
+  new URL('../../../migrations/0085_candidate_node_idempotency.sql', import.meta.url),
+  'utf8',
+);
+const livingContextMigrationSql = readFileSync(
+  new URL('../../../migrations/0082_living_context_graph.sql', import.meta.url),
+  'utf8',
+);
+const contextRecordsMigrationSql = readFileSync(
+  new URL('../../../migrations/0095_context_records.sql', import.meta.url),
+  'utf8',
+);
+const assessmentLayerMigrationSql = readFileSync(
+  new URL('../../../migrations/0102_assessment_layer.sql', import.meta.url),
+  'utf8',
+);
 
 // Mock D1Database
 function createMockDb() {
@@ -24,6 +48,37 @@ function createMockDb() {
     }),
   };
   return db;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function createSessionEvidenceDb(): { sqlite: BetterSqliteDb; db: D1Database } {
+  const sqlite = new Database(':memory:');
+  sqlite.exec('PRAGMA foreign_keys = ON;');
+  sqlite.exec(`
+    CREATE TABLE candidates (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT,
+      owner_id TEXT NOT NULL,
+      name TEXT,
+      email TEXT,
+      status TEXT NOT NULL
+    );
+  `);
+  sqlite.exec(candidateNodesMigrationSql);
+  sqlite.exec(candidateNodeIdempotencyMigrationSql);
+  sqlite.exec(livingContextMigrationSql);
+  sqlite.exec(contextRecordsMigrationSql);
+  sqlite.exec(assessmentLayerMigrationSql);
+  sqlite.prepare(
+    `INSERT INTO candidates (id, pipeline_id, owner_id, name, email, status)
+     VALUES ('cand-assessment', NULL, 'workspace-1', 'Ada Lovelace', 'ada@example.com', 'IN_PROGRESS')`,
+  ).run();
+  return { sqlite, db: createMockD1(sqlite) };
 }
 
 describe('sessionEvents', () => {
@@ -49,6 +104,77 @@ describe('sessionEvents', () => {
       // Will be null because insertCandidateNode mock returns null from .first()
       // But we verify it doesn't throw
       expect(result).toBeNull();
+    });
+
+    it('also appends source-backed 95 room assessment evidence for real agent events', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const event: SessionEvent = {
+          type: 'ai_chat_agent',
+          sessionId: 'meeting-session-95',
+          candidateId: 'cand-assessment',
+          timestamp: 1782603900,
+          actor: 'agent',
+          text: 'I inspected the repository task and found the failing worker route.',
+          properties: {
+            source: 'clippy_agent_bridge',
+            agentName: 'devin',
+            surface: 'win95',
+            workspaceSessionId: 'workspace-session-1',
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+        await captureSessionEvent(realDb, event);
+
+        expect(sqlite.prepare(
+          `SELECT mode, state, candidate_id, interview_id, metadata_json
+             FROM assessment_sessions
+            WHERE ingestion_key = ?`,
+        ).get('assessment-session:95-room:cand-assessment:meeting-session-95')).toMatchObject({
+          mode: 'NINETY_FIVE_UNTIL_INFINITY_ROOM',
+          state: 'IN_PROGRESS',
+          candidate_id: 'cand-assessment',
+          interview_id: 'meeting-session-95',
+        });
+
+        const eventRows = sqlite.prepare(
+          `SELECT e.kind, e.actor_type, e.actor_id, e.narrative,
+                  r.source_ref_type, r.source_ref_id, r.exact_text, r.content_hash
+             FROM assessment_evidence_events e
+             JOIN assessment_event_source_refs r ON r.event_id = e.id
+            ORDER BY e.sequence`,
+        ).all() as Array<{
+          kind: string;
+          actor_type: string;
+          actor_id: string;
+          narrative: string;
+          source_ref_type: string;
+          source_ref_id: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(eventRows).toHaveLength(1);
+        expect(eventRows[0]).toMatchObject({
+          kind: 'ai_interaction',
+          actor_type: 'devin',
+          actor_id: 'devin',
+          source_ref_type: 'meeting_session_event',
+          source_ref_id: node!.id,
+          exact_text: event.text,
+          content_hash: await sha256Hex(event.text),
+        });
+        expect(eventRows[0]!.narrative).toContain('Agent responded');
+
+        expect(() => sqlite.prepare(
+          `UPDATE assessment_evidence_events SET narrative = 'rewritten' WHERE id = (
+             SELECT id FROM assessment_evidence_events LIMIT 1
+           )`,
+        ).run()).toThrow('assessment_evidence_events are immutable');
+      } finally {
+        sqlite.close();
+      }
     });
 
     it('should handle errors gracefully', async () => {
