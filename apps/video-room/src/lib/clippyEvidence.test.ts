@@ -507,6 +507,30 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('redacts Devin bridge output before deriving source-backed fallback evidence', () => {
+    const evidence = buildClippyAgentMessageSessionEvidence({
+      text: 'I inspected auth with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and /api/v1/meeting-rooms/live-room-token?token=raw-token.',
+      source: 'agent_stdout',
+      agentName: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782603900000,
+    });
+
+    expect(evidence).not.toBeNull();
+    if (!evidence) throw new Error('expected redacted agent fallback evidence');
+    expect(evidence.eventType).toBe('ai_chat_agent');
+    expect(evidence.text).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+    expect(evidence.text).toContain('/api/v1/meeting-rooms/[REDACTED_SECRET]');
+    expect(evidence.text).not.toContain('cog_aaaaaaaa');
+    expect(evidence.text).not.toContain('live-room-token');
+    expect(evidence.properties.responseLength).toBe(evidence.text.length);
+    expect(evidence.properties.responseFingerprint).toBe(clippyAgentResponseFingerprint(evidence.text));
+  });
+
   it('records source-backed diagnostics instead of fake replies when agent stdout lacks observation metadata', () => {
     expect(buildClippyAgentMessageSessionEvidence({
       text: 'I inspected the failing test.',
@@ -599,6 +623,30 @@ describe('clippy evidence', () => {
         agentResponseClaimed: false,
       },
     });
+  });
+
+  it('redacts source-backed bridge status diagnostics before persistence', () => {
+    const evidence = buildClippyAgentStatusEvidence({
+      text: 'Auth failed with Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      agentName: 'devin',
+      status: 'auth_needed',
+      bridgeMessageSource: 'bridge_diagnostic',
+      diagnosticSource: 'agent_auth_check',
+      observedAt: '2026-06-27T21:12:00.000Z',
+      capturedAtMs: 1782594720000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782594720000,
+    });
+
+    expect(evidence).not.toBeNull();
+    if (!evidence) throw new Error('expected redacted agent status evidence');
+    expect(evidence.text).toBe('Auth failed with Bearer [REDACTED_SECRET]');
+    expect(evidence.properties.agentStatusEventId).toBe(
+      'agent-status:devin:1782594720000:bridge_diagnostic:auth_needed:agent_auth_check',
+    );
   });
 
   it('does not fabricate bridge diagnostics when an agent message has no bridge source', () => {

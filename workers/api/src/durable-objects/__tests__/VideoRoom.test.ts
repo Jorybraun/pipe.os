@@ -1595,6 +1595,77 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('redacts Clippy/Devin status diagnostics before broadcast and storage', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+    const rawText = [
+      'Auth failed with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      '/api/v1/meeting-rooms/live-room-token?token=raw-token',
+    ].join(' ');
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-agent-status-redacted',
+        clientId: 'guest-client',
+        createdAt: 1782604100000,
+        eventType: 'ai_agent_status',
+        actor: 'agent',
+        text: rawText,
+        evidence: {
+          source: 'clippy_agent_bridge',
+          agentStatusEventSource: 'browser_clippy_agent_ws',
+          agent: 'devin',
+          status: 'auth_needed',
+          diagnosticSource: 'agent_auth_check',
+          bridgeMessageSource: 'bridge_diagnostic',
+          observedAt: '2026-06-27T20:00:00.000Z',
+          capturedAtMs: 1782604100000,
+          agentStatusEventId: 'agent-status:devin:1782604100000:bridge_diagnostic:auth_needed:agent_auth_check',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782604100000,
+          agentResponseClaimed: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    const broadcast = parseSent(host).find((message) => (
+      message.type === 'ROOM_CLIPPY_INTERACTION'
+      && typeof message.payload === 'object'
+      && message.payload !== null
+      && 'id' in message.payload
+      && message.payload.id === 'clippy-agent-status-redacted'
+    ));
+    expect(broadcast).toMatchObject({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
+      },
+    });
+    const log = storage.get('clippyInteractionActivityLog');
+    expect(log).toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({
+          id: 'clippy-agent-status-redacted',
+          text: 'Auth failed with DEVIN_API_KEY=[REDACTED_SECRET] Bearer [REDACTED_SECRET] /api/v1/meeting-rooms/[REDACTED_SECRET]',
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(parseSent(host))).not.toContain('cog_aaaaaaaa');
+    expect(JSON.stringify(log)).not.toContain('live-room-token');
+    expect(JSON.stringify(log)).not.toContain('ghp_bbbbbbbb');
+  });
+
   it('rejects Clippy/Devin interaction events without source evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

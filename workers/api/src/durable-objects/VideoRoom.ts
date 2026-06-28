@@ -1024,6 +1024,14 @@ export class VideoRoom {
       || value === 'clippy_action';
   }
 
+  private safeClippyInteractionTextOrNull(eventType: RoomClippyInteractionEventType, value: unknown): string | undefined {
+    if (eventType === 'ai_chat_agent' || eventType === 'ai_agent_status') {
+      return this.safeWorkspaceDiagnosticOrNull(value, 8000) ?? undefined;
+    }
+    if (typeof value !== 'string' || value.trim().length === 0 || value.length > 8000) return undefined;
+    return value;
+  }
+
   private parseClippyInteractionEvent(value: unknown): RoomClippyInteractionEvent | null {
     if (!this.isRecord(value)) return null;
     if (
@@ -1038,19 +1046,18 @@ export class VideoRoom {
         && value.actor !== 'agent'
         && value.actor !== 'system'
       )
-      || typeof value.text !== 'string'
-      || value.text.trim().length === 0
-      || value.text.length > 8000
     ) {
       return null;
     }
+    const text = this.safeClippyInteractionTextOrNull(value.eventType, value.text);
+    if (!text) return null;
     return {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
       eventType: value.eventType,
       actor: value.actor,
-      text: value.text,
+      text,
       evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
     };
   }

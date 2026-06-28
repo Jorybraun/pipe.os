@@ -27,7 +27,7 @@ describe('terminal WebSocket protocol', () => {
   });
 
   it('redacts auth tokens before terminal commands or output become evidence', () => {
-    const token = 'cog_oetjr6udnnd3vvvp5p6f577r7taxudks7fxdld7qnutgx55eewsa';
+    const token = 'cog_testredactiontoken000000000000000000';
     expect(redactTerminalEvidenceText(`DEVIN_API_KEY=${token}`)).toBe('DEVIN_API_KEY=[REDACTED_SECRET]');
 
     const command = collectTerminalCommands('', `export DEVIN_API_KEY=${token}\r`);

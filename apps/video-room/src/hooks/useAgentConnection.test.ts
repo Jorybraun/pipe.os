@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentStatusEvidenceText, parseAgentBridgeMessage } from './useAgentConnection';
+import { redactAgentDiagnosticText } from '../lib/agentDiagnosticRedaction';
 
 describe('parseAgentBridgeMessage', () => {
   it('parses real Devin bridge status without fabricating a chat response', () => {
@@ -115,6 +116,37 @@ describe('parseAgentBridgeMessage', () => {
       agentName: 'devin',
       authUrl: null,
       message: 'Real Devin credentials are required.',
+    });
+  });
+
+  it('redacts bridge diagnostics before they become Clippy messages', () => {
+    const raw = [
+      'DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'Bearer ghp_bbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      '/api/v1/meeting-rooms/live-room-token?token=raw-token',
+    ].join(' ');
+    const redacted = redactAgentDiagnosticText(raw);
+
+    expect(redacted).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+    expect(redacted).toContain('Bearer [REDACTED_SECRET]');
+    expect(redacted).toContain('/api/v1/meeting-rooms/[REDACTED_SECRET]');
+    expect(redacted).not.toContain('cog_aaaaaaaa');
+    expect(redacted).not.toContain('ghp_bbbbbbbb');
+    expect(redacted).not.toContain('live-room-token');
+    expect(parseAgentBridgeMessage({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'auth_needed',
+      message: raw,
+      diagnosticSource: 'agent_auth_check',
+      observedAt: '2026-06-27T19:00:00.000Z',
+    })).toMatchObject({
+      kind: 'diagnostic',
+      message: {
+        text: redacted,
+        source: 'bridge_diagnostic',
+        diagnosticSource: 'agent_auth_check',
+      },
     });
   });
 
@@ -249,6 +281,24 @@ describe('parseAgentBridgeMessage', () => {
         persisted: true,
       },
       actions: undefined,
+    });
+  });
+
+  it('redacts real bridge chat responses before browser fallback evidence can hash them', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      source: 'agent_stdout',
+      text: 'I used DEVIN_API_KEY=cog_cccccccccccccccccccccccccccccccc while checking auth.',
+      agent: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      persisted: false,
+    })).toMatchObject({
+      kind: 'chat',
+      message: {
+        text: 'I used DEVIN_API_KEY=[REDACTED_SECRET] while checking auth.',
+        source: 'agent_stdout',
+        agentName: 'devin',
+      },
     });
   });
 

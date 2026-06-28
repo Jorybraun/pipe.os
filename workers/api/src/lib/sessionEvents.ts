@@ -109,6 +109,14 @@ const START_MENU_EVENT_SOURCES = new Set([
 ]);
 const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
 const CODE_EDITOR_OPEN_ID_RE = /^code-editor-open:(host|guest):\d+:[a-zA-Z0-9:_-]+$/;
+const AGENT_DIAGNOSTIC_REDACTED_SECRET = '[REDACTED_SECRET]';
+const AGENT_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
+const AGENT_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const AGENT_OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
+const AGENT_BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
+const AGENT_ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
+const AGENT_SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
+const AGENT_ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s?]+/g;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -168,6 +176,27 @@ function compactPreview(value: unknown, maxLength = 1000): string | undefined {
   const text = value.trim();
   if (!text) return undefined;
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function redactAgentDiagnosticText(value: string, maxLength = 8000): string | null {
+  if (!value.trim()) return null;
+  const redacted = value
+    .replace(AGENT_BARE_SECRET_RE, AGENT_DIAGNOSTIC_REDACTED_SECRET)
+    .replace(AGENT_GITHUB_PAT_RE, AGENT_DIAGNOSTIC_REDACTED_SECRET)
+    .replace(AGENT_OPENAI_KEY_RE, AGENT_DIAGNOSTIC_REDACTED_SECRET)
+    .replace(AGENT_BEARER_TOKEN_RE, (_match, prefix: string) => `${prefix}${AGENT_DIAGNOSTIC_REDACTED_SECRET}`)
+    .replace(AGENT_ENV_SECRET_ASSIGNMENT_RE, (_match, name: string) => `${name}=${AGENT_DIAGNOSTIC_REDACTED_SECRET}`)
+    .replace(AGENT_SECRET_QUERY_RE, (_match, prefix: string) => `${prefix}${AGENT_DIAGNOSTIC_REDACTED_SECRET}`)
+    .replace(AGENT_ROOM_TOKEN_PATH_RE, (_match, prefix: string) => `${prefix}${AGENT_DIAGNOSTIC_REDACTED_SECRET}`);
+  return redacted.length > maxLength ? redacted.slice(0, maxLength) : redacted;
+}
+
+function sanitizedAgentBridgeSessionEvent(event: SessionEvent): SessionEvent | null {
+  if (event.type !== 'ai_chat_agent' && event.type !== 'ai_agent_status') return event;
+  const redactedText = redactAgentDiagnosticText(event.text);
+  if (!redactedText) return null;
+  if (event.type === 'ai_chat_agent' && redactedText !== event.text) return null;
+  return redactedText === event.text ? event : { ...event, text: redactedText };
 }
 
 function safeEvidenceIdPart(value: unknown): string {
@@ -1349,7 +1378,11 @@ function clippyInteractionActivityToSessionEvent(input: RoomActivitySyncInput, v
   ) {
     return null;
   }
-  const text = stringOrNull(event.text);
+  const rawText = stringOrNull(event.text);
+  if (!rawText) return null;
+  const text = eventType === 'ai_chat_agent' || eventType === 'ai_agent_status'
+    ? redactAgentDiagnosticText(rawText)
+    : rawText;
   if (!text) return null;
   const role = isRoomActivityRole(value.role) ? value.role : null;
   const eventActor = stringOrNull(event.actor);
@@ -3416,12 +3449,14 @@ export async function captureSessionEvent(
   env?: { NEO4J_URI?: string; NEO4J_USER?: string; NEO4J_PASSWORD?: string },
 ): Promise<CandidateNode | null> {
   try {
-    const payload = eventToNodePayload(event);
+    const safeEvent = sanitizedAgentBridgeSessionEvent(event);
+    if (!safeEvent) return null;
+    const payload = eventToNodePayload(safeEvent);
     const node = await insertCandidateNode(db, payload, {
-      ingestionKeyOverride: sessionEventIngestionKey(event),
+      ingestionKeyOverride: sessionEventIngestionKey(safeEvent),
     });
-    await persistSessionEventContextRecord(db, event, node);
-    await persistSessionEventAssessmentEvidence(db, event, node);
+    await persistSessionEventContextRecord(db, safeEvent, node);
+    await persistSessionEventAssessmentEvidence(db, safeEvent, node);
 
     // Fire-and-forget write to Neo4j graph
     if (env?.NEO4J_URI && env?.NEO4J_PASSWORD) {

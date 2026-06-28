@@ -7,6 +7,7 @@ import {
   normalizedClippyPromptTimestamp,
   safeClippyEvidenceIdPart as safeEvidenceIdPart,
 } from './clippyPromptIdentity';
+import { redactAgentDiagnosticText } from './agentDiagnosticRedaction';
 
 export { clippyTextFingerprint } from './clippyPromptIdentity';
 
@@ -375,8 +376,10 @@ export function buildClippyAgentStatusEvidence(input: {
     : 0;
   const agent = input.agentName?.trim();
   if (!agent) return null;
+  const text = redactAgentDiagnosticText(input.text);
+  if (!text) return null;
   return {
-    text: input.text,
+    text,
     properties: {
       source: 'clippy_agent_bridge',
       agentStatusEventSource: 'browser_clippy_agent_ws',
@@ -441,11 +444,13 @@ export function buildClippyAgentChatFallbackEvidence(input: {
 }): ClippyAgentChatFallbackEvidence | null {
   const agent = input.agentName?.trim();
   if (!agent) return null;
+  const text = redactAgentDiagnosticText(input.text);
+  if (!text) return null;
   const observedAtMs = Date.parse(input.observedAt);
   const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : input.messageTimestamp;
-  const responseFingerprint = clippyAgentResponseFingerprint(input.text);
+  const responseFingerprint = clippyAgentResponseFingerprint(text);
   return {
-    text: input.text,
+    text,
     properties: {
       source: 'clippy_agent_bridge',
       agent,
@@ -459,7 +464,7 @@ export function buildClippyAgentChatFallbackEvidence(input: {
         responseFingerprint,
       }),
       responseFingerprint,
-      responseLength: input.text.length,
+      responseLength: text.length,
       bridgePersisted: false,
       persistenceFallback: 'browser_after_bridge_persist_failed',
       ...(input.browserPromptId ? { browserPromptId: input.browserPromptId } : {}),
@@ -512,13 +517,14 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   messageTimestamp: number;
 }): ClippyAgentMessageSessionEvidence | null {
   if (input.persisted) return null;
-  if (!input.text.trim()) return null;
+  const text = redactAgentDiagnosticText(input.text);
+  if (!text) return null;
   const agentName = input.agentName?.trim();
   if (!agentName) return null;
   const isAgentResponse = input.source === 'agent_stdout';
   if (isAgentResponse && input.observedAt) {
     const evidence = buildClippyAgentChatFallbackEvidence({
-      text: input.text,
+      text,
       agentName,
       observedAt: input.observedAt,
       browserPromptId: input.browserPromptId ?? null,
@@ -550,7 +556,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
   const evidence = buildClippyAgentStatusEvidence({
     text: isAgentResponse
       ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
-      : input.text,
+      : text,
     agentName,
     status: input.agentStatus ?? null,
     diagnosticSource,

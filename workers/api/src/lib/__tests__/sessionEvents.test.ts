@@ -191,6 +191,77 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('redacts agent status diagnostics before they are persisted as evidence', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const event: SessionEvent = {
+          type: 'ai_agent_status',
+          sessionId: 'meeting-session-redaction',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604200,
+          actor: 'agent',
+          text: 'Auth failed with DEVIN_API_KEY=cog_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa and /api/v1/meeting-rooms/live-room-token?token=raw-token',
+          properties: {
+            source: 'clippy_agent_bridge',
+            agent: 'devin',
+            status: 'auth_needed',
+            surface: 'win95',
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+        const candidateNode = sqlite.prepare(
+          `SELECT narrative_text
+             FROM candidate_nodes
+            WHERE source_reference = ?`,
+        ).get('meeting-session-redaction') as { narrative_text: string } | undefined;
+        expect(candidateNode?.narrative_text).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+        expect(candidateNode?.narrative_text).toContain('/api/v1/meeting-rooms/[REDACTED_SECRET]');
+        expect(candidateNode?.narrative_text).not.toContain('cog_aaaaaaaa');
+        expect(candidateNode?.narrative_text).not.toContain('live-room-token');
+        const sourceRefs = sqlite.prepare(
+          `SELECT exact_text
+             FROM assessment_event_source_refs
+            ORDER BY created_at`,
+        ).all() as Array<{ exact_text: string }>;
+        expect(JSON.stringify(sourceRefs)).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+        expect(JSON.stringify(sourceRefs)).not.toContain('cog_aaaaaaaa');
+        expect(JSON.stringify(sourceRefs)).not.toContain('live-room-token');
+      } finally {
+        sqlite.close();
+      }
+    });
+
+    it('rejects secret-bearing agent chat responses instead of rewriting fingerprinted evidence', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const event: SessionEvent = {
+          type: 'ai_chat_agent',
+          sessionId: 'meeting-session-agent-secret',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604300,
+          actor: 'agent',
+          text: 'I used DEVIN_API_KEY=cog_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb while checking the repo.',
+          properties: {
+            source: 'clippy_agent_bridge',
+            agent: 'devin',
+            bridgeEventType: 'CHAT_RESPONSE',
+            bridgeMessageSource: 'agent_stdout',
+          },
+        };
+
+        await expect(captureSessionEvent(realDb, event)).resolves.toBeNull();
+        expect(sqlite.prepare(
+          `SELECT COUNT(*) AS count
+             FROM candidate_nodes
+            WHERE source_reference = ?`,
+        ).get('meeting-session-agent-secret')).toEqual({ count: 0 });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves exact Win95 text file content as source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

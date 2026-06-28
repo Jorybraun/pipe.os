@@ -186,6 +186,10 @@ The controlling product rule remains:
   broadcasting to browsers. Browser evidence capture remains a fallback only
   when the bridge cannot persist, preventing duplicate graph events while
   preserving the visible chat/diagnostic stream.
+- Clippy/Devin bridge diagnostic, auth/status, room-action, and stdout fallback
+  text is redacted before browser evidence, Durable Object broadcast/storage,
+  or session-event persistence. Secret-bearing agent chat is rejected rather
+  than rewriting fingerprinted source evidence.
 - Clippy/Devin room-action suggestions now persist directly from the bridge as
   `clippy_action` events with `executionStatus: suggested`. Browser-side action
   execution remains separate `clippy_action` evidence with

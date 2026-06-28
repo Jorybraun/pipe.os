@@ -3,6 +3,7 @@ import {
   buildClippyBrowserPromptIdentity,
   type ClippyPromptActor,
 } from '../lib/clippyPromptIdentity';
+import { redactAgentDiagnosticText } from '../lib/agentDiagnosticRedaction';
 
 export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
 export type AgentRoomActionId =
@@ -236,7 +237,7 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   if (!isRecord(value)) return null;
   const id = findRoomActionId(value.action ?? value.id ?? value.name);
   if (!id) return null;
-  const text = stringOrNull(value.text ?? value.reason ?? value.message) ?? undefined;
+  const text = redactAgentDiagnosticText(value.text ?? value.reason ?? value.message) ?? undefined;
   const label = stringOrNull(value.label) ?? ROOM_ACTIONS[id].label;
   const browserPromptId = stringOrNull(value.browserPromptId);
   const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
@@ -290,7 +291,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     return { kind: 'status', status: value.status, agentName };
   }
   if (value.type === 'CHAT_RESPONSE') {
-    const text = stringOrNull(value.text);
+    const text = redactAgentDiagnosticText(value.text);
     if (!text) return { kind: 'ignored' };
     if (value.source !== 'agent_stdout') return { kind: 'ignored' };
     const agentName = stringOrNull(value.agent);
@@ -323,7 +324,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
       kind: 'auth_needed',
       authUrl: stringOrNull(value.authUrl),
       agentName,
-      message: stringOrNull(value.message),
+      message: redactAgentDiagnosticText(value.message),
     };
   }
   if (value.type === 'AGENT_READY') {
@@ -379,7 +380,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
   }
   if (value.type === 'ERROR') {
-    const text = stringOrNull(value.message) ?? 'Unknown agent error';
+    const text = redactAgentDiagnosticText(value.message) ?? 'Unknown agent error';
     return {
       kind: 'error',
       message: {
@@ -390,7 +391,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'AGENT_DIAGNOSTIC') {
-    const text = stringOrNull(value.message) ?? 'Agent bridge diagnostic.';
+    const text = redactAgentDiagnosticText(value.message) ?? 'Agent bridge diagnostic.';
     const status = isAgentStatus(value.status) ? value.status : 'disconnected';
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
