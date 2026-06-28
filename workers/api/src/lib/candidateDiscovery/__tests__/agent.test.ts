@@ -83,6 +83,50 @@ describe('discoverCandidateProfile', () => {
     expect(result.keyConcepts.primary_language).toBe('go');
   });
 
+  it('extracts a balanced JSON object from provider preamble without accepting plain prose', async () => {
+    const provider = makeStubProvider(
+      'Here is the JSON object you requested:\n' +
+        JSON.stringify({
+          candidate_searchable_profile: `${PROFILE_400} They also mention JSON-shaped snippets like {"not":"outer"} inside the narrative without breaking parsing.`,
+          key_concepts: {
+            mustHaveSkills: ['Cloudflare Workers', 'TypeScript'],
+            niceToHaveSkills: ['Vitest'],
+            seniority: null,
+            primary_language: 'typescript',
+            detected_domain: 'developer-tools',
+          },
+        }) +
+        '\nDone.',
+    );
+
+    const result = await discoverCandidateProfile({
+      provider,
+      parsed: { skills: ['TypeScript', 'Cloudflare Workers'] },
+    });
+
+    expect(result.keyConcepts.mustHaveSkills).toEqual(['cloudflare workers', 'typescript']);
+    expect(result.keyConcepts.primary_language).toBe('typescript');
+  });
+
+  it('rejects array-shaped provider output instead of accepting an inner object', async () => {
+    const provider = makeStubProvider([
+      {
+        candidate_searchable_profile: PROFILE_400,
+        key_concepts: {
+          mustHaveSkills: ['go'],
+          niceToHaveSkills: [],
+          seniority: 'senior',
+          primary_language: 'go',
+          detected_domain: 'infrastructure',
+        },
+      },
+    ]);
+
+    await expect(
+      discoverCandidateProfile({ provider, parsed: { skills: ['Go'] } }),
+    ).rejects.toThrow(/JSON object/i);
+  });
+
   it('throws if the profile is shorter than MIN_PROFILE_CHARS', async () => {
     const provider = makeStubProvider({
       candidate_searchable_profile: 'too short',

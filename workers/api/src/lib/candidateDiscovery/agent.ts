@@ -83,6 +83,54 @@ function stripCodeFences(raw: string): string {
     .trim();
 }
 
+function extractFirstJsonObject(raw: string): string | null {
+  const start = raw.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i]!;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseJsonObject(candidate: string): Record<string, unknown> | null {
+  const parsed = JSON.parse(candidate) as unknown;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  return null;
+}
+
 function coerceStringArray(value: unknown, max: number): string[] {
   if (!Array.isArray(value)) return [];
   const out: string[] = [];
@@ -115,14 +163,28 @@ function coerceSeniority(value: unknown): SeniorityBand | null {
 
 function parseJsonResponse(raw: string): Record<string, unknown> {
   const cleaned = stripCodeFences(raw);
+  const firstNonWhitespace = cleaned.trimStart()[0];
+
   try {
-    const parsed = JSON.parse(cleaned);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
+    const parsed = parseJsonObject(cleaned);
+    if (parsed) return parsed;
   } catch {
-    // fall through
+    // Try a balanced-object extraction below. Some edge LLM responses include
+    // a short preamble or trailing note even when forceJson is set.
   }
+
+  if (firstNonWhitespace !== '[') {
+    const extracted = extractFirstJsonObject(cleaned);
+    if (extracted && extracted !== cleaned) {
+      try {
+        const parsed = parseJsonObject(extracted);
+        if (parsed) return parsed;
+      } catch {
+        // fall through
+      }
+    }
+  }
+
   throw new Error('Candidate Discovery response was not a JSON object');
 }
 
