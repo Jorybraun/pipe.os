@@ -30,7 +30,7 @@ const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500
 const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
-const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 750, 25);
+const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 3000, 25);
 const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
 const agentAuthed = Boolean(AGENT_NAME) && Boolean(DEVIN_API_KEY);
