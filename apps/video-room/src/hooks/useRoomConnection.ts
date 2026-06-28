@@ -1932,6 +1932,10 @@ export function useRoomConnection(
           const event = parseFileSystemEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
           setFileSystem((prev) => applyFileSystemEvent(prev, event));
+        } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT_REJECTED') {
+          const snapshot = parseFileSystemSnapshot(message.payload);
+          if (!snapshot) return;
+          setFileSystem(sortRoomFiles(snapshot.files));
         } else if (message.type === 'ROOM_FILE_SYSTEM_STATE') {
           const snapshot = parseFileSystemSnapshot(message.payload);
           if (!snapshot) return;

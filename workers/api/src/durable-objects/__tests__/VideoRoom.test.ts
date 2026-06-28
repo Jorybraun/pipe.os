@@ -1967,6 +1967,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       [host, 'HOST'],
       [guest, 'GUEST'],
     ]);
+    storage.set('roomFileSystem', [{
+      id: 'accepted-notes',
+      name: 'accepted-notes.txt',
+      kind: 'text',
+      content: 'Already accepted evidence.',
+      mimeType: 'text/plain',
+      createdAt: 5,
+      updatedAt: 5,
+      updatedBy: 'GUEST',
+    }]);
     const room = new VideoRoom(state);
 
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
@@ -1992,11 +2002,24 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
       type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
       reason: 'MISSING_SOURCE_EVIDENCE',
+      payload: {
+        files: [
+          expect.objectContaining({
+            id: 'accepted-notes',
+            content: 'Already accepted evidence.',
+          }),
+        ],
+      },
     }));
     expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
       type: 'ROOM_FILE_SYSTEM_EVENT',
     }));
-    expect(storage.has('roomFileSystem')).toBe(false);
+    expect(storage.get('roomFileSystem')).toEqual([
+      expect.objectContaining({
+        id: 'accepted-notes',
+        content: 'Already accepted evidence.',
+      }),
+    ]);
     expect(storage.has('fileSystemActivityLog')).toBe(false);
   });
 

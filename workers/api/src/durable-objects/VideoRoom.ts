@@ -2384,6 +2384,16 @@ export class VideoRoom {
     await this.state.storage.put('fileSystemActivityLog', next);
   }
 
+  private async sendFileSystemEventRejected(ws: WebSocket, reason: string): Promise<void> {
+    ws.send(JSON.stringify({
+      type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
+      reason,
+      payload: {
+        files: await this.getRoomFileSystem(),
+      },
+    }));
+  }
+
   /** Get all active WebSockets */
   private getAllWebSockets(): WebSocket[] {
     return this.state.getWebSockets();
@@ -3038,25 +3048,16 @@ export class VideoRoom {
 
     if (message.type === 'ROOM_FILE_SYSTEM_EVENT') {
       if (this.sessionStatus === 'ENDED') {
-        ws.send(JSON.stringify({
-          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
-          reason: 'ROOM_ENDED',
-        }));
+        await this.sendFileSystemEventRejected(ws, 'ROOM_ENDED');
         return;
       }
       const event = this.parseFileSystemEvent(message.payload);
       if (!event) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
-          reason: 'INVALID_EVENT',
-        }));
+        await this.sendFileSystemEventRejected(ws, 'INVALID_EVENT');
         return;
       }
       if (!this.hasSourceBackedFileEvidence(event, senderRole)) {
-        ws.send(JSON.stringify({
-          type: 'ROOM_FILE_SYSTEM_EVENT_REJECTED',
-          reason: 'MISSING_SOURCE_EVIDENCE',
-        }));
+        await this.sendFileSystemEventRejected(ws, 'MISSING_SOURCE_EVIDENCE');
         return;
       }
       const enrichedEvent = await this.enrichFileSystemEvent(event);

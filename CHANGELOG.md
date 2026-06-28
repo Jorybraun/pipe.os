@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Rejected shared Notepad/Paint file events now return the Durable Object's authoritative file snapshot so clients roll back optimistic file changes that were not accepted as source-backed evidence.
 - Authoritative shared desktop snapshots now remove stale locally optimistic Win95 windows that are no longer accepted by the Durable Object while preserving local bootstrap call/chat/workspace windows, preventing rejected or missed close events from leaving one participant's desktop out of sync.
 - Rejected shared desktop events now return the Durable Object's authoritative surface/window snapshot, allowing clients to roll back optimistic local 95/standard-call state when source-backed desktop evidence is refused.
 - Reconnected room clients now re-apply the Durable Object's authoritative shared surface snapshot unless a fresh local surface toggle is still pending, keeping host and guest synced when one returns from 95 Until Infinity to the standard call after the other briefly disconnects.
