@@ -7,6 +7,7 @@ function redactDiagnosticText(value) {
   return String(value || '')
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
     .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
     .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
     .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]');
 }

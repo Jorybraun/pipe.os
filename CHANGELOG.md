@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin container bridge diagnostics now redact bare Cognition/Devin service-token strings before they can appear in chat, session events, or hypergraph evidence.
 - Clippy user-prompt evidence now records browser-to-bridge CHAT submission without Devin attribution, and HTTP, Durable Object, and replay validators reject human prompts that stamp an agent identity.
 - 95 room assessment evidence now preserves explicit Clippy/Devin bridge agent identity from `agent`/`agentName` metadata and leaves missing agent ids absent instead of defaulting assessment actors to Devin.
 - Clippy UI action evidence from tray and prompt clicks now rejects any agent attribution server-side, keeping human Clippy interactions separate from real Devin bridge evidence.
