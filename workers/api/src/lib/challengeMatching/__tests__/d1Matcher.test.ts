@@ -54,6 +54,10 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const assessmentLayerMigration = readFileSync(
+  new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+  'utf8',
+);
 
 type SqlValue = string | number | null;
 
@@ -2082,6 +2086,8 @@ describe('matchCandidateToReviewChallenge', () => {
       contentHash: await sha256(roleExactText),
     }];
 
+    sqlite.exec(assessmentLayerMigration);
+
     const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1', {
       roleContextId: 'role-context-mui-popover',
       roleSnapshotId: 'role-context:mui-popover:source-backed:simple-jd-v1',
@@ -2253,6 +2259,78 @@ describe('matchCandidateToReviewChallenge', () => {
     const matchConceptKeys = matchConcepts.map((row) => row.canonical_key);
     expect(matchConceptKeys).toContain('term:patient-click-threshold');
     expect(matchConceptKeys.some((key) => key === 'term:popover' || key === 'term:popover-trigger')).toBe(true);
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT mode, state, candidate_id, workspace_id, metadata_json
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:repo-match:${result.matchRunId}`) as {
+      mode: string;
+      state: string;
+      candidate_id: string;
+      workspace_id: string;
+      metadata_json: string;
+    };
+    expect(assessmentSession).toEqual(expect.objectContaining({
+      mode: 'REPO_MATCHING',
+      state: 'IN_PROGRESS',
+      candidate_id: 'candidate-1',
+      workspace_id: 'workspace-1',
+    }));
+    expect(JSON.parse(assessmentSession.metadata_json)).toEqual(expect.objectContaining({
+      matchRunId: result.matchRunId,
+      roleContextId: 'role-context-mui-popover',
+      selectedPacketId: data.packet.id,
+      source: 'match_runs',
+    }));
+
+    const assessmentRefs = sqlite.prepare(
+      `SELECT r.source_ref_type, r.source_ref_id, r.evidence_role, r.exact_text, r.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.ingestion_key = ?
+        ORDER BY r.evidence_role, r.source_ref_type, r.source_ref_id`,
+    ).all(`assessment-event:repo-match:${result.matchRunId}:decision`) as Array<{
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    }>;
+    expect(assessmentRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source_ref_type: 'match_run',
+        source_ref_id: result.matchRunId,
+        evidence_role: 'decision_record',
+      }),
+      expect.objectContaining({
+        source_ref_type: 'review_challenge_packet',
+        source_ref_id: data.packet.id,
+        evidence_role: 'selected_packet',
+        content_hash: data.packet.contentHash,
+      }),
+      expect.objectContaining({
+        source_ref_type: 'role_source',
+        source_ref_id: 'role-source-mui-popover',
+        evidence_role: 'role_source',
+        exact_text: roleExactText,
+      }),
+      expect.objectContaining({
+        source_ref_type: 'source_span',
+        evidence_role: 'selected_candidate_evidence',
+        exact_text: transcriptText,
+      }),
+    ]));
+    expect(assessmentRefs.some((ref) =>
+      ref.source_ref_type === 'match_run'
+      && ref.exact_text.includes(`"selectedPacketId":"${data.packet.id}"`)
+      && ref.exact_text.includes('"status":"MATCHED"')
+    )).toBe(true);
+    expect(assessmentRefs.some((ref) =>
+      ref.source_ref_type === 'repo_source_span'
+      && ref.evidence_role === 'selected_repo_evidence'
+      && ref.exact_text.includes('PATIENT_CLICK_THRESHOLD = 500')
+    )).toBe(true);
   });
 
   it('auto-matches roleless resume evidence to a live-shaped mui/base-ui PR packet', async () => {

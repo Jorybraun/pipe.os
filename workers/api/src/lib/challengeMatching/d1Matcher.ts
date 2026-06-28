@@ -24,6 +24,7 @@ import {
 import { LivingContextStore } from '../livingContext/persistence';
 import { normalizeOpenTermSurface, openSemanticTerm } from '../livingContext/openTerms';
 import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import { ingestMatchRunAssessmentEvidence } from '../assessmentLayer/matchEvidence';
 import type {
   ContextRecordConceptInput,
   ContextRecordEntityInput,
@@ -1743,6 +1744,15 @@ export async function matchCandidateToReviewChallenge(
     }))),
     selected?.challenge.id ?? null,
   ).run();
+
+  await ingestMatchRunAssessmentEvidence(db, {
+    matchRunId,
+    candidateSourceRefs: selected?.alignments.flatMap((entry) => entry.atom.sourceRefs) ?? [],
+    repoSourceRefs: selected?.alignments.flatMap((entry) => entry.demand.sourceRefs) ?? [],
+    roleSourceReferences: selected
+      ? selectedRoleSourcesForAlignment(selected, options.roleSourceReferences ?? [])
+      : [],
+  });
 
   const contextStore = new LivingContextStore(db);
   const matchConcepts = await buildMatchContextConcepts(contextStore, {
