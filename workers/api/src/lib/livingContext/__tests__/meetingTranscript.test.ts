@@ -1183,6 +1183,42 @@ describe('meeting transcript living-context ingestion', () => {
     expect(contextRecordSpanText.map((row) => row.exact_text)).toEqual([
       'I designed a phosphor lattice accumulator for low-light signal recovery.',
     ]);
+    const directContextRef = sqlite.prepare(
+      `SELECT crsr.source_ref_type, crsr.source_ref_id, crsr.evidence_role,
+              crsr.exact_text, crsr.content_hash, crsr.locator_json, crsr.metadata_json
+         FROM context_record_source_refs crsr
+         JOIN context_records cr ON cr.id = crsr.context_record_id
+        WHERE cr.record_type = 'meeting_transcript_assertion'`,
+    ).get() as {
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+      locator_json: string;
+      metadata_json: string;
+    };
+    expect(directContextRef).toMatchObject({
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_assertion_source',
+      exact_text: 'I designed a phosphor lattice accumulator for low-light signal recovery.',
+      content_hash: expect.any(String),
+    });
+    expect(directContextRef.content_hash).toMatch(/^content_[a-f0-9]{32}$/);
+    expect(JSON.parse(directContextRef.locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      stableSegmentId: 'guest-1',
+      speakerRole: 'guest',
+      channel: 1,
+      timestampStartMs: 2100,
+      timestampEndMs: 6500,
+    });
+    expect(JSON.parse(directContextRef.metadata_json)).toMatchObject({
+      sourceKind: 'meeting_transcript.assertion_source_span',
+      provider: 'deepgram-multichannel',
+      confidence: 0.97,
+      contactId: 'contact-1',
+    });
 
     // Signal snapshot reflects the open concept.
     expect(sqlite.prepare(

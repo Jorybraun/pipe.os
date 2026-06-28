@@ -88,6 +88,25 @@ interface CanonicalTranscript {
   segments: CanonicalSegment[];
 }
 
+interface TranscriptSourceSpanRef {
+  id: string;
+  contactId: string | null;
+  stableSegmentId: string;
+  exactText: string;
+  contentHash: string;
+  charStart: number;
+  charEnd: number;
+  lineStart: number;
+  lineEnd: number;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  speakerLabel: string | null;
+  speakerRole: string | null;
+  channel: number | null;
+  confidence: number | null;
+  metadata: JsonObject | undefined;
+}
+
 interface ParticipantRow {
   contact_id: string;
   role: string;
@@ -636,11 +655,9 @@ export async function ingestMeetingTranscriptToLivingContext(
     version = { id: persisted.id, version_number: versionNumber };
   }
 
-  const spanBySegmentId = new Map<string, {
-    id: string;
-    contactId: string | null;
-  }>();
+  const spanBySegmentId = new Map<string, TranscriptSourceSpanRef>();
   for (const segment of canonical.segments) {
+    const segmentContentHash = await deterministicEntityId('content', segment.text);
     const span = await store.createSourceSpan({
       ingestionKey: `meeting:${input.meetingId}:transcript:${version.id}:segment:${segment.stableSegmentId}`,
       artifactVersionId: version.id,
@@ -693,6 +710,20 @@ export async function ingestMeetingTranscriptToLivingContext(
     spanBySegmentId.set(segment.stableSegmentId, {
       id: span.id,
       contactId: attributed ? segment.contactId ?? null : null,
+      stableSegmentId: segment.stableSegmentId,
+      exactText: segment.text,
+      contentHash: segmentContentHash,
+      charStart: segment.charStart,
+      charEnd: segment.charEnd,
+      lineStart: segment.lineStart,
+      lineEnd: segment.lineEnd,
+      timestampStartMs: segment.timestampStartMs,
+      timestampEndMs: segment.timestampEndMs,
+      speakerLabel: segment.speakerLabel ?? null,
+      speakerRole: segment.speakerRole ?? null,
+      channel: segment.channel ?? null,
+      confidence: segment.confidence ?? null,
+      metadata: segment.metadata,
     });
   }
 
@@ -758,11 +789,41 @@ export async function ingestMeetingTranscriptToLivingContext(
       confidence: null,
       extractionVersion: 'meeting-transcript-ingestion-v1',
       observedAt,
-      sources: canonical.segments.map((segment) => ({
-        sourceSpanId: spanBySegmentId.get(segment.stableSegmentId)?.id,
-        evidenceRole: 'transcript_segment',
-        exactText: segment.text,
-      })),
+      sources: canonical.segments.flatMap((segment) => {
+        const sourceSpan = spanBySegmentId.get(segment.stableSegmentId);
+        if (!sourceSpan) return [];
+        return [{
+          sourceSpanId: sourceSpan.id,
+          sourceRefType: 'source_span',
+          sourceRefId: sourceSpan.id,
+          evidenceRole: 'transcript_segment',
+          locator: {
+            meetingId: input.meetingId,
+            scheduledInterviewId: input.scheduledInterviewId ?? null,
+            artifactId: artifact.id,
+            artifactVersionId: version.id,
+            stableSegmentId: sourceSpan.stableSegmentId,
+            charStart: sourceSpan.charStart,
+            charEnd: sourceSpan.charEnd,
+            lineStart: sourceSpan.lineStart,
+            lineEnd: sourceSpan.lineEnd,
+            timestampStartMs: sourceSpan.timestampStartMs,
+            timestampEndMs: sourceSpan.timestampEndMs,
+            speakerRole: sourceSpan.speakerRole,
+            speakerLabel: sourceSpan.speakerLabel,
+            channel: sourceSpan.channel,
+          },
+          exactText: sourceSpan.exactText,
+          contentHash: sourceSpan.contentHash,
+          metadata: {
+            sourceKind: 'meeting_transcript.source_span',
+            provider: input.provider ?? null,
+            confidence: sourceSpan.confidence,
+            contactId: sourceSpan.contactId,
+            segmentMetadata: sourceSpan.metadata ?? {},
+          },
+        }];
+      }),
       entities: [
         {
           entityType: 'meeting',
@@ -832,7 +893,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       if (!identity) continue;
       const sourceSpans = [...new Set(extracted.sourceSegmentIds)]
         .map((segmentId) => spanBySegmentId.get(segmentId))
-        .filter((span): span is { id: string; contactId: string | null } => Boolean(span));
+        .filter((span): span is TranscriptSourceSpanRef => Boolean(span));
       if (
         sourceSpans.length === 0
         || !extracted.sourceSegmentIds.includes(extracted.subjectSegmentId)
@@ -943,7 +1004,34 @@ export async function ingestMeetingTranscriptToLivingContext(
         observedAt,
         sources: sourceSpans.map((sourceSpan) => ({
           sourceSpanId: sourceSpan.id,
-          evidenceRole: 'source',
+          sourceRefType: 'source_span',
+          sourceRefId: sourceSpan.id,
+          evidenceRole: 'transcript_assertion_source',
+          locator: {
+            meetingId: input.meetingId,
+            scheduledInterviewId: input.scheduledInterviewId ?? null,
+            artifactId: artifact.id,
+            artifactVersionId: version.id,
+            stableSegmentId: sourceSpan.stableSegmentId,
+            charStart: sourceSpan.charStart,
+            charEnd: sourceSpan.charEnd,
+            lineStart: sourceSpan.lineStart,
+            lineEnd: sourceSpan.lineEnd,
+            timestampStartMs: sourceSpan.timestampStartMs,
+            timestampEndMs: sourceSpan.timestampEndMs,
+            speakerRole: sourceSpan.speakerRole,
+            speakerLabel: sourceSpan.speakerLabel,
+            channel: sourceSpan.channel,
+          },
+          exactText: sourceSpan.exactText,
+          contentHash: sourceSpan.contentHash,
+          metadata: {
+            sourceKind: 'meeting_transcript.assertion_source_span',
+            provider: input.provider ?? null,
+            confidence: sourceSpan.confidence,
+            contactId: sourceSpan.contactId,
+            segmentMetadata: sourceSpan.metadata ?? {},
+          },
         })),
         entities: [
           {

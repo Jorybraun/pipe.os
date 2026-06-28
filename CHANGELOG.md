@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Transcript-derived assertion context records now preserve self-contained exact-text `source_span` refs with content hashes, segment locators, speaker roles, timestamps, provider confidence, and contact attribution so scored/person evidence can cite the spoken moment without reconstructing it from a broader transcript packet.
 - Source-backed 95 room surface changes, Start menu toggles, browser navigation, window lifecycle/data/state updates, cursor samples, media controls, recording state, workspace state, and code-server opens now emit direct source refs and graph entities in living-context and assessment evidence instead of only the broad meeting-session event packet.
 - Clippy UI actions and real bridge room-action suggestions now preserve direct `clippy_ui_action` / `clippy_agent_room_action` exact-text source refs in living-context and assessment evidence, so tray clicks, chat closes, auth intents, and agent suggestions are citeable without unpacking the broader room event packet.
 - Room chat, proactive Clippy prompts, Clippy user prompts, and real agent stdout replies now preserve direct exact-text source refs in living-context and assessment evidence, so chat turns can be cited without unpacking the broader room event packet.
