@@ -13,6 +13,7 @@ import type { ClippyTrayStatus } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 import type { RoomCursorPresence } from '../hooks/useRoomConnection';
+import type { WindowStateSource } from '../lib/windowEvidence';
 
 interface DesktopIcon {
   windowType: WindowType;
@@ -42,9 +43,9 @@ interface Win95DesktopProps {
   clippyStatus?: ClippyTrayStatus;
   renderWindowContent: (win: WindowState) => ReactNode;
   onWindowClose?: (id: string) => void;
-  onWindowFocus?: (id: string) => void;
-  onWindowMinimize?: (id: string) => void;
-  onWindowRestore?: (id: string) => void;
+  onWindowFocus?: (id: string, stateSource?: WindowStateSource) => void;
+  onWindowMinimize?: (id: string, stateSource?: WindowStateSource) => void;
+  onWindowRestore?: (id: string, stateSource?: WindowStateSource) => void;
   onWindowMaximize?: (id: string) => void;
   onWindowMove?: (id: string, x: number, y: number) => void;
   onWindowMoveEnd?: (id: string, x: number, y: number) => void;
@@ -84,11 +85,23 @@ export function Win95Desktop({
   const handleWindowClick = useCallback(
     (win: WindowState): void => {
       if (win.minimized) {
-        (onWindowRestore ?? wm.restoreWindow)(win.id);
+        if (onWindowRestore) {
+          onWindowRestore(win.id, 'win95_taskbar');
+        } else {
+          wm.restoreWindow(win.id);
+        }
       } else if (win.focused) {
-        (onWindowMinimize ?? wm.minimizeWindow)(win.id);
+        if (onWindowMinimize) {
+          onWindowMinimize(win.id, 'win95_taskbar');
+        } else {
+          wm.minimizeWindow(win.id);
+        }
       } else {
-        (onWindowFocus ?? wm.focusWindow)(win.id);
+        if (onWindowFocus) {
+          onWindowFocus(win.id, 'win95_taskbar');
+        } else {
+          wm.focusWindow(win.id);
+        }
       }
     },
     [onWindowFocus, onWindowMinimize, onWindowRestore, wm],

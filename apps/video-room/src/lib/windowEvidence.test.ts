@@ -120,12 +120,14 @@ describe('window evidence', () => {
       actor: 'host',
       windowId: 'chat',
       patch: { minimized: true, focused: false, title: 'Chat' },
+      source: 'win95_taskbar',
       surface: 'win95',
       roomPhase: 'connected',
       capturedAtMs: 4000,
     })).toMatchObject({
       properties: {
         action: 'minimize',
+        stateSource: 'win95_taskbar',
         windowStateChangeId: 'window-state:host:4000:chat:minimize',
         capturedAtMs: 4000,
         statePatch: { minimized: true, focused: false },

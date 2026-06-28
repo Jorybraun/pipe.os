@@ -125,6 +125,11 @@ const WINDOW_STATE_ACTIONS = new Set([
   'restore_size',
   'update',
 ]);
+const WINDOW_STATE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_window_chrome',
+  'win95_taskbar',
+]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
 const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
@@ -514,7 +519,8 @@ const sessionEventSchema = z.object({
     const stateKeysOk = stateKeys.length === sortedPatchKeys.length
       && stateKeys.every((key, index) => key === sortedPatchKeys[index]);
     const sourceOk = properties.source === 'window_state_client_submit'
-      && properties.stateSource === 'win95_window_chrome';
+      && typeof properties.stateSource === 'string'
+      && WINDOW_STATE_SOURCES.has(properties.stateSource);
     const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
     const actorOk = (event.actor === 'host' || event.actor === 'guest')
       && properties.actor === event.actor;

@@ -542,7 +542,7 @@ describe('sessionEvents', () => {
               minimized: false,
               evidence: {
                 source: 'window_state_client_submit',
-                stateSource: 'win95_window_chrome',
+                stateSource: 'win95_taskbar',
                 actor: 'guest',
                 windowId: 'browser',
                 action: 'restore_or_focus',
@@ -1311,7 +1311,7 @@ describe('sessionEvents', () => {
       expect(events[2]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'window_state_client_submit',
-        stateSource: 'win95_window_chrome',
+        stateSource: 'win95_taskbar',
         actor: 'guest',
         windowId: 'browser',
         action: 'restore_or_focus',

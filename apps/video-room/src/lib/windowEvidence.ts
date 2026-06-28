@@ -9,6 +9,10 @@ export type WindowLifecycleSource =
   | 'win95_taskbar'
   | 'clippy_action'
   | 'shared_state_sync';
+export type WindowStateSource =
+  | 'win95_desktop_ui'
+  | 'win95_window_chrome'
+  | 'win95_taskbar';
 
 export interface WindowLifecycleEvidence {
   text: string;
@@ -119,6 +123,7 @@ export function buildWindowStateUpdateEvidence(input: {
   actor: WindowEvidenceActor;
   windowId: string;
   patch: Record<string, unknown>;
+  source?: WindowStateSource;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   capturedAtMs: number;
@@ -142,7 +147,7 @@ export function buildWindowStateUpdateEvidence(input: {
     text: `Window state updated: ${input.windowId}`,
     properties: {
       source: 'window_state_client_submit',
-      stateSource: 'win95_window_chrome',
+      stateSource: input.source ?? 'win95_window_chrome',
       actor: input.actor,
       windowId: input.windowId,
       action,

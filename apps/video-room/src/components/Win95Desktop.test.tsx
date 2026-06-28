@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Win95Desktop } from './Win95Desktop';
 import type { WindowManagerApi, WindowType } from '../hooks/useWindowManager';
@@ -82,5 +82,34 @@ describe('Win95Desktop', () => {
 
     fireEvent.click(clippy);
     expect(onClippyClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports taskbar window restores with taskbar provenance', () => {
+    const wm = makeWindowManager();
+    wm.windows = [{
+      id: 'browser',
+      windowType: 'browser',
+      title: 'Microsoft Edge',
+      x: 100,
+      y: 80,
+      width: 640,
+      height: 420,
+      zIndex: 4,
+      minimized: true,
+      maximized: false,
+      focused: false,
+    }];
+    const onWindowRestore = vi.fn();
+
+    render(
+      <Win95Desktop
+        wm={wm}
+        renderWindowContent={() => null}
+        onWindowRestore={onWindowRestore}
+      />,
+    );
+
+    fireEvent.click(within(screen.getByTestId('win95-taskbar')).getByTitle('Microsoft Edge'));
+    expect(onWindowRestore).toHaveBeenCalledWith('browser', 'win95_taskbar');
   });
 });

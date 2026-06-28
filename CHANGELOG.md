@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Win95 window state evidence now preserves whether focus/minimize/restore came from the taskbar, desktop icon, or window chrome instead of collapsing every update to window chrome.
 - Clippy-opened Win95 tool windows now persist `window_open` lifecycle evidence with `lifecycleSource: clippy_action` instead of misattributing those opens to direct desktop UI clicks.
 - Clippy’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Clippy’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.

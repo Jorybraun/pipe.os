@@ -40,6 +40,7 @@ const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renam
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const WINDOW_STATE_SOURCES = new Set(['win95_desktop_ui', 'win95_window_chrome', 'win95_taskbar']);
 
 interface SignalMessage {
   type:
@@ -757,7 +758,8 @@ export class VideoRoom {
     }
     if (event.kind === 'UPDATE_WINDOW_STATE') {
       return evidence.source === 'window_state_client_submit'
-        && evidence.stateSource === 'win95_window_chrome'
+        && typeof evidence.stateSource === 'string'
+        && WINDOW_STATE_SOURCES.has(evidence.stateSource)
         && evidence.actor === actor
         && evidence.windowId === event.windowId
         && typeof evidence.windowStateChangeId === 'string'

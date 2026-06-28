@@ -68,6 +68,7 @@ export interface SessionEvent {
 
 type RoomActivityRole = 'RECRUITER' | 'CANDIDATE' | 'HOST' | 'GUEST';
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
+const WINDOW_STATE_SOURCES = new Set(['win95_desktop_ui', 'win95_window_chrome', 'win95_taskbar']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
@@ -317,7 +318,8 @@ function hasSourceBackedWindowStateEvidence(
   return evidence !== null
     && (actor === 'host' || actor === 'guest')
     && evidence.source === 'window_state_client_submit'
-    && evidence.stateSource === 'win95_window_chrome'
+    && typeof evidence.stateSource === 'string'
+    && WINDOW_STATE_SOURCES.has(evidence.stateSource)
     && evidence.actor === actor
     && evidence.windowId === windowId
     && typeof evidence.windowStateChangeId === 'string'

@@ -319,7 +319,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         focused: true,
         evidence: {
           source: 'window_state_client_submit',
-          stateSource: 'win95_window_chrome',
+          stateSource: 'win95_taskbar',
           actor: 'host',
           windowId: 'browser',
           action: 'restore_or_focus',
@@ -361,6 +361,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           windowId: 'browser',
           evidence: expect.objectContaining({
             source: 'window_state_client_submit',
+            stateSource: 'win95_taskbar',
             windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
           }),
         }),

@@ -51,6 +51,7 @@ import {
   buildWindowLifecycleEvidence,
   buildWindowStateUpdateEvidence,
   type WindowLifecycleSource,
+  type WindowStateSource,
 } from './lib/windowEvidence';
 import {
   buildCursorPresenceEvidence,
@@ -727,13 +728,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [captureSessionEvent, room, roomActor, wm]);
 
-  const publishSharedWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
+  const publishSharedWindowState = useCallback((
+    id: string,
+    patch: WindowStatePatch,
+    stateSource: WindowStateSource = 'win95_window_chrome',
+  ): void => {
     if (room.roomSurface !== 'win95') return;
     const capturedAtMs = Date.now();
     const evidence = buildWindowStateUpdateEvidence({
       actor: roomActor,
       windowId: id,
       patch: { ...patch },
+      source: stateSource,
       surface: room.roomSurface,
       roomPhase: room.phase,
       capturedAtMs,
@@ -749,19 +755,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [captureSessionEvent, room, roomActor]);
 
-  const focusSharedWindow = useCallback((id: string): void => {
+  const focusSharedWindow = useCallback((
+    id: string,
+    stateSource: WindowStateSource = 'win95_window_chrome',
+  ): void => {
     wm.focusWindow(id);
-    publishSharedWindowState(id, { focused: true, minimized: false });
+    publishSharedWindowState(id, { focused: true, minimized: false }, stateSource);
   }, [publishSharedWindowState, wm]);
 
-  const minimizeSharedWindow = useCallback((id: string): void => {
+  const minimizeSharedWindow = useCallback((
+    id: string,
+    stateSource: WindowStateSource = 'win95_window_chrome',
+  ): void => {
     wm.minimizeWindow(id);
-    publishSharedWindowState(id, { minimized: true, focused: false });
+    publishSharedWindowState(id, { minimized: true, focused: false }, stateSource);
   }, [publishSharedWindowState, wm]);
 
-  const restoreSharedWindow = useCallback((id: string): void => {
+  const restoreSharedWindow = useCallback((
+    id: string,
+    stateSource: WindowStateSource = 'win95_window_chrome',
+  ): void => {
     wm.restoreWindow(id);
-    publishSharedWindowState(id, { minimized: false, focused: true });
+    publishSharedWindowState(id, { minimized: false, focused: true }, stateSource);
   }, [publishSharedWindowState, wm]);
 
   const maximizeSharedWindow = useCallback((id: string): void => {
@@ -1997,9 +2012,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const existing = wm.getWindowByType(windowType);
     if (existing) {
       if (existing.minimized) {
-        restoreSharedWindow(existing.id);
+        restoreSharedWindow(existing.id, 'win95_desktop_ui');
       } else {
-        focusSharedWindow(existing.id);
+        focusSharedWindow(existing.id, 'win95_desktop_ui');
       }
       return;
     }
