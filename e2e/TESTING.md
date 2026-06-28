@@ -197,6 +197,20 @@ to run only the full-submit profiles, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for
 repeated runs, and `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want
 the first failure to stop the batch.
 
+For a repeatable pilot-reliability gate with stored artifacts, use:
+
+```bash
+npm run smoke:code-review-assess-dev:loop
+```
+
+The loop runs the matrix twice by default and writes per-iteration stdout,
+stderr, and parsed summary JSON under `tmp/code-review-smoke-runs/`. Each
+iteration must include at least one completed/scored full-submit match and at
+least one blocked `repo_matching` state with `autoRefresh: false`; a green
+process exit alone is not enough. Tune with `CODE_REVIEW_SMOKE_LOOP_RUNS=3`,
+`CODE_REVIEW_SMOKE_LOOP_STOP_ON_FAILURE=0`, and
+`CODE_REVIEW_SMOKE_LOOP_OUT_DIR=<path>`.
+
 To audit the local judge/feedback improvement queue without calling an LLM:
 
 ```bash

@@ -153,6 +153,7 @@ function summarizeSmoke(profile, parsed, durationMs) {
     blockedPhase: parsed?.blockedMatch?.phase ?? null,
     blockedReason: parsed?.blockedMatch?.reason ?? null,
     blockedMatchableNodeCount: parsed?.blockedMatch?.matchableNodeCount ?? null,
+    blockedAutoRefresh: parsed?.blockedMatch?.autoRefresh ?? null,
   };
 }
 
