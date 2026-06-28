@@ -534,10 +534,21 @@ interface ScheduledCodeReviewEvidenceRefresh {
   reportId: string;
   summary: string;
   sourceSpanCount: number | null;
+  evidenceSnippets: ScheduledCodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;
   completedAt: string | null;
   updatedAt: string | null;
+}
+
+interface ScheduledCodeReviewEvidenceSnippet {
+  eventId: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string | null;
+  locator: Record<string, unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1287,6 +1298,7 @@ async function loadCodeReviewEvidenceRefresh(
     if (status !== 'READY_FOR_REPO_MATCH_REFRESH') continue;
 
     const sourceSpanCount = numberOrNull(output.sourceSpanCount);
+    const evidenceSnippets = await loadCodeReviewEvidenceSnippets(db, row.assessment_session_id);
     return {
       status,
       assessmentSessionId: row.assessment_session_id,
@@ -1296,6 +1308,7 @@ async function loadCodeReviewEvidenceRefresh(
       reportId: row.report_id,
       summary: row.report_summary,
       sourceSpanCount,
+      evidenceSnippets,
       matchRunId: optionalString(output.matchRunId) ?? optionalString(metadata.matchRunId) ?? null,
       matchStatus: optionalString(output.matchStatus) ?? optionalString(metadata.matchStatus) ?? null,
       completedAt: row.session_completed_at ?? row.report_created_at,
@@ -1304,6 +1317,52 @@ async function loadCodeReviewEvidenceRefresh(
   }
 
   return null;
+}
+
+async function loadCodeReviewEvidenceSnippets(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<ScheduledCodeReviewEvidenceSnippet[]> {
+  if (!await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')) {
+    return [];
+  }
+
+  const rows = await db.prepare(
+    `SELECT e.id AS event_id,
+            e.occurred_at,
+            r.source_ref_id,
+            r.source_span_id,
+            r.evidence_role,
+            r.locator_json,
+            r.exact_text
+       FROM assessment_evidence_events e
+       JOIN assessment_event_source_refs r ON r.event_id = e.id
+      WHERE e.session_id = ?1
+        AND e.kind = 'evidence_plan_response_span'
+        AND r.exact_text IS NOT NULL
+        AND trim(r.exact_text) <> ''
+      ORDER BY e.sequence ASC, r.id ASC
+      LIMIT 3`,
+  ).bind(assessmentSessionId).all<{
+    event_id: string;
+    occurred_at: string | null;
+    source_ref_id: string;
+    source_span_id: string | null;
+    evidence_role: string;
+    locator_json: string | null;
+    exact_text: string;
+  }>();
+
+  return (rows.results ?? []).map((row) => ({
+    eventId: row.event_id,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id,
+    evidenceRole: row.evidence_role,
+    exactText: row.exact_text,
+    occurredAt: row.occurred_at,
+    locator: parseJsonObject(row.locator_json),
+  }));
 }
 
 function parseRoleContextVersion(rcdJson: string | null): string | null {

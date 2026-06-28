@@ -1147,6 +1147,37 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       sourceSpanCount: 3,
     }));
+    const snippetText = 'I debugged checkout retry idempotency, reviewed the failing PR, and verified duplicate-delivery safeguards with regression tests.';
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type,
+        actor_id, narrative, payload_json, occurred_at, created_at
+      ) VALUES (
+        'assessment-event-refresh-ready-span-1',
+        'assessment-event:code-review-evidence-plan:assessment-plan-refresh-ready:meeting-1:artifact-v1:guest-1',
+        'assessment-plan-refresh-ready', 1, 'evidence_plan_response_span',
+        'candidate', 'candidate-1',
+        'Evidence-plan response transcript segment spoken by guest.',
+        '{}', '2026-06-22T19:00:30.000Z', '2026-06-22T19:00:30.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json,
+        created_at
+      ) VALUES (
+        'assessment-event-refresh-ready-ref-1',
+        'assessment-event-refresh-ready-span-1', 'source_span',
+        'source-span-refresh-ready-1', NULL, 'evidence_plan_response_span',
+        ?, ?, ?, '{}', '2026-06-22T19:00:30.000Z'
+      )
+    `).run(JSON.stringify({
+      meetingId: 'meeting-refresh-ready',
+      stableSegmentId: 'guest-1',
+      timestampStartMs: 0,
+      timestampEndMs: 7000,
+    }), snippetText, sha256Hex(snippetText));
 
     const app = mountSchedulingApp();
     const response = await app.request('/interviews/interview-code-review-refresh-ready');
@@ -1163,6 +1194,13 @@ describe('GET /interviews/:id detail', () => {
             sourceSpanCount: number | null;
             matchRunId: string | null;
             matchStatus: string | null;
+            evidenceSnippets: Array<{
+              eventId: string;
+              sourceRefId: string;
+              exactText: string;
+              evidenceRole: string;
+              occurredAt: string | null;
+            }>;
           } | null;
         } | null;
       };
@@ -1179,6 +1217,20 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       completedAt: '2026-06-22T19:00:00.000Z',
       updatedAt: '2026-06-22T19:01:00.000Z',
+      evidenceSnippets: [{
+        eventId: 'assessment-event-refresh-ready-span-1',
+        sourceRefId: 'source-span-refresh-ready-1',
+        sourceSpanId: null,
+        evidenceRole: 'evidence_plan_response_span',
+        exactText: snippetText,
+        occurredAt: '2026-06-22T19:00:30.000Z',
+        locator: {
+          meetingId: 'meeting-refresh-ready',
+          stableSegmentId: 'guest-1',
+          timestampStartMs: 0,
+          timestampEndMs: 7000,
+        },
+      }],
     });
   });
 

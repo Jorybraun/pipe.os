@@ -1295,6 +1295,18 @@ export default function InterviewDetailPage(): JSX.Element {
                       {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
                     </div>
                   </div>
+                  {(codeReviewEvidenceRefresh.evidenceSnippets?.length ?? 0) > 0 && (
+                    <div style={DECISION_FOLLOW_UP_ITEM}>
+                      <div style={FIELD_LABEL}>Captured source evidence</div>
+                      <div style={DECISION_FOLLOW_UP_LIST}>
+                        {codeReviewEvidenceRefresh.evidenceSnippets?.slice(0, 3).map((snippet) => (
+                          <div key={`${snippet.eventId}:${snippet.sourceRefId}`} style={CONTEXT_RECORD_NARRATIVE}>
+                            {snippet.exactText}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <button
                     data-testid="interview-code-review-refresh-match-cta"
                     onClick={() => void refreshCodeReviewMatch()}

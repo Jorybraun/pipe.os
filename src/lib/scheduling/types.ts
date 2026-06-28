@@ -253,10 +253,21 @@ export interface CodeReviewEvidenceRefresh {
   reportId: string;
   summary: string;
   sourceSpanCount: number | null;
+  evidenceSnippets?: CodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;
   completedAt: string | null;
   updatedAt: string | null;
+}
+
+export interface CodeReviewEvidenceSnippet {
+  eventId: string;
+  sourceRefId: string;
+  sourceSpanId: string | null;
+  evidenceRole: string;
+  exactText: string;
+  occurredAt: string | null;
+  locator?: Record<string, unknown>;
 }
 
 export interface LinkedMeetingSummary {

@@ -476,6 +476,18 @@ describe('InterviewDetailPage', () => {
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             completedAt: '2026-06-22T19:00:00.000Z',
             updatedAt: '2026-06-22T19:01:00.000Z',
+            evidenceSnippets: [{
+              eventId: 'assessment-event-refresh-ready-span-1',
+              sourceRefId: 'source-span-refresh-ready-1',
+              sourceSpanId: 'source-span-refresh-ready-1',
+              evidenceRole: 'evidence_plan_response_span',
+              exactText: 'I debugged checkout retry idempotency, reviewed the failing PR, and verified duplicate-delivery safeguards with regression tests.',
+              occurredAt: '2026-06-22T19:00:30.000Z',
+              locator: {
+                meetingId: 'meeting-refresh-ready',
+                stableSegmentId: 'guest-1',
+              },
+            }],
           },
         },
       }),
@@ -491,6 +503,8 @@ describe('InterviewDetailPage', () => {
     expect(refresh).toHaveTextContent('Evidence call captured 3 source-backed transcript spans for repo-match refresh.');
     expect(refresh).toHaveTextContent('3 source-backed transcript spans are linked to this original code-review match.');
     expect(refresh).toHaveTextContent('Use the new source-backed spans to try PR selection again.');
+    expect(refresh).toHaveTextContent('Captured source evidence');
+    expect(refresh).toHaveTextContent('I debugged checkout retry idempotency, reviewed the failing PR, and verified duplicate-delivery safeguards with regression tests.');
     expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('RERUN REPO MATCH');
     expect(screen.getByTestId('interview-code-review-open-evidence-call')).toHaveTextContent('OPEN EVIDENCE CALL');
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
