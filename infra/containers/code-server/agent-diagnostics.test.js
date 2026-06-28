@@ -224,6 +224,8 @@ describe('agent diagnostics', () => {
         autoExecute: false,
         url: null,
         observedAt: '2026-06-27T21:10:00.000Z',
+        capturedAtMs: 1782594600000,
+        clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
         bridgePersisted: true,
       },
     });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildClippyActionEventId,
   buildClippyAgentChatFallbackEvidence,
   buildClippyAgentChatResponseId,
   buildClippyAgentStatusEvidence,
@@ -16,6 +17,7 @@ describe('clippy evidence', () => {
       actionId: 'open-clippy-chat',
       origin: 'tray',
       actor: 'guest',
+      capturedAtMs: 1782594000000,
       surface: 'win95',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
@@ -30,6 +32,8 @@ describe('clippy evidence', () => {
         executedBy: 'guest',
         actionSource: 'win95_taskbar_tray',
         executionStatus: 'opened',
+        capturedAtMs: 1782594000000,
+        clippyActionEventId: 'clippy-action:guest:1782594000000:clippy_tray_ui:tray:opened:open-clippy-chat',
         surface: 'win95',
         roomPhase: 'connected',
         workspaceStatus: 'READY',
@@ -46,6 +50,7 @@ describe('clippy evidence', () => {
       actionId: 'dismiss-clippy',
       origin: 'prompt',
       actor: 'host',
+      capturedAtMs: 1782594060000,
       surface: 'win95',
       roomPhase: 'connected',
       workspaceStatus: null,
@@ -59,6 +64,8 @@ describe('clippy evidence', () => {
         origin: 'prompt',
         actionSource: 'clippy_prompt_ui',
         executionStatus: 'dismissed',
+        capturedAtMs: 1782594060000,
+        clippyActionEventId: 'clippy-action:host:1782594060000:clippy_prompt_ui:prompt:dismissed:dismiss-clippy',
         agentResponseClaimed: false,
       },
     });
@@ -70,6 +77,7 @@ describe('clippy evidence', () => {
       text: 'Clippy action: start recording',
       origin: 'prompt',
       actor: 'host',
+      capturedAtMs: 1782594200000,
       surface: 'win95',
       roomPhase: 'connected',
       workspaceStatus: 'READY',
@@ -90,6 +98,8 @@ describe('clippy evidence', () => {
         agentActionObservedAt: null,
         agentActionBridgePersisted: null,
         executionStatus: 'executed',
+        capturedAtMs: 1782594200000,
+        clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
         autoExecute: null,
         url: null,
         surface: 'win95',
@@ -107,6 +117,7 @@ describe('clippy evidence', () => {
       text: 'Agent action: open terminal',
       origin: 'agent',
       actor: 'guest',
+      capturedAtMs: 1782594660000,
       agentAction: {
         id: 'open-terminal',
         label: 'Open Terminal',
@@ -135,9 +146,22 @@ describe('clippy evidence', () => {
         agentActionObservedAt: '2026-06-27T21:10:00.000Z',
         agentActionBridgePersisted: true,
         executionStatus: 'executed',
+        capturedAtMs: 1782594660000,
+        clippyActionEventId: 'clippy-action:guest:1782594660000:clippy_agent_bridge:agent:executed:open-terminal',
         agentResponseClaimed: false,
       },
     });
+  });
+
+  it('derives Clippy action ids from actor, source, origin, status, action, and capture time', () => {
+    expect(buildClippyActionEventId({
+      actor: 'agent',
+      capturedAtMs: 1782594600000,
+      source: 'clippy_agent_bridge',
+      origin: 'agent',
+      executionStatus: 'suggested',
+      actionId: 'open-terminal',
+    })).toBe('clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal');
   });
 
   it('captures user prompts as browser-to-bridge evidence without claiming an agent response', () => {

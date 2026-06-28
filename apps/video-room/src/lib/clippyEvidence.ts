@@ -69,6 +69,28 @@ function clippyUiActionStatus(actionId: ClippyUiActionId): string {
   return actionId === 'open-clippy-chat' ? 'opened' : 'dismissed';
 }
 
+export function buildClippyActionEventId(input: {
+  actor: ClippyEvidenceActor | 'agent';
+  capturedAtMs: number;
+  source: 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_agent_bridge';
+  origin: ClippyUiActionOrigin | ClippyRoomActionOrigin;
+  executionStatus: 'opened' | 'dismissed' | 'executed' | 'suggested';
+  actionId: string;
+}): string {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
+  return [
+    'clippy-action',
+    input.actor,
+    String(capturedAtMs),
+    input.source,
+    input.origin,
+    input.executionStatus,
+    safeEvidenceIdPart(input.actionId),
+  ].join(':');
+}
+
 export function buildClippyAgentStatusEventId(input: {
   agentName: string | null;
   capturedAtMs: number;
@@ -111,21 +133,34 @@ export function buildClippyUiActionEvidence(input: {
   actionId: ClippyUiActionId;
   origin: ClippyUiActionOrigin;
   actor: ClippyEvidenceActor;
+  capturedAtMs: number;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
   workspaceSessionId: string | null;
   agentWorkspaceReady: boolean;
 }): ClippyUiActionEvidence {
+  const source = input.origin === 'tray' ? 'clippy_tray_ui' : 'clippy_prompt_ui';
+  const executionStatus = clippyUiActionStatus(input.actionId) as 'opened' | 'dismissed';
+  const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
     text: clippyUiActionText(input.actionId),
     properties: {
-      source: input.origin === 'tray' ? 'clippy_tray_ui' : 'clippy_prompt_ui',
+      source,
       actionId: input.actionId,
       origin: input.origin,
       executedBy: input.actor,
       actionSource: input.origin === 'tray' ? 'win95_taskbar_tray' : 'clippy_prompt_ui',
-      executionStatus: clippyUiActionStatus(input.actionId),
+      executionStatus,
+      capturedAtMs,
+      clippyActionEventId: buildClippyActionEventId({
+        actor: input.actor,
+        capturedAtMs,
+        source,
+        origin: input.origin,
+        executionStatus,
+        actionId: input.actionId,
+      }),
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -142,6 +177,7 @@ export function buildClippyRoomActionExecutionEvidence(input: {
   text: string;
   origin: ClippyRoomActionOrigin;
   actor: ClippyEvidenceActor;
+  capturedAtMs: number;
   agentAction?: AgentRoomAction;
   surface: RoomSurface;
   roomPhase: RoomPhase;
@@ -149,10 +185,12 @@ export function buildClippyRoomActionExecutionEvidence(input: {
   workspaceSessionId: string | null;
 }): ClippyRoomActionExecutionEvidence {
   const agent = input.agentAction?.agentName ?? 'devin';
+  const source = input.origin === 'agent' ? 'clippy_agent_bridge' : 'clippy_prompt_ui';
+  const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
     text: input.text,
     properties: {
-      source: input.origin === 'agent' ? 'clippy_agent_bridge' : 'clippy_prompt_ui',
+      source,
       actionId: input.actionId,
       origin: input.origin,
       executedBy: input.actor,
@@ -167,6 +205,15 @@ export function buildClippyRoomActionExecutionEvidence(input: {
       agentActionObservedAt: input.agentAction?.observedAt ?? null,
       agentActionBridgePersisted: input.agentAction?.persisted ?? null,
       executionStatus: 'executed',
+      capturedAtMs,
+      clippyActionEventId: buildClippyActionEventId({
+        actor: input.actor,
+        capturedAtMs,
+        source,
+        origin: input.origin,
+        executionStatus: 'executed',
+        actionId: input.actionId,
+      }),
       autoExecute: input.agentAction?.autoExecute ?? null,
       url: input.agentAction?.url ?? null,
       surface: input.surface,

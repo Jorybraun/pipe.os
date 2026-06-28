@@ -129,6 +129,7 @@ const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
 const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
 const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
+const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_agent_bridge):(tray|prompt|agent):(opened|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -630,7 +631,23 @@ const sessionEventSchema = z.object({
   }
   if (event.type === 'clippy_action') {
     const source = properties.source;
+    const capturedAtMs = properties.capturedAtMs;
     const actionIdOk = hasString(properties.actionId);
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const expectedActionEventId = (
+      capturedAtOk
+      && hasString(source)
+      && hasString(properties.origin)
+      && hasString(properties.executionStatus)
+      && hasString(properties.actionId)
+    )
+      ? `clippy-action:${event.actor}:${capturedAtMs}:${source}:${properties.origin}:${properties.executionStatus}:${safeEvidenceIdPart(properties.actionId)}`
+      : null;
+    const actionEventIdOk = typeof properties.clippyActionEventId === 'string'
+      && CLIPPY_ACTION_EVENT_ID_RE.test(properties.clippyActionEventId)
+      && properties.clippyActionEventId === expectedActionEventId;
     const surfaceContextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase);
     if (typeof source === 'string' && CLIPPY_UI_SOURCES.has(source)) {
@@ -642,16 +659,18 @@ const sessionEventSchema = z.object({
       const statusOk = typeof properties.executionStatus === 'string'
         && CLIPPY_UI_EXECUTION_STATUSES.has(properties.executionStatus);
       const noFakeAgentOk = properties.agentResponseClaimed === false;
-      if (actionIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
+      if (actionIdOk && capturedAtOk && actionEventIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Clippy UI action evidence must come from tray or prompt UI with actor, action source, execution status, surface, and no claimed agent response.',
+        message: 'Clippy UI action evidence must come from tray or prompt UI with actor, stable action id, capture timestamp, action source, execution status, surface, and no claimed agent response.',
         path: ['properties'],
       });
       return;
     }
     if (source === 'clippy_agent_bridge') {
       const commonOk = actionIdOk
+        && capturedAtOk
+        && actionEventIdOk
         && properties.origin === 'agent'
         && hasString(properties.actionSource)
         && hasString(properties.agent)
@@ -671,7 +690,7 @@ const sessionEventSchema = z.object({
       if (commonOk && (suggestedOk || executedOk)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Clippy agent action evidence must come from the real bridge with ROOM_ACTION metadata and either a suggested agent event or a browser execution linked to that bridge event.',
+        message: 'Clippy agent action evidence must come from the real bridge with stable action id, capture timestamp, ROOM_ACTION metadata, and either a suggested agent event or a browser execution linked to that bridge event.',
         path: ['properties'],
       });
       return;

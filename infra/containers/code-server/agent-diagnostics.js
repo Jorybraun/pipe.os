@@ -111,6 +111,26 @@ function agentChatResponseId({
   ].join(':');
 }
 
+function clippyActionEventId({
+  actor = 'agent',
+  capturedAtMs = 0,
+  source = 'clippy_agent_bridge',
+  origin = 'agent',
+  executionStatus = 'suggested',
+  actionId = 'unknown-action',
+}) {
+  const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
+  return [
+    'clippy-action',
+    safeEvidenceIdPart(actor),
+    String(captured),
+    safeEvidenceIdPart(source),
+    safeEvidenceIdPart(origin),
+    safeEvidenceIdPart(executionStatus),
+    safeEvidenceIdPart(actionId),
+  ].join(':');
+}
+
 function agentDiagnosticMessage({
   agent = 'devin',
   status = 'disconnected',
@@ -275,6 +295,8 @@ function agentRoomActionSessionEvent({
   const rawAction = action && typeof action === 'object' ? action : {};
   const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, 'unknown-action', 120)
     ?? 'unknown-action';
+  const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
+  const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   return {
     type: 'clippy_action',
     text: `${safeAgent} suggested room action: ${actionId}`,
@@ -293,6 +315,15 @@ function agentRoomActionSessionEvent({
       autoExecute: typeof rawAction.autoExecute === 'boolean' ? rawAction.autoExecute : null,
       url: safeActionString(rawAction.url ?? rawAction.href, null, 2048),
       observedAt,
+      capturedAtMs,
+      clippyActionEventId: clippyActionEventId({
+        actor: 'agent',
+        capturedAtMs,
+        source: 'clippy_agent_bridge',
+        origin: 'agent',
+        executionStatus: 'suggested',
+        actionId,
+      }),
       bridgePersisted: true,
     },
   };
