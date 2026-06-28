@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Job-description parsing no longer emits a synthetic Senior Backend Engineer baseline from `MOCK_AI`; unavailable role-agent parsing now falls back to source-text-only fields with uncertain requirements left absent.
 - Culture interview scoring now fails closed when no real provider, provider output, evidence quotes, or valid scorer JSON is available instead of writing neutral mock score reports.
 - Comprehension review scoring no longer emits mock score reports or default midpoint dimensions when scorer providers are unavailable or return incomplete JSON.
 - Resume/CV ingestion no longer returns synthetic `Jane Doe` parsed/decomposition data from `MOCK_AI` or parser mock flags; unavailable candidate LLMs now degrade to deterministic source-text parsing or explicit ingestion diagnostics only.
