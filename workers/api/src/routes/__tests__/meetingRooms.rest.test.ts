@@ -2854,6 +2854,110 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
+  it('requires stable source-backed evidence for synced window data updates', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-window-data-evidence',
+      'owner-1',
+      'Window Data Candidate',
+      'window-data@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Window Data Candidate',
+        recipientEmail: 'window-data@example.com',
+        title: 'Window data evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-window-data-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const sourceOnlyRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_window_data_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_81a94acf' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyRes.status).toBe(422);
+
+    const validRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_update',
+        text: 'Window data updated: notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_data_client_submit',
+          dataSource: 'win95_window_data_sync',
+          actor: 'guest',
+          windowId: 'notepad',
+          action: 'edit_text',
+          windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+          capturedAtMs: 1782601700000,
+          dataKeys: ['text'],
+          dataValueFingerprints: { text: 'data_81a94acf' },
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(validRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-window-data-evidence') as { candidate_id: string } | undefined;
+    const node = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_window_update'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(node?.narrative_text).toContain('Window updated: Window data updated: notepad');
+    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_data_client_submit',
+      dataSource: 'win95_window_data_sync',
+      actor: 'guest',
+      windowId: 'notepad',
+      action: 'edit_text',
+      windowDataUpdateId: 'window-data:guest:1782601700000:notepad:edit_text',
+      capturedAtMs: 1782601700000,
+      dataKeys: ['text'],
+      dataValueFingerprints: { text: 'data_81a94acf' },
+    });
+  });
+
   it('returns non-OK when a valid session event cannot be persisted', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();

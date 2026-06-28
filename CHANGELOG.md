@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — 95 Until Infinity desktop tools
 
 - Workers AI model routing now remaps deprecated Llama 3.1 8B variants before inference so repo/challenge discovery does not fail on stale environment overrides.
+- Synced Notepad/Paint window-data updates now carry stable window-data ids, capture timestamps, changed keys, and value fingerprints through shared desktop state, Durable Object replay, and session-event validation.
 - Synced Microsoft Edge navigations now carry stable browser navigation ids, capture timestamps, and URL fingerprints through shared desktop state, Durable Object replay, and session-event validation.
 - Synced Win95 window lifecycle/state events now preserve stable window event ids and capture timestamps through the client connection, Durable Object replay, and session-event validation.
 - Summary-only room transcripts now persist their person-context mode into living-context metadata and cannot create candidate source attributions, assertions, or signals.

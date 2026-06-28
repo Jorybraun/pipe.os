@@ -45,6 +45,7 @@ import {
   buildWorkspaceStateDesktopEvent,
 } from './lib/workspaceEvidence';
 import {
+  buildWindowDataUpdateEvidence,
   buildWindowLifecycleEvidence,
   buildWindowStateUpdateEvidence,
 } from './lib/windowEvidence';
@@ -636,6 +637,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   ): void => {
     wm.updateWindowData(id, data);
     const currentUrl = data.currentUrl;
+    const capturedAtMs = Date.now();
     const navigationEvidence = typeof currentUrl === 'string'
       ? buildBrowserNavigationEvidence({
           actor: roomActor,
@@ -644,15 +646,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
           surface: room.roomSurface,
           roomPhase: room.phase,
-          capturedAtMs: Date.now(),
+          capturedAtMs,
         })
       : null;
+    const dataEvidence = navigationEvidence
+      ? null
+      : buildWindowDataUpdateEvidence({
+          actor: roomActor,
+          windowId: id,
+          data,
+          surface: room.roomSurface,
+          roomPhase: room.phase,
+          capturedAtMs,
+        });
     if (room.roomSurface === 'win95') {
       room.publishDesktopEvent({
         kind: 'UPDATE_WINDOW_DATA',
         windowId: id,
         data,
-        evidence: navigationEvidence?.properties,
+        evidence: navigationEvidence?.properties ?? dataEvidence?.properties,
       });
     }
     if (navigationEvidence) {

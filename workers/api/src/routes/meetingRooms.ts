@@ -123,6 +123,7 @@ const WINDOW_STATE_ACTIONS = new Set([
   'update',
 ]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
+const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
 const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
@@ -146,6 +147,8 @@ const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
 const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
 const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
+const WINDOW_DATA_UPDATE_ID_RE = /^window-data:(host|guest):\d+:[^:]+:[a-z_]+$/;
+const WINDOW_DATA_FINGERPRINT_RE = /^data_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
 
@@ -382,6 +385,63 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'window_update' || event.type === 'window_focus') {
+    if (properties.source === 'window_data_client_submit') {
+      const dataKeys = Array.isArray(properties.dataKeys)
+        ? properties.dataKeys.filter((key): key is string => typeof key === 'string')
+        : [];
+      const dataValueFingerprints = (
+        typeof properties.dataValueFingerprints === 'object'
+        && properties.dataValueFingerprints !== null
+        && !Array.isArray(properties.dataValueFingerprints)
+      )
+        ? properties.dataValueFingerprints as Record<string, unknown>
+        : null;
+      const sortedDataKeys = [...dataKeys].sort();
+      const dataKeysOk = dataKeys.length > 0
+        && dataKeys.every((key, index) => key === sortedDataKeys[index] && hasString(key));
+      const fingerprintKeys = dataValueFingerprints ? Object.keys(dataValueFingerprints).sort() : [];
+      const fingerprintsOk = dataValueFingerprints !== null
+        && fingerprintKeys.length === dataKeys.length
+        && fingerprintKeys.every((key, index) => (
+          key === dataKeys[index]
+          && typeof dataValueFingerprints[key] === 'string'
+          && WINDOW_DATA_FINGERPRINT_RE.test(dataValueFingerprints[key])
+        ));
+      const sourceOk = event.type === 'window_update'
+        && properties.dataSource === 'win95_window_data_sync';
+      const actionOk = typeof properties.action === 'string' && WINDOW_DATA_ACTIONS.has(properties.action);
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.actor === event.actor;
+      const windowOk = hasString(properties.windowId)
+        && event.text === `Window data updated: ${properties.windowId}`;
+      const capturedAtMs = properties.capturedAtMs;
+      const dataUpdateId = properties.windowDataUpdateId;
+      const idOk = typeof dataUpdateId === 'string'
+        && WINDOW_DATA_UPDATE_ID_RE.test(dataUpdateId)
+        && typeof capturedAtMs === 'number'
+        && Number.isInteger(capturedAtMs)
+        && capturedAtMs >= 0
+        && dataUpdateId === `window-data:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
+      const contextOk = hasRoomSurface(properties.surface)
+        && hasString(properties.roomPhase)
+        && typeof properties.durableObjectReplayExpected === 'boolean';
+      if (
+        sourceOk
+        && actionOk
+        && actorOk
+        && windowOk
+        && idOk
+        && dataKeysOk
+        && fingerprintsOk
+        && contextOk
+      ) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Window data evidence must include the client source, actor, stable event id, timestamp, data keys, value fingerprints, surface, and room phase.',
+        path: ['properties'],
+      });
+      return;
+    }
     const statePatch = properties.statePatch;
     const statePatchRecord = typeof statePatch === 'object' && statePatch !== null && !Array.isArray(statePatch)
       ? statePatch as Record<string, unknown>

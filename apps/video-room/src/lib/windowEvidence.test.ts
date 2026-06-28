@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildWindowDataUpdateEvidence,
   buildWindowLifecycleEvidence,
   buildWindowStateUpdateEvidence,
 } from './windowEvidence';
@@ -115,6 +116,71 @@ describe('window evidence', () => {
       surface: 'win95',
       roomPhase: 'connected',
       capturedAtMs: 5000,
+    })).toBeNull();
+  });
+
+  it('builds bounded source-backed evidence for Notepad data changes', () => {
+    expect(buildWindowDataUpdateEvidence({
+      actor: 'guest',
+      windowId: 'notepad',
+      data: { text: 'Candidate writes a replay test plan.' },
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 6000,
+    })).toEqual({
+      text: 'Window data updated: notepad',
+      properties: {
+        source: 'window_data_client_submit',
+        dataSource: 'win95_window_data_sync',
+        actor: 'guest',
+        windowId: 'notepad',
+        action: 'edit_text',
+        windowDataUpdateId: 'window-data:guest:6000:notepad:edit_text',
+        capturedAtMs: 6000,
+        surface: 'win95',
+        roomPhase: 'connected',
+        dataKeys: ['text'],
+        dataValueFingerprints: { text: 'data_81a94acf' },
+        durableObjectReplayExpected: true,
+      },
+    });
+  });
+
+  it('builds bounded source-backed evidence for Paint data changes', () => {
+    expect(buildWindowDataUpdateEvidence({
+      actor: 'host',
+      windowId: 'paint',
+      data: {
+        strokes: [{
+          kind: 'rectangle',
+          color: '#111111',
+          size: 2,
+          start: { x: 1, y: 2 },
+          end: { x: 3, y: 4 },
+        }],
+      },
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 7000,
+    })).toMatchObject({
+      text: 'Window data updated: paint',
+      properties: {
+        action: 'edit_paint',
+        windowDataUpdateId: 'window-data:host:7000:paint:edit_paint',
+        dataKeys: ['strokes'],
+        dataValueFingerprints: { strokes: 'data_44b27bb4' },
+      },
+    });
+  });
+
+  it('returns null for empty window data patches', () => {
+    expect(buildWindowDataUpdateEvidence({
+      actor: 'host',
+      windowId: 'paint',
+      data: {},
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 8000,
     })).toBeNull();
   });
 });

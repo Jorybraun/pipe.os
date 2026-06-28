@@ -314,12 +314,19 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
         },
       });
     }
+    const evidence = isRecord(event.evidence) ? event.evidence : null;
+    const dataKeys = Object.keys(event.data).sort();
     return createSessionEvent(input, {
       type: 'window_update',
       timestamp,
       actor,
-      text: windowId,
-      properties: { ...base, windowId, keys: Object.keys(event.data).sort() },
+      text: `Window data updated: ${windowId}`,
+      properties: {
+        ...base,
+        ...(evidence ?? { source: 'window_data_durable_object' }),
+        windowId,
+        dataKeys,
+      },
     });
   }
 

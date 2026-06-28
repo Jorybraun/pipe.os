@@ -286,6 +286,34 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000002500,
+            event: {
+              id: 'evt-notepad-data',
+              clientId: 'guest-client',
+              createdAt: 1700000002500,
+              kind: 'UPDATE_WINDOW_DATA',
+              windowId: 'notepad',
+              data: {
+                text: 'Candidate writes a replay test plan.',
+              },
+              evidence: {
+                source: 'window_data_client_submit',
+                dataSource: 'win95_window_data_sync',
+                actor: 'guest',
+                windowId: 'notepad',
+                action: 'edit_text',
+                windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
+                capturedAtMs: 1700000002500,
+                surface: 'win95',
+                roomPhase: 'connected',
+                dataKeys: ['text'],
+                dataValueFingerprints: { text: 'data_81a94acf' },
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
         ],
         chatActivityLog: [
           {
@@ -438,6 +466,21 @@ describe('sessionEvents', () => {
           text: 'I found the retry bug in the queue worker.',
         }),
         expect.objectContaining({
+          type: 'window_update',
+          actor: 'guest',
+          text: 'Window data updated: notepad',
+          properties: expect.objectContaining({
+            roomActivitySource: 'durable_object',
+            source: 'window_data_client_submit',
+            dataSource: 'win95_window_data_sync',
+            action: 'edit_text',
+            windowDataUpdateId: 'window-data:guest:1700000002500:notepad:edit_text',
+            capturedAtMs: 1700000002500,
+            dataKeys: ['text'],
+            dataValueFingerprints: { text: 'data_81a94acf' },
+          }),
+        }),
+        expect.objectContaining({
           type: 'clippy_prompt',
           actor: 'host',
           text: 'Would you like to open the workspace?',
@@ -485,15 +528,15 @@ describe('sessionEvents', () => {
           y: 140,
         },
       });
-      expect(events[6]!.properties).toMatchObject({
+      expect(events[7]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'upsert',
         fileId: 'notepad',
         fileKind: 'text',
         contentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[6]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(events[7]!.properties).toMatchObject({
+      expect(events[7]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[8]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'delete',
         fileId: 'notepad',
@@ -502,7 +545,7 @@ describe('sessionEvents', () => {
         deletedContentLength: 'Candidate identified retry bug evidence.'.length,
         deletedContentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[7]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[8]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
     });
   });
 
