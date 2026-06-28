@@ -206,8 +206,10 @@ npm run smoke:code-review-assess-dev:loop
 The loop runs the matrix twice by default and writes per-iteration stdout,
 stderr, and parsed summary JSON under `tmp/code-review-smoke-runs/`. Each
 iteration must include at least one completed/scored full-submit match and at
-least one blocked `repo_matching` state with `autoRefresh: false`; a green
-process exit alone is not enough. Tune with `CODE_REVIEW_SMOKE_LOOP_RUNS=3`,
+least one blocked `repo_matching` state with `autoRefresh: false`; the matched
+profile must also prove the candidate-facing review-session status endpoint
+reports `review` and `scoring` as complete. A green process exit alone is not
+enough. Tune with `CODE_REVIEW_SMOKE_LOOP_RUNS=3`,
 `CODE_REVIEW_SMOKE_LOOP_STOP_ON_FAILURE=0`, and
 `CODE_REVIEW_SMOKE_LOOP_OUT_DIR=<path>`.
 

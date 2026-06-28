@@ -76,6 +76,9 @@ function summarizeMatrix(proof) {
     && summary.reviewSessionId.length > 0
     && Number.isFinite(Number(summary.reviewScore))
     && typeof summary.reviewBand === 'string'
+    && summary.reviewStatus === 'scored'
+    && summary.reviewStatusPhase === 'scoring'
+    && summary.reviewPipelineScoringStatus === 'complete'
     && summary.recruiterMatchStatus === 'MATCHED'
     && Number(summary.evidenceHyperedgeCount) > 0
   );
@@ -100,6 +103,9 @@ function summarizeMatrix(proof) {
       reviewSessionId: summary.reviewSessionId,
       reviewScore: summary.reviewScore,
       reviewBand: summary.reviewBand,
+      reviewStatus: summary.reviewStatus,
+      reviewStatusPhase: summary.reviewStatusPhase,
+      reviewPipelineScoringStatus: summary.reviewPipelineScoringStatus,
       evidenceHyperedgeCount: summary.evidenceHyperedgeCount,
     })),
     blockedNoAutoRefreshCount: blockedNoAutoRefresh.length,

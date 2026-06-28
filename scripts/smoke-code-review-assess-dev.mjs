@@ -1028,6 +1028,46 @@ async function verifyScorePersistence(reviewSessionId) {
   throw new Error(`Score persistence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
 }
 
+async function verifyReviewStatusPipeline(sessionToken, reviewSessionId) {
+  const deadline = Date.now() + 60_000;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = await requestJson(`/rpc/review/${reviewSessionId}/status`, {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+      },
+    }, { basicAuth: false });
+    const pipeline = Array.isArray(latest?.pipeline) ? latest.pipeline : [];
+    const reviewStep = pipeline.find((step) => step?.id === 'review');
+    const scoringStep = pipeline.find((step) => step?.id === 'scoring');
+    if (
+      latest?.status === 'scored'
+      && latest?.phase === 'scoring'
+      && reviewStep?.status === 'complete'
+      && scoringStep?.status === 'complete'
+      && Number.isFinite(Number(latest?.scoreReport?.overall))
+      && typeof latest?.scoreReport?.band === 'string'
+    ) {
+      return {
+        status: latest.status,
+        phase: latest.phase,
+        currentRound: latest.currentRound ?? null,
+        maxRounds: latest.maxRounds ?? null,
+        scoreOverall: latest.scoreReport.overall,
+        scoreBand: latest.scoreReport.band,
+        pipeline: pipeline.map((step) => ({
+          id: step.id ?? null,
+          status: step.status ?? null,
+          detail: step.detail ?? null,
+        })),
+      };
+    }
+    await sleep(2_000);
+  }
+
+  throw new Error(`Review status pipeline did not expose durable scoring for ${reviewSessionId}: ${JSON.stringify(latest)}`);
+}
+
 async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   if (!SUBMIT_REVIEW) return { skipped: true };
 
@@ -1045,6 +1085,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   const judgeExample = await verifyJudgeExample(init.sessionId);
   const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
   const scorePersistence = await verifyScorePersistence(init.sessionId);
+  const reviewStatusPipeline = await verifyReviewStatusPipeline(session.sessionToken, init.sessionId);
 
   return {
     skipped: false,
@@ -1058,6 +1099,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     recruiterResults,
     assessmentEvidence,
     scorePersistence,
+    reviewStatusPipeline,
   };
 }
 

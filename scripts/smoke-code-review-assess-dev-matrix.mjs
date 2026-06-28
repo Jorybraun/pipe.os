@@ -147,6 +147,11 @@ function summarizeSmoke(profile, parsed, durationMs) {
     reviewSessionId: parsed?.submissionSmoke?.reviewSessionId ?? null,
     reviewScore: parsed?.submissionSmoke?.scorePersistence?.reviewScore ?? null,
     reviewBand: parsed?.submissionSmoke?.scorePersistence?.reviewBand ?? null,
+    reviewStatus: parsed?.submissionSmoke?.reviewStatusPipeline?.status ?? null,
+    reviewStatusPhase: parsed?.submissionSmoke?.reviewStatusPipeline?.phase ?? null,
+    reviewPipelineScoringStatus: Array.isArray(parsed?.submissionSmoke?.reviewStatusPipeline?.pipeline)
+      ? (parsed.submissionSmoke.reviewStatusPipeline.pipeline.find((step) => step?.id === 'scoring')?.status ?? null)
+      : null,
     recruiterMatchStatus: parsed?.submissionSmoke?.recruiterResults?.codeReviewMatchStatus ?? null,
     evidenceHyperedgeCount: parsed?.submissionSmoke?.recruiterResults?.evidenceHyperedgeCount ?? null,
     blockedState: parsed?.blockedMatch?.state ?? null,
