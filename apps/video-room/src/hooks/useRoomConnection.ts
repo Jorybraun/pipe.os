@@ -38,6 +38,8 @@ export type RoomClippyInteractionEventType = Extract<
 >;
 export type RoomCodeServerFileEventType = Extract<SessionEventType, 'code_editor_save' | 'file_change'>;
 export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 
@@ -1100,6 +1102,38 @@ function parseCodeServerFileEvent(value: unknown): RoomCodeServerFileEvent | nul
   };
 }
 
+export function hasSourceBackedCodeServerFileEvidence(event: RoomCodeServerFileEvent): boolean {
+  const evidence = event.evidence;
+  if (!isRecord(evidence)) return false;
+  const commonOk = event.actor === 'system'
+    && evidence.source === 'code_server_workspace'
+    && evidence.observedBy === 'clippy_agent_bridge'
+    && evidence.bridgeEventType === 'FILE_CHANGED'
+    && evidence.editorSurface === 'code-server'
+    && typeof evidence.path === 'string'
+    && evidence.path.trim().length > 0
+    && event.text === evidence.path
+    && typeof evidence.contentHash === 'string'
+    && SHA256_HEX_RE.test(evidence.contentHash)
+    && typeof evidence.sizeBytes === 'number'
+    && Number.isFinite(evidence.sizeBytes)
+    && evidence.sizeBytes >= 0
+    && typeof evidence.observedAt === 'string'
+    && evidence.observedAt.trim().length > 0
+    && evidence.bridgePersisted === false
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && typeof evidence.roomPhase === 'string'
+    && typeof evidence.workspaceStatus === 'string'
+    && typeof evidence.workspaceSessionId === 'string'
+    && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string')
+    && evidence.durableObjectReplayExpected === true;
+  if (!commonOk) return false;
+  if (event.eventType === 'code_editor_save') {
+    return typeof evidence.action === 'string' && CODE_SERVER_SAVE_ACTIONS.has(evidence.action);
+  }
+  return evidence.action === 'deleted';
+}
+
 function parseTerminalEvent(value: unknown): RoomTerminalEvent | null {
   if (!isRecord(value)) return null;
   if (
@@ -2035,7 +2069,11 @@ export function useRoomConnection(
           setRecordingState(snapshot.state);
         } else if (message.type === 'ROOM_CODE_SERVER_FILE_EVENT') {
           const event = parseCodeServerFileEvent(message.payload);
-          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (
+            !event
+            || event.clientId === desktopClientIdRef.current
+            || !hasSourceBackedCodeServerFileEvidence(event)
+          ) return;
           setCodeServerFileEvents((prev) => [...prev.slice(-199), event]);
         } else if (message.type === 'ROOM_TERMINAL_EVENT') {
           const terminalEvent = parseTerminalEvent(message.payload);
@@ -2421,6 +2459,14 @@ export function useRoomConnection(
       clientId: desktopClientIdRef.current,
       createdAt,
     };
+    if (!hasSourceBackedCodeServerFileEvidence(event)) {
+      console.error('[publishCodeServerFileEvent] rejected code-server file event without source-backed evidence:', {
+        eventType: event.eventType,
+        path: event.text,
+        source: event.evidence?.source,
+      });
+      return;
+    }
     setCodeServerFileEvents((prev) => [...prev.slice(-199), event]);
     if (!sendCodeServerFileEvent(event)) {
       codeServerFileOutboxRef.current.push(event);

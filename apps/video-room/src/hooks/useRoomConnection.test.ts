@@ -4,6 +4,7 @@ import {
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
   decideRoomSurfaceSnapshot,
+  hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
@@ -11,6 +12,7 @@ import {
   ROOM_CURSOR_SEND_INTERVAL_MS,
   shouldSendCursorPresence,
   type RoomChatMessage,
+  type RoomCodeServerFileEvent,
   type RoomCursorPresence,
   type RoomFileSystemEvent,
   type RoomMediaControlState,
@@ -384,5 +386,62 @@ describe('hasSourceBackedTerminalEvidence', () => {
 
   it('rejects terminal commands attributed to the wrong room actor', () => {
     expect(hasSourceBackedTerminalEvidence(sourceBackedCommand, 'HOST')).toBe(false);
+  });
+});
+
+describe('hasSourceBackedCodeServerFileEvidence', () => {
+  const sourceBackedSave: RoomCodeServerFileEvent = {
+    id: 'code-file-save-1',
+    clientId: 'guest-client',
+    createdAt: 1700000003000,
+    eventType: 'code_editor_save',
+    actor: 'system',
+    text: 'src/app.ts',
+    evidence: {
+      source: 'code_server_workspace',
+      observedBy: 'clippy_agent_bridge',
+      bridgeEventType: 'FILE_CHANGED',
+      editorSurface: 'code-server',
+      action: 'modified',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      path: 'src/app.ts',
+      observedAt: '2026-06-27T12:00:00.000Z',
+      contentHash: 'a'.repeat(64),
+      sizeBytes: 421,
+      bridgePersisted: false,
+      durableObjectReplayExpected: true,
+    },
+  };
+
+  it('accepts code-server saves only when Clippy bridge workspace evidence matches the event', () => {
+    expect(hasSourceBackedCodeServerFileEvidence(sourceBackedSave)).toBe(true);
+  });
+
+  it('rejects source-less code-server events before optimistic local state can change', () => {
+    expect(hasSourceBackedCodeServerFileEvidence({
+      ...sourceBackedSave,
+      evidence: undefined,
+    })).toBe(false);
+  });
+
+  it('rejects code-server events without a SHA-256 content hash', () => {
+    expect(hasSourceBackedCodeServerFileEvidence({
+      ...sourceBackedSave,
+      evidence: {
+        ...sourceBackedSave.evidence!,
+        contentHash: 'sha256-source-hash',
+      },
+    })).toBe(false);
+  });
+
+  it('rejects code-server evidence that names a different path than the room event', () => {
+    expect(hasSourceBackedCodeServerFileEvidence({
+      ...sourceBackedSave,
+      text: 'src/other.ts',
+    })).toBe(false);
   });
 });
