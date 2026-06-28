@@ -309,6 +309,15 @@ describe('InterviewDetailPage', () => {
     renderDetail();
 
     await flushAsyncUpdates();
+    const reviewAssignmentSection = screen.getByText('Review assignment').closest('section');
+    const matchDecisionSection = screen.getByText('Match decision').closest('section');
+    const schedulingSection = screen.getByText('Scheduling').closest('section');
+    const personContextSection = screen.getByText('Person context').closest('section');
+    expect(reviewAssignmentSection?.style.order).toBe('-30');
+    expect(matchDecisionSection?.style.order).toBe('-20');
+    expect(schedulingSection?.style.order).toBe('20');
+    expect(personContextSection?.style.order).toBe('40');
+
     const reviewProfile = screen.getByTestId('code-review-review-profile');
     expect(reviewProfile).toHaveTextContent('ASSESSMENT_FIT');
     expect(reviewProfile).toHaveTextContent('ADVANCED');

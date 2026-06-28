@@ -436,13 +436,15 @@ function Section({
   title,
   icon,
   children,
+  style,
 }: {
   title: string;
   icon: JSX.Element;
   children: ReactNode;
+  style?: CSSProperties | undefined;
 }): JSX.Element {
   return (
-    <section style={SECTION}>
+    <section style={{ ...SECTION, ...style }}>
       <div style={SECTION_TITLE}>
         {icon}
         {title}
@@ -924,7 +926,11 @@ export default function InterviewDetailPage(): JSX.Element {
       )}
 
       <main style={EVIDENCE_GRID}>
-        <Section title="Scheduling" icon={<CalendarCheck size={15} />}>
+        <Section
+          title="Scheduling"
+          icon={<CalendarCheck size={15} />}
+          style={isCodeReviewInterview ? CODE_REVIEW_OPERATIONAL_SECTION : undefined}
+        >
           <div style={EVIDENCE_LIST}>
             <div style={EVIDENCE_ROW}>
               <span style={FIELD_LABEL}>Status</span>
@@ -962,7 +968,11 @@ export default function InterviewDetailPage(): JSX.Element {
         </Section>
 
         {showsCallRecord && (
-          <Section title="Call record" icon={<FileText size={15} />}>
+          <Section
+            title="Call record"
+            icon={<FileText size={15} />}
+            style={isCodeReviewInterview ? CODE_REVIEW_CALL_RECORD_SECTION : undefined}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               {transcriptStatus === 'COMPLETED' || transcriptStatus === 'READY'
                 ? <CheckCircle size={14} color="#4ade80" />
@@ -1024,7 +1034,11 @@ export default function InterviewDetailPage(): JSX.Element {
           </Section>
         )}
 
-        <Section title="Person context" icon={<Network size={15} />}>
+        <Section
+          title="Person context"
+          icon={<Network size={15} />}
+          style={isCodeReviewInterview ? CODE_REVIEW_PERSON_CONTEXT_SECTION : undefined}
+        >
           {hasLivingContextEvidence && contextSummary ? (
             <>
               <div style={CONTEXT_METRICS}>
@@ -1072,7 +1086,11 @@ export default function InterviewDetailPage(): JSX.Element {
         </Section>
 
         {hasCodeReviewEvidence && (
-          <Section title="Review assignment" icon={<GitPullRequest size={15} />}>
+          <Section
+            title="Review assignment"
+            icon={<GitPullRequest size={15} />}
+            style={CODE_REVIEW_ASSIGNMENT_SECTION}
+          >
             <div style={EVIDENCE_LIST}>
               {interview.githubRepoUrl && (
                 <div style={EVIDENCE_ROW}>
@@ -1099,7 +1117,11 @@ export default function InterviewDetailPage(): JSX.Element {
         )}
 
         {codeReviewMatch && (
-          <Section title="Match decision" icon={<Network size={15} />}>
+          <Section
+            title="Match decision"
+            icon={<Network size={15} />}
+            style={CODE_REVIEW_MATCH_SECTION}
+          >
             <div data-testid="interview-code-review-match" style={EVIDENCE_LIST}>
               <div style={MATCH_DECISION_GRID}>
                 <div style={MATCH_DECISION_CARD}>
@@ -1325,7 +1347,11 @@ export default function InterviewDetailPage(): JSX.Element {
         )}
 
         {codeReviewSubmission && (
-          <Section title="Candidate review result" icon={<CheckCircle size={15} />}>
+          <Section
+            title="Candidate review result"
+            icon={<CheckCircle size={15} />}
+            style={CODE_REVIEW_RESULT_SECTION}
+          >
             <div data-testid="interview-code-review-result" style={EVIDENCE_LIST}>
               {codeReviewSubmission.verdict && (
                 <div style={EVIDENCE_ROW}>
@@ -1508,6 +1534,30 @@ const SECTION: CSSProperties = {
   borderRadius: 8,
   background: 'var(--pipe-surface-solid)',
   padding: 18,
+};
+
+const CODE_REVIEW_ASSIGNMENT_SECTION: CSSProperties = {
+  order: -30,
+};
+
+const CODE_REVIEW_MATCH_SECTION: CSSProperties = {
+  order: -20,
+};
+
+const CODE_REVIEW_RESULT_SECTION: CSSProperties = {
+  order: -10,
+};
+
+const CODE_REVIEW_OPERATIONAL_SECTION: CSSProperties = {
+  order: 20,
+};
+
+const CODE_REVIEW_CALL_RECORD_SECTION: CSSProperties = {
+  order: 30,
+};
+
+const CODE_REVIEW_PERSON_CONTEXT_SECTION: CSSProperties = {
+  order: 40,
 };
 
 const SECTION_TITLE: CSSProperties = {
