@@ -77,6 +77,14 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'SET_ROOM_SURFACE';
       surface: RoomSurface;
+      previousSurface?: RoomSurface;
+      action?: string;
+      source?: string;
+      surfaceControlEventSource?: string;
+      surfaceChangeId?: string;
+      capturedAtMs?: number;
+      roomPhase?: string;
+      durableObjectReplayExpected?: boolean;
     }
   | {
       id: string;
@@ -378,6 +386,18 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'SET_ROOM_SURFACE',
         surface: value.surface,
+        previousSurface: this.isRoomSurface(value.previousSurface) ? value.previousSurface : undefined,
+        action: typeof value.action === 'string' ? value.action : undefined,
+        source: typeof value.source === 'string' ? value.source : undefined,
+        surfaceControlEventSource: typeof value.surfaceControlEventSource === 'string'
+          ? value.surfaceControlEventSource
+          : undefined,
+        surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
+        capturedAtMs: this.optionalNumber(value.capturedAtMs),
+        roomPhase: typeof value.roomPhase === 'string' ? value.roomPhase : undefined,
+        durableObjectReplayExpected: typeof value.durableObjectReplayExpected === 'boolean'
+          ? value.durableObjectReplayExpected
+          : undefined,
       };
     }
     if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {

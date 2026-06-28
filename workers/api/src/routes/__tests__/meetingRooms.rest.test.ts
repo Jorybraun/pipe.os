@@ -1566,6 +1566,68 @@ describe('meeting room recording living-context route', () => {
       surface: 'win95',
     });
 
+    const sourceOnlyRoomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'room_surface_change',
+        text: 'Room surface changed to 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_surface_control',
+          actor: 'guest',
+          surface: 'win95',
+          previousSurface: 'standard',
+          action: 'enter_desktop',
+          roomPhase: 'connected',
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyRoomSurfaceRes.status).toBe(422);
+
+    const roomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'room_surface_change',
+        text: 'Room surface changed to 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'room_surface_control',
+          surfaceControlEventSource: 'browser_room_surface_toggle',
+          actor: 'guest',
+          surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
+          capturedAtMs: 1782601510000,
+          surface: 'win95',
+          previousSurface: 'standard',
+          action: 'enter_desktop',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(roomSurfaceRes.status).toBe(200);
+
+    const surfaceNode = sqlite.prepare(
+      `SELECT node_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_room_surface_change'
+        ORDER BY captured_at DESC
+        LIMIT 1`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(JSON.parse(surfaceNode?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'guest',
+      source: 'room_surface_control',
+      surfaceControlEventSource: 'browser_room_surface_toggle',
+      surfaceChangeId: 'surface:guest:1782601510000:standard:win95',
+      surface: 'win95',
+      previousSurface: 'standard',
+      durableObjectReplayExpected: true,
+    });
+
     const fakeWorkspaceStateRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

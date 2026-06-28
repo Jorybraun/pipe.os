@@ -167,12 +167,30 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
   if (event.kind === 'SET_ROOM_SURFACE') {
     const surface = stringOrNull(event.surface);
     if (!surface) return null;
+    const properties: Record<string, unknown> = { ...base, surface };
+    const previousSurface = stringOrNull(event.previousSurface);
+    const action = stringOrNull(event.action);
+    const source = stringOrNull(event.source);
+    const surfaceControlEventSource = stringOrNull(event.surfaceControlEventSource);
+    const surfaceChangeId = stringOrNull(event.surfaceChangeId);
+    const capturedAtMs = numberOrNull(event.capturedAtMs);
+    const roomPhase = stringOrNull(event.roomPhase);
+    if (previousSurface) properties.previousSurface = previousSurface;
+    if (action) properties.action = action;
+    properties.source = source ?? 'room_surface_durable_object';
+    if (surfaceControlEventSource) properties.surfaceControlEventSource = surfaceControlEventSource;
+    if (surfaceChangeId) properties.surfaceChangeId = surfaceChangeId;
+    if (capturedAtMs !== null) properties.capturedAtMs = capturedAtMs;
+    if (roomPhase) properties.roomPhase = roomPhase;
+    if (typeof event.durableObjectReplayExpected === 'boolean') {
+      properties.durableObjectReplayExpected = event.durableObjectReplayExpected;
+    }
     return createSessionEvent(input, {
       type: 'room_surface_change',
       timestamp,
       actor,
       text: `Room surface changed to ${surface}`,
-      properties: { ...base, surface },
+      properties,
     });
   }
 

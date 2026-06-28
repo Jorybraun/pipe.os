@@ -143,6 +143,7 @@ const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
+const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -380,16 +381,28 @@ const sessionEventSchema = z.object({
   }
   if (event.type === 'room_surface_change') {
     const sourceOk = properties.source === 'room_surface_control';
-    const actorOk = propertyActorMatches;
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.surfaceControlEventSource === 'browser_room_surface_toggle';
     const surfacesOk = hasRoomSurface(properties.surface)
       && hasRoomSurface(properties.previousSurface)
       && properties.surface !== properties.previousSurface;
-    const actionOk = properties.action === 'enter_desktop' || properties.action === 'exit_desktop';
+    const expectedAction = properties.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+    const actionOk = properties.action === expectedAction;
     const roomPhaseOk = hasString(properties.roomPhase);
-    if (sourceOk && actorOk && surfacesOk && actionOk && roomPhaseOk) return;
+    const capturedAtMs = properties.capturedAtMs;
+    const surfaceChangeId = properties.surfaceChangeId;
+    const idOk = typeof surfaceChangeId === 'string'
+      && SURFACE_CHANGE_ID_RE.test(surfaceChangeId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && surfaceChangeId === `surface:${event.actor}:${capturedAtMs}:${properties.previousSurface}:${properties.surface}`;
+    const replayOk = properties.durableObjectReplayExpected === true;
+    if (sourceOk && actorOk && eventSourceOk && surfacesOk && actionOk && roomPhaseOk && idOk && replayOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Room surface evidence must come from shared room surface controls with actor, previous surface, next surface, action, and room phase.',
+      message: 'Room surface evidence must come from a browser room surface toggle with actor, previous/next surface, stable event id, timestamp, action, replay expectation, and room phase.',
       path: ['properties'],
     });
     return;

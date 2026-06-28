@@ -16,15 +16,20 @@ describe('room surface evidence', () => {
       previousSurface: 'standard',
       nextSurface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 1000,
     })).toEqual({
       text: 'Room surface changed to 95 Until Infinity desktop',
       properties: {
         source: 'room_surface_control',
+        surfaceControlEventSource: 'browser_room_surface_toggle',
         actor: 'guest',
+        surfaceChangeId: 'surface:guest:1000:standard:win95',
+        capturedAtMs: 1000,
         surface: 'win95',
         previousSurface: 'standard',
         action: 'enter_desktop',
         roomPhase: 'connected',
+        durableObjectReplayExpected: true,
       },
     });
   });
@@ -35,14 +40,19 @@ describe('room surface evidence', () => {
       previousSurface: 'win95',
       nextSurface: 'standard',
       roomPhase: 'connected',
+      capturedAtMs: 2000,
     })).toMatchObject({
       text: 'Room surface changed to standard call',
       properties: {
         source: 'room_surface_control',
+        surfaceControlEventSource: 'browser_room_surface_toggle',
         actor: 'host',
+        surfaceChangeId: 'surface:host:2000:win95:standard',
+        capturedAtMs: 2000,
         surface: 'standard',
         previousSurface: 'win95',
         action: 'exit_desktop',
+        durableObjectReplayExpected: true,
       },
     });
   });

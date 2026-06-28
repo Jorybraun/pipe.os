@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clippy/Devin agent replies now require real bridge `CHAT_RESPONSE` source metadata before becoming `ai_chat_agent` evidence; source-less browser claims are rejected as invalid session events.
 - Video-room clients now rely on the source-backed lifecycle route for participant join/leave evidence and stop retrying permanent session-event validation failures forever.
 - Code-server save/delete evidence now requires FILE_CHANGED bridge provenance, content hash, size, observation time, and either direct container persistence or browser-fallback room/workspace context before entering the graph.
+- Shared room surface changes now carry browser-toggle provenance, stable surface-change ids, timestamps, previous/next surfaces, and Durable Object replay markers across live capture and replayed projections.
 - Win95 cursor presence evidence now includes actor-bound sample ids, browser pointermove provenance, timestamps, sampling thresholds, and previous-position deltas before the API accepts it.
 - Video room microphone/camera evidence now includes actor-bound event ids, browser control provenance, capture timestamps, and previous/next state before the API accepts it.
 - Win95 shared cursor presence now records sampled source-backed `cursor_presence` evidence instead of keeping the mouse layer as live-only state.

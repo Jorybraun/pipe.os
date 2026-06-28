@@ -1337,13 +1337,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const setSharedRoomSurface = (surface: RoomSurface): void => {
     if (!canControlRoomSurface || room.roomSurface === surface) return;
+    const capturedAtMs = Date.now();
     const evidence = buildRoomSurfaceChangeEvidence({
       actor: roomActor,
       previousSurface: room.roomSurface,
       nextSurface: surface,
       roomPhase: room.phase,
+      capturedAtMs,
     });
-    room.setRoomSurface(surface);
+    room.setRoomSurface(surface, evidence.properties);
     captureSessionEvent('room_surface_change', evidence.text, roomActor, evidence.properties);
   };
 

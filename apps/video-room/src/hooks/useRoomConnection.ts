@@ -119,6 +119,14 @@ export type RoomDesktopEvent =
       createdAt: number;
       kind: 'SET_ROOM_SURFACE';
       surface: RoomSurface;
+      previousSurface?: RoomSurface;
+      action?: string;
+      source?: string;
+      surfaceControlEventSource?: string;
+      surfaceChangeId?: string;
+      capturedAtMs?: number;
+      roomPhase?: RoomPhase;
+      durableObjectReplayExpected?: boolean;
     }
   | {
       id: string;
@@ -187,6 +195,14 @@ export type RoomDesktopEventDraft =
   | {
       kind: 'SET_ROOM_SURFACE';
       surface: RoomSurface;
+      previousSurface?: RoomSurface;
+      action?: string;
+      source?: string;
+      surfaceControlEventSource?: string;
+      surfaceChangeId?: string;
+      capturedAtMs?: number;
+      roomPhase?: RoomPhase;
+      durableObjectReplayExpected?: boolean;
     }
   | {
       kind: 'OPEN_WINDOW';
@@ -289,7 +305,7 @@ interface RoomConnection {
   publishChatMessage: (text: string) => RoomChatMessage | null;
   publishCursorPresence: (position: { x: number; y: number }) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
-  setRoomSurface: (surface: RoomSurface) => void;
+  setRoomSurface: (surface: RoomSurface, evidence?: Record<string, unknown>) => void;
 }
 
 const FALLBACK_ICE: RTCIceServer[] = [
@@ -394,6 +410,16 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'SET_ROOM_SURFACE',
       surface: value.surface,
+      previousSurface: isRoomSurface(value.previousSurface) ? value.previousSurface : undefined,
+      action: typeof value.action === 'string' ? value.action : undefined,
+      source: typeof value.source === 'string' ? value.source : undefined,
+      surfaceControlEventSource: typeof value.surfaceControlEventSource === 'string'
+        ? value.surfaceControlEventSource
+        : undefined,
+      surfaceChangeId: typeof value.surfaceChangeId === 'string' ? value.surfaceChangeId : undefined,
+      capturedAtMs: numberOrUndefined(value.capturedAtMs),
+      roomPhase: typeof value.roomPhase === 'string' ? value.roomPhase as RoomPhase : undefined,
+      durableObjectReplayExpected: booleanOrUndefined(value.durableObjectReplayExpected),
     };
   }
   if (value.kind === 'CLOSE_WINDOW' && typeof value.windowId === 'string') {
@@ -1489,8 +1515,21 @@ export function useRoomConnection(
     sendCursorPresence(cursor);
   }, [role, sendCursorPresence]);
 
-  const setRoomSurface = useCallback((surface: RoomSurface): void => {
-    publishDesktopEvent({ kind: 'SET_ROOM_SURFACE', surface });
+  const setRoomSurface = useCallback((surface: RoomSurface, evidence?: Record<string, unknown>): void => {
+    publishDesktopEvent({
+      kind: 'SET_ROOM_SURFACE',
+      surface,
+      previousSurface: isRoomSurface(evidence?.previousSurface) ? evidence.previousSurface : undefined,
+      action: typeof evidence?.action === 'string' ? evidence.action : undefined,
+      source: typeof evidence?.source === 'string' ? evidence.source : undefined,
+      surfaceControlEventSource: typeof evidence?.surfaceControlEventSource === 'string'
+        ? evidence.surfaceControlEventSource
+        : undefined,
+      surfaceChangeId: typeof evidence?.surfaceChangeId === 'string' ? evidence.surfaceChangeId : undefined,
+      capturedAtMs: numberOrUndefined(evidence?.capturedAtMs),
+      roomPhase: typeof evidence?.roomPhase === 'string' ? evidence.roomPhase as RoomPhase : undefined,
+      durableObjectReplayExpected: booleanOrUndefined(evidence?.durableObjectReplayExpected),
+    });
   }, [publishDesktopEvent]);
 
   const publishFileSystemEvent = useCallback((draft: RoomFileSystemEventDraft): void => {
