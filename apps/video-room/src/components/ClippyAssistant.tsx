@@ -287,6 +287,17 @@ export function ClippyAssistant({
     onOpenAuthTerminal?.();
   }, [onOpenAuthTerminal]);
 
+  const handleOpenTerminalClick = useCallback(() => {
+    if (agentRef.current) {
+      agentRef.current.animate();
+    }
+    if (onAction) {
+      onAction('open-terminal');
+      return;
+    }
+    onOpenTerminal?.();
+  }, [onAction, onOpenTerminal]);
+
   const handleActionClick = useCallback((actionId: string) => {
     if (agentRef.current) {
       agentRef.current.animate();
@@ -461,10 +472,11 @@ export function ClippyAssistant({
             </button>
           )}
 
-          {onOpenTerminal && agentEnabled && (
+          {(onAction || onOpenTerminal) && agentEnabled && (
             <button
               className="win95-clippy-chat-auth-btn"
-              onClick={onOpenTerminal}
+              onClick={handleOpenTerminalClick}
+              data-testid="clippy-open-terminal"
             >
               Open Terminal
             </button>

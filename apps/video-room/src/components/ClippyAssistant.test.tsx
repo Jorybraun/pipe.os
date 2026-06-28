@@ -231,4 +231,30 @@ describe('ClippyAssistant', () => {
     expect(startAuth).toHaveBeenCalledTimes(1);
     expect(sendMessage).not.toHaveBeenCalled();
   });
+
+  it('routes the generic Open Terminal button through source-backed Clippy action handling', async () => {
+    const onAction = vi.fn();
+    const onOpenTerminal = vi.fn();
+    mockAgentConnection({
+      connected: true,
+      status: 'idle',
+      capabilities: ['chat'],
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+        onAction={onAction}
+        onOpenTerminal={onOpenTerminal}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('clippy-open-terminal'));
+    expect(onAction).toHaveBeenCalledWith('open-terminal');
+    expect(onOpenTerminal).not.toHaveBeenCalled();
+  });
 });
