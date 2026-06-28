@@ -263,7 +263,10 @@ export async function markStatus(
              url = COALESCE(?2, url),
              started_at = COALESCE(?3, started_at),
              stopped_at = COALESCE(?4, stopped_at),
-             error_message = COALESCE(?5, error_message),
+             error_message = CASE
+               WHEN ?1 = 'ERROR' THEN COALESCE(?5, error_message)
+               ELSE NULL
+             END,
              updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
        WHERE session_id = ?6`,
     )

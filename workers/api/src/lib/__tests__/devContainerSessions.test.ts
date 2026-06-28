@@ -5,6 +5,7 @@ import { createMockD1, type BetterSqliteDb } from '../../__tests__/helpers/mockD
 import {
   insertRoomSession,
   insertSession,
+  markError,
   markStatus,
   markStopped,
   markWarned,
@@ -283,6 +284,65 @@ describe('devContainerSessions assessment evidence', () => {
       candidateId: 'candidate-1',
       status: 'LAUNCHING',
       repoGitUrl: 'https://github.com/example/candidate-task',
+    });
+  });
+
+  it('clears stale live error text when a dev-container recovers while preserving the error evidence event', async () => {
+    await insertRoomSession(db, {
+      id: 'row-room-recovery',
+      sessionId: 'room-session-recovery',
+      meetingId: 'meeting-recovery',
+      meetingRoomId: 'room-recovery',
+      ownerId: 'workspace-recovery',
+      instanceType: 'standard-1',
+      ttlSeconds: 3600,
+      ttlSource: 'GLOBAL',
+      expiresAt: '2026-06-28T08:00:00.000Z',
+      repoGitUrl: 'https://github.com/example/recovered-repo',
+      challengeBranch: 'pr-77',
+    });
+
+    await markError(db, 'room-session-recovery', 'port 8080 never opened');
+    await markStatus(db, 'room-session-recovery', 'READY', {
+      startedAt: '2026-06-28T07:02:00.000Z',
+    });
+
+    const row = sqlite.prepare(
+      `SELECT status, error_message
+         FROM dev_container_sessions
+        WHERE session_id = 'room-session-recovery'`,
+    ).get() as { status: string; error_message: string | null };
+    expect(row).toEqual({
+      status: 'READY',
+      error_message: null,
+    });
+
+    const events = sqlite.prepare(
+      `SELECT e.sequence, e.payload_json, r.exact_text
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        ORDER BY e.sequence`,
+    ).all() as Array<{ sequence: number; payload_json: string; exact_text: string }>;
+    expect(events).toHaveLength(3);
+    expect(JSON.parse(events[1]!.payload_json)).toMatchObject({
+      lifecycleEvent: 'error',
+      status: 'ERROR',
+      errorMessage: 'port 8080 never opened',
+    });
+    expect(JSON.parse(events[1]!.exact_text)).toMatchObject({
+      lifecycleEvent: 'error',
+      status: 'ERROR',
+      errorMessage: 'port 8080 never opened',
+    });
+    expect(JSON.parse(events[2]!.payload_json)).toMatchObject({
+      lifecycleEvent: 'ready',
+      status: 'READY',
+      errorMessage: null,
+    });
+    expect(JSON.parse(events[2]!.exact_text)).toMatchObject({
+      lifecycleEvent: 'ready',
+      status: 'READY',
+      errorMessage: null,
     });
   });
 });
