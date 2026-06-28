@@ -215,6 +215,20 @@ export interface CodeReviewMatchHyperedge {
   nodes: CodeReviewMatchHyperedgeNode[];
 }
 
+export interface CodeReviewEvidencePlanItem {
+  id: string;
+  missingSignal: string;
+  whyItMatters: string;
+  recommendedAssessment: 'recorded_evidence_question' | 'technical_pr_review' | 'manual_review_selection';
+  expectedEvidence: string;
+  question: string;
+  source: {
+    matchRunId: string | null;
+    matchStatus: string;
+    gap: string;
+  };
+}
+
 export interface CodeReviewMatchDetail {
   status: string;
   matchRunId: string | null;
@@ -228,6 +242,7 @@ export interface CodeReviewMatchDetail {
   evidence: CodeReviewMatchAlignment[];
   evidenceHyperedges: CodeReviewMatchHyperedge[];
   gaps: string[];
+  evidencePlan?: CodeReviewEvidencePlanItem[];
 }
 
 export interface LinkedMeetingSummary {

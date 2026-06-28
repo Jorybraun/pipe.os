@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Candidate CODE_REVIEW waiting states now expose a six-step pipeline for CV intake, evidence decomposition, repo matching, challenge assignment, review, and scoring instead of collapsing every delay into generic matching copy.
 - Public candidate `/assess/:token` links now mount without requiring recruiter Clerk configuration, while recruiter routes still show the missing-auth configuration screen.
 - Recruiter CODE_REVIEW details now label blocked repo matching as an assignment/evidence issue and recommend a context call or manual PR selection instead of implying the candidate has not submitted their review.
-- Blocked CODE_REVIEW recruiter details now surface three concise context-call questions so recruiters can collect the missing background evidence needed for a fair repo match.
+- Blocked CODE_REVIEW recruiter details now consume a source-backed evidence plan that names the missing signal, why it matters, expected evidence, and the evidence-producing follow-up question.
+- Blocked CODE_REVIEW follow-up creation now stores concise evidence questions so recruiters can collect the missing background needed for a fair repo match.
 - Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
 - Code-review context-call recommendation persistence now narrows candidate application ids before writing living-context records, restoring Workers type-checks for the scheduling route.
 - Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.
@@ -65,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Blocked Clippy chat submits now stay typeable and persist source-backed non-delivery evidence with exact prompt text, prompt fingerprint, and readiness reason instead of silently disabling the input or implying Devin received the message.
 - Failed video-room recording stops now broadcast and persist source-backed browser failure stage/source/message facts, while vague failed recording states are rejected instead of entering the evidence graph.
 - Candidate ingestion status now queues a source-backed retry for stale Workers AI model failures, so the challenge wait screen can recover from deprecated-model errors instead of replaying an old terminal failure.
 - Clippy room-action routing now rejects unsupported bridge action shapes instead of relabeling legacy agent suggestions as human prompt actions, while still allowing file-change observations to offer a user-clicked workspace prompt.

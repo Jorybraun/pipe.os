@@ -299,10 +299,24 @@ const inviteToCallSchema = z.object({
 });
 
 const CONTEXT_CALL_QUESTIONS = [
-  'Which project history best proves the work PIPE should assess here?',
-  'What parts of this background are missing from the current source evidence?',
+  'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+  'What did you inspect, what trade-offs mattered, and how did you verify the outcome?',
   'Which codebase constraints or PR style would make the assessment fair rather than misleading?',
 ] as const;
+
+interface ScheduledCodeReviewEvidencePlanItem {
+  id: string;
+  missingSignal: string;
+  whyItMatters: string;
+  recommendedAssessment: 'recorded_evidence_question' | 'technical_pr_review' | 'manual_review_selection';
+  expectedEvidence: string;
+  question: string;
+  source: {
+    matchRunId: string | null;
+    matchStatus: string;
+    gap: string;
+  };
+}
 
 // ─── Status transition validation ───────────────────────────────────────────
 
@@ -505,6 +519,7 @@ interface ScheduledCodeReviewMatchDetail {
   evidence: ScheduledCodeReviewAlignment[];
   evidenceHyperedges: ScheduledCodeReviewHyperedge[];
   gaps: string[];
+  evidencePlan: ScheduledCodeReviewEvidencePlanItem[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -822,9 +837,15 @@ function scheduledCodeReviewMatchSummary(
         gaps: ['Candidate has not submitted source evidence yet.'],
       };
     }
+    if (status === 'NEEDS_MORE_EVIDENCE') {
+      return {
+        summary: 'PIPE needs more source-backed candidate evidence before assigning a fair code-review challenge.',
+        gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+      };
+    }
     return {
       summary: 'No source-backed code review match is available for this interview yet.',
-      gaps: [],
+      gaps: ['NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'],
     };
   }
   if (status === 'NO_ROLE_SAFE_CHALLENGE') {
@@ -839,6 +860,91 @@ function scheduledCodeReviewMatchSummary(
     summary: `Matched ${selected.alignedDemandCount} source-backed demand${selected.alignedDemandCount === 1 ? '' : 's'} (${selected.stretchCount} stretch).`,
     gaps: selected.rejectionReasons,
   };
+}
+
+function codeReviewEvidencePlanForGap(input: {
+  gap: string;
+  matchStatus: string;
+  matchRunId: string | null;
+}): ScheduledCodeReviewEvidencePlanItem {
+  const normalized = input.gap.trim() || 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE';
+  const source = {
+    matchRunId: input.matchRunId,
+    matchStatus: input.matchStatus,
+    gap: normalized,
+  };
+
+  if (
+    normalized === 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'
+    || normalized === 'CANDIDATE_SIGNALS_EXCLUDED_FOR_MISSING_OR_NULL_EVIDENCE'
+    || normalized === 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'
+  ) {
+    return {
+      id: `candidate-source-evidence:${normalized}`,
+      missingSignal: 'Source-backed candidate work evidence',
+      whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
+      recommendedAssessment: 'recorded_evidence_question',
+      expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
+      question: CONTEXT_CALL_QUESTIONS[0],
+      source,
+    };
+  }
+
+  if (normalized === 'NO_SOURCE_BACKED_ROLE_SAFE_CHALLENGE_RECALLED') {
+    return {
+      id: `role-safe-challenge:${normalized}`,
+      missingSignal: 'Role-safe reviewable PR challenge',
+      whyItMatters: 'The candidate may have usable evidence, but PIPE does not have a source-backed PR that safely tests it yet.',
+      recommendedAssessment: 'manual_review_selection',
+      expectedEvidence: 'A recruiter-selected or generated PR packet with source spans, expected review demands, planted issues, and scoring criteria.',
+      question: CONTEXT_CALL_QUESTIONS[2],
+      source,
+    };
+  }
+
+  if (normalized === 'NO_SOURCE_BACKED_CANDIDATE_ALIGNMENT') {
+    return {
+      id: `candidate-alignment:${normalized}`,
+      missingSignal: 'Candidate evidence aligned to the PR demands',
+      whyItMatters: 'A challenge should test a real stretch from the person graph, not a generic repo that merely looks plausible.',
+      recommendedAssessment: 'recorded_evidence_question',
+      expectedEvidence: 'A specific example that can be mapped to the repo demand: stack, behavior, debugging/review action, and outcome.',
+      question: CONTEXT_CALL_QUESTIONS[1],
+      source,
+    };
+  }
+
+  return {
+    id: `match-gap:${normalized.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'}`,
+    missingSignal: normalized.replace(/_/g, ' ').toLowerCase(),
+    whyItMatters: 'This gap prevented PIPE from confidently assigning or validating the code-review assessment.',
+    recommendedAssessment: input.matchStatus === 'NO_ROLE_SAFE_CHALLENGE'
+      ? 'manual_review_selection'
+      : 'recorded_evidence_question',
+    expectedEvidence: 'Source-backed context that explains the relevant project history, technical constraints, and assessment fit.',
+    question: CONTEXT_CALL_QUESTIONS[0],
+    source,
+  };
+}
+
+function buildCodeReviewEvidencePlan(input: {
+  matchStatus: string;
+  matchRunId: string | null;
+  gaps: string[];
+}): ScheduledCodeReviewEvidencePlanItem[] {
+  if (input.matchStatus === 'MATCHED') return [];
+  const gaps = input.gaps.length > 0
+    ? input.gaps
+    : input.matchStatus === 'NEEDS_MORE_EVIDENCE'
+      ? ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE']
+      : ['NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'];
+  return Array.from(new Set(gaps))
+    .slice(0, 3)
+    .map((gap) => codeReviewEvidencePlanForGap({
+      gap,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    }));
 }
 
 function isPassedCodeReviewVerdict(verdict: string | null | undefined): boolean {
@@ -1087,6 +1193,7 @@ async function loadManualCodeReviewMatchDetail(
     evidence: [],
     evidenceHyperedges: [],
     gaps: ['Manual override did not run automatic candidate-to-PR contrast ranking.'],
+    evidencePlan: [],
   };
 }
 
@@ -1151,6 +1258,7 @@ async function loadScheduledCodeReviewMatchDetail(
     ...summary.gaps,
     ...(contrastGap ? [contrastGap] : []),
   ];
+  const uniqueGaps = [...new Set(gaps)];
 
   return {
     status: run.status,
@@ -1164,7 +1272,12 @@ async function loadScheduledCodeReviewMatchDetail(
     roleSources,
     evidence,
     evidenceHyperedges: buildScheduledCodeReviewHyperedges(evidence, roleSources),
-    gaps: [...new Set(gaps)],
+    gaps: uniqueGaps,
+    evidencePlan: buildCodeReviewEvidencePlan({
+      matchStatus: run.status,
+      matchRunId: run.id,
+      gaps: uniqueGaps,
+    }),
   };
 }
 

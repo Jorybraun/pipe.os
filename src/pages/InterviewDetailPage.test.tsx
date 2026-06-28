@@ -357,7 +357,7 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('1 annotation');
     expect(decision).toHaveTextContent('1 pushback thread');
-    expect(screen.queryByTestId('interview-code-review-context-questions')).toBeNull();
+    expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
@@ -381,6 +381,19 @@ describe('InterviewDetailPage', () => {
           evidence: [],
           evidenceHyperedges: [],
           gaps: ['The deterministic repo matcher did not return a quality-gated PR.'],
+          evidencePlan: [{
+            id: 'candidate-source-evidence:NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            missingSignal: 'Source-backed candidate work evidence',
+            whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
+            recommendedAssessment: 'recorded_evidence_question',
+            expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
+            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            source: {
+              matchRunId: 'match-run-blocked-1',
+              matchStatus: 'NEEDS_MORE_EVIDENCE',
+              gap: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            },
+          }],
         },
       }),
     });
@@ -390,15 +403,16 @@ describe('InterviewDetailPage', () => {
     await flushAsyncUpdates();
     const decision = screen.getByTestId('interview-code-review-decision-summary');
     expect(decision).toHaveTextContent('No confident repo match yet');
-    expect(decision).toHaveTextContent('Schedule a short background call to gather source-backed context, or choose a reviewable PR manually if you already know the candidate fit.');
+    expect(decision).toHaveTextContent('Resolve the missing source-backed evidence before relying on this code-review assignment.');
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
-    expect(decision).toHaveTextContent('schedule context call or select PR');
+    expect(decision).toHaveTextContent('resolve missing evidence');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
-    const contextQuestions = screen.getByTestId('interview-code-review-context-questions');
-    expect(contextQuestions).toHaveTextContent('Context call questions');
-    expect(contextQuestions).toHaveTextContent('Which project history best proves the work PIPE should assess here?');
-    expect(contextQuestions).toHaveTextContent('What parts of this background are missing from the current source evidence?');
-    expect(contextQuestions).toHaveTextContent('Which codebase constraints or PR style would make the assessment fair rather than misleading?');
+    const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
+    expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
+    expect(evidencePlan).toHaveTextContent('Source-backed candidate work evidence');
+    expect(evidencePlan).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(evidencePlan).toHaveTextContent('A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.');
+    expect(evidencePlan).toHaveTextContent('CREATE EVIDENCE CALL');
   });
 
   it('creates a linked context call from a blocked code-review match', async () => {

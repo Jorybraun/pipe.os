@@ -999,6 +999,77 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns a source-backed evidence plan when CODE_REVIEW matching needs candidate evidence', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-needs-evidence', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-needs-candidate-evidence', 'candidate-1', 'standalone-code-review-v1',
+        'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run();
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-needs-evidence');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          status: string;
+          summary: string;
+          gaps: string[];
+          evidencePlan: Array<{
+            missingSignal: string;
+            recommendedAssessment: string;
+            question: string;
+            source: {
+              matchRunId: string | null;
+              matchStatus: string;
+              gap: string;
+            };
+          }>;
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch).toMatchObject({
+      status: 'NEEDS_MORE_EVIDENCE',
+      summary: 'PIPE needs more source-backed candidate evidence before assigning a fair code-review challenge.',
+      gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+    });
+    expect(body.interview.codeReviewMatch?.evidencePlan).toEqual([
+      expect.objectContaining({
+        missingSignal: 'Source-backed candidate work evidence',
+        recommendedAssessment: 'recorded_evidence_question',
+        question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+        source: {
+          matchRunId: 'match-run-needs-candidate-evidence',
+          matchStatus: 'NEEDS_MORE_EVIDENCE',
+          gap: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+        },
+      }),
+    ]);
+  });
+
   it('downgrades stale role-backed CODE_REVIEW validator proof when contrast was unmeasured', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`
@@ -1715,7 +1786,7 @@ describe('GET /interviews/:id detail', () => {
       originalInterviewId: 'interview-code-review-blocked',
       candidateId: 'candidate-1',
     });
-    expect(body.contextCall.questions).toContain('Which project history best proves the work PIPE should assess here?');
+    expect(body.contextCall.questions).toContain('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
     expect(body.contextCall.recruiterNotes).toContain('Only one source-backed candidate signal aligned with the repo challenge.');
 
     const followUpRow = sqlite!.prepare(
@@ -1764,7 +1835,7 @@ describe('GET /interviews/:id detail', () => {
     expect(contextRow.narrative).toContain('Ada Lovelace');
     expect(contextRow.exact_text).toContain('Original interview id: interview-code-review-blocked');
     expect(contextRow.exact_text).toContain('Match status: NO_ROLE_SAFE_CHALLENGE');
-    expect(contextRow.exact_text).toContain('Question 1: Which project history best proves the work PIPE should assess here?');
+    expect(contextRow.exact_text).toContain('Question 1: Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
   });
 
   it('records source-backed invite delivery separately from interview creation', async () => {

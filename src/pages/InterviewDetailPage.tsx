@@ -18,6 +18,7 @@ import {
 import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import type {
+  CodeReviewEvidencePlanItem,
   CodeReviewMatchAlignment,
   CodeReviewMatchDetail,
   CodeReviewMatchHyperedge,
@@ -355,7 +356,7 @@ function codeReviewActionText(
     return 'The PR assignment is ready. Wait for the candidate review before making a hiring decision.';
   }
   if (match && match.status !== 'MATCHED') {
-    return 'Schedule a short background call to gather source-backed context, or choose a reviewable PR manually if you already know the candidate fit.';
+    return 'Resolve the missing source-backed evidence before relying on this code-review assignment.';
   }
   return 'Resolve the assignment issue before relying on this assessment.';
 }
@@ -374,22 +375,53 @@ function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
     return `${match.assessmentQuality.score}/${match.assessmentQuality.maxScore}`;
   }
   if (match?.status && match.status !== 'MATCHED') {
-    return 'schedule context call or select PR';
+    return 'resolve missing evidence';
   }
   const score = formatMatchScore(match?.score);
   return score ? `confidence ${score}` : 'waiting for source-backed match';
 }
 
-function codeReviewContextCallQuestions(
+function fallbackEvidencePlanItem(
+  match: CodeReviewMatchDetail,
+  gap: string,
+): CodeReviewEvidencePlanItem {
+  const normalizedGap = gap.trim() || (
+    match.status === 'NEEDS_MORE_EVIDENCE'
+      ? 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'
+      : 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'
+  );
+  const missingSignal = normalizedGap === 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'
+    ? 'Source-backed candidate work evidence'
+    : normalizedGap.replace(/_/g, ' ').toLowerCase();
+  return {
+    id: `fallback:${normalizedGap}`,
+    missingSignal,
+    whyItMatters: 'PIPE cannot fairly select a real PR challenge until this missing evidence is tied to the person graph.',
+    recommendedAssessment: match.status === 'NO_ROLE_SAFE_CHALLENGE'
+      ? 'manual_review_selection'
+      : 'recorded_evidence_question',
+    expectedEvidence: 'A concrete project, personal action, technical constraint, and verification detail that can be cited back to the candidate.',
+    question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+    source: {
+      matchRunId: match.matchRunId,
+      matchStatus: match.status,
+      gap: normalizedGap,
+    },
+  };
+}
+
+function codeReviewEvidencePlanItems(
   match: CodeReviewMatchDetail | null,
   submission: CodeReviewSubmissionDetail | null,
-): string[] {
+): CodeReviewEvidencePlanItem[] {
   if (!match || match.status === 'MATCHED' || submission) return [];
-  return [
-    'Which project history best proves the work PIPE should assess here?',
-    'What parts of this background are missing from the current source evidence?',
-    'Which codebase constraints or PR style would make the assessment fair rather than misleading?',
-  ];
+  if (match.evidencePlan && match.evidencePlan.length > 0) return match.evidencePlan;
+  const gaps = match.gaps.length > 0
+    ? match.gaps
+    : [match.status === 'NEEDS_MORE_EVIDENCE'
+      ? 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'
+      : 'NO_SOURCE_BACKED_MATCH_RECORD_AVAILABLE'];
+  return gaps.slice(0, 3).map((gap) => fallbackEvidencePlanItem(match, gap));
 }
 
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
@@ -907,7 +939,7 @@ export default function InterviewDetailPage(): JSX.Element {
         : 'Send an invite or open the host room to start collecting call evidence.';
   const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict, codeReviewMatch);
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
-  const codeReviewFollowUpQuestions = codeReviewContextCallQuestions(codeReviewMatch, codeReviewSubmission);
+  const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -1079,14 +1111,21 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
-              {codeReviewFollowUpQuestions.length > 0 && (
-                <div data-testid="interview-code-review-context-questions" style={DECISION_FOLLOW_UP}>
-                  <div style={FIELD_LABEL}>Context call questions</div>
-                  <ol style={DECISION_FOLLOW_UP_LIST}>
-                    {codeReviewFollowUpQuestions.map((question) => (
-                      <li key={question} style={DECISION_FOLLOW_UP_ITEM}>{question}</li>
+              {codeReviewEvidencePlan.length > 0 && (
+                <div data-testid="interview-code-review-evidence-plan" style={DECISION_FOLLOW_UP}>
+                  <div style={FIELD_LABEL}>Resolve missing evidence</div>
+                  <div style={DECISION_FOLLOW_UP_LIST}>
+                    {codeReviewEvidencePlan.map((item) => (
+                      <div key={item.id} style={DECISION_FOLLOW_UP_ITEM}>
+                        <div style={DECISION_PLAN_SIGNAL}>{item.missingSignal}</div>
+                        <div>{item.question}</div>
+                        <div style={CONTEXT_RECORD_NARRATIVE}>{item.whyItMatters}</div>
+                        <div style={CONTEXT_RECORD_NARRATIVE}>
+                          Expected evidence: {item.expectedEvidence}
+                        </div>
+                      </div>
                     ))}
-                  </ol>
+                  </div>
                   <button
                     data-testid="interview-code-review-context-call-cta"
                     onClick={() => void createContextCall()}
@@ -1096,7 +1135,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     {isCreatingContextCall
                       ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                       : <CalendarCheck size={14} />}
-                    SCHEDULE CONTEXT CALL
+                    CREATE EVIDENCE CALL
                   </button>
                   {contextCallError && <div style={ERROR_NOTE}>{contextCallError}</div>}
                 </div>
@@ -2126,9 +2165,18 @@ const DECISION_FOLLOW_UP_LIST: CSSProperties = {
 };
 
 const DECISION_FOLLOW_UP_ITEM: CSSProperties = {
+  display: 'grid',
+  gap: 5,
   color: 'var(--pipe-text)',
   fontSize: 13,
   lineHeight: 1.55,
+};
+
+const DECISION_PLAN_SIGNAL: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 12,
+  fontWeight: 800,
+  textTransform: 'uppercase',
 };
 
 const CONTEXT_CALL_BUTTON: CSSProperties = {
