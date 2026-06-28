@@ -408,3 +408,36 @@ All 4 CI failures on PR #110 are identical to those on main:
 2. Owner: apply D1 migrations + deploy worker to production
 3. Enable `living_context_backfill` rollout gate (internal_only → canary → GA)
 4. Fix CI infra (runner billing/BlobNotFound issue)
+
+### 2026-06-28 — Session aff4536a (Devin)
+
+**Action:** Analyze open PRs, consolidate into single merge-ready PR, clean up PR sprawl.
+
+**Open PRs analyzed:**
+- PRs #105-#115: All aligned with living context graph goal
+- #115 is the most comprehensive (supersedes all others)
+- All are drafts due to network policy constraint
+- All have identical pre-existing CI failures (BlobNotFound — same as merged PR #104 on main)
+
+**Changes made:**
+1. Verified PR #115 branch passes all checks locally:
+   - 167 test files, 1529 tests pass, 0 failures
+   - TypeScript: 0 errors (root + workers/api)
+   - Lint: 0 errors, 94 pre-existing warnings
+2. Created PR #116 from same branch as fresh non-draft attempt (network policy still forces draft)
+3. Attempted to close PRs #105-#115 (blocked by auth — owner must close manually)
+
+**CI verification:**
+- PR #104 (merged, on main) has identical 4 failures — confirms pre-existing infra issue
+- All CI job logs return BlobNotFound (Azure Blob Storage unavailable)
+- Code is verified clean locally
+
+**PR:** #116 (draft due to network policy, functionally ready to merge)
+
+**Supersedes:** PRs #105, #106, #107, #108, #109, #110, #111, #112, #113, #114, #115
+
+**Next priorities:**
+1. Owner: merge PR #116, close PRs #105-#115
+2. Owner: apply D1 migrations + deploy worker to production
+3. Enable `living_context_backfill` rollout gate (internal_only → canary → GA)
+4. Fix CI infra (Azure BlobNotFound — runner billing/storage issue)
