@@ -525,6 +525,172 @@ describe('meeting transcript living-context ingestion', () => {
     });
   });
 
+  it('marks evidence-plan follow-up transcripts ready for repo-match refresh', async () => {
+    sqlite.exec(assessmentLayerMigration);
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'assessment-plan-1',
+      'assessment-session:code-review-evidence-plan:code-review-1:scheduled-interview-1',
+      'scheduled-interview-1',
+      'TECHNICAL',
+      'IN_PROGRESS',
+      'candidate-1',
+      'workspace-1',
+      'code-review-evidence-plan',
+      JSON.stringify({
+        source: 'code_review_evidence_plan',
+        originalInterviewId: 'code-review-1',
+        contextCallInterviewId: 'scheduled-interview-1',
+        matchRunId: 'match-run-1',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+      }),
+      '2026-06-13T09:30:00.000Z',
+      '2026-06-13T09:30:00.000Z',
+    );
+
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      provider: 'deepgram-multichannel',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which review work best matches this challenge?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 6_000,
+          confidence: 0.95,
+        },
+      ],
+      semanticAssertions: [],
+      personContextMode: 'attributed' as const,
+    };
+
+    await ingestMeetingTranscriptToLivingContext(db, input);
+    await ingestMeetingTranscriptToLivingContext(db, input);
+
+    expect(count(sqlite, 'assessment_sessions')).toBe(2);
+    const planSession = sqlite.prepare(
+      `SELECT state, metadata_json
+         FROM assessment_sessions
+        WHERE id = 'assessment-plan-1'`,
+    ).get() as { state: string; metadata_json: string };
+    expect(planSession.state).toBe('EVALUATED');
+    expect(JSON.parse(planSession.metadata_json)).toMatchObject({
+      source: 'code_review_evidence_plan',
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+    });
+
+    const planEvents = sqlite.prepare(
+      `SELECT e.sequence,
+              e.kind,
+              e.actor_type,
+              e.actor_id,
+              r.evidence_role,
+              r.exact_text,
+              r.locator_json
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = 'assessment-plan-1'
+        ORDER BY e.sequence`,
+    ).all() as Array<{
+      sequence: number;
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      evidence_role: string;
+      exact_text: string;
+      locator_json: string;
+    }>;
+    expect(planEvents).toHaveLength(2);
+    expect(planEvents[1]).toMatchObject({
+      sequence: 2,
+      kind: 'evidence_plan_response_span',
+      actor_type: 'candidate',
+      actor_id: 'contact-1',
+      evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+    });
+    expect(JSON.parse(planEvents[1].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      stableSegmentId: 'guest-1',
+    });
+
+    const report = sqlite.prepare(
+      `SELECT status, summary, output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = 'assessment-plan-1'`,
+    ).get() as { status: string; summary: string; output_json: string };
+    expect(report.status).toBe('NEEDS_HUMAN_REVIEW');
+    expect(report.summary).toBe('Evidence call captured 2 source-backed transcript spans for repo-match refresh.');
+    expect(JSON.parse(report.output_json)).toMatchObject({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      sourceSpanCount: 2,
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    });
+
+    const claim = sqlite.prepare(
+      `SELECT c.polarity,
+              c.dimension,
+              c.narrative,
+              r.evidence_role,
+              r.exact_text
+         FROM assessment_evaluation_claims c
+         JOIN assessment_claim_source_refs r ON r.claim_id = c.id
+        WHERE c.report_id = (
+          SELECT id FROM assessment_evaluation_reports WHERE session_id = 'assessment-plan-1'
+        )
+        ORDER BY r.exact_text`,
+    ).all() as Array<{
+      polarity: string;
+      dimension: string;
+      narrative: string;
+      evidence_role: string;
+      exact_text: string;
+    }>;
+    expect(claim).toHaveLength(2);
+    expect(claim[0]).toMatchObject({
+      polarity: 'neutral',
+      dimension: 'repo_match_refresh_readiness',
+      evidence_role: 'evidence_plan_response_span',
+    });
+
+    const transitions = sqlite.prepare(
+      `SELECT to_state, reason
+         FROM assessment_state_transitions
+        WHERE session_id = 'assessment-plan-1'
+        ORDER BY sequence`,
+    ).all() as Array<{ to_state: string; reason: string }>;
+    expect(transitions.map((transition) => transition.to_state)).toEqual(['FINAL_SUBMITTED', 'EVALUATED']);
+  });
+
   it('grows a person-centered living context graph from a meeting transcript', async () => {
     const input = {
       meetingId: 'meeting-1',
