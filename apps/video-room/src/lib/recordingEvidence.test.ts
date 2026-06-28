@@ -60,4 +60,33 @@ describe('buildRecordingLifecycleEvidence', () => {
       transcriptStatus: null,
     });
   });
+
+  it('adds source-backed room sync metadata when recording state is shared', () => {
+    expect(buildRecordingLifecycleEvidence({
+      lifecycleKind: 'start',
+      actor: 'host',
+      capturedAtMs: 1700000000123.4,
+      surface: 'win95',
+      roomPhase: 'connected',
+      recordingStatus: 'recording',
+      recordingActive: true,
+      speakerMetadata,
+      iceProvider: 'cloudflare',
+      hasTranscriptionAudio: true,
+    })).toMatchObject({
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingStateEventSource: 'browser_media_recorder_state_sync',
+      actor: 'host',
+      recordingLifecycleKind: 'start',
+      recordingStateEventId: 'recording:host:1700000000123:start:recording',
+      capturedAtMs: 1700000000123,
+      surface: 'win95',
+      roomPhase: 'connected',
+      recordingStatus: 'recording',
+      recordingActive: true,
+      durableObjectReplayExpected: true,
+      speakerMetadataVersion: 1,
+    });
+  });
 });

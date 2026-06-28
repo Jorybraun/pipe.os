@@ -869,22 +869,45 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingStartedRef.current = true;
       setRecordingNotice('Recording started. Transcript processing begins after the host ends the call.');
       setRecordingState('recording');
-      void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
-        setRecordingNotice('Recording started. Status will sync when the call ends.');
-      });
-      captureSessionEvent('recording_start', 'Recording started', 'host', buildRecordingLifecycleEvidence({
+      const recordingStartEvidence = buildRecordingLifecycleEvidence({
         lifecycleKind: 'start',
+        actor: 'host',
+        capturedAtMs: Date.now(),
+        surface: room.roomSurface,
+        roomPhase: room.phase,
+        recordingStatus: 'recording',
+        recordingActive: true,
         speakerMetadata: composite.speakerMetadata,
         iceProvider: room.iceProvider,
         hasTranscriptionAudio: transcriptionTracks.length > 0,
-      }));
+      });
+      room.publishRecordingStateEvent({
+        lifecycleKind: 'start',
+        status: 'recording',
+        active: true,
+        evidence: recordingStartEvidence,
+      });
+      void postRoomEvent(token, 'RECORDING_STARTED').catch(() => {
+        setRecordingNotice('Recording started. Status will sync when the call ends.');
+      });
+      captureSessionEvent('recording_start', 'Recording started', 'host', recordingStartEvidence);
     } catch (error) {
       await dispose?.().catch(() => undefined);
       const message = error instanceof Error ? error.message : 'Recording could not start.';
       setRecordingState('failed');
       setRecordingError(message);
     }
-  }, [captureSessionEvent, metadata.role, room.iceProvider, room.localStream, room.phase, room.remoteStream, token]);
+  }, [
+    captureSessionEvent,
+    metadata.role,
+    room.iceProvider,
+    room.localStream,
+    room.phase,
+    room.publishRecordingStateEvent,
+    room.remoteStream,
+    room.roomSurface,
+    token,
+  ]);
 
   const stopRecorder = async (recorder: MediaRecorder | null): Promise<void> => {
     if (!recorder || recorder.state === 'inactive') return;
@@ -934,8 +957,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         iceProvider: room.iceProvider,
       });
-      captureSessionEvent('recording_stop', 'Recording stopped', 'host', buildRecordingLifecycleEvidence({
+      const recordingStopEvidence = buildRecordingLifecycleEvidence({
         lifecycleKind: 'stop',
+        actor: 'host',
+        capturedAtMs: Date.now(),
+        surface: room.roomSurface,
+        roomPhase: room.phase,
+        recordingStatus: 'uploading',
+        recordingActive: false,
         speakerMetadata: recordingSpeakerMetadataRef.current,
         iceProvider: room.iceProvider,
         hasTranscriptionAudio: Boolean(transcriptionAudio),
@@ -944,7 +973,14 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionBytes: transcriptionAudio?.size ?? 0,
         transcriptionMimeType: transcriptionAudio?.type ?? null,
         uploadStatus: 'attempting',
-      }));
+      });
+      room.publishRecordingStateEvent({
+        lifecycleKind: 'stop',
+        status: 'uploading',
+        active: false,
+        evidence: recordingStopEvidence,
+      });
+      captureSessionEvent('recording_stop', 'Recording stopped', 'host', recordingStopEvidence);
       const result = await uploadRecording(
         token,
         blob,
@@ -956,6 +992,29 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptStatus: result.transcriptStatus,
       });
       setRecordingState('saved');
+      room.publishRecordingStateEvent({
+        lifecycleKind: 'stop',
+        status: 'saved',
+        active: false,
+        evidence: buildRecordingLifecycleEvidence({
+          lifecycleKind: 'stop',
+          actor: 'host',
+          capturedAtMs: Date.now(),
+          surface: room.roomSurface,
+          roomPhase: room.phase,
+          recordingStatus: 'saved',
+          recordingActive: false,
+          speakerMetadata: recordingSpeakerMetadataRef.current,
+          iceProvider: room.iceProvider,
+          hasTranscriptionAudio: Boolean(transcriptionAudio),
+          recordingBytes: blob.size,
+          recordingMimeType: blob.type || null,
+          transcriptionBytes: transcriptionAudio?.size ?? 0,
+          transcriptionMimeType: transcriptionAudio?.type ?? null,
+          uploadStatus: 'accepted',
+          transcriptStatus: result.transcriptStatus ?? null,
+        }),
+      });
       setRecordingNotice(
         result.transcriptStatus === 'PROCESSING'
           ? 'Recording saved. Transcript processing has started.'
@@ -972,6 +1031,23 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         transcriptionChunks: transcriptionChunksRef.current.length,
       });
       setRecordingState('failed');
+      room.publishRecordingStateEvent({
+        lifecycleKind: 'stop',
+        status: 'failed',
+        active: false,
+        evidence: buildRecordingLifecycleEvidence({
+          lifecycleKind: 'stop',
+          actor: 'host',
+          capturedAtMs: Date.now(),
+          surface: room.roomSurface,
+          roomPhase: room.phase,
+          recordingStatus: 'failed',
+          recordingActive: false,
+          speakerMetadata: recordingSpeakerMetadataRef.current,
+          iceProvider: room.iceProvider,
+          hasTranscriptionAudio: transcriptionChunksRef.current.length > 0,
+        }),
+      });
       setRecordingError(message);
       throw error;
     } finally {
@@ -1238,6 +1314,19 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     saved: 'Saved',
     failed: 'Save failed',
   }[recordingState];
+  const sharedRecordingLabel = room.recordingState
+    ? {
+        recording: 'Recording',
+        uploading: 'Saving',
+        saved: 'Saved',
+        failed: 'Save failed',
+      }[room.recordingState.status]
+    : null;
+  const visibleRecordingActive = recordingState === 'recording'
+    || (metadata.role !== 'HOST' && room.recordingState?.active === true);
+  const visibleRecordingLabel = metadata.role === 'HOST'
+    ? recordingLabel
+    : sharedRecordingLabel ?? recordingLabel;
   const visibleRecordingNotice = recordingError ?? recordingNotice;
   const inlineRecordingNotice = (
     recordingState === 'uploading'
@@ -2194,12 +2283,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   </button>
                 )
               )}
-              {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
+              {(metadata.features?.recordingEnabled ?? true) && (metadata.role === 'HOST' || room.recordingState) && (
                 <span
-                  className={`win95-recording-state${recordingState === 'recording' ? ' is-recording' : ''}`}
+                  className={`win95-recording-state${visibleRecordingActive ? ' is-recording' : ''}`}
                   data-testid="recording-state"
                 >
-                  {recordingLabel}
+                  {visibleRecordingLabel}
                 </span>
               )}
               {metadata.role === 'HOST' && inlineRecordingNotice && (
@@ -2363,8 +2452,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     <Win95Desktop
       wm={wm}
       onIconDoubleClick={handleDesktopIconDoubleClick}
-      recordingLabel={recordingLabel}
-      recordingActive={recordingState === 'recording'}
+      recordingLabel={visibleRecordingLabel}
+      recordingActive={visibleRecordingActive}
       onClippyClick={(metadata.features?.clippyEnabled ?? true) ? openClippyChat : undefined}
       clippyActive={clippyVisible}
       clippyStatus={clippyTrayStatus}
@@ -2387,8 +2476,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     <StandardLayout
       wm={wm}
       renderWindowContent={renderWindowContent}
-      recordingLabel={recordingLabel}
-      recordingActive={recordingState === 'recording'}
+      recordingLabel={visibleRecordingLabel}
+      recordingActive={visibleRecordingActive}
       canEnterDesktop={canControlRoomSurface}
       onEnterDesktop={enterWin95Desktop}
     />

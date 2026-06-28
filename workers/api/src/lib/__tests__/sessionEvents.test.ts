@@ -1494,6 +1494,88 @@ describe('sessionEvents', () => {
         ]));
       }
     });
+
+    it('converts source-backed recording room state into session evidence', async () => {
+      const events = await roomActivitySnapshotToSessionEvents({
+        recordingActivityLog: [
+          {
+            role: 'HOST',
+            recordedAt: 1700000000500,
+            event: {
+              id: 'recording-state-1',
+              clientId: 'host-client',
+              createdAt: 1700000000500,
+              role: 'HOST',
+              lifecycleKind: 'start',
+              status: 'recording',
+              active: true,
+              evidence: {
+                source: 'video_room_recording',
+                recordingEventSource: 'browser_media_recorder',
+                recordingStateEventSource: 'browser_media_recorder_state_sync',
+                actor: 'host',
+                recordingLifecycleKind: 'start',
+                recordingStateEventId: 'recording:host:1700000000500:start:recording',
+                capturedAtMs: 1700000000500,
+                surface: 'win95',
+                roomPhase: 'connected',
+                recordingStatus: 'recording',
+                recordingActive: true,
+                durableObjectReplayExpected: true,
+                iceProvider: 'cloudflare',
+                hasTranscriptionAudio: true,
+                speakerMetadataVersion: 1,
+                speakerChannelLayout: 'host-local-guest-remote-v1',
+                speakerChannelCount: 2,
+                speakerChannels: [
+                  { channel: 0, role: 'host', source: 'local' },
+                  { channel: 1, role: 'guest', source: 'remote' },
+                ],
+              },
+            },
+          },
+          {
+            role: 'HOST',
+            recordedAt: 1700000000600,
+            event: {
+              id: 'recording-source-less',
+              clientId: 'host-client',
+              createdAt: 1700000000600,
+              role: 'HOST',
+              lifecycleKind: 'stop',
+              status: 'uploading',
+              active: false,
+            },
+          },
+        ],
+      }, {
+        candidateId: 'cand-room',
+        sessionId: 'meeting--room-sync',
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'recording_start',
+          actor: 'host',
+          text: 'Recording started',
+          candidateId: 'cand-room',
+          sessionId: 'meeting--room-sync',
+          timestamp: 1700000000,
+          properties: expect.objectContaining({
+            roomActivitySource: 'durable_object',
+            roomActivityKind: 'recording_state',
+            source: 'video_room_recording',
+            recordingEventSource: 'browser_media_recorder',
+            recordingStateEventSource: 'browser_media_recorder_state_sync',
+            recordingStateEventId: 'recording:host:1700000000500:start:recording',
+            recordingStatus: 'recording',
+            recordingActive: true,
+            roomEventId: 'recording-state-1',
+            clientId: 'host-client',
+          }),
+        }),
+      ]);
+    });
   });
 
   describe('resolveCandidateIdForRoom', () => {

@@ -132,6 +132,35 @@ export interface RoomMediaControlState {
   updatedAt: number;
 }
 
+export type RoomRecordingLifecycleKind = 'start' | 'stop';
+export type RoomRecordingStatus = 'recording' | 'uploading' | 'saved' | 'failed';
+
+export interface RoomRecordingStateEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: RoomRole;
+  lifecycleKind: RoomRecordingLifecycleKind;
+  status: RoomRecordingStatus;
+  active: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+export interface RoomRecordingStateEventDraft {
+  lifecycleKind: RoomRecordingLifecycleKind;
+  status: RoomRecordingStatus;
+  active: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+export interface RoomRecordingState {
+  role: RoomRole;
+  status: RoomRecordingStatus;
+  active: boolean;
+  updatedAt: number;
+  evidence?: Record<string, unknown>;
+}
+
 export interface RoomCodeServerFileEvent {
   id: string;
   clientId: string;
@@ -423,6 +452,7 @@ interface RoomConnection {
   clippyInteractionEvents: RoomClippyInteractionEvent[];
   chatMessages: RoomChatMessage[];
   mediaControlStates: RoomMediaControlState[];
+  recordingState: RoomRecordingState | null;
   codeServerFileEvents: RoomCodeServerFileEvent[];
   terminalEvents: RoomTerminalEvent[];
   peerCursors: RoomCursorPresence[];
@@ -441,6 +471,7 @@ interface RoomConnection {
   publishClippyInteractionEvent: (event: RoomClippyInteractionEventDraft) => void;
   publishChatMessage: (text: string) => RoomChatMessage | null;
   publishMediaControlEvent: (event: RoomMediaControlEventDraft) => void;
+  publishRecordingStateEvent: (event: RoomRecordingStateEventDraft) => void;
   publishCodeServerFileEvent: (event: RoomCodeServerFileEventDraft) => void;
   publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
   publishCursorPresence: (position: { x: number; y: number }, evidence?: Record<string, unknown>) => void;
@@ -916,6 +947,87 @@ export function applyRoomMediaControlEvent(
   ];
 }
 
+function isRoomRecordingLifecycleKind(value: unknown): value is RoomRecordingLifecycleKind {
+  return value === 'start' || value === 'stop';
+}
+
+function isRoomRecordingStatus(value: unknown): value is RoomRecordingStatus {
+  return value === 'recording'
+    || value === 'uploading'
+    || value === 'saved'
+    || value === 'failed';
+}
+
+function parseRecordingStateEvent(value: unknown): RoomRecordingStateEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || !Number.isFinite(value.createdAt)
+    || !isRoomRole(value.role)
+    || !isRoomRecordingLifecycleKind(value.lifecycleKind)
+    || !isRoomRecordingStatus(value.status)
+    || typeof value.active !== 'boolean'
+  ) {
+    return null;
+  }
+  if (value.lifecycleKind === 'start' && (value.status !== 'recording' || value.active !== true)) {
+    return null;
+  }
+  if (value.lifecycleKind === 'stop' && (value.status === 'recording' || value.active !== false)) {
+    return null;
+  }
+  return {
+    id: value.id,
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    role: value.role,
+    lifecycleKind: value.lifecycleKind,
+    status: value.status,
+    active: value.active,
+    evidence: recordOrUndefined(value.evidence),
+  };
+}
+
+function parseRecordingState(value: unknown): RoomRecordingState | null {
+  if (!isRecord(value)) return null;
+  if (
+    !isRoomRole(value.role)
+    || !isRoomRecordingStatus(value.status)
+    || typeof value.active !== 'boolean'
+    || typeof value.updatedAt !== 'number'
+    || !Number.isFinite(value.updatedAt)
+  ) {
+    return null;
+  }
+  return {
+    role: value.role,
+    status: value.status,
+    active: value.active,
+    updatedAt: value.updatedAt,
+    evidence: recordOrUndefined(value.evidence),
+  };
+}
+
+function parseRecordingStateSnapshot(value: unknown): { state: RoomRecordingState | null } | null {
+  if (!isRecord(value) || !('state' in value)) return null;
+  return { state: value.state === null ? null : parseRecordingState(value.state) };
+}
+
+export function applyRoomRecordingStateEvent(
+  _previous: RoomRecordingState | null,
+  event: RoomRecordingStateEvent,
+): RoomRecordingState {
+  return {
+    role: event.role,
+    status: event.status,
+    active: event.active,
+    updatedAt: event.createdAt,
+    evidence: event.evidence,
+  };
+}
+
 function isRoomCodeServerFileEventType(value: unknown): value is RoomCodeServerFileEventType {
   return value === 'code_editor_save' || value === 'file_change';
 }
@@ -1148,6 +1260,7 @@ export function useRoomConnection(
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const chatMessagesRef = useRef<RoomChatMessage[]>([]);
   const [mediaControlStates, setMediaControlStates] = useState<RoomMediaControlState[]>([]);
+  const [recordingState, setRecordingState] = useState<RoomRecordingState | null>(null);
   const [codeServerFileEvents, setCodeServerFileEvents] = useState<RoomCodeServerFileEvent[]>([]);
   const [terminalEvents, setTerminalEvents] = useState<RoomTerminalEvent[]>([]);
   const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
@@ -1174,6 +1287,7 @@ export function useRoomConnection(
   const clippyInteractionOutboxRef = useRef<RoomClippyInteractionEvent[]>([]);
   const chatOutboxRef = useRef<RoomChatMessage[]>([]);
   const mediaControlOutboxRef = useRef<RoomMediaControlEvent[]>([]);
+  const recordingStateOutboxRef = useRef<RoomRecordingStateEvent[]>([]);
   const codeServerFileOutboxRef = useRef<RoomCodeServerFileEvent[]>([]);
   const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
@@ -1266,6 +1380,13 @@ export function useRoomConnection(
     return true;
   }, []);
 
+  const sendRecordingStateEvent = useCallback((event: RoomRecordingStateEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_RECORDING_STATE', payload: event }));
+    return true;
+  }, []);
+
   const sendCodeServerFileEvent = useCallback((event: RoomCodeServerFileEvent): boolean => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -1348,6 +1469,17 @@ export function useRoomConnection(
       }
     }
   }, [sendMediaControlEvent]);
+
+  const flushRecordingStateOutbox = useCallback((): void => {
+    if (recordingStateOutboxRef.current.length === 0) return;
+    const pending = recordingStateOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendRecordingStateEvent(event)) {
+        recordingStateOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendRecordingStateEvent]);
 
   const flushCodeServerFileOutbox = useCallback((): void => {
     if (codeServerFileOutboxRef.current.length === 0) return;
@@ -1539,6 +1671,7 @@ export function useRoomConnection(
         flushClippyInteractionOutbox();
         flushChatOutbox();
         flushMediaControlOutbox();
+        flushRecordingStateOutbox();
         flushCodeServerFileOutbox();
         flushTerminalOutbox();
         flushFileSystemOutbox();
@@ -1710,6 +1843,18 @@ export function useRoomConnection(
           const snapshot = parseMediaControlSnapshot(message.payload);
           if (!snapshot) return;
           setMediaControlStates(snapshot.states);
+        } else if (message.type === 'ROOM_RECORDING_STATE') {
+          const event = parseRecordingStateEvent(message.payload);
+          if (!event || event.clientId === desktopClientIdRef.current) return;
+          setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
+        } else if (message.type === 'ROOM_RECORDING_STATE_ACK') {
+          const event = parseRecordingStateEvent(message.payload);
+          if (!event) return;
+          setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
+        } else if (message.type === 'ROOM_RECORDING_STATE_SNAPSHOT') {
+          const snapshot = parseRecordingStateSnapshot(message.payload);
+          if (!snapshot) return;
+          setRecordingState(snapshot.state);
         } else if (message.type === 'ROOM_CODE_SERVER_FILE_EVENT') {
           const event = parseCodeServerFileEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
@@ -1770,6 +1915,7 @@ export function useRoomConnection(
     flushDesktopOutbox,
     flushFileSystemOutbox,
     flushMediaControlOutbox,
+    flushRecordingStateOutbox,
     flushTerminalOutbox,
     role,
     scheduleHostRenegotiation,
@@ -2046,6 +2192,24 @@ export function useRoomConnection(
     }
   }, [role, sendMediaControlEvent]);
 
+  const publishRecordingStateEvent = useCallback((draft: RoomRecordingStateEventDraft): void => {
+    if (role !== 'HOST') return;
+    const createdAt = Date.now();
+    const event: RoomRecordingStateEvent = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `recording-${createdAt}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt,
+      role,
+    };
+    setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
+    if (!sendRecordingStateEvent(event)) {
+      recordingStateOutboxRef.current.push(event);
+    }
+  }, [role, sendRecordingStateEvent]);
+
   const publishCodeServerFileEvent = useCallback((draft: RoomCodeServerFileEventDraft): void => {
     if (!draft.text.trim()) return;
     const createdAt = Date.now();
@@ -2187,6 +2351,7 @@ export function useRoomConnection(
     clippyInteractionEvents,
     chatMessages,
     mediaControlStates,
+    recordingState,
     codeServerFileEvents,
     terminalEvents,
     peerCursors,
@@ -2205,6 +2370,7 @@ export function useRoomConnection(
     publishClippyInteractionEvent,
     publishChatMessage,
     publishMediaControlEvent,
+    publishRecordingStateEvent,
     publishCodeServerFileEvent,
     publishTerminalEvent,
     publishCursorPresence,

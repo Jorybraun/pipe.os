@@ -1016,6 +1016,117 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('mediaControlActivityLog')).toBe(false);
   });
 
+  it('stores and broadcasts source-backed host recording state', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_RECORDING_STATE',
+      payload: {
+        id: 'recording-state-1',
+        clientId: 'host-client',
+        createdAt: 1700000000500,
+        role: 'HOST',
+        lifecycleKind: 'start',
+        status: 'recording',
+        active: true,
+        evidence: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingStateEventSource: 'browser_media_recorder_state_sync',
+          actor: 'host',
+          recordingLifecycleKind: 'start',
+          recordingStateEventId: 'recording:host:1700000000500:start:recording',
+          capturedAtMs: 1700000000500,
+          surface: 'win95',
+          roomPhase: 'connected',
+          recordingStatus: 'recording',
+          recordingActive: true,
+          durableObjectReplayExpected: true,
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      },
+    }));
+
+    expect(storage.get('roomRecordingState')).toEqual(expect.objectContaining({
+      role: 'HOST',
+      status: 'recording',
+      active: true,
+      updatedAt: 1700000000500,
+      evidence: expect.objectContaining({
+        recordingStateEventId: 'recording:host:1700000000500:start:recording',
+      }),
+    }));
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE_ACK',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'recording-state-1',
+        status: 'recording',
+        active: true,
+      }),
+    }));
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'recording-state-1',
+        status: 'recording',
+        evidence: expect.objectContaining({
+          source: 'video_room_recording',
+          recordingStateEventSource: 'browser_media_recorder_state_sync',
+        }),
+      }),
+    }));
+    expect(storage.get('recordingActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'recording-state-1',
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects guest recording state changes without storing evidence', async () => {
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([[guest, 'GUEST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_RECORDING_STATE',
+      payload: {
+        id: 'recording-state-guest',
+        clientId: 'guest-client',
+        createdAt: 1700000000500,
+        role: 'GUEST',
+        lifecycleKind: 'start',
+        status: 'recording',
+        active: true,
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE_REJECTED',
+      reason: 'ONLY_HOST_CAN_RECORD',
+    }));
+    expect(storage.has('roomRecordingState')).toBe(false);
+    expect(storage.has('recordingActivityLog')).toBe(false);
+  });
+
   it('broadcasts raw cursor moves live without persisting cursor evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

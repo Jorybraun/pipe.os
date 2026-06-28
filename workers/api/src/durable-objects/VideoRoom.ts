@@ -37,6 +37,7 @@ const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
+const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
@@ -74,6 +75,7 @@ interface SignalMessage {
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_CURSOR'
     | 'ROOM_MEDIA_CONTROL'
+    | 'ROOM_RECORDING_STATE'
     | 'ROOM_CODE_SERVER_FILE_EVENT'
     | 'ROOM_TERMINAL_EVENT'
     | 'ROOM_FILE_SYSTEM_EVENT';
@@ -263,6 +265,34 @@ interface RoomMediaControlState {
 
 interface RoomMediaControlActivityEntry {
   event: RoomMediaControlEvent;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomRecordingLifecycleKind = 'start' | 'stop';
+type RoomRecordingStatus = 'recording' | 'uploading' | 'saved' | 'failed';
+
+interface RoomRecordingStateEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: VideoRole;
+  lifecycleKind: RoomRecordingLifecycleKind;
+  status: RoomRecordingStatus;
+  active: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+interface RoomRecordingState {
+  role: VideoRole;
+  status: RoomRecordingStatus;
+  active: boolean;
+  updatedAt: number;
+  evidence?: Record<string, unknown>;
+}
+
+interface RoomRecordingActivityEntry {
+  event: RoomRecordingStateEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -1454,6 +1484,176 @@ export class VideoRoom {
     await this.state.storage.put('mediaControlActivityLog', next);
   }
 
+  private isRoomRecordingLifecycleKind(value: unknown): value is RoomRecordingLifecycleKind {
+    return value === 'start' || value === 'stop';
+  }
+
+  private isRoomRecordingStatus(value: unknown): value is RoomRecordingStatus {
+    return value === 'recording'
+      || value === 'uploading'
+      || value === 'saved'
+      || value === 'failed';
+  }
+
+  private parseRecordingStateEvent(value: unknown): RoomRecordingStateEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 160)
+      || !this.isSafeFileText(value.clientId, 160)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !this.isVideoRole(value.role)
+      || !this.isRoomRecordingLifecycleKind(value.lifecycleKind)
+      || !this.isRoomRecordingStatus(value.status)
+      || typeof value.active !== 'boolean'
+    ) {
+      return null;
+    }
+    if (value.lifecycleKind === 'start' && (value.status !== 'recording' || value.active !== true)) {
+      return null;
+    }
+    if (value.lifecycleKind === 'stop' && (value.status === 'recording' || value.active !== false)) {
+      return null;
+    }
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      role: value.role,
+      lifecycleKind: value.lifecycleKind,
+      status: value.status,
+      active: value.active,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private hasSourceBackedRecordingStateEvidence(event: RoomRecordingStateEvent, role: VideoRole): boolean {
+    if (!this.isHostRole(role) || event.role !== role) return false;
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const capturedAtMs = evidence.capturedAtMs;
+    const recordingStateEventId = evidence.recordingStateEventId;
+    const speakerChannels = evidence.speakerChannels;
+    const baseOk = evidence.source === 'video_room_recording'
+      && evidence.recordingEventSource === 'browser_media_recorder'
+      && evidence.recordingStateEventSource === 'browser_media_recorder_state_sync'
+      && evidence.actor === 'host'
+      && evidence.recordingLifecycleKind === event.lifecycleKind
+      && evidence.recordingStatus === event.status
+      && evidence.recordingActive === event.active
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && typeof recordingStateEventId === 'string'
+      && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
+      && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && typeof evidence.roomPhase === 'string'
+      && evidence.roomPhase.length > 0
+      && evidence.durableObjectReplayExpected === true
+      && typeof evidence.iceProvider === 'string'
+      && typeof evidence.hasTranscriptionAudio === 'boolean'
+      && typeof evidence.speakerMetadataVersion === 'number'
+      && Number.isInteger(evidence.speakerMetadataVersion)
+      && typeof evidence.speakerChannelLayout === 'string'
+      && typeof evidence.speakerChannelCount === 'number'
+      && Number.isInteger(evidence.speakerChannelCount)
+      && Array.isArray(speakerChannels)
+      && speakerChannels.length === evidence.speakerChannelCount
+      && speakerChannels.every((channel) => (
+        this.isRecord(channel)
+        && typeof channel.channel === 'number'
+        && Number.isInteger(channel.channel)
+        && (channel.role === 'host' || channel.role === 'guest')
+        && (channel.source === 'local' || channel.source === 'remote')
+      ));
+    if (!baseOk) return false;
+    if (event.lifecycleKind === 'start') return event.status === 'recording' && event.active;
+    if (event.status === 'uploading' || event.status === 'saved') {
+      const expectedUploadStatus = event.status === 'uploading' ? 'attempting' : 'accepted';
+      return evidence.uploadStatus === expectedUploadStatus
+        && typeof evidence.recordingBytes === 'number'
+        && Number.isFinite(evidence.recordingBytes)
+        && evidence.recordingBytes >= 0
+        && typeof evidence.recordingMimeType === 'string'
+        && evidence.recordingMimeType.length > 0
+        && typeof evidence.transcriptionBytes === 'number'
+        && Number.isFinite(evidence.transcriptionBytes)
+        && evidence.transcriptionBytes >= 0
+        && (
+          evidence.hasTranscriptionAudio === false
+          || (typeof evidence.transcriptionMimeType === 'string' && evidence.transcriptionMimeType.length > 0)
+        );
+    }
+    return event.status === 'failed' && !event.active;
+  }
+
+  private parseRecordingState(value: unknown): RoomRecordingState | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isVideoRole(value.role)
+      || !this.isRoomRecordingStatus(value.status)
+      || typeof value.active !== 'boolean'
+      || typeof value.updatedAt !== 'number'
+      || !Number.isFinite(value.updatedAt)
+    ) {
+      return null;
+    }
+    return {
+      role: value.role,
+      status: value.status,
+      active: value.active,
+      updatedAt: value.updatedAt,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private async getRecordingState(): Promise<RoomRecordingState | null> {
+    return this.parseRecordingState(await this.state.storage.get<unknown>('roomRecordingState'));
+  }
+
+  private async persistRecordingState(event: RoomRecordingStateEvent, role: VideoRole): Promise<RoomRecordingState> {
+    const next: RoomRecordingState = {
+      role,
+      status: event.status,
+      active: event.active,
+      updatedAt: event.createdAt,
+      evidence: event.evidence,
+    };
+    await this.state.storage.put('roomRecordingState', next);
+    return next;
+  }
+
+  private parseRecordingActivityEntry(value: unknown): RoomRecordingActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseRecordingStateEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseRecordingActivityLog(value: unknown): RoomRecordingActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseRecordingActivityEntry(entry))
+      .filter((entry): entry is RoomRecordingActivityEntry => entry !== null);
+  }
+
+  private async recordRecordingActivity(event: RoomRecordingStateEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseRecordingActivityLog(await this.state.storage.get<unknown>('recordingActivityLog'));
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('recordingActivityLog', next);
+  }
+
   private parseCursorPresence(value: unknown, fallbackRole?: VideoRole): RoomCursorPresence | null {
     if (!this.isRecord(value)) return null;
     const role = this.isVideoRole(value.role) ? value.role : fallbackRole;
@@ -2306,6 +2506,9 @@ export class VideoRoom {
         mediaControlActivityLog: this.parseMediaControlActivityLog(
           await this.state.storage.get<unknown>('mediaControlActivityLog'),
         ),
+        recordingActivityLog: this.parseRecordingActivityLog(
+          await this.state.storage.get<unknown>('recordingActivityLog'),
+        ),
         cursorActivityLog: this.parseCursorActivityLog(
           await this.state.storage.get<unknown>('cursorActivityLog'),
         ),
@@ -2377,6 +2580,12 @@ export class VideoRoom {
       server.send(JSON.stringify({
         type: 'ROOM_MEDIA_CONTROL_STATE',
         payload: { states: mediaControlStates },
+      }));
+
+      const recordingState = await this.getRecordingState();
+      server.send(JSON.stringify({
+        type: 'ROOM_RECORDING_STATE_SNAPSHOT',
+        payload: { state: recordingState },
       }));
 
       const roomFileSystem = await this.getRoomFileSystem();
@@ -2675,6 +2884,51 @@ export class VideoRoom {
       }));
       this.broadcastExcept(ws, JSON.stringify({
         type: 'ROOM_MEDIA_CONTROL',
+        role: senderRole,
+        payload: event,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_RECORDING_STATE') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_RECORDING_STATE_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      if (!this.isHostRole(senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_RECORDING_STATE_REJECTED',
+          reason: 'ONLY_HOST_CAN_RECORD',
+        }));
+        return;
+      }
+      const event = this.parseRecordingStateEvent(message.payload);
+      if (!event) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_RECORDING_STATE_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedRecordingStateEvidence(event, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_RECORDING_STATE_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
+        }));
+        return;
+      }
+      await this.persistRecordingState(event, senderRole);
+      await this.recordRecordingActivity(event, senderRole);
+      ws.send(JSON.stringify({
+        type: 'ROOM_RECORDING_STATE_ACK',
+        role: senderRole,
+        payload: event,
+      }));
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_RECORDING_STATE',
         role: senderRole,
         payload: event,
       }));

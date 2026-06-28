@@ -96,6 +96,7 @@ const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'b
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
+const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
@@ -148,6 +149,10 @@ function actorFromRoomRole(value: unknown): SessionEvent['actor'] {
   if (value === 'HOST' || value === 'RECRUITER') return 'host';
   if (value === 'GUEST' || value === 'CANDIDATE') return 'guest';
   return 'system';
+}
+
+function isHostRoomRole(value: unknown): boolean {
+  return value === 'HOST' || value === 'RECRUITER';
 }
 
 function unixTimestampFromActivity(primary: unknown, fallback: unknown): number {
@@ -778,6 +783,114 @@ function mediaControlActivityToSessionEvent(input: RoomActivitySyncInput, value:
     timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
     actor,
     text: mediaControlText(actor, control, enabled),
+    properties,
+  });
+}
+
+function isRecordingStateStatus(value: unknown): value is 'recording' | 'uploading' | 'saved' | 'failed' {
+  return value === 'recording'
+    || value === 'uploading'
+    || value === 'saved'
+    || value === 'failed';
+}
+
+function recordingStateText(lifecycleKind: 'start' | 'stop', status: string): string {
+  if (lifecycleKind === 'start') return 'Recording started';
+  if (status === 'saved') return 'Recording saved';
+  if (status === 'failed') return 'Recording save failed';
+  return 'Recording stopped';
+}
+
+function isSourceBackedRecordingStateEvidence(
+  evidence: Record<string, unknown> | null,
+  lifecycleKind: 'start' | 'stop',
+  status: 'recording' | 'uploading' | 'saved' | 'failed',
+  active: boolean,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  const capturedAtMs = numberOrNull(evidence.capturedAtMs);
+  const recordingStateEventId = stringOrNull(evidence.recordingStateEventId);
+  const speakerChannels = Array.isArray(evidence.speakerChannels) ? evidence.speakerChannels : null;
+  const speakerChannelCount = numberOrNull(evidence.speakerChannelCount);
+  const baseOk = evidence.source === 'video_room_recording'
+    && evidence.recordingEventSource === 'browser_media_recorder'
+    && evidence.recordingStateEventSource === 'browser_media_recorder_state_sync'
+    && evidence.actor === 'host'
+    && evidence.recordingLifecycleKind === lifecycleKind
+    && evidence.recordingStatus === status
+    && evidence.recordingActive === active
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && recordingStateEventId !== null
+    && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
+    && recordingStateEventId === `recording:host:${capturedAtMs}:${lifecycleKind}:${status}`
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && stringOrNull(evidence.roomPhase) !== null
+    && evidence.durableObjectReplayExpected === true
+    && stringOrNull(evidence.iceProvider) !== null
+    && typeof evidence.hasTranscriptionAudio === 'boolean'
+    && numberOrNull(evidence.speakerMetadataVersion) !== null
+    && stringOrNull(evidence.speakerChannelLayout) !== null
+    && speakerChannelCount !== null
+    && Number.isInteger(speakerChannelCount)
+    && speakerChannels !== null
+    && speakerChannels.length === speakerChannelCount
+    && speakerChannels.every((channel) => (
+      isRecord(channel)
+      && numberOrNull(channel.channel) !== null
+      && Number.isInteger(numberOrNull(channel.channel))
+      && (channel.role === 'host' || channel.role === 'guest')
+      && (channel.source === 'local' || channel.source === 'remote')
+    ));
+  if (!baseOk) return false;
+  if (lifecycleKind === 'start') return status === 'recording' && active;
+  if (status === 'uploading' || status === 'saved') {
+    const expectedUploadStatus = status === 'uploading' ? 'attempting' : 'accepted';
+    return active === false
+      && evidence.uploadStatus === expectedUploadStatus
+      && numberOrNull(evidence.recordingBytes) !== null
+      && stringOrNull(evidence.recordingMimeType) !== null
+      && numberOrNull(evidence.transcriptionBytes) !== null
+      && (
+        evidence.hasTranscriptionAudio === false
+        || stringOrNull(evidence.transcriptionMimeType) !== null
+      );
+  }
+  return lifecycleKind === 'stop' && status === 'failed' && active === false;
+}
+
+function recordingActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const role = isRoomActivityRole(value.role)
+    ? value.role
+    : isRoomActivityRole(event.role)
+      ? event.role
+      : null;
+  if (!role || !isHostRoomRole(role)) return null;
+  if (isRoomActivityRole(event.role) && event.role !== role) return null;
+  const lifecycleKind = event.lifecycleKind === 'start' || event.lifecycleKind === 'stop'
+    ? event.lifecycleKind
+    : null;
+  if (!lifecycleKind || !isRecordingStateStatus(event.status) || typeof event.active !== 'boolean') {
+    return null;
+  }
+  const evidence = isRecord(event.evidence) ? event.evidence : null;
+  if (!isSourceBackedRecordingStateEvidence(evidence, lifecycleKind, event.status, event.active)) return null;
+  const properties = {
+    ...roomActivityBaseProperties('recording_state', role, value.recordedAt),
+    ...evidence,
+  };
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) properties.roomEventId = eventId;
+  if (clientId) properties.clientId = clientId;
+  return createSessionEvent(input, {
+    type: lifecycleKind === 'start' ? 'recording_start' : 'recording_stop',
+    timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+    actor: 'host',
+    text: recordingStateText(lifecycleKind, event.status),
     properties,
   });
 }
@@ -1417,6 +1530,9 @@ export async function roomActivitySnapshotToSessionEvents(
   const mediaControlActivityLog = Array.isArray(snapshot.mediaControlActivityLog)
     ? snapshot.mediaControlActivityLog
     : [];
+  const recordingActivityLog = Array.isArray(snapshot.recordingActivityLog)
+    ? snapshot.recordingActivityLog
+    : [];
   const cursorActivityLog = Array.isArray(snapshot.cursorActivityLog) ? snapshot.cursorActivityLog : [];
   const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
     ? snapshot.clippyPromptActivityLog
@@ -1431,6 +1547,7 @@ export async function roomActivitySnapshotToSessionEvents(
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
+  recordingActivityLog.forEach((entry) => pushMapped(recordingActivityToSessionEvent(input, entry)));
   cursorActivityLog.forEach((entry) => pushMapped(cursorActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
   clippyInteractionActivityLog.forEach((entry) => pushMapped(clippyInteractionActivityToSessionEvent(input, entry)));
@@ -2257,6 +2374,7 @@ const CONTEXT_SOURCE_REF_KEYS = [
   'agentStatusEventId',
   'clippyActionEventId',
   'recordingEventId',
+  'recordingStateEventId',
   'mediaControlId',
   'cursorSampleId',
 ] as const;

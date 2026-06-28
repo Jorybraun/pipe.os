@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyRoomMediaControlEvent,
+  applyRoomRecordingStateEvent,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
   type RoomChatMessage,
@@ -63,6 +64,33 @@ describe('mergePeerCursorPresence', () => {
         updatedAt: 5000,
       },
     ]);
+  });
+});
+
+describe('applyRoomRecordingStateEvent', () => {
+  it('stores the latest host recording state for guest-visible indicators', () => {
+    expect(applyRoomRecordingStateEvent(null, {
+      id: 'recording-state-1',
+      clientId: 'host-client',
+      createdAt: 3000,
+      role: 'HOST',
+      lifecycleKind: 'start',
+      status: 'recording',
+      active: true,
+      evidence: {
+        source: 'video_room_recording',
+        recordingStateEventId: 'recording:host:3000:start:recording',
+      },
+    })).toEqual({
+      role: 'HOST',
+      status: 'recording',
+      active: true,
+      updatedAt: 3000,
+      evidence: {
+        source: 'video_room_recording',
+        recordingStateEventId: 'recording:host:3000:start:recording',
+      },
+    });
   });
 });
 

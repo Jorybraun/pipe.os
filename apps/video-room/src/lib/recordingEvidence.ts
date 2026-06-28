@@ -1,7 +1,16 @@
 import type { IceServerProvider, RecordingSpeakerMetadata } from '../types';
+import type { RoomSurface } from '../hooks/useRoomConnection';
+
+export type RecordingStateStatus = 'recording' | 'uploading' | 'saved' | 'failed';
 
 export interface RecordingLifecycleEvidenceInput {
   lifecycleKind: 'start' | 'stop';
+  actor?: 'host';
+  capturedAtMs?: number;
+  surface?: RoomSurface;
+  roomPhase?: string;
+  recordingStatus?: RecordingStateStatus;
+  recordingActive?: boolean;
   speakerMetadata?: RecordingSpeakerMetadata | null;
   iceProvider?: IceServerProvider;
   hasTranscriptionAudio?: boolean;
@@ -20,6 +29,13 @@ function finiteNonNegative(value: number | null | undefined): number | null {
   return value;
 }
 
+function capturedTimestamp(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return Math.round(value);
+}
+
 export function buildRecordingLifecycleEvidence(
   input: RecordingLifecycleEvidenceInput,
 ): Record<string, unknown> {
@@ -29,6 +45,31 @@ export function buildRecordingLifecycleEvidence(
     recordingLifecycleKind: input.lifecycleKind,
   };
   if (input.iceProvider) properties.iceProvider = input.iceProvider;
+  const capturedAtMs = capturedTimestamp(input.capturedAtMs);
+  if (
+    input.actor
+    && capturedAtMs !== null
+    && input.surface
+    && input.roomPhase
+    && input.recordingStatus
+    && typeof input.recordingActive === 'boolean'
+  ) {
+    properties.recordingStateEventSource = 'browser_media_recorder_state_sync';
+    properties.actor = input.actor;
+    properties.recordingStateEventId = [
+      'recording',
+      input.actor,
+      capturedAtMs,
+      input.lifecycleKind,
+      input.recordingStatus,
+    ].join(':');
+    properties.capturedAtMs = capturedAtMs;
+    properties.surface = input.surface;
+    properties.roomPhase = input.roomPhase;
+    properties.recordingStatus = input.recordingStatus;
+    properties.recordingActive = input.recordingActive;
+    properties.durableObjectReplayExpected = true;
+  }
   if (input.hasTranscriptionAudio !== undefined) {
     properties.hasTranscriptionAudio = input.hasTranscriptionAudio;
   }
