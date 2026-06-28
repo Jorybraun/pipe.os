@@ -668,6 +668,8 @@ describe('sessionEvents', () => {
       try {
         const promptText = 'Can you inspect the failing test?';
         const promptId = 'workspace-session-1:guest:prompt:1782604600000:clippy_0123abcd';
+        const blockedPromptText = 'Can you inspect this before the workspace starts?';
+        const blockedPromptId = 'none:guest:prompt:1782604620000:clippy_89abcdef';
         const agentText = 'I inspected the failing test.';
         const agentResponseId = 'agent-chat:devin:1782604610000:CHAT_RESPONSE:agent_314a13fc';
         const events: SessionEvent[] = [
@@ -727,6 +729,7 @@ describe('sessionEvents', () => {
               agentChatEventSource: 'browser_clippy_chat_window',
               bridgeMessageType: 'CHAT',
               bridgeProtocol: 'clippy_dev_container_ws',
+              bridgeDeliveryStatus: 'queued',
               browserQueuedBridgeMessage: true,
               bridgeDeliveryConfirmed: false,
               deliveredToAgentBridge: false,
@@ -742,6 +745,38 @@ describe('sessionEvents', () => {
               workspaceStatus: 'READY',
               workspaceSessionId: 'workspace-session-1',
               repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'ai_chat_user',
+            sessionId: 'meeting-session-chat-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604620,
+            actor: 'guest',
+            text: blockedPromptText,
+            properties: {
+              source: 'clippy_agent_chat_client_submit',
+              agentChatEventSource: 'browser_clippy_chat_window',
+              bridgeMessageType: 'CHAT',
+              bridgeProtocol: 'clippy_dev_container_ws',
+              bridgeDeliveryStatus: 'blocked',
+              bridgeBlockedReason: 'workspace_required',
+              browserQueuedBridgeMessage: false,
+              bridgeDeliveryConfirmed: false,
+              deliveredToAgentBridge: false,
+              agentResponseClaimed: false,
+              agent: null,
+              actor: 'guest',
+              promptId: blockedPromptId,
+              promptTimestamp: 1782604620000,
+              promptFingerprint: 'clippy_89abcdef',
+              promptLength: blockedPromptText.length,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: null,
+              workspaceSessionId: null,
+              repoUrl: null,
               durableObjectReplayExpected: true,
             },
           },
@@ -789,6 +824,7 @@ describe('sessionEvents', () => {
                 'room_chat_message',
                 'clippy_proactive_prompt',
                 'clippy_user_prompt',
+                'clippy_user_prompt_blocked',
                 'clippy_agent_response'
               )
             ORDER BY csr.source_ref_type`,
@@ -823,6 +859,13 @@ describe('sessionEvents', () => {
             content_hash: await sha256Hex(promptText),
           },
           {
+            source_ref_type: 'clippy_user_prompt_blocked',
+            source_ref_id: blockedPromptId,
+            evidence_role: 'clippy_user_prompt_blocked',
+            exact_text: blockedPromptText,
+            content_hash: await sha256Hex(blockedPromptText),
+          },
+          {
             source_ref_type: 'room_chat_message',
             source_ref_id: 'chat-guest-1',
             evidence_role: 'room_chat_message',
@@ -838,6 +881,7 @@ describe('sessionEvents', () => {
               'room_chat_message',
               'clippy_proactive_prompt',
               'clippy_user_prompt',
+              'clippy_user_prompt_blocked',
               'clippy_agent_response'
             )
             ORDER BY source_ref_type`,
@@ -870,6 +914,11 @@ describe('sessionEvents', () => {
             entity_type: 'clippy_prompt',
             entity_id: 'clippy-proactive-host-1',
             relationship: 'prompt_event',
+          },
+          {
+            entity_type: 'clippy_prompt',
+            entity_id: blockedPromptId,
+            relationship: 'source_prompt',
           },
           {
             entity_type: 'clippy_prompt',

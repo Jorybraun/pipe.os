@@ -1,16 +1,28 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { initAgent } from 'clippyjs';
 import ClippyLoaders from 'clippyjs/agents/clippy';
 import {
   useAgentConnection,
   type AgentChatMessage,
+  type AgentPromptBlockedReason,
   type AgentFileChangeEvent,
   type AgentRoomAction,
   type AgentStatus,
 } from '../hooks/useAgentConnection';
 import type { ClippyPromptActor } from '../lib/clippyPromptIdentity';
+import { buildClippyBrowserPromptIdentity } from '../lib/clippyPromptIdentity';
 
 type Agent = Awaited<ReturnType<typeof initAgent>>;
+
+const BLOCKED_PROMPT_MESSAGES: Record<AgentPromptBlockedReason, string> = {
+  workspace_required: 'Clippy could not send that because the dev workspace is not running.',
+  bridge_reconnecting: 'Clippy could not send that because the container bridge is reconnecting.',
+  agent_starting: 'Clippy could not send that because the real agent is still starting.',
+  agent_auth_needed: 'Clippy could not send that because the real agent needs authentication.',
+  agent_disconnected: 'Clippy could not send that because no real agent bridge is ready.',
+  agent_identity_missing: 'Clippy could not send that because the bridge has not reported a real agent identity.',
+  agent_capabilities_missing: 'Clippy could not send that because the real agent has not reported chat capability yet.',
+};
 
 export interface ClippyMessage {
   text: string;
@@ -80,6 +92,7 @@ export function ClippyAssistant({
   const spokenMessagesRef = useRef<Set<string>>(new Set());
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
@@ -167,8 +180,8 @@ export function ClippyAssistant({
   }, [agentConn.messages, ready]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [agentConn.messages]);
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+  }, [agentConn.messages, localChatMessages]);
 
   useEffect(() => {
     for (const msg of agentConn.messages) {
@@ -283,15 +296,6 @@ export function ClippyAssistant({
     }, 800);
   }, [ready]);
 
-  const handleSendChat = useCallback(() => {
-    const text = chatInput.trim();
-    if (!text) return;
-    const message = agentConn.sendMessage(text);
-    if (!message) return;
-    onUserChatMessage?.(message);
-    setChatInput('');
-  }, [chatInput, agentConn, onUserChatMessage]);
-
   const handleAuthClick = useCallback(() => {
     if (agentConn.authUrl && onOpenBrowser) {
       onOpenAuthBrowser?.();
@@ -365,6 +369,68 @@ export function ClippyAssistant({
     && agentConn.status !== 'disconnected'
     && reportedAgentName.length > 0
     && agentConn.capabilities.length > 0;
+  const blockedPromptReason: AgentPromptBlockedReason | null = canSendToAgent
+    ? null
+    : !agentEnabled
+      ? 'workspace_required'
+      : !agentConn.connected
+        ? 'bridge_reconnecting'
+        : agentConn.status === 'starting'
+          ? 'agent_starting'
+          : agentConn.status === 'auth_needed'
+            ? 'agent_auth_needed'
+            : agentConn.status === 'disconnected'
+              ? 'agent_disconnected'
+              : reportedAgentName.length === 0
+                ? 'agent_identity_missing'
+                : agentConn.capabilities.length === 0
+                  ? 'agent_capabilities_missing'
+                  : 'agent_disconnected';
+  const handleSendChat = useCallback(() => {
+    const text = chatInput.trim();
+    if (!text) return;
+    if (canSendToAgent) {
+      const message = agentConn.sendMessage(text);
+      if (!message) return;
+      onUserChatMessage?.(message);
+      setChatInput('');
+      return;
+    }
+    if (!blockedPromptReason) return;
+    const timestamp = Date.now();
+    const promptIdentity = buildClippyBrowserPromptIdentity({
+      text,
+      actor: promptActor ?? 'guest',
+      timestamp,
+      workspaceSessionId: promptWorkspaceSessionId ?? null,
+    });
+    const blockedUserMessage: AgentChatMessage = {
+      role: 'user',
+      text,
+      timestamp,
+      source: 'user_submit',
+      deliveryStatus: 'blocked',
+      blockedReason: blockedPromptReason,
+      ...promptIdentity,
+    };
+    const blockedDiagnostic: AgentChatMessage = {
+      role: 'agent',
+      text: BLOCKED_PROMPT_MESSAGES[blockedPromptReason],
+      timestamp: timestamp + 1,
+      source: 'bridge_observation',
+    };
+    setLocalChatMessages((prev) => [...prev.slice(-19), blockedUserMessage, blockedDiagnostic]);
+    onUserChatMessage?.(blockedUserMessage);
+    setChatInput('');
+  }, [
+    agentConn,
+    blockedPromptReason,
+    canSendToAgent,
+    chatInput,
+    onUserChatMessage,
+    promptActor,
+    promptWorkspaceSessionId,
+  ]);
   const emptyChatMessage = !agentEnabled
     ? unavailableMessage
     : !agentConn.connected
@@ -415,6 +481,9 @@ export function ClippyAssistant({
       state: agentConn.capabilities.length > 0 ? 'ok' : 'waiting',
     },
   ] as const;
+  const chatMessages = useMemo(() => (
+    [...agentConn.messages, ...localChatMessages].sort((a, b) => a.timestamp - b.timestamp)
+  ), [agentConn.messages, localChatMessages]);
 
   return (
     <>
@@ -471,12 +540,12 @@ export function ClippyAssistant({
           </div>
 
           <div className="win95-clippy-chat-messages">
-            {agentConn.messages.length === 0 && (
+            {chatMessages.length === 0 && (
               <div className="win95-clippy-chat-msg agent">
                 {emptyChatMessage}
               </div>
             )}
-            {agentConn.messages.map((msg, i) => (
+            {chatMessages.map((msg, i) => (
               <div
                 key={i}
                 className={`win95-clippy-chat-msg ${msg.role}`}
@@ -569,13 +638,12 @@ export function ClippyAssistant({
                 if (e.key === 'Enter') handleSendChat();
               }}
               placeholder={agentEnabled ? 'Ask Clippy...' : 'Ask Clippy when a real agent is connected...'}
-              disabled={!canSendToAgent}
               data-testid="clippy-chat-input"
             />
             <button
               className="win95-clippy-chat-send"
               onClick={handleSendChat}
-              disabled={!canSendToAgent || !chatInput.trim()}
+              disabled={!chatInput.trim()}
             >
               Send
             </button>

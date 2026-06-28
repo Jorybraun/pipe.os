@@ -6,6 +6,15 @@ import {
 import { redactAgentDiagnosticText } from '../lib/agentDiagnosticRedaction';
 
 export type AgentStatus = 'starting' | 'idle' | 'thinking' | 'working' | 'auth_needed' | 'disconnected';
+export type AgentPromptDeliveryStatus = 'queued' | 'blocked';
+export type AgentPromptBlockedReason =
+  | 'workspace_required'
+  | 'bridge_reconnecting'
+  | 'agent_starting'
+  | 'agent_auth_needed'
+  | 'agent_disconnected'
+  | 'agent_identity_missing'
+  | 'agent_capabilities_missing';
 export type AgentRoomActionId =
   | 'open-browser'
   | 'open-terminal'
@@ -43,6 +52,8 @@ export interface AgentChatMessage {
   browserPromptFingerprint?: string;
   browserPromptTimestamp?: number;
   browserPromptLength?: number;
+  deliveryStatus?: AgentPromptDeliveryStatus;
+  blockedReason?: AgentPromptBlockedReason;
 }
 
 export interface AgentRoomAction {

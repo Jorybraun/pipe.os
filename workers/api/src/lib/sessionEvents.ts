@@ -95,6 +95,15 @@ const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-z
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
+const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
+  'workspace_required',
+  'bridge_reconnecting',
+  'agent_starting',
+  'agent_auth_needed',
+  'agent_disconnected',
+  'agent_identity_missing',
+  'agent_capabilities_missing',
+]);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
@@ -1223,13 +1232,25 @@ function isSourceBackedClippyInteractionEvidence(
     const promptTimestamp = numberOrNull(evidence.promptTimestamp);
     const promptFingerprint = stringOrNull(evidence.promptFingerprint);
     const workspaceSessionId = stringOrNull(evidence.workspaceSessionId);
+    const workspacePart = safeEvidenceIdPart(workspaceSessionId);
+    const deliveryStatus = evidence.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
+    const deliveryOk = deliveryStatus === 'blocked'
+      ? evidence.browserQueuedBridgeMessage === false
+        && CLIPPY_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
+      : evidence.browserQueuedBridgeMessage === true
+        && workspaceSessionId !== null
+        && stringOrNull(evidence.workspaceStatus) !== null;
     return (actor === 'host' || actor === 'guest')
       && evidence.actor === actor
       && evidence.source === 'clippy_agent_chat_client_submit'
       && evidence.agentChatEventSource === 'browser_clippy_chat_window'
       && evidence.bridgeMessageType === 'CHAT'
       && evidence.bridgeProtocol === 'clippy_dev_container_ws'
-      && evidence.browserQueuedBridgeMessage === true
+      && (
+        evidence.bridgeDeliveryStatus === deliveryStatus
+        || (deliveryStatus === 'queued' && evidence.bridgeDeliveryStatus === undefined)
+      )
+      && deliveryOk
       && evidence.bridgeDeliveryConfirmed === false
       && evidence.deliveredToAgentBridge !== true
       && evidence.agentResponseClaimed === false
@@ -1239,11 +1260,10 @@ function isSourceBackedClippyInteractionEvidence(
       && promptFingerprint !== null
       && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
       && evidence.promptLength === text.length
-      && workspaceSessionId !== null
-      && evidence.promptId === `${workspaceSessionId}:${actor}:prompt:${promptTimestamp}:${promptFingerprint}`
+      && evidence.promptId === `${workspacePart}:${actor}:prompt:${promptTimestamp}:${promptFingerprint}`
       && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && stringOrNull(evidence.roomPhase) !== null
-      && stringOrNull(evidence.workspaceStatus) !== null
+      && (evidence.workspaceStatus === null || evidence.workspaceStatus === undefined || stringOrNull(evidence.workspaceStatus) !== null)
       && (evidence.repoUrl === null || evidence.repoUrl === undefined || typeof evidence.repoUrl === 'string');
   }
 
@@ -2165,6 +2185,8 @@ function sessionEventEntities(input: {
         actor: event.actor,
         promptLength: numberProperty(properties, 'promptLength'),
         workspaceSessionId: stringProperty(properties, 'workspaceSessionId'),
+        bridgeDeliveryStatus: stringProperty(properties, 'bridgeDeliveryStatus'),
+        bridgeBlockedReason: stringProperty(properties, 'bridgeBlockedReason'),
       },
     });
   }
@@ -2436,16 +2458,21 @@ async function chatTextSourceRef(input: {
     const promptTimestamp = numberProperty(input.properties, 'promptTimestamp');
     const promptFingerprint = stringProperty(input.properties, 'promptFingerprint');
     const workspaceSessionId = stringProperty(input.properties, 'workspaceSessionId');
+    const workspacePart = safeEvidenceIdPart(workspaceSessionId);
     const promptLength = numberProperty(input.properties, 'promptLength');
+    const deliveryStatus = input.properties.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
+    const blockedReason = stringProperty(input.properties, 'bridgeBlockedReason');
     if (!promptId || promptLength !== input.event.text.length) return null;
     if (promptTimestamp === null || promptTimestamp < 0 || !Number.isInteger(promptTimestamp)) return null;
     if (!promptFingerprint || !CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)) return null;
-    if (!workspaceSessionId || promptId !== `${workspaceSessionId}:${input.event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`) return null;
+    if (promptId !== `${workspacePart}:${input.event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`) return null;
+    if (deliveryStatus === 'queued' && !workspaceSessionId) return null;
+    if (deliveryStatus === 'blocked' && (!blockedReason || !CLIPPY_PROMPT_BLOCKED_REASONS.has(blockedReason))) return null;
     if (input.properties.agentResponseClaimed !== false || input.properties.deliveredToAgentBridge === true) return null;
     return {
-      sourceRefType: 'clippy_user_prompt',
+      sourceRefType: deliveryStatus === 'blocked' ? 'clippy_user_prompt_blocked' : 'clippy_user_prompt',
       sourceRefId: promptId,
-      evidenceRole: 'clippy_user_prompt',
+      evidenceRole: deliveryStatus === 'blocked' ? 'clippy_user_prompt_blocked' : 'clippy_user_prompt',
       locator: {
         sessionId: input.event.sessionId,
         candidateId: input.event.candidateId,
@@ -2457,14 +2484,20 @@ async function chatTextSourceRef(input: {
         repoUrl: stringProperty(input.properties, 'repoUrl'),
         surface: stringProperty(input.properties, 'surface'),
         roomPhase: stringProperty(input.properties, 'roomPhase'),
+        bridgeDeliveryStatus: deliveryStatus,
+        bridgeBlockedReason: blockedReason,
       },
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
       metadata: {
-        sourceKind: 'clippy.user_prompt',
+        sourceKind: deliveryStatus === 'blocked'
+          ? 'clippy.user_prompt_blocked'
+          : 'clippy.user_prompt',
         agentChatEventSource: 'browser_clippy_chat_window',
         bridgeMessageType: stringProperty(input.properties, 'bridgeMessageType'),
         bridgeProtocol: stringProperty(input.properties, 'bridgeProtocol'),
+        bridgeDeliveryStatus: deliveryStatus,
+        bridgeBlockedReason: blockedReason,
         promptFingerprint,
         promptLength,
       },

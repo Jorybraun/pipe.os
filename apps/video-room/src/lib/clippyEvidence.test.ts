@@ -393,6 +393,7 @@ describe('clippy evidence', () => {
         promptFingerprint: 'clippy_0123abcd',
         promptLength: 48,
         promptTimestamp: 1782603900000,
+        bridgeDeliveryStatus: 'queued',
         browserQueuedBridgeMessage: true,
         bridgeDeliveryConfirmed: false,
         agent: null,
@@ -401,6 +402,49 @@ describe('clippy evidence', () => {
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-123',
         repoUrl: 'https://github.com/acme/orders',
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
+  it('captures blocked Clippy prompts without claiming bridge delivery', () => {
+    expect(buildClippyUserChatEvidence({
+      message: {
+        role: 'user',
+        text: 'Can you inspect the repo before the workspace starts?',
+        timestamp: 1782603950000,
+        source: 'user_submit',
+        deliveryStatus: 'blocked',
+        blockedReason: 'workspace_required',
+        browserPromptId: 'none:guest:prompt:1782603950000:clippy_89abcdef',
+        browserPromptFingerprint: 'clippy_89abcdef',
+        browserPromptTimestamp: 1782603950000,
+        browserPromptLength: 51,
+      },
+      actor: 'guest',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: null,
+      workspaceSessionId: null,
+      repoUrl: null,
+    })).toMatchObject({
+      text: 'Can you inspect the repo before the workspace starts?',
+      properties: {
+        source: 'clippy_agent_chat_client_submit',
+        agentChatEventSource: 'browser_clippy_chat_window',
+        bridgeMessageType: 'CHAT',
+        bridgeProtocol: 'clippy_dev_container_ws',
+        bridgeDeliveryStatus: 'blocked',
+        bridgeBlockedReason: 'workspace_required',
+        promptId: 'none:guest:prompt:1782603950000:clippy_89abcdef',
+        promptFingerprint: 'clippy_89abcdef',
+        promptLength: 51,
+        promptTimestamp: 1782603950000,
+        browserQueuedBridgeMessage: false,
+        bridgeDeliveryConfirmed: false,
+        agent: null,
+        workspaceStatus: null,
+        workspaceSessionId: null,
         agentResponseClaimed: false,
       },
     });

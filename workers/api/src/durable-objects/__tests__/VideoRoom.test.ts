@@ -1630,6 +1630,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           promptFingerprint: 'clippy_0123abcd',
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
+          bridgeDeliveryStatus: 'queued',
           browserQueuedBridgeMessage: true,
           bridgeDeliveryConfirmed: false,
           agent: null,
@@ -1715,6 +1716,79 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'clippy-agent-status-1',
           eventType: 'ai_agent_status',
+        }),
+      }),
+    ]);
+  });
+
+  it('records blocked Clippy prompts without claiming delivery to Devin', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+    const promptText = 'Can you inspect this before the workspace starts?';
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-user-chat-blocked',
+        clientId: 'guest-client',
+        createdAt: 1782603950000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: promptText,
+        evidence: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          bridgeDeliveryStatus: 'blocked',
+          bridgeBlockedReason: 'workspace_required',
+          promptId: 'none:guest:prompt:1782603950000:clippy_89abcdef',
+          promptFingerprint: 'clippy_89abcdef',
+          promptLength: promptText.length,
+          promptTimestamp: 1782603950000,
+          browserQueuedBridgeMessage: false,
+          bridgeDeliveryConfirmed: false,
+          agent: null,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: null,
+          workspaceSessionId: null,
+          repoUrl: null,
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        id: 'clippy-user-chat-blocked',
+        eventType: 'ai_chat_user',
+        text: promptText,
+        evidence: expect.objectContaining({
+          bridgeDeliveryStatus: 'blocked',
+          bridgeBlockedReason: 'workspace_required',
+          browserQueuedBridgeMessage: false,
+        }),
+      }),
+    }));
+    expect(storage.get('clippyInteractionActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'clippy-user-chat-blocked',
+          evidence: expect.objectContaining({
+            bridgeDeliveryStatus: 'blocked',
+            bridgeBlockedReason: 'workspace_required',
+          }),
         }),
       }),
     ]);

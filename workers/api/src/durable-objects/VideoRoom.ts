@@ -35,6 +35,15 @@ const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'agent_api_response', 'bridge_diagnostic', 'bridge_observation']);
+const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
+  'workspace_required',
+  'bridge_reconnecting',
+  'agent_starting',
+  'agent_auth_needed',
+  'agent_disconnected',
+  'agent_identity_missing',
+  'agent_capabilities_missing',
+]);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
@@ -1082,7 +1091,17 @@ export class VideoRoom {
         ? evidence.promptTimestamp
         : null;
       const promptFingerprint = typeof evidence.promptFingerprint === 'string' ? evidence.promptFingerprint : null;
-      const workspaceSessionId = typeof evidence.workspaceSessionId === 'string' ? evidence.workspaceSessionId : null;
+      const workspaceSessionId = typeof evidence.workspaceSessionId === 'string' && evidence.workspaceSessionId.trim().length > 0
+        ? evidence.workspaceSessionId
+        : null;
+      const workspacePart = safeEvidenceIdPart(workspaceSessionId);
+      const deliveryStatus = evidence.bridgeDeliveryStatus === 'blocked' ? 'blocked' : 'queued';
+      const deliveryOk = deliveryStatus === 'blocked'
+        ? evidence.browserQueuedBridgeMessage === false
+          && CLIPPY_PROMPT_BLOCKED_REASONS.has(String(evidence.bridgeBlockedReason))
+        : evidence.browserQueuedBridgeMessage === true
+          && workspaceSessionId !== null
+          && typeof evidence.workspaceStatus === 'string';
       return (event.actor === 'host' || event.actor === 'guest')
         && event.actor === senderActor
         && evidence.actor === event.actor
@@ -1090,7 +1109,11 @@ export class VideoRoom {
         && evidence.agentChatEventSource === 'browser_clippy_chat_window'
         && evidence.bridgeMessageType === 'CHAT'
         && evidence.bridgeProtocol === 'clippy_dev_container_ws'
-        && evidence.browserQueuedBridgeMessage === true
+        && (
+          evidence.bridgeDeliveryStatus === deliveryStatus
+          || (deliveryStatus === 'queued' && evidence.bridgeDeliveryStatus === undefined)
+        )
+        && deliveryOk
         && evidence.bridgeDeliveryConfirmed === false
         && evidence.deliveredToAgentBridge !== true
         && evidence.agentResponseClaimed === false
@@ -1100,11 +1123,10 @@ export class VideoRoom {
         && promptFingerprint !== null
         && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
         && evidence.promptLength === event.text.length
-        && workspaceSessionId !== null
-        && evidence.promptId === `${workspaceSessionId}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`
+        && evidence.promptId === `${workspacePart}:${event.actor}:prompt:${promptTimestamp}:${promptFingerprint}`
         && (evidence.surface === 'standard' || evidence.surface === 'win95')
         && typeof evidence.roomPhase === 'string'
-        && typeof evidence.workspaceStatus === 'string'
+        && (evidence.workspaceStatus === null || typeof evidence.workspaceStatus === 'string')
         && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string');
     }
 

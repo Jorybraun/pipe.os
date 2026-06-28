@@ -1,5 +1,10 @@
 import type { RoomSurface } from '../hooks/useRoomConnection';
-import type { AgentChatMessage, AgentRoomAction, AgentStatus } from '../hooks/useAgentConnection';
+import type {
+  AgentChatMessage,
+  AgentPromptBlockedReason,
+  AgentRoomAction,
+  AgentStatus,
+} from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
 import {
   buildClippyPromptId,
@@ -51,6 +56,15 @@ export interface ClippyAgentMessageSessionEvidence {
 
 type ClippyAgentBridgeMessageSource = Exclude<NonNullable<AgentChatMessage['source']>, 'user_submit'>;
 type ClippyAgentStatusBridgeMessageSource = 'agent_status' | ClippyAgentBridgeMessageSource;
+const CLIPPY_PROMPT_BLOCKED_REASONS = new Set<AgentPromptBlockedReason>([
+  'workspace_required',
+  'bridge_reconnecting',
+  'agent_starting',
+  'agent_auth_needed',
+  'agent_disconnected',
+  'agent_identity_missing',
+  'agent_capabilities_missing',
+]);
 
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
@@ -316,6 +330,12 @@ export function buildClippyUserChatEvidence(input: {
     promptFingerprint,
   });
   const promptLength = input.message.browserPromptLength ?? input.message.text.length;
+  const blockedReason = input.message.deliveryStatus === 'blocked'
+    && input.message.blockedReason
+    && CLIPPY_PROMPT_BLOCKED_REASONS.has(input.message.blockedReason)
+    ? input.message.blockedReason
+    : null;
+  const deliveryStatus = blockedReason ? 'blocked' : 'queued';
   return {
     text: input.message.text,
     properties: {
@@ -323,12 +343,14 @@ export function buildClippyUserChatEvidence(input: {
       agentChatEventSource: 'browser_clippy_chat_window',
       bridgeMessageType: 'CHAT',
       bridgeProtocol: 'clippy_dev_container_ws',
+      bridgeDeliveryStatus: deliveryStatus,
       promptId,
       promptFingerprint,
       promptLength,
       promptTimestamp,
-      browserQueuedBridgeMessage: true,
+      browserQueuedBridgeMessage: deliveryStatus === 'queued',
       bridgeDeliveryConfirmed: false,
+      ...(blockedReason ? { bridgeBlockedReason: blockedReason } : {}),
       agent: null,
       surface: input.surface,
       roomPhase: input.roomPhase,
