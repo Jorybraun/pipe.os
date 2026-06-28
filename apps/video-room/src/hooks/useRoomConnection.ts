@@ -45,6 +45,14 @@ const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d{1,4}:\d{1,4}$/;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
+const RECORDING_FAILURE_STAGES = new Set(['stop_recorder', 'prepare_upload', 'upload_request']);
+const RECORDING_FAILURE_SOURCES = new Set([
+  'browser_media_recorder_exception',
+  'browser_blob_builder_exception',
+  'recording_upload_exception',
+]);
+const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 
 export interface RoomClippyAction {
   id: string;
@@ -999,6 +1007,38 @@ export function applyRoomMediaControlEvent(
   ];
 }
 
+export function hasSourceBackedMediaControlEvidence(
+  event: RoomMediaControlEvent,
+  role?: RoomRole,
+): boolean {
+  const evidence = event.evidence;
+  if (!isRecord(evidence) || !role) return false;
+  const actor = role === 'HOST' ? 'host' : 'guest';
+  const action = event.enabled ? 'enabled' : 'disabled';
+  const controlSurface = evidence.surface === 'win95'
+    ? 'win95_video_window'
+    : 'standard_video_call';
+  return event.role === role
+    && evidence.source === 'video_room_media_controls'
+    && evidence.mediaControlEventSource === 'browser_video_control_button'
+    && evidence.actor === actor
+    && evidence.control === event.control
+    && evidence.previousEnabled === event.previousEnabled
+    && evidence.enabled === event.enabled
+    && evidence.action === action
+    && evidence.controlAction === 'toggle'
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.length > 0
+    && evidence.controlSurface === controlSurface
+    && evidence.mediaSource === 'local_media_stream'
+    && evidence.rawMediaStreamPersisted === false
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isInteger(evidence.capturedAtMs)
+    && evidence.capturedAtMs >= 0
+    && evidence.mediaControlId === `media:${actor}:${event.control}:${evidence.capturedAtMs}:${action}`;
+}
+
 function isRoomRecordingLifecycleKind(value: unknown): value is RoomRecordingLifecycleKind {
   return value === 'start' || value === 'stop';
 }
@@ -1078,6 +1118,94 @@ export function applyRoomRecordingStateEvent(
     updatedAt: event.createdAt,
     evidence: event.evidence,
   };
+}
+
+export function hasSourceBackedRecordingStateEvidence(
+  event: RoomRecordingStateEvent,
+  role?: RoomRole,
+): boolean {
+  if (role !== 'HOST' || event.role !== role) return false;
+  const evidence = event.evidence;
+  if (!isRecord(evidence)) return false;
+  const capturedAtMs = evidence.capturedAtMs;
+  const recordingStateEventId = evidence.recordingStateEventId;
+  const speakerChannels = evidence.speakerChannels;
+  const baseOk = evidence.source === 'video_room_recording'
+    && evidence.recordingEventSource === 'browser_media_recorder'
+    && evidence.recordingStateEventSource === 'browser_media_recorder_state_sync'
+    && evidence.actor === 'host'
+    && evidence.recordingLifecycleKind === event.lifecycleKind
+    && evidence.recordingStatus === event.status
+    && evidence.recordingActive === event.active
+    && typeof capturedAtMs === 'number'
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && typeof recordingStateEventId === 'string'
+    && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
+    && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.length > 0
+    && evidence.durableObjectReplayExpected === true
+    && typeof evidence.iceProvider === 'string'
+    && typeof evidence.hasTranscriptionAudio === 'boolean'
+    && typeof evidence.speakerMetadataVersion === 'number'
+    && Number.isInteger(evidence.speakerMetadataVersion)
+    && typeof evidence.speakerChannelLayout === 'string'
+    && typeof evidence.speakerChannelCount === 'number'
+    && Number.isInteger(evidence.speakerChannelCount)
+    && Array.isArray(speakerChannels)
+    && speakerChannels.length === evidence.speakerChannelCount
+    && speakerChannels.every((channel) => (
+      isRecord(channel)
+      && typeof channel.channel === 'number'
+      && Number.isInteger(channel.channel)
+      && (channel.role === 'host' || channel.role === 'guest')
+      && (channel.source === 'local' || channel.source === 'remote')
+    ));
+  if (!baseOk) return false;
+  if (event.lifecycleKind === 'start') return event.status === 'recording' && event.active;
+  if (event.status === 'uploading' || event.status === 'saved') {
+    const expectedUploadStatus = event.status === 'uploading' ? 'attempting' : 'accepted';
+    return evidence.uploadStatus === expectedUploadStatus
+      && typeof evidence.recordingBytes === 'number'
+      && Number.isFinite(evidence.recordingBytes)
+      && evidence.recordingBytes >= 0
+      && typeof evidence.recordingMimeType === 'string'
+      && evidence.recordingMimeType.length > 0
+      && typeof evidence.transcriptionBytes === 'number'
+      && Number.isFinite(evidence.transcriptionBytes)
+      && evidence.transcriptionBytes >= 0
+      && (
+        evidence.hasTranscriptionAudio === false
+        || (typeof evidence.transcriptionMimeType === 'string' && evidence.transcriptionMimeType.length > 0)
+      );
+  }
+  const recordingBytesOk = evidence.recordingBytes === undefined
+    || (typeof evidence.recordingBytes === 'number'
+      && Number.isFinite(evidence.recordingBytes)
+      && evidence.recordingBytes >= 0);
+  const transcriptionBytesOk = evidence.transcriptionBytes === undefined
+    || (typeof evidence.transcriptionBytes === 'number'
+      && Number.isFinite(evidence.transcriptionBytes)
+      && evidence.transcriptionBytes >= 0);
+  const recordingMimeTypeOk = evidence.recordingMimeType === undefined
+    || (typeof evidence.recordingMimeType === 'string' && evidence.recordingMimeType.length > 0);
+  const transcriptionMimeTypeOk = evidence.transcriptionMimeType === undefined
+    || (typeof evidence.transcriptionMimeType === 'string' && evidence.transcriptionMimeType.length > 0);
+  return event.lifecycleKind === 'stop'
+    && event.status === 'failed'
+    && !event.active
+    && evidence.uploadStatus === 'failed'
+    && RECORDING_FAILURE_STAGES.has(String(evidence.recordingFailureStage))
+    && RECORDING_FAILURE_SOURCES.has(String(evidence.recordingFailureSource))
+    && typeof evidence.recordingFailureMessage === 'string'
+    && evidence.recordingFailureMessage.length > 0
+    && evidence.recordingFailureMessage.length <= MAX_RECORDING_FAILURE_MESSAGE_LENGTH
+    && recordingBytesOk
+    && transcriptionBytesOk
+    && recordingMimeTypeOk
+    && transcriptionMimeTypeOk;
 }
 
 function isRoomCodeServerFileEventType(value: unknown): value is RoomCodeServerFileEventType {
@@ -2092,11 +2220,15 @@ export function useRoomConnection(
           setChatMessages(sortChatMessages(snapshot.messages));
         } else if (message.type === 'ROOM_MEDIA_CONTROL') {
           const event = parseMediaControlEvent(message.payload);
-          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (
+            !event
+            || event.clientId === desktopClientIdRef.current
+            || !hasSourceBackedMediaControlEvidence(event, isRoomRole(message.role) ? message.role : event.role)
+          ) return;
           setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
         } else if (message.type === 'ROOM_MEDIA_CONTROL_ACK') {
           const event = parseMediaControlEvent(message.payload);
-          if (!event) return;
+          if (!event || !hasSourceBackedMediaControlEvidence(event, isRoomRole(message.role) ? message.role : event.role)) return;
           setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
         } else if (message.type === 'ROOM_MEDIA_CONTROL_STATE') {
           const snapshot = parseMediaControlSnapshot(message.payload);
@@ -2104,11 +2236,15 @@ export function useRoomConnection(
           setMediaControlStates(snapshot.states);
         } else if (message.type === 'ROOM_RECORDING_STATE') {
           const event = parseRecordingStateEvent(message.payload);
-          if (!event || event.clientId === desktopClientIdRef.current) return;
+          if (
+            !event
+            || event.clientId === desktopClientIdRef.current
+            || !hasSourceBackedRecordingStateEvidence(event, isRoomRole(message.role) ? message.role : event.role)
+          ) return;
           setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
         } else if (message.type === 'ROOM_RECORDING_STATE_ACK') {
           const event = parseRecordingStateEvent(message.payload);
-          if (!event) return;
+          if (!event || !hasSourceBackedRecordingStateEvidence(event, isRoomRole(message.role) ? message.role : event.role)) return;
           setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
         } else if (message.type === 'ROOM_RECORDING_STATE_SNAPSHOT') {
           const snapshot = parseRecordingStateSnapshot(message.payload);
@@ -2475,6 +2611,14 @@ export function useRoomConnection(
       createdAt,
       role,
     };
+    if (!hasSourceBackedMediaControlEvidence(event, role)) {
+      console.error('[publishMediaControlEvent] rejected media control event without source-backed evidence:', {
+        control: event.control,
+        role,
+        source: event.evidence?.source,
+      });
+      return;
+    }
     setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
     if (!sendMediaControlEvent(event)) {
       mediaControlOutboxRef.current.push(event);
@@ -2493,6 +2637,15 @@ export function useRoomConnection(
       createdAt,
       role,
     };
+    if (!hasSourceBackedRecordingStateEvidence(event, role)) {
+      console.error('[publishRecordingStateEvent] rejected recording state event without source-backed evidence:', {
+        lifecycleKind: event.lifecycleKind,
+        status: event.status,
+        role,
+        source: event.evidence?.source,
+      });
+      return;
+    }
     setRecordingState((prev) => applyRoomRecordingStateEvent(prev, event));
     if (!sendRecordingStateEvent(event)) {
       recordingStateOutboxRef.current.push(event);

@@ -6,6 +6,8 @@ import {
   decideRoomSurfaceSnapshot,
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedCursorEvidence,
+  hasSourceBackedMediaControlEvidence,
+  hasSourceBackedRecordingStateEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
@@ -16,7 +18,9 @@ import {
   type RoomCodeServerFileEvent,
   type RoomCursorPresence,
   type RoomFileSystemEvent,
+  type RoomMediaControlEvent,
   type RoomMediaControlState,
+  type RoomRecordingStateEvent,
   type RoomTerminalEvent,
 } from './useRoomConnection';
 
@@ -231,6 +235,112 @@ describe('applyRoomRecordingStateEvent', () => {
         recordingStateEventId: 'recording:host:3000:start:recording',
       },
     });
+  });
+});
+
+describe('hasSourceBackedMediaControlEvidence', () => {
+  const sourceBackedMediaControl: RoomMediaControlEvent = {
+    id: 'media-control-1',
+    clientId: 'guest-client',
+    createdAt: 1700000001000,
+    role: 'GUEST',
+    control: 'microphone',
+    previousEnabled: true,
+    enabled: false,
+    evidence: {
+      source: 'video_room_media_controls',
+      mediaControlEventSource: 'browser_video_control_button',
+      actor: 'guest',
+      mediaControlId: 'media:guest:microphone:1700000001000:disabled',
+      capturedAtMs: 1700000001000,
+      control: 'microphone',
+      previousEnabled: true,
+      enabled: false,
+      action: 'disabled',
+      surface: 'win95',
+      roomPhase: 'connected',
+      controlSurface: 'win95_video_window',
+      controlAction: 'toggle',
+      mediaSource: 'local_media_stream',
+      rawMediaStreamPersisted: false,
+    },
+  };
+
+  it('accepts media-control updates only when browser button evidence matches the room actor and control', () => {
+    expect(hasSourceBackedMediaControlEvidence(sourceBackedMediaControl, 'GUEST')).toBe(true);
+  });
+
+  it('rejects source-less media-control updates before optimistic state can change', () => {
+    expect(hasSourceBackedMediaControlEvidence({
+      ...sourceBackedMediaControl,
+      evidence: undefined,
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('rejects media-control updates attributed to the wrong room actor', () => {
+    expect(hasSourceBackedMediaControlEvidence(sourceBackedMediaControl, 'HOST')).toBe(false);
+  });
+});
+
+describe('hasSourceBackedRecordingStateEvidence', () => {
+  const sourceBackedRecordingStart: RoomRecordingStateEvent = {
+    id: 'recording-state-1',
+    clientId: 'host-client',
+    createdAt: 1700000003000,
+    role: 'HOST',
+    lifecycleKind: 'start',
+    status: 'recording',
+    active: true,
+    evidence: {
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingStateEventSource: 'browser_media_recorder_state_sync',
+      actor: 'host',
+      recordingLifecycleKind: 'start',
+      recordingStateEventId: 'recording:host:1700000003000:start:recording',
+      capturedAtMs: 1700000003000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      recordingStatus: 'recording',
+      recordingActive: true,
+      durableObjectReplayExpected: true,
+      iceProvider: 'cloudflare',
+      hasTranscriptionAudio: true,
+      speakerMetadataVersion: 1,
+      speakerChannelLayout: 'host-local-guest-remote-v1',
+      speakerChannelCount: 2,
+      speakerChannels: [
+        { channel: 0, role: 'host', source: 'local' },
+        { channel: 1, role: 'guest', source: 'remote' },
+      ],
+    },
+  };
+
+  it('accepts host recording state only when MediaRecorder evidence preserves speaker/source metadata', () => {
+    expect(hasSourceBackedRecordingStateEvidence(sourceBackedRecordingStart, 'HOST')).toBe(true);
+  });
+
+  it('rejects source-less recording state before optimistic state can change', () => {
+    expect(hasSourceBackedRecordingStateEvidence({
+      ...sourceBackedRecordingStart,
+      evidence: undefined,
+    }, 'HOST')).toBe(false);
+  });
+
+  it('rejects vague failed recording state without concrete failure provenance', () => {
+    expect(hasSourceBackedRecordingStateEvidence({
+      ...sourceBackedRecordingStart,
+      lifecycleKind: 'stop',
+      status: 'failed',
+      active: false,
+      evidence: {
+        ...sourceBackedRecordingStart.evidence!,
+        recordingLifecycleKind: 'stop',
+        recordingStateEventId: 'recording:host:1700000003000:stop:failed',
+        recordingStatus: 'failed',
+        recordingActive: false,
+      },
+    }, 'HOST')).toBe(false);
   });
 });
 
