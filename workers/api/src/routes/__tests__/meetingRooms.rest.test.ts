@@ -4361,6 +4361,16 @@ describe('meeting room recording living-context route', () => {
       personContextMode: 'summary_only',
       personContextReason: 'mixed_audio_without_speaker_attribution',
     });
+    const transcriptRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_transcript'`,
+    ).get() as { qualifiers_json: string };
+    expect(JSON.parse(transcriptRecord.qualifiers_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
 
     const contactGraphRes = await app.request(
       `/contacts/${created.meeting.contactId}/living-context`,

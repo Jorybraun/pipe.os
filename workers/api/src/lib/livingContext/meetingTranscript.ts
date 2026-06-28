@@ -62,6 +62,8 @@ export interface MeetingTranscriptIngestionInput {
   transcriptionAudioKey?: string | null;
   provider?: string | null;
   speakerMetadata?: JsonObject | null;
+  personContextMode?: 'attributed' | 'summary_only' | null;
+  personContextReason?: string | null;
 }
 
 interface CanonicalSegment extends MeetingTranscriptSegmentInput {
@@ -520,6 +522,13 @@ export async function ingestMeetingTranscriptToLivingContext(
   assertionCount: number;
 }> {
   const canonical = canonicalizeMeetingTranscript(input);
+  const personContextMode = input.personContextMode === 'summary_only'
+    ? 'summary_only'
+    : input.personContextMode === 'attributed'
+      ? 'attributed'
+      : null;
+  const personContextReason = input.personContextReason?.trim() || null;
+  const canAttachPersonContext = personContextMode !== 'summary_only';
   const participants = await db.prepare(
     `SELECT mp.contact_id, mp.role, m.started_at, m.ended_at, m.updated_at
        FROM meeting_participants mp
@@ -573,6 +582,8 @@ export async function ingestMeetingTranscriptToLivingContext(
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       provider: input.provider ?? null,
       speakerMetadata: input.speakerMetadata ?? null,
+      personContextMode,
+      personContextReason,
       transcriptStatus: 'READY',
     },
   });
@@ -646,7 +657,9 @@ export async function ingestMeetingTranscriptToLivingContext(
         ...(segment.metadata ?? {}),
       },
     });
-    const attributed = segment.contactId ? identities.get(segment.contactId) : null;
+    const attributed = canAttachPersonContext && segment.contactId
+      ? identities.get(segment.contactId)
+      : null;
     if (attributed) {
       await db.prepare(
         `INSERT INTO source_span_attributions (
@@ -694,6 +707,8 @@ export async function ingestMeetingTranscriptToLivingContext(
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
         speakerMetadata: input.speakerMetadata ?? null,
+        personContextMode,
+        personContextReason,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
@@ -728,7 +743,7 @@ export async function ingestMeetingTranscriptToLivingContext(
   if (input.semanticAssertions !== undefined) {
     const priorSignals = await removePriorSemanticProjection(db, artifact.id);
     const extractorVersion = input.extractorVersion ?? 'meeting-transcript-open-v1';
-    const assertions = input.semanticAssertions;
+    const assertions = canAttachPersonContext ? input.semanticAssertions : [];
     outputHash = await deterministicEntityId(
       'semantic_projection',
       stableJson(assertions as unknown as JsonValue),

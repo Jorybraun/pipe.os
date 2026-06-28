@@ -830,6 +830,65 @@ describe('meeting transcript living-context ingestion', () => {
     expect(count(sqlite, 'semantic_assertions')).toBe(0);
   });
 
+  it('keeps summary-only transcripts out of person attribution and semantic projections', async () => {
+    const result = await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [{
+        stableSegmentId: 'mixed-1',
+        text: 'I implemented aurora queue recovery, but this audio is mixed.',
+        speakerLabel: 'mixed',
+        speakerRole: 'guest',
+        contactId: 'contact-1',
+      }],
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+      semanticAssertions: [{
+        sourceSegmentIds: ['mixed-1'],
+        subjectSegmentId: 'mixed-1',
+        predicate: 'implemented',
+        narrative: 'Implemented aurora queue recovery.',
+        concepts: [{
+          surface: 'aurora queue recovery',
+          relationship: 'mechanism named in source',
+          weight: 0.9,
+          evidenceLevel: 'implemented',
+          strength: 0.8,
+        }],
+      }],
+    });
+
+    expect(result.assertionCount).toBe(0);
+    expect(result.sourceSpanCount).toBe(1);
+    expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'semantic_assertions')).toBe(0);
+    expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+
+    const artifact = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'`,
+    ).get() as { metadata_json: string };
+    expect(JSON.parse(artifact.metadata_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+
+    const transcriptRecord = sqlite.prepare(
+      `SELECT qualifiers_json
+         FROM context_records
+        WHERE record_type = 'meeting_transcript'`,
+    ).get() as { qualifiers_json: string };
+    expect(JSON.parse(transcriptRecord.qualifiers_json)).toMatchObject({
+      provider: 'workers-ai-whisper-summary-only',
+      personContextMode: 'summary_only',
+      personContextReason: 'mixed_audio_without_speaker_attribution',
+    });
+  });
+
   it('regression: a previously unseen concept survives as an open concept with source-backed spans', async () => {
     // "phosphor lattice accumulator" is a deliberately unseen surface — no
     // hard-coded skill/domain alias should map or reject it. It must survive as

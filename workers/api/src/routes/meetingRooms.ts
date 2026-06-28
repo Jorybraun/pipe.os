@@ -1643,6 +1643,8 @@ async function processRecording(
       transcriptionAudioKey: transcriptionSourceKey !== recordingKey ? transcriptionSourceKey : null,
       provider,
       speakerMetadata: speakerMetadataJsonObject(speakerMetadata),
+      personContextMode,
+      personContextReason: analysisForStorage.personContextReason,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
