@@ -96,6 +96,42 @@ describe('createCandidateAgentProvider', () => {
     );
   });
 
+  it.each([
+    '@cf/moonshotai/kimi-k2.5',
+    '@hf/meta-llama/meta-llama-3-8b-instruct',
+    '@cf/meta/llama-3-8b-instruct',
+    '@cf/meta/llama-3-8b-instruct-awq',
+    '@cf/meta/llama-3.1-70b-instruct',
+    '@cf/meta/llama-2-7b-chat-int8',
+    '@cf/meta/llama-2-7b-chat-fp16',
+    '@cf/mistral/mistral-7b-instruct-v0.1',
+    '@hf/mistral/mistral-7b-instruct-v0.2',
+    '@hf/google/gemma-7b-it',
+    '@cf/google/gemma-3-12b-it',
+    '@hf/nousresearch/hermes-2-pro-mistral-7b',
+    '@cf/microsoft/phi-2',
+    '@cf/defog/sqlcoder-7b-2',
+    '@cf/unum/uform-gen2-qwen-500m',
+    '@cf/facebook/bart-large-cnn',
+  ])('remaps Workers AI model deprecated on 2026-05-30 before inference: %s', async (model) => {
+    const ai = createAi();
+    const provider = createGenerationProvider(aiEnv(ai), model);
+
+    expect(provider).toBeInstanceOf(CloudflareAIProvider);
+    expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+
+    await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
+
+    expect(ai.run).toHaveBeenCalledWith(
+      DEFAULT_CLOUDFLARE_MODEL,
+      expect.objectContaining({ messages: expect.any(Array) }),
+    );
+    expect(ai.run).not.toHaveBeenCalledWith(
+      model,
+      expect.anything(),
+    );
+  });
+
   it('retries the current default once when Workers AI reports a configured model is deprecated at runtime', async () => {
     const ai = {
       run: vi.fn()

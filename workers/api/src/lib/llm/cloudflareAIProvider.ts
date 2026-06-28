@@ -19,11 +19,31 @@ import type { LLMProvider, LLMMessage, LLMCompletion, CompleteOptions, LLMUsage 
 
 export const DEFAULT_CLOUDFLARE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
+// Cloudflare Workers AI changelog, 2026-05-08:
+// these models were deprecated on 2026-05-30. Normalize stale env overrides
+// before inference so matching/candidate ingestion can use a live model while
+// keeping source-evidence validators responsible for accepting the result.
 const DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS: Record<string, string> = {
+  '@cf/moonshotai/kimi-k2.5': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/meta-llama/meta-llama-3-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3-8b-instruct-awq': DEFAULT_CLOUDFLARE_MODEL,
   '@cf/meta/llama-3.1-8b-instruct': DEFAULT_CLOUDFLARE_MODEL,
   '@cf/meta/llama-3.1-8b-instruct-awq': DEFAULT_CLOUDFLARE_MODEL,
   '@cf/meta/llama-3.1-8b-instruct-fast': DEFAULT_CLOUDFLARE_MODEL,
   '@cf/meta/llama-3.1-8b-instruct-fp8': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-3.1-70b-instruct': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-2-7b-chat-int8': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/meta/llama-2-7b-chat-fp16': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/mistral/mistral-7b-instruct-v0.1': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/mistral/mistral-7b-instruct-v0.2': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/google/gemma-7b-it': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/google/gemma-3-12b-it': DEFAULT_CLOUDFLARE_MODEL,
+  '@hf/nousresearch/hermes-2-pro-mistral-7b': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/microsoft/phi-2': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/defog/sqlcoder-7b-2': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/unum/uform-gen2-qwen-500m': DEFAULT_CLOUDFLARE_MODEL,
+  '@cf/facebook/bart-large-cnn': DEFAULT_CLOUDFLARE_MODEL,
 };
 
 export function normalizeCloudflareAIModel(model: string): string {

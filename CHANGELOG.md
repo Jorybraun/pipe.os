@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Workers AI model routing now remaps all Cloudflare models listed in the 2026-05-30 deprecation catalog before candidate/repo matching inference, preventing stale environment overrides from blocking source-backed challenge discovery.
 - Code-review scoring now rejects missing BARS dimension scores, source evidence, or narrative output instead of defaulting incomplete scorer JSON to midpoint assessments.
 - Candidate discovery no longer defaults missing or malformed `greenfield_ratio` evidence to `0.5`; repo matching prompts now receive `null` unless the model produced a valid source-backed number.
 - Job-description parsing no longer emits a synthetic Senior Backend Engineer baseline from `MOCK_AI`; unavailable role-agent parsing now falls back to source-text-only fields with uncertain requirements left absent.
