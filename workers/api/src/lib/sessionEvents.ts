@@ -80,6 +80,7 @@ const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
+const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -618,6 +619,87 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
     timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),
     actor: actorFromRoomRole(role),
     text,
+    properties,
+  });
+}
+
+function mediaControlText(actor: SessionEvent['actor'], control: string, enabled: boolean): string {
+  const actorLabel = actor === 'host' ? 'Host' : 'Guest';
+  const nextState = enabled ? 'on' : 'off';
+  return `${actorLabel} turned ${control} ${nextState}`;
+}
+
+function isSourceBackedMediaControlEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  control: unknown,
+  previousEnabled: unknown,
+  enabled: unknown,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  if (actor !== 'host' && actor !== 'guest') return false;
+  if (control !== 'microphone' && control !== 'camera') return false;
+  if (typeof previousEnabled !== 'boolean' || typeof enabled !== 'boolean' || previousEnabled === enabled) {
+    return false;
+  }
+  const action = enabled ? 'enabled' : 'disabled';
+  const capturedAtMs = numberOrNull(evidence.capturedAtMs);
+  const mediaControlId = stringOrNull(evidence.mediaControlId);
+  const expectedControlSurface = evidence.surface === 'win95'
+    ? 'win95_video_window'
+    : 'standard_video_call';
+  return evidence.source === 'video_room_media_controls'
+    && evidence.mediaControlEventSource === 'browser_video_control_button'
+    && evidence.actor === actor
+    && evidence.control === control
+    && evidence.previousEnabled === previousEnabled
+    && evidence.enabled === enabled
+    && evidence.action === action
+    && evidence.controlAction === 'toggle'
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && stringOrNull(evidence.roomPhase) !== null
+    && evidence.controlSurface === expectedControlSurface
+    && evidence.mediaSource === 'local_media_stream'
+    && evidence.rawMediaStreamPersisted === false
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && mediaControlId !== null
+    && MEDIA_CONTROL_ID_RE.test(mediaControlId)
+    && mediaControlId === `media:${actor}:${control}:${capturedAtMs}:${action}`;
+}
+
+function mediaControlActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.event)) return null;
+  const event = value.event;
+  const role = isRoomActivityRole(value.role)
+    ? value.role
+    : isRoomActivityRole(event.role)
+      ? event.role
+      : null;
+  if (!role) return null;
+  if (isRoomActivityRole(event.role) && event.role !== role) return null;
+  const actor = actorFromRoomRole(role);
+  const control = stringOrNull(event.control);
+  if (control !== 'microphone' && control !== 'camera') return null;
+  const previousEnabled = typeof event.previousEnabled === 'boolean' ? event.previousEnabled : null;
+  const enabled = typeof event.enabled === 'boolean' ? event.enabled : null;
+  if (previousEnabled === null || enabled === null) return null;
+  const evidence = isRecord(event.evidence) ? event.evidence : null;
+  if (!isSourceBackedMediaControlEvidence(evidence, actor, control, previousEnabled, enabled)) return null;
+  const properties = {
+    ...roomActivityBaseProperties('media_control', role, value.recordedAt),
+    ...evidence,
+  };
+  const eventId = stringOrNull(event.id);
+  const clientId = stringOrNull(event.clientId);
+  if (eventId) properties.roomEventId = eventId;
+  if (clientId) properties.clientId = clientId;
+  return createSessionEvent(input, {
+    type: 'media_control',
+    timestamp: unixTimestampFromActivity(event.createdAt, value.recordedAt),
+    actor,
+    text: mediaControlText(actor, control, enabled),
     properties,
   });
 }
@@ -1174,6 +1256,9 @@ export async function roomActivitySnapshotToSessionEvents(
     ? snapshot.codeServerFileActivityLog
     : [];
   const terminalActivityLog = Array.isArray(snapshot.terminalActivityLog) ? snapshot.terminalActivityLog : [];
+  const mediaControlActivityLog = Array.isArray(snapshot.mediaControlActivityLog)
+    ? snapshot.mediaControlActivityLog
+    : [];
   const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
     ? snapshot.clippyPromptActivityLog
     : [];
@@ -1186,6 +1271,7 @@ export async function roomActivitySnapshotToSessionEvents(
   chatActivityLog.forEach((entry) => pushMapped(chatActivityToSessionEvent(input, entry)));
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
+  mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
   clippyInteractionActivityLog.forEach((entry) => pushMapped(clippyInteractionActivityToSessionEvent(input, entry)));
   for (const entry of fileSystemActivityLog) {

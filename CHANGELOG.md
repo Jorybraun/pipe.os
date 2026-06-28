@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Room-end Durable Object replay now maps accepted mic/camera control activity into source-backed `media_control` meeting-session evidence, instead of relying only on one browser's direct event capture.
 - Mic/camera toggles now publish source-backed shared media-control events through the room Durable Object, persist replayable activity/state, and render peer media status across both standard and Windows 95 room surfaces.
 - Room chat delivery acknowledgements and rejections now persist as source-backed `chat_message` evidence immediately, so the live context graph records the Durable Object delivery outcome instead of only the optimistic browser send.
 - Dev-container agent startup now requires an explicit supported `AGENT_TYPE` through the meeting launch path and bridge runtime instead of defaulting missing or unsupported agent configuration to Devin.
