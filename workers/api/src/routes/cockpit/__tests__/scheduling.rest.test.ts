@@ -19,6 +19,7 @@ import {
   ensureContactLivingContext,
   LivingContextStore,
 } from '../../../lib/livingContext';
+import { ingestMeetingTranscriptAssessmentEvidence } from '../../../lib/assessmentLayer/meetingTranscriptEvidence';
 import * as d1Matcher from '../../../lib/challengeMatching/d1Matcher';
 import type { Env, Variables } from '../../../types';
 import {
@@ -2309,6 +2310,129 @@ describe('GET /interviews/:id detail', () => {
     expect(JSON.parse(assessmentEvent.payload_json)).toMatchObject({
       originalInterviewId: 'interview-code-review-blocked',
       contextCallInterviewId: body.contextCall.id,
+      matchRunId: 'match-run-blocked',
+      matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
+    });
+
+    const transcriptText = 'I reviewed retry idempotency in Kafka order processing and verified duplicate delivery safeguards.';
+    const artifactId = 'artifact-context-call-loop-transcript';
+    const artifactVersionId = 'artifact-version-context-call-loop-transcript-v1';
+    const sourceSpanId = 'source-span-context-call-loop-guest-1';
+    const observedAt = '2026-06-22T19:10:00.000Z';
+
+    sqlite!.prepare(
+      `INSERT INTO artifacts (
+         id, ingestion_key, workspace_person_id, interaction_id, artifact_type,
+         logical_key, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, NULL, NULL, 'meeting_transcript', ?, '{}', ?, ?)`,
+    ).run(
+      artifactId,
+      'artifact:context-call-loop-transcript',
+      `meeting-transcript:${body.contextCall.id}`,
+      observedAt,
+      observedAt,
+    );
+    sqlite!.prepare(
+      `INSERT INTO artifact_versions (
+         id, ingestion_key, artifact_id, version_number, content_hash,
+         media_type, content_text, storage_key, byte_length, metadata_json,
+         created_at
+       ) VALUES (?, ?, ?, 1, ?, 'text/plain', ?, NULL, ?, '{}', ?)`,
+    ).run(
+      artifactVersionId,
+      'artifact-version:context-call-loop-transcript:v1',
+      artifactId,
+      sha256Hex(transcriptText),
+      transcriptText,
+      transcriptText.length,
+      observedAt,
+    );
+    sqlite!.prepare(
+      `INSERT INTO source_spans (
+         id, ingestion_key, artifact_version_id, stable_segment_id,
+         byte_start, byte_end, char_start, char_end, line_start, line_end,
+         timestamp_start_ms, timestamp_end_ms, exact_text, exact_text_hash,
+         metadata_json, created_at
+       ) VALUES (?, ?, ?, 'guest-1', 0, ?, 0, ?, 1, 1, 0, 5000, ?, ?, '{}', ?)`,
+    ).run(
+      sourceSpanId,
+      'source-span:context-call-loop-transcript:guest-1',
+      artifactVersionId,
+      transcriptText.length,
+      transcriptText.length,
+      transcriptText,
+      sha256Hex(transcriptText),
+      observedAt,
+    );
+
+    await ingestMeetingTranscriptAssessmentEvidence(createMockD1(sqlite!), {
+      meetingId: 'meeting-context-call-loop',
+      ownerId: 'owner-1',
+      scheduledInterviewId: body.contextCall.id,
+      artifactId,
+      artifactVersionId,
+      versionNumber: 1,
+      provider: 'test-transcript',
+      personContextMode: 'attributed',
+      observedAt,
+      segments: [{
+        stableSegmentId: 'guest-1',
+        text: transcriptText,
+        sourceSpanId,
+        charStart: 0,
+        charEnd: transcriptText.length,
+        lineStart: 1,
+        lineEnd: 1,
+        speakerRole: 'guest',
+        speakerLabel: 'Guest',
+        contactId: 'candidate-1',
+        timestampStartMs: 0,
+        timestampEndMs: 5000,
+        confidence: 0.98,
+      }],
+    });
+
+    const completedPlan = sqlite!.prepare(
+      `SELECT state
+         FROM assessment_sessions
+        WHERE id = ?`,
+    ).get(evidenceAssessmentSessionId) as { state: string };
+    expect(completedPlan.state).toBe('EVALUATED');
+
+    const planReport = sqlite!.prepare(
+      `SELECT output_json
+         FROM assessment_evaluation_reports
+        WHERE session_id = ?`,
+    ).get(evidenceAssessmentSessionId) as { output_json: string };
+    expect(JSON.parse(planReport.output_json)).toMatchObject({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-blocked',
+      contextCallInterviewId: body.contextCall.id,
+      sourceSpanCount: 1,
+    });
+
+    const originalDetailResponse = await app.request('/interviews/interview-code-review-blocked');
+    expect(originalDetailResponse.status).toBe(200);
+    const originalDetail = await originalDetailResponse.json() as {
+      interview: {
+        codeReviewMatch: {
+          evidenceRefresh: {
+            status: string;
+            assessmentSessionId: string;
+            contextCallInterviewId: string | null;
+            sourceSpanCount: number | null;
+            matchRunId: string | null;
+            matchStatus: string | null;
+          } | null;
+        } | null;
+      };
+    };
+    expect(originalDetail.interview.codeReviewMatch?.evidenceRefresh).toMatchObject({
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      assessmentSessionId: evidenceAssessmentSessionId,
+      contextCallInterviewId: body.contextCall.id,
+      sourceSpanCount: 1,
       matchRunId: 'match-run-blocked',
       matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
     });
