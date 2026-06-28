@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Container terminal command/output evidence now fails closed until a real workspace session exists, preventing browser-only terminal events that the room Durable Object would reject from entering the context graph.
 - Clippy chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities with distinct status dots, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
 - Host recording start/stop/upload state now syncs through the room Durable Object to both Win95 and standard layouts, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
 - Win95 room file saves now fail closed when source-backed file evidence cannot be built, preventing source-less Notepad/Paint mutations from becoming local room state.

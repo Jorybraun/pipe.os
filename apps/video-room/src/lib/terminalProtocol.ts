@@ -153,6 +153,13 @@ function terminalContextProperties(context: TerminalEvidenceContext): Pick<
   };
 }
 
+function hasWorkspaceTerminalContext(context: TerminalEvidenceContext): boolean {
+  return typeof context.workspaceStatus === 'string'
+    && context.workspaceStatus.trim().length > 0
+    && typeof context.workspaceSessionId === 'string'
+    && context.workspaceSessionId.trim().length > 0;
+}
+
 export function collectTerminalCommands(buffer: string, data: string): TerminalCommandCaptureResult {
   let nextBuffer = buffer;
   const commands: string[] = [];
@@ -197,7 +204,8 @@ export function buildTerminalCommandEvidence({
   actor,
   capturedAtMs,
   context,
-}: TerminalCommandEvidenceInput): TerminalCommandEvidence {
+}: TerminalCommandEvidenceInput): TerminalCommandEvidence | null {
+  if (!hasWorkspaceTerminalContext(context)) return null;
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
   const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   const redactedCommand = redactTerminalEvidenceText(command);
@@ -224,7 +232,8 @@ export function buildTerminalOutputEvidence({
   activeCommandId,
   capturedAtMs,
   context,
-}: TerminalOutputEvidenceInput): TerminalOutputEvidence {
+}: TerminalOutputEvidenceInput): TerminalOutputEvidence | null {
+  if (!hasWorkspaceTerminalContext(context)) return null;
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
   const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   const redactedOutput = redactTerminalEvidenceText(output);

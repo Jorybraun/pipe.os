@@ -58,6 +58,33 @@ describe('terminal WebSocket protocol', () => {
     expect(terminalOutputEvidenceText('x'.repeat(5000))?.length).toBe(4000);
   });
 
+  it('does not build terminal evidence until a real workspace session exists', () => {
+    const context = {
+      surface: 'win95',
+      roomPhase: 'ACTIVE',
+      workspaceStatus: null,
+      workspaceSessionId: null,
+      repoUrl: null,
+    };
+
+    expect(buildTerminalCommandEvidence({
+      command: 'npm test',
+      terminalSessionId: 'terminal-no-workspace-guest',
+      commandSequence: 1,
+      actor: 'guest',
+      capturedAtMs: 1700000000000,
+      context,
+    })).toBeNull();
+    expect(buildTerminalOutputEvidence({
+      output: 'PASS src/app.test.ts\n',
+      terminalSessionId: 'terminal-no-workspace-guest',
+      outputSequence: 1,
+      activeCommandId: null,
+      capturedAtMs: 1700000000100,
+      context,
+    })).toBeNull();
+  });
+
   it('links terminal output chunks to the completed command that produced them', () => {
     const context = {
       surface: 'win95',
@@ -89,10 +116,15 @@ describe('terminal WebSocket protocol', () => {
       output: 'PASS src/app.test.ts\n',
       terminalSessionId: 'terminal-workspace-session-1-guest',
       outputSequence: 12,
-      activeCommandId: command.properties.terminalCommandId,
+      activeCommandId: command?.properties.terminalCommandId ?? null,
       capturedAtMs: 1700000000100,
       context,
     });
+
+    expect(command).not.toBeNull();
+    expect(retriedCommand).not.toBeNull();
+    expect(output).not.toBeNull();
+    if (!command || !retriedCommand || !output) throw new Error('expected workspace-backed terminal evidence');
 
     expect(command).toEqual({
       text: 'npm test',
@@ -149,10 +181,14 @@ describe('terminal WebSocket protocol', () => {
       output: `authenticated with ${secret}\n`,
       terminalSessionId: 'terminal-workspace-session-1-host',
       outputSequence: 1,
-      activeCommandId: command.properties.terminalCommandId,
+      activeCommandId: command?.properties.terminalCommandId ?? null,
       capturedAtMs: 1700000000100,
       context,
     });
+
+    expect(command).not.toBeNull();
+    expect(output).not.toBeNull();
+    if (!command || !output) throw new Error('expected workspace-backed terminal evidence');
 
     expect(command.text).toBe('export GITHUB_TOKEN=[REDACTED_SECRET]');
     expect(command.properties.commandLength).toBe(command.text.length);

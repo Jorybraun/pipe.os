@@ -1210,15 +1210,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     workspaceSession?.status,
   ]);
   const captureTerminalCommand = useCallback((command: string): void => {
-    terminalCommandSequenceRef.current += 1;
+    const commandSequence = terminalCommandSequenceRef.current + 1;
     const evidence = buildTerminalCommandEvidence({
       command,
       terminalSessionId,
-      commandSequence: terminalCommandSequenceRef.current,
+      commandSequence,
       actor: roomActor,
       capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
+    if (!evidence) return;
+    terminalCommandSequenceRef.current = commandSequence;
     const properties = {
       ...evidence.properties,
       durableObjectReplayExpected: true,
@@ -1238,15 +1240,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     roomActor,
   ]);
   const captureTerminalOutput = useCallback((output: string): void => {
-    terminalOutputSequenceRef.current += 1;
+    const outputSequence = terminalOutputSequenceRef.current + 1;
     const evidence = buildTerminalOutputEvidence({
       output,
       terminalSessionId,
-      outputSequence: terminalOutputSequenceRef.current,
+      outputSequence,
       activeCommandId: activeTerminalCommandIdRef.current,
       capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
+    if (!evidence) return;
+    terminalOutputSequenceRef.current = outputSequence;
     const properties = {
       ...evidence.properties,
       durableObjectReplayExpected: true,
