@@ -3056,6 +3056,173 @@ describe('GET /interviews/:id detail', () => {
     expect(sentMessages).toHaveLength(1);
   });
 
+  it('does not collapse ambiguous same-email Calendly bookings onto an arbitrary pending interview', async () => {
+    seedInterviewDetailFixture();
+    const sentMessages: Array<{
+      to: unknown;
+      from: unknown;
+      subject: string;
+      html?: string;
+      text?: string;
+    }> = [];
+    sqlite!.prepare(`
+      INSERT INTO scheduling_connections (
+        id, owner_id, provider_id, access_token, refresh_token, token_expiry,
+        account_email, account_name, webhook_secret, webhook_id, status,
+        connected_at, last_sync_at, created_at, updated_at
+      ) VALUES (
+        'conn-1', 'owner-1', 'CALENDLY', 'cal-token', NULL, '2026-07-01T00:00:00.000Z',
+        'recruiter@example.com', 'Recruiter', NULL, NULL, 'ACTIVE',
+        '2026-06-26T12:00:00.000Z', NULL, '2026-06-26T12:00:00.000Z', '2026-06-26T12:00:00.000Z'
+      )
+    `).run();
+
+    const authApp = mountSchedulingApp();
+    const firstResponse = await authApp.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl: 'https://calendly.com/pipe/background',
+      }),
+    });
+    expect(firstResponse.status).toBe(201);
+    const first = await firstResponse.json() as { interview: { id: string } };
+
+    const secondResponse = await authApp.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'VIDEO',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl: 'https://calendly.com/pipe/code-review-follow-up',
+      }),
+    });
+    expect(secondResponse.status).toBe(201);
+    const second = await secondResponse.json() as { interview: { id: string } };
+
+    sqlite!.prepare(
+      `UPDATE scheduled_interviews
+          SET created_at = '2026-07-01T10:00:00.000Z',
+              updated_at = '2026-07-01T10:00:00.000Z'
+        WHERE id = ?`,
+    ).run(first.interview.id);
+    sqlite!.prepare(
+      `UPDATE scheduled_interviews
+          SET created_at = '2026-07-01T11:00:00.000Z',
+              updated_at = '2026-07-01T11:00:00.000Z'
+        WHERE id = ?`,
+    ).run(second.interview.id);
+
+    const publicApp = mountSchedulingPublicApp({
+      EMAIL: {
+        send: async (message) => {
+          sentMessages.push(message);
+          return { messageId: 'ambiguous-same-email-message-1' };
+        },
+      },
+      OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
+      VIDEO_ROOM_APP_URL: 'https://room.example.com',
+      PUBLIC_EMAIL_LOGO_URL: 'https://api-dev.hire-pipe.com/assets/email/pipe-logo.png',
+    } as Partial<Env>);
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const response = await publicApp.request('/webhook?connectionId=conn-1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Calendly Webhook',
+      },
+      body: JSON.stringify({
+        event: 'invitee.created',
+        payload: {
+          name: 'Katherine Johnson',
+          email: 'katherine@example.com',
+          scheduled_event: {
+            uri: 'https://api.calendly.com/scheduled_events/event-katherine-ambiguous',
+            start_time: '2026-07-05T19:00:00.000Z',
+            location: {
+              join_url: 'https://meet.example.com/calendly-katherine-ambiguous',
+            },
+          },
+        },
+      }),
+    }, undefined, ctx);
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      message: 'Interview imported',
+      created: true,
+    });
+    await waitUntilAll();
+
+    const originalRows = sqlite!.prepare(
+      `SELECT id, status, external_event_id, meeting_url
+         FROM scheduled_interviews
+        WHERE id IN (?, ?)
+        ORDER BY created_at ASC`,
+    ).all(first.interview.id, second.interview.id) as Array<{
+      id: string;
+      status: string;
+      external_event_id: string | null;
+      meeting_url: string | null;
+    }>;
+    expect(originalRows).toEqual([
+      {
+        id: first.interview.id,
+        status: 'INVITED',
+        external_event_id: null,
+        meeting_url: null,
+      },
+      {
+        id: second.interview.id,
+        status: 'INVITED',
+        external_event_id: null,
+        meeting_url: null,
+      },
+    ]);
+
+    const imported = sqlite!.prepare(
+      `SELECT id, status, scheduled_at, meeting_url, external_event_id, recipient_email
+         FROM scheduled_interviews
+        WHERE external_event_id = ?`,
+    ).get('https://api.calendly.com/scheduled_events/event-katherine-ambiguous') as {
+      id: string;
+      status: string;
+      scheduled_at: string | null;
+      meeting_url: string | null;
+      external_event_id: string | null;
+      recipient_email: string | null;
+    };
+    expect(imported.id).not.toBe(first.interview.id);
+    expect(imported.id).not.toBe(second.interview.id);
+    expect(imported).toMatchObject({
+      status: 'SCHEDULED',
+      scheduled_at: '2026-07-05T19:00:00.000Z',
+      meeting_url: expect.stringMatching(/^https:\/\/room\.example\.com\/room\/.+/),
+      external_event_id: 'https://api.calendly.com/scheduled_events/event-katherine-ambiguous',
+      recipient_email: 'katherine@example.com',
+    });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM scheduled_interviews
+        WHERE lower(recipient_email) = 'katherine@example.com'`,
+    ).get()).toEqual({ count: 3 });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM contacts
+        WHERE owner_id = 'owner-1'
+          AND lower(email) = 'katherine@example.com'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sentMessages).toHaveLength(1);
+  });
+
   it('imports an unmatched Calendly scheduled webhook and links it 1:1 to a Pipe meeting', async () => {
     seedInterviewDetailFixture();
     const sentMessages: Array<{

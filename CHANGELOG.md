@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Calendly webhook email fallback now refuses to mutate an arbitrary pending interview when the same person/email has multiple open invites; ambiguous provider events are imported as their own scheduled meeting while preserving the shared contact/person identity.
 - Candidate discovery now persists the exact provider model key used for profile generation, including Workers AI remap/fallback model keys, so repo-match evidence can cite the real inference source instead of only `cloudflare-ai`.
 - Workers AI routing now preserves Cloudflare's documented active `@cf/meta/llama-3.1-8b-instruct-fast` variant while still remapping the deprecated non-fast Llama 3.1 models before candidate/repo matching inference.
 - Candidate CODE_REVIEW waiting states now expose a six-step pipeline for CV intake, evidence decomposition, repo matching, challenge assignment, review, and scoring instead of collapsing every delay into generic matching copy.

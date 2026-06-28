@@ -4168,21 +4168,43 @@ schedulingPublic.post('/webhook', async (c) => {
   // Fallback: match by candidate email OR recipient_email
   if (!interview && normalized.candidateEmail) {
     const candidateEmail = normalizeEmail(normalized.candidateEmail);
-    interview = await db
-      .prepare(
-        `SELECT si.id, si.status
-         FROM scheduled_interviews si
-         LEFT JOIN candidates c ON c.id = si.candidate_id
-         WHERE si.owner_id = ?
-           AND (
-             lower(COALESCE(c.email, '')) = ?
-             OR lower(COALESCE(si.recipient_email, '')) = ?
-           )
-           AND si.status IN ('INVITED', 'SCHEDULED')
-         ORDER BY si.created_at DESC LIMIT 1`
-      )
-      .bind(connection.owner_id, candidateEmail, candidateEmail)
-      .first<{ id: string; status: string }>();
+    if (candidateEmail) {
+      const emailMatches = await db
+        .prepare(
+          `SELECT si.id, si.status, si.scheduled_at
+             FROM scheduled_interviews si
+             LEFT JOIN candidates c ON c.id = si.candidate_id
+            WHERE si.owner_id = ?
+              AND (
+                lower(COALESCE(c.email, '')) = ?
+                OR lower(COALESCE(si.recipient_email, '')) = ?
+              )
+              AND si.status IN ('INVITED', 'SCHEDULED')
+            ORDER BY si.created_at DESC`
+        )
+        .bind(connection.owner_id, candidateEmail, candidateEmail)
+        .all<{ id: string; status: string; scheduled_at: string | null }>();
+      const pendingMatches = emailMatches.results ?? [];
+      const scheduledAtMatches = normalized.scheduledAt
+        ? pendingMatches.filter((row) => row.scheduled_at === normalized.scheduledAt)
+        : [];
+      const selectedMatch = scheduledAtMatches.length === 1
+        ? scheduledAtMatches[0]
+        : pendingMatches.length === 1
+          ? pendingMatches[0]
+          : null;
+
+      if (selectedMatch) {
+        interview = { id: selectedMatch.id, status: selectedMatch.status };
+      } else if (pendingMatches.length > 1) {
+        console.warn('[scheduling/webhook] Ambiguous email fallback; importing provider event instead of mutating an arbitrary pending interview', {
+          candidateEmail,
+          externalEventId: normalized.externalEventId,
+          scheduledAt: normalized.scheduledAt,
+          pendingInterviewIds: pendingMatches.map((row) => row.id),
+        });
+      }
+    }
   }
 
   const now = new Date().toISOString();
