@@ -17,8 +17,6 @@ export type SessionEventType =
   | 'media_control'
   | 'room_surface_change'
   | 'workspace_state'
-  | 'participant_join'
-  | 'participant_leave'
   | 'clippy_prompt'
   | 'clippy_action'
   | 'recording_start'
@@ -47,6 +45,10 @@ function sessionEventsUrl(apiBase: string, token: string): string {
 function createClientEventId(sequence: number): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
   return `session-event-${Date.now()}-${sequence}-${Math.random().toString(36).slice(2)}`;
+}
+
+function shouldRetrySessionEventResponse(response: Response): boolean {
+  return response.status >= 500 || response.status === 408 || response.status === 429 || response.status === 0;
 }
 
 /**
@@ -81,7 +83,9 @@ export function useSessionEvents({ token, apiBase }: CaptureOptions) {
           body: JSON.stringify(event),
         });
         if (!response.ok) {
-          failed.push(event);
+          if (shouldRetrySessionEventResponse(response)) {
+            failed.push(event);
+          }
         }
       } catch {
         failed.push(event);

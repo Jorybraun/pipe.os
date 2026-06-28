@@ -504,7 +504,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setPreview(null);
     setEnteredRoom(true);
     void postRoomEvent(token, 'JOINED');
-    captureSessionEvent('participant_join', metadata.role === 'HOST' ? 'Host' : 'Guest', metadata.role === 'HOST' ? 'host' : 'guest');
   };
 
   useEffect(() => {

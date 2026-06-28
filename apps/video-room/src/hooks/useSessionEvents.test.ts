@@ -13,7 +13,7 @@ describe('useSessionEvents', () => {
     vi.unstubAllGlobals();
   });
 
-  it('requeues events when the session-events endpoint returns a non-OK response', async () => {
+  it('requeues events when the session-events endpoint returns a retryable response', async () => {
     vi.setSystemTime(new Date('2026-06-27T22:50:00.000Z'));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(null, { status: 500 }))
@@ -65,6 +65,38 @@ describe('useSessionEvents', () => {
         }),
       }),
     );
+  });
+
+  it('drops permanent validation failures instead of retrying source-less evidence forever', async () => {
+    vi.setSystemTime(new Date('2026-06-27T22:50:30.000Z'));
+    const fetchMock = vi.fn()
+      .mockResolvedValue(new Response(JSON.stringify({
+        error: { code: 'VALIDATION_ERROR' },
+      }), { status: 422 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useSessionEvents({
+      token: 'room-token',
+      apiBase: 'https://api.test',
+    }));
+
+    act(() => {
+      result.current.capture('chat_message', 'source-less participant joined', 'guest', {
+        source: 'meeting_room_lifecycle',
+      });
+    });
+
+    await act(async () => {
+      await result.current.flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.flush();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('stamps repeated browser interactions with distinct source event ids', async () => {
