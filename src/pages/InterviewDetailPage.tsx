@@ -114,6 +114,14 @@ interface CodeReviewSubmissionDetail {
   defenseThreads: CodeReviewDefenseThread[];
 }
 
+interface EvidenceFollowUpPlan {
+  originalInterviewId: string | null;
+  matchStatus: string | null;
+  matchSummary: string | null;
+  gaps: string[];
+  questions: string[];
+}
+
 function formatDate(value: string | null | undefined, fallback = 'Not scheduled'): string {
   if (!value) return fallback;
   return new Date(value).toLocaleString(undefined, {
@@ -435,6 +443,61 @@ function codeReviewEvidencePlanItems(
   return gaps.slice(0, 3).map((gap) => fallbackEvidencePlanItem(match, gap));
 }
 
+function parseEvidenceFollowUpPlan(raw: string | null | undefined): EvidenceFollowUpPlan | null {
+  if (!raw) return null;
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines[0] !== 'PIPE context call for blocked code-review matching.') return null;
+
+  const readValue = (prefix: string): string | null => {
+    const line = lines.find((item) => item.startsWith(prefix));
+    return line ? line.slice(prefix.length).trim() || null : null;
+  };
+
+  const gaps = lines
+    .flatMap((line): string[] => {
+      const match = /^Evidence gap \d+:\s*(.+)$/.exec(line);
+      if (!match?.[1]) return [];
+      const gap = match[1].trim();
+      return gap && gap !== 'none recorded' ? [gap] : [];
+    });
+
+  const questionStart = lines.indexOf('Suggested questions:');
+  const questions = questionStart >= 0
+    ? lines.slice(questionStart + 1).flatMap((line): string[] => {
+        const match = /^\d+\.\s*(.+)$/.exec(line);
+        return match?.[1]?.trim() ? [match[1].trim()] : [];
+      })
+    : [];
+
+  if (questions.length === 0) return null;
+
+  return {
+    originalInterviewId: readValue('Original CODE_REVIEW interview:'),
+    matchStatus: readValue('Match status:'),
+    matchSummary: readValue('Match summary:'),
+    gaps,
+    questions,
+  };
+}
+
+function evidenceFollowUpInviteMessage(plan: EvidenceFollowUpPlan): string {
+  const question = plan.questions[0];
+  const gap = plan.gaps[0];
+  return [
+    'PIPE would like to capture one bit of source-backed context before assigning a code-review challenge.',
+    '',
+    `Question: ${question}`,
+    gap ? `Focus: ${gap}` : null,
+    'Please come ready to answer with a concrete project, your actions, the constraints, and how you verified the outcome.',
+  ]
+    .filter((line): line is string => typeof line === 'string')
+    .join('\n')
+    .slice(0, 1000);
+}
+
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
   if (!raw) return [];
   try {
@@ -666,6 +729,10 @@ export default function InterviewDetailPage(): JSX.Element {
     () => parseCodeReviewSubmission(interview?.submissionJson),
     [interview?.submissionJson],
   );
+  const evidenceFollowUpPlan = useMemo(
+    () => parseEvidenceFollowUpPlan(interview?.recruiterNotes),
+    [interview?.recruiterNotes],
+  );
 
   const ensureRoomLinks = useCallback(async (): Promise<PreparedRoomLinks | null> => {
     if (!interview) return null;
@@ -748,9 +815,12 @@ export default function InterviewDetailPage(): JSX.Element {
     setRoomNotice(null);
     setIsSendingInvite(true);
     try {
+      const invitePayload = evidenceFollowUpPlan
+        ? { email, message: evidenceFollowUpInviteMessage(evidenceFollowUpPlan) }
+        : { email };
       const result = await api.post<InviteResponse>(
         `/api/v1/scheduling/interviews/${interview.id}/invite`,
-        { email },
+        invitePayload,
       );
       if (result.room) {
         setRoomLinks(result.room);
@@ -770,7 +840,7 @@ export default function InterviewDetailPage(): JSX.Element {
     } finally {
       setIsSendingInvite(false);
     }
-  }, [api, interview, load]);
+  }, [api, evidenceFollowUpPlan, interview, load]);
 
   const createContextCall = useCallback(async () => {
     if (!interview) return;
@@ -1100,6 +1170,59 @@ export default function InterviewDetailPage(): JSX.Element {
             {roomNotice && <div style={SUCCESS_NOTE}>{roomNotice}</div>}
             {roomError && <div style={ERROR_NOTE}>{roomError}</div>}
           </div>
+        </section>
+      )}
+
+      {evidenceFollowUpPlan && (
+        <section data-testid="interview-evidence-follow-up-plan" style={FOLLOW_UP_PLAN_SECTION}>
+          <div style={SECTION_TITLE}>
+            <CalendarCheck size={15} />
+            Follow-up assessment plan
+          </div>
+          <div style={FOLLOW_UP_PLAN_GRID}>
+            <div style={FOLLOW_UP_PLAN_PRIMARY}>
+              <div style={FIELD_LABEL}>Ask this first</div>
+              <div style={DECISION_PLAN_SIGNAL}>{evidenceFollowUpPlan.questions[0]}</div>
+              <div style={CONTEXT_RECORD_NARRATIVE}>
+                Candidate answer becomes source-backed context for repo matching.
+              </div>
+              <div style={CONTEXT_RECORD_NARRATIVE}>
+                The invite includes this question so the call has a concrete purpose.
+              </div>
+            </div>
+            <div style={FOLLOW_UP_PLAN_META}>
+              {evidenceFollowUpPlan.originalInterviewId && (
+                <div style={MATCH_BRIDGE_CARD}>
+                  <div style={FIELD_LABEL}>Original code-review interview</div>
+                  <div style={TRANSCRIPT_TEXT}>{evidenceFollowUpPlan.originalInterviewId}</div>
+                </div>
+              )}
+              {evidenceFollowUpPlan.matchStatus && (
+                <div style={MATCH_BRIDGE_CARD}>
+                  <div style={FIELD_LABEL}>Match status</div>
+                  <div style={TRANSCRIPT_TEXT}>{titleCaseToken(evidenceFollowUpPlan.matchStatus)}</div>
+                </div>
+              )}
+              {evidenceFollowUpPlan.gaps.length > 0 && (
+                <div style={MATCH_BRIDGE_CARD}>
+                  <div style={FIELD_LABEL}>Missing evidence</div>
+                  <div style={TAG_ROW}>
+                    {evidenceFollowUpPlan.gaps.slice(0, 3).map((gap) => (
+                      <span key={gap} style={TAG}>{titleCaseToken(gap)}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          {evidenceFollowUpPlan.questions.length > 1 && (
+            <div style={FOLLOW_UP_QUESTION_LIST}>
+              <div style={FIELD_LABEL}>Useful follow-ups</div>
+              {evidenceFollowUpPlan.questions.slice(1, 3).map((question) => (
+                <div key={question} style={CONTEXT_RECORD_NARRATIVE}>{question}</div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -1817,6 +1940,44 @@ const WORKSPACE_CONFIG_FORM: CSSProperties = {
   justifyContent: 'flex-end',
   gap: 8,
   minWidth: 0,
+};
+
+const FOLLOW_UP_PLAN_SECTION: CSSProperties = {
+  border: '1px solid rgba(96,165,250,0.32)',
+  borderRadius: 8,
+  background: 'rgba(96,165,250,0.08)',
+  padding: 18,
+};
+
+const FOLLOW_UP_PLAN_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1.15fr) minmax(240px, 0.85fr)',
+  gap: 12,
+  minWidth: 0,
+};
+
+const FOLLOW_UP_PLAN_PRIMARY: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  minWidth: 0,
+  padding: 14,
+  border: '1px solid rgba(96,165,250,0.28)',
+  borderRadius: 6,
+  background: 'rgba(12,12,14,0.28)',
+};
+
+const FOLLOW_UP_PLAN_META: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  minWidth: 0,
+};
+
+const FOLLOW_UP_QUESTION_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  marginTop: 12,
+  paddingTop: 12,
+  borderTop: '1px solid rgba(96,165,250,0.24)',
 };
 
 const WORKSPACE_INPUT: CSSProperties = {

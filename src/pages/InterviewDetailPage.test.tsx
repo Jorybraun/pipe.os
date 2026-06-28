@@ -75,6 +75,19 @@ async function flushAsyncUpdates(): Promise<void> {
   });
 }
 
+function evidenceFollowUpNotes(): string {
+  return [
+    'PIPE context call for blocked code-review matching.',
+    'Original CODE_REVIEW interview: interview-code-review-blocked',
+    'Match status: NEEDS_MORE_EVIDENCE',
+    'Match summary: PIPE needs source-backed candidate work evidence before selecting a fair PR.',
+    'Evidence gap 1: NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+    'Suggested questions:',
+    '1. Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+    '2. What did you inspect, what trade-offs mattered, and how did you verify the outcome?',
+  ].join('\n');
+}
+
 describe('InterviewDetailPage', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -647,6 +660,83 @@ describe('InterviewDetailPage', () => {
     );
     expect(screen.getByText('Refresh ran, but matcher returned NEEDS MORE EVIDENCE.')).toBeTruthy();
     expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('NEEDS MORE EVIDENCE');
+  });
+
+  it('shows the source-backed follow-up assessment plan on created context-call interviews', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        id: 'context-call-1',
+        candidateId: 'candidate-1',
+        candidateName: 'Ada Candidate',
+        candidateEmail: 'ada@example.com',
+        interviewType: 'VIDEO',
+        meetingType: 'SCREENING_INTERVIEW',
+        status: 'INVITED',
+        inviteLinkSentAt: null,
+        emailSentAt: null,
+        recruiterNotes: evidenceFollowUpNotes(),
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const plan = screen.getByTestId('interview-evidence-follow-up-plan');
+    expect(plan).toHaveTextContent('Follow-up assessment plan');
+    expect(plan).toHaveTextContent('Original code-review interview');
+    expect(plan).toHaveTextContent('interview-code-review-blocked');
+    expect(plan).toHaveTextContent('NEEDS MORE EVIDENCE');
+    expect(plan).toHaveTextContent('Ask this first');
+    expect(plan).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(plan).toHaveTextContent('Candidate answer becomes source-backed context for repo matching.');
+    expect(plan).toHaveTextContent('The invite includes this question so the call has a concrete purpose.');
+  });
+
+  it('includes the evidence-plan question when inviting a follow-up assessment candidate', async () => {
+    const followUp = makeInterview({
+      id: 'context-call-1',
+      candidateId: 'candidate-1',
+      candidateName: 'Ada Candidate',
+      candidateEmail: 'ada@example.com',
+      interviewType: 'VIDEO',
+      meetingType: 'SCREENING_INTERVIEW',
+      status: 'INVITED',
+      inviteLinkSentAt: null,
+      emailSentAt: null,
+      recruiterNotes: evidenceFollowUpNotes(),
+    });
+    mocks.api.get
+      .mockResolvedValueOnce({ interview: followUp })
+      .mockResolvedValueOnce({ interview: { ...followUp, inviteLinkSentAt: '2026-06-23T00:05:00.000Z' } });
+    mocks.api.post.mockResolvedValueOnce({
+      success: true,
+      emailSent: false,
+      meetingUrl: 'https://room-dev.hire-pipe.com/guest/context-call-1',
+      room: {
+        id: 'room-context-call-1',
+        sessionId: 'session-context-call-1',
+        hostUrl: 'https://room-dev.hire-pipe.com/host/context-call-1',
+        guestUrl: 'https://room-dev.hire-pipe.com/guest/context-call-1',
+        expiresAt: '2026-06-24T00:00:00.000Z',
+      },
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    fireEvent.click(screen.getByText('SEND INVITE'));
+    await flushAsyncUpdates();
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/context-call-1/invite',
+      expect.objectContaining({
+        email: 'ada@example.com',
+        message: expect.stringContaining('Walk me through a real code review or debugging task'),
+      }),
+    );
+    const invitePayload = mocks.api.post.mock.calls[0]?.[1] as { message?: string };
+    expect(invitePayload.message).toContain('source-backed context');
+    expect(invitePayload.message).toContain('concrete project');
   });
 
   it('creates a linked context call from a blocked code-review match', async () => {
