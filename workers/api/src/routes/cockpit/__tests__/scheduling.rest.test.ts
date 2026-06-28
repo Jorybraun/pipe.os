@@ -1651,6 +1651,122 @@ describe('GET /interviews/:id detail', () => {
       .toContain('Recipient email: edsger@example.com');
   });
 
+  it('creates a source-backed context call from a blocked code-review match', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-blocked', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', 'SCREENING_INTERVIEW', 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, NULL,
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (?, ?, NULL, ?, ?, NULL, NULL, ?)
+    `).run(
+      'match-run-blocked',
+      'candidate-1',
+      'NO_ROLE_SAFE_CHALLENGE',
+      JSON.stringify([
+        {
+          rank: 1,
+          challengeId: 'packet-weak-1',
+          repoId: 'repo-1',
+          prNumber: 973,
+          score: 0.12,
+          alignedDemandCount: 1,
+          stretchCount: 0,
+          provenanceComplete: true,
+          eligible: false,
+          rejectionReasons: ['Only one source-backed candidate signal aligned with the repo challenge.'],
+        },
+      ]),
+      '2026-06-22T17:46:00.000Z',
+    );
+
+    const response = await app.request('/interviews/interview-code-review-blocked/context-call', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      contextCall: {
+        id: string;
+        originalInterviewId: string;
+        candidateId: string | null;
+        questions: string[];
+        recruiterNotes: string;
+      };
+    };
+    expect(body.contextCall).toMatchObject({
+      originalInterviewId: 'interview-code-review-blocked',
+      candidateId: 'candidate-1',
+    });
+    expect(body.contextCall.questions).toContain('Which project history best proves the work PIPE should assess here?');
+    expect(body.contextCall.recruiterNotes).toContain('Only one source-backed candidate signal aligned with the repo challenge.');
+
+    const followUpRow = sqlite!.prepare(
+      `SELECT candidate_id, pipeline_id, stage_id, interview_type, meeting_type, status, recruiter_notes
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(body.contextCall.id) as {
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      stage_id: string | null;
+      interview_type: string | null;
+      meeting_type: string | null;
+      status: string | null;
+      recruiter_notes: string | null;
+    };
+    expect(followUpRow).toMatchObject({
+      candidate_id: 'candidate-1',
+      pipeline_id: 'pipeline-1',
+      stage_id: null,
+      interview_type: 'VIDEO',
+      meeting_type: 'SCREENING_INTERVIEW',
+      status: 'INVITED',
+    });
+    expect(followUpRow.recruiter_notes).toContain('Original CODE_REVIEW interview: interview-code-review-blocked');
+
+    const contextRow = sqlite!.prepare(
+      `SELECT cr.record_type,
+              cr.predicate,
+              cr.narrative,
+              ss.exact_text
+         FROM context_records cr
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE cr.record_type = 'code_review_context_call_recommendation'
+        LIMIT 1`,
+    ).get() as {
+      record_type: string;
+      predicate: string | null;
+      narrative: string;
+      exact_text: string;
+    };
+    expect(contextRow).toMatchObject({
+      record_type: 'code_review_context_call_recommendation',
+      predicate: 'recommends context call for repo matching',
+    });
+    expect(contextRow.narrative).toContain('Ada Lovelace');
+    expect(contextRow.exact_text).toContain('Original interview id: interview-code-review-blocked');
+    expect(contextRow.exact_text).toContain('Match status: NO_ROLE_SAFE_CHALLENGE');
+    expect(contextRow.exact_text).toContain('Question 1: Which project history best proves the work PIPE should assess here?');
+  });
+
   it('records source-backed invite delivery separately from interview creation', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();

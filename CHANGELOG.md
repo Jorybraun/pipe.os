@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Public candidate `/assess/:token` links now mount without requiring recruiter Clerk configuration, while recruiter routes still show the missing-auth configuration screen.
 - Recruiter CODE_REVIEW details now label blocked repo matching as an assignment/evidence issue and recommend a context call or manual PR selection instead of implying the candidate has not submitted their review.
 - Blocked CODE_REVIEW recruiter details now surface three concise context-call questions so recruiters can collect the missing background evidence needed for a fair repo match.
+- Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
 - Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.
 - Candidate-facing CODE_REVIEW review-session status now exposes a six-step public pipeline through review and scoring, and the app-dev smoke fails unless completed reviews report durable scoring through that status endpoint.
 - Added a CODE_REVIEW app-dev reliability loop that repeats the profile matrix, persists per-run proof artifacts, and fails unless every iteration includes a completed/scored full-submit match plus an explicit blocked repo-matching state with no auto-refresh loop.

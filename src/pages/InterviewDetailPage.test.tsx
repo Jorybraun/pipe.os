@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import InterviewDetailPage from './InterviewDetailPage';
@@ -399,6 +399,63 @@ describe('InterviewDetailPage', () => {
     expect(contextQuestions).toHaveTextContent('Which project history best proves the work PIPE should assess here?');
     expect(contextQuestions).toHaveTextContent('What parts of this background are missing from the current source evidence?');
     expect(contextQuestions).toHaveTextContent('Which codebase constraints or PR style would make the assessment fair rather than misleading?');
+  });
+
+  it('creates a linked context call from a blocked code-review match', async () => {
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          id: 'interview-blocked-1',
+          candidateId: 'candidate-1',
+          candidateName: 'Ada Candidate',
+          candidateEmail: 'ada@example.com',
+          interviewType: 'CODE_REVIEW',
+          status: 'INVITED',
+          codeReviewMatch: {
+            status: 'NEEDS_MORE_EVIDENCE',
+            matchRunId: 'match-run-blocked-1',
+            packetId: null,
+            summary: 'No quality-gated source-backed PR challenge was selected.',
+            score: 0,
+            assessmentQuality: null,
+            reviewProfile: null,
+            validatorAgent: null,
+            roleSources: [],
+            evidence: [],
+            evidenceHyperedges: [],
+            gaps: ['The deterministic repo matcher did not return a quality-gated PR.'],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          id: 'context-call-1',
+          candidateId: 'candidate-1',
+          candidateName: 'Ada Candidate',
+          candidateEmail: 'ada@example.com',
+          interviewType: 'VIDEO',
+          meetingType: 'SCREENING_INTERVIEW',
+          status: 'INVITED',
+        }),
+      });
+    mocks.api.post.mockResolvedValueOnce({
+      contextCall: {
+        id: 'context-call-1',
+        originalInterviewId: 'interview-blocked-1',
+        questions: [],
+      },
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    fireEvent.click(screen.getByTestId('interview-code-review-context-call-cta'));
+    await flushAsyncUpdates();
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-blocked-1/context-call',
+      {},
+    );
   });
 
   it('shows code-review evidence hyperedges for recruiter match justification', async () => {

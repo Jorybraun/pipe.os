@@ -63,6 +63,14 @@ interface InviteResponse {
   room?: PreparedRoomLinks;
 }
 
+interface ContextCallResponse {
+  contextCall: {
+    id: string;
+    originalInterviewId: string;
+    questions: string[];
+  };
+}
+
 interface CodeReviewAnnotationDetail {
   file: string;
   line: number | null;
@@ -548,6 +556,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const [isSendingInvite, setIsSendingInvite] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [roomNotice, setRoomNotice] = useState<string | null>(null);
+  const [contextCallError, setContextCallError] = useState<string | null>(null);
+  const [isCreatingContextCall, setIsCreatingContextCall] = useState(false);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -715,6 +725,23 @@ export default function InterviewDetailPage(): JSX.Element {
       setIsSendingInvite(false);
     }
   }, [api, interview, load]);
+
+  const createContextCall = useCallback(async () => {
+    if (!interview) return;
+    setContextCallError(null);
+    setIsCreatingContextCall(true);
+    try {
+      const result = await api.post<ContextCallResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/context-call`,
+        {},
+      );
+      navigate(`/interviews/${result.contextCall.id}`);
+    } catch (err) {
+      setContextCallError(err instanceof Error ? err.message : 'Unable to create context call');
+    } finally {
+      setIsCreatingContextCall(false);
+    }
+  }, [api, interview, navigate]);
 
   const saveWorkspaceConfig = useCallback(async () => {
     if (!interview) return;
@@ -1060,6 +1087,18 @@ export default function InterviewDetailPage(): JSX.Element {
                       <li key={question} style={DECISION_FOLLOW_UP_ITEM}>{question}</li>
                     ))}
                   </ol>
+                  <button
+                    data-testid="interview-code-review-context-call-cta"
+                    onClick={() => void createContextCall()}
+                    disabled={isCreatingContextCall}
+                    style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                  >
+                    {isCreatingContextCall
+                      ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                      : <CalendarCheck size={14} />}
+                    SCHEDULE CONTEXT CALL
+                  </button>
+                  {contextCallError && <div style={ERROR_NOTE}>{contextCallError}</div>}
                 </div>
               )}
               <div style={DECISION_SIGNAL_GRID}>
@@ -2090,6 +2129,14 @@ const DECISION_FOLLOW_UP_ITEM: CSSProperties = {
   color: 'var(--pipe-text)',
   fontSize: 13,
   lineHeight: 1.55,
+};
+
+const CONTEXT_CALL_BUTTON: CSSProperties = {
+  width: 'fit-content',
+  marginTop: 4,
+  borderColor: 'rgba(96,165,250,0.38)',
+  background: 'rgba(96,165,250,0.12)',
+  color: '#bfdbfe',
 };
 
 const DECISION_SIGNAL_GRID: CSSProperties = {

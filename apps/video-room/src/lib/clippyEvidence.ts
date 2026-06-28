@@ -528,7 +528,7 @@ export function buildClippyAgentMessageSessionEvidence(input: {
     const evidence = buildClippyAgentChatFallbackEvidence({
       text,
       agentName,
-      bridgeMessageSource: input.source,
+      bridgeMessageSource: input.source === 'agent_api_response' ? 'agent_api_response' : 'agent_stdout',
       observedAt: input.observedAt,
       browserPromptId: input.browserPromptId ?? null,
       browserPromptFingerprint: input.browserPromptFingerprint ?? null,

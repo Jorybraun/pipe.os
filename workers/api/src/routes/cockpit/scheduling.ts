@@ -298,6 +298,12 @@ const inviteToCallSchema = z.object({
   sendEmail: z.boolean().optional(),
 });
 
+const CONTEXT_CALL_QUESTIONS = [
+  'Which project history best proves the work PIPE should assess here?',
+  'What parts of this background are missing from the current source evidence?',
+  'Which codebase constraints or PR style would make the assessment fair rather than misleading?',
+] as const;
+
 // ─── Status transition validation ───────────────────────────────────────────
 
 export const SCHEDULED_INTERVIEW_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -1523,6 +1529,181 @@ async function persistContactFirstInterviewInviteContext(
         entityId: input.contactId,
         relationship: 'participant',
       },
+    ],
+  });
+}
+
+function codeReviewContextCallSourceText(input: {
+  originalInterviewId: string;
+  contextCallInterviewId: string;
+  personName: string;
+  personEmail: string;
+  matchStatus: string;
+  matchSummary: string;
+  gaps: string[];
+  questions: readonly string[];
+  createdAt: string;
+}): string {
+  return [
+    'Code-review context call recommendation',
+    `Original interview id: ${input.originalInterviewId}`,
+    `Context call interview id: ${input.contextCallInterviewId}`,
+    `Person name: ${input.personName}`,
+    `Person email: ${input.personEmail}`,
+    `Match status: ${input.matchStatus}`,
+    `Match summary: ${input.matchSummary}`,
+    ...(input.gaps.length > 0
+      ? input.gaps.map((gap, index) => `Evidence gap ${index + 1}: ${gap}`)
+      : ['Evidence gap: none recorded']),
+    ...input.questions.map((question, index) => `Question ${index + 1}: ${question}`),
+    `Created at: ${input.createdAt}`,
+  ].join('\n');
+}
+
+async function persistCodeReviewContextCallRecommendation(
+  db: D1Database,
+  input: {
+    ownerId: string;
+    candidateId: string | null;
+    contactId: string | null;
+    originalInterviewId: string;
+    contextCallInterviewId: string;
+    personName: string;
+    personEmail: string;
+    matchRunId: string | null;
+    matchStatus: string;
+    matchSummary: string;
+    gaps: string[];
+    questions: readonly string[];
+    createdAt: string;
+  },
+): Promise<void> {
+  const identity = input.candidateId
+    ? await ensureCandidateLivingContext(db, input.candidateId)
+    : input.contactId
+      ? await ensureContactLivingContext(db, input.contactId)
+      : null;
+  if (!identity) return;
+
+  const applicationId = 'applicationId' in identity ? identity.applicationId : null;
+  const store = new LivingContextStore(db, () => input.createdAt);
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `code-review-context-call:${input.originalInterviewId}:${input.contextCallInterviewId}`,
+    workspacePersonId: identity.workspacePersonId,
+    applicationId,
+    interactionType: 'code_review_context_call_recommendation',
+    externalReference: input.originalInterviewId,
+    startedAt: input.createdAt,
+    metadata: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:artifact`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'code_review_context_call_recommendation',
+    logicalKey: `${input.originalInterviewId}:context-call:${input.contextCallInterviewId}`,
+    metadata: {
+      ownerId: input.ownerId,
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const sourceText = codeReviewContextCallSourceText(input);
+  const contentHash = await deterministicEntityId('content', sourceText);
+  const version = await store.createArtifactVersion({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:${contentHash}`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash,
+    mediaType: 'text/plain',
+    contentText: sourceText,
+    byteLength: new TextEncoder().encode(sourceText).byteLength,
+    metadata: {
+      source: 'code_review_context_call_recommendation',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `code-review-context-call:${input.contextCallInterviewId}:${version.id}:full`,
+    artifactVersionId: version.id,
+    stableSegmentId: 'context-call-recommendation-full',
+    byteStart: 0,
+    byteEnd: new TextEncoder().encode(sourceText).byteLength,
+    charStart: 0,
+    charEnd: sourceText.length,
+    lineStart: 1,
+    lineEnd: lineCount(sourceText),
+    exactText: sourceText,
+    metadata: {
+      source: 'code_review_context_call_recommendation',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchStatus: input.matchStatus,
+    },
+  });
+  await store.upsertContextRecord({
+    ingestionKey: `code-review-context-call:${input.originalInterviewId}:${input.contextCallInterviewId}:context`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    applicationId,
+    recordType: 'code_review_context_call_recommendation',
+    predicate: 'recommends context call for repo matching',
+    narrative: `PIPE recommended a context call for ${input.personName} before assigning a code review challenge.`,
+    qualifiers: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+    },
+    confidence: 1,
+    extractionVersion: 'code-review-context-call-v1',
+    observedAt: input.createdAt,
+    sources: [{ sourceSpanId: span.id, evidenceRole: 'source' }],
+    entities: [
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.originalInterviewId,
+        relationship: 'originating_assessment',
+      },
+      {
+        entityType: 'scheduled_interview',
+        entityId: input.contextCallInterviewId,
+        relationship: 'recommended_follow_up',
+      },
+      ...(input.matchRunId
+        ? [{
+            entityType: 'match_run',
+            entityId: input.matchRunId,
+            relationship: 'blocked_match',
+          }]
+        : []),
+      ...(input.candidateId
+        ? [{
+            entityType: 'candidate',
+            entityId: input.candidateId,
+            relationship: 'participant',
+          }]
+        : []),
+      ...(input.contactId
+        ? [{
+            entityType: 'contact',
+            entityId: input.contactId,
+            relationship: 'participant',
+          }]
+        : []),
     ],
   });
 }
@@ -2807,6 +2988,138 @@ schedulingAuth.post('/interviews', async (c) => {
       githubRepoUrl: githubRepoUrl ?? null,
       githubPrNumber: githubPrNumber ?? null,
       assessmentSetup,
+    },
+  }, 201);
+});
+
+// POST /interviews/:id/context-call — create a follow-up call for blocked CODE_REVIEW matching
+schedulingAuth.post('/interviews/:id/context-call', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const source = await db
+    .prepare(
+      `SELECT si.id, si.candidate_id, si.pipeline_id, si.interview_type,
+              si.matched_repo_id, si.github_repo_url, si.github_pr_number,
+              si.recipient_name, si.recipient_email,
+              c.name AS candidate_name, c.email AS candidate_email
+         FROM scheduled_interviews si
+         LEFT JOIN candidates c ON c.id = si.candidate_id
+        WHERE si.id = ?1 AND si.owner_id = ?2`,
+    )
+    .bind(id, userId)
+    .first<{
+      id: string;
+      candidate_id: string | null;
+      pipeline_id: string | null;
+      interview_type: string | null;
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      recipient_name: string | null;
+      recipient_email: string | null;
+      candidate_name: string | null;
+      candidate_email: string | null;
+    }>();
+
+  if (!source) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+  if (source.interview_type !== 'CODE_REVIEW') {
+    return apiError(c, 'VALIDATION_ERROR', 'Context calls can only be created from code-review interviews.');
+  }
+
+  const match = await loadScheduledCodeReviewMatchDetail(db, {
+    candidate_id: source.candidate_id,
+    interview_type: source.interview_type,
+    matched_repo_id: source.matched_repo_id,
+    github_repo_url: source.github_repo_url,
+    github_pr_number: source.github_pr_number,
+  });
+  if (match?.status === 'MATCHED') {
+    return apiError(c, 'VALIDATION_ERROR', 'This code review already has a matched PR challenge.');
+  }
+
+  const personName = source.candidate_name ?? source.recipient_name ?? source.candidate_email ?? source.recipient_email;
+  const personEmail = source.candidate_email ?? source.recipient_email;
+  if (!personName || !personEmail) {
+    return apiError(c, 'VALIDATION_ERROR', 'A name and email are required before creating a context call.');
+  }
+
+  const contextCallId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const questions = [...CONTEXT_CALL_QUESTIONS];
+  const gaps = match?.gaps.filter((gap) => gap.trim().length > 0) ?? [];
+  const matchStatus = match?.status ?? 'NO_MATCH_DATA';
+  const matchSummary = match?.summary ?? 'No source-backed match record was available when the context call was requested.';
+  const recruiterNotes = [
+    'PIPE context call for blocked code-review matching.',
+    `Original CODE_REVIEW interview: ${source.id}`,
+    `Match status: ${matchStatus}`,
+    `Match summary: ${matchSummary}`,
+    ...(gaps.length > 0
+      ? gaps.map((gap, index) => `Evidence gap ${index + 1}: ${gap}`)
+      : ['Evidence gap: none recorded']),
+    'Suggested questions:',
+    ...questions.map((question, index) => `${index + 1}. ${question}`),
+  ].join('\n');
+
+  const contactId = source.candidate_id
+    ? null
+    : await ensureRecipientContact(db, userId, {
+        name: personName,
+        email: personEmail,
+      });
+
+  await db
+    .prepare(
+      `INSERT INTO scheduled_interviews
+       (id, candidate_id, pipeline_id, stage_id, owner_id, status,
+        interview_type, meeting_type, scheduled_at, scheduling_provider,
+        scheduling_url, recipient_name, recipient_email, recruiter_notes,
+        sync_source, matched_repo_id, github_repo_url, github_pr_number,
+        created_at, updated_at)
+       VALUES (?1, ?2, ?3, NULL, ?4, 'INVITED',
+        'VIDEO', 'SCREENING_INTERVIEW', NULL, 'MANUAL',
+        NULL, ?5, ?6, ?7,
+        'MANUAL', NULL, NULL, NULL,
+        ?8, ?8)`,
+    )
+    .bind(
+      contextCallId,
+      source.candidate_id,
+      source.pipeline_id,
+      userId,
+      source.candidate_id ? null : personName,
+      source.candidate_id ? null : personEmail.trim().toLowerCase(),
+      recruiterNotes,
+      now,
+    )
+    .run();
+
+  await persistCodeReviewContextCallRecommendation(db, {
+    ownerId: userId,
+    candidateId: source.candidate_id,
+    contactId,
+    originalInterviewId: source.id,
+    contextCallInterviewId: contextCallId,
+    personName,
+    personEmail: personEmail.trim().toLowerCase(),
+    matchRunId: match?.matchRunId ?? null,
+    matchStatus,
+    matchSummary,
+    gaps,
+    questions,
+    createdAt: now,
+  });
+
+  return c.json({
+    contextCall: {
+      id: contextCallId,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+      contactId,
+      questions,
+      recruiterNotes,
     },
   }, 201);
 });
