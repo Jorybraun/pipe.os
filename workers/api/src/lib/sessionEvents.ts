@@ -93,6 +93,7 @@ const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:[a-z_]+:[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
+const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
@@ -684,6 +685,8 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
       : null;
   const text = stringOrNull(message.text);
   if (!text) return null;
+  const actor = actorFromRoomRole(role);
+  if (!isSourceBackedChatEvidence(message, evidence, actor, text)) return null;
   const properties = {
     ...roomActivityBaseProperties('chat', role, value.recordedAt),
     ...evidence,
@@ -700,10 +703,45 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   return createSessionEvent(input, {
     type: 'chat_message',
     timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),
-    actor: actorFromRoomRole(role),
+    actor,
     text,
     properties,
   });
+}
+
+function isSourceBackedChatEvidence(
+  message: Record<string, unknown>,
+  evidence: Record<string, unknown>,
+  actor: SessionEvent['actor'],
+  text: string,
+): boolean {
+  if (actor !== 'host' && actor !== 'guest') return false;
+  const messageId = stringOrNull(message.id);
+  const clientId = stringOrNull(message.clientId);
+  const createdAt = numberOrNull(message.createdAt);
+  const messageDeliveryStatus = stringOrNull(message.deliveryStatus);
+  const evidenceDeliveryStatus = stringOrNull(evidence.deliveryStatus);
+  if (
+    !messageId
+    || !clientId
+    || createdAt === null
+    || !messageDeliveryStatus
+    || !CHAT_DELIVERY_STATUSES.has(messageDeliveryStatus)
+  ) {
+    return false;
+  }
+  return evidence.source === 'room_chat_client_submit'
+    && evidence.chatEventSource === 'browser_room_chat_window'
+    && evidence.actor === actor
+    && evidence.roomMessageId === messageId
+    && evidence.clientId === clientId
+    && evidence.messageCreatedAt === createdAt
+    && evidence.messageLength === text.length
+    && evidenceDeliveryStatus === messageDeliveryStatus
+    && CHAT_DELIVERY_STATUSES.has(evidenceDeliveryStatus)
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && stringOrNull(evidence.roomPhase) !== null
+    && evidence.durableObjectReplayExpected === true;
 }
 
 function mediaControlText(actor: SessionEvent['actor'], control: string, enabled: boolean): string {

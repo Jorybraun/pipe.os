@@ -885,6 +885,47 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('rejects room chat messages without browser source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CHAT_MESSAGE',
+      payload: {
+        id: 'chat-forged-evidence',
+        clientId: 'host-client',
+        createdAt: 42,
+        role: 'HOST',
+        text: 'This should not become evidence.',
+        deliveryStatus: 'pending',
+        evidence: {
+          source: 'room_chat_claim',
+          chatEventSource: 'manual_test_payload',
+          actor: 'host',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(storage.get('chatMessages')).toBeUndefined();
+    expect(storage.get('chatActivityLog')).toBeUndefined();
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE_REJECTED',
+      reason: 'INVALID_EVIDENCE',
+      payload: { clientMessageId: 'chat-forged-evidence' },
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CHAT_MESSAGE',
+    }));
+  });
+
   it('rejects invalid room chat messages with the client message id for reconciliation', async () => {
     const host = new FakeSocket();
     const { state, storage } = makeState([[host, 'HOST']]);

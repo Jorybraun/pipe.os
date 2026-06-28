@@ -1336,6 +1336,31 @@ export class VideoRoom {
     };
   }
 
+  private hasSourceBackedChatEvidence(message: RoomChatMessage, role: VideoRole): boolean {
+    const evidence = message.evidence;
+    if (!evidence) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const messageCreatedAt = evidence.messageCreatedAt;
+    const messageLength = evidence.messageLength;
+    return evidence.source === 'room_chat_client_submit'
+      && evidence.chatEventSource === 'browser_room_chat_window'
+      && evidence.actor === actor
+      && evidence.roomMessageId === message.id
+      && evidence.clientId === message.clientId
+      && messageCreatedAt === message.createdAt
+      && typeof messageCreatedAt === 'number'
+      && Number.isFinite(messageCreatedAt)
+      && messageCreatedAt >= 0
+      && messageLength === message.text.length
+      && typeof messageLength === 'number'
+      && evidence.deliveryStatus === 'accepted'
+      && typeof evidence.surface === 'string'
+      && this.isRoomSurface(evidence.surface)
+      && typeof evidence.roomPhase === 'string'
+      && evidence.roomPhase.trim().length > 0
+      && evidence.durableObjectReplayExpected === true;
+  }
+
   private chatClientMessageId(value: unknown): string | null {
     if (!this.isRecord(value)) return null;
     return this.isSafeFileText(value.id, 120) ? value.id : null;
@@ -2837,6 +2862,14 @@ export class VideoRoom {
         deliveryStatus: 'accepted' as const,
         evidence: this.acceptedChatEvidence(chatMessage, senderRole),
       };
+      if (!this.hasSourceBackedChatEvidence(persistedMessage, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CHAT_MESSAGE_REJECTED',
+          reason: 'INVALID_EVIDENCE',
+          payload: { clientMessageId: chatMessage.id },
+        }));
+        return;
+      }
       await this.persistChatMessage(persistedMessage, senderRole);
       await this.recordChatActivity(persistedMessage, senderRole);
       ws.send(JSON.stringify({
