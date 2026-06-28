@@ -1983,6 +1983,23 @@ function sessionEventEntities(input: {
     });
   }
 
+  const clippyActionEventId = stringProperty(properties, 'clippyActionEventId');
+  if (clippyActionEventId) {
+    entities.push({
+      entityType: 'clippy_action',
+      entityId: clippyActionEventId,
+      relationship: 'source_action',
+      metadata: {
+        actor: event.actor,
+        actionId: stringProperty(properties, 'actionId'),
+        origin: stringProperty(properties, 'origin'),
+        executionStatus: stringProperty(properties, 'executionStatus'),
+        source: stringProperty(properties, 'source'),
+        agent: stringProperty(properties, 'agent'),
+      },
+    });
+  }
+
   const fileId = stringProperty(properties, 'fileId');
   if (fileId) {
     entities.push({
@@ -2286,6 +2303,74 @@ async function chatTextSourceRef(input: {
   return null;
 }
 
+async function clippyActionSourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<SessionEventExactSourceRef | null> {
+  if (input.event.type !== 'clippy_action') return null;
+  if (input.event.text.trim().length === 0) return null;
+  if (!isSourceBackedClippyInteractionEvidence('clippy_action', input.event.actor, input.event.text, input.properties)) {
+    return null;
+  }
+
+  const source = stringProperty(input.properties, 'source');
+  const actionId = stringProperty(input.properties, 'actionId');
+  const origin = stringProperty(input.properties, 'origin');
+  const executionStatus = stringProperty(input.properties, 'executionStatus');
+  const clippyActionEventId = stringProperty(input.properties, 'clippyActionEventId');
+  if (!source || !actionId || !origin || !executionStatus || !clippyActionEventId) return null;
+
+  const agentBacked = source === 'clippy_agent_bridge';
+  const evidenceRole = agentBacked
+    ? executionStatus === 'suggested'
+      ? 'clippy_agent_suggested_action'
+      : 'clippy_agent_executed_action'
+    : 'clippy_ui_action';
+
+  return {
+    sourceRefType: agentBacked ? 'clippy_agent_room_action' : 'clippy_ui_action',
+    sourceRefId: clippyActionEventId,
+    evidenceRole,
+    locator: {
+      sessionId: input.event.sessionId,
+      candidateId: input.event.candidateId,
+      candidateNodeId: input.node.id,
+      actor: input.event.actor,
+      source,
+      actionId,
+      origin,
+      executionStatus,
+      clippyActionEventId,
+      capturedAtMs: numberProperty(input.properties, 'capturedAtMs'),
+      executedBy: stringProperty(input.properties, 'executedBy'),
+      agent: stringProperty(input.properties, 'agent'),
+      observedAt: stringProperty(input.properties, 'observedAt'),
+      agentActionObservedAt: stringProperty(input.properties, 'agentActionObservedAt'),
+      browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+      workspaceSessionId: stringProperty(input.properties, 'workspaceSessionId'),
+      surface: stringProperty(input.properties, 'surface'),
+      roomPhase: stringProperty(input.properties, 'roomPhase'),
+    },
+    exactText: input.event.text,
+    contentHash: await sha256Hex(input.event.text),
+    metadata: {
+      sourceKind: agentBacked ? 'clippy.agent_room_action' : 'clippy.ui_action',
+      actionSource: stringProperty(input.properties, 'actionSource'),
+      actionProtocol: stringProperty(input.properties, 'actionProtocol'),
+      bridgeEventType: stringProperty(input.properties, 'bridgeEventType'),
+      bridgePersisted: typeof input.properties.bridgePersisted === 'boolean'
+        ? input.properties.bridgePersisted
+        : null,
+      agentActionBridgePersisted: typeof input.properties.agentActionBridgePersisted === 'boolean'
+        ? input.properties.agentActionBridgePersisted
+        : null,
+      agentResponseClaimed: input.properties.agentResponseClaimed === true,
+      durableObjectReplayExpected: input.properties.durableObjectReplayExpected === true,
+    },
+  };
+}
+
 async function terminalTextSourceRef(input: {
   event: SessionEvent;
   node: CandidateNode;
@@ -2500,6 +2585,7 @@ async function persistSessionEventContextRecord(
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
+  const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
@@ -2526,6 +2612,7 @@ async function persistSessionEventContextRecord(
   ];
   if (roomFileContentSource) sources.push(roomFileContentSource);
   if (chatTextSource) sources.push(chatTextSource);
+  if (clippyActionSource) sources.push(clippyActionSource);
   if (terminalTextSource) sources.push(terminalTextSource);
   if (codeServerFileSource) sources.push(codeServerFileSource);
   if (sourceSpanId) {
@@ -2701,6 +2788,7 @@ async function persistSessionEventAssessmentEvidence(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
   const chatTextSource = await chatTextSourceRef({ event, node, properties });
+  const clippyActionSource = await clippyActionSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
   const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
@@ -2726,6 +2814,7 @@ async function persistSessionEventAssessmentEvidence(
     },
     ...(roomFileContentSource ? [roomFileContentSource] : []),
     ...(chatTextSource ? [chatTextSource] : []),
+    ...(clippyActionSource ? [clippyActionSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
     ...(codeServerFileSource ? [codeServerFileSource] : []),
   ];

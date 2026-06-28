@@ -821,6 +821,149 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves Clippy UI and bridge room actions as direct source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const trayOpenText = 'Clippy chat opened from the Win95 taskbar tray';
+        const trayOpenId = 'clippy-action:guest:1782604700000:clippy_tray_ui:tray:opened:open-clippy-chat';
+        const agentSuggestionText = 'devin suggested room action: open-terminal';
+        const agentSuggestionId = 'clippy-action:agent:1782604710000:clippy_agent_bridge:agent:suggested:open-terminal';
+        const events: SessionEvent[] = [
+          {
+            type: 'clippy_action',
+            sessionId: 'meeting-session-clippy-actions',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604700,
+            actor: 'guest',
+            text: trayOpenText,
+            properties: {
+              source: 'clippy_tray_ui',
+              actionId: 'open-clippy-chat',
+              origin: 'tray',
+              executedBy: 'guest',
+              actionSource: 'win95_taskbar_tray',
+              executionStatus: 'opened',
+              capturedAtMs: 1782604700000,
+              clippyActionEventId: trayOpenId,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              agent: null,
+              agentWorkspaceReady: true,
+              agentResponseClaimed: false,
+              durableObjectReplayExpected: true,
+            },
+          },
+          {
+            type: 'clippy_action',
+            sessionId: 'meeting-session-clippy-actions',
+            candidateId: 'cand-assessment',
+            timestamp: 1782604710,
+            actor: 'agent',
+            text: agentSuggestionText,
+            properties: {
+              source: 'clippy_agent_bridge',
+              origin: 'agent',
+              executionStatus: 'suggested',
+              actionId: 'open-terminal',
+              actionSource: 'agent_stdout',
+              actionProtocol: 'clippy_room_action_tag',
+              bridgeEventType: 'ROOM_ACTION',
+              agent: 'devin',
+              observedAt: '2026-06-27T20:18:30.000Z',
+              capturedAtMs: 1782604710000,
+              clippyActionEventId: agentSuggestionId,
+              bridgePersisted: true,
+              browserPromptId: 'workspace-session-1:guest:prompt:1782604705000:clippy_0123abcd',
+              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptTimestamp: 1782604705000,
+              browserPromptLength: 'Open the terminal'.length,
+              durableObjectReplayExpected: true,
+            },
+          },
+        ];
+
+        const nodes = [];
+        for (const event of events) {
+          nodes.push(await captureSessionEvent(realDb, event));
+        }
+        expect(nodes.every((node) => node !== null)).toBe(true);
+
+        const contextSources = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type IN ('clippy_ui_action', 'clippy_agent_room_action')
+            ORDER BY csr.source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+
+        expect(contextSources).toEqual([
+          {
+            source_ref_type: 'clippy_agent_room_action',
+            source_ref_id: agentSuggestionId,
+            evidence_role: 'clippy_agent_suggested_action',
+            exact_text: agentSuggestionText,
+            content_hash: await sha256Hex(agentSuggestionText),
+          },
+          {
+            source_ref_type: 'clippy_ui_action',
+            source_ref_id: trayOpenId,
+            evidence_role: 'clippy_ui_action',
+            exact_text: trayOpenText,
+            content_hash: await sha256Hex(trayOpenText),
+          },
+        ]);
+
+        const assessmentSources = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type IN ('clippy_ui_action', 'clippy_agent_room_action')
+            ORDER BY source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(assessmentSources).toEqual(contextSources);
+
+        const entities = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship
+             FROM context_record_entities
+            WHERE entity_type = 'clippy_action'
+            ORDER BY entity_id`,
+        ).all() as Array<{
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+        }>;
+        expect(entities).toEqual([
+          {
+            entity_type: 'clippy_action',
+            entity_id: agentSuggestionId,
+            relationship: 'source_action',
+          },
+          {
+            entity_type: 'clippy_action',
+            entity_id: trayOpenId,
+            relationship: 'source_action',
+          },
+        ]);
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
