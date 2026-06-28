@@ -627,6 +627,100 @@ describe('POST /rpc/get-stage-config', () => {
       title: 'Building your personalized challenge',
     });
   });
+
+  it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
+    const storage = {
+      get: vi.fn(async () => ({
+        text: async () => resumeText,
+      })),
+    } as unknown as R2Bucket;
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/old',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_retry',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: 'retryable_standalone_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/old',
+            status: 'failed',
+            current_step: 'discover_profile',
+            error_text: 'Discovery failed: Cloudflare Workers AI call failed for model @cf/meta/llama-3.1-8b-instruct: 5028: This model was deprecated on 2026-05-30.',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db, STORAGE: storage });
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      waitingChallenge?: { config?: { state?: string; reason?: string } };
+    };
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'pending',
+      reason: 'Retrying candidate evidence ingestion after a stale Workers AI model failure.',
+    });
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes("status = 'pending'")
+      && call.sql.includes("current_step = 'retry_queued'")
+    )).toBe(true);
+
+    await waitUntilAll();
+    expect(storage.get).toHaveBeenCalledWith('text-intake/cand_1/old');
+    expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
+      candidateId: 'cand_1',
+      resumeText,
+      decompositionResult: null,
+      parsed: expect.objectContaining({
+        skills: expect.any(Array),
+        experiences: expect.any(Array),
+        projects: expect.any(Array),
+      }),
+    }));
+  });
 });
 
 // ─── POST /rpc/submit-challenge-response ─────────────────────────────────────
@@ -635,8 +729,10 @@ describe('POST /rpc/submit-challenge-response', () => {
   it('queues text-intake ingestion from deterministic CV evidence without a pre-ingestion AI parse', async () => {
     const db = fakeD1();
     const aiRun = vi.fn(async () => ({ response: '{}' }));
-    const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai });
+    const storage = { put: vi.fn(async () => null) } as unknown as R2Bucket;
+    const env = buildEnv({ DB: db, AI: { run: aiRun } as unknown as Ai, STORAGE: storage });
     const { ctx, waitUntilAll } = buildCtx();
+    const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
 
     const res = await rpcAuth.request(
       '/submit-challenge-response',
@@ -649,7 +745,7 @@ describe('POST /rpc/submit-challenge-response', () => {
         body: JSON.stringify({
           order: 0,
           submission: JSON.stringify({
-            resumeText: 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.',
+            resumeText,
           }),
         }),
       },
@@ -659,6 +755,17 @@ describe('POST /rpc/submit-challenge-response', () => {
 
     expect(res.status).toBe(200);
     await waitUntilAll();
+    expect(storage.put).toHaveBeenCalledWith(
+      expect.stringMatching(/^text-intake\/cand_1\//),
+      resumeText,
+      expect.objectContaining({
+        httpMetadata: { contentType: 'text/plain;charset=utf-8' },
+        customMetadata: expect.objectContaining({
+          source: 'candidate_text_intake',
+          candidateId: 'cand_1',
+        }),
+      }),
+    );
     expect(aiRun).not.toHaveBeenCalled();
     expect(runCandidateIngestion).toHaveBeenCalledWith(expect.objectContaining({
       candidateId: 'cand_1',
