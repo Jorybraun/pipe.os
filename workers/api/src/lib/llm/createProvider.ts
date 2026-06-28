@@ -28,7 +28,8 @@
  *   CLOUDFLARE_AI_MODEL    = default Workers AI model (default: @cf/google/gemma-4-26b-a4b-it)
  *   AI                     = Cloudflare Workers AI binding
  *
- * When 'MOCK_AI=true', culture/copilot/candidate agents return null (deterministic mock paths).
+ * When 'MOCK_AI=true', culture/copilot/candidate agents return null. Candidate
+ * ingestion must degrade to source-text-only diagnostics, never mock resume data.
  */
 
 import { GoogleAIProvider } from './googleAIProvider';
@@ -74,7 +75,7 @@ export interface ProviderEnv {
   /** Cloudflare Workers AI model override. */
   CLOUDFLARE_AI_MODEL?: string;
   AI?: Ai;
-  /** When 'true', culture/copilot/candidate agents return null (deterministic mock path). */
+  /** When 'true', culture/copilot/candidate agents return null. */
   MOCK_AI?: string;
 }
 

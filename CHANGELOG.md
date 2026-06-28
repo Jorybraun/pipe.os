@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Resume/CV ingestion no longer returns synthetic `Jane Doe` parsed/decomposition data from `MOCK_AI` or parser mock flags; unavailable candidate LLMs now degrade to deterministic source-text parsing or explicit ingestion diagnostics only.
 - CODE_REVIEW explainer questions now return explicit `AI_DEVELOPER_UNAVAILABLE` diagnostics when the real provider is missing, empty, failed, or unparsable, instead of writing canned mock explanations into candidate transcripts.
 - Standalone dev-container and open-source bug-fix interviews now requeue source-backed candidate ingestion from the original CV/text source after stale Workers AI model failures before claiming repo matching is blocked.
 - Non-matching candidate-to-PR outcomes now persist `REPO_MATCHING` assessment diagnostics and move the assessment session to `DIAGNOSTIC` instead of leaving missing-evidence states as active progress.

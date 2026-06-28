@@ -62,12 +62,10 @@ export async function processResumeFromR2(
     // 2. Parse resume (or use pre-parsed result)
     let parseResult = preParsed ?? null;
     if (!parseResult) {
-      const isMock = env.MOCK_AI === 'true';
       parseResult = await parseResume({
         fileBuffer,
         contentType,
         env,
-        mock: isMock,
       });
     }
 

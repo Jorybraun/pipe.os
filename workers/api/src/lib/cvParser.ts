@@ -9,8 +9,8 @@
  * 4. Derive simple ParsedCV fields from the rich decomposition result
  * 5. Persist skills, role, experience, education to D1
  *
- * Falls back gracefully: if no AI provider is available or parsing fails,
- * the upload still succeeds — parsed data is supplementary.
+ * Falls back gracefully: if no AI provider is available, parsing uses only
+ * deterministic fields extracted from the supplied resume text.
  *
  * ADR-041 Phase 1: Parser now emits structured skeletons for resume decomposition.
  * The rule-based pass is deterministic and fast; LLM does the heavy enrichment.
@@ -74,95 +74,6 @@ export interface ParsedCV {
 export interface ParseResumeResult {
   parsedCV: ParsedCV;
   decompositionResult: DecompositionResult | null;
-}
-
-// ─── Mock ───────────────────────────────────────────────────────────────────
-
-export function getMockParsedCV(): ParsedCV {
-  return {
-    name: 'Jane Doe',
-    skills: ['TypeScript', 'React', 'Node.js', 'PostgreSQL', 'AWS', 'GraphQL'],
-    yearsOfExperience: 5,
-    currentRole: 'Senior Frontend Engineer',
-    education: ['B.S. Computer Science, MIT'],
-    experiences: [
-      {
-        company: 'Acme Corp',
-        role: 'Senior Frontend Engineer',
-        startDate: '2022-01',
-        endDate: '2024-05',
-        description: 'Led frontend migration to React 18 and TypeScript.',
-        isCurrent: false,
-      },
-    ],
-    educationBlocks: [
-      {
-        institution: 'MIT',
-        degree: 'B.S.',
-        field: 'Computer Science',
-        year: '2019',
-      },
-    ],
-    credentials: [],
-    projects: [
-      {
-        name: 'Open-source CLI tool',
-        description: 'A TypeScript utility for data processing.',
-        url: 'https://github.com/janedoe/cli-tool',
-      },
-    ],
-  };
-}
-
-export function getMockDecompositionResult(): DecompositionResult {
-  return {
-    candidate_name: 'Jane Doe',
-    experiences: [
-      {
-        company: 'Acme Corp',
-        role: 'Senior Frontend Engineer',
-        duration_months: 28,
-        team_size: '5-10',
-        scope: 'service',
-        narrative: 'Led frontend migration to React 18 and TypeScript.',
-        skills_demonstrated: ['typescript', 'react'],
-        confidence: 0.9,
-      },
-    ],
-    projects: [
-      {
-        name: 'Open-source CLI tool',
-        description: 'A TypeScript utility for data processing.',
-        url: 'https://github.com/janedoe/cli-tool',
-        skills_demonstrated: ['typescript', 'node.js'],
-        confidence: 0.85,
-      },
-    ],
-    skills: [
-      { name: 'typescript', proficiency: 'expert', years_exposure: 5, confidence: 0.95 },
-      { name: 'react', proficiency: 'expert', confidence: 0.95 },
-      { name: 'node.js', proficiency: 'proficient', confidence: 0.85 },
-      { name: 'postgresql', proficiency: 'familiar', confidence: 0.7 },
-      { name: 'aws', proficiency: 'familiar', confidence: 0.65 },
-      { name: 'graphql', proficiency: 'familiar', confidence: 0.65 },
-    ],
-    education: [
-      {
-        institution: 'MIT',
-        degree: 'B.S.',
-        field: 'Computer Science',
-        year: '2019',
-        confidence: 0.95,
-      },
-    ],
-    credentials: [],
-    career_arc: {
-      narrative: 'Steady progression from junior to senior frontend engineer.',
-      growth_velocity: 'normal',
-      transitions: [{ from: 'Junior Developer', to: 'Senior Frontend Engineer', at_company: 'Acme Corp' }],
-      confidence: 0.85,
-    },
-  };
 }
 
 // ─── Text Extraction ────────────────────────────────────────────────────────
@@ -891,8 +802,6 @@ export interface ParseResumeInput {
   contentType: string;
   /** Worker env / bindings — used to create the AI provider */
   env: ProviderEnv;
-  /** When true, return mock data instead of calling LLM */
-  mock?: boolean;
 }
 
 export interface ParseResumeTextInput {
@@ -900,8 +809,6 @@ export interface ParseResumeTextInput {
   resumeText: string;
   /** Worker env / bindings — used to create the AI provider. */
   env: ProviderEnv;
-  /** When true, return mock data instead of calling LLM. */
-  mock?: boolean;
 }
 
 export function buildRuleBasedParsedCV(text: string): ParsedCV {
@@ -915,13 +822,6 @@ export function buildRuleBasedParsedCV(text: string): ParsedCV {
 }
 
 export async function parseResumeText(input: ParseResumeTextInput): Promise<ParseResumeResult | null> {
-  if (input.mock) {
-    return {
-      parsedCV: getMockParsedCV(),
-      decompositionResult: getMockDecompositionResult(),
-    };
-  }
-
   const text = input.resumeText.trim();
   if (text.length < 20) {
     console.warn('[cvParser] Insufficient resume text:', text.length, 'chars');
@@ -968,13 +868,6 @@ export async function parseResumeText(input: ParseResumeTextInput): Promise<Pars
  * Returns null if parsing is unavailable (no provider) or fails gracefully.
  */
 export async function parseResume(input: ParseResumeInput): Promise<ParseResumeResult | null> {
-  if (input.mock) {
-    return {
-      parsedCV: getMockParsedCV(),
-      decompositionResult: getMockDecompositionResult(),
-    };
-  }
-
   // Only PDFs are supported for text extraction currently
   if (input.contentType !== 'application/pdf') {
     console.warn('[cvParser] Non-PDF file — skipping parsing:', input.contentType);

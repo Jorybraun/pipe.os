@@ -2348,12 +2348,10 @@ candidateOps.post('/:candidateId/resume', async (c) => {
     .run();
 
   // Parse the resume for structured data (skills, role, experience)
-  const isMock = c.env.MOCK_AI === 'true';
   const parseResult = await parseResume({
     fileBuffer,
     contentType: fileEntry.type,
     env: c.env,
-    mock: isMock,
   });
   const parsed = parseResult?.parsedCV ?? null;
   const decompositionResult = parseResult?.decompositionResult ?? null;

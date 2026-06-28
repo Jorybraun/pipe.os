@@ -171,17 +171,25 @@ describe('ParsedCV structure', () => {
 });
 
 describe('parseResume', () => {
-  it('parses plain text intake through the same decomposition contract', async () => {
+  it('falls back to source-text-only parsing when no AI provider is available', async () => {
     const result = await parseResumeText({
-      resumeText: 'Jane Doe\nSenior Frontend Engineer with TypeScript and React experience.',
+      resumeText: `
+Experience
+
+Source Labs
+Backend Engineer — January 2021 – Present
+Built queue workers for retry handling with TypeScript.
+`,
       env: {},
-      mock: true,
     });
 
     expect(result).not.toBeNull();
-    expect(result!.parsedCV.skills.map((skill) => skill.toLowerCase())).toContain('typescript');
-    expect(result!.decompositionResult).not.toBeNull();
-    expect(result!.decompositionResult!.experiences.length).toBeGreaterThan(0);
+    expect(result!.decompositionResult).toBeNull();
+    expect(result!.parsedCV.name).toBeUndefined();
+    expect(result!.parsedCV.skills).toEqual([]);
+    expect(result!.parsedCV.experiences).toHaveLength(1);
+    expect(result!.parsedCV.experiences[0]!.company).toBe('Source Labs');
+    expect(result!.parsedCV.experiences[0]!.description).toContain('retry handling');
   });
 
   it('normalizes partial LLM decomposition responses for text intake', async () => {
@@ -224,17 +232,24 @@ describe('parseResume', () => {
     expect(result!.decompositionResult!.career_arc.narrative).toContain('idempotent retry');
   });
 
-  it('returns mock data when mock flag is set', async () => {
-    const result = await parseResume({
-      fileBuffer: new ArrayBuffer(0),
-      contentType: 'application/pdf',
-      env: {},
-      mock: true,
+  it('does not fabricate Jane Doe profile data when MOCK_AI disables candidate providers', async () => {
+    const result = await parseResumeText({
+      resumeText: `
+Experience
+
+Real Resume Co
+Platform Engineer — 2020 – Present
+Maintained deployment workflows and incident tooling.
+`,
+      env: { MOCK_AI: 'true' },
     });
+
     expect(result).not.toBeNull();
-    expect(result!.parsedCV.name).toBe('Jane Doe');
-    expect(result!.parsedCV.experiences.length).toBeGreaterThan(0);
-    expect(result!.decompositionResult).not.toBeNull();
+    expect(result!.decompositionResult).toBeNull();
+    expect(result!.parsedCV.name).toBeUndefined();
+    expect(result!.parsedCV.currentRole).not.toBe('Senior Frontend Engineer');
+    expect(result!.parsedCV.education ?? []).not.toContain('B.S. Computer Science, MIT');
+    expect(result!.parsedCV.experiences[0]!.company).toBe('Real Resume Co');
   });
 
   it('returns null for non-PDF files', async () => {
