@@ -172,6 +172,10 @@ The controlling product rule remains:
   evidence for real stderr, context-primer failures, process exits, and startup
   errors, including diagnostic source, observed time, exit code, and signal
   metadata instead of leaving failures only in container logs.
+- Clippy/Devin bridge statuses and diagnostics now preserve direct exact-text
+  `clippy_agent_status` / `clippy_agent_diagnostic` source refs in both
+  living-context and assessment evidence, so auth, startup, prompt-handoff, and
+  process-failure states can be cited without unpacking the broad session event.
 - Clippy/Devin context-primer and chat-prompt handoffs now persist
   `ai_agent_status` diagnostics when the bridge writes to real Devin stdin,
   including delivery state, room-context fetch status, and redacted

@@ -892,6 +892,121 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves Clippy/Devin bridge statuses and diagnostics as direct source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const statusText = 'devin is starting from the real container bridge.';
+        const statusId = 'agent-status:devin:1782594720000:agent_status:starting:none';
+        const diagnosticText = 'devin chat prompt delivered to process stdin.';
+        const diagnosticId = 'agent-status:devin:1782594000000:bridge_diagnostic:thinking:agent_prompt_sent';
+        const events: SessionEvent[] = [
+          {
+            type: 'ai_agent_status',
+            sessionId: 'meeting-session-agent-status-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782594720,
+            actor: 'agent',
+            text: statusText,
+            properties: {
+              source: 'clippy_agent_bridge',
+              agentStatusEventSource: 'browser_clippy_agent_ws',
+              agent: 'devin',
+              status: 'starting',
+              diagnosticSource: null,
+              bridgeMessageSource: 'agent_status',
+              observedAt: '2026-06-27T21:12:00.000Z',
+              capturedAtMs: 1782594720000,
+              agentStatusEventId: statusId,
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              messageTimestamp: 1782594720000,
+              agentResponseClaimed: false,
+            },
+          },
+          {
+            type: 'ai_agent_status',
+            sessionId: 'meeting-session-agent-status-sources',
+            candidateId: 'cand-assessment',
+            timestamp: 1782594000,
+            actor: 'agent',
+            text: diagnosticText,
+            properties: {
+              source: 'clippy_agent_bridge',
+              agent: 'devin',
+              status: 'thinking',
+              diagnosticSource: 'agent_prompt_sent',
+              bridgeMessageSource: 'bridge_diagnostic',
+              observedAt: '2026-06-27T20:00:00.000Z',
+              capturedAtMs: 1782594000000,
+              agentStatusEventId: diagnosticId,
+              bridgePersisted: true,
+              promptType: 'chat_prompt',
+              deliveredToAgent: true,
+              browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+              browserPromptFingerprint: 'clippy_0123abcd',
+              browserPromptTimestamp: 1782603900000,
+              browserPromptLength: 24,
+            },
+          },
+        ];
+
+        const nodes = [];
+        for (const event of events) nodes.push(await captureSessionEvent(realDb, event));
+        expect(nodes.every((node) => node !== null)).toBe(true);
+
+        const contextSources = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type IN ('clippy_agent_status', 'clippy_agent_diagnostic')
+            ORDER BY csr.source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+
+        expect(contextSources).toEqual([
+          {
+            source_ref_type: 'clippy_agent_diagnostic',
+            source_ref_id: diagnosticId,
+            evidence_role: 'clippy_agent_diagnostic',
+            exact_text: diagnosticText,
+            content_hash: await sha256Hex(diagnosticText),
+          },
+          {
+            source_ref_type: 'clippy_agent_status',
+            source_ref_id: statusId,
+            evidence_role: 'clippy_agent_status',
+            exact_text: statusText,
+            content_hash: await sha256Hex(statusText),
+          },
+        ]);
+
+        const assessmentSources = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type IN ('clippy_agent_status', 'clippy_agent_diagnostic')
+            ORDER BY source_ref_type`,
+        ).all() as Array<{
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        }>;
+        expect(assessmentSources).toEqual(contextSources);
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves Clippy UI and bridge room actions as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

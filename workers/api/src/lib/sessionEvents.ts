@@ -2487,6 +2487,67 @@ async function chatTextSourceRef(input: {
     };
   }
 
+  if (input.event.type === 'ai_agent_status') {
+    if (input.properties.source !== 'clippy_agent_bridge') return null;
+    if (input.event.actor !== 'agent') return null;
+    const agent = stringProperty(input.properties, 'agent');
+    const agentStatusEventId = stringProperty(input.properties, 'agentStatusEventId');
+    const capturedAtMs = numberProperty(input.properties, 'capturedAtMs');
+    const bridgeMessageSource = stringProperty(input.properties, 'bridgeMessageSource');
+    const status = stringProperty(input.properties, 'status');
+    const diagnosticSource = stringProperty(input.properties, 'diagnosticSource');
+    const observedAt = stringProperty(input.properties, 'observedAt');
+    if (!agent || !agentStatusEventId || !bridgeMessageSource || !observedAt) return null;
+    if (capturedAtMs === null || capturedAtMs < 0 || !Number.isInteger(capturedAtMs)) return null;
+    if (!AGENT_STATUS_MESSAGE_SOURCES.has(bridgeMessageSource)) return null;
+    if (status !== null && !AGENT_STATUSES.has(status)) return null;
+    if (!AGENT_STATUS_EVENT_ID_RE.test(agentStatusEventId)) return null;
+    const expectedId = `agent-status:${safeEvidenceIdPart(agent)}:${capturedAtMs}:${bridgeMessageSource}:${safeEvidenceIdPart(status)}:${safeEvidenceIdPart(diagnosticSource)}`;
+    if (agentStatusEventId !== expectedId) return null;
+
+    const browserObservationOk = input.properties.agentStatusEventSource === 'browser_clippy_agent_ws'
+      && (
+        (bridgeMessageSource === 'agent_status' && status !== null && AGENT_STATUSES.has(status))
+        || (bridgeMessageSource !== 'agent_status' && diagnosticSource !== null)
+      );
+    const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
+      && input.properties.bridgePersisted === true
+      && diagnosticSource !== null;
+    if (!browserObservationOk && !persistedDiagnosticOk) return null;
+
+    const diagnosticBacked = bridgeMessageSource === 'bridge_diagnostic';
+    return {
+      sourceRefType: diagnosticBacked ? 'clippy_agent_diagnostic' : 'clippy_agent_status',
+      sourceRefId: agentStatusEventId,
+      evidenceRole: diagnosticBacked ? 'clippy_agent_diagnostic' : 'clippy_agent_status',
+      locator: {
+        sessionId: input.event.sessionId,
+        candidateId: input.event.candidateId,
+        candidateNodeId: input.node.id,
+        agent,
+        agentStatusEventId,
+        observedAt,
+        capturedAtMs,
+        status,
+        diagnosticSource,
+        bridgeMessageSource,
+        browserPromptId: stringProperty(input.properties, 'browserPromptId'),
+      },
+      exactText: input.event.text,
+      contentHash: await sha256Hex(input.event.text),
+      metadata: {
+        sourceKind: diagnosticBacked ? 'clippy.agent_diagnostic' : 'clippy.agent_status',
+        bridgeMessageSource,
+        status,
+        diagnosticSource,
+        agentStatusEventSource: stringProperty(input.properties, 'agentStatusEventSource'),
+        bridgePersisted: input.properties.bridgePersisted === true,
+        promptType: stringProperty(input.properties, 'promptType'),
+        deliveredToAgent: input.properties.deliveredToAgent === true,
+      },
+    };
+  }
+
   return null;
 }
 
