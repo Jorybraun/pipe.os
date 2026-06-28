@@ -3185,6 +3185,24 @@ button:focus-visible {
   border-color: #000080;
 }
 
+.chat-clippy-btn {
+  width: 32px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-clippy-btn:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
 .chat-send-btn {
   width: 60px;
   height: 28px;

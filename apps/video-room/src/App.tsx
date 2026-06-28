@@ -2036,6 +2036,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             messages={chatMessages}
             onSend={(text) => sendChatMessage(text)}
             currentUserRole={metadata.role}
+            onAskClippy={(metadata.features?.clippyEnabled ?? true) && usesWin95Desktop
+              ? openClippyChat
+              : undefined}
           />
         );
 
