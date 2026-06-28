@@ -27,6 +27,7 @@ import { writeCandidateGraphFireAndForget } from './neo4j/writeCandidateGraph';
 import {
   AssessmentLayerStore,
   type AssessmentActorType,
+  type AssessmentEvidenceSourceRefInput,
   type AssessmentSessionState,
 } from './assessmentLayer/persistence';
 
@@ -1492,6 +1493,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
       properties.contentHash = await deterministicEntityId('content', file.content);
       const preview = compactPreview(file.content);
       if (preview && fileKind !== 'paint') properties.contentPreview = preview;
+      if (fileKind === 'text') properties.contentExactText = file.content;
     }
     return createSessionEvent(input, {
       type: 'file_change',
@@ -1531,6 +1533,7 @@ async function fileSystemActivityToSessionEvent(input: RoomActivitySyncInput, va
         properties.deletedContentHash = await deterministicEntityId('content', file.content);
         const preview = compactPreview(file.content);
         if (preview && fileKind !== 'paint') properties.deletedContentPreview = preview;
+        if (fileKind === 'text') properties.deletedContentExactText = file.content;
       }
       const createdAt = numberOrNull(file.createdAt);
       const updatedAt = numberOrNull(file.updatedAt);
@@ -1924,6 +1927,20 @@ function sessionEventEntities(input: {
     });
   }
 
+  const fileId = stringProperty(properties, 'fileId');
+  if (fileId) {
+    entities.push({
+      entityType: 'room_file',
+      entityId: fileId,
+      relationship: 'affected_file',
+      metadata: {
+        fileName: stringProperty(properties, 'fileName'),
+        fileKind: stringProperty(properties, 'fileKind'),
+        operation: stringProperty(properties, 'operation'),
+      },
+    });
+  }
+
   return entities;
 }
 
@@ -1937,6 +1954,48 @@ function sessionEventSourcePayload(event: SessionEvent, node: CandidateNode): Js
     text: event.text,
     properties: jsonObject(event.properties),
     candidateNodeId: node.id,
+  };
+}
+
+async function roomTextFileContentSourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<(ContextRecordSourceInput & AssessmentEvidenceSourceRefInput) | null> {
+  if (input.event.type !== 'file_change') return null;
+  const fileKind = stringProperty(input.properties, 'fileKind');
+  if (fileKind !== 'text') return null;
+  const operation = stringProperty(input.properties, 'operation');
+  if (operation !== 'upsert' && operation !== 'delete') return null;
+  const exactTextKey = operation === 'delete' ? 'deletedContentExactText' : 'contentExactText';
+  const exactText = stringProperty(input.properties, exactTextKey);
+  if (!exactText) return null;
+  const fileId = stringProperty(input.properties, 'fileId');
+  if (!fileId) return null;
+  const fileName = stringProperty(input.properties, 'fileName');
+  const fileChangeId = stringProperty(input.properties, 'fileChangeId');
+  return {
+    sourceRefType: 'room_file_content',
+    sourceRefId: `${input.node.id}:${operation}:${fileId}`,
+    evidenceRole: operation === 'delete' ? 'deleted_file_content' : 'file_content',
+    locator: {
+      sessionId: input.event.sessionId,
+      candidateId: input.event.candidateId,
+      candidateNodeId: input.node.id,
+      fileId,
+      fileName,
+      fileChangeId,
+      operation,
+      eventType: input.event.type,
+      timestamp: input.event.timestamp,
+    },
+    exactText,
+    contentHash: await sha256Hex(exactText),
+    metadata: {
+      sourceKind: 'win95_shared_file_system.text_content',
+      fileKind,
+      operation,
+    },
   };
 }
 
@@ -1967,6 +2026,7 @@ async function persistSessionEventContextRecord(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const contentHash = await deterministicEntityId('content', sourceExactText);
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
+  const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -1989,6 +2049,7 @@ async function persistSessionEventContextRecord(
       },
     },
   ];
+  if (roomFileContentSource) sources.push(roomFileContentSource);
   if (sourceSpanId) {
     sources.push({
       sourceSpanId,
@@ -2160,23 +2221,9 @@ async function persistSessionEventAssessmentEvidence(
   const narrative = formatEventNarrative(event);
   const properties = jsonObject(event.properties);
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
-
-  await store.recordAssessmentEvent({
-    sessionId: session.id,
-    ingestionKey: `assessment-event:95-room:${node.id}`,
-    kind: assessmentEventKindForSessionEvent(event.type),
-    actorType,
-    actorId,
-    narrative,
-    payload: {
-      sessionEventType: event.type,
-      meetingSessionId: event.sessionId,
-      candidateNodeId: node.id,
-      actor: event.actor,
-      properties,
-    },
-    occurredAt: observedAt,
-    sourceRefs: [{
+  const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
+  const sourceRefs = [
+    {
       sourceRefType: 'meeting_session_event',
       sourceRefId: node.id,
       evidenceRole: 'source_event',
@@ -2195,7 +2242,26 @@ async function persistSessionEventAssessmentEvidence(
         candidateNodeType: node.node_type,
         sourceReference: node.source_reference ?? null,
       },
-    }],
+    },
+    ...(roomFileContentSource ? [roomFileContentSource] : []),
+  ];
+
+  await store.recordAssessmentEvent({
+    sessionId: session.id,
+    ingestionKey: `assessment-event:95-room:${node.id}`,
+    kind: assessmentEventKindForSessionEvent(event.type),
+    actorType,
+    actorId,
+    narrative,
+    payload: {
+      sessionEventType: event.type,
+      meetingSessionId: event.sessionId,
+      candidateNodeId: node.id,
+      actor: event.actor,
+      properties,
+    },
+    occurredAt: observedAt,
+    sourceRefs,
   });
 
   await markAssessmentSessionInProgress({ db, store, sessionId: session.id });

@@ -191,6 +191,117 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves exact Win95 text file content as source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const exactText = 'Candidate identified retry bug evidence.\nAdd a failing replay test first.';
+        const event: SessionEvent = {
+          type: 'file_change',
+          sessionId: 'meeting-session-file-content',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604300,
+          actor: 'guest',
+          text: 'notes.txt',
+          properties: {
+            source: 'win95_shared_file_system',
+            fileEventSource: 'browser_client_submit',
+            fileChangeId: 'file:guest:1782604300000:upsert:notepad',
+            actor: 'guest',
+            operation: 'upsert',
+            fileId: 'notepad',
+            fileName: 'notes.txt',
+            fileKind: 'text',
+            surface: 'win95',
+            roomPhase: 'connected',
+            capturedAtMs: 1782604300000,
+            durableObjectReplayExpected: true,
+            contentLength: exactText.length,
+            contentHash: 'content_0123456789abcdef0123456789abcdef',
+            contentPreview: exactText,
+            contentExactText: exactText,
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+
+        const contextSource = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash, csr.locator_json
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type = 'room_file_content'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+          locator_json: string;
+        } | undefined;
+
+        expect(contextSource).toMatchObject({
+          source_ref_type: 'room_file_content',
+          source_ref_id: `${node!.id}:upsert:notepad`,
+          evidence_role: 'file_content',
+          exact_text: exactText,
+          content_hash: await sha256Hex(exactText),
+        });
+        expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
+          sessionId: 'meeting-session-file-content',
+          candidateId: 'cand-assessment',
+          candidateNodeId: node!.id,
+          fileId: 'notepad',
+          fileName: 'notes.txt',
+          fileChangeId: 'file:guest:1782604300000:upsert:notepad',
+          operation: 'upsert',
+        });
+
+        const assessmentSource = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type = 'room_file_content'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        } | undefined;
+        expect(assessmentSource).toMatchObject({
+          source_ref_type: 'room_file_content',
+          source_ref_id: `${node!.id}:upsert:notepad`,
+          evidence_role: 'file_content',
+          exact_text: exactText,
+          content_hash: await sha256Hex(exactText),
+        });
+
+        const fileEntity = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship, metadata_json
+             FROM context_record_entities
+            WHERE entity_type = 'room_file'`,
+        ).get() as {
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+          metadata_json: string;
+        } | undefined;
+        expect(fileEntity).toMatchObject({
+          entity_type: 'room_file',
+          entity_id: 'notepad',
+          relationship: 'affected_file',
+        });
+        expect(JSON.parse(fileEntity?.metadata_json ?? '{}')).toMatchObject({
+          fileName: 'notes.txt',
+          fileKind: 'text',
+          operation: 'upsert',
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
@@ -1485,6 +1596,7 @@ describe('sessionEvents', () => {
         capturedAtMs: 1700000004000,
         durableObjectReplayExpected: true,
         contentPreview: 'Candidate identified retry bug evidence.',
+        contentExactText: 'Candidate identified retry bug evidence.',
       });
       expect(upsertFileEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
       const deleteFileEvent = events.find((event) => (
@@ -1508,6 +1620,7 @@ describe('sessionEvents', () => {
         durableObjectReplayExpected: true,
         deletedContentLength: 'Candidate identified retry bug evidence.'.length,
         deletedContentPreview: 'Candidate identified retry bug evidence.',
+        deletedContentExactText: 'Candidate identified retry bug evidence.',
       });
       expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
       expect(events).not.toEqual(expect.arrayContaining([
