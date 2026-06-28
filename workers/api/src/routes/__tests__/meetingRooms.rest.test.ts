@@ -3322,6 +3322,88 @@ describe('meeting room recording living-context route', () => {
     });
   });
 
+  it('persists Win95 Start menu window lifecycle evidence with exact source provenance', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+    const now = new Date().toISOString();
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, candidate_id, owner_id, recipient_name, recipient_email, interview_type, status, updated_at
+       ) VALUES (?, NULL, ?, ?, ?, 'DEV_CONTAINER_CHALLENGE', 'INVITED', ?)`,
+    ).run(
+      'scheduled-start-menu-window-evidence',
+      'owner-1',
+      'Start Menu Candidate',
+      'start-menu-window@example.com',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Start Menu Candidate',
+        recipientEmail: 'start-menu-window@example.com',
+        title: 'Start menu evidence room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId: 'scheduled-start-menu-window-evidence',
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as { hostToken: string };
+
+    const lifecycleRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'notes.txt - Notepad',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_start_menu',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+          capturedAtMs: 1782601800000,
+          actor: 'guest',
+          windowId: 'notepad',
+          windowType: 'notepad',
+          windowTitle: 'notes.txt - Notepad',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(lifecycleRes.status).toBe(200);
+
+    const linked = sqlite.prepare(
+      'SELECT candidate_id FROM scheduled_interviews WHERE id = ?',
+    ).get('scheduled-start-menu-window-evidence') as { candidate_id: string } | undefined;
+    const node = sqlite.prepare(
+      `SELECT node_type, narrative_text, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_window_open'`,
+    ).get(linked?.candidate_id) as {
+      node_type: string;
+      narrative_text: string;
+      extracted_properties_json: string;
+    } | undefined;
+    expect(node?.narrative_text).toContain('Window opened: notes.txt - Notepad');
+    expect(JSON.parse(node?.extracted_properties_json ?? '{}')).toMatchObject({
+      source: 'window_lifecycle_client_submit',
+      lifecycleSource: 'win95_start_menu',
+      lifecycleKind: 'open',
+      actor: 'guest',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      windowLifecycleId: 'window-lifecycle:guest:1782601800000:open:notepad',
+      capturedAtMs: 1782601800000,
+      surface: 'win95',
+    });
+  });
+
   it('requires stable source-backed evidence for synced window data updates', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
@@ -3468,7 +3550,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'window_state_client_submit',
-          stateSource: 'win95_taskbar',
+          stateSource: 'win95_start_menu',
           actor: 'guest',
           windowId: 'browser',
           action: 'restore_or_focus',

@@ -52,6 +52,7 @@ import {
   buildWindowStateUpdateEvidence,
   type WindowLifecycleSource,
   type WindowStateSource,
+  type WindowUiLaunchSource,
 } from './lib/windowEvidence';
 import {
   buildCursorPresenceEvidence,
@@ -2008,40 +2009,49 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     });
   };
 
-  const handleDesktopIconDoubleClick = (windowType: WindowType): void => {
+  const handleDesktopIconDoubleClick = (
+    windowType: WindowType,
+    launchSource: WindowUiLaunchSource = 'win95_desktop_ui',
+  ): void => {
     const existing = wm.getWindowByType(windowType);
     if (existing) {
       if (existing.minimized) {
-        restoreSharedWindow(existing.id, 'win95_desktop_ui');
+        restoreSharedWindow(existing.id, launchSource);
       } else {
-        focusSharedWindow(existing.id, 'win95_desktop_ui');
+        focusSharedWindow(existing.id, launchSource);
       }
       return;
     }
     switch (windowType) {
       case 'video':
-        openSharedWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+        openSharedWindow(
+          { id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 },
+          launchSource,
+        );
         break;
       case 'workspace':
-        openWorkspaceWindow();
+        openWorkspaceWindow(launchSource);
         break;
       case 'chat':
-        openSharedWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
+        openSharedWindow(
+          { id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 },
+          launchSource,
+        );
         break;
       case 'tasks':
-        openFilesWindow();
+        openFilesWindow(launchSource);
         break;
       case 'notepad':
-        openNotepadWindow();
+        openNotepadWindow(undefined, launchSource);
         break;
       case 'paint':
-        openPaintWindow();
+        openPaintWindow(undefined, launchSource);
         break;
       case 'browser':
-        openBrowserWindow();
+        openBrowserWindow('', launchSource);
         break;
       case 'terminal':
-        openTerminalWindow();
+        openTerminalWindow(launchSource);
         break;
       default:
         break;

@@ -171,7 +171,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         },
         evidence: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_desktop_ui',
+          lifecycleSource: 'win95_start_menu',
           lifecycleKind: 'open',
           windowLifecycleId: 'window-lifecycle:host:1:open:browser',
           capturedAtMs: 1,
@@ -200,6 +200,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       payload: expect.objectContaining({
         kind: 'OPEN_WINDOW',
         window: expect.objectContaining({ id: 'browser' }),
+        evidence: expect.objectContaining({ lifecycleSource: 'win95_start_menu' }),
       }),
     }));
 

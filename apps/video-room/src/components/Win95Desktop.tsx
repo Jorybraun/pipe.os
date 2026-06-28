@@ -13,7 +13,7 @@ import type { ClippyTrayStatus } from './Win95Taskbar';
 import { Win95Window } from './Win95Window';
 import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 import type { RoomCursorPresence } from '../hooks/useRoomConnection';
-import type { WindowStateSource } from '../lib/windowEvidence';
+import type { WindowStateSource, WindowUiLaunchSource } from '../lib/windowEvidence';
 
 interface DesktopIcon {
   windowType: WindowType;
@@ -35,7 +35,7 @@ const DESKTOP_ICONS: DesktopIcon[] = [
 interface Win95DesktopProps {
   wm: WindowManagerApi;
   children?: ReactNode;
-  onIconDoubleClick?: (windowType: WindowType) => void;
+  onIconDoubleClick?: (windowType: WindowType, source?: WindowUiLaunchSource) => void;
   recordingLabel?: string;
   recordingActive?: boolean;
   onClippyClick?: () => void;
@@ -108,9 +108,9 @@ export function Win95Desktop({
   );
 
   const handleIconDoubleClick = useCallback(
-    (windowType: WindowType): void => {
+    (windowType: WindowType, source: WindowUiLaunchSource): void => {
       if (onIconDoubleClick) {
-        onIconDoubleClick(windowType);
+        onIconDoubleClick(windowType, source);
       }
     },
     [onIconDoubleClick],
@@ -167,7 +167,7 @@ export function Win95Desktop({
               key={icon.windowType}
               className="win95-desktop-icon"
               data-testid={`room-desktop-icon-${icon.windowType}`}
-              onDoubleClick={() => handleIconDoubleClick(icon.windowType)}
+              onDoubleClick={() => handleIconDoubleClick(icon.windowType, 'win95_desktop_ui')}
               onClick={(e) => e.stopPropagation()}
               title={icon.label}
             >
@@ -191,7 +191,7 @@ export function Win95Desktop({
                   key={icon.windowType}
                   className="win95-start-menu-item"
                   onClick={() => {
-                    handleIconDoubleClick(icon.windowType);
+                    handleIconDoubleClick(icon.windowType, 'win95_start_menu');
                     setStartMenuOpen(false);
                   }}
                 >

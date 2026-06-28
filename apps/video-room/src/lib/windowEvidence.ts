@@ -5,14 +5,19 @@ export type WindowEvidenceActor = 'host' | 'guest';
 export type WindowLifecycleKind = 'open' | 'close';
 export type WindowLifecycleSource =
   | 'win95_desktop_ui'
+  | 'win95_start_menu'
   | 'win95_window_chrome'
   | 'win95_taskbar'
   | 'clippy_action'
   | 'shared_state_sync';
 export type WindowStateSource =
   | 'win95_desktop_ui'
+  | 'win95_start_menu'
   | 'win95_window_chrome'
   | 'win95_taskbar';
+export type WindowUiLaunchSource =
+  | 'win95_desktop_ui'
+  | 'win95_start_menu';
 
 export interface WindowLifecycleEvidence {
   text: string;

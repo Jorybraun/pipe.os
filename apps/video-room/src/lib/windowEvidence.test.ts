@@ -88,6 +88,32 @@ describe('window evidence', () => {
     });
   });
 
+  it('preserves the Win95 Start menu as the initiator when it opens a shared window', () => {
+    expect(buildWindowLifecycleEvidence({
+      kind: 'open',
+      actor: 'guest',
+      windowId: 'notepad',
+      windowType: 'notepad',
+      windowTitle: 'notes.txt - Notepad',
+      source: 'win95_start_menu',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 2750,
+    })).toMatchObject({
+      text: 'notes.txt - Notepad',
+      properties: {
+        source: 'window_lifecycle_client_submit',
+        lifecycleKind: 'open',
+        lifecycleSource: 'win95_start_menu',
+        windowLifecycleId: 'window-lifecycle:guest:2750:open:notepad',
+        actor: 'guest',
+        windowId: 'notepad',
+        windowType: 'notepad',
+        windowTitle: 'notes.txt - Notepad',
+      },
+    });
+  });
+
   it('builds direct source-backed evidence for Win95 window movement', () => {
     expect(buildWindowStateUpdateEvidence({
       actor: 'guest',
@@ -131,6 +157,26 @@ describe('window evidence', () => {
         windowStateChangeId: 'window-state:host:4000:chat:minimize',
         capturedAtMs: 4000,
         statePatch: { minimized: true, focused: false },
+        stateKeys: ['focused', 'minimized'],
+      },
+    });
+  });
+
+  it('captures Start menu restore/focus state without collapsing it into desktop icon evidence', () => {
+    expect(buildWindowStateUpdateEvidence({
+      actor: 'guest',
+      windowId: 'browser',
+      patch: { minimized: false, focused: true },
+      source: 'win95_start_menu',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 4500,
+    })).toMatchObject({
+      properties: {
+        action: 'restore_or_focus',
+        stateSource: 'win95_start_menu',
+        windowStateChangeId: 'window-state:guest:4500:browser:restore_or_focus',
+        statePatch: { minimized: false, focused: true },
         stateKeys: ['focused', 'minimized'],
       },
     });

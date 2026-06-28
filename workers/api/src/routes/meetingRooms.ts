@@ -110,6 +110,7 @@ const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
+  'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',
   'clippy_action',
@@ -127,6 +128,7 @@ const WINDOW_STATE_ACTIONS = new Set([
 ]);
 const WINDOW_STATE_SOURCES = new Set([
   'win95_desktop_ui',
+  'win95_start_menu',
   'win95_window_chrome',
   'win95_taskbar',
 ]);

@@ -40,7 +40,20 @@ const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renam
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
-const WINDOW_STATE_SOURCES = new Set(['win95_desktop_ui', 'win95_window_chrome', 'win95_taskbar']);
+const WINDOW_LIFECYCLE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+  'clippy_action',
+  'shared_state_sync',
+]);
+const WINDOW_STATE_SOURCES = new Set([
+  'win95_desktop_ui',
+  'win95_start_menu',
+  'win95_window_chrome',
+  'win95_taskbar',
+]);
 
 interface SignalMessage {
   type:
@@ -713,6 +726,7 @@ export class VideoRoom {
       const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
       return evidence.source === 'window_lifecycle_client_submit'
         && typeof evidence.lifecycleSource === 'string'
+        && WINDOW_LIFECYCLE_SOURCES.has(evidence.lifecycleSource)
         && evidence.lifecycleKind === kind
         && evidence.actor === actor
         && evidence.windowId === windowId

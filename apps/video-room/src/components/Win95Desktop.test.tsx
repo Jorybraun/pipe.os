@@ -112,4 +112,21 @@ describe('Win95Desktop', () => {
     fireEvent.click(within(screen.getByTestId('win95-taskbar')).getByTitle('Microsoft Edge'));
     expect(onWindowRestore).toHaveBeenCalledWith('browser', 'win95_taskbar');
   });
+
+  it('reports Start menu app launches with Start menu provenance', () => {
+    const onIconDoubleClick = vi.fn();
+
+    render(
+      <Win95Desktop
+        wm={makeWindowManager()}
+        renderWindowContent={() => null}
+        onIconDoubleClick={onIconDoubleClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('win95-start-btn'));
+    fireEvent.click(within(screen.getByTestId('win95-start-menu')).getByRole('button', { name: 'Notepad' }));
+
+    expect(onIconDoubleClick).toHaveBeenCalledWith('notepad', 'win95_start_menu');
+  });
 });
