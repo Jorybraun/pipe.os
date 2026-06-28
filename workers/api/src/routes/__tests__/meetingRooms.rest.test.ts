@@ -1974,7 +1974,7 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeCursorPresenceRes.status).toBe(422);
 
-    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const sourceOnlyCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1988,6 +1988,35 @@ describe('meeting room recording living-context route', () => {
           normalizedX: 0.42,
           normalizedY: 0.61,
           evidenceSampling: 'presence_sample',
+          rawCursorMovesPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyCursorPresenceRes.status).toBe(422);
+
+    const cursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'cursor_presence',
+        text: 'Guest cursor presence sampled on 95 Until Infinity desktop',
+        actor: 'guest',
+        properties: {
+          source: 'win95_cursor_presence_client_sample',
+          cursorEventSource: 'browser_win95_desktop_pointermove',
+          actor: 'guest',
+          cursorSampleId: 'cursor:guest:1761592321000:420:610',
+          sampledAtMs: 1761592321000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+          previousNormalizedX: null,
+          previousNormalizedY: null,
+          distanceFromPrevious: null,
+          evidenceSampling: 'presence_sample',
+          sampleIntervalMs: 15000,
+          movementThreshold: 0.03,
           rawCursorMovesPersisted: false,
         },
       }),
@@ -2012,9 +2041,13 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(cursorNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'win95_cursor_presence_client_sample',
+      cursorEventSource: 'browser_win95_desktop_pointermove',
+      cursorSampleId: 'cursor:guest:1761592321000:420:610',
       surface: 'win95',
       normalizedX: 0.42,
       normalizedY: 0.61,
+      sampleIntervalMs: 15000,
+      movementThreshold: 0.03,
       rawCursorMovesPersisted: false,
     });
 

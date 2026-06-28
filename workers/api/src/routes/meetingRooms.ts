@@ -138,6 +138,9 @@ const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'shared_state_sync',
 ]);
 const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'error']);
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -660,15 +663,51 @@ const sessionEventSchema = z.object({
   }
   if (event.type === 'cursor_presence') {
     const sourceOk = properties.source === 'win95_cursor_presence_client_sample';
-    const surfaceOk = properties.surface === 'win95';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.cursorEventSource === 'browser_win95_desktop_pointermove';
+    const contextOk = properties.surface === 'win95' && hasString(properties.roomPhase);
     const x = properties.normalizedX;
     const y = properties.normalizedY;
+    const previousX = properties.previousNormalizedX;
+    const previousY = properties.previousNormalizedY;
+    const distance = properties.distanceFromPrevious;
     const xOk = typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
     const yOk = typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 1;
-    if (sourceOk && surfaceOk && xOk && yOk) return;
+    const previousXOk = previousX === null || (
+      typeof previousX === 'number' && Number.isFinite(previousX) && previousX >= 0 && previousX <= 1
+    );
+    const previousYOk = previousY === null || (
+      typeof previousY === 'number' && Number.isFinite(previousY) && previousY >= 0 && previousY <= 1
+    );
+    const distanceOk = distance === null || hasFiniteNonNegativeNumber(distance);
+    const samplingOk = properties.evidenceSampling === 'presence_sample'
+      && properties.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+      && properties.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+      && properties.rawCursorMovesPersisted === false;
+    const sampleId = properties.cursorSampleId;
+    const sampledAtMs = properties.sampledAtMs;
+    const sampleIdOk = typeof sampleId === 'string'
+      && CURSOR_SAMPLE_ID_RE.test(sampleId)
+      && typeof sampledAtMs === 'number'
+      && Number.isInteger(sampledAtMs)
+      && sampleId.startsWith(`cursor:${event.actor}:${sampledAtMs}:`);
+    if (
+      sourceOk
+      && actorOk
+      && eventSourceOk
+      && contextOk
+      && xOk
+      && yOk
+      && previousXOk
+      && previousYOk
+      && distanceOk
+      && samplingOk
+      && sampleIdOk
+    ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Cursor presence evidence must be a sampled Win95 browser cursor event with normalized coordinates.',
+      message: 'Cursor presence evidence must be an actor-bound sampled Win95 browser cursor event with stable sample provenance.',
       path: ['properties'],
     });
   }
