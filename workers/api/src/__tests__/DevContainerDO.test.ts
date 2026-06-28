@@ -562,6 +562,32 @@ describe('DevContainerDO.onExpire — Step 10', () => {
     expect(last.params[5]).toBe('sess_expire');
   });
 
+  it('does not record the expiry destroy stop as an unexpected container error', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+
+    await init(instance, {
+      sessionId: 'sess_expire_cleanly',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      ttlSeconds: 60,
+    });
+
+    instance.destroy = async () => {
+      await instance.onStop({ exitCode: 0, reason: 'exit' });
+    };
+
+    await instance.onExpire();
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    expect(updates.some((call) => call.params[0] === 'ERROR')).toBe(false);
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('EXPIRED');
+    expect(last.params[5]).toBe('sess_expire_cleanly');
+  });
+
   it('no-ops when the config payload is missing from storage', async () => {
     const db = fakeD1();
     const env = buildEnv(db);

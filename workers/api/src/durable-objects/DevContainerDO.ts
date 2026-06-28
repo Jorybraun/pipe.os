@@ -179,8 +179,8 @@ export class DevContainerDO extends Container<Env> {
   override async onStop(params: { exitCode: number; reason: string }): Promise<void> {
     const config = await this.loadConfig();
     if (!config) return;
-    const wasIntentionalSleep = (await this.ctx.storage.get<boolean>(INTENTIONAL_SLEEP_KEY)) === true;
-    if (wasIntentionalSleep) {
+    const wasIntentionalStop = (await this.ctx.storage.get<boolean>(INTENTIONAL_SLEEP_KEY)) === true;
+    if (wasIntentionalStop) {
       await this.ctx.storage.delete(INTENTIONAL_SLEEP_KEY);
       return;
     }
@@ -226,6 +226,7 @@ export class DevContainerDO extends Container<Env> {
 
     // Stop the container if it's running. Safe to call when already stopped.
     try {
+      await this.ctx.storage.put(INTENTIONAL_SLEEP_KEY, true);
       await this.destroy();
     } catch (err) {
       console.error('[DevContainerDO.handleDestroy] destroy() failed:', err);
@@ -294,6 +295,7 @@ export class DevContainerDO extends Container<Env> {
 
     // Kill the container if it's still running. Safe to call when stopped.
     try {
+      await this.ctx.storage.put(INTENTIONAL_SLEEP_KEY, true);
       await this.destroy();
     } catch (err) {
       console.error('[DevContainerDO.onExpire] destroy() failed:', err);

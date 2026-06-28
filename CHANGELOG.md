@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Candidate dev-container launches now pass the real Devin bridge configuration into the server-side container init payload without returning secrets to the browser, keeping Clippy chat eligible for real-agent operation outside meeting-room launches.
+- Dev-container expiry/manual teardown now marks intentional container stops before destroy, preventing normal `EXPIRED` sessions from retaining false "container stopped unexpectedly" diagnostics in UI and evidence projections.
 - Clippy/Devin bridge diagnostics, auth/status messages, room-action text, and real stdout fallback evidence now redact service tokens, bearer tokens, room tokens, and secret query parameters before browser evidence, Durable Object broadcast/storage, or session-event persistence; secret-bearing agent chat is rejected instead of rewriting fingerprinted evidence.
 - The container Clippy/Devin bridge now redacts real agent stdout and room-action text before WebSocket broadcast and direct `session-events` persistence, so bridge-origin evidence hashes the same redacted text as browser fallback evidence.
 - Clippy/Devin bridge status and diagnostic events now emit direct exact-text `clippy_agent_status` / `clippy_agent_diagnostic` source refs in living-context and assessment evidence instead of only being citeable through the broad meeting-session packet.

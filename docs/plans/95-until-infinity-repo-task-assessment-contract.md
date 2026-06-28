@@ -213,6 +213,14 @@ The controlling product rule remains:
   update the canonical D1 session row before projection, so Clippy availability,
   room workspace state, and assessment evidence reflect the real container
   lifecycle instead of a stale `READY` session.
+- Standalone candidate dev-container launches now pass the same real Devin
+  bridge configuration into the server-side container init payload without
+  returning secrets to the browser, so Clippy chat can only become available
+  through the actual container bridge instead of a UI-only placeholder.
+- Dev-container expiry/manual teardown now marks intentional container stops
+  before destroy, so normal `EXPIRED` / `STOPPED` sessions do not retain false
+  "container stopped unexpectedly" diagnostics in UI or assessment evidence
+  projections.
 - Meeting-room workspace launch now marks the dev-container session `ERROR`
   with a redacted diagnostic when the background Durable Object init request
   fails before the container can report status, so a broken workspace does not

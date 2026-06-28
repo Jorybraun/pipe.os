@@ -228,6 +228,12 @@ devContainer.post('/launch', async (c) => {
         ttlSeconds: effective.ttlSeconds,
         repoGitUrl,
         challengeBranch,
+        agentType: 'devin',
+        agentApiKey: c.env.DEVIN_API_KEY ?? null,
+        agentOrgId: c.env.DEVIN_ORG_ID ?? null,
+        pipeApiUrl: c.env.API_BASE_URL
+          ?? c.env.APP_BASE_URL
+          ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
       }),
     })
     .then(async (response) => {

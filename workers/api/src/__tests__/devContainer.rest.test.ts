@@ -523,6 +523,55 @@ describe('POST /rpc/dev-container/launch', () => {
     expect(updateCall).toBeTruthy();
   });
 
+  it('passes real Devin bridge configuration to the container without returning secrets', async () => {
+    const db = fakeD1();
+    const env = buildEnv({
+      DB: db,
+      API_BASE_URL: 'https://api-dev.hire-pipe.com',
+      DEVIN_API_KEY: 'test-devin-service-token',
+      DEVIN_ORG_ID: 'test-devin-org',
+    } as Partial<TestEnv>);
+    const { ctx, waitUntilAll } = buildCtx();
+
+    const res = await rpcAuth.request(
+      '/dev-container/launch',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({}),
+      },
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as { sessionId: string };
+    await waitUntilAll();
+
+    expect(env.DEV_CONTAINER.__calls).toHaveLength(1);
+    const doCall = env.DEV_CONTAINER.__calls[0];
+    if (!doCall) throw new Error('expected a recorded DO call');
+    expect(doCall.sessionId).toBe(body.sessionId);
+    const initPayload = JSON.parse(doCall.body ?? '{}') as {
+      agentType?: string | null;
+      agentApiKey?: string | null;
+      agentOrgId?: string | null;
+      pipeApiUrl?: string | null;
+      roomToken?: string | null;
+    };
+    expect(initPayload).toMatchObject({
+      agentType: 'devin',
+      agentApiKey: 'test-devin-service-token',
+      agentOrgId: 'test-devin-org',
+      pipeApiUrl: 'https://api-dev.hire-pipe.com',
+    });
+    expect(initPayload.roomToken).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('test-devin-service-token');
+  });
+
   it('marks the session ERROR with a redacted diagnostic when background DO init fails', async () => {
     const rawToken = 'session-secret-do-not-log';
     const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
