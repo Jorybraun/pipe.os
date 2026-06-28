@@ -596,6 +596,65 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
+  it('shows an existing pending follow-up assessment instead of creating duplicates', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [{
+            id: 'candidate-source-evidence:NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            missingSignal: 'Source-backed candidate work evidence',
+            whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
+            recommendedAssessment: 'recorded_evidence_question',
+            expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
+            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            source: {
+              matchRunId: 'match-run-blocked-1',
+              matchStatus: 'NEEDS_MORE_EVIDENCE',
+              gap: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            },
+          }],
+          evidenceFollowUp: {
+            assessmentSessionId: 'assessment-plan-pending-1',
+            contextCallInterviewId: 'context-call-pending-1',
+            state: 'IN_PROGRESS',
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+            questions: ['Walk me through a real code review or debugging task that best matches the work PIPE should assess here.'],
+            createdAt: '2026-06-22T18:00:00.000Z',
+            updatedAt: '2026-06-22T18:05:00.000Z',
+          },
+          evidenceRefresh: null,
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const followUp = screen.getByTestId('interview-code-review-evidence-follow-up');
+    expect(followUp).toHaveTextContent('Follow-up assessment open');
+    expect(followUp).toHaveTextContent('Waiting for source-backed response');
+    expect(followUp).toHaveTextContent('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(followUp).toHaveTextContent('OPEN FOLLOW-UP ASSESSMENT');
+    expect(screen.queryByTestId('interview-code-review-context-call-cta')).toBeNull();
+    expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
+  });
+
   it('refreshes the code-review match from captured follow-up evidence', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

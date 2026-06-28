@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Pending CODE_REVIEW evidence-plan follow-ups are now reused and surfaced on the original interview instead of creating duplicate context-call meetings for the same unresolved match gap.
 - CODE_REVIEW interview detail now shows a compact person evidence timeline from living-context interactions, making repeated invites, follow-ups, and evidence captures visible as one accumulating person graph.
 - Matched CODE_REVIEW evidence refresh cards now mark captured follow-up spans as already used for the current PR assignment and hide the stale rerun CTA.
 - Successful CODE_REVIEW evidence refresh notices now name the selected GitHub repo and PR, making the rerun outcome recruiter-legible instead of a generic success toast.

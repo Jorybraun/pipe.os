@@ -71,6 +71,7 @@ interface ContextCallResponse {
     originalInterviewId: string;
     evidenceAssessmentSessionId?: string | null;
     questions: string[];
+    reused?: boolean;
   };
 }
 
@@ -1096,10 +1097,13 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
+  const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
   const codeReviewEvidenceRefreshUsed = Boolean(
     codeReviewEvidenceRefresh && codeReviewMatch?.status === 'MATCHED',
   );
-  const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0 && !codeReviewEvidenceRefresh;
+  const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
+    && !codeReviewEvidenceRefresh
+    && !codeReviewEvidenceFollowUp;
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -1381,6 +1385,40 @@ export default function InterviewDetailPage(): JSX.Element {
                   )}
                   {matchRefreshNotice && <div style={SUCCESS_NOTE}>{matchRefreshNotice}</div>}
                   {matchRefreshError && <div style={ERROR_NOTE}>{matchRefreshError}</div>}
+                </div>
+              )}
+              {codeReviewEvidenceFollowUp && !codeReviewEvidenceRefresh && (
+                <div data-testid="interview-code-review-evidence-follow-up" style={DECISION_FOLLOW_UP}>
+                  <div style={FIELD_LABEL}>Follow-up assessment open</div>
+                  <div style={DECISION_PLAN_SIGNAL}>Waiting for source-backed response</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>
+                    PIPE already has an evidence-plan assessment linked to this code-review match gap.
+                  </div>
+                  {codeReviewEvidenceFollowUp.questions.length > 0 && (
+                    <>
+                      <div style={FIELD_LABEL}>Question plan</div>
+                      <div style={DECISION_FOLLOW_UP_LIST}>
+                        {codeReviewEvidenceFollowUp.questions.map((question, index) => (
+                          <div
+                            key={`${codeReviewEvidenceFollowUp.assessmentSessionId}:${index}`}
+                            style={DECISION_FOLLOW_UP_ITEM}
+                          >
+                            {question}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {codeReviewEvidenceFollowUp.contextCallInterviewId && (
+                    <button
+                      data-testid="interview-code-review-open-follow-up-assessment"
+                      onClick={() => navigate(`/interviews/${codeReviewEvidenceFollowUp.contextCallInterviewId}`)}
+                      style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                    >
+                      <CalendarCheck size={14} />
+                      OPEN FOLLOW-UP ASSESSMENT
+                    </button>
+                  )}
                 </div>
               )}
               {shouldShowEvidencePlan && (

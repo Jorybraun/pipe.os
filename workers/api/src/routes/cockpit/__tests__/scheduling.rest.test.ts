@@ -2490,6 +2490,101 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('reuses an existing pending code-review evidence follow-up instead of duplicating it', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-idempotent', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', 'SCREENING_INTERVIEW', 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, NULL,
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-idempotent', 'candidate-1', 'standalone-code-review-v1',
+        'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run();
+
+    const firstResponse = await app.request('/interviews/interview-code-review-idempotent/context-call', {
+      method: 'POST',
+    });
+    expect(firstResponse.status).toBe(201);
+    const first = await firstResponse.json() as {
+      contextCall: {
+        id: string;
+        evidenceAssessmentSessionId: string | null;
+      };
+    };
+
+    const secondResponse = await app.request('/interviews/interview-code-review-idempotent/context-call', {
+      method: 'POST',
+    });
+    expect(secondResponse.status).toBe(200);
+    const second = await secondResponse.json() as {
+      contextCall: {
+        id: string;
+        evidenceAssessmentSessionId: string | null;
+        reused: boolean;
+      };
+    };
+
+    expect(second.contextCall).toMatchObject({
+      id: first.contextCall.id,
+      evidenceAssessmentSessionId: first.contextCall.evidenceAssessmentSessionId,
+      reused: true,
+    });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM scheduled_interviews
+        WHERE recruiter_notes LIKE '%Original CODE_REVIEW interview: interview-code-review-idempotent%'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_sessions
+        WHERE created_by = 'code-review-evidence-plan'
+          AND json_extract(metadata_json, '$.originalInterviewId') = 'interview-code-review-idempotent'`,
+    ).get()).toEqual({ count: 1 });
+
+    const detailResponse = await app.request('/interviews/interview-code-review-idempotent');
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json() as {
+      interview: {
+        codeReviewMatch: {
+          evidenceFollowUp: {
+            assessmentSessionId: string;
+            contextCallInterviewId: string | null;
+            state: string;
+            questions: string[];
+          } | null;
+        } | null;
+      };
+    };
+    expect(detail.interview.codeReviewMatch?.evidenceFollowUp).toMatchObject({
+      assessmentSessionId: first.contextCall.evidenceAssessmentSessionId,
+      contextCallInterviewId: first.contextCall.id,
+      state: 'IN_PROGRESS',
+    });
+    expect(detail.interview.codeReviewMatch?.evidenceFollowUp?.questions).toContain(
+      'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+    );
+  });
+
   it('records source-backed invite delivery separately from interview creation', async () => {
     seedInterviewDetailFixture();
     const app = mountSchedulingApp();
