@@ -128,10 +128,10 @@ const WINDOW_STATE_ACTIONS = new Set([
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
 const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
-const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
-const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
+const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui', 'clippy_chat_ui']);
+const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
 const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
-const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_agent_bridge):(tray|prompt|agent):(opened|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
+const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:(clippy_tray_ui|clippy_prompt_ui|clippy_chat_ui|clippy_agent_bridge):(tray|prompt|chat|agent):(opened|closed|dismissed|executed|suggested):[a-zA-Z0-9:_-]+$/;
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
@@ -678,7 +678,9 @@ const sessionEventSchema = z.object({
     if (typeof source === 'string' && CLIPPY_UI_SOURCES.has(source)) {
       const originOk = source === 'clippy_tray_ui'
         ? properties.origin === 'tray' && properties.actionSource === 'win95_taskbar_tray'
-        : properties.origin === 'prompt' && properties.actionSource === 'clippy_prompt_ui';
+        : source === 'clippy_chat_ui'
+          ? properties.origin === 'chat' && properties.actionSource === 'clippy_chat_window'
+          : properties.origin === 'prompt' && properties.actionSource === 'clippy_prompt_ui';
       const actorOk = (event.actor === 'host' || event.actor === 'guest')
         && properties.executedBy === event.actor;
       const statusOk = typeof properties.executionStatus === 'string'

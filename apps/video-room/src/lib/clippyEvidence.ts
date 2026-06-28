@@ -10,10 +10,12 @@ import {
 
 export { clippyTextFingerprint } from './clippyPromptIdentity';
 
-export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth';
-export type ClippyUiActionOrigin = 'tray' | 'prompt';
+export type ClippyUiActionId = 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth';
+export type ClippyUiActionOrigin = 'tray' | 'prompt' | 'chat';
 export type ClippyRoomActionOrigin = 'prompt' | 'agent';
 export type ClippyEvidenceActor = 'host' | 'guest';
+type ClippyUiActionSource = 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_chat_ui';
+type ClippyActionExecutionStatus = 'opened' | 'closed' | 'dismissed' | 'executed' | 'suggested';
 
 export interface ClippyUiActionEvidence {
   text: string;
@@ -56,6 +58,8 @@ function clippyUiActionText(actionId: ClippyUiActionId): string {
   switch (actionId) {
     case 'open-clippy-chat':
       return 'Clippy chat opened from the Win95 taskbar tray';
+    case 'close-clippy-chat':
+      return 'Clippy chat window closed';
     case 'dismiss-clippy':
       return 'Clippy prompt dismissed';
     case 'check-devin-auth':
@@ -67,6 +71,7 @@ function clippyUiActionText(actionId: ClippyUiActionId): string {
 
 function clippyUiActionStatus(actionId: ClippyUiActionId): string {
   if (actionId === 'open-clippy-chat') return 'opened';
+  if (actionId === 'close-clippy-chat') return 'closed';
   if (actionId === 'dismiss-clippy') return 'dismissed';
   return 'executed';
 }
@@ -74,9 +79,9 @@ function clippyUiActionStatus(actionId: ClippyUiActionId): string {
 export function buildClippyActionEventId(input: {
   actor: ClippyEvidenceActor | 'agent';
   capturedAtMs: number;
-  source: 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_agent_bridge';
+  source: ClippyUiActionSource | 'clippy_agent_bridge';
   origin: ClippyUiActionOrigin | ClippyRoomActionOrigin;
-  executionStatus: 'opened' | 'dismissed' | 'executed' | 'suggested';
+  executionStatus: ClippyActionExecutionStatus;
   actionId: string;
 }): string {
   const capturedAtMs = Number.isFinite(input.capturedAtMs)
@@ -179,8 +184,17 @@ export function buildClippyUiActionEvidence(input: {
   workspaceSessionId: string | null;
   agentWorkspaceReady: boolean;
 }): ClippyUiActionEvidence {
-  const source = input.origin === 'tray' ? 'clippy_tray_ui' : 'clippy_prompt_ui';
-  const executionStatus = clippyUiActionStatus(input.actionId) as 'opened' | 'dismissed';
+  const source: ClippyUiActionSource = input.origin === 'tray'
+    ? 'clippy_tray_ui'
+    : input.origin === 'chat'
+      ? 'clippy_chat_ui'
+      : 'clippy_prompt_ui';
+  const actionSource = input.origin === 'tray'
+    ? 'win95_taskbar_tray'
+    : input.origin === 'chat'
+      ? 'clippy_chat_window'
+      : 'clippy_prompt_ui';
+  const executionStatus = clippyUiActionStatus(input.actionId) as ClippyActionExecutionStatus;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {
     text: clippyUiActionText(input.actionId),
@@ -189,7 +203,7 @@ export function buildClippyUiActionEvidence(input: {
       actionId: input.actionId,
       origin: input.origin,
       executedBy: input.actor,
-      actionSource: input.origin === 'tray' ? 'win95_taskbar_tray' : 'clippy_prompt_ui',
+      actionSource,
       executionStatus,
       capturedAtMs,
       clippyActionEventId: buildClippyActionEventId({

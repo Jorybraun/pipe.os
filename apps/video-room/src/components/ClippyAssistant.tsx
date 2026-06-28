@@ -28,6 +28,7 @@ export interface ClippyAssistantProps {
   messages: ClippyMessage[];
   onDismiss: () => void;
   onClippyClick?: () => void;
+  onChatClose?: () => void;
   agentWsUrl?: string | null;
   agentEnabled?: boolean;
   agentUnavailableMessage?: string;
@@ -51,6 +52,7 @@ export function ClippyAssistant({
   messages,
   onDismiss,
   onClippyClick,
+  onChatClose,
   agentWsUrl,
   agentEnabled = false,
   agentUnavailableMessage,
@@ -236,6 +238,11 @@ export function ClippyAssistant({
     onClippyClick?.();
   }, [onClippyClick]);
 
+  const closeChat = useCallback(() => {
+    setChatOpen(false);
+    onChatClose?.();
+  }, [onChatClose]);
+
   useEffect(() => {
     if (openChatRequest === undefined || openChatRequest <= 0) return;
     if (lastOpenChatRequestRef.current === openChatRequest) return;
@@ -404,7 +411,14 @@ export function ClippyAssistant({
         <div className="win95-clippy-chat" data-testid="clippy-chat">
           <div className="win95-clippy-chat-header">
             <span>Clippy — {chatAgentName}</span>
-            <button onClick={() => setChatOpen(false)}>×</button>
+            <button
+              type="button"
+              onClick={closeChat}
+              aria-label="Close Clippy chat"
+              data-testid="clippy-chat-close"
+            >
+              ×
+            </button>
           </div>
 
           <div className="win95-clippy-chat-messages">

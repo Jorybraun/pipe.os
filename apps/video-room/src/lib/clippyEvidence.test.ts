@@ -46,6 +46,39 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures chat-window closes as human UI actions without claiming a Devin response', () => {
+    expect(buildClippyUiActionEvidence({
+      actionId: 'close-clippy-chat',
+      origin: 'chat',
+      actor: 'guest',
+      capturedAtMs: 1782594030000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      agentWorkspaceReady: true,
+    })).toEqual({
+      text: 'Clippy chat window closed',
+      properties: {
+        source: 'clippy_chat_ui',
+        actionId: 'close-clippy-chat',
+        origin: 'chat',
+        executedBy: 'guest',
+        actionSource: 'clippy_chat_window',
+        executionStatus: 'closed',
+        capturedAtMs: 1782594030000,
+        clippyActionEventId: 'clippy-action:guest:1782594030000:clippy_chat_ui:chat:closed:close-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-123',
+        agent: null,
+        agentWorkspaceReady: true,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
   it('captures prompt dismissals separately from agent actions', () => {
     expect(buildClippyUiActionEvidence({
       actionId: 'dismiss-clippy',

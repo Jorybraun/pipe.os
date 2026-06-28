@@ -95,6 +95,27 @@ describe('ClippyAssistant', () => {
     expect(onAction).toHaveBeenCalledWith('launch-workspace');
   });
 
+  it('reports Clippy chat closes so the tray and evidence stay in sync', async () => {
+    const onChatClose = vi.fn();
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        onChatClose={onChatClose}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={1}
+      />,
+    );
+
+    expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('clippy-chat-close'));
+
+    expect(onChatClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('clippy-chat')).toBeNull();
+  });
+
   it('does not render or enable a fake Devin identity before the bridge reports an agent name', async () => {
     const sendMessage = vi.fn(() => null);
     mockAgentConnection({

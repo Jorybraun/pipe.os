@@ -1092,11 +1092,14 @@ export class VideoRoom {
         && evidence.clippyActionEventId === expectedId;
       const surfaceOk = evidence.surface === 'standard' || evidence.surface === 'win95';
       const roomContextOk = surfaceOk && typeof evidence.roomPhase === 'string';
-      if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui') {
+      if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui') {
         const originOk = source === 'clippy_tray_ui'
           ? origin === 'tray' && evidence.actionSource === 'win95_taskbar_tray'
-          : (origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui');
+          : source === 'clippy_chat_ui'
+            ? origin === 'chat' && evidence.actionSource === 'clippy_chat_window'
+            : (origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui');
         const statusOk = executionStatus === 'opened'
+          || executionStatus === 'closed'
           || executionStatus === 'dismissed'
           || executionStatus === 'executed';
         return (event.actor === 'host' || event.actor === 'guest')

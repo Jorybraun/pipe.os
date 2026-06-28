@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Closing the Clippy chat window now clears the Win95 tray active state and persists a source-backed `clippy_chat_ui` close action instead of disappearing as local-only UI state.
 - Clippy chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Clippy action evidence before opening the shared terminal window.
 - Clippy “Check Devin auth” clicks now emit source-backed human UI action evidence before the bridge re-runs real Devin CLI auth preflight, keeping auth recovery intent separate from bridge diagnostics.
 - Clippy auth-needed chat now includes a real “Check Devin auth” retry after terminal login, reusing the container bridge auth preflight so Devin only becomes ready after the CLI reports a stored login.

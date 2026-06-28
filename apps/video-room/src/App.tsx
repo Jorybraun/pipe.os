@@ -1039,8 +1039,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [hasActiveWorkspace, workspaceSession?.sessionId]);
   const captureClippyUiAction = (
-    actionId: 'open-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth',
-    origin: 'tray' | 'prompt',
+    actionId: 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth',
+    origin: 'tray' | 'prompt' | 'chat',
   ): void => {
     const evidence = buildClippyUiActionEvidence({
       actionId,
@@ -1069,6 +1069,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureClippyUiAction('open-clippy-chat', 'tray');
     setClippyVisible(true);
     setClippyChatRequest((request) => request + 1);
+  };
+  const closeClippyChat = (): void => {
+    captureClippyUiAction('close-clippy-chat', 'chat');
+    setClippyVisible(false);
   };
   const dismissClippy = (): void => {
     captureClippyUiAction('dismiss-clippy', 'prompt');
@@ -2325,6 +2329,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         <ClippyAssistant
           messages={clippyMessages}
           onDismiss={dismissClippy}
+          onChatClose={closeClippyChat}
           agentWsUrl={workspaceSession && hasActiveWorkspace
             ? roomAgentWsUrl(token, workspaceSession.sessionId)
             : null}

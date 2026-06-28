@@ -2020,6 +2020,33 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(clippyActionRes.status).toBe(200);
 
+    const clippyChatCloseRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy chat window closed',
+        actor: 'host',
+        properties: {
+          source: 'clippy_chat_ui',
+          actionId: 'close-clippy-chat',
+          origin: 'chat',
+          executedBy: 'host',
+          actionSource: 'clippy_chat_window',
+          executionStatus: 'closed',
+          capturedAtMs: 1782594300000,
+          clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyChatCloseRes.status).toBe(200);
+
     const clippyAgentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2064,12 +2091,17 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(clippyNodes).toHaveLength(2);
+    expect(clippyNodes).toHaveLength(3);
     expect(clippyNodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
         node_type: 'session_clippy_action',
         source_type: 'meeting_session',
         narrative_text: expect.stringContaining('Clippy action: start recording'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy chat window closed'),
       }),
       expect.objectContaining({
         node_type: 'session_clippy_action',
@@ -2086,6 +2118,16 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'executed',
         capturedAtMs: 1782594200000,
         clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_chat_ui',
+        actionId: 'close-clippy-chat',
+        actionSource: 'clippy_chat_window',
+        executionStatus: 'closed',
+        capturedAtMs: 1782594300000,
+        clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
         surface: 'win95',
       }),
       expect.objectContaining({

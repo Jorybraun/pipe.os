@@ -1059,11 +1059,14 @@ function isSourceBackedClippyInteractionEvidence(
       && evidence.clippyActionEventId === expectedId;
     const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'win95')
       && stringOrNull(evidence.roomPhase) !== null;
-    if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui') {
+    if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui') {
       const originOk = source === 'clippy_tray_ui'
         ? origin === 'tray' && evidence.actionSource === 'win95_taskbar_tray'
-        : origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui';
+        : source === 'clippy_chat_ui'
+          ? origin === 'chat' && evidence.actionSource === 'clippy_chat_window'
+          : origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui';
       const statusOk = executionStatus === 'opened'
+        || executionStatus === 'closed'
         || executionStatus === 'dismissed'
         || executionStatus === 'executed';
       return (actor === 'host' || actor === 'guest')
