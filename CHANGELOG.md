@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recruiter CODE_REVIEW details now label blocked repo matching as an assignment/evidence issue and recommend a context call or manual PR selection instead of implying the candidate has not submitted their review.
 - Blocked CODE_REVIEW recruiter details now consume a source-backed evidence plan that names the missing signal, why it matters, expected evidence, and the evidence-producing follow-up question.
 - Blocked CODE_REVIEW follow-up creation now stores concise evidence questions so recruiters can collect the missing background needed for a fair repo match.
+- Blocked CODE_REVIEW evidence-call creation now also creates a source-backed `TECHNICAL` assessment session and immutable evidence-plan event linked to the original match gap and follow-up interview.
 - Blocked CODE_REVIEW recruiter details now include a context-call CTA that creates a linked video follow-up and stores the original match gaps plus suggested questions as source-backed person context.
 - Code-review context-call recommendation persistence now narrows candidate application ids before writing living-context records, restoring Workers type-checks for the scheduling route.
 - Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.

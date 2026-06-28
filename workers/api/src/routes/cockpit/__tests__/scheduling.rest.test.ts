@@ -53,6 +53,10 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const assessmentLayerMigration = readFileSync(
+  new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+  'utf8',
+);
 
 function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -403,6 +407,7 @@ describe('GET /interviews/:id detail', () => {
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
     sqlite.exec(contextRecordsMigration);
+    sqlite.exec(assessmentLayerMigration);
 
     sqlite.prepare(`
       INSERT INTO candidates (id, owner_id, pipeline_id, status, name, email)
@@ -1778,6 +1783,7 @@ describe('GET /interviews/:id detail', () => {
         id: string;
         originalInterviewId: string;
         candidateId: string | null;
+        evidenceAssessmentSessionId: string | null;
         questions: string[];
         recruiterNotes: string;
       };
@@ -1786,6 +1792,9 @@ describe('GET /interviews/:id detail', () => {
       originalInterviewId: 'interview-code-review-blocked',
       candidateId: 'candidate-1',
     });
+    const evidenceAssessmentSessionId = body.contextCall.evidenceAssessmentSessionId;
+    expect(evidenceAssessmentSessionId).toEqual(expect.stringMatching(/^assessment_session_/));
+    if (!evidenceAssessmentSessionId) throw new Error('expected evidence assessment session id');
     expect(body.contextCall.questions).toContain('Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
     expect(body.contextCall.recruiterNotes).toContain('Only one source-backed candidate signal aligned with the repo challenge.');
 
@@ -1836,6 +1845,74 @@ describe('GET /interviews/:id detail', () => {
     expect(contextRow.exact_text).toContain('Original interview id: interview-code-review-blocked');
     expect(contextRow.exact_text).toContain('Match status: NO_ROLE_SAFE_CHALLENGE');
     expect(contextRow.exact_text).toContain('Question 1: Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+
+    const assessmentSession = sqlite!.prepare(
+      `SELECT id, interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
+         FROM assessment_sessions
+        WHERE id = ?`,
+    ).get(evidenceAssessmentSessionId) as {
+      id: string;
+      interview_id: string | null;
+      mode: string;
+      state: string;
+      candidate_id: string | null;
+      workspace_id: string | null;
+      created_by: string | null;
+      metadata_json: string;
+    };
+    expect(assessmentSession).toMatchObject({
+      interview_id: body.contextCall.id,
+      mode: 'TECHNICAL',
+      state: 'IN_PROGRESS',
+      candidate_id: 'candidate-1',
+      workspace_id: 'owner-1',
+      created_by: 'code-review-evidence-plan',
+    });
+    expect(JSON.parse(assessmentSession.metadata_json)).toMatchObject({
+      source: 'code_review_evidence_plan',
+      originalInterviewId: 'interview-code-review-blocked',
+      contextCallInterviewId: body.contextCall.id,
+      matchRunId: 'match-run-blocked',
+      matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
+      gaps: ['Only one source-backed candidate signal aligned with the repo challenge.'],
+    });
+
+    const assessmentEvent = sqlite!.prepare(
+      `SELECT e.kind,
+              e.actor_type,
+              e.narrative,
+              e.payload_json,
+              r.source_ref_type,
+              r.evidence_role,
+              r.exact_text
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = ?
+        LIMIT 1`,
+    ).get(evidenceAssessmentSessionId) as {
+      kind: string;
+      actor_type: string;
+      narrative: string;
+      payload_json: string;
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+    };
+    expect(assessmentEvent).toMatchObject({
+      kind: 'evidence_plan_created',
+      actor_type: 'system',
+      source_ref_type: 'source_span',
+      evidence_role: 'evidence_plan_source',
+    });
+    expect(assessmentEvent.narrative).toContain('source-backed evidence plan');
+    expect(assessmentEvent.exact_text).toContain('Context call interview id:');
+    expect(assessmentEvent.exact_text).toContain('Question 1: Walk me through a real code review or debugging task that best matches the work PIPE should assess here.');
+    expect(JSON.parse(assessmentEvent.payload_json)).toMatchObject({
+      originalInterviewId: 'interview-code-review-blocked',
+      contextCallInterviewId: body.contextCall.id,
+      matchRunId: 'match-run-blocked',
+      matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
+    });
   });
 
   it('records source-backed invite delivery separately from interview creation', async () => {

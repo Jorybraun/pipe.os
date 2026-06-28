@@ -33,6 +33,7 @@ import {
   loadCandidateLivingContext,
   loadContactLivingContext,
 } from '../../lib/livingContext';
+import { AssessmentLayerStore } from '../../lib/assessmentLayer/persistence';
 import type { Env, Variables } from '../../types';
 
 // ─── Provider config ────────────────────────────────────────────────────────
@@ -1496,6 +1497,21 @@ function lineCount(value: string): number {
   return Math.max(1, value.split('\n').length);
 }
 
+async function tableExists(db: D1Database, tableName: string): Promise<boolean> {
+  const row = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
+  ).bind(tableName).first<{ name: string }>();
+  return Boolean(row);
+}
+
+async function hasAssessmentLayerSchema(db: D1Database): Promise<boolean> {
+  return await tableExists(db, 'assessment_sessions')
+    && await tableExists(db, 'assessment_evidence_events')
+    && await tableExists(db, 'assessment_event_source_refs')
+    && await tableExists(db, 'context_records')
+    && await tableExists(db, 'context_record_source_refs');
+}
+
 function contactFirstInterviewSourceText(input: {
   recipientName: string;
   recipientEmail: string;
@@ -1690,13 +1706,13 @@ async function persistCodeReviewContextCallRecommendation(
     questions: readonly string[];
     createdAt: string;
   },
-): Promise<void> {
+): Promise<string | null> {
   const identity = input.candidateId
     ? await ensureCandidateLivingContext(db, input.candidateId)
     : input.contactId
       ? await ensureContactLivingContext(db, input.contactId)
       : null;
-  if (!identity) return;
+  if (!identity) return null;
 
   const applicationId: string | null = 'applicationId' in identity && typeof identity.applicationId === 'string'
     ? identity.applicationId
@@ -1821,6 +1837,77 @@ async function persistCodeReviewContextCallRecommendation(
         : []),
     ],
   });
+
+  if (!await hasAssessmentLayerSchema(db)) return null;
+
+  const assessmentStore = new AssessmentLayerStore(db, () => input.createdAt);
+  const assessmentSession = await assessmentStore.createAssessmentSession({
+    ingestionKey: `assessment-session:code-review-evidence-plan:${input.originalInterviewId}:${input.contextCallInterviewId}`,
+    interviewId: input.contextCallInterviewId,
+    mode: 'TECHNICAL',
+    candidateId: input.candidateId,
+    workspaceId: input.ownerId,
+    createdBy: 'code-review-evidence-plan',
+    metadata: {
+      source: 'code_review_evidence_plan',
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+      workspacePersonId: identity.workspacePersonId,
+      applicationId,
+    },
+  });
+
+  await assessmentStore.recordAssessmentEvent({
+    sessionId: assessmentSession.id,
+    ingestionKey: `assessment-event:code-review-evidence-plan:${input.originalInterviewId}:${input.contextCallInterviewId}:created`,
+    kind: 'evidence_plan_created',
+    actorType: 'system',
+    narrative: `PIPE created a source-backed evidence plan for ${input.personName} before assigning a code-review challenge.`,
+    payload: {
+      originalInterviewId: input.originalInterviewId,
+      contextCallInterviewId: input.contextCallInterviewId,
+      matchRunId: input.matchRunId,
+      matchStatus: input.matchStatus,
+      matchSummary: input.matchSummary,
+      gaps: input.gaps,
+      questions: [...input.questions],
+      workspacePersonId: identity.workspacePersonId,
+      applicationId,
+    },
+    occurredAt: input.createdAt,
+    sourceRefs: [{
+      sourceRefType: 'source_span',
+      sourceRefId: span.id,
+      sourceSpanId: span.id,
+      evidenceRole: 'evidence_plan_source',
+      locator: {
+        originalInterviewId: input.originalInterviewId,
+        contextCallInterviewId: input.contextCallInterviewId,
+        matchRunId: input.matchRunId,
+        stableSegmentId: 'context-call-recommendation-full',
+      },
+      exactText: sourceText,
+      contentHash,
+      metadata: {
+        sourceKind: 'code_review_context_call_recommendation.source_span',
+        matchStatus: input.matchStatus,
+      },
+    }],
+  });
+
+  await assessmentStore.transitionAssessmentState({
+    sessionId: assessmentSession.id,
+    toState: 'IN_PROGRESS',
+    reason: 'Recruiter created a source-backed evidence plan follow-up for blocked code-review matching.',
+    actorType: 'system',
+  });
+
+  return assessmentSession.id;
 }
 
 function inviteDeliverySourceText(input: {
@@ -3211,7 +3298,7 @@ schedulingAuth.post('/interviews/:id/context-call', async (c) => {
     )
     .run();
 
-  await persistCodeReviewContextCallRecommendation(db, {
+  const evidenceAssessmentSessionId = await persistCodeReviewContextCallRecommendation(db, {
     ownerId: userId,
     candidateId: source.candidate_id,
     contactId,
@@ -3233,6 +3320,7 @@ schedulingAuth.post('/interviews/:id/context-call', async (c) => {
       originalInterviewId: source.id,
       candidateId: source.candidate_id,
       contactId,
+      evidenceAssessmentSessionId,
       questions,
       recruiterNotes,
     },

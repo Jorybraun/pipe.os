@@ -68,6 +68,7 @@ interface ContextCallResponse {
   contextCall: {
     id: string;
     originalInterviewId: string;
+    evidenceAssessmentSessionId?: string | null;
     questions: string[];
   };
 }
