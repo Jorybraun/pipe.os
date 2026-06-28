@@ -7,9 +7,11 @@ export type MediaControlActor = 'host' | 'guest';
 interface MediaControlEvidenceInput {
   actor: MediaControlActor;
   control: MediaControlKind;
+  previousEnabled: boolean;
   enabled: boolean;
   surface: RoomSurface;
   roomPhase: RoomPhase;
+  capturedAtMs: number;
 }
 
 interface MediaControlEvidence {
@@ -29,18 +31,33 @@ function controlSurface(surface: RoomSurface): string {
   return surface === 'win95' ? 'win95_video_window' : 'standard_video_call';
 }
 
+function mediaControlId(input: MediaControlEvidenceInput, capturedAtMs: number): string {
+  const action = input.enabled ? 'enabled' : 'disabled';
+  return ['media', input.actor, input.control, capturedAtMs, action].join(':');
+}
+
 export function buildMediaControlEvidence(input: MediaControlEvidenceInput): MediaControlEvidence {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
   const nextState = input.enabled ? 'on' : 'off';
+  const action = input.enabled ? 'enabled' : 'disabled';
   return {
     text: `${actorLabel(input.actor)} turned ${controlLabel(input.control)} ${nextState}`,
     properties: {
       source: 'video_room_media_controls',
+      mediaControlEventSource: 'browser_video_control_button',
+      actor: input.actor,
+      mediaControlId: mediaControlId(input, capturedAtMs),
+      capturedAtMs,
       control: input.control,
+      previousEnabled: input.previousEnabled,
       enabled: input.enabled,
-      action: input.enabled ? 'enabled' : 'disabled',
+      action,
       surface: input.surface,
       roomPhase: input.roomPhase,
       controlSurface: controlSurface(input.surface),
+      controlAction: 'toggle',
       mediaSource: 'local_media_stream',
       rawMediaStreamPersisted: false,
     },

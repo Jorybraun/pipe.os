@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Standalone code-review assessment routing now ignores room lifecycle telemetry when deciding whether candidate decomposition evidence exists, sends telemetry-only candidates back to CV intake, and replaces claimed invite tokens before emailing assessment links again.
 - Clippy/Devin agent replies now require real bridge `CHAT_RESPONSE` source metadata before becoming `ai_chat_agent` evidence; source-less browser claims are rejected as invalid session events.
 - Win95 cursor presence evidence now includes actor-bound sample ids, browser pointermove provenance, timestamps, sampling thresholds, and previous-position deltas before the API accepts it.
+- Video room microphone/camera evidence now includes actor-bound event ids, browser control provenance, capture timestamps, and previous/next state before the API accepts it.
 - Win95 shared cursor presence now records sampled source-backed `cursor_presence` evidence instead of keeping the mouse layer as live-only state.
 - Video room microphone/camera toggles now persist as validated source-backed `media_control` evidence with surface and room phase metadata.
 - Win95 Notepad/Paint saves and deletes now submit validated source-backed `file_change` evidence immediately with file identity, content hashes, and delete snapshots.

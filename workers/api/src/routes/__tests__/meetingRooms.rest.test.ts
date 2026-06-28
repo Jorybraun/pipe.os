@@ -2069,7 +2069,7 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeMediaControlRes.status).toBe(422);
 
-    const mediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const sourceOnlyMediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2084,6 +2084,34 @@ describe('meeting room recording living-context route', () => {
           surface: 'win95',
           roomPhase: 'connected',
           controlSurface: 'win95_video_window',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyMediaControlRes.status).toBe(422);
+
+    const mediaControlRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'media_control',
+        text: 'Guest turned microphone off',
+        actor: 'guest',
+        properties: {
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          actor: 'guest',
+          mediaControlId: 'media:guest:microphone:1761592322000:disabled',
+          capturedAtMs: 1761592322000,
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          controlAction: 'toggle',
           mediaSource: 'local_media_stream',
           rawMediaStreamPersisted: false,
         },
@@ -2109,12 +2137,16 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(mediaControlNode?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'video_room_media_controls',
+      mediaControlEventSource: 'browser_video_control_button',
+      mediaControlId: 'media:guest:microphone:1761592322000:disabled',
       control: 'microphone',
+      previousEnabled: true,
       enabled: false,
       action: 'disabled',
       surface: 'win95',
       roomPhase: 'connected',
       controlSurface: 'win95_video_window',
+      controlAction: 'toggle',
       rawMediaStreamPersisted: false,
     });
 

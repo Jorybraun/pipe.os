@@ -1352,27 +1352,35 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const exitWin95Desktop = (): void => setSharedRoomSurface('standard');
 
-  const captureMediaControlChange = (control: MediaControlKind, enabled: boolean): void => {
+  const captureMediaControlChange = (
+    control: MediaControlKind,
+    previousEnabled: boolean,
+    enabled: boolean,
+  ): void => {
     const evidence = buildMediaControlEvidence({
       actor: roomActor,
       control,
+      previousEnabled,
       enabled,
       surface: room.roomSurface,
       roomPhase: room.phase,
+      capturedAtMs: Date.now(),
     });
     captureSessionEvent('media_control', evidence.text, roomActor, evidence.properties);
   };
 
   const toggleMicrophone = (): void => {
-    const enabled = !room.micEnabled;
+    const previousEnabled = room.micEnabled;
+    const enabled = !previousEnabled;
     room.toggleMic();
-    captureMediaControlChange('microphone', enabled);
+    captureMediaControlChange('microphone', previousEnabled, enabled);
   };
 
   const toggleCamera = (): void => {
-    const enabled = !room.cameraEnabled;
+    const previousEnabled = room.cameraEnabled;
+    const enabled = !previousEnabled;
     room.toggleCamera();
-    captureMediaControlChange('camera', enabled);
+    captureMediaControlChange('camera', previousEnabled, enabled);
   };
 
   const captureRoomFileChange = (operation: RoomFileEvidenceOperation, file: RoomFile): void => {

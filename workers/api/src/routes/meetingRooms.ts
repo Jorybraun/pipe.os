@@ -141,6 +141,7 @@ const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'e
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -713,15 +714,48 @@ const sessionEventSchema = z.object({
   }
   if (event.type === 'media_control') {
     const sourceOk = properties.source === 'video_room_media_controls';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const eventSourceOk = properties.mediaControlEventSource === 'browser_video_control_button';
     const controlOk = properties.control === 'microphone' || properties.control === 'camera';
     const enabledOk = typeof properties.enabled === 'boolean';
-    const surfaceOk = properties.surface === 'standard' || properties.surface === 'win95';
-    const roomPhase = properties.roomPhase;
-    const roomPhaseOk = typeof roomPhase === 'string' && roomPhase.trim().length > 0;
-    if (sourceOk && controlOk && enabledOk && surfaceOk && roomPhaseOk) return;
+    const previousEnabledOk = typeof properties.previousEnabled === 'boolean'
+      && typeof properties.enabled === 'boolean'
+      && properties.previousEnabled !== properties.enabled;
+    const expectedAction = properties.enabled === true ? 'enabled' : 'disabled';
+    const actionOk = properties.action === expectedAction && properties.controlAction === 'toggle';
+    const expectedControlSurface = properties.surface === 'win95'
+      ? 'win95_video_window'
+      : 'standard_video_call';
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && properties.controlSurface === expectedControlSurface;
+    const sourceDetailsOk = properties.mediaSource === 'local_media_stream'
+      && properties.rawMediaStreamPersisted === false;
+    const mediaControlId = properties.mediaControlId;
+    const capturedAtMs = properties.capturedAtMs;
+    const idOk = typeof mediaControlId === 'string'
+      && MEDIA_CONTROL_ID_RE.test(mediaControlId)
+      && typeof properties.control === 'string'
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && mediaControlId === `media:${event.actor}:${properties.control}:${capturedAtMs}:${expectedAction}`;
+    if (
+      sourceOk
+      && actorOk
+      && eventSourceOk
+      && controlOk
+      && enabledOk
+      && previousEnabledOk
+      && actionOk
+      && contextOk
+      && sourceDetailsOk
+      && idOk
+    ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Media control evidence must come from video room controls with control, state, surface, and room phase.',
+      message: 'Media control evidence must be an actor-bound browser control toggle with stable event provenance and previous/next state.',
       path: ['properties'],
     });
   }
