@@ -495,6 +495,91 @@ describe('repo task assessment session routes', () => {
     ).get(session.id)).toEqual({ state: 'DIAGNOSTIC' });
   });
 
+  it('rejects diagnostic-only reports marked as evaluated', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:diagnostic-only-evaluated',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-diagnostic-only',
+    });
+
+    const evaluatedDiagnosticResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:diagnostic-only-evaluated',
+        status: 'EVALUATED',
+        summary: 'Unable to evaluate because no source-backed solution evidence was captured.',
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status: 'PROVENANCE_INCOMPLETE',
+        },
+        claims: [{
+          id: 'claim-provenance-gap',
+          polarity: 'diagnostic',
+          dimension: 'source_provenance',
+          narrative: 'No source-backed code diff or final submission was captured.',
+          sourceRefs: [],
+        }],
+        diagnostics: [{
+          code: 'MISSING_REPO_SOURCE_EVIDENCE',
+          severity: 'blocking',
+          message: 'No source-backed repo task packet was captured.',
+        }],
+      }),
+      env,
+    );
+
+    expect(evaluatedDiagnosticResponse.status).toBe(400);
+    const evaluatedDiagnosticBody = await evaluatedDiagnosticResponse.json() as {
+      error: { message: string };
+    };
+    expect(evaluatedDiagnosticBody.error.message).toContain(
+      'EVALUATED assessment report requires at least one non-diagnostic evaluation claim',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+
+    const diagnosticResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:diagnostic-only-provenance-incomplete',
+        status: 'PROVENANCE_INCOMPLETE',
+        summary: 'Unable to evaluate because no source-backed solution evidence was captured.',
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status: 'PROVENANCE_INCOMPLETE',
+        },
+        claims: [{
+          id: 'claim-provenance-gap',
+          polarity: 'diagnostic',
+          dimension: 'source_provenance',
+          narrative: 'No source-backed code diff or final submission was captured.',
+          sourceRefs: [],
+        }],
+        diagnostics: [{
+          code: 'MISSING_REPO_SOURCE_EVIDENCE',
+          severity: 'blocking',
+          message: 'No source-backed repo task packet was captured.',
+        }],
+      }),
+      env,
+    );
+
+    expect(diagnosticResponse.status).toBe(201);
+    const diagnosticBody = await diagnosticResponse.json() as {
+      report: { id: string; status: string };
+    };
+    expect(diagnosticBody.report.status).toBe('PROVENANCE_INCOMPLETE');
+    expect(sqlite.prepare(
+      `SELECT status, summary
+         FROM assessment_evaluation_reports
+        WHERE id = ?`,
+    ).get(diagnosticBody.report.id)).toEqual({
+      status: 'PROVENANCE_INCOMPLETE',
+      summary: 'Unable to evaluate because no source-backed solution evidence was captured.',
+    });
+  });
+
   it('persists evaluation reports only when positive claims cite exact source evidence', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:evaluation',

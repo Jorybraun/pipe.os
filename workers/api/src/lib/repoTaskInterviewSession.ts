@@ -273,6 +273,22 @@ function normalizeDiagnostics(
   }));
 }
 
+function hasNonDiagnosticEvaluationClaim(
+  claims: readonly AssessmentEvaluationClaimInputCompat[],
+): boolean {
+  return claims.some((claim) => claim.polarity !== 'diagnostic');
+}
+
+function assertEvaluationReportStatusMatchesEvidence(input: CreateEvaluationReportInput): void {
+  if (input.status !== 'EVALUATED') return;
+  if (hasNonDiagnosticEvaluationClaim(input.claims)) return;
+
+  throw new Error(
+    'EVALUATED assessment report requires at least one non-diagnostic evaluation claim; '
+    + 'diagnostic-only reports must use a diagnostic status.',
+  );
+}
+
 function outputToJsonValue(
   output: FinalRepoTaskAssessmentOutput | JsonObject | undefined,
 ): JsonValue | undefined {
@@ -444,6 +460,7 @@ export class RepoTaskInterviewSessionStore {
   async createEvaluationReport(
     input: CreateEvaluationReportInput,
   ): Promise<PersistedEvaluationReport> {
+    assertEvaluationReportStatusMatchesEvidence(input);
     const report = await this.#store.createEvaluationReport({
       sessionId: input.sessionId,
       ingestionKey: input.ingestionKey,
