@@ -1,6 +1,7 @@
 import type {
   AlignCandidateToChallengeInput,
   CandidateMatchQuery,
+  CandidateSignal,
   ChallengeAlignment,
   ChallengeDemand,
   ChallengePacket,
@@ -245,6 +246,12 @@ function withEpisodeMultipliers(atoms: QueryAtom[]): QueryAtom[] {
   });
 }
 
+function conceptCapKeys(signal: CandidateSignal): string[] {
+  const concepts = [...new Set(normalized(signal.concepts))];
+  const idConcept = concepts.find((concept) => signal.id.endsWith(`:${concept}`));
+  return idConcept ? [idConcept] : concepts;
+}
+
 export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): CompileCandidateMatchResult {
   const excludedSignalIds: string[] = [];
   const recallOnlyAtoms: QueryAtom[] = [];
@@ -293,7 +300,7 @@ export function compileCandidateMatchQuery(input: CompileCandidateMatchInput): C
     }
 
     const episodeCount = episodeCounts.get(atom.episodeId) ?? 0;
-    const concepts = [...new Set(normalized(signal.concepts))];
+    const concepts = conceptCapKeys(signal);
     const exceedsConceptCap = concepts.some(
       (concept) => (conceptCounts.get(concept) ?? 0) >= MAX_ATOMS_PER_CONCEPT,
     );

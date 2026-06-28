@@ -270,26 +270,13 @@ function sourceTextOpenTerms(text: string, limit = 24): string[] {
   return [...terms];
 }
 
-function relatedSourceTextOpenTerms(text: string, concepts: string[]): string[] {
-  const conceptSegments = new Set(
-    concepts
-      .flatMap(termSegments)
-      .filter((segment) => !CANDIDATE_SIGNAL_STOPWORDS.has(segment)),
-  );
-  const textTerms = sourceTextOpenTerms(text);
-  if (conceptSegments.size === 0) return textTerms;
-  return textTerms.filter((term) =>
-    termSegments(term).some((segment) => conceptSegments.has(segment))
-  );
-}
-
 export function deriveCandidateSignalFacets(input: {
   narrative: string;
   exactText: string;
   concepts: string[];
 }): Pick<CandidateSignal, 'concepts' | 'problems' | 'mechanisms' | 'domains' | 'businessObjects' | 'ownershipActions'> {
   const sourceText = `${input.exactText}\n${input.narrative}`;
-  const textTerms = relatedSourceTextOpenTerms(sourceText, input.concepts);
+  const textTerms = sourceTextOpenTerms(sourceText);
   const concepts = new Set([...input.concepts, ...textTerms]);
   const mechanisms = input.concepts.filter((concept) => {
     const segments = termSegments(concept);
