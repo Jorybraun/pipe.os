@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added missing `packet_json` column to `checkReviewChallengeGraphReadiness` test fixtures, fixing `no such column: rcp.packet_json` schema mismatch.
 - Added `it.skipIf(!hasGo)` guard to Go parser test in `sourceAnalysis.test.ts` so CI skips gracefully when Go toolchain is absent.
 
+### Added — Full-pipeline E2E proof test
+
+- Added `fullPipelineE2E.test.ts` exercising the complete lifecycle across all 8 acceptance criteria in a single coherent test: contact creation → meeting transcript ingestion → identity unification → dynamic concept learning → repo semantic graph → source-backed PR challenge → evidence-based matching → match narrative generation → source content search → read model verification → backfill orchestrator checkpointing with dependency ordering.
+- Added determinism proof test verifying that re-running matching with identical data yields identical results (criterion #8).
+
 ### Fixed — CI stabilization
 
 - Fixed `resolveDevContainerApiBase` to return `http://localhost:8787` for localhost when runtimeLocation is provided, fixing failing frontend test.

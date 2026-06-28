@@ -152,3 +152,21 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 **Acceptance criteria status:**
 - All criteria from previous sessions remain DONE (#1-#7)
 - #8 Production quality: ADVANCED — CI now green, backfill orchestrator, rollout gates, health endpoint, 1821 total tests passing
+
+**Follow-up (same session):**
+5. Added `fullPipelineE2E.test.ts` — comprehensive E2E proof test exercising all 8 criteria end-to-end:
+   - Criterion #1: contact → person → workspace person → identity unification via shared email
+   - Criterion #2: meeting transcript ingestion with exact source span preservation + assertion links + searchSourceContent
+   - Criterion #3: dynamic concept learning (open `term:kafka` concept created without hard-coding)
+   - Criterion #4: repo semantic graph with exact commit/line provenance via source spans
+   - Criterion #5: evidence-based matching — candidate matched to PR #42 with transcript-derived evidence
+   - Criterion #6: formatMatchNarrative with direct evidence, stretch areas, gaps, source locators
+   - Criterion #7: read model verification — assertions, interactions, source spans navigable
+   - Criterion #8: BackfillOrchestrator dependency ordering + checkpoint persistence + determinism proof
+6. Added determinism proof test — re-running matching with identical data yields identical results
+
+**Updated test results:**
+- Worker: 165 test files, 1503 tests pass, 15 skipped, 0 failures
+- Frontend: 35 test files, 320 tests pass, 24 skipped, 0 failures
+- TypeScript: 0 errors (both root + workers/api)
+- Lint: 0 errors, 94 warnings
