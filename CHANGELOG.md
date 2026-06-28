@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
-- Role-backed CODE_REVIEW matching now treats source-backed selected role terms as relevance evidence instead of requiring every selected term to appear in a single PR packet, preventing good partial-overlap review challenges from becoming terminal no-matches.
+- Role-backed CODE_REVIEW matching now treats source-backed selected role-context terms as relevance evidence instead of requiring every selected term to appear in a single PR packet, preventing good partial-overlap review challenges from becoming terminal no-matches.
 - CODE_REVIEW PR-author pushback now falls through current Workers AI author models and retries malformed non-empty provider output through a strict JSON repair pass before surfacing `AI_DEVELOPER_UNAVAILABLE`, reducing app-dev review-round stalls without fabricating author replies.
 - Standalone CODE_REVIEW matching now blocks stale non-progressing evidence ingestion with candidate-safe diagnostics instead of polling forever behind the generic matching screen, and ingestion step heartbeats update `updated_at` for reliable freshness checks.
 - Role-backed CODE_REVIEW matching now converts terminal deterministic no-match outcomes into blocked repo-matching diagnostics instead of repeatedly polling a generic matching screen.
