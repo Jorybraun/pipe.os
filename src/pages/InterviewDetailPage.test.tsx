@@ -357,6 +357,7 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('1 annotation');
     expect(decision).toHaveTextContent('1 pushback thread');
+    expect(screen.queryByTestId('interview-code-review-context-questions')).toBeNull();
 
     const sourceProof = screen.getByText('Source proof').closest('details');
     expect(sourceProof).not.toHaveAttribute('open');
@@ -393,6 +394,11 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(decision).toHaveTextContent('schedule context call or select PR');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
+    const contextQuestions = screen.getByTestId('interview-code-review-context-questions');
+    expect(contextQuestions).toHaveTextContent('Context call questions');
+    expect(contextQuestions).toHaveTextContent('Which project history best proves the work PIPE should assess here?');
+    expect(contextQuestions).toHaveTextContent('What parts of this background are missing from the current source evidence?');
+    expect(contextQuestions).toHaveTextContent('Which codebase constraints or PR style would make the assessment fair rather than misleading?');
   });
 
   it('shows code-review evidence hyperedges for recruiter match justification', async () => {

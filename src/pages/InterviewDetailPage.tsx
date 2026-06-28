@@ -372,6 +372,18 @@ function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
   return score ? `confidence ${score}` : 'waiting for source-backed match';
 }
 
+function codeReviewContextCallQuestions(
+  match: CodeReviewMatchDetail | null,
+  submission: CodeReviewSubmissionDetail | null,
+): string[] {
+  if (!match || match.status === 'MATCHED' || submission) return [];
+  return [
+    'Which project history best proves the work PIPE should assess here?',
+    'What parts of this background are missing from the current source evidence?',
+    'Which codebase constraints or PR style would make the assessment fair rather than misleading?',
+  ];
+}
+
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
   if (!raw) return [];
   try {
@@ -868,6 +880,7 @@ export default function InterviewDetailPage(): JSX.Element {
         : 'Send an invite or open the host room to start collecting call evidence.';
   const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict, codeReviewMatch);
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
+  const codeReviewFollowUpQuestions = codeReviewContextCallQuestions(codeReviewMatch, codeReviewSubmission);
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -1039,6 +1052,16 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              {codeReviewFollowUpQuestions.length > 0 && (
+                <div data-testid="interview-code-review-context-questions" style={DECISION_FOLLOW_UP}>
+                  <div style={FIELD_LABEL}>Context call questions</div>
+                  <ol style={DECISION_FOLLOW_UP_LIST}>
+                    {codeReviewFollowUpQuestions.map((question) => (
+                      <li key={question} style={DECISION_FOLLOW_UP_ITEM}>{question}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               <div style={DECISION_SIGNAL_GRID}>
                 {codeReviewDecisionSignals.map((signal) => (
                   <div key={signal.label} style={DECISION_SIGNAL_CARD}>
@@ -2047,6 +2070,26 @@ const DECISION_ACTION: CSSProperties = {
   color: 'var(--pipe-text)',
   fontSize: 14,
   lineHeight: 1.65,
+};
+
+const DECISION_FOLLOW_UP: CSSProperties = {
+  display: 'grid',
+  gap: 8,
+  paddingTop: 4,
+  borderTop: '1px solid var(--pipe-border)',
+};
+
+const DECISION_FOLLOW_UP_LIST: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  margin: 0,
+  paddingLeft: 20,
+};
+
+const DECISION_FOLLOW_UP_ITEM: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 13,
+  lineHeight: 1.55,
 };
 
 const DECISION_SIGNAL_GRID: CSSProperties = {
