@@ -5617,6 +5617,7 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
       personContextMode: 'attributed',
       speakerMetadata,
+      speakerMetadataOrigin: 'recording_upload_form',
     });
 
     const transcriptArtifactMetadata = sqlite.prepare(
@@ -5627,6 +5628,7 @@ describe('meeting room recording living-context route', () => {
     ).get(created.meeting.id) as { metadata_json: string } | undefined;
     expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
       speakerMetadata,
+      speakerMetadataOrigin: 'recording_upload_form',
       provider: 'deepgram-multichannel',
     });
 
@@ -5643,6 +5645,7 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(guestSpan?.span_metadata_json ?? '{}')).toMatchObject({
       speakerRole: 'guest',
       channel: 0,
+      speakerMetadataOrigin: 'recording_upload_form',
       providerSegmentId: 'dg-guest-1',
       speakerMetadataRole: 'guest',
       speakerMetadataSource: 'remote',
@@ -5651,6 +5654,7 @@ describe('meeting room recording living-context route', () => {
       contactId: created.meeting.contactId,
       speakerRole: 'guest',
       channel: 0,
+      speakerMetadataOrigin: 'recording_upload_form',
       providerSegmentId: 'dg-guest-1',
       speakerMetadataRole: 'guest',
       speakerMetadataSource: 'remote',
@@ -5897,6 +5901,7 @@ describe('meeting room recording living-context route', () => {
   it('retries transcript processing from an existing saved room recording', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
     const personEmail = 'retry-transcript@example.com';
 
     const createMeetingRes = await app.request('/meetings', {
@@ -5950,7 +5955,8 @@ describe('meeting room recording living-context route', () => {
     await waitUntilAll();
 
     const meetingRow = sqlite.prepare(
-      `SELECT transcript_status, transcript_summary, transcript_error, recording_r2_key
+      `SELECT transcript_status, transcript_summary, transcript_error,
+              recording_r2_key, transcript_analysis_json
          FROM meetings
         WHERE id = ?`,
     ).get(created.meeting.id) as {
@@ -5958,12 +5964,69 @@ describe('meeting room recording living-context route', () => {
       transcript_summary: string | null;
       transcript_error: string | null;
       recording_r2_key: string | null;
+      transcript_analysis_json: string;
     };
-    expect(meetingRow).toEqual({
+    expect(meetingRow).toMatchObject({
       transcript_status: 'READY',
       transcript_summary: 'Guest described lattice replay buffers for ecommerce order recovery.',
       transcript_error: null,
       recording_r2_key: recordingKey,
+    });
+    expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      personContextMode: 'attributed',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const transcriptArtifactMetadata = sqlite.prepare(
+      `SELECT metadata_json
+         FROM artifacts
+        WHERE artifact_type = 'meeting_transcript'
+          AND logical_key = ?`,
+    ).get(created.meeting.id) as { metadata_json: string } | undefined;
+    expect(JSON.parse(transcriptArtifactMetadata?.metadata_json ?? '{}')).toMatchObject({
+      provider: 'deepgram-multichannel',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT metadata_json
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(assessmentSession?.metadata_json ?? '{}')).toMatchObject({
+      source: 'meeting_transcript_living_context',
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadata: defaultRecordingSpeakerMetadataForTest(),
+    });
+
+    const retryGuestSpan = sqlite.prepare(
+      `SELECT ss.metadata_json AS span_metadata_json,
+              ssa.metadata_json AS attribution_metadata_json
+         FROM source_spans ss
+         JOIN source_span_attributions ssa ON ssa.source_span_id = ss.id
+        WHERE ss.stable_segment_id = 'utterance-0002'`,
+    ).get() as {
+      span_metadata_json: string;
+      attribution_metadata_json: string;
+    } | undefined;
+    expect(JSON.parse(retryGuestSpan?.span_metadata_json ?? '{}')).toMatchObject({
+      speakerRole: 'guest',
+      channel: 1,
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
+    });
+    expect(JSON.parse(retryGuestSpan?.attribution_metadata_json ?? '{}')).toMatchObject({
+      contactId: created.meeting.contactId,
+      speakerRole: 'guest',
+      channel: 1,
+      speakerMetadataOrigin: 'recording_r2_custom_metadata',
+      speakerMetadataRole: 'guest',
+      speakerMetadataSource: 'remote',
     });
 
     expect(sqlite.prepare(

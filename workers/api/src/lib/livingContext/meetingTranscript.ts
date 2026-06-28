@@ -66,6 +66,7 @@ export interface MeetingTranscriptIngestionInput {
   transcriptionAudioKey?: string | null;
   provider?: string | null;
   speakerMetadata?: JsonObject | null;
+  speakerMetadataOrigin?: string | null;
   personContextMode?: 'attributed' | 'summary_only' | null;
   personContextReason?: string | null;
   assessmentMode?: AssessmentSessionMode;
@@ -606,6 +607,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       provider: input.provider ?? null,
       speakerMetadata: input.speakerMetadata ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
       personContextMode,
       personContextReason,
       transcriptStatus: 'READY',
@@ -648,6 +650,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
         speakerMetadata: input.speakerMetadata ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
         transcriptStatus: 'READY',
         segmentCount: canonical.segments.length,
       },
@@ -675,6 +678,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         speakerLabel: segment.speakerLabel ?? null,
         speakerRole: segment.speakerRole ?? null,
         channel: segment.channel ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
         providerConfidence: boundedScore(segment.confidence),
         ...(segment.metadata ?? {}),
       },
@@ -700,6 +704,7 @@ export async function ingestMeetingTranscriptToLivingContext(
           speakerLabel: segment.speakerLabel ?? null,
           speakerRole: segment.speakerRole ?? null,
           channel: segment.channel ?? null,
+          speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
           speakerMetadataRole: segment.metadata?.speakerMetadataRole ?? null,
           speakerMetadataSource: segment.metadata?.speakerMetadataSource ?? null,
           providerSegmentId: segment.metadata?.providerSegmentId ?? null,
@@ -738,6 +743,7 @@ export async function ingestMeetingTranscriptToLivingContext(
     recordingKey: input.recordingKey ?? null,
     transcriptionAudioKey: input.transcriptionAudioKey ?? null,
     speakerMetadata: input.speakerMetadata ?? null,
+    speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
     personContextMode,
     personContextReason,
     assessmentMode: input.assessmentMode,
@@ -781,6 +787,7 @@ export async function ingestMeetingTranscriptToLivingContext(
         recordingKey: input.recordingKey ?? null,
         transcriptionAudioKey: input.transcriptionAudioKey ?? null,
         speakerMetadata: input.speakerMetadata ?? null,
+        speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
         personContextMode,
         personContextReason,
         transcriptStatus: 'READY',
@@ -820,6 +827,7 @@ export async function ingestMeetingTranscriptToLivingContext(
             provider: input.provider ?? null,
             confidence: sourceSpan.confidence,
             contactId: sourceSpan.contactId,
+            speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
             segmentMetadata: sourceSpan.metadata ?? {},
           },
         }];

@@ -81,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Meeting transcript evidence now preserves the origin of speaker metadata, distinguishing browser-uploaded channel maps from R2 custom metadata recovered during transcript retry, so speaker attribution remains source-backed across processing passes.
 - Rejected Room Chat sends now preserve the Durable Object rejection reason in browser evidence and exact source-ref metadata, so failed chat delivery is explainable instead of only marked as not sent.
 - Deleting shared Win95 Notepad/Paint files now clears any open editor window through the shared desktop data channel with `win95_file_delete_sync` provenance, keeping both participants in sync instead of leaving stale local window content.
 - Win95 file-manager opens now preserve `win95_file_system` lifecycle provenance, and `.link` file opens emit source-specific browser navigation evidence instead of being flattened into generic desktop launches.

@@ -1429,6 +1429,7 @@ interface RecordingProcessingOverrides {
   structuredTranscription?: StructuredTranscription | null;
   analysisJson?: string | null;
   speakerMetadata?: RecordingSpeakerMetadata | null;
+  speakerMetadataOrigin?: 'recording_upload_form' | 'recording_r2_custom_metadata' | null;
 }
 
 const recordingSpeakerChannelSchema = z.object({
@@ -1980,8 +1981,12 @@ async function processRecording(
     }
     const audioBuffer = await object.arrayBuffer();
     const contentType = object.httpMetadata?.contentType ?? 'video/webm';
-    const speakerMetadata = overrides.speakerMetadata
-      ?? speakerMetadataFromCustomMetadata(object.customMetadata);
+    const r2SpeakerMetadata = speakerMetadataFromCustomMetadata(object.customMetadata);
+    const speakerMetadata = overrides.speakerMetadata ?? r2SpeakerMetadata;
+    const speakerMetadataOrigin = speakerMetadata
+      ? overrides.speakerMetadataOrigin
+        ?? (overrides.speakerMetadata ? 'recording_upload_form' : 'recording_r2_custom_metadata')
+      : null;
     const channelMap = speakerMetadata ? speakerChannelsByChannel(speakerMetadata) : new Map<number, RecordingSpeakerChannel>();
     console.log(`${logPrefix} Retrieved audio from R2`, {
       transcriptionSourceKey,
@@ -2091,6 +2096,7 @@ async function processRecording(
       personContextMode,
       personContextReason,
       speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
+      speakerMetadataOrigin,
     };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
       stable_segment_id: segment.stableSegmentId,
@@ -2138,6 +2144,7 @@ async function processRecording(
       transcriptionAudioKey: transcriptionSourceKey !== recordingKey ? transcriptionSourceKey : null,
       provider,
       speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
+      speakerMetadataOrigin,
       personContextMode,
       personContextReason,
     });
@@ -2954,6 +2961,7 @@ meetingRooms.post('/:token/recording', async (c) => {
     {
       ...processingOverrides,
       speakerMetadata,
+      speakerMetadataOrigin: speakerMetadata ? 'recording_upload_form' : null,
     },
   ));
   console.log('[meetingRooms] Recording upload complete, processing started', {

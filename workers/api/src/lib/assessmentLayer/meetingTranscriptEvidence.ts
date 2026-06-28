@@ -36,6 +36,7 @@ export interface MeetingTranscriptAssessmentEvidenceInput {
   recordingKey?: string | null;
   transcriptionAudioKey?: string | null;
   speakerMetadata?: JsonObject | null;
+  speakerMetadataOrigin?: string | null;
   personContextMode?: 'attributed' | 'summary_only' | null;
   personContextReason?: string | null;
   assessmentMode?: AssessmentSessionMode;
@@ -125,6 +126,7 @@ async function transcriptSegmentSourceRef(input: {
   provider?: string | null;
   recordingKey?: string | null;
   transcriptionAudioKey?: string | null;
+  speakerMetadataOrigin?: string | null;
   evidenceRole: string;
   segment: MeetingTranscriptAssessmentSegment;
 }): Promise<AssessmentEvidenceSourceRefInput> {
@@ -159,6 +161,7 @@ async function transcriptSegmentSourceRef(input: {
       provider: input.provider ?? null,
       confidence: segment.confidence ?? null,
       contactId: segment.contactId ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
       segmentMetadata: segment.metadata ?? {},
     },
   };
@@ -236,6 +239,7 @@ async function captureEvidencePlanTranscriptEvidence(
       provider: input.provider ?? null,
       recordingKey: input.recordingKey ?? null,
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
       evidenceRole: 'evidence_plan_response_span',
       segment,
     });
@@ -335,6 +339,7 @@ export async function ingestMeetingTranscriptAssessmentEvidence(
       recordingKey: input.recordingKey ?? null,
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
       speakerMetadata: input.speakerMetadata ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
       personContextMode: input.personContextMode ?? null,
       personContextReason: input.personContextReason ?? null,
       source: 'meeting_transcript_living_context',
@@ -351,6 +356,7 @@ export async function ingestMeetingTranscriptAssessmentEvidence(
       provider: input.provider ?? null,
       recordingKey: input.recordingKey ?? null,
       transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+      speakerMetadataOrigin: input.speakerMetadataOrigin ?? null,
       evidenceRole: 'transcript_segment',
       segment,
     });
