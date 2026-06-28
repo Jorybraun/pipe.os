@@ -8,6 +8,10 @@ import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from './openTerms';
+import {
+  ingestMeetingTranscriptAssessmentEvidence,
+} from '../assessmentLayer/meetingTranscriptEvidence';
+import type { AssessmentSessionMode } from '../assessmentLayer/persistence';
 import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 const TRANSCRIPT_PROJECTION_TYPE = 'meeting_transcript_semantics';
@@ -64,6 +68,7 @@ export interface MeetingTranscriptIngestionInput {
   speakerMetadata?: JsonObject | null;
   personContextMode?: 'attributed' | 'summary_only' | null;
   personContextReason?: string | null;
+  assessmentMode?: AssessmentSessionMode;
 }
 
 interface CanonicalSegment extends MeetingTranscriptSegmentInput {
@@ -690,6 +695,44 @@ export async function ingestMeetingTranscriptToLivingContext(
       contactId: attributed ? segment.contactId ?? null : null,
     });
   }
+
+  await ingestMeetingTranscriptAssessmentEvidence(db, {
+    meetingId: input.meetingId,
+    ownerId: input.ownerId,
+    scheduledInterviewId: input.scheduledInterviewId ?? null,
+    artifactId: artifact.id,
+    artifactVersionId: version.id,
+    versionNumber: version.version_number,
+    provider: input.provider ?? null,
+    recordingKey: input.recordingKey ?? null,
+    transcriptionAudioKey: input.transcriptionAudioKey ?? null,
+    speakerMetadata: input.speakerMetadata ?? null,
+    personContextMode,
+    personContextReason,
+    assessmentMode: input.assessmentMode,
+    observedAt,
+    segments: canonical.segments.flatMap((segment) => {
+      const sourceSpan = spanBySegmentId.get(segment.stableSegmentId);
+      if (!sourceSpan) return [];
+      return [{
+        stableSegmentId: segment.stableSegmentId,
+        text: segment.text,
+        sourceSpanId: sourceSpan.id,
+        charStart: segment.charStart,
+        charEnd: segment.charEnd,
+        lineStart: segment.lineStart,
+        lineEnd: segment.lineEnd,
+        speakerLabel: segment.speakerLabel ?? null,
+        speakerRole: segment.speakerRole ?? null,
+        contactId: segment.contactId ?? null,
+        channel: segment.channel ?? null,
+        timestampStartMs: segment.timestampStartMs,
+        timestampEndMs: segment.timestampEndMs,
+        confidence: segment.confidence ?? null,
+        metadata: segment.metadata,
+      }];
+    }),
+  });
 
   if (canonical.segments.length > 0) {
     await store.upsertContextRecord({

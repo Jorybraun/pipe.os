@@ -29,11 +29,21 @@ const transcriptProjectionMigration = readFileSync(
   new URL('../../../../migrations/0091_transcript_semantic_projections.sql', import.meta.url),
   'utf8',
 );
+const assessmentLayerMigration = readFileSync(
+  new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+  'utf8',
+);
 
 
 
 function count(sqlite: BetterSqliteDb, table: string): number {
   return (sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 describe('meeting transcript living-context ingestion', () => {
@@ -363,6 +373,154 @@ describe('meeting transcript living-context ingestion', () => {
       total_score: 0.9,
       evidence_count: 1,
       source_diversity: 1,
+    });
+  });
+
+  it('mirrors transcript source spans into assessment evidence without inventing evaluation claims', async () => {
+    sqlite.exec(assessmentLayerMigration);
+
+    const input = {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      transcriptionAudioKey: 'meetings/workspace-1/meeting-1/transcription-audio.webm',
+      provider: 'deepgram-multichannel',
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which bug would you start with?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          channel: 0,
+          timestampStartMs: 1_000,
+          timestampEndMs: 2_000,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: 'I would reproduce the stale listener bug before changing the patch.',
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-1',
+          channel: 1,
+          timestampStartMs: 2_100,
+          timestampEndMs: 5_800,
+          confidence: 0.94,
+          metadata: {
+            providerSegmentId: 'dg-guest-1',
+          },
+        },
+      ],
+      semanticAssertions: [],
+      personContextMode: 'attributed' as const,
+    };
+
+    const first = await ingestMeetingTranscriptToLivingContext(db, input);
+    const replay = await ingestMeetingTranscriptToLivingContext(db, input);
+
+    expect(replay).toEqual(first);
+    expect(count(sqlite, 'assessment_sessions')).toBe(1);
+    expect(count(sqlite, 'assessment_evidence_events')).toBe(2);
+    expect(count(sqlite, 'assessment_event_source_refs')).toBe(2);
+    expect(count(sqlite, 'assessment_evaluation_reports')).toBe(0);
+    expect(count(sqlite, 'assessment_evaluation_claims')).toBe(0);
+
+    const session = sqlite.prepare(
+      `SELECT interview_id, mode, state, candidate_id, workspace_id, created_by, metadata_json
+         FROM assessment_sessions`,
+    ).get() as {
+      interview_id: string;
+      mode: string;
+      state: string;
+      candidate_id: string | null;
+      workspace_id: string;
+      created_by: string;
+      metadata_json: string;
+    };
+    expect(session).toMatchObject({
+      interview_id: 'scheduled-interview-1',
+      mode: 'STANDARD_VIDEO_INTERVIEW',
+      state: 'IN_PROGRESS',
+      candidate_id: 'contact-1',
+      workspace_id: 'workspace-1',
+      created_by: 'meeting-transcript-ingestion',
+    });
+    expect(JSON.parse(session.metadata_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      provider: 'deepgram-multichannel',
+      recordingKey: 'meetings/workspace-1/meeting-1/recording.webm',
+      transcriptionAudioKey: 'meetings/workspace-1/meeting-1/transcription-audio.webm',
+      source: 'meeting_transcript_living_context',
+    });
+
+    const evidenceRows = sqlite.prepare(
+      `SELECT e.sequence, e.kind, e.actor_type, e.actor_id, e.narrative,
+              r.source_ref_type, r.source_ref_id, r.source_span_id, r.evidence_role,
+              r.exact_text, r.content_hash, r.locator_json, r.metadata_json
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        ORDER BY e.sequence`,
+    ).all() as Array<{
+      sequence: number;
+      kind: string;
+      actor_type: string;
+      actor_id: string | null;
+      narrative: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      source_span_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+      locator_json: string;
+      metadata_json: string;
+    }>;
+    expect(evidenceRows).toHaveLength(2);
+    expect(evidenceRows[0]).toMatchObject({
+      sequence: 1,
+      kind: 'transcript_span',
+      actor_type: 'recruiter',
+      actor_id: 'host',
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_segment',
+      exact_text: 'Which bug would you start with?',
+      content_hash: await sha256Hex('Which bug would you start with?'),
+    });
+    expect(JSON.parse(evidenceRows[0].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      stableSegmentId: 'host-1',
+      speakerRole: 'host',
+      channel: 0,
+    });
+    expect(evidenceRows[1]).toMatchObject({
+      sequence: 2,
+      kind: 'transcript_span',
+      actor_type: 'candidate',
+      actor_id: 'contact-1',
+      source_ref_type: 'source_span',
+      evidence_role: 'transcript_segment',
+      exact_text: 'I would reproduce the stale listener bug before changing the patch.',
+      content_hash: await sha256Hex('I would reproduce the stale listener bug before changing the patch.'),
+    });
+    expect(evidenceRows[1].source_ref_id).toBe(evidenceRows[1].source_span_id);
+    expect(JSON.parse(evidenceRows[1].metadata_json)).toMatchObject({
+      sourceKind: 'meeting_transcript.source_span',
+      provider: 'deepgram-multichannel',
+      confidence: 0.94,
+      contactId: 'contact-1',
+      segmentMetadata: {
+        providerSegmentId: 'dg-guest-1',
+      },
+    });
+    expect(JSON.parse(evidenceRows[1].locator_json)).toMatchObject({
+      meetingId: 'meeting-1',
+      scheduledInterviewId: 'scheduled-interview-1',
+      stableSegmentId: 'guest-1',
+      speakerRole: 'guest',
+      speakerLabel: 'Guest',
+      timestampStartMs: 2100,
+      timestampEndMs: 5800,
     });
   });
 
