@@ -1119,6 +1119,54 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
+  it('rejects human Clippy UI actions that claim a Devin agent attribution', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-attributed-ui-action',
+        clientId: 'host-client',
+        createdAt: 1782594200000,
+        eventType: 'clippy_action',
+        actor: 'host',
+        text: 'Clippy action: start recording',
+        evidence: {
+          source: 'clippy_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594200000,
+          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+    }));
+    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+  });
+
   it('stores, broadcasts, and records shared room filesystem edits', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

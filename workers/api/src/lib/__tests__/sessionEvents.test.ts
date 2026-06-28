@@ -651,6 +651,35 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'HOST',
+            recordedAt: 1700000003300,
+            event: {
+              id: 'clippy-attributed-ui-action',
+              clientId: 'host-client',
+              createdAt: 1700000003300,
+              eventType: 'clippy_action',
+              actor: 'host',
+              text: 'Clippy action: start recording',
+              evidence: {
+                source: 'clippy_prompt_ui',
+                actionId: 'start-recording',
+                origin: 'prompt',
+                executedBy: 'host',
+                actionSource: 'clippy_prompt_ui',
+                executionStatus: 'executed',
+                capturedAtMs: 1700000003300,
+                clippyActionEventId: 'clippy-action:host:1700000003300:clippy_prompt_ui:prompt:executed:start-recording',
+                agent: 'devin',
+                agentResponseClaimed: false,
+                surface: 'win95',
+                roomPhase: 'connected',
+                workspaceStatus: 'READY',
+                workspaceSessionId: 'workspace-session-1',
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
         ],
         fileSystemActivityLog: [
           {
@@ -958,6 +987,17 @@ describe('sessionEvents', () => {
         deletedContentPreview: 'Candidate identified retry bug evidence.',
       });
       expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'clippy_action',
+          actor: 'host',
+          properties: expect.objectContaining({
+            roomEventId: 'clippy-attributed-ui-action',
+            source: 'clippy_prompt_ui',
+            agent: 'devin',
+          }),
+        }),
+      ]));
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'file_change',

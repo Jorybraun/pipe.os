@@ -1962,7 +1962,7 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(legacyBridgeActionRes.status).toBe(422);
 
-    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const attributedUiActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1979,6 +1979,33 @@ describe('meeting room recording living-context route', () => {
           capturedAtMs: 1782594200000,
           clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
           agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(attributedUiActionRes.status).toBe(422);
+
+    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: start recording',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594200000,
+          clippyActionEventId: 'clippy-action:host:1782594200000:clippy_prompt_ui:prompt:executed:start-recording',
+          agent: null,
           agentResponseClaimed: false,
           surface: 'win95',
           roomPhase: 'connected',

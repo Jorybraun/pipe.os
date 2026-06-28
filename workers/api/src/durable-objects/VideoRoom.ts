@@ -1032,7 +1032,8 @@ export class VideoRoom {
           && roomContextOk
           && originOk
           && statusOk
-          && evidence.agentResponseClaimed === false;
+          && evidence.agentResponseClaimed === false
+          && (evidence.agent === undefined || evidence.agent === null);
       }
       if (source === 'clippy_agent_bridge') {
         const commonOk = actionId !== null
