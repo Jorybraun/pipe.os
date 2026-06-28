@@ -816,12 +816,23 @@ export interface StandaloneReviewRoleSource {
   contentHash?: string;
 }
 
+export interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 export interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  stretch: { dimension: string; atomConcept: string; demandConcept: string } | null;
   roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
@@ -950,6 +961,8 @@ export interface StandaloneReviewMatchRecord {
   summary: string;
   evidence: StandaloneReviewAlignment[];
   roleSources: StandaloneReviewRoleSource[];
+  stretchAreas: StandaloneReviewStretchArea[];
+  unmatchedDemandIds: string[];
   gaps: string[];
   diagnostics: StandaloneReviewDiagnostics;
   packet: StandaloneReviewPacketDetail | null;
