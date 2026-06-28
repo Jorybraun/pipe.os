@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Production infrastructure for living context graph
+
+- Added D1 migrations `0104_backfill_checkpoints`, `0105_rollout_gates`, `0106_rollout_gate_audit_log` for idempotent backfill tracking, feature rollout gates, and immutable gate transition audit trail.
+- Added `BackfillOrchestrator` with dependency-aware multi-task checkpoint tracking — tasks resume from the last committed cursor on restart (criterion #8 deterministic idempotent backfills).
+- Added `rolloutEnforcement` module with `checkGate()`, `requireGate()` middleware, `gatedField()`, `updateGateStage()`, `listGates()`, and `queryAuditLog()` — D1-backed feature rollout gates with 60-second in-memory cache and immutable audit trail (criterion #8 staged rollout).
+- Added `formatMatchNarrative()` for recruiter-facing human-readable match explanations — classifies evidence as strong/moderate/partial, separates stretch areas from gaps, links to source locators (criterion #6 explain every match).
+- Added `GET /api/v1/internal/living-context-health` endpoint for per-subsystem health checks: required tables, rollout gates, backfill orchestrator status, projection outbox health (criterion #8 production quality).
+- Added proof test suites: `backfillOrchestrator.test.ts` (8 tests), `rolloutEnforcement.test.ts` (6 tests), `matchNarrative.test.ts` (6 tests), `livingContextHealth.test.ts` (2 tests) — 22 new tests for production infrastructure.
+
 ### Added — Living context graph & match explanation completeness
 
 - Added `searchSourceContent()` to the living context read model for cross-artifact semantic source search (criterion #2). Searches all source spans linked to a workspace person, falls back to assertion narratives when no spans match, and returns hits with citing assertions, context records, and concept keys.

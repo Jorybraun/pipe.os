@@ -87,3 +87,42 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 - #6 Explain every match: DONE (stretch areas + unmatched demands surfaced)
 - #7 Visualize the living graph: DONE (StretchAreasPanel, UnmatchedDemandsPanel added)
 - #8 Production quality: PARTIAL (tests stable, rollout gate endpoint, evaluation corpus exists; needs expert labels + staged rollout execution)
+
+### 2026-06-28 — Session b34582d0 (Devin)
+
+**Action:** Merge aligned PRs #105/#106, build production infrastructure to close criterion #8 gaps.
+
+**Open PRs reviewed:**
+- PR #105 (test stabilization) — aligned, superset contained in PR #106
+- PR #106 (source search + match explanation + rollout gate) — aligned, 18 files, 1079 insertions, all tests pass
+
+**Changes made (on top of PR #106 branch):**
+1. D1 migration `0104_backfill_checkpoints` — idempotent backfill tracking with cursor-based resume
+2. D1 migration `0105_rollout_gates` — feature rollout gates (disabled → internal_only → canary → GA)
+3. D1 migration `0106_rollout_gate_audit_log` — immutable gate transition audit trail
+4. `BackfillOrchestrator` class with dependency-aware task graph, checkpoint persistence, resume from cursor
+5. `rolloutEnforcement` module — `checkGate()`, `requireGate()` middleware, `gatedField()`, `updateGateStage()`, `listGates()`, `queryAuditLog()` with 60s cache + audit log
+6. `formatMatchNarrative()` — recruiter-facing match explanation formatter with strength classification, stretch/gap separation, source locator linking
+7. `GET /api/v1/internal/living-context-health` — per-subsystem health check endpoint
+8. 4 new test files: `backfillOrchestrator.test.ts` (8), `rolloutEnforcement.test.ts` (6), `matchNarrative.test.ts` (6), `livingContextHealth.test.ts` (2) — 22 new tests
+
+**Test results after changes:**
+- 164 test files pass, 0 failures
+- 1501 tests pass, 15 skipped
+- TypeScript: 0 errors (both frontend + workers)
+- Lint: 2 pre-existing errors (not in changed files)
+
+**Acceptance criteria status:**
+- #1 Living person graph: DONE (identity unification, lifecycle provenance)
+- #2 Preserve original meaning: DONE (source spans + searchSourceContent)
+- #3 Learn semantics dynamically: DONE (concept registry, open terms)
+- #4 Understand repositories: DONE (repo semantic graph, source spans)
+- #5 Evidence-based matching: DONE (d1Matcher, challenge matching)
+- #6 Explain every match: DONE (stretch areas + unmatched demands + formatMatchNarrative)
+- #7 Visualize the living graph: DONE (StretchAreasPanel, UnmatchedDemandsPanel)
+- #8 Production quality: ADVANCED (backfill orchestrator, rollout gates with audit, health endpoint, 1501 tests; remaining: expert labels, staged rollout execution)
+
+**Remaining gaps for full #8 completion:**
+- Seed expert-labelled evaluation corpus with real data
+- Execute staged rollout: shadow → canary → production
+- E2E integration test covering full pipeline

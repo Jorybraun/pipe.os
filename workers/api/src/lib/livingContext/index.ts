@@ -20,3 +20,15 @@ export {
   searchTranscriptSourceSpans,
   searchSourceContent,
 } from './readModel';
+export { BackfillOrchestrator } from './backfillOrchestrator';
+export type { BackfillCheckpoint, BackfillTaskDefinition, BackfillOrchestratorStatus } from './backfillOrchestrator';
+export {
+  checkGate,
+  requireGate,
+  gatedField,
+  updateGateStage,
+  listGates,
+  queryAuditLog,
+  clearGateCache,
+} from './rolloutEnforcement';
+export type { GateStage, GateCheckResult } from './rolloutEnforcement';

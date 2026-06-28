@@ -44,6 +44,7 @@ import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
 import rolloutGate from './routes/internal/rolloutGate';
+import livingContextHealth from './routes/internal/livingContextHealth';
 import { e2eSeed } from './routes/internal/e2eSeed';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
@@ -262,6 +263,9 @@ app.route('/api/v1/internal', neo4jHealth);
 
 // Internal: Rollout gate readiness check (criterion #8 staged rollout)
 app.route('/api/v1/internal', rolloutGate);
+
+// Internal: Living context subsystem health check (criterion #8 production quality)
+app.route('/api/v1/internal', livingContextHealth);
 
 // Internal: deterministic local/test fixture seeding for E2E only.
 app.route('/api/v1/internal/e2e', e2eSeed);
