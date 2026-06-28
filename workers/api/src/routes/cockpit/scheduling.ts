@@ -3342,6 +3342,7 @@ schedulingAuth.post('/interviews/:id/context-call', async (c) => {
   }
 
   const match = await loadScheduledCodeReviewMatchDetail(db, {
+    id: source.id,
     candidate_id: source.candidate_id,
     interview_type: source.interview_type,
     matched_repo_id: source.matched_repo_id,
