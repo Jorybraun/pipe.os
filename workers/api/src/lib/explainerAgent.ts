@@ -7,11 +7,16 @@
  * the explainer agent answers free-form questions with markdown + mermaid diagrams.
  *
  * Same provider abstraction: Workers AI / Google AI.
- * When API key is not set, returns mock responses for testing.
+ *
+ * Missing or failed AI providers return explicit diagnostics. They must not
+ * fabricate PR author explanations.
  */
 
+import {
+  aiDeveloperUnavailableDiagnostic,
+  type AssessmentDiagnostic,
+} from './assessmentEvidence';
 import { buildExplainerSystemPrompt, type RepoKnowledgeInput } from './explainerPrompts';
-import { getMockExplainerResponse } from './mockResponses';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +42,27 @@ export interface ComprehensionExchange {
 }
 
 export type LLMProvider = 'workers-ai' | 'google-ai';
+
+export class ExplainerAgentUnavailableError extends Error {
+  readonly diagnostic: AssessmentDiagnostic;
+
+  constructor(input: {
+    provider: LLMProvider;
+    reason: string;
+    retryable?: boolean;
+    details?: Record<string, string | number | boolean | null>;
+  }) {
+    const diagnostic = aiDeveloperUnavailableDiagnostic({
+      provider: input.provider,
+      reason: input.reason,
+      retryable: input.retryable,
+      details: input.details,
+    });
+    super(diagnostic.reason);
+    this.name = 'ExplainerAgentUnavailableError';
+    this.diagnostic = diagnostic;
+  }
+}
 
 export interface CallExplainerAgentInput {
   apiKey: string;
@@ -106,7 +132,7 @@ async function callGoogleAI(apiKey: string, systemPrompt: string, userMessage: s
   if (!response.ok) {
     const errorText = await response.text();
     console.error('[explainerAgent] Google AI error', { status: response.status, body: errorText });
-    return '';
+    throw new Error(`Google AI error ${response.status}`);
   }
 
   const data = (await response.json()) as {
@@ -150,23 +176,29 @@ function buildUserMessage(
 /**
  * Calls the configured LLM to get an explainer response to the candidate's question.
  *
- * Falls back to mock responses when:
- * - apiKey is empty / missing
- * - The API call fails
+ * Throws ExplainerAgentUnavailableError when a real provider cannot produce a
+ * valid response. Candidate transcripts must never contain simulated PR-author
+ * explanations.
  */
 export async function callExplainerAgent(
   input: CallExplainerAgentInput,
 ): Promise<ExplainerResponse> {
   const { apiKey, provider = 'workers-ai', ai, prBrief, prDiff, repoKnowledge, previousExchanges, newQuestion } = input;
 
-  // Return mock response when API key is not configured (for testing)
   if (!apiKey && provider !== 'workers-ai') {
-    console.log('[explainerAgent] No API key configured. Returning mock response for testing.');
-    return getMockExplainerResponse(newQuestion);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Review explainer agent API key is not configured.',
+      retryable: true,
+    });
   }
 
   if (provider === 'workers-ai' && !ai) {
-    throw new Error('[explainerAgent] Workers AI binding not available.');
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Workers AI binding is not available for the review explainer agent.',
+      retryable: true,
+    });
   }
 
   const systemPrompt = buildExplainerSystemPrompt(prBrief, prDiff, repoKnowledge);
@@ -180,14 +212,21 @@ export async function callExplainerAgent(
       raw = await callGoogleAI(apiKey, systemPrompt, userMessage);
     }
   } catch (err) {
-    console.error(`[explainerAgent] ${provider} call failed:`, err);
-    console.log('[explainerAgent] Falling back to mock response.');
-    return getMockExplainerResponse(newQuestion);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[explainerAgent] ${provider} call failed:`, message);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: `Review explainer agent provider failed: ${message}`,
+      retryable: true,
+    });
   }
 
   if (!raw) {
-    console.warn(`[explainerAgent] ${provider} returned empty response. Falling back to mock.`);
-    return getMockExplainerResponse(newQuestion);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Review explainer agent provider returned an empty response.',
+      retryable: true,
+    });
   }
 
   // Parse JSON response
@@ -197,13 +236,20 @@ export async function callExplainerAgent(
     parsed = JSON.parse(jsonText);
   } catch {
     console.error('[explainerAgent] Failed to parse JSON response:', raw.slice(0, 300));
-    console.log('[explainerAgent] Falling back to mock response.');
-    return getMockExplainerResponse(newQuestion);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Review explainer agent provider returned invalid JSON.',
+      retryable: true,
+    });
   }
 
   if (!parsed || typeof parsed !== 'object') {
     console.error('[explainerAgent] Response is not an object:', typeof parsed);
-    return getMockExplainerResponse(newQuestion);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Review explainer agent provider response was not an object.',
+      retryable: true,
+    });
   }
 
   const rec = parsed as Record<string, unknown>;
@@ -212,7 +258,11 @@ export async function callExplainerAgent(
   const content = typeof rec.content === 'string' ? rec.content : '';
   if (!content) {
     console.error('[explainerAgent] Parsed object has no content field');
-    return getMockExplainerResponse(newQuestion);
+    throw new ExplainerAgentUnavailableError({
+      provider,
+      reason: 'Review explainer agent provider returned no answer content.',
+      retryable: true,
+    });
   }
 
   const contextProvided = Array.isArray(rec.context_provided)

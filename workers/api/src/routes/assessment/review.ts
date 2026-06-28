@@ -1802,6 +1802,9 @@ review.post('/ask', async (c) => {
         newQuestion: question,
       });
     } catch (err) {
+      if (isAiDeveloperUnavailableError(err)) {
+        return c.json(aiDeveloperUnavailableResponse(err), 503);
+      }
       const msg = err instanceof Error ? err.message : String(err);
       console.error('[review/ask] explainer agent failed:', msg);
       return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
@@ -1842,6 +1845,9 @@ review.post('/ask', async (c) => {
       newQuestion: question,
     });
   } catch (err) {
+    if (isAiDeveloperUnavailableError(err)) {
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[review/ask] explainer agent failed:', msg);
     return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);
@@ -1984,6 +1990,9 @@ review.post('/:sessionId/ask', async (c) => {
       newQuestion: question,
     });
   } catch (err) {
+    if (isAiDeveloperUnavailableError(err)) {
+      return c.json(aiDeveloperUnavailableResponse(err), 503);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[review/ask] explainer agent failed:', msg);
     return c.json({ error: { code: 'AGENT_ERROR', message: msg } }, 502);

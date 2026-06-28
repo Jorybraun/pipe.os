@@ -64,7 +64,7 @@ vi.mock('../lib/candidateDiscovery/orchestrate', async (importOriginal) => {
 });
 
 import { AiDeveloperUnavailableError, callImplementerAgent } from '../lib/implementerAgent';
-import { callExplainerAgent } from '../lib/explainerAgent';
+import { ExplainerAgentUnavailableError, callExplainerAgent } from '../lib/explainerAgent';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
 import { matchCandidateToReviewChallenge } from '../lib/challengeMatching';
@@ -1889,6 +1889,65 @@ describe('POST /rpc/review/ask', () => {
     expect(body.error.code).toBe('WAITING_FOR_MATCH');
     expect(vi.mocked(callExplainerAgent)).not.toHaveBeenCalled();
     expect(db.__calls.some((call) => call.sql.includes('FROM review_challenge_packets'))).toBe(true);
+  });
+
+  it('returns AI_DEVELOPER_UNAVAILABLE without creating a fake explainer exchange', async () => {
+    vi.mocked(callExplainerAgent).mockRejectedValueOnce(new ExplainerAgentUnavailableError({
+      provider: 'workers-ai',
+      reason: 'Workers AI binding is not available for the review explainer agent.',
+      retryable: true,
+    }));
+    const assignedExplainerChallenge = {
+      ...ASSIGNED_CHALLENGE_WITHOUT_SOURCE_PACKET,
+      config: JSON.stringify({ enableExplainer: true, maxExplainerQuestions: 4 }),
+    };
+    const packet = sourceBackedPacket('repo-span-explainer');
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates', value: CANDIDATE },
+        { match: 'FROM assessments', value: ASSESSMENT_ROW },
+        { match: 'FROM review_sessions', value: null },
+        { match: 'FROM challenges ch', value: assignedExplainerChallenge },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM challenges',
+          value: [assignedExplainerChallenge],
+        },
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-explainer',
+            path: 'src/auth.ts',
+            exact_text: 'retryTokenRefresh();',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/review/ask',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeader(),
+        },
+        body: JSON.stringify({ challengeOrder: 0, question: 'What is this PR doing?' }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(503);
+    const body = await res.json() as { error: { code: string; diagnostic: { code: string } } };
+    expect(body.error.code).toBe('AI_DEVELOPER_UNAVAILABLE');
+    expect(body.error.diagnostic.code).toBe('AI_DEVELOPER_UNAVAILABLE');
+    expect(vi.mocked(callExplainerAgent)).toHaveBeenCalledTimes(1);
+    expect(db.__calls.some((call) => call.sql.includes('INSERT INTO review_sessions') && call.ran)).toBe(false);
   });
 });
 

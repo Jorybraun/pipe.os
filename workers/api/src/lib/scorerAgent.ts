@@ -830,7 +830,7 @@ export async function scoreReviewSession(input: ScorerInput): Promise<ScoreRepor
   ]);
 
   // Debug: log raw LLM output before parsing (helps diagnose truncation)
-  if (provider === 'workers-ai' || provider === 'kimi') {
+  if (provider === 'kimi') {
     console.log('[scorerAgent] Scorer A raw length:', scorerARaw.length, 'last 200 chars:', JSON.stringify(scorerARaw.slice(-200)));
     console.log('[scorerAgent] Scorer B raw length:', scorerBRaw.length, 'last 200 chars:', JSON.stringify(scorerBRaw.slice(-200)));
   }
