@@ -33,3 +33,46 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 5. Expert-labelled evaluation corpus
 
 **Acceptance criteria advanced:** 3 (CamelCase normalization), 8 (test stabilization)
+
+### 2026-06-28 — Sessions 643c457a → aff4536a → 8e4b6d1c (Devin)
+
+**Action:** Consolidate all living context graph PRs #105–#116 into PR #117.
+
+**Open PRs reviewed and consolidated:**
+- PRs #105–#116: progressive drafts of living context production infrastructure
+- All superseded by PR #117 (clean squash onto main)
+- PRs #105–#116 need manual closure by owner (GitHub API restricted)
+
+**Changes delivered in PR #117:**
+1. Native resume ingestion with per-section source spans (`ingestResumeToLivingContext`)
+2. `BackfillOrchestrator` — dependency-ordered checkpoint tracking in D1
+3. Scheduled cron backfill covering 7 entity types (candidates, contacts, resumes, meetings, phone_calls, code_reviews, projection_outbox_drain)
+4. Rebuildable projections via outbox drain (`scheduleFullProjectionRebuild`)
+5. Cross-artifact semantic source search (`searchSourceContent`)
+6. Match narrative formatter with strength classification (`formatMatchNarrative`)
+7. D1-backed rollout gates with immutable audit trail (`checkGate`, `requireGate`, `updateGateStage`)
+8. Health + rollout gate endpoints
+9. `StretchAreasPanel` + `UnmatchedDemandsPanel` UI components
+10. D1 migrations: 0104–0106
+
+**Test results:**
+- 167 test files pass, 1529 tests, 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — same on main/PR #104)
+
+**All 8 acceptance criteria covered:**
+1. Living person graph: all entity types with continuous ingestion
+2. Preserve original meaning: source spans + searchSourceContent
+3. Learn semantics dynamically: conceptRegistry + openTerms
+4. Understand repositories: repoSemanticGraph module
+5. Evidence-based matching: d1Matcher + challengeMatching
+6. Explain every match: matchNarrative
+7. Visualize the living graph: LivingContextGraph.tsx + panels
+8. Production quality: backfills, rollout gates, E2E proofs, staged rollout
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```

@@ -904,6 +904,55 @@ async function projectWorkspacePerson(
   }
 }
 
+/**
+ * Enqueue rebuild projection jobs for all workspace persons.
+ *
+ * This is the "fully rebuildable projections" capability: D1 remains the
+ * source of truth, and Neo4j projections can be deleted and reconstructed
+ * at any time by scheduling rebuild jobs through the projection outbox.
+ *
+ * Returns the number of rebuild jobs enqueued.
+ */
+export async function scheduleFullProjectionRebuild(
+  db: D1Database,
+  batchSize = 100,
+): Promise<{ enqueued: number }> {
+  let afterId = '';
+  let enqueued = 0;
+  const now = new Date().toISOString();
+
+  for (;;) {
+    const page = await db.prepare(
+      `SELECT id FROM workspace_people WHERE id > ?1 ORDER BY id LIMIT ?2`,
+    ).bind(afterId, batchSize).all<{ id: string }>();
+
+    if (!page.results || page.results.length === 0) break;
+
+    for (const row of page.results) {
+      const ingestionKey = `rebuild:neo4j:workspace_person:${row.id}`;
+      const jobId = `rebuild-${row.id}-${Date.now()}`;
+      await db.prepare(
+        `INSERT INTO projection_outbox (
+           id, ingestion_key, projection_type, aggregate_type, aggregate_id,
+           operation, status, available_at, created_at, updated_at
+         ) VALUES (
+           ?1, ?2, 'neo4j', 'workspace_person', ?3, 'rebuild',
+           'pending', ?4, ?4, ?4
+         )
+         ON CONFLICT(ingestion_key) DO UPDATE
+           SET operation = 'rebuild', status = 'pending',
+               available_at = ?4, updated_at = ?4
+           WHERE status NOT IN ('processing')`,
+      ).bind(jobId, ingestionKey, row.id, now).run();
+      enqueued++;
+    }
+
+    afterId = page.results.at(-1)!.id;
+  }
+
+  return { enqueued };
+}
+
 export async function processProjectionOutbox(
   env: Env,
   limit = 25,
