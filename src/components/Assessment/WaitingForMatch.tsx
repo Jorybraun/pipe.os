@@ -4,6 +4,17 @@ import { LiquidMetalCard } from '../ui/LiquidMetalCard';
 import type { CandidateProfile } from './CandidateProfileReview';
 import { CandidateProfileReview } from './CandidateProfileReview';
 
+export interface WaitingForMatchDiagnostics {
+  phase?: 'candidate_evidence' | 'repo_matching';
+  ingestionStatus?: string | null;
+  currentStep?: string | null;
+  matchableNodeCount?: number;
+  rawNodeCount?: number;
+  updatedAt?: string | null;
+  estimatedCompletionAt?: string | null;
+  staleAfterSeconds?: number;
+}
+
 interface WaitingForMatchProps {
   title: string;
   instructions: string;
@@ -12,6 +23,7 @@ interface WaitingForMatchProps {
     refreshIntervalSeconds?: number;
     state?: 'pending' | 'blocked';
     reason?: string;
+    diagnostics?: WaitingForMatchDiagnostics;
   };
   onRefresh: () => void;
   sessionToken?: string | null;
@@ -32,6 +44,46 @@ async function fetchProfile(sessionToken: string): Promise<CandidateProfile | nu
   }
 }
 
+function formatDiagnosticLabel(value: string): string {
+  return value.replace(/_/g, ' ').toUpperCase();
+}
+
+function formatUpdatedAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function diagnosticRows(diagnostics: WaitingForMatchDiagnostics | undefined): Array<{ label: string; value: string }> {
+  if (!diagnostics) return [];
+  const rows: Array<{ label: string; value: string }> = [];
+  if (diagnostics.phase) {
+    rows.push({ label: 'PHASE', value: formatDiagnosticLabel(diagnostics.phase) });
+  }
+  if (diagnostics.ingestionStatus) {
+    rows.push({ label: 'STATUS', value: formatDiagnosticLabel(diagnostics.ingestionStatus) });
+  }
+  if (diagnostics.currentStep) {
+    rows.push({ label: 'STEP', value: formatDiagnosticLabel(diagnostics.currentStep) });
+  }
+  if (typeof diagnostics.matchableNodeCount === 'number' || typeof diagnostics.rawNodeCount === 'number') {
+    const matchable = diagnostics.matchableNodeCount ?? 0;
+    const raw = diagnostics.rawNodeCount ?? matchable;
+    rows.push({ label: 'EVIDENCE', value: `${matchable} MATCHABLE / ${raw} RAW` });
+  }
+  const updatedAt = formatUpdatedAt(diagnostics.updatedAt);
+  if (updatedAt) {
+    rows.push({ label: 'UPDATED', value: updatedAt.toUpperCase() });
+  }
+  return rows;
+}
+
 export function WaitingForMatch({
   title,
   instructions,
@@ -41,6 +93,7 @@ export function WaitingForMatch({
 }: WaitingForMatchProps): JSX.Element {
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
   const isBlocked = config.state === 'blocked';
+  const rows = diagnosticRows(config.diagnostics);
 
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
@@ -169,6 +222,51 @@ export function WaitingForMatch({
           >
             {config.reason}
           </p>
+        )}
+
+        {rows.length > 0 && (
+          <div
+            style={{
+              margin: '0 0 24px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(12,12,14,0.28)',
+              textAlign: 'left',
+            }}
+          >
+            {rows.map((row) => (
+              <div
+                key={row.label}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '112px minmax(0, 1fr)',
+                  gap: 12,
+                  padding: '10px 12px',
+                  borderBottom: row.label === rows[rows.length - 1]?.label ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                  fontFamily: '"Space Mono", monospace',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 9,
+                    color: 'var(--pipe-text-dim)',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {row.label}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--pipe-text, #fff)',
+                    lineHeight: 1.4,
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
 
         <div

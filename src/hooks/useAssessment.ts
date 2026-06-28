@@ -32,6 +32,18 @@ export interface WaitingChallengeConfig {
   refreshIntervalSeconds: number;
   state?: 'pending' | 'blocked';
   reason?: string;
+  diagnostics?: WaitingChallengeDiagnostics;
+}
+
+export interface WaitingChallengeDiagnostics {
+  phase?: 'candidate_evidence' | 'repo_matching';
+  ingestionStatus?: string | null;
+  currentStep?: string | null;
+  matchableNodeCount?: number;
+  rawNodeCount?: number;
+  updatedAt?: string | null;
+  estimatedCompletionAt?: string | null;
+  staleAfterSeconds?: number;
 }
 
 export interface WaitingChallengeDTO {

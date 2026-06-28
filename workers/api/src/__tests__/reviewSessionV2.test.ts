@@ -628,6 +628,99 @@ describe('POST /rpc/get-stage-config', () => {
     });
   });
 
+  it('blocks stale standalone CODE_REVIEW ingestion with candidate-safe diagnostics instead of polling forever', async () => {
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM candidates WHERE id',
+          value: {
+            id: 'cand_1',
+            pipeline_id: null,
+            owner_id: 'owner_1',
+            current_stage_id: null,
+            resume_s3_key: 'text-intake/cand_1/stale',
+          },
+        },
+        {
+          match: 'FROM candidates c WHERE c.id',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_stale',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'text-intake/cand_1/stale',
+            status: 'pending',
+            current_step: 'decompose_resume',
+            error_text: null,
+            estimated_completion_at: '2000-01-01T00:05:00.000Z',
+            updated_at: '2000-01-01T00:00:00.000Z',
+            raw_node_count: 0,
+            node_count: 0,
+          },
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-stage-config',
+      {
+        method: 'POST',
+        headers: { Authorization: await authHeaderWithoutPipeline() },
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      stageId?: string;
+      waitingChallenge?: {
+        config?: {
+          state?: string;
+          autoRefresh?: boolean;
+          reason?: string;
+          diagnostics?: {
+            phase?: string;
+            ingestionStatus?: string | null;
+            currentStep?: string | null;
+            matchableNodeCount?: number;
+            rawNodeCount?: number;
+            updatedAt?: string | null;
+          };
+        };
+      };
+    };
+    expect(body.stageId).toBe('standalone-code-review-matching');
+    expect(body.waitingChallenge?.config).toMatchObject({
+      state: 'blocked',
+      autoRefresh: false,
+      reason: expect.stringContaining('stalled'),
+      diagnostics: {
+        phase: 'candidate_evidence',
+        ingestionStatus: 'pending',
+        currentStep: 'decompose_resume',
+        matchableNodeCount: 0,
+        rawNodeCount: 0,
+        updatedAt: '2000-01-01T00:00:00.000Z',
+      },
+    });
+  });
+
   it('retries stale Workers AI model failures from stored text-intake source on status refresh', async () => {
     const resumeText = 'Senior TypeScript engineer building Cloudflare Workers runtime tooling, request routing, source-mapped stack traces, and Vitest regression tests.';
     const storage = {

@@ -59,7 +59,19 @@ interface WaitingChallenge {
     refreshIntervalSeconds: number;
     state?: 'pending' | 'blocked';
     reason?: string;
+    diagnostics?: WaitingChallengeDiagnostics;
   };
+}
+
+interface WaitingChallengeDiagnostics {
+  phase: 'candidate_evidence' | 'repo_matching';
+  ingestionStatus?: string | null;
+  currentStep?: string | null;
+  matchableNodeCount?: number;
+  rawNodeCount?: number;
+  updatedAt?: string | null;
+  estimatedCompletionAt?: string | null;
+  staleAfterSeconds?: number;
 }
 
 interface GateResult {
@@ -377,6 +389,7 @@ function standaloneWaitingChallenge(options: {
   state?: 'pending' | 'blocked';
   reason?: string | null;
   autoRefresh?: boolean;
+  diagnostics?: WaitingChallengeDiagnostics;
 } = {}): WaitingChallenge {
   const state = options.state ?? 'pending';
   return {
@@ -393,6 +406,7 @@ function standaloneWaitingChallenge(options: {
       refreshIntervalSeconds: 30,
       state,
       reason: options.reason ?? undefined,
+      diagnostics: options.diagnostics,
     },
   };
 }
@@ -400,11 +414,13 @@ function standaloneWaitingChallenge(options: {
 function standaloneWaitingChallengeForReadiness(
   readiness: StandaloneReviewEvidenceReadiness,
 ): WaitingChallenge {
-  if (readiness.status === 'failed') {
+  const diagnostics = diagnosticsForStandaloneReviewReadiness(readiness);
+  if (readiness.terminal) {
     return standaloneWaitingChallenge({
       state: 'blocked',
       autoRefresh: false,
       reason: readiness.reason,
+      diagnostics,
       instructions: readiness.reason
         ?? 'Candidate evidence ingestion failed before a source-backed repo challenge could be selected.',
     });
@@ -412,7 +428,51 @@ function standaloneWaitingChallengeForReadiness(
   return standaloneWaitingChallenge({
     state: 'pending',
     reason: readiness.reason,
+    diagnostics,
   });
+}
+
+function diagnosticsForStandaloneReviewReadiness(
+  readiness: StandaloneReviewEvidenceReadiness,
+): WaitingChallengeDiagnostics {
+  return {
+    phase: 'candidate_evidence',
+    ingestionStatus: readiness.status,
+    currentStep: readiness.currentStep,
+    matchableNodeCount: readiness.nodeCount,
+    rawNodeCount: readiness.rawNodeCount,
+    updatedAt: readiness.updatedAt,
+    estimatedCompletionAt: readiness.estimatedCompletionAt,
+    staleAfterSeconds: STANDALONE_EVIDENCE_STALE_AFTER_MS / 1000,
+  };
+}
+
+function isInProgressStandaloneIngestionStatus(status: string | null): boolean {
+  return status === 'pending'
+    || status === 'profile_generated'
+    || status === 'enriching';
+}
+
+function isCompletedStandaloneIngestionStatus(status: string | null): boolean {
+  return status === 'embedded'
+    || status === 'matched'
+    || status === 'enriched';
+}
+
+function staleStandaloneEvidenceReason(
+  currentStep: string | null,
+  updatedAt: string | null,
+): string {
+  const step = currentStep ?? 'unknown step';
+  const timestamp = updatedAt ?? 'unknown time';
+  return `Candidate evidence ingestion stalled at ${step} without matchable source-backed evidence. Last update: ${timestamp}.`;
+}
+
+function standaloneEvidenceIsStale(status: string | null, updatedAt: string | null): boolean {
+  if (!isInProgressStandaloneIngestionStatus(status) || !updatedAt) return false;
+  const updatedMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedMs)) return false;
+  return Date.now() - updatedMs >= STANDALONE_EVIDENCE_STALE_AFTER_MS;
 }
 
 const STANDALONE_REVIEW_CHALLENGE_CONFIG = {
@@ -570,13 +630,18 @@ interface StandaloneReviewMatchResult {
 
 interface StandaloneReviewEvidenceReadiness {
   ready: boolean;
+  terminal: boolean;
   reason: string | null;
   status: string | null;
+  currentStep: string | null;
   nodeCount: number;
   rawNodeCount: number;
+  updatedAt: string | null;
+  estimatedCompletionAt: string | null;
 }
 
 const STANDALONE_RETRY_REASON = 'Retrying candidate evidence ingestion after a stale Workers AI model failure.';
+const STANDALONE_EVIDENCE_STALE_AFTER_MS = 10 * 60 * 1000;
 
 interface PersistedMatchRunRow {
   status: string;
@@ -1290,6 +1355,8 @@ async function standaloneReviewEvidenceReadiness(
             ci.status,
             ci.current_step,
             ci.error_text,
+            ci.estimated_completion_at,
+            ci.updated_at,
             (SELECT COUNT(*)
                FROM candidate_nodes cn
               WHERE cn.candidate_id = c.id
@@ -1306,6 +1373,8 @@ async function standaloneReviewEvidenceReadiness(
     status: string | null;
     current_step: string | null;
     error_text: string | null;
+    estimated_completion_at: string | null;
+    updated_at: string | null;
     raw_node_count: number;
     node_count: number;
   }>();
@@ -1313,54 +1382,119 @@ async function standaloneReviewEvidenceReadiness(
   if (!row) {
     return {
       ready: false,
+      terminal: true,
       reason: 'candidate not found',
       status: null,
+      currentStep: null,
       nodeCount: 0,
       rawNodeCount: 0,
+      updatedAt: null,
+      estimatedCompletionAt: null,
     };
   }
 
   const nodeCount = row.node_count ?? 0;
   const rawNodeCount = row.raw_node_count ?? nodeCount;
   const status = row.status ?? null;
+  const currentStep = row.current_step ?? null;
+  const updatedAt = row.updated_at ?? null;
+  const estimatedCompletionAt = row.estimated_completion_at ?? null;
   if (status === 'failed' && nodeCount <= 0) {
     return {
       ready: false,
+      terminal: true,
       reason: row.error_text ?? 'candidate ingestion failed before source-backed evidence was created',
       status,
+      currentStep,
       nodeCount,
       rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
+    };
+  }
+
+  if (nodeCount > 0) {
+    return {
+      ready: true,
+      terminal: false,
+      reason: null,
+      status,
+      currentStep,
+      nodeCount,
+      rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
+    };
+  }
+
+  if (isCompletedStandaloneIngestionStatus(status)) {
+    return {
+      ready: false,
+      terminal: true,
+      reason: 'Candidate evidence ingestion completed without matchable source-backed evidence.',
+      status,
+      currentStep,
+      nodeCount,
+      rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
+    };
+  }
+
+  if (standaloneEvidenceIsStale(status, updatedAt)) {
+    return {
+      ready: false,
+      terminal: true,
+      reason: staleStandaloneEvidenceReason(currentStep, updatedAt),
+      status,
+      currentStep,
+      nodeCount,
+      rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
     };
   }
 
   if (nodeCount <= 0) {
     return {
       ready: false,
+      terminal: false,
       reason: row.resume_s3_key
         ? 'candidate evidence graph is still being built'
         : 'candidate CV intake has not completed',
-      status: row.status ?? null,
+      status,
+      currentStep,
       nodeCount,
       rawNodeCount,
+      updatedAt,
+      estimatedCompletionAt,
     };
   }
 
   return {
-    ready: true,
-    reason: null,
+    ready: false,
+    terminal: true,
+    reason: 'Candidate evidence graph returned an invalid matchable evidence count.',
     status,
+    currentStep,
     nodeCount,
     rawNodeCount,
+    updatedAt,
+    estimatedCompletionAt,
   };
 }
 
 function retryingStandaloneReviewReadiness(): StandaloneReviewEvidenceReadiness {
   return {
     ready: false,
+    terminal: false,
     reason: STANDALONE_RETRY_REASON,
     status: 'pending',
+    currentStep: 'retry_queued',
     nodeCount: 0,
     rawNodeCount: 0,
+    updatedAt: new Date().toISOString(),
+    estimatedCompletionAt: null,
   };
 }
 

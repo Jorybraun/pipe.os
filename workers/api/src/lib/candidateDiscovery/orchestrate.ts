@@ -686,9 +686,10 @@ async function setCurrentStep(
   candidateId: string,
   stepName: string,
 ): Promise<void> {
+  const now = new Date().toISOString();
   await db
-    .prepare(`UPDATE candidate_ingestion SET current_step = ?1 WHERE candidate_id = ?2`)
-    .bind(stepName, candidateId)
+    .prepare(`UPDATE candidate_ingestion SET current_step = ?1, updated_at = ?2 WHERE candidate_id = ?3`)
+    .bind(stepName, now, candidateId)
     .run();
 }
 

@@ -846,9 +846,28 @@ function sqlString(value) {
 }
 
 function localD1Query(command) {
+  return d1Query(command, { remote: false });
+}
+
+function smokeD1DatabaseName(remote) {
+  return process.env.CODE_REVIEW_SMOKE_D1_DATABASE || (remote ? 'pipe-db-test' : 'pipe-db');
+}
+
+function d1Query(command, { remote }) {
+  const databaseName = smokeD1DatabaseName(remote);
+  const args = [
+    'wrangler',
+    'd1',
+    'execute',
+    databaseName,
+    remote ? '--remote' : '--local',
+    '--json',
+    '--command',
+    command,
+  ];
   const result = spawnSync(
     'npx',
-    ['wrangler', 'd1', 'execute', 'pipe-db', '--local', '--json', '--command', command],
+    args,
     {
       cwd: `${process.cwd()}/workers/api`,
       encoding: 'utf8',
@@ -856,10 +875,16 @@ function localD1Query(command) {
     },
   );
   if (result.status !== 0) {
-    throw new Error(`Local D1 query failed (${result.status}): ${result.stderr || result.stdout}`);
+    const target = remote ? 'remote' : 'local';
+    throw new Error(`${target} D1 query failed (${result.status}) for ${databaseName}: ${result.stderr || result.stdout}`);
   }
   const parsed = JSON.parse(result.stdout);
   return Array.isArray(parsed?.[0]?.results) ? parsed[0].results : [];
+}
+
+function scoreD1Query(command) {
+  const remote = !isLocalBase(API_BASE) && !isLocalBase(RPC_BASE);
+  return d1Query(command, { remote });
 }
 
 async function verifyLocalAssessmentEvidence(reviewSessionId) {
@@ -933,6 +958,69 @@ async function verifyLocalAssessmentEvidence(reviewSessionId) {
   throw new Error(`Assessment evidence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
 }
 
+async function verifyScorePersistence(reviewSessionId) {
+  const command = `
+    WITH target_session AS (
+      SELECT id, assessment_id, challenge_id, status, score_report
+        FROM review_sessions
+       WHERE id = ${sqlString(reviewSessionId)}
+       LIMIT 1
+    ),
+    target_submission AS (
+      SELECT id, score, score_report_json, scored_at
+        FROM challenge_submissions
+       WHERE assessment_id = (SELECT assessment_id FROM target_session)
+         AND challenge_id = (SELECT challenge_id FROM target_session)
+       LIMIT 1
+    )
+    SELECT
+      (SELECT id FROM target_session) AS review_session_id,
+      (SELECT status FROM target_session) AS review_status,
+      (SELECT score_report IS NOT NULL AND length(score_report) > 0 FROM target_session) AS review_score_report_present,
+      json_extract((SELECT score_report FROM target_session), '$.overall.score') AS review_score,
+      json_extract((SELECT score_report FROM target_session), '$.overall.band') AS review_band,
+      (SELECT id FROM target_submission) AS challenge_submission_id,
+      (SELECT score FROM target_submission) AS challenge_submission_score,
+      (SELECT score_report_json IS NOT NULL AND length(score_report_json) > 0 FROM target_submission) AS challenge_submission_score_report_present,
+      (SELECT scored_at FROM target_submission) AS challenge_submission_scored_at,
+      (SELECT score FROM assessments WHERE id = (SELECT assessment_id FROM target_session)) AS assessment_score
+  `;
+
+  const deadline = Date.now() + 90_000;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = scoreD1Query(command)[0] ?? null;
+    const reviewScore = Number(latest?.review_score);
+    const challengeSubmissionScore = Number(latest?.challenge_submission_score);
+    const assessmentScore = Number(latest?.assessment_score);
+    if (
+      latest?.review_session_id === reviewSessionId
+      && latest.review_status === 'scored'
+      && Number(latest.review_score_report_present) === 1
+      && Number.isFinite(reviewScore)
+      && latest.challenge_submission_id
+      && Number.isFinite(challengeSubmissionScore)
+      && Number(latest.challenge_submission_score_report_present) === 1
+      && Number.isFinite(assessmentScore)
+    ) {
+      return {
+        skipped: false,
+        reviewStatus: latest.review_status,
+        reviewScore,
+        reviewBand: latest.review_band ?? null,
+        challengeSubmissionId: latest.challenge_submission_id,
+        challengeSubmissionScore,
+        challengeSubmissionScoredAt: latest.challenge_submission_scored_at ?? null,
+        assessmentScore,
+        d1Target: isLocalBase(API_BASE) || isLocalBase(RPC_BASE) ? 'local' : 'remote',
+      };
+    }
+    await sleep(2_000);
+  }
+
+  throw new Error(`Score persistence did not become durable for review session ${reviewSessionId}: ${JSON.stringify(latest)}`);
+}
+
 async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   if (!SUBMIT_REVIEW) return { skipped: true };
 
@@ -949,6 +1037,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
   });
   const judgeExample = await verifyJudgeExample(init.sessionId);
   const assessmentEvidence = await verifyLocalAssessmentEvidence(init.sessionId);
+  const scorePersistence = await verifyScorePersistence(init.sessionId);
 
   return {
     skipped: false,
@@ -961,6 +1050,7 @@ async function runFullSubmissionSmoke({ session, challenge, interviewId }) {
     judgeExample,
     recruiterResults,
     assessmentEvidence,
+    scorePersistence,
   };
 }
 

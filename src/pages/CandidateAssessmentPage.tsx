@@ -16,7 +16,7 @@ import type { CodeReviewMatchExplanation } from '../components/Panels/ProblemPan
 import { FollowUpQuestionsPanel } from '../components/Assessment/FollowUpQuestionsPanel';
 import { IntakeChallenge } from '../components/Assessment/IntakeChallenge';
 import { WelcomeScreen } from '../components/Assessment/WelcomeScreen';
-import { WaitingForMatch } from '../components/Assessment/WaitingForMatch';
+import { WaitingForMatch, type WaitingForMatchDiagnostics } from '../components/Assessment/WaitingForMatch';
 import { resolveStageConfig } from '../lib/challenge/resolveStageConfig';
 import { normalizeDiffJson } from '../lib/challenge/componentMap';
 import type { RawStage, RawChallenge } from '../lib/challenge/resolveStageConfig';
@@ -405,6 +405,9 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
       ? waitConfig.state
       : undefined;
     const waitReason = typeof waitConfig.reason === 'string' ? waitConfig.reason : undefined;
+    const waitDiagnostics = typeof waitConfig.diagnostics === 'object' && waitConfig.diagnostics !== null && !Array.isArray(waitConfig.diagnostics)
+      ? (waitConfig.diagnostics as WaitingForMatchDiagnostics)
+      : undefined;
     return (
       <div style={{ height: '100vh', overflow: 'hidden', background: '#0c0c0e' }}>
         <ChromeMeshGrid />
@@ -416,6 +419,7 @@ export default function CandidateAssessmentPage({ hideHeader = false }: Candidat
             refreshIntervalSeconds: typeof waitConfig.refreshIntervalSeconds === 'number' ? waitConfig.refreshIntervalSeconds : 30,
             ...(waitState ? { state: waitState } : {}),
             ...(waitReason ? { reason: waitReason } : {}),
+            ...(waitDiagnostics ? { diagnostics: waitDiagnostics } : {}),
           }}
           onRefresh={() => void refresh()}
           sessionToken={sessionToken}

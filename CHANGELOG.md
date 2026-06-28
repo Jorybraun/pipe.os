@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Standalone CODE_REVIEW matching now blocks stale non-progressing evidence ingestion with candidate-safe diagnostics instead of polling forever behind the generic matching screen, and ingestion step heartbeats update `updated_at` for reliable freshness checks.
+- The CODE_REVIEW app-dev full-submit smoke now polls D1 for durable review-session score reports, challenge-submission scores/reports, and assessment scores so scoring regressions fail the reliability gate.
 - Candidate discovery now extracts one balanced JSON object from provider responses that include preamble/trailing text while still rejecting array-shaped or non-JSON output, reducing brittle repo-matching blocks without fabricating evidence.
 - Meeting transcript ingestion now requires explicit `attributed` speaker mode before contact ids can create person attribution, semantic assertions, or candidate signals, preventing diarization-adjacent metadata from becoming person evidence by default.
 - Scheduled Worker repair now requeues stale/deprecated Workers AI candidate-discovery failures from the original R2 CV/text source in bounded batches and writes append-only retry/failure session events, so old `Challenge needs attention` rows can self-heal without fabricating match evidence.
