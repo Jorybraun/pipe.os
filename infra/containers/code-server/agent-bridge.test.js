@@ -454,6 +454,66 @@ setInterval(() => {}, 1000);
     ws.close();
   });
 
+  it('redacts real Devin stdout before bridge broadcast and direct session-event persistence', async () => {
+    const captureServer = await startSessionEventCaptureServer();
+    const rawToken = 'cog_fakeServiceUserToken0123456789abcdef';
+    try {
+      const { port } = await startBridge(`
+process.stdin.setEncoding('utf8');
+let buffer = '';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  if (buffer.includes('Current Clippy chat message:')) {
+    process.stdout.write('Auth check used DEVIN_API_KEY=${rawToken}.\\n');
+  }
+});
+setInterval(() => {}, 1000);
+`, {
+        AGENT_READY_AFTER_PRIMER_MS: '35',
+        AGENT_START_READY_TIMEOUT_MS: '2000',
+        PIPE_API_URL: captureServer.url,
+        ROOM_TOKEN: 'room-token',
+      });
+
+      const { ws, messages } = await connectAgent(port);
+      await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+      ws.send(JSON.stringify({
+        type: 'CHAT',
+        text: 'Please inspect auth.',
+        browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+        browserPromptFingerprint: 'clippy_0123abcd',
+        browserPromptTimestamp: 1782603900000,
+        browserPromptLength: 20,
+      }));
+
+      const response = await waitForMessage(messages, (message) => (
+        message.type === 'CHAT_RESPONSE'
+        && String(message.text || '').includes('Auth check used DEVIN_API_KEY=')
+      ));
+      expect(response.text).toBe('Auth check used DEVIN_API_KEY=[REDACTED_SECRET]');
+      expect(JSON.stringify(response)).not.toContain(rawToken);
+
+      const chatEvent = captureServer.events.find((event) => event.type === 'ai_chat_agent');
+      expect(chatEvent).toMatchObject({
+        type: 'ai_chat_agent',
+        text: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          responseLength: 'Auth check used DEVIN_API_KEY=[REDACTED_SECRET]'.length,
+          bridgePersisted: true,
+        },
+      });
+      expect(JSON.stringify(chatEvent)).not.toContain(rawToken);
+      expect(chatEvent.properties.agentChatResponseId).toContain(chatEvent.properties.responseFingerprint);
+      ws.close();
+    } finally {
+      await captureServer.close();
+    }
+  });
+
   it('persists code-server workspace creates as code editor save evidence before broadcasting', async () => {
     const captureServer = await startSessionEventCaptureServer();
     try {

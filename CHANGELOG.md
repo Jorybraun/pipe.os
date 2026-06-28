@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — 95 Until Infinity desktop tools
 
 - Clippy/Devin bridge diagnostics, auth/status messages, room-action text, and real stdout fallback evidence now redact service tokens, bearer tokens, room tokens, and secret query parameters before browser evidence, Durable Object broadcast/storage, or session-event persistence; secret-bearing agent chat is rejected instead of rewriting fingerprinted evidence.
+- The container Clippy/Devin bridge now redacts real agent stdout and room-action text before WebSocket broadcast and direct `session-events` persistence, so bridge-origin evidence hashes the same redacted text as browser fallback evidence.
 - Workspace-state diagnostics now redact room tokens, Devin/Cognition tokens, API keys, bearer tokens, and secret query parameters in both browser-built evidence and the VideoRoom Durable Object activity log.
 - Standalone dev-container launches now mark candidate sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, and the status API returns that diagnostic to the UI.
 - Room workspace launches now mark dev-container sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, preventing broken workspaces from polling forever as `LAUNCHING`.

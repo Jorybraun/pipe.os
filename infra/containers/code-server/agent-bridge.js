@@ -10,6 +10,7 @@ const {
   agentRoomActionSessionEvent,
   agentPromptHandoffDiagnosticMessage,
   isAgentAuthFailureText,
+  redactDiagnosticText,
 } = require('./agent-diagnostics.js');
 
 const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
@@ -273,9 +274,13 @@ function sendAgentDiagnostic(ws, message) {
 
 function broadcastAgentChat(message) {
   if (!message) return;
-  void captureAgentChatEvidence(message)
+  const safeMessage = {
+    ...message,
+    text: redactDiagnosticText(message.text),
+  };
+  void captureAgentChatEvidence(safeMessage)
     .then((persisted) => {
-      broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...message, persisted });
+      broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...safeMessage, persisted });
     });
 }
 
@@ -314,9 +319,16 @@ function clearPendingPromptRefs() {
 
 function broadcastAgentRoomAction(action, observedAt) {
   if (!action) return;
-  void captureAgentRoomActionEvidence(action, observedAt)
+  const safeAction = {
+    ...action,
+    ...(typeof action.label === 'string' ? { label: redactDiagnosticText(action.label) } : {}),
+    ...(typeof action.text === 'string' ? { text: redactDiagnosticText(action.text) } : {}),
+    ...(typeof action.url === 'string' ? { url: redactDiagnosticText(action.url) } : {}),
+    ...(typeof action.href === 'string' ? { href: redactDiagnosticText(action.href) } : {}),
+  };
+  void captureAgentRoomActionEvidence(safeAction, observedAt)
     .then((persisted) => {
-      broadcast({ type: 'ROOM_ACTION', ...action, observedAt, persisted });
+      broadcast({ type: 'ROOM_ACTION', ...safeAction, observedAt, persisted });
     });
 }
 

@@ -2,14 +2,17 @@ const crypto = require('crypto');
 
 const DEFAULT_MAX_CHARS = 1200;
 const PROMPT_TYPES = new Set(['context_primer', 'chat_prompt']);
+const REDACTED_SECRET = '[REDACTED_SECRET]';
 
 function redactDiagnosticText(value) {
   return String(value || '')
-    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
-    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
-    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
-    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
-    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]');
+    .replace(/\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g, REDACTED_SECRET)
+    .replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, REDACTED_SECRET)
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, REDACTED_SECRET)
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, `$1${REDACTED_SECRET}`)
+    .replace(/\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s"'`]+/gi, `$1${REDACTED_SECRET}`)
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, `$1${REDACTED_SECRET}`)
+    .replace(/(\/api\/v1\/meeting-rooms\/)[^/\s?]+/g, `$1${REDACTED_SECRET}`);
 }
 
 function boundedDiagnosticText(value, maxChars = DEFAULT_MAX_CHARS) {
@@ -313,7 +316,7 @@ function agentChatSessionEvent({
   browserPromptTimestamp = null,
   browserPromptLength = null,
 } = {}) {
-  const responseText = String(text || '');
+  const responseText = redactDiagnosticText(text);
   const safeAgent = safeAgentName(agent);
   if (!safeAgent) return null;
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;

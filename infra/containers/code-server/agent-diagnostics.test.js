@@ -16,16 +16,18 @@ describe('agent diagnostics', () => {
   it('redacts likely secrets from bridge diagnostics', () => {
     const cognitionLikeToken = 'cog_fakeServiceUserToken0123456789abcdef';
     const text = redactDiagnosticText(
-      `DEVIN_API_KEY=sk-live-secret Bearer abc.def TOKEN=raw-token ${cognitionLikeToken} https://x.test/?token=abc123`,
+      `DEVIN_API_KEY=sk-live-secret Bearer abc.def TOKEN=raw-token ${cognitionLikeToken} /api/v1/meeting-rooms/raw-room-token?token=abc123`,
     );
 
-    expect(text).toContain('DEVIN_API_KEY=[redacted]');
-    expect(text).toContain('Bearer [redacted]');
-    expect(text).toContain('TOKEN=[redacted]');
-    expect(text).toContain('cog_[redacted]');
-    expect(text).toContain('token=[redacted]');
+    expect(text).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+    expect(text).toContain('Bearer [REDACTED_SECRET]');
+    expect(text).toContain('TOKEN=[REDACTED_SECRET]');
+    expect(text).toContain('[REDACTED_SECRET]');
+    expect(text).toContain('/api/v1/meeting-rooms/[REDACTED_SECRET]');
+    expect(text).toContain('token=[REDACTED_SECRET]');
     expect(text).not.toContain('sk-live-secret');
     expect(text).not.toContain('raw-token');
+    expect(text).not.toContain('raw-room-token');
     expect(text).not.toContain(cognitionLikeToken);
   });
 
@@ -293,7 +295,7 @@ describe('agent diagnostics', () => {
         bridgeEventType: 'ROOM_ACTION',
         agent: 'devin',
         agentActionLabel: 'Open Terminal',
-        agentActionText: 'Open a terminal so we can inspect the failure TOKEN=[redacted]',
+        agentActionText: 'Open a terminal so we can inspect the failure TOKEN=[REDACTED_SECRET]',
         autoExecute: false,
         url: null,
         browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
@@ -330,5 +332,20 @@ describe('agent diagnostics', () => {
       },
       observedAt: '2026-06-27T21:10:00.000Z',
     })).toBeNull();
+  });
+
+  it('redacts real Devin stdout before building response ids and lengths', () => {
+    const event = agentChatSessionEvent({
+      agent: 'devin',
+      text: 'I inspected auth with DEVIN_API_KEY=cog_fakeServiceUserToken0123456789abcdef.',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      actionCount: 0,
+    });
+
+    expect(event).not.toBeNull();
+    expect(event.text).toBe('I inspected auth with DEVIN_API_KEY=[REDACTED_SECRET]');
+    expect(event.text).not.toContain('cog_fakeServiceUserToken');
+    expect(event.properties.responseLength).toBe(event.text.length);
+    expect(event.properties.agentChatResponseId).toContain(event.properties.responseFingerprint);
   });
 });

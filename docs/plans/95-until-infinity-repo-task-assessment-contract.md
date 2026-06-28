@@ -190,6 +190,9 @@ The controlling product rule remains:
   text is redacted before browser evidence, Durable Object broadcast/storage,
   or session-event persistence. Secret-bearing agent chat is rejected rather
   than rewriting fingerprinted source evidence.
+- The container bridge applies the same redaction before WebSocket broadcasts
+  and direct `session-events` writes, so bridge-origin response ids and lengths
+  are derived from the stored redacted stdout rather than raw agent output.
 - Clippy/Devin room-action suggestions now persist directly from the bridge as
   `clippy_action` events with `executionStatus: suggested`. Browser-side action
   execution remains separate `clippy_action` evidence with
