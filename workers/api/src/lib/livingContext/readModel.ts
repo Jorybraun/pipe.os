@@ -329,6 +329,35 @@ export interface TranscriptSearchResult {
   hits: TranscriptSearchHit[];
 }
 
+export interface SourceContentSearchHit {
+  sourceSpanId: string;
+  artifactId: string;
+  artifactType: string;
+  artifactLogicalKey: string | null;
+  artifactVersionId: string;
+  artifactVersionNumber: number;
+  mediaType: string;
+  stableSegmentId: string | null;
+  exactText: string;
+  charStart: number | null;
+  charEnd: number | null;
+  lineStart: number | null;
+  lineEnd: number | null;
+  timestampStartMs: number | null;
+  timestampEndMs: number | null;
+  matchOffset: number;
+  matchLength: number;
+  citingAssertionIds: string[];
+  citingContextRecordIds: string[];
+  conceptKeys: string[];
+}
+
+export interface SourceContentSearchResult {
+  personId: string;
+  query: string;
+  hits: SourceContentSearchHit[];
+}
+
 interface IdentityRow {
   person_id: string;
   workspace_person_id: string;
@@ -2460,6 +2489,210 @@ export async function searchTranscriptSourceSpans(
       matchLength: trimmed.length,
       citingAssertionIds: assertionsBySpan.get(row.source_span_id) ?? [],
       citingContextRecordIds: contextRecordsBySpan.get(row.source_span_id) ?? [],
+    };
+  });
+
+  return result;
+}
+
+const SOURCE_CONTENT_SEARCH_LIMIT = 50;
+
+/**
+ * Search all source content linked to a workspace person. Returns hits across
+ * every artifact (transcripts, resumes, assessment responses, code review
+ * evidence) with exact source span provenance, linked citing assertions and
+ * context records, and concept keys. Enables criterion #2: "original content
+ * remains semantically searchable — PIPE can always explain where a conclusion
+ * originated."
+ */
+export async function searchSourceContent(
+  db: D1Database,
+  workspacePersonId: string,
+  query: string,
+  limit = SOURCE_CONTENT_SEARCH_LIMIT,
+): Promise<SourceContentSearchResult> {
+  const trimmed = query.trim();
+  const result: SourceContentSearchResult = { personId: workspacePersonId, query: trimmed, hits: [] };
+  if (!trimmed) return result;
+
+  const person = await db.prepare(
+    `SELECT person_id FROM workspace_people WHERE id = ?1 LIMIT 1`,
+  ).bind(workspacePersonId).first<{ person_id: string }>();
+  if (!person) return result;
+
+  const escaped = trimmed.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const like = `%${escaped}%`;
+
+  const spans = await db.prepare(
+    `SELECT ss.id AS source_span_id,
+            a.id AS artifact_id,
+            a.artifact_type,
+            a.logical_key,
+            av.id AS artifact_version_id,
+            av.version_number,
+            av.media_type,
+            ss.stable_segment_id,
+            ss.exact_text,
+            ss.char_start,
+            ss.char_end,
+            ss.line_start,
+            ss.line_end,
+            ss.timestamp_start_ms,
+            ss.timestamp_end_ms
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       JOIN interactions i ON i.id = a.interaction_id
+      WHERE i.workspace_person_id = ?1
+        AND LOWER(ss.exact_text) LIKE LOWER(?2) ESCAPE '\\'
+      ORDER BY av.version_number DESC, ss.char_start, ss.timestamp_start_ms, ss.id
+      LIMIT ?3`,
+  ).bind(workspacePersonId, like, limit).all<{
+    source_span_id: string;
+    artifact_id: string;
+    artifact_type: string;
+    logical_key: string | null;
+    artifact_version_id: string;
+    version_number: number;
+    media_type: string;
+    stable_segment_id: string | null;
+    exact_text: string;
+    char_start: number | null;
+    char_end: number | null;
+    line_start: number | null;
+    line_end: number | null;
+    timestamp_start_ms: number | null;
+    timestamp_end_ms: number | null;
+  }>();
+
+  const spanIds = (spans.results ?? []).map((row) => row.source_span_id);
+  if (spanIds.length === 0) {
+    // Also search assertion narratives for concept-linked content
+    const assertionHits = await db.prepare(
+      `SELECT sa.id AS assertion_id, sa.narrative, sa.predicate
+         FROM semantic_assertions sa
+        WHERE sa.workspace_person_id = ?1
+          AND LOWER(sa.narrative) LIKE LOWER(?2) ESCAPE '\\'
+        ORDER BY sa.observed_at DESC, sa.id
+        LIMIT ?3`,
+    ).bind(workspacePersonId, like, limit).all<{
+      assertion_id: string;
+      narrative: string;
+      predicate: string;
+    }>();
+
+    const assertionIds = (assertionHits.results ?? []).map((row) => row.assertion_id);
+    if (assertionIds.length === 0) return result;
+
+    const aPlaceholders = assertionIds.map((_, i) => `?${i + 1}`).join(', ');
+    const conceptRows = await db.prepare(
+      `SELECT ac.assertion_id, c.canonical_key
+         FROM assertion_concepts ac
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ac.assertion_id IN (${aPlaceholders})`,
+    ).bind(...assertionIds).all<{ assertion_id: string; canonical_key: string }>();
+
+    const conceptsByAssertion = new Map<string, string[]>();
+    for (const row of conceptRows.results ?? []) {
+      const keys = conceptsByAssertion.get(row.assertion_id) ?? [];
+      keys.push(row.canonical_key);
+      conceptsByAssertion.set(row.assertion_id, keys);
+    }
+
+    const lowerQuery = trimmed.toLowerCase();
+    result.hits = (assertionHits.results ?? []).map((row) => {
+      const matchOffset = row.narrative.toLowerCase().indexOf(lowerQuery);
+      return {
+        sourceSpanId: '',
+        artifactId: '',
+        artifactType: 'assertion',
+        artifactLogicalKey: null,
+        artifactVersionId: '',
+        artifactVersionNumber: 0,
+        mediaType: 'text/plain',
+        stableSegmentId: null,
+        exactText: row.narrative,
+        charStart: null,
+        charEnd: null,
+        lineStart: null,
+        lineEnd: null,
+        timestampStartMs: null,
+        timestampEndMs: null,
+        matchOffset: matchOffset >= 0 ? matchOffset : 0,
+        matchLength: trimmed.length,
+        citingAssertionIds: [row.assertion_id],
+        citingContextRecordIds: [],
+        conceptKeys: conceptsByAssertion.get(row.assertion_id) ?? [],
+      };
+    });
+
+    return result;
+  }
+
+  const placeholders = spanIds.map((_, i) => `?${i + 1}`).join(', ');
+  const [assertionLinks, contextRecordLinks, conceptLinks] = await Promise.all([
+    db.prepare(
+      `SELECT ass.source_span_id, ass.assertion_id
+         FROM assertion_source_spans ass
+        WHERE ass.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; assertion_id: string }>(),
+    db.prepare(
+      `SELECT crsr.source_span_id, crsr.context_record_id
+         FROM context_record_source_refs crsr
+        WHERE crsr.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; context_record_id: string }>(),
+    db.prepare(
+      `SELECT ass.source_span_id, c.canonical_key
+         FROM assertion_source_spans ass
+         JOIN assertion_concepts ac ON ac.assertion_id = ass.assertion_id
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ass.source_span_id IN (${placeholders})`,
+    ).bind(...spanIds).all<{ source_span_id: string; canonical_key: string }>(),
+  ]);
+
+  const assertionsBySpan = new Map<string, string[]>();
+  for (const row of assertionLinks.results ?? []) {
+    const ids = assertionsBySpan.get(row.source_span_id) ?? [];
+    ids.push(row.assertion_id);
+    assertionsBySpan.set(row.source_span_id, ids);
+  }
+  const contextRecordsBySpan = new Map<string, string[]>();
+  for (const row of contextRecordLinks.results ?? []) {
+    const ids = contextRecordsBySpan.get(row.source_span_id) ?? [];
+    ids.push(row.context_record_id);
+    contextRecordsBySpan.set(row.source_span_id, ids);
+  }
+  const conceptsBySpan = new Map<string, string[]>();
+  for (const row of conceptLinks.results ?? []) {
+    const keys = conceptsBySpan.get(row.source_span_id) ?? [];
+    if (!keys.includes(row.canonical_key)) keys.push(row.canonical_key);
+    conceptsBySpan.set(row.source_span_id, keys);
+  }
+
+  const lowerQuery = trimmed.toLowerCase();
+  result.hits = (spans.results ?? []).map((row) => {
+    const matchOffset = row.exact_text.toLowerCase().indexOf(lowerQuery);
+    return {
+      sourceSpanId: row.source_span_id,
+      artifactId: row.artifact_id,
+      artifactType: row.artifact_type,
+      artifactLogicalKey: row.logical_key,
+      artifactVersionId: row.artifact_version_id,
+      artifactVersionNumber: row.version_number,
+      mediaType: row.media_type,
+      stableSegmentId: row.stable_segment_id,
+      exactText: row.exact_text,
+      charStart: row.char_start,
+      charEnd: row.char_end,
+      lineStart: row.line_start,
+      lineEnd: row.line_end,
+      timestampStartMs: row.timestamp_start_ms,
+      timestampEndMs: row.timestamp_end_ms,
+      matchOffset: matchOffset >= 0 ? matchOffset : 0,
+      matchLength: trimmed.length,
+      citingAssertionIds: assertionsBySpan.get(row.source_span_id) ?? [],
+      citingContextRecordIds: contextRecordsBySpan.get(row.source_span_id) ?? [],
+      conceptKeys: conceptsBySpan.get(row.source_span_id) ?? [],
     };
   });
 

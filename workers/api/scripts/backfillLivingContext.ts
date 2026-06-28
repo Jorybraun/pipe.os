@@ -49,11 +49,7 @@ import { D1Client, loadD1Config } from './crawl-repos/shared/d1Client.js';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const apiRoot = resolve(scriptDir, '..');
 const require = createRequire(import.meta.url);
-const { DatabaseSync } = require('node:sqlite') as {
-  DatabaseSync: {
-  new (path: string): SqliteDatabase;
-  };
-};
+const BetterSqlite3 = require('better-sqlite3') as new (path: string) => SqliteDatabase;
 dotenv.config({ path: resolve(apiRoot, '.dev.vars') });
 
 type SqlValue = string | number | null;
@@ -310,6 +306,30 @@ function parseArgs(argv: string[]): Options {
   };
 }
 
+function rewriteNumberedParams(
+  sql: string,
+  params: SqlValue[],
+): { sql: string; args: SqlValue[] } {
+  const numbered = /\?(\d+)/g;
+  let match = numbered.exec(sql);
+  if (!match) return { sql, args: params };
+
+  const args: SqlValue[] = [];
+  let rewritten = '';
+  let lastIndex = 0;
+
+  numbered.lastIndex = 0;
+  while ((match = numbered.exec(sql)) !== null) {
+    rewritten += sql.slice(lastIndex, match.index) + '?';
+    const paramIndex = Number.parseInt(match[1]!, 10) - 1;
+    args.push(params[paramIndex] ?? null);
+    lastIndex = numbered.lastIndex;
+  }
+  rewritten += sql.slice(lastIndex);
+
+  return { sql: rewritten, args };
+}
+
 class LocalStatement implements PreparedStatementLike {
   private values: SqlValue[] = [];
 
@@ -324,18 +344,21 @@ class LocalStatement implements PreparedStatementLike {
   }
 
   async first<T>(): Promise<T | null> {
-    return (this.database.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+    return (this.database.prepare(sql).get(...args) as T | undefined) ?? null;
   }
 
   async all<T>(): Promise<QueryResult<T>> {
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
     return {
-      results: this.database.prepare(this.sql).all(...this.values) as T[],
+      results: this.database.prepare(sql).all(...args) as T[],
       success: true,
     };
   }
 
   async run(): Promise<QueryResult<never>> {
-    this.database.prepare(this.sql).run(...this.values);
+    const { sql, args } = rewriteNumberedParams(this.sql, this.values);
+    this.database.prepare(sql).run(...args);
     return { results: [], success: true };
   }
 }
@@ -922,7 +945,7 @@ async function main(): Promise<void> {
     console.log('[living-context] target=remote');
   } else {
     const databasePath = discoverLocalDatabase(options.databasePath);
-    localDatabase = new DatabaseSync(databasePath);
+    localDatabase = new BetterSqlite3(databasePath);
     localDatabase.exec('PRAGMA foreign_keys = ON');
     db = new LocalD1(localDatabase);
     console.log(`[living-context] target=local database=${databasePath}`);
