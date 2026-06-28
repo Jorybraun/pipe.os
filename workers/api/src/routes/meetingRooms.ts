@@ -14,6 +14,7 @@ import {
   loadMeetingTranscriptContext,
   searchTranscriptSourceSpans,
 } from '../lib/livingContext/readModel';
+import { ingestMeetingTranscriptProcessingFailure } from '../lib/assessmentLayer/transcriptProcessingEvidence';
 import { getTurnIceServers } from '../lib/turnCredentials';
 import { sendTransactionalEmail } from '../lib/transactionalEmail';
 import {
@@ -2030,6 +2031,7 @@ async function processRecording(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const stack = error instanceof Error ? error.stack : undefined;
+    const failedAt = new Date().toISOString();
     console.error(`${logPrefix} Recording processing failed`, {
       message,
       stack,
@@ -2040,7 +2042,18 @@ async function processRecording(
       `UPDATE meetings
        SET transcript_status = 'FAILED', transcript_error = ?, updated_at = ?
        WHERE id = ?`,
-    ).bind(message, new Date().toISOString(), room.meeting_id).run();
+    ).bind(message, failedAt, room.meeting_id).run();
+    await ingestMeetingTranscriptProcessingFailure(env.DB, {
+      meetingId: room.meeting_id,
+      ownerId: room.owner_id,
+      scheduledInterviewId: room.scheduled_interview_id,
+      guestContactId: room.guest_contact_id,
+      recordingKey,
+      transcriptionSourceKey,
+      errorMessage: message,
+      errorStack: stack ?? null,
+      observedAt: failedAt,
+    });
   }
 }
 

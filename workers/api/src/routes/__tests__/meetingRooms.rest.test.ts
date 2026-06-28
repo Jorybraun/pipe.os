@@ -35,6 +35,7 @@ const livingContextMigration = readMigration('0082_living_context_graph.sql');
 const repoSemanticGraphMigration = readMigration('0083_repo_semantic_graph_and_match_runs.sql');
 const transcriptProjectionMigration = readMigration('0091_transcript_semantic_projections.sql');
 const contextRecordsMigration = readMigration('0095_context_records.sql');
+const assessmentLayerMigration = readMigration('0102_assessment_layer.sql');
 const OBSERVED_AT = '2026-06-14T08:00:00.000Z';
 
 function readMigration(name: string): string {
@@ -4910,6 +4911,7 @@ describe('meeting room recording living-context route', () => {
   it('marks transcript processing failed when Whisper transcription times out', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
     delete (env as { DEEPGRAM_API_KEY?: string }).DEEPGRAM_API_KEY;
     env.AI = {
       run: vi.fn(() => new Promise(() => undefined)),
@@ -4971,6 +4973,55 @@ describe('meeting room recording living-context route', () => {
     expect(meetingRow.recording_r2_key).toBe(
       `meetings/owner-1/${created.meeting.id}/recording.webm`,
     );
+
+    const assessmentSession = sqlite.prepare(
+      `SELECT mode, state, interview_id, candidate_id, workspace_id
+         FROM assessment_sessions
+        WHERE ingestion_key = ?`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      mode: string;
+      state: string;
+      interview_id: string;
+      candidate_id: string;
+      workspace_id: string;
+    };
+    expect(assessmentSession).toMatchObject({
+      mode: 'STANDARD_VIDEO_INTERVIEW',
+      state: 'DIAGNOSTIC',
+      interview_id: created.meeting.id,
+      workspace_id: 'owner-1',
+    });
+
+    const assessmentEvent = sqlite.prepare(
+      `SELECT e.kind, e.narrative, r.source_ref_type, r.evidence_role,
+              r.exact_text, r.content_hash
+         FROM assessment_evidence_events e
+         JOIN assessment_event_source_refs r ON r.event_id = e.id
+        WHERE e.session_id = (
+          SELECT id FROM assessment_sessions WHERE ingestion_key = ?
+        )`,
+    ).get(`assessment-session:meeting-transcript:${created.meeting.id}`) as {
+      kind: string;
+      narrative: string;
+      source_ref_type: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    };
+    expect(assessmentEvent).toMatchObject({
+      kind: 'system_diagnostic',
+      source_ref_type: 'meeting_transcript_processing',
+      evidence_role: 'processing_failure',
+    });
+    expect(assessmentEvent.narrative).toContain('Workers AI transcription timed out');
+    expect(JSON.parse(assessmentEvent.exact_text)).toMatchObject({
+      sourceKind: 'meeting_transcript_processing.failure',
+      meetingId: created.meeting.id,
+      ownerId: 'owner-1',
+      recordingKey: `meetings/owner-1/${created.meeting.id}/recording.webm`,
+      transcriptionSourceKey: `meetings/owner-1/${created.meeting.id}/recording.webm`,
+      errorMessage: expect.stringContaining('Workers AI transcription timed out'),
+    });
   });
 
   it('exposes source-backed interaction context and transcript search for a recorded meeting', async () => {

@@ -71,11 +71,13 @@ async function markAssessmentSessionInProgress(input: {
   sessionId: string;
 }): Promise<void> {
   const state = await currentAssessmentState(input.db, input.sessionId);
-  if (state !== 'INTAKE') return;
+  if (state !== 'INTAKE' && state !== 'DIAGNOSTIC') return;
   await input.store.transitionAssessmentState({
     sessionId: input.sessionId,
     toState: 'IN_PROGRESS',
-    reason: 'Meeting transcript source spans were captured as assessment evidence.',
+    reason: state === 'DIAGNOSTIC'
+      ? 'Meeting transcript retry captured source spans after a prior diagnostic failure.'
+      : 'Meeting transcript source spans were captured as assessment evidence.',
     actorType: 'system',
   });
 }
