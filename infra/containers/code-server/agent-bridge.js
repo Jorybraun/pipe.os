@@ -812,13 +812,32 @@ function acceptWebSocket(req, socket, onMessage) {
   return ws;
 }
 
+function isExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function executableFromPath(command) {
+  const pathValue = process.env.PATH || '';
+  for (const directory of pathValue.split(path.delimiter)) {
+    if (!directory) continue;
+    const candidate = path.join(directory, command);
+    if (isExecutable(candidate)) return candidate;
+  }
+  return null;
+}
+
 function devinCommand() {
   const candidates = [
     '/root/.local/bin/devin',
     '/usr/local/bin/devin',
     '/usr/bin/devin',
   ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) || 'devin';
+  return candidates.find(isExecutable) || executableFromPath('devin');
 }
 
 function startAgent() {
@@ -835,12 +854,21 @@ function startAgent() {
   }
 
   try {
+    const command = devinCommand();
+    if (!command) {
+      markAgentDisconnected(
+        'Devin CLI executable was not found in the container image. Install the real Devin CLI before enabling Clippy chat.',
+        'agent_cli_missing',
+        null,
+      );
+      return;
+    }
     const env = { ...process.env };
     if (DEVIN_API_KEY) env.DEVIN_API_KEY = DEVIN_API_KEY;
     agentReady = false;
     agentStatus = 'starting';
     broadcastAgentStatus();
-    agentProcess = spawn(devinCommand(), [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    agentProcess = spawn(command, [], { cwd: WORKSPACE, env, stdio: ['pipe', 'pipe', 'pipe'] });
     const startedProcess = agentProcess;
     scheduleAgentStartReadyTimeout(startedProcess);
     void primeAgentWithRoomContext(startedProcess)
@@ -973,6 +1001,10 @@ async function handleAgentMessage(ws, msg) {
       return;
     }
     if (!agentProcess && agentStatus !== 'auth_needed') startAgent();
+    if (!agentProcess && agentStatus === 'disconnected') {
+      send(ws, { type: 'ERROR', message: `${AGENT_NAME} is not available. Check bridge diagnostics before sending chat.` });
+      return;
+    }
     if (agentStatus === 'auth_needed') {
       send(ws, devinAuthNeededMessage());
       sendAgentDiagnostic(ws, devinAuthDiagnosticMessage());

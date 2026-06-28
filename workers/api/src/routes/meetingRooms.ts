@@ -2253,6 +2253,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
         challengeMessage: challenge.message,
         agentType: 'devin',
         agentApiKey: c.env.DEVIN_API_KEY ?? null,
+        agentOrgId: c.env.DEVIN_ORG_ID ?? null,
         pipeApiUrl: c.env.API_BASE_URL
           ?? c.env.VIDEO_ROOM_APP_URL
           ?? c.env.APP_BASE_URL

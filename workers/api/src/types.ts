@@ -160,6 +160,8 @@ export interface Env {
   DEV_PROXY_SECRET?: string;
   /** Devin API key injected server-side into dev containers for the real Clippy/Devin bridge. */
   DEVIN_API_KEY?: string;
+  /** Devin organization id paired with DEVIN_API_KEY for real Clippy/Devin bridge auth. */
+  DEVIN_ORG_ID?: string;
   /** Dev-only Basic Auth username embedded into generated room links. */
   DEV_BASIC_AUTH_USER?: string;
   /** Dev-only Basic Auth password embedded into generated room links. */

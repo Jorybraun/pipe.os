@@ -30,6 +30,7 @@ interface InitPayload {
   challengeBranch: string | null;
   agentType?: string | null;
   agentApiKey?: string | null;
+  agentOrgId?: string | null;
   pipeApiUrl?: string | null;
   roomToken?: string | null;
 }
@@ -47,6 +48,7 @@ function buildEnvVars(payload: InitPayload): Record<string, string> {
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
   if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;
+  if (payload.agentOrgId) env.DEVIN_ORG_ID = payload.agentOrgId;
   if (payload.pipeApiUrl) env.PIPE_API_URL = payload.pipeApiUrl;
   if (payload.roomToken) env.ROOM_TOKEN = payload.roomToken;
   return env;

@@ -55,11 +55,16 @@ async function writeFakeDevin(scriptBody) {
   return { root, binDir };
 }
 
-async function startBridge(scriptBody, extraEnv = {}) {
+async function startBridge(scriptBody, extraEnv = {}, options = {}) {
+  const installFakeDevin = options.installFakeDevin !== false;
   const port = await freePort();
   const codeServerPort = await freePort();
   const workspaceDir = mkdtempSync(path.join(tmpdir(), 'pipe-bridge-workspace-'));
-  const { binDir } = await writeFakeDevin(scriptBody);
+  const fakeDevin = installFakeDevin ? await writeFakeDevin(scriptBody) : null;
+  const emptyBinDir = mkdtempSync(path.join(tmpdir(), 'pipe-empty-bin-'));
+  const bridgePathEnv = fakeDevin
+    ? `${fakeDevin.binDir}:${process.env.PATH ?? ''}`
+    : emptyBinDir;
   const bridgeRoot = mkdtempSync(path.join(tmpdir(), 'pipe-agent-bridge-'));
   const bridgePath = path.join(bridgeRoot, 'agent-bridge.cjs');
   const diagnosticsPath = path.join(bridgeRoot, 'agent-diagnostics.cjs');
@@ -80,7 +85,7 @@ async function startBridge(scriptBody, extraEnv = {}) {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        PATH: bridgePathEnv,
         DEVIN_API_KEY: 'test-devin-key',
         AGENT_TYPE: 'devin',
         AGENT_BRIDGE_PORT: String(port),
@@ -234,6 +239,29 @@ setInterval(() => {}, 1000);
       type: 'AUTH_NEEDED',
       agent: 'devin',
     }));
+    ws.close();
+  });
+
+  it('does not report ready when the real Devin CLI executable is missing', async () => {
+    const { port } = await startBridge('', {}, { installFakeDevin: false });
+
+    const { ws, messages } = await connectAgent(port);
+    await delay(500);
+
+    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: 'AGENT_DIAGNOSTIC',
+      agent: 'devin',
+      status: 'disconnected',
+      diagnosticSource: 'agent_cli_missing',
+    }));
+
+    ws.send(JSON.stringify({ type: 'CHAT', text: 'hello?' }));
+    const error = await waitForMessage(messages, (message) => message.type === 'ERROR');
+    expect(error).toEqual({
+      type: 'ERROR',
+      message: 'devin is not available. Check bridge diagnostics before sending chat.',
+    });
     ws.close();
   });
 

@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://cli.devin.ai/install.sh | bash || test -x /root/.local/bin/devin
+RUN test -x /root/.local/bin/devin && /root/.local/bin/devin --version
 ENV PATH="/root/.local/bin:${PATH}"
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

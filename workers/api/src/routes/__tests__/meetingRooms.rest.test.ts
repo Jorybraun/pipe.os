@@ -4338,6 +4338,7 @@ describe('meeting room recording living-context route', () => {
     env.DEV_CONTAINER_MAX_TTL_SECONDS = '7200';
     env.API_BASE_URL = 'http://localhost:8787';
     env.DEVIN_API_KEY = 'test-devin-api-key';
+    env.DEVIN_ORG_ID = 'test-devin-org-id';
 
     const scheduledInterviewId = 'scheduled-interview-workspace-pr';
     sqlite.prepare(
@@ -4402,6 +4403,7 @@ describe('meeting room recording living-context route', () => {
       challengeBranch: 'refs/pull/144/head',
       agentType: 'devin',
       agentApiKey: 'test-devin-api-key',
+      agentOrgId: 'test-devin-org-id',
       pipeApiUrl: 'http://localhost:8787',
       roomToken: created.hostToken,
     }));
