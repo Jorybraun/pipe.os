@@ -330,6 +330,9 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if (!source) return { kind: 'ignored' };
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
+    const observedAt = stringOrNull(value.observedAt);
+    const persisted = typeof value.persisted === 'boolean' ? value.persisted : null;
+    if (!observedAt || persisted === null) return { kind: 'ignored' };
     const browserPromptId = stringOrNull(value.browserPromptId);
     const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
     const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
@@ -345,8 +348,8 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         text,
         source,
         agentName,
-        observedAt: stringOrNull(value.observedAt) ?? undefined,
-        persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+        observedAt,
+        persisted,
         ...(browserPromptId ? { browserPromptId } : {}),
         ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
         ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
