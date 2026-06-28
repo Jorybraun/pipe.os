@@ -105,6 +105,11 @@ export interface RoomChatMessage {
   evidence?: Record<string, unknown>;
 }
 
+export interface RoomChatRejection {
+  clientMessageId: string | null;
+  reason: string | null;
+}
+
 export type RoomMediaControlKind = 'microphone' | 'camera';
 
 export interface RoomMediaControlEvent {
@@ -886,10 +891,11 @@ function parseChatSnapshot(value: unknown): { messages: RoomChatMessage[] } | nu
   };
 }
 
-function parseChatRejection(value: unknown): { clientMessageId: string | null } {
-  if (!isRecord(value)) return { clientMessageId: null };
+function parseChatRejection(value: unknown, reason: unknown): RoomChatRejection {
+  if (!isRecord(value)) return { clientMessageId: null, reason: null };
   return {
     clientMessageId: typeof value.clientMessageId === 'string' ? value.clientMessageId : null,
+    reason: typeof reason === 'string' && reason.trim().length > 0 ? reason.trim() : null,
   };
 }
 
@@ -1135,6 +1141,25 @@ export function mergeRoomChatMessage(
     ...previous.filter((entry) => entry.id !== message.id),
     message,
   ]);
+}
+
+export function applyRoomChatRejection(
+  previous: RoomChatMessage[],
+  rejection: RoomChatRejection,
+): RoomChatMessage[] {
+  if (!rejection.clientMessageId) return previous;
+  return previous.map((entry) => {
+    if (entry.id !== rejection.clientMessageId) return entry;
+    return {
+      ...entry,
+      deliveryStatus: 'rejected',
+      evidence: {
+        ...(entry.evidence ?? {}),
+        deliveryStatus: 'rejected',
+        ...(rejection.reason ? { deliveryRejectionReason: rejection.reason } : {}),
+      },
+    };
+  });
 }
 
 function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence | null {
@@ -1749,6 +1774,7 @@ export function useRoomConnection(
           role?: RoomRole;
           status?: string;
           peers?: number;
+          reason?: unknown;
           payload?: unknown;
         };
         try {
@@ -1877,30 +1903,16 @@ export function useRoomConnection(
           setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
           chatDeliveryEvidenceRef.current?.(chatMessage);
         } else if (message.type === 'ROOM_CHAT_MESSAGE_REJECTED') {
-          const rejection = parseChatRejection(message.payload);
+          const rejection = parseChatRejection(message.payload, message.reason);
           if (!rejection.clientMessageId) return;
-          const rejectedMessage = chatMessagesRef.current.find((entry) => entry.id === rejection.clientMessageId);
+          const rejectedMessage = applyRoomChatRejection(
+            chatMessagesRef.current,
+            rejection,
+          ).find((entry) => entry.id === rejection.clientMessageId);
           if (rejectedMessage) {
-            chatDeliveryEvidenceRef.current?.({
-              ...rejectedMessage,
-              deliveryStatus: 'rejected',
-              evidence: {
-                ...(rejectedMessage.evidence ?? {}),
-                deliveryStatus: 'rejected',
-              },
-            });
+            chatDeliveryEvidenceRef.current?.(rejectedMessage);
           }
-          setChatMessages((prev) => prev.map((entry) => {
-            if (entry.id !== rejection.clientMessageId) return entry;
-            return {
-              ...entry,
-              deliveryStatus: 'rejected',
-              evidence: {
-                ...(entry.evidence ?? {}),
-                deliveryStatus: 'rejected',
-              },
-            };
-          }));
+          setChatMessages((prev) => applyRoomChatRejection(prev, rejection));
         } else if (message.type === 'ROOM_CHAT_STATE') {
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;

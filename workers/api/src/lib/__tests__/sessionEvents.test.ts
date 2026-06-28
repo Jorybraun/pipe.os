@@ -1084,6 +1084,57 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves room chat rejection reasons in exact source refs', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const text = 'This message should be rejected by source validation.';
+        const node = await captureSessionEvent(realDb, {
+          type: 'chat_message',
+          sessionId: 'meeting-session-chat-rejected',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604680,
+          actor: 'host',
+          text,
+          properties: {
+            source: 'room_chat_client_submit',
+            chatEventSource: 'browser_room_chat_window',
+            actor: 'host',
+            roomMessageId: 'chat-rejected-1',
+            clientId: 'host-client',
+            messageCreatedAt: 1782604680000,
+            messageLength: text.length,
+            deliveryStatus: 'rejected',
+            deliveryRejectionReason: 'INVALID_EVIDENCE',
+            surface: 'win95',
+            roomPhase: 'connected',
+            durableObjectReplayExpected: true,
+          },
+        });
+
+        expect(node).not.toBeNull();
+
+        const source = sqlite.prepare(
+          `SELECT locator_json, metadata_json
+             FROM context_record_source_refs
+            WHERE source_ref_type = 'room_chat_message'
+              AND source_ref_id = 'chat-rejected-1'`,
+        ).get() as {
+          locator_json: string;
+          metadata_json: string;
+        };
+        expect(JSON.parse(source.locator_json)).toMatchObject({
+          deliveryStatus: 'rejected',
+          deliveryRejectionReason: 'INVALID_EVIDENCE',
+        });
+        expect(JSON.parse(source.metadata_json)).toMatchObject({
+          deliveryStatus: 'rejected',
+          deliveryRejectionReason: 'INVALID_EVIDENCE',
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves Clippy/Devin bridge statuses and diagnostics as direct source refs', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

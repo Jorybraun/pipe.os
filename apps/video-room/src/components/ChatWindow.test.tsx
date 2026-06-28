@@ -29,4 +29,23 @@ describe('ChatWindow', () => {
     expect(onSend).toHaveBeenCalledWith('hello candidate');
     expect(onAskClippy).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps the real server rejection reason on failed sends', () => {
+    render(
+      <ChatWindow
+        messages={[{
+          id: 'chat-rejected-1',
+          role: 'host',
+          text: 'hello candidate',
+          timestamp: 1782604680000,
+          deliveryStatus: 'rejected',
+          deliveryRejectionReason: 'INVALID_EVIDENCE',
+        }]}
+        onSend={vi.fn()}
+        currentUserRole="HOST"
+      />,
+    );
+
+    expect(screen.getByText('Not sent').getAttribute('title')).toBe('INVALID_EVIDENCE');
+  });
 });

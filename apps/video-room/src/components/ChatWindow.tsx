@@ -9,6 +9,7 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   deliveryStatus?: 'pending' | 'accepted' | 'rejected';
+  deliveryRejectionReason?: string;
 }
 
 interface ChatWindowProps {
@@ -103,7 +104,12 @@ export function ChatWindow({
                     <span className="chat-msg-status">Sending</span>
                   )}
                   {msg.deliveryStatus === 'rejected' && (
-                    <span className="chat-msg-status chat-msg-status-error">Not sent</span>
+                    <span
+                      className="chat-msg-status chat-msg-status-error"
+                      title={msg.deliveryRejectionReason}
+                    >
+                      Not sent
+                    </span>
                   )}
                 </div>
                 <div className="chat-msg-text">{msg.text}</div>

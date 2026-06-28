@@ -2393,6 +2393,7 @@ async function chatTextSourceRef(input: {
     const roomMessageId = stringProperty(input.properties, 'roomMessageId');
     const clientId = stringProperty(input.properties, 'clientId');
     const deliveryStatus = stringProperty(input.properties, 'deliveryStatus');
+    const deliveryRejectionReason = stringProperty(input.properties, 'deliveryRejectionReason');
     const messageLength = numberProperty(input.properties, 'messageLength');
     if (!roomMessageId || !clientId || !deliveryStatus || !CHAT_DELIVERY_STATUSES.has(deliveryStatus)) return null;
     if (messageLength !== input.event.text.length) return null;
@@ -2412,6 +2413,7 @@ async function chatTextSourceRef(input: {
         messageCreatedAt: numberProperty(input.properties, 'messageCreatedAt'),
         surface: stringProperty(input.properties, 'surface'),
         roomPhase: stringProperty(input.properties, 'roomPhase'),
+        ...(deliveryStatus === 'rejected' && deliveryRejectionReason ? { deliveryRejectionReason } : {}),
       },
       exactText: input.event.text,
       contentHash: await sha256Hex(input.event.text),
@@ -2420,6 +2422,7 @@ async function chatTextSourceRef(input: {
         chatEventSource: 'browser_room_chat_window',
         deliveryStatus,
         messageLength,
+        ...(deliveryStatus === 'rejected' && deliveryRejectionReason ? { deliveryRejectionReason } : {}),
       },
     };
   }

@@ -544,6 +544,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     text: message.text,
     timestamp: message.createdAt,
     deliveryStatus: message.deliveryStatus,
+    deliveryRejectionReason: typeof message.evidence?.deliveryRejectionReason === 'string'
+      ? message.evidence.deliveryRejectionReason
+      : undefined,
   }));
   const sendChatMessage = (text: string): void => {
     const message = room.publishChatMessage(text);

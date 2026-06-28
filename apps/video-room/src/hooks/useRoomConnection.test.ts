@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyRoomChatRejection,
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
   decideRoomSurfaceSnapshot,
@@ -211,6 +212,37 @@ describe('mergeRoomChatMessage', () => {
     };
 
     expect(mergeRoomChatMessage([pending], accepted)).toEqual([accepted]);
+  });
+
+  it('keeps the Durable Object rejection reason on source-backed failed chat evidence', () => {
+    const pending: RoomChatMessage = {
+      id: 'chat-1',
+      clientId: 'host-client',
+      createdAt: 1000,
+      role: 'HOST',
+      text: 'Can you see this?',
+      deliveryStatus: 'pending',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        deliveryStatus: 'pending',
+        surface: 'win95',
+        roomPhase: 'connected',
+      },
+    };
+
+    expect(applyRoomChatRejection([pending], {
+      clientMessageId: 'chat-1',
+      reason: 'INVALID_EVIDENCE',
+    })).toEqual([{
+      ...pending,
+      deliveryStatus: 'rejected',
+      evidence: {
+        ...pending.evidence,
+        deliveryStatus: 'rejected',
+        deliveryRejectionReason: 'INVALID_EVIDENCE',
+      },
+    }]);
   });
 });
 
