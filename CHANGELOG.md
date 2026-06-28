@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Culture interview scoring now fails closed when no real provider, provider output, evidence quotes, or valid scorer JSON is available instead of writing neutral mock score reports.
 - Comprehension review scoring no longer emits mock score reports or default midpoint dimensions when scorer providers are unavailable or return incomplete JSON.
 - Resume/CV ingestion no longer returns synthetic `Jane Doe` parsed/decomposition data from `MOCK_AI` or parser mock flags; unavailable candidate LLMs now degrade to deterministic source-text parsing or explicit ingestion diagnostics only.
 - CODE_REVIEW explainer questions now return explicit `AI_DEVELOPER_UNAVAILABLE` diagnostics when the real provider is missing, empty, failed, or unparsable, instead of writing canned mock explanations into candidate transcripts.

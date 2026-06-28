@@ -25,14 +25,6 @@
  * examples, achieves QWK ≈ 0.62 (human expert agreement range is 0.55–0.65).
  * That is the architecture this module implements.
  *
- * ### Mock path
- *
- * If `provider` is `null`, the module returns a mock report (safe defaults,
- * all scores = 3, zero-confidence). This is the standard no-provider contract
- * used across all LLM modules in this codebase — tests pass `null` as provider.
- * Call `mockScoreReport(transcript, orgBenchmark)` directly in tests that need
- * a specific shape without a provider.
- *
  * ### Phase C note
  *
  * The inline BARS rubric table (`COMPETENCY_BARS_RUBRICS`) and profile
@@ -170,6 +162,16 @@ export interface CultureScoreReport {
   orgBenchmark: OrgCultureBenchmark;
   /** ISO timestamp when the scoring pipeline completed. */
   scoredAt: string;
+}
+
+export class CultureScorerUnavailableError extends Error {
+  readonly provider: string | null;
+
+  constructor(reason: string, provider: LLMProvider | string | null = null) {
+    super(reason);
+    this.name = 'CultureScorerUnavailableError';
+    this.provider = typeof provider === 'string' ? provider : provider?.name ?? null;
+  }
 }
 
 // ─── BARS rubric table ────────────────────────────────────────────────────────
@@ -366,7 +368,7 @@ export const CULTURE_PROFILE_BARS: Record<CultureProfileDimension, ProfileEntry>
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 export interface ScoreCultureInterviewInput {
-  /** Cloudflare AI provider. Null triggers mock path (for tests). */
+  /** Cloudflare AI provider. Null means culture scoring is unavailable. */
   provider: LLMProvider | null;
   /** The completed transcript from the culture interview agent. */
   transcript: CultureTranscript;
@@ -394,18 +396,15 @@ async function scoreCompetencyDimensionWithReprompt(
   const { messages, overridden } = buildCompetencyScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
-  if (!content) {
-    console.warn('[cultureScorer] Empty response for competency dimension:', dimension);
-    return competencyFallback(dimension, overridden, dispositionalWeight);
-  }
 
   let result = parseCompetencyResponse(dimension, content, {
     barsOverrideApplied: overridden,
     dispositionalWeight,
-  });
+  }, provider);
 
-  // Re-prompt on ungrounded non-neutral scores (ADR-029 §6)
-  if (result.evidenceQuotes.length === 0 && result.score !== 3) {
+  // Re-prompt on ungrounded scores (ADR-029 §6). A score without a direct
+  // transcript quote is not source-backed enough to persist.
+  if (result.evidenceQuotes.length === 0) {
     const originalScore = result.score;
     const originalConfidence = result.confidence;
     messages.push({ role: 'assistant', content });
@@ -415,37 +414,22 @@ async function scoreCompetencyDimensionWithReprompt(
     });
 
     const repromptContent = await callProvider(provider, messages, 1024);
-    if (repromptContent) {
-      const repromptResult = parseCompetencyResponse(dimension, repromptContent, {
-        barsOverrideApplied: overridden,
-        dispositionalWeight,
-      });
-      result = {
-        ...repromptResult,
-        repromptCount: 1,
-        originalScore,
-        originalConfidence,
-        confidence:
-          repromptResult.evidenceQuotes.length === 0
-            ? Math.max(0, repromptResult.confidence - 0.3)
-            : repromptResult.confidence,
-      };
-      if (repromptResult.evidenceQuotes.length === 0) {
-        console.warn('[cultureScorer] ungrounded score accepted after re-prompt:', {
-          dimension,
-          score: repromptResult.score,
-          candidateId: undefined,
-        });
-      }
-    } else {
-      result = {
-        ...result,
-        repromptCount: 1,
-        originalScore,
-        originalConfidence,
-        confidence: Math.max(0, result.confidence - 0.3),
-      };
+    const repromptResult = parseCompetencyResponse(dimension, repromptContent, {
+      barsOverrideApplied: overridden,
+      dispositionalWeight,
+    }, provider);
+    if (repromptResult.evidenceQuotes.length === 0) {
+      throw new CultureScorerUnavailableError(
+        `Culture competency scorer for ${dimension} did not return source evidence quotes after re-prompt.`,
+        provider,
+      );
     }
+    result = {
+      ...repromptResult,
+      repromptCount: 1,
+      originalScore,
+      originalConfidence,
+    };
   }
 
   return result;
@@ -463,15 +447,12 @@ async function scoreCultureProfileDimensionWithReprompt(
   const messages = buildCultureProfileScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
-  if (!content) {
-    console.warn('[cultureScorer] Empty response for profile dimension:', dimension);
-    return profileFallback(dimension);
-  }
 
-  let result = parseProfileResponse(dimension, content);
+  let result = parseProfileResponse(dimension, content, provider);
 
-  // Re-prompt on ungrounded non-neutral positions (ADR-029 §6)
-  if (result.evidenceQuotes.length === 0 && result.candidatePosition !== 3) {
+  // Re-prompt on ungrounded positions (ADR-029 §6). A position estimate without
+  // a direct transcript quote is not source-backed enough to persist.
+  if (result.evidenceQuotes.length === 0) {
     const originalPosition = result.candidatePosition;
     const originalConfidence = result.confidence;
     messages.push({ role: 'assistant', content });
@@ -481,34 +462,19 @@ async function scoreCultureProfileDimensionWithReprompt(
     });
 
     const repromptContent = await callProvider(provider, messages, 1024);
-    if (repromptContent) {
-      const repromptResult = parseProfileResponse(dimension, repromptContent);
-      result = {
-        ...repromptResult,
-        repromptCount: 1,
-        originalPosition,
-        originalConfidence,
-        confidence:
-          repromptResult.evidenceQuotes.length === 0
-            ? Math.max(0, repromptResult.confidence - 0.3)
-            : repromptResult.confidence,
-      };
-      if (repromptResult.evidenceQuotes.length === 0) {
-        console.warn('[cultureScorer] ungrounded score accepted after re-prompt:', {
-          dimension,
-          candidatePosition: repromptResult.candidatePosition,
-          candidateId: undefined,
-        });
-      }
-    } else {
-      result = {
-        ...result,
-        repromptCount: 1,
-        originalPosition,
-        originalConfidence,
-        confidence: Math.max(0, result.confidence - 0.3),
-      };
+    const repromptResult = parseProfileResponse(dimension, repromptContent, provider);
+    if (repromptResult.evidenceQuotes.length === 0) {
+      throw new CultureScorerUnavailableError(
+        `Culture profile scorer for ${dimension} did not return source evidence quotes after re-prompt.`,
+        provider,
+      );
     }
+    result = {
+      ...repromptResult,
+      repromptCount: 1,
+      originalPosition,
+      originalConfidence,
+    };
   }
 
   return result;
@@ -530,7 +496,7 @@ export async function scoreCultureInterview(
   const { provider, transcript, orgBenchmark, teamContext } = input;
 
   if (!provider) {
-    return mockScoreReport(transcript, orgBenchmark);
+    throw new CultureScorerUnavailableError('Culture scoring provider is not configured.');
   }
 
   // Fire all 10 dimension calls concurrently (with re-prompt guards).
@@ -644,10 +610,9 @@ export function applyDispositionalWeight(
 /**
  * Score one behavioral competency dimension via a single Gemma call.
  *
- * Falls back to a parse-failure sentinel on any error — never throws, because
- * a partial report is more useful than a complete crash. The sentinel uses
- * `score: 3` (neutral midpoint) and `confidence: 0` to signal to the synthesis
- * agent and human reviewer that this dimension was not reliably scored.
+ * Fails closed on missing provider output or missing source evidence. Culture
+ * score reports are persisted downstream, so a partial neutral score would be
+ * indistinguishable from real assessment evidence.
  */
 function buildCompetencyScorerMessages(args: ScoreCompetencyArgs): { messages: LLMMessage[]; overridden: boolean } {
   const { dimension, transcript, barsOverrides = [] } = args;
@@ -681,32 +646,35 @@ export async function scoreCompetencyDimension(args: ScoreCompetencyArgs): Promi
   const { messages, overridden } = buildCompetencyScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
-  if (!content) {
-    console.warn('[cultureScorer] Empty response for competency dimension:', dimension);
-    return competencyFallback(dimension, overridden, dispositionalWeight);
-  }
-
-  return parseCompetencyResponse(dimension, content, {
+  const result = parseCompetencyResponse(dimension, content, {
     barsOverrideApplied: overridden,
     dispositionalWeight,
-  });
+  }, provider);
+  if (result.evidenceQuotes.length === 0) {
+    throw new CultureScorerUnavailableError(
+      `Culture competency scorer for ${dimension} did not return source evidence quotes.`,
+      provider,
+    );
+  }
+  return result;
 }
 
 function parseCompetencyResponse(
   dimension: CompetencyDimension,
   content: string,
   meta: { barsOverrideApplied: boolean; dispositionalWeight: number },
+  provider?: LLMProvider,
 ): CompetencyScoreResult {
   try {
     const stripped = stripJsonFences(content);
     const raw = JSON.parse(stripped) as unknown;
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
-    const rawScore = parseScoreInt(r.score);
+    const rawScore = parseScoreInt(r.score, `competency ${dimension} score`);
     const score = applyDispositionalWeight(rawScore, meta.dispositionalWeight);
     const evidenceQuotes = parseStringArray(r.evidence_quotes);
-    const confidence = parseConfidence(r.confidence);
-    const reasoning = typeof r.reasoning === 'string' ? r.reasoning.trim() : 'parse_failure';
+    const confidence = parseConfidence(r.confidence, `competency ${dimension} confidence`);
+    const reasoning = requireString(r.reasoning, `competency ${dimension} reasoning`);
 
     return {
       dimension,
@@ -720,27 +688,12 @@ function parseCompetencyResponse(
       repromptCount: 0,
     };
   } catch (err) {
-    console.error('[cultureScorer] Failed to parse competency response for', dimension, ':', content.slice(0, 300), err);
-    return competencyFallback(dimension, meta.barsOverrideApplied, meta.dispositionalWeight);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CultureScorerUnavailableError(
+      `Culture competency scorer for ${dimension} returned invalid JSON: ${message}`,
+      provider ?? null,
+    );
   }
-}
-
-function competencyFallback(
-  dimension: CompetencyDimension,
-  barsOverrideApplied = false,
-  dispositionalWeight = 0,
-): CompetencyScoreResult {
-  return {
-    dimension,
-    score: 3,
-    rawScore: 3,
-    dispositionalWeight,
-    barsOverrideApplied,
-    evidenceQuotes: [],
-    confidence: 0,
-    reasoning: 'parse_failure',
-    repromptCount: 0,
-  };
 }
 
 // ─── Dealbreaker HITL gate ────────────────────────────────────────────────────
@@ -834,41 +787,39 @@ export async function scoreCultureProfileDimension(
   const messages = buildCultureProfileScorerMessages(args);
 
   const content = await callProvider(provider, messages, 1024);
-  if (!content) {
-    console.warn('[cultureScorer] Empty response for profile dimension:', dimension);
-    return profileFallback(dimension);
+  const result = parseProfileResponse(dimension, content, provider);
+  if (result.evidenceQuotes.length === 0) {
+    throw new CultureScorerUnavailableError(
+      `Culture profile scorer for ${dimension} did not return source evidence quotes.`,
+      provider,
+    );
   }
-
-  return parseProfileResponse(dimension, content);
+  return result;
 }
 
-function parseProfileResponse(dimension: CultureProfileDimension, content: string): CultureProfileScoreResult {
+function parseProfileResponse(
+  dimension: CultureProfileDimension,
+  content: string,
+  provider?: LLMProvider,
+): CultureProfileScoreResult {
   try {
     const stripped = stripJsonFences(content);
     const raw = JSON.parse(stripped) as unknown;
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
-    const candidatePosition = parseScoreInt(r.candidate_position);
+    const candidatePosition = parseScoreInt(r.candidate_position, `profile ${dimension} candidate_position`);
     const evidenceQuotes = parseStringArray(r.evidence_quotes);
-    const confidence = parseConfidence(r.confidence);
-    const reasoning = typeof r.reasoning === 'string' ? r.reasoning.trim() : 'parse_failure';
+    const confidence = parseConfidence(r.confidence, `profile ${dimension} confidence`);
+    const reasoning = requireString(r.reasoning, `profile ${dimension} reasoning`);
 
     return { dimension, candidatePosition, evidenceQuotes, confidence, reasoning, repromptCount: 0 };
   } catch (err) {
-    console.error('[cultureScorer] Failed to parse profile response for', dimension, ':', content.slice(0, 300), err);
-    return profileFallback(dimension);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CultureScorerUnavailableError(
+      `Culture profile scorer for ${dimension} returned invalid JSON: ${message}`,
+      provider ?? null,
+    );
   }
-}
-
-function profileFallback(dimension: CultureProfileDimension): CultureProfileScoreResult {
-  return {
-    dimension,
-    candidatePosition: 3,
-    evidenceQuotes: [],
-    confidence: 0,
-    reasoning: 'parse_failure',
-    repromptCount: 0,
-  };
 }
 
 // ─── Synthesis ────────────────────────────────────────────────────────────────
@@ -918,92 +869,31 @@ export async function synthesizeReport(
   ];
 
   const content = await callProvider(provider, messages, 2048);
-  if (!content) {
-    console.warn('[cultureScorer] Empty response from synthesis call. Using fallback.');
-    return synthesisFallback();
-  }
 
-  return parseSynthesisResponse(content);
+  return parseSynthesisResponse(content, provider);
 }
 
-function parseSynthesisResponse(content: string): CultureScoreReport['synthesis'] {
+function parseSynthesisResponse(
+  content: string,
+  provider?: LLMProvider,
+): CultureScoreReport['synthesis'] {
   try {
     const stripped = stripJsonFences(content);
     const raw = JSON.parse(stripped) as unknown;
     const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
 
-    const headline = typeof r.headline === 'string' ? r.headline.trim() : 'Synthesis unavailable.';
-    const narrative = typeof r.narrative === 'string' ? r.narrative.trim() : 'Narrative unavailable.';
+    const headline = requireString(r.headline, 'synthesis headline');
+    const narrative = requireString(r.narrative, 'synthesis narrative');
     const recommendation = parseRecommendation(r.recommendation);
 
     return { headline, narrative, recommendation };
   } catch (err) {
-    console.error('[cultureScorer] Failed to parse synthesis response:', content.slice(0, 300), err);
-    return synthesisFallback();
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CultureScorerUnavailableError(
+      `Culture synthesis scorer returned invalid JSON: ${message}`,
+      provider ?? null,
+    );
   }
-}
-
-function synthesisFallback(): CultureScoreReport['synthesis'] {
-  return {
-    headline: 'Synthesis unavailable due to scoring error.',
-    narrative: 'parse_failure',
-    recommendation: 'FLAG_FOR_REVIEW',
-  };
-}
-
-// ─── Mock path ────────────────────────────────────────────────────────────────
-
-/**
- * Returns a deterministic mock `CultureScoreReport` for tests and no-provider
- * environments. All competency scores default to 3 (neutral midpoint) and all
- * profile positions default to 3 (center of axis). Confidence is 0 throughout
- * so any consumer can identify this as a mock.
- *
- * Exported for direct use in tests that want a specific report shape without
- * going through the full `scoreCultureInterview` flow.
- */
-export function mockScoreReport(
-  transcript: CultureTranscript,
-  orgBenchmark: OrgCultureBenchmark,
-): CultureScoreReport {
-  const competencyScores: CompetencyScoreResult[] = COMPETENCY_DIMENSIONS.map((dim) => ({
-    dimension: dim,
-    score: 3,
-    rawScore: 3,
-    dispositionalWeight: 0,
-    barsOverrideApplied: false,
-    evidenceQuotes: [],
-    confidence: 0,
-    reasoning: '[MOCK] Neutral midpoint — no provider.',
-    repromptCount: 0,
-  }));
-
-  const profileScores: CultureProfileScoreResult[] = CULTURE_PROFILE_DIMENSIONS.map((dim) => ({
-    dimension: dim,
-    candidatePosition: 3,
-    evidenceQuotes: [],
-    confidence: 0,
-    reasoning: '[MOCK] Center position — no provider.',
-    repromptCount: 0,
-  }));
-
-  // Suppress unused parameter warning — transcript is accepted for signature
-  // parity with the real path, and may be used by future mock variants.
-  void transcript;
-
-  return {
-    competencyScores,
-    profileScores,
-    dealbreakerFlags: [],
-    hitlReviewRequired: false,
-    synthesis: {
-      headline: '[MOCK] No provider — all scores defaulted to midpoint.',
-      narrative: '[MOCK] Scoring pipeline ran in mock mode. No real analysis performed.',
-      recommendation: 'FLAG_FOR_REVIEW',
-    },
-    orgBenchmark,
-    scoredAt: new Date().toISOString(),
-  };
 }
 
 // ─── Shared LLM call helper ───────────────────────────────────────────────────
@@ -1016,16 +906,21 @@ async function callProvider(
   provider: LLMProvider,
   messages: LLMMessage[],
   maxTokens: number,
-): Promise<string | null> {
+): Promise<string> {
   try {
     const completion = await provider.complete(messages, {
       forceJson: true,
       maxTokens,
     });
-    return (completion.content ?? '').trim() || null;
+    const content = (completion.content ?? '').trim();
+    if (content.length === 0) {
+      throw new CultureScorerUnavailableError('Culture scorer provider returned empty content.', provider);
+    }
+    return content;
   } catch (err) {
-    console.error('[cultureScorer] provider.complete failed:', err);
-    return null;
+    if (err instanceof CultureScorerUnavailableError) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CultureScorerUnavailableError(`Culture scorer provider failed: ${message}`, provider);
   }
 }
 
@@ -1042,17 +937,22 @@ function stripJsonFences(text: string): string {
 
 // ─── Field parsers ────────────────────────────────────────────────────────────
 
-function parseScoreInt(v: unknown): 1 | 2 | 3 | 4 | 5 {
-  if (typeof v !== 'number') return 3;
+function parseScoreInt(v: unknown, fieldName: string): 1 | 2 | 3 | 4 | 5 {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`${fieldName} is missing or not numeric.`);
+  }
   const n = Math.round(v);
   if (n >= 1 && n <= 5) return n as 1 | 2 | 3 | 4 | 5;
-  return 3;
+  throw new Error(`${fieldName} must be between 1 and 5.`);
 }
 
-function parseConfidence(v: unknown): number {
-  if (typeof v !== 'number' || !Number.isFinite(v)) return 0;
-  if (v < 0) return 0;
-  if (v > 1) return 1;
+function parseConfidence(v: unknown, fieldName: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`${fieldName} is missing or not numeric.`);
+  }
+  if (v < 0 || v > 1) {
+    throw new Error(`${fieldName} must be between 0 and 1.`);
+  }
   return v;
 }
 
@@ -1061,9 +961,16 @@ function parseStringArray(v: unknown): string[] {
   return v.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
 }
 
+function requireString(v: unknown, fieldName: string): string {
+  if (typeof v !== 'string' || v.trim().length === 0) {
+    throw new Error(`${fieldName} is missing or empty.`);
+  }
+  return v.trim();
+}
+
 function parseRecommendation(v: unknown): 'HIRE' | 'FLAG_FOR_REVIEW' | 'PASS' {
   if (v === 'HIRE' || v === 'FLAG_FOR_REVIEW' || v === 'PASS') return v;
-  return 'FLAG_FOR_REVIEW';
+  throw new Error('synthesis recommendation is missing or invalid.');
 }
 
 // ─── Benchmark key mapping ────────────────────────────────────────────────────
