@@ -242,6 +242,16 @@ export function buildClippyRoomActionExecutionEvidence(input: {
       actionProtocol: input.agentAction?.protocol ?? null,
       agentActionObservedAt: input.agentAction?.observedAt ?? null,
       agentActionBridgePersisted: input.agentAction?.persisted ?? null,
+      ...(input.agentAction?.browserPromptId ? { browserPromptId: input.agentAction.browserPromptId } : {}),
+      ...(input.agentAction?.browserPromptFingerprint
+        ? { browserPromptFingerprint: input.agentAction.browserPromptFingerprint }
+        : {}),
+      ...(input.agentAction?.browserPromptTimestamp !== undefined
+        ? { browserPromptTimestamp: input.agentAction.browserPromptTimestamp }
+        : {}),
+      ...(input.agentAction?.browserPromptLength !== undefined
+        ? { browserPromptLength: input.agentAction.browserPromptLength }
+        : {}),
       executionStatus: 'executed',
       capturedAtMs,
       clippyActionEventId: buildClippyActionEventId({
@@ -396,6 +406,10 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   text: string;
   agentName: string | null;
   observedAt: string;
+  browserPromptId?: string | null;
+  browserPromptFingerprint?: string | null;
+  browserPromptTimestamp?: number | null;
+  browserPromptLength?: number | null;
   surface: RoomSurface;
   roomPhase: RoomPhase;
   workspaceStatus: string | null;
@@ -424,6 +438,14 @@ export function buildClippyAgentChatFallbackEvidence(input: {
       responseLength: input.text.length,
       bridgePersisted: false,
       persistenceFallback: 'browser_after_bridge_persist_failed',
+      ...(input.browserPromptId ? { browserPromptId: input.browserPromptId } : {}),
+      ...(input.browserPromptFingerprint ? { browserPromptFingerprint: input.browserPromptFingerprint } : {}),
+      ...(input.browserPromptTimestamp !== null && input.browserPromptTimestamp !== undefined
+        ? { browserPromptTimestamp: input.browserPromptTimestamp }
+        : {}),
+      ...(input.browserPromptLength !== null && input.browserPromptLength !== undefined
+        ? { browserPromptLength: input.browserPromptLength }
+        : {}),
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,
@@ -475,6 +497,10 @@ export function buildClippyAgentMessageSessionEvidence(input: {
       text: input.text,
       agentName,
       observedAt: input.observedAt,
+      browserPromptId: input.browserPromptId ?? null,
+      browserPromptFingerprint: input.browserPromptFingerprint ?? null,
+      browserPromptTimestamp: input.browserPromptTimestamp ?? null,
+      browserPromptLength: input.browserPromptLength ?? null,
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,

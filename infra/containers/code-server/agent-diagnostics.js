@@ -291,12 +291,22 @@ function agentChatSessionEvent({
   text,
   observedAt = new Date().toISOString(),
   actionCount = 0,
+  browserPromptId = null,
+  browserPromptFingerprint = null,
+  browserPromptTimestamp = null,
+  browserPromptLength = null,
 }) {
   const responseText = String(text || '');
   const safeAgent = String(agent || 'devin');
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   const responseFingerprint = agentResponseFingerprint(responseText);
+  const browserPromptReferences = {
+    browserPromptId: safePromptReferenceString(browserPromptId),
+    browserPromptFingerprint: safePromptReferenceString(browserPromptFingerprint, 80),
+    browserPromptTimestamp: safePromptReferenceNumber(browserPromptTimestamp),
+    browserPromptLength: safePromptReferenceNumber(browserPromptLength),
+  };
   return {
     type: 'ai_chat_agent',
     text: responseText,
@@ -316,6 +326,16 @@ function agentChatSessionEvent({
       responseFingerprint,
       responseLength: responseText.length,
       actionCount: Number.isFinite(actionCount) ? Math.max(0, Math.floor(actionCount)) : 0,
+      ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
+      ...(browserPromptReferences.browserPromptFingerprint
+        ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
+        : {}),
+      ...(browserPromptReferences.browserPromptTimestamp !== null
+        ? { browserPromptTimestamp: browserPromptReferences.browserPromptTimestamp }
+        : {}),
+      ...(browserPromptReferences.browserPromptLength !== null
+        ? { browserPromptLength: browserPromptReferences.browserPromptLength }
+        : {}),
       bridgePersisted: true,
     },
   };
@@ -340,6 +360,12 @@ function agentRoomActionSessionEvent({
   if (!actionId || actionSource !== 'agent_stdout' || actionProtocol !== 'clippy_room_action_tag') {
     return null;
   }
+  const browserPromptReferences = {
+    browserPromptId: safePromptReferenceString(rawAction.browserPromptId),
+    browserPromptFingerprint: safePromptReferenceString(rawAction.browserPromptFingerprint, 80),
+    browserPromptTimestamp: safePromptReferenceNumber(rawAction.browserPromptTimestamp),
+    browserPromptLength: safePromptReferenceNumber(rawAction.browserPromptLength),
+  };
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   return {
@@ -359,6 +385,16 @@ function agentRoomActionSessionEvent({
       agentActionText: safeActionString(rawAction.text, null, 1000),
       autoExecute: typeof rawAction.autoExecute === 'boolean' ? rawAction.autoExecute : null,
       url: safeActionString(rawAction.url ?? rawAction.href, null, 2048),
+      ...(browserPromptReferences.browserPromptId ? { browserPromptId: browserPromptReferences.browserPromptId } : {}),
+      ...(browserPromptReferences.browserPromptFingerprint
+        ? { browserPromptFingerprint: browserPromptReferences.browserPromptFingerprint }
+        : {}),
+      ...(browserPromptReferences.browserPromptTimestamp !== null
+        ? { browserPromptTimestamp: browserPromptReferences.browserPromptTimestamp }
+        : {}),
+      ...(browserPromptReferences.browserPromptLength !== null
+        ? { browserPromptLength: browserPromptReferences.browserPromptLength }
+        : {}),
       observedAt,
       capturedAtMs,
       clippyActionEventId: clippyActionEventId({

@@ -56,6 +56,10 @@ export interface AgentRoomAction {
   protocol?: 'bridge_actions_field' | 'clippy_room_action_tag' | 'workspace_file_observation';
   observedAt?: string;
   persisted?: boolean;
+  browserPromptId?: string;
+  browserPromptFingerprint?: string;
+  browserPromptTimestamp?: number;
+  browserPromptLength?: number;
 }
 
 export interface AgentFileChangeEvent {
@@ -234,6 +238,10 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   if (!id) return null;
   const text = stringOrNull(value.text ?? value.reason ?? value.message) ?? undefined;
   const label = stringOrNull(value.label) ?? ROOM_ACTIONS[id].label;
+  const browserPromptId = stringOrNull(value.browserPromptId);
+  const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+  const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+  const browserPromptLength = numberOrUndefined(value.browserPromptLength);
   return {
     id,
     label,
@@ -246,6 +254,10 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
     protocol: context.protocol,
     observedAt: stringOrNull(value.observedAt) ?? undefined,
     persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+    ...(browserPromptId ? { browserPromptId } : {}),
+    ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
+    ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
+    ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
   };
 }
 
@@ -282,6 +294,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if (value.source !== 'agent_stdout') return { kind: 'ignored' };
     const agentName = stringOrNull(value.agent);
     if (!agentName) return { kind: 'ignored' };
+    const browserPromptId = stringOrNull(value.browserPromptId);
+    const browserPromptFingerprint = stringOrNull(value.browserPromptFingerprint);
+    const browserPromptTimestamp = numberOrUndefined(value.browserPromptTimestamp);
+    const browserPromptLength = numberOrUndefined(value.browserPromptLength);
     return {
       kind: 'chat',
       message: {
@@ -291,6 +307,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         agentName,
         observedAt: stringOrNull(value.observedAt) ?? undefined,
         persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
+        ...(browserPromptId ? { browserPromptId } : {}),
+        ...(browserPromptFingerprint ? { browserPromptFingerprint } : {}),
+        ...(browserPromptTimestamp !== undefined ? { browserPromptTimestamp } : {}),
+        ...(browserPromptLength !== undefined ? { browserPromptLength } : {}),
       },
       actions: undefined,
     };

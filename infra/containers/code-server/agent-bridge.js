@@ -39,6 +39,7 @@ let workspaceBaselineReady = false;
 let workspaceScanInFlight = false;
 let workspaceWatcherTimer = null;
 let workspaceSnapshot = new Map();
+const pendingAgentChatPromptRefs = [];
 
 const WORKSPACE_IGNORED_DIRS = new Set([
   '.git',
@@ -265,6 +266,39 @@ function broadcastAgentChat(message) {
     .then((persisted) => {
       broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...message, persisted });
     });
+}
+
+function promptRefFromMessage(message) {
+  if (!message || typeof message !== 'object') return {};
+  return {
+    browserPromptId: message.browserPromptId,
+    browserPromptFingerprint: message.browserPromptFingerprint,
+    browserPromptTimestamp: message.browserPromptTimestamp,
+    browserPromptLength: message.browserPromptLength,
+  };
+}
+
+function hasPromptRef(promptRef) {
+  return Boolean(promptRef)
+    && (
+      typeof promptRef.browserPromptId === 'string'
+      || typeof promptRef.browserPromptFingerprint === 'string'
+      || Number.isFinite(promptRef.browserPromptTimestamp)
+      || Number.isFinite(promptRef.browserPromptLength)
+    );
+}
+
+function enqueuePromptRefForNextAgentResponse(promptRef) {
+  if (!hasPromptRef(promptRef)) return;
+  pendingAgentChatPromptRefs.push(promptRef);
+}
+
+function takePromptRefForAgentResponse() {
+  return pendingAgentChatPromptRefs.shift() || {};
+}
+
+function clearPendingPromptRefs() {
+  pendingAgentChatPromptRefs.splice(0, pendingAgentChatPromptRefs.length);
 }
 
 function broadcastAgentRoomAction(action, observedAt) {
@@ -513,6 +547,7 @@ function markAgentReady() {
 
 function markAgentDisconnected(message, diagnosticSource, processToStop = agentProcess) {
   clearAgentStartupTimers();
+  clearPendingPromptRefs();
   agentReady = false;
   agentStatus = 'disconnected';
   broadcastAgentStatus();
@@ -564,6 +599,7 @@ function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
   if (agentProcess) {
     const processToStop = agentProcess;
     agentProcess = null;
+    clearPendingPromptRefs();
     processToStop.kill('SIGTERM');
   }
 }
@@ -681,6 +717,7 @@ async function writeAgentChatPrompt(text, browserPromptRef = {}) {
   const roomContextText = compactAgentContext(context.text);
   const prompt = buildAgentContextPrompt(context.text, text);
   const deliveredToAgent = writeToCurrentAgentProcess(targetProcess, prompt);
+  if (deliveredToAgent) enqueuePromptRefForNextAgentResponse(browserPromptRef);
   broadcastAgentDiagnostic(agentPromptHandoffDiagnosticMessage({
     agent: AGENT_NAME,
     status: agentStatus,
@@ -820,15 +857,21 @@ function startAgent() {
       agentStatus = 'working';
       broadcastAgentStatus();
       const observedAt = new Date().toISOString();
+      const responsePromptRef = parsed.text || parsed.actions.length > 0
+        ? takePromptRefForAgentResponse()
+        : {};
       if (parsed.text) {
         broadcastAgentChat({
           agent: AGENT_NAME,
           text: parsed.text,
           observedAt,
           actionCount: parsed.actions.length,
+          ...responsePromptRef,
         });
       }
-      for (const action of parsed.actions) broadcastAgentRoomAction(action, observedAt);
+      for (const action of parsed.actions) {
+        broadcastAgentRoomAction({ ...action, ...responsePromptRef }, observedAt);
+      }
       agentStatus = 'idle';
       broadcastAgentStatus();
     });
@@ -852,6 +895,7 @@ function startAgent() {
       clearAgentStartupTimers();
       const wasAuthNeeded = agentStatus === 'auth_needed';
       agentProcess = null;
+      clearPendingPromptRefs();
       agentReady = false;
       agentStatus = wasAuthNeeded ? 'auth_needed' : 'disconnected';
       broadcastAgentDiagnostic(agentDiagnosticMessage({
@@ -868,6 +912,7 @@ function startAgent() {
       if (agentProcess !== startedProcess && agentProcess !== null) return;
       clearAgentStartupTimers();
       agentProcess = null;
+      clearPendingPromptRefs();
       agentReady = false;
       agentStatus = 'disconnected';
       broadcastAgentDiagnostic(agentDiagnosticMessage({
@@ -919,12 +964,7 @@ async function handleAgentMessage(ws, msg) {
     }
     agentStatus = 'thinking';
     broadcastAgentStatus();
-    const sent = await writeAgentChatPrompt(text, {
-      browserPromptId: msg.browserPromptId,
-      browserPromptFingerprint: msg.browserPromptFingerprint,
-      browserPromptTimestamp: msg.browserPromptTimestamp,
-      browserPromptLength: msg.browserPromptLength,
-    });
+    const sent = await writeAgentChatPrompt(text, promptRefFromMessage(msg));
     if (!sent) {
       send(ws, { type: 'ERROR', message: 'Agent is not ready to receive messages.' });
       agentStatus = 'idle';
@@ -937,6 +977,7 @@ async function handleAgentMessage(ws, msg) {
     }
     markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
   } else if (msg.type === 'AGENT_STOP' && agentProcess) {
+    clearPendingPromptRefs();
     agentProcess.kill('SIGTERM');
   } else if (msg.type === 'GET_STATUS') {
     sendAgentStatus(ws);
@@ -1089,6 +1130,7 @@ server.listen(BRIDGE_PORT, '0.0.0.0', () => {
 
 process.on('SIGTERM', () => {
   if (workspaceWatcherTimer) clearInterval(workspaceWatcherTimer);
+  clearPendingPromptRefs();
   if (agentProcess) agentProcess.kill('SIGTERM');
   server.close(() => process.exit(0));
 });

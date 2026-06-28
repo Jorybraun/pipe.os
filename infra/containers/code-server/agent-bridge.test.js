@@ -259,6 +259,10 @@ setInterval(() => {}, 1000);
     expect(response).toMatchObject({
       agent: 'devin',
       source: 'agent_stdout',
+      browserPromptId: 'workspace-123:guest:prompt:1782603900000:clippy_0123abcd',
+      browserPromptFingerprint: 'clippy_0123abcd',
+      browserPromptTimestamp: 1782603900000,
+      browserPromptLength: 24,
     });
     ws.close();
   });
