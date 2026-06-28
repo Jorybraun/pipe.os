@@ -252,24 +252,43 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const windowId = stringOrNull(event.window.id);
     const windowType = stringOrNull(event.window.windowType);
     if (!title || !windowId || !windowType) return null;
+    const evidence = isRecord(event.evidence) ? event.evidence : null;
     return createSessionEvent(input, {
       type: 'window_open',
       timestamp,
       actor,
       text: title,
-      properties: { ...base, windowId, windowType },
+      properties: {
+        ...base,
+        ...(evidence ?? {
+          source: 'window_lifecycle_durable_object',
+          lifecycleKind: 'open',
+          windowTitle: title,
+        }),
+        windowId,
+        windowType,
+      },
     });
   }
 
   if (event.kind === 'CLOSE_WINDOW') {
     const windowId = stringOrNull(event.windowId);
     if (!windowId) return null;
+    const evidence = isRecord(event.evidence) ? event.evidence : null;
+    const title = stringOrNull(evidence?.windowTitle) ?? windowId;
     return createSessionEvent(input, {
       type: 'window_close',
       timestamp,
       actor,
-      text: windowId,
-      properties: { ...base, windowId },
+      text: title,
+      properties: {
+        ...base,
+        ...(evidence ?? {
+          source: 'window_lifecycle_durable_object',
+          lifecycleKind: 'close',
+        }),
+        windowId,
+      },
     });
   }
 
@@ -298,6 +317,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
   if (event.kind === 'UPDATE_WINDOW_STATE') {
     const windowId = stringOrNull(event.windowId);
     if (!windowId) return null;
+    const evidence = isRecord(event.evidence) ? event.evidence : null;
     const statePatch: Record<string, unknown> = {};
     for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']) {
       const valueAtKey = event[key];
@@ -314,6 +334,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
       text: windowId,
       properties: {
         ...base,
+        ...(evidence ?? { source: 'window_state_durable_object' }),
         windowId,
         statePatch,
         stateKeys,

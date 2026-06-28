@@ -1041,6 +1041,29 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeWindowOpenRes.status).toBe(422);
 
+    const sourceOnlyWindowOpenRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'window_open',
+        text: 'Microsoft Edge',
+        actor: 'guest',
+        properties: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_desktop_ui',
+          lifecycleKind: 'open',
+          actor: 'guest',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyWindowOpenRes.status).toBe(422);
+
     const sessionEventRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1052,6 +1075,8 @@ describe('meeting room recording living-context route', () => {
           source: 'window_lifecycle_client_submit',
           lifecycleSource: 'win95_desktop_ui',
           lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:guest:1782601200000:open:browser',
+          capturedAtMs: 1782601200000,
           actor: 'guest',
           windowId: 'browser',
           windowType: 'browser',
@@ -1444,6 +1469,8 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         windowId: 'browser',
         action: 'move',
+        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+        capturedAtMs: 1782601500000,
         statePatch: { x: 120, y: 80 },
         stateKeys: ['x', 'y'],
         surface: 'win95',
@@ -1537,6 +1564,8 @@ describe('meeting room recording living-context route', () => {
         source: 'window_state_client_submit',
         windowId: 'browser',
         surface: 'win95',
+        windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+        capturedAtMs: 1782601500000,
         clientCapturedAtMs: 1782601500000,
       }),
     ]));
@@ -1564,6 +1593,8 @@ describe('meeting room recording living-context route', () => {
       source: 'window_state_client_submit',
       windowId: 'browser',
       surface: 'win95',
+      windowStateChangeId: 'window-state:guest:1782601500000:browser:move',
+      capturedAtMs: 1782601500000,
     });
 
     const sourceOnlyRoomSurfaceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
@@ -2837,6 +2868,8 @@ describe('meeting room recording living-context route', () => {
           actor: 'guest',
           windowId: 'browser',
           action: 'move',
+          windowStateChangeId: 'window-state:guest:1782601600000:browser:move',
+          capturedAtMs: 1782601600000,
           statePatch: { x: 120, y: 80 },
           stateKeys: ['x', 'y'],
           surface: 'win95',

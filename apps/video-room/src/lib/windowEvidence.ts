@@ -44,13 +44,25 @@ export function buildWindowLifecycleEvidence(input: {
   source: WindowLifecycleSource;
   surface: RoomSurface;
   roomPhase: RoomPhase;
+  capturedAtMs: number;
 }): WindowLifecycleEvidence {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
   return {
     text: input.windowTitle,
     properties: {
       source: 'window_lifecycle_client_submit',
       lifecycleSource: input.source,
       lifecycleKind: input.kind,
+      windowLifecycleId: [
+        'window-lifecycle',
+        input.actor,
+        capturedAtMs,
+        input.kind,
+        input.windowId,
+      ].join(':'),
+      capturedAtMs,
       actor: input.actor,
       windowId: input.windowId,
       windowType: input.windowType,
@@ -68,6 +80,7 @@ export function buildWindowStateUpdateEvidence(input: {
   patch: Record<string, unknown>;
   surface: RoomSurface;
   roomPhase: RoomPhase;
+  capturedAtMs: number;
 }): WindowStateUpdateEvidence | null {
   const statePatch: Record<string, number | boolean> = {};
   for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']) {
@@ -79,6 +92,10 @@ export function buildWindowStateUpdateEvidence(input: {
 
   const stateKeys = Object.keys(statePatch).sort();
   if (stateKeys.length === 0) return null;
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
+  const action = inferWindowStateAction(statePatch);
 
   return {
     text: `Window state updated: ${input.windowId}`,
@@ -87,7 +104,15 @@ export function buildWindowStateUpdateEvidence(input: {
       stateSource: 'win95_window_chrome',
       actor: input.actor,
       windowId: input.windowId,
-      action: inferWindowStateAction(statePatch),
+      action,
+      windowStateChangeId: [
+        'window-state',
+        input.actor,
+        capturedAtMs,
+        input.windowId,
+        action,
+      ].join(':'),
+      capturedAtMs,
       surface: input.surface,
       roomPhase: input.roomPhase,
       statePatch,

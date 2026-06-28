@@ -134,6 +134,7 @@ export type RoomDesktopEvent =
       createdAt: number;
       kind: 'OPEN_WINDOW';
       window: RoomDesktopWindowConfig;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -141,6 +142,7 @@ export type RoomDesktopEvent =
       createdAt: number;
       kind: 'CLOSE_WINDOW';
       windowId: string;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -163,6 +165,7 @@ export type RoomDesktopEvent =
       minimized?: boolean;
       maximized?: boolean;
       focused?: boolean;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -207,10 +210,12 @@ export type RoomDesktopEventDraft =
   | {
       kind: 'OPEN_WINDOW';
       window: RoomDesktopWindowConfig;
+      evidence?: Record<string, unknown>;
     }
   | {
       kind: 'CLOSE_WINDOW';
       windowId: string;
+      evidence?: Record<string, unknown>;
     }
   | {
       kind: 'UPDATE_WINDOW_DATA';
@@ -227,6 +232,7 @@ export type RoomDesktopEventDraft =
       minimized?: boolean;
       maximized?: boolean;
       focused?: boolean;
+      evidence?: Record<string, unknown>;
     }
   | {
       kind: 'WORKSPACE_STATE_CHANGED';
@@ -401,6 +407,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'OPEN_WINDOW',
       window: windowConfig,
+      evidence: recordOrUndefined(value.evidence),
     };
   }
   if (value.kind === 'SET_ROOM_SURFACE' && isRoomSurface(value.surface)) {
@@ -429,6 +436,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'CLOSE_WINDOW',
       windowId: value.windowId,
+      evidence: recordOrUndefined(value.evidence),
     };
   }
   if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && isRecord(value.data)) {
@@ -455,6 +463,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
       maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
       focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+      evidence: recordOrUndefined(value.evidence),
     };
     if (
       event.x === undefined

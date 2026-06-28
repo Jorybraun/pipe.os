@@ -590,9 +590,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const openSharedWindow = useCallback((config: OpenWindowConfig & { id: string }): void => {
     wm.openWindow(config);
-    if (room.roomSurface === 'win95') {
-      room.publishDesktopEvent({ kind: 'OPEN_WINDOW', window: config });
-    }
+    const capturedAtMs = Date.now();
     const evidence = buildWindowLifecycleEvidence({
       kind: 'open',
       actor: roomActor,
@@ -602,16 +600,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       source: 'win95_desktop_ui',
       surface: room.roomSurface,
       roomPhase: room.phase,
+      capturedAtMs,
     });
+    if (room.roomSurface === 'win95') {
+      room.publishDesktopEvent({ kind: 'OPEN_WINDOW', window: config, evidence: evidence.properties });
+    }
     captureSessionEvent('window_open', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor, wm]);
 
   const closeSharedWindow = useCallback((id: string): void => {
     const win = wm.windows.find((entry) => entry.id === id);
     wm.closeWindow(id);
-    if (room.roomSurface === 'win95') {
-      room.publishDesktopEvent({ kind: 'CLOSE_WINDOW', windowId: id });
-    }
+    const capturedAtMs = Date.now();
     const evidence = buildWindowLifecycleEvidence({
       kind: 'close',
       actor: roomActor,
@@ -621,7 +621,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       source: 'win95_window_chrome',
       surface: room.roomSurface,
       roomPhase: room.phase,
+      capturedAtMs,
     });
+    if (room.roomSurface === 'win95') {
+      room.publishDesktopEvent({ kind: 'CLOSE_WINDOW', windowId: id, evidence: evidence.properties });
+    }
     captureSessionEvent('window_close', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor, wm]);
 
@@ -656,17 +660,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const publishSharedWindowState = useCallback((id: string, patch: WindowStatePatch): void => {
     if (room.roomSurface !== 'win95') return;
-    room.publishDesktopEvent({
-      kind: 'UPDATE_WINDOW_STATE',
-      windowId: id,
-      ...patch,
-    });
+    const capturedAtMs = Date.now();
     const evidence = buildWindowStateUpdateEvidence({
       actor: roomActor,
       windowId: id,
       patch: { ...patch },
       surface: room.roomSurface,
       roomPhase: room.phase,
+      capturedAtMs,
+    });
+    room.publishDesktopEvent({
+      kind: 'UPDATE_WINDOW_STATE',
+      windowId: id,
+      evidence: evidence?.properties,
+      ...patch,
     });
     if (evidence) {
       captureSessionEvent('window_update', evidence.text, roomActor, evidence.properties);

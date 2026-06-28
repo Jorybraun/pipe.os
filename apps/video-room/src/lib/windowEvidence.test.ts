@@ -15,12 +15,15 @@ describe('window evidence', () => {
       source: 'win95_desktop_ui',
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 1000,
     })).toEqual({
       text: 'Microsoft Edge',
       properties: {
         source: 'window_lifecycle_client_submit',
         lifecycleSource: 'win95_desktop_ui',
         lifecycleKind: 'open',
+        windowLifecycleId: 'window-lifecycle:guest:1000:open:browser',
+        capturedAtMs: 1000,
         actor: 'guest',
         windowId: 'browser',
         windowType: 'browser',
@@ -42,12 +45,15 @@ describe('window evidence', () => {
       source: 'win95_window_chrome',
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 2000,
     })).toMatchObject({
       text: 'Room Chat',
       properties: {
         source: 'window_lifecycle_client_submit',
         lifecycleKind: 'close',
         lifecycleSource: 'win95_window_chrome',
+        windowLifecycleId: 'window-lifecycle:host:2000:close:chat',
+        capturedAtMs: 2000,
         actor: 'host',
         windowId: 'chat',
         windowTitle: 'Room Chat',
@@ -62,6 +68,7 @@ describe('window evidence', () => {
       patch: { x: 120, y: 80, ignored: 'nope' },
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 3000,
     })).toEqual({
       text: 'Window state updated: workspace',
       properties: {
@@ -70,6 +77,8 @@ describe('window evidence', () => {
         actor: 'guest',
         windowId: 'workspace',
         action: 'move',
+        windowStateChangeId: 'window-state:guest:3000:workspace:move',
+        capturedAtMs: 3000,
         surface: 'win95',
         roomPhase: 'connected',
         statePatch: { x: 120, y: 80 },
@@ -86,9 +95,12 @@ describe('window evidence', () => {
       patch: { minimized: true, focused: false, title: 'Chat' },
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 4000,
     })).toMatchObject({
       properties: {
         action: 'minimize',
+        windowStateChangeId: 'window-state:host:4000:chat:minimize',
+        capturedAtMs: 4000,
         statePatch: { minimized: true, focused: false },
         stateKeys: ['focused', 'minimized'],
       },
@@ -102,6 +114,7 @@ describe('window evidence', () => {
       patch: { title: 'Chat' },
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 5000,
     })).toBeNull();
   });
 });

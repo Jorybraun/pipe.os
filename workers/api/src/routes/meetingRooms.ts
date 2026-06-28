@@ -144,6 +144,8 @@ const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
+const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
+const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -328,18 +330,27 @@ const sessionEventSchema = z.object({
       && typeof properties.lifecycleSource === 'string'
       && WINDOW_LIFECYCLE_SOURCES.has(properties.lifecycleSource);
     const lifecycleOk = properties.lifecycleKind === expectedLifecycleKind;
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
     const windowIdOk = hasString(properties.windowId);
     const windowTypeOk = hasString(properties.windowType);
     const windowTitleOk = hasString(properties.windowTitle)
       && event.text === properties.windowTitle;
-    const contextOk = propertyActorMatches
-      && hasRoomSurface(properties.surface)
+    const capturedAtMs = properties.capturedAtMs;
+    const lifecycleId = properties.windowLifecycleId;
+    const idOk = typeof lifecycleId === 'string'
+      && WINDOW_LIFECYCLE_ID_RE.test(lifecycleId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && lifecycleId === `window-lifecycle:${event.actor}:${capturedAtMs}:${expectedLifecycleKind}:${properties.windowId}`;
+    const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && lifecycleOk && windowIdOk && windowTypeOk && windowTitleOk && contextOk) return;
+    if (sourceOk && lifecycleOk && actorOk && windowIdOk && windowTypeOk && windowTitleOk && idOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Window lifecycle evidence must come from the room window client with lifecycle kind, window identity, surface, and room phase.',
+      message: 'Window lifecycle evidence must come from the room window client with actor, lifecycle kind, stable event id, timestamp, window identity, surface, and room phase.',
       path: ['properties'],
     });
     return;
@@ -365,16 +376,25 @@ const sessionEventSchema = z.object({
     const sourceOk = properties.source === 'window_state_client_submit'
       && properties.stateSource === 'win95_window_chrome';
     const actionOk = typeof properties.action === 'string' && WINDOW_STATE_ACTIONS.has(properties.action);
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
     const windowOk = hasString(properties.windowId)
       && event.text === `Window state updated: ${properties.windowId}`;
-    const contextOk = propertyActorMatches
-      && hasRoomSurface(properties.surface)
+    const capturedAtMs = properties.capturedAtMs;
+    const stateChangeId = properties.windowStateChangeId;
+    const idOk = typeof stateChangeId === 'string'
+      && WINDOW_STATE_CHANGE_ID_RE.test(stateChangeId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && stateChangeId === `window-state:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.action}`;
+    const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && typeof properties.durableObjectReplayExpected === 'boolean';
-    if (sourceOk && actionOk && windowOk && contextOk && patchOk && stateKeysOk) return;
+    if (sourceOk && actionOk && actorOk && windowOk && idOk && contextOk && patchOk && stateKeysOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Window state evidence must include the client source, action, exact state patch, surface, and room phase.',
+      message: 'Window state evidence must include the client source, actor, stable event id, timestamp, action, exact state patch, surface, and room phase.',
       path: ['properties'],
     });
     return;

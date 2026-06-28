@@ -92,6 +92,7 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'OPEN_WINDOW';
       window: RoomDesktopWindow;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -99,6 +100,7 @@ type RoomDesktopEvent =
       createdAt: number;
       kind: 'CLOSE_WINDOW';
       windowId: string;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -121,6 +123,7 @@ type RoomDesktopEvent =
       minimized?: boolean;
       maximized?: boolean;
       focused?: boolean;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -377,6 +380,7 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'OPEN_WINDOW',
         window: windowConfig,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
     }
     if (value.kind === 'SET_ROOM_SURFACE' && this.isRoomSurface(value.surface)) {
@@ -407,6 +411,7 @@ export class VideoRoom {
         createdAt: value.createdAt,
         kind: 'CLOSE_WINDOW',
         windowId: value.windowId,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
     }
     if (value.kind === 'UPDATE_WINDOW_DATA' && typeof value.windowId === 'string' && this.isRecord(value.data)) {
@@ -433,6 +438,7 @@ export class VideoRoom {
         minimized: typeof value.minimized === 'boolean' ? value.minimized : undefined,
         maximized: typeof value.maximized === 'boolean' ? value.maximized : undefined,
         focused: typeof value.focused === 'boolean' ? value.focused : undefined,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
       if (
         event.x === undefined
