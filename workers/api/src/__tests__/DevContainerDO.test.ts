@@ -345,6 +345,132 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
   });
 });
 
+// ─── Container lifecycle evidence ────────────────────────────────────────────
+
+describe('DevContainerDO container lifecycle evidence', () => {
+  it('marks an idle container as SLEEPING before stopping it', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env) as SpyableDO;
+
+    await init(instance, {
+      sessionId: 'sess_sleep',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    instance.__stopCalls.length = 0;
+
+    await instance.onActivityExpired();
+
+    expect(instance.__stopCalls).toEqual([15]);
+    expect(await state.storage.get('intentional_sleep_stop')).toBe(true);
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('SLEEPING');
+    expect(last.params[5]).toBe('sess_sleep');
+  });
+
+  it('does not convert an intentional sleep stop into an ERROR', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env);
+
+    await init(instance, {
+      sessionId: 'sess_sleep_stop',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    await state.storage.put('intentional_sleep_stop', true);
+
+    await instance.onStop({ exitCode: 0, reason: 'exit' });
+
+    expect(await state.storage.get('intentional_sleep_stop')).toBeUndefined();
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    expect(updates.every((call) => call.params[0] !== 'ERROR')).toBe(true);
+  });
+
+  it('marks a real wake as READY after an idle sleep', async () => {
+    const db = fakeD1();
+    const state = buildState();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(state, env);
+
+    await init(instance, {
+      sessionId: 'sess_wake',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+    await state.storage.put('intentional_sleep_stop', true);
+
+    await instance.onStart();
+
+    expect(await state.storage.get('intentional_sleep_stop')).toBeUndefined();
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('READY');
+    expect(last.params[2]).toEqual(expect.any(String));
+    expect(last.params[5]).toBe('sess_wake');
+  });
+
+  it('persists unexpected container stops as redacted ERROR diagnostics', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+
+    await init(instance, {
+      sessionId: 'sess_crash',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+
+    await instance.onStop({ exitCode: 137, reason: 'oom' });
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('ERROR');
+    expect(last.params[4]).toBe('Container stopped unexpectedly (exit code 137, reason oom).');
+    expect(last.params[5]).toBe('sess_crash');
+  });
+
+  it('redacts likely secrets before persisting container errors', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env);
+    const devinLikeSecret = 'cog_fakeServiceUserToken0123456789abcdef';
+
+    await init(instance, {
+      sessionId: 'sess_error_redact',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+    });
+
+    await expect(instance.onError(new Error(
+      `DEVIN_API_KEY=${devinLikeSecret} token=room-secret`,
+    ))).rejects.toThrow(/DEVIN_API_KEY=/);
+
+    const updates = db.__calls.filter(
+      (c) => c.sql.includes('UPDATE dev_container_sessions') && c.ran,
+    );
+    const last = updates[updates.length - 1]!;
+    expect(last.params[0]).toBe('ERROR');
+    expect(last.params[4]).toContain('DEVIN_API_KEY=[redacted]');
+    expect(last.params[4]).toContain('token=[redacted]');
+    expect(last.params[4]).not.toContain('room-secret');
+    expect(last.params[4]).not.toContain(devinLikeSecret);
+    expect(last.params[5]).toBe('sess_error_redact');
+  });
+});
+
 // ─── onWarn ─────────────────────────────────────────────────────────────────
 
 describe('DevContainerDO.onWarn — Step 11', () => {

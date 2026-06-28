@@ -5735,9 +5735,11 @@ describe('meeting room recording living-context route', () => {
       meeting: { id: string; contactId: string };
       hostToken: string;
     };
+    const opaqueRoomTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 
-    // The host token is an opaque room token, never a stageId--candidateId fabrication.
-    expect(created.hostToken).not.toContain('--');
+    // The host token is an opaque 32-byte base64url room token, never a
+    // stageId--candidateId fabrication.
+    expect(created.hostToken).toMatch(opaqueRoomTokenPattern);
 
     // Prepare room links — both host and guest URLs must use /room/:token.
     const roomRes = await app.request(`/meetings/${created.meeting.id}/room`, {
@@ -5776,7 +5778,7 @@ describe('meeting room recording living-context route', () => {
     };
     expect(invite.joinUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
     expect(invite.joinUrl).not.toContain('/video/');
-    expect(invite.guestToken).not.toContain('--');
+    expect(invite.guestToken).toMatch(opaqueRoomTokenPattern);
 
     // Resolve the guest token via the public room endpoint.
     const guestToken = new URL(invite.joinUrl).pathname.split('/').pop()!;

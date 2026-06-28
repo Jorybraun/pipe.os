@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Dev-container Durable Object lifecycle hooks now persist source-backed `SLEEPING`, wake-to-`READY`, and unexpected-stop/error diagnostics, keeping Clippy availability and workspace evidence aligned with the real container state.
 - Sampled Win95 peer-cursor movements now publish source-backed cursor evidence through the room Durable Object, while raw pointer moves stay live-only and are excluded from replay.
 - Room-end Durable Object replay now maps accepted mic/camera control activity into source-backed `media_control` meeting-session evidence, instead of relying only on one browser's direct event capture.
 - Mic/camera toggles now publish source-backed shared media-control events through the room Durable Object, persist replayable activity/state, and render peer media status across both standard and Windows 95 room surfaces.

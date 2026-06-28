@@ -194,6 +194,10 @@ The controlling product rule remains:
   `session-events` directly without the browser Basic Auth proxy, so app-dev can
   prove the same source-backed workspace evidence path used by production room
   token validation.
+- Dev-container idle sleep, wake, and unexpected stop/error lifecycle hooks now
+  update the canonical D1 session row before projection, so Clippy availability,
+  room workspace state, and assessment evidence reflect the real container
+  lifecycle instead of a stale `READY` session.
 - Live peer cursor presence now keeps one receive-timestamped cursor per remote
   role and renders movement with transform-only compositing, so host/guest
   pointer presence stays synced without stale visual trails.

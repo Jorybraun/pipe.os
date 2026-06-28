@@ -14,8 +14,9 @@ const {
 
 describe('agent diagnostics', () => {
   it('redacts likely secrets from bridge diagnostics', () => {
+    const cognitionLikeToken = 'cog_fakeServiceUserToken0123456789abcdef';
     const text = redactDiagnosticText(
-      'DEVIN_API_KEY=sk-live-secret Bearer abc.def TOKEN=raw-token cog_oetjr6udnnd3vvvp5p6f577r7taxudks7fxdld7qnutgx55eewsa https://x.test/?token=abc123',
+      `DEVIN_API_KEY=sk-live-secret Bearer abc.def TOKEN=raw-token ${cognitionLikeToken} https://x.test/?token=abc123`,
     );
 
     expect(text).toContain('DEVIN_API_KEY=[redacted]');
@@ -25,7 +26,7 @@ describe('agent diagnostics', () => {
     expect(text).toContain('token=[redacted]');
     expect(text).not.toContain('sk-live-secret');
     expect(text).not.toContain('raw-token');
-    expect(text).not.toContain('oetjr6udnnd3vvvp5p6f577r7taxudks7fxdld7qnutgx55eewsa');
+    expect(text).not.toContain(cognitionLikeToken);
   });
 
   it('classifies Devin auth/login output as auth failure evidence', () => {
