@@ -21,6 +21,17 @@ describe('parseAgentBridgeMessage', () => {
     })).toEqual({ kind: 'ignored' });
   });
 
+  it('ignores bridge room actions without explicit agent identity', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'ROOM_ACTION',
+      action: 'open_terminal',
+      text: 'I can inspect that from the terminal.',
+      autoExecute: true,
+      observedAt: '2026-06-27T21:10:00.000Z',
+      persisted: true,
+    })).toEqual({ kind: 'ignored' });
+  });
+
   it('normalizes Devin room action messages into safe Clippy actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'ROOM_ACTION',
@@ -215,6 +226,16 @@ describe('parseAgentBridgeMessage', () => {
       },
       actions: undefined,
     });
+  });
+
+  it('ignores bridge chat responses without explicit agent identity', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      source: 'agent_stdout',
+      text: 'I inspected the failing test.',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      persisted: true,
+    })).toEqual({ kind: 'ignored' });
   });
 
   it('ignores bridge chat responses without explicit stdout source metadata', () => {

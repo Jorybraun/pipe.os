@@ -277,11 +277,13 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     const text = stringOrNull(value.text);
     if (!text) return { kind: 'ignored' };
     if (value.source !== 'agent_stdout') return { kind: 'ignored' };
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     const actions = parseRoomActions(value.actions, {
       source: 'agent_stdout_action',
       bridgeEventType: 'CHAT_RESPONSE',
       protocol: 'bridge_actions_field',
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
     });
     return {
       kind: 'chat',
@@ -289,7 +291,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
         role: 'agent',
         text,
         source: 'agent_stdout',
-        agentName: stringOrNull(value.agent) ?? undefined,
+        agentName,
         observedAt: stringOrNull(value.observedAt) ?? undefined,
         persisted: typeof value.persisted === 'boolean' ? value.persisted : undefined,
       },
@@ -348,11 +350,13 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     };
   }
   if (value.type === 'ROOM_ACTION') {
+    const agentName = stringOrNull(value.agent);
+    if (!agentName) return { kind: 'ignored' };
     const action = parseRoomAction(value, {
       source: 'agent_stdout_action',
       bridgeEventType: 'ROOM_ACTION',
       protocol: 'clippy_room_action_tag',
-      agentName: stringOrNull(value.agent) ?? 'devin',
+      agentName,
     });
     return action ? { kind: 'room_action', action } : { kind: 'ignored' };
   }

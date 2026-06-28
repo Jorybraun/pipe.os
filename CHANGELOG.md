@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin browser bridge parsing now ignores `CHAT_RESPONSE` and `ROOM_ACTION` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
 - Meeting recording uploads now require explicit speaker-channel metadata before separate transcription audio can produce attributed transcript evidence; missing metadata stays summary-only instead of defaulting channel 0/1 to host/guest.
 - Clippy/Devin room context summaries now include compact source refs for each session event, preserving candidate node ids, session refs, captured timestamps, and stable event ids inside the real Devin prompt context.
 - Code-server save/delete observations from the real Clippy/Devin bridge now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
