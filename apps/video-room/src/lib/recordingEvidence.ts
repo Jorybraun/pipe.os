@@ -1,6 +1,7 @@
 import type { IceServerProvider, RecordingSpeakerMetadata } from '../types';
 
 export interface RecordingLifecycleEvidenceInput {
+  lifecycleKind: 'start' | 'stop';
   speakerMetadata?: RecordingSpeakerMetadata | null;
   iceProvider?: IceServerProvider;
   hasTranscriptionAudio?: boolean;
@@ -24,6 +25,8 @@ export function buildRecordingLifecycleEvidence(
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     source: 'video_room_recording',
+    recordingEventSource: 'browser_media_recorder',
+    recordingLifecycleKind: input.lifecycleKind,
   };
   if (input.iceProvider) properties.iceProvider = input.iceProvider;
   if (input.hasTranscriptionAudio !== undefined) {

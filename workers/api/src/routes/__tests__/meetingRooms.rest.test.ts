@@ -1833,6 +1833,112 @@ describe('meeting room recording living-context route', () => {
       rawMediaStreamPersisted: false,
     });
 
+    const fakeRecordingStartRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_start',
+        text: 'Recording started',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          hasTranscriptionAudio: true,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeRecordingStartRes.status).toBe(422);
+
+    const recordingStartRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_start',
+        text: 'Recording started',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingLifecycleKind: 'start',
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      }),
+    }, env, ctx);
+    expect(recordingStartRes.status).toBe(200);
+
+    const recordingStopRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'recording_stop',
+        text: 'Recording stopped',
+        actor: 'host',
+        properties: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingLifecycleKind: 'stop',
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+          uploadStatus: 'attempting',
+          recordingBytes: 12345,
+          recordingMimeType: 'video/webm;codecs=vp9,opus',
+          transcriptionBytes: 2345,
+          transcriptionMimeType: 'audio/webm;codecs=opus',
+        },
+      }),
+    }, env, ctx);
+    expect(recordingStopRes.status).toBe(200);
+
+    const recordingNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_recording_start', 'session_recording_stop')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(recordingNodes.map((node) => node.node_type)).toEqual([
+      'session_recording_start',
+      'session_recording_stop',
+    ]);
+    expect(recordingNodes[0]?.narrative_text).toContain('Recording started');
+    expect(recordingNodes[1]?.narrative_text).toContain('Recording stopped');
+    expect(JSON.parse(recordingNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'start',
+      speakerChannelLayout: 'host-local-guest-remote-v1',
+      speakerChannelCount: 2,
+    });
+    expect(JSON.parse(recordingNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+      actor: 'host',
+      source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'stop',
+      uploadStatus: 'attempting',
+      recordingBytes: 12345,
+      transcriptionBytes: 2345,
+    });
+
     const fakeWin95FileChangeRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

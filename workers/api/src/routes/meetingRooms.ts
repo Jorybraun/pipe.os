@@ -558,6 +558,34 @@ const sessionEventSchema = z.object({
       path: ['properties'],
     });
   }
+  if (event.type === 'recording_start' || event.type === 'recording_stop') {
+    const expectedLifecycleKind = event.type === 'recording_start' ? 'start' : 'stop';
+    const sourceOk = properties.source === 'video_room_recording'
+      && properties.recordingEventSource === 'browser_media_recorder';
+    const actorOk = event.actor === 'host';
+    const lifecycleOk = properties.recordingLifecycleKind === expectedLifecycleKind;
+    const commonOk = typeof properties.hasTranscriptionAudio === 'boolean'
+      && hasString(properties.iceProvider)
+      && hasFiniteNonNegativeNumber(properties.speakerMetadataVersion)
+      && hasString(properties.speakerChannelLayout)
+      && hasFiniteNonNegativeNumber(properties.speakerChannelCount)
+      && Array.isArray(properties.speakerChannels)
+      && properties.speakerChannels.length === properties.speakerChannelCount;
+    const stopOk = event.type === 'recording_start' || (
+      properties.uploadStatus === 'attempting'
+      && hasFiniteNonNegativeNumber(properties.recordingBytes)
+      && (properties.recordingMimeType === null || hasString(properties.recordingMimeType))
+      && hasFiniteNonNegativeNumber(properties.transcriptionBytes)
+      && (properties.transcriptionMimeType === null || hasString(properties.transcriptionMimeType))
+    );
+    if (sourceOk && actorOk && lifecycleOk && commonOk && stopOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Recording lifecycle evidence must come from the host browser MediaRecorder with lifecycle kind, speaker-channel provenance, and upload source facts.',
+      path: ['properties'],
+    });
+    return;
+  }
   if (event.type === 'code_editor_save') {
     const sourceOk = properties.source === 'code_server_workspace';
     const observedByOk = properties.observedBy === 'agent_bridge' || properties.observedBy === 'clippy_agent_bridge';

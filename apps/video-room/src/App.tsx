@@ -767,6 +767,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         setRecordingNotice('Recording started. Status will sync when the call ends.');
       });
       captureSessionEvent('recording_start', 'Recording started', 'host', buildRecordingLifecycleEvidence({
+        lifecycleKind: 'start',
         speakerMetadata: composite.speakerMetadata,
         iceProvider: room.iceProvider,
         hasTranscriptionAudio: transcriptionTracks.length > 0,
@@ -828,6 +829,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         iceProvider: room.iceProvider,
       });
       captureSessionEvent('recording_stop', 'Recording stopped', 'host', buildRecordingLifecycleEvidence({
+        lifecycleKind: 'stop',
         speakerMetadata: recordingSpeakerMetadataRef.current,
         iceProvider: room.iceProvider,
         hasTranscriptionAudio: Boolean(transcriptionAudio),

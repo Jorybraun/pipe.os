@@ -17,6 +17,7 @@ const speakerMetadata: RecordingSpeakerMetadata = {
 describe('buildRecordingLifecycleEvidence', () => {
   it('captures recording source facts and speaker-channel provenance', () => {
     expect(buildRecordingLifecycleEvidence({
+      lifecycleKind: 'stop',
       speakerMetadata,
       iceProvider: 'cloudflare',
       hasTranscriptionAudio: true,
@@ -27,6 +28,8 @@ describe('buildRecordingLifecycleEvidence', () => {
       uploadStatus: 'attempting',
     })).toEqual({
       source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'stop',
       iceProvider: 'cloudflare',
       hasTranscriptionAudio: true,
       recordingMimeType: 'video/webm;codecs=vp9,opus',
@@ -46,11 +49,14 @@ describe('buildRecordingLifecycleEvidence', () => {
 
   it('omits invalid numeric fields instead of fabricating measurements', () => {
     expect(buildRecordingLifecycleEvidence({
+      lifecycleKind: 'stop',
       recordingBytes: Number.NaN,
       transcriptionBytes: -1,
       transcriptStatus: null,
     })).toEqual({
       source: 'video_room_recording',
+      recordingEventSource: 'browser_media_recorder',
+      recordingLifecycleKind: 'stop',
       transcriptStatus: null,
     });
   });
