@@ -1937,6 +1937,31 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeClippyActionRes.status).toBe(422);
 
+    const legacyBridgeActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'devin suggested room action: open-terminal',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'bridge_actions_field',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          observedAt: '2026-06-27T21:10:00.000Z',
+          capturedAtMs: 1782594600000,
+          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(legacyBridgeActionRes.status).toBe(422);
+
     const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -5425,18 +5450,11 @@ describe('meeting room recording living-context route', () => {
       created.meeting.id,
     );
     expect(interactionContext.interactions[0]?.summary).toMatchObject({
-      assertionCount: 1,
-      contextRecordCount: 1,
+      assertionCount: 0,
+      contextRecordCount: 0,
     });
-    expect(interactionContext.interactions[0]?.assertions[0]?.predicate).toBe(
-      'implemented a source-described recovery mechanism',
-    );
-    expect(interactionContext.interactions[0]?.assertions[0]?.sources[0]?.exactText).toBe(
-      'I implemented lattice replay buffers for ecommerce order recovery.',
-    );
-    expect(interactionContext.interactions[0]?.signalEvidence[0]?.signalKey).toBe(
-      'term:lattice-replay-buffers',
-    );
+    expect(interactionContext.interactions[0]?.assertions).toEqual([]);
+    expect(interactionContext.interactions[0]?.signalEvidence).toEqual([]);
     expect(interactionContext.sharedArtifacts).toHaveLength(1);
     expect(interactionContext.sharedArtifacts[0]?.artifactType).toBe('meeting_transcript');
     expect(interactionContext.sharedArtifacts[0]?.sourceSpans.map((span) => span.exactText))
@@ -5450,8 +5468,8 @@ describe('meeting room recording living-context route', () => {
     expect(interactionContext.summary).toMatchObject({
       interactionCount: 1,
       artifactCount: 1,
-      assertionCount: 1,
-      contextRecordCount: 2,
+      assertionCount: 0,
+      contextRecordCount: 1,
     });
 
     // GET /meetings/:id/transcript/search?q= searches original transcript text
@@ -5484,7 +5502,7 @@ describe('meeting room recording living-context route', () => {
     );
     expect(hit.matchLength).toBe('lattice replay buffers'.length);
     expect(hit.stableSegmentId).toBe('utterance-0002');
-    expect(hit.citingAssertionIds).toHaveLength(1);
+    expect(hit.citingAssertionIds).toHaveLength(0);
     expect(hit.citingContextRecordIds.length).toBeGreaterThanOrEqual(1);
 
     // A missing query parameter is rejected.

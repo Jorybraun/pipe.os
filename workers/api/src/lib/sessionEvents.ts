@@ -891,17 +891,18 @@ function isSourceBackedClippyInteractionEvidence(
         && capturedAtMs >= 0
         && idOk
         && origin === 'agent'
-        && stringOrNull(evidence.actionSource) !== null
         && stringOrNull(evidence.agent) !== null
-        && stringOrNull(evidence.actionProtocol) !== null
+        && evidence.actionProtocol === 'clippy_room_action_tag'
         && evidence.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = actor === 'agent'
         && executionStatus === 'suggested'
+        && evidence.actionSource === 'agent_stdout'
         && stringOrNull(evidence.observedAt) !== null
         && typeof evidence.bridgePersisted === 'boolean';
       const executedOk = (actor === 'host' || actor === 'guest')
         && executionStatus === 'executed'
         && evidence.executedBy === actor
+        && evidence.actionSource === 'agent_stdout_action'
         && stringOrNull(evidence.agentActionObservedAt) !== null
         && typeof evidence.agentActionBridgePersisted === 'boolean'
         && roomContextOk

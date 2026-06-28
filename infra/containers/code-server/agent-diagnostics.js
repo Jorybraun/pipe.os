@@ -293,8 +293,12 @@ function agentRoomActionSessionEvent({
 }) {
   const safeAgent = String(agent || 'devin');
   const rawAction = action && typeof action === 'object' ? action : {};
-  const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, 'unknown-action', 120)
-    ?? 'unknown-action';
+  const actionId = safeActionString(rawAction.action ?? rawAction.id ?? rawAction.name, null, 120);
+  const actionSource = safeActionString(rawAction.source, null, 120);
+  const actionProtocol = safeActionString(rawAction.protocol, null, 120);
+  if (!actionId || actionSource !== 'agent_stdout' || actionProtocol !== 'clippy_room_action_tag') {
+    return null;
+  }
   const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
   const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
   return {
@@ -306,8 +310,8 @@ function agentRoomActionSessionEvent({
       origin: 'agent',
       executionStatus: 'suggested',
       actionId,
-      actionSource: safeActionString(rawAction.source, 'agent_stdout', 120),
-      actionProtocol: safeActionString(rawAction.protocol, 'clippy_room_action_tag', 120),
+      actionSource,
+      actionProtocol,
       bridgeEventType: 'ROOM_ACTION',
       agent: safeAgent,
       agentActionLabel: safeActionString(rawAction.label, null, 500),

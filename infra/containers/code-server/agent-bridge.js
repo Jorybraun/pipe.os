@@ -212,6 +212,7 @@ async function captureWorkspaceFileChangeEvidence(change) {
 
 async function postSessionEventEvidence(event, logLabel) {
   const endpoint = roomSessionEventsUrl();
+  if (!event) return false;
   if (!endpoint) return false;
 
   try {

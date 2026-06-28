@@ -1040,18 +1040,20 @@ export class VideoRoom {
           && capturedAtMs >= 0
           && idOk
           && origin === 'agent'
-          && typeof evidence.actionSource === 'string'
           && typeof evidence.agent === 'string'
-          && typeof evidence.actionProtocol === 'string'
+          && evidence.agent.trim().length > 0
+          && evidence.actionProtocol === 'clippy_room_action_tag'
           && evidence.bridgeEventType === 'ROOM_ACTION';
         const suggestedOk = event.actor === 'agent'
           && executionStatus === 'suggested'
+          && evidence.actionSource === 'agent_stdout'
           && typeof evidence.observedAt === 'string'
           && typeof evidence.bridgePersisted === 'boolean';
         const executedOk = (event.actor === 'host' || event.actor === 'guest')
           && event.actor === senderActor
           && executionStatus === 'executed'
           && evidence.executedBy === event.actor
+          && evidence.actionSource === 'agent_stdout_action'
           && typeof evidence.agentActionObservedAt === 'string'
           && typeof evidence.agentActionBridgePersisted === 'boolean'
           && roomContextOk

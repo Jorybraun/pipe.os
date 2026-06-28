@@ -673,17 +673,18 @@ const sessionEventSchema = z.object({
         && capturedAtOk
         && actionEventIdOk
         && properties.origin === 'agent'
-        && hasString(properties.actionSource)
         && hasString(properties.agent)
-        && hasString(properties.actionProtocol)
+        && properties.actionProtocol === 'clippy_room_action_tag'
         && properties.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = event.actor === 'agent'
         && properties.executionStatus === 'suggested'
+        && properties.actionSource === 'agent_stdout'
         && hasString(properties.observedAt)
         && typeof properties.bridgePersisted === 'boolean';
       const executedOk = (event.actor === 'host' || event.actor === 'guest')
         && properties.executionStatus === 'executed'
         && properties.executedBy === event.actor
+        && properties.actionSource === 'agent_stdout_action'
         && hasString(properties.agentActionObservedAt)
         && typeof properties.agentActionBridgePersisted === 'boolean'
         && surfaceContextOk

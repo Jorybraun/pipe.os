@@ -1073,6 +1073,52 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
+  it('rejects Clippy/Devin room actions without the exact bridge tag protocol', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-legacy-agent-action',
+        clientId: 'guest-client',
+        createdAt: 1782594600000,
+        eventType: 'clippy_action',
+        actor: 'agent',
+        text: 'devin suggested room action: open-terminal',
+        evidence: {
+          source: 'clippy_agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'bridge_actions_field',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          observedAt: '2026-06-27T21:10:00.000Z',
+          capturedAtMs: 1782594600000,
+          clippyActionEventId: 'clippy-action:agent:1782594600000:clippy_agent_bridge:agent:suggested:open-terminal',
+          bridgePersisted: true,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+    }));
+    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+  });
+
   it('stores, broadcasts, and records shared room filesystem edits', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

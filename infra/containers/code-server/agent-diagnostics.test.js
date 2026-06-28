@@ -230,4 +230,28 @@ describe('agent diagnostics', () => {
       },
     });
   });
+
+  it('does not fabricate source metadata for incomplete room action suggestions', () => {
+    expect(agentRoomActionSessionEvent({
+      agent: 'devin',
+      action: {
+        action: 'open-terminal',
+        label: 'Open Terminal',
+        text: 'Open a terminal so we can inspect the failure.',
+      },
+      observedAt: '2026-06-27T21:10:00.000Z',
+    })).toBeNull();
+
+    expect(agentRoomActionSessionEvent({
+      agent: 'devin',
+      action: {
+        action: 'open-terminal',
+        label: 'Open Terminal',
+        text: 'Open a terminal so we can inspect the failure.',
+        source: 'agent_stdout',
+        protocol: 'bridge_actions_field',
+      },
+      observedAt: '2026-06-27T21:10:00.000Z',
+    })).toBeNull();
+  });
 });

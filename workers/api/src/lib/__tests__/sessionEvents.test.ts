@@ -596,6 +596,62 @@ describe('sessionEvents', () => {
             },
           },
         ],
+        clippyInteractionActivityLog: [
+          {
+            role: 'GUEST',
+            recordedAt: 1700000003200,
+            event: {
+              id: 'clippy-agent-action-valid',
+              clientId: 'guest-client',
+              createdAt: 1700000003200,
+              eventType: 'clippy_action',
+              actor: 'agent',
+              text: 'devin suggested room action: open-terminal',
+              evidence: {
+                source: 'clippy_agent_bridge',
+                origin: 'agent',
+                executionStatus: 'suggested',
+                actionId: 'open-terminal',
+                actionSource: 'agent_stdout',
+                actionProtocol: 'clippy_room_action_tag',
+                bridgeEventType: 'ROOM_ACTION',
+                agent: 'devin',
+                observedAt: '2026-06-27T21:10:00.000Z',
+                capturedAtMs: 1700000003200,
+                clippyActionEventId: 'clippy-action:agent:1700000003200:clippy_agent_bridge:agent:suggested:open-terminal',
+                bridgePersisted: true,
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000003210,
+            event: {
+              id: 'clippy-agent-action-legacy-protocol',
+              clientId: 'guest-client',
+              createdAt: 1700000003210,
+              eventType: 'clippy_action',
+              actor: 'agent',
+              text: 'devin suggested room action: open-terminal',
+              evidence: {
+                source: 'clippy_agent_bridge',
+                origin: 'agent',
+                executionStatus: 'suggested',
+                actionId: 'open-terminal',
+                actionSource: 'agent_stdout',
+                actionProtocol: 'bridge_actions_field',
+                bridgeEventType: 'ROOM_ACTION',
+                agent: 'devin',
+                observedAt: '2026-06-27T21:10:00.000Z',
+                capturedAtMs: 1700000003210,
+                clippyActionEventId: 'clippy-action:agent:1700000003210:clippy_agent_bridge:agent:suggested:open-terminal',
+                bridgePersisted: true,
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+        ],
         fileSystemActivityLog: [
           {
             role: 'GUEST',
@@ -792,6 +848,24 @@ describe('sessionEvents', () => {
           }),
         }),
         expect.objectContaining({
+          type: 'clippy_action',
+          actor: 'agent',
+          text: 'devin suggested room action: open-terminal',
+          properties: expect.objectContaining({
+            roomActivitySource: 'durable_object',
+            source: 'clippy_agent_bridge',
+            origin: 'agent',
+            executionStatus: 'suggested',
+            actionId: 'open-terminal',
+            actionSource: 'agent_stdout',
+            actionProtocol: 'clippy_room_action_tag',
+            bridgeEventType: 'ROOM_ACTION',
+            agent: 'devin',
+            clippyActionEventId: 'clippy-action:agent:1700000003200:clippy_agent_bridge:agent:suggested:open-terminal',
+            bridgePersisted: true,
+          }),
+        }),
+        expect.objectContaining({
           type: 'clippy_prompt',
           actor: 'host',
           text: 'Would you like to open the workspace?',
@@ -839,7 +913,12 @@ describe('sessionEvents', () => {
           y: 140,
         },
       });
-      expect(events[7]!.properties).toMatchObject({
+      const upsertFileEvent = events.find((event) => (
+        event.type === 'file_change'
+        && event.actor === 'guest'
+        && event.properties?.fileChangeId === 'file:guest:1700000004000:upsert:notepad'
+      ));
+      expect(upsertFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'win95_shared_file_system',
         fileEventSource: 'browser_client_submit',
@@ -855,8 +934,13 @@ describe('sessionEvents', () => {
         durableObjectReplayExpected: true,
         contentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[7]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(events[8]!.properties).toMatchObject({
+      expect(upsertFileEvent?.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      const deleteFileEvent = events.find((event) => (
+        event.type === 'file_change'
+        && event.actor === 'guest'
+        && event.properties?.fileChangeId === 'file:guest:1700000005000:delete:notepad'
+      ));
+      expect(deleteFileEvent?.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'win95_shared_file_system',
         fileEventSource: 'browser_client_submit',
@@ -873,7 +957,7 @@ describe('sessionEvents', () => {
         deletedContentLength: 'Candidate identified retry bug evidence.'.length,
         deletedContentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[8]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(deleteFileEvent?.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
       expect(events).not.toEqual(expect.arrayContaining([
         expect.objectContaining({
           type: 'file_change',

@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin bridge room-action validators now require the exact stdout tag source and `clippy_room_action_tag` protocol across HTTP session events, Durable Object replay, graph replay, and the container bridge helper instead of accepting generic bridge-shaped action strings.
 - Clippy prompt/tray actions no longer stamp Devin as the acting agent, and browser-executed Devin desktop actions now require source-backed `ROOM_ACTION` bridge metadata before executing or persisting.
 - Clippy/Devin browser bridge parsing now ignores `CHAT_RESPONSE` and `ROOM_ACTION` packets without explicit bridge-provided agent identity instead of defaulting them to Devin.
 - Meeting recording uploads now require explicit speaker-channel metadata before separate transcription audio can produce attributed transcript evidence; missing metadata stays summary-only instead of defaulting channel 0/1 to host/guest.
