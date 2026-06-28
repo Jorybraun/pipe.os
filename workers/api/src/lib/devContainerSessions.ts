@@ -10,6 +10,10 @@
  */
 
 import type { TtlSource } from './devContainerTtl';
+import {
+  tryIngestDevContainerAssessmentEvidence,
+  type DevContainerLifecycleEvent,
+} from './assessmentLayer/devContainerEvidence';
 
 export type DevContainerStatus =
   | 'LAUNCHING'
@@ -44,6 +48,14 @@ export interface DevContainerSessionRow {
   created_at: string;
   updated_at: string;
 }
+
+const DEV_CONTAINER_SESSION_COLUMNS = `
+  id, session_id, candidate_id, challenge_id, pipeline_id,
+  meeting_id, meeting_room_id, owner_id, access_scope,
+  status, instance_type, ttl_seconds, ttl_source, expires_at,
+  warned_at, url, repo_git_url, challenge_branch,
+  started_at, stopped_at, error_message, created_at, updated_at
+`.trim();
 
 export interface InsertSessionInput {
   id: string;
@@ -100,6 +112,7 @@ export async function insertSession(
       input.challengeBranch,
     )
     .run();
+  await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');
 }
 
 /** Insert a LAUNCHING row for a live meeting room workspace. */
@@ -131,6 +144,7 @@ export async function insertRoomSession(
       input.challengeBranch,
     )
     .run();
+  await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');
 }
 
 /**
@@ -188,6 +202,48 @@ export async function getLatestSessionForRoom(
     .first<DevContainerSessionRow>();
 }
 
+async function getSessionRowForEvidence(
+  db: D1Database,
+  sessionId: string,
+): Promise<DevContainerSessionRow | null> {
+  return db
+    .prepare(
+      `SELECT ${DEV_CONTAINER_SESSION_COLUMNS}
+       FROM dev_container_sessions
+       WHERE session_id = ?1
+       LIMIT 1`,
+    )
+    .bind(sessionId)
+    .first<DevContainerSessionRow>();
+}
+
+async function persistLifecycleAssessmentEvidence(
+  db: D1Database,
+  sessionId: string,
+  event: DevContainerLifecycleEvent,
+): Promise<void> {
+  const row = await getSessionRowForEvidence(db, sessionId);
+  if (!row) return;
+  await tryIngestDevContainerAssessmentEvidence(db, row, event);
+}
+
+function lifecycleEventForStatus(status: DevContainerStatus): DevContainerLifecycleEvent {
+  switch (status) {
+    case 'LAUNCHING':
+      return 'launching';
+    case 'READY':
+      return 'ready';
+    case 'SLEEPING':
+      return 'sleeping';
+    case 'ERROR':
+      return 'error';
+    case 'STOPPED':
+      return 'stopped';
+    case 'EXPIRED':
+      return 'expired';
+  }
+}
+
 /** Update status + timestamps without touching TTL fields. */
 export async function markStatus(
   db: D1Database,
@@ -220,6 +276,7 @@ export async function markStatus(
       sessionId,
     )
     .run();
+  await persistLifecycleAssessmentEvidence(db, sessionId, lifecycleEventForStatus(status));
 }
 
 /** Stamp the warned_at column when the 60s-before-expiry alarm fires. */
@@ -237,6 +294,7 @@ export async function markWarned(
     )
     .bind(warnedAt, sessionId)
     .run();
+  await persistLifecycleAssessmentEvidence(db, sessionId, 'warned');
 }
 
 /** Manual destroy path. */
