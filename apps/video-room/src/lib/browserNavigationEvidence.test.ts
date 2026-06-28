@@ -52,4 +52,34 @@ describe('browser navigation evidence', () => {
     expect(isKnownEmbedBlockedUrl('https://subdomain.youtube.com/watch?v=1')).toBe(true);
     expect(isKnownEmbedBlockedUrl('https://example.com')).toBe(false);
   });
+
+  it('builds distinct source ids for reload and external-open interactions', () => {
+    const reload = buildBrowserNavigationEvidence({
+      actor: 'host',
+      windowId: 'browser',
+      url: 'https://example.com/review',
+      trigger: 'reload_button',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 2000,
+    });
+    const externalOpen = buildBrowserNavigationEvidence({
+      actor: 'host',
+      windowId: 'browser',
+      url: 'https://example.com/review',
+      trigger: 'external_open',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 2000,
+    });
+
+    expect(reload?.properties).toMatchObject({
+      navigationTrigger: 'reload_button',
+      browserNavigationId: 'browser-navigation:host:2000:browser:reload_button:nav_c42d69e8',
+    });
+    expect(externalOpen?.properties).toMatchObject({
+      navigationTrigger: 'external_open',
+      browserNavigationId: 'browser-navigation:host:2000:browser:external_open:nav_c42d69e8',
+    });
+  });
 });

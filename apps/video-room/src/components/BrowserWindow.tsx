@@ -85,8 +85,9 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
       const currentSrc = iframeRef.current.src;
       iframeRef.current.src = '';
       iframeRef.current.src = currentSrc;
+      notifyNavigate(url, 'reload_button');
     }
-  }, [url]);
+  }, [notifyNavigate, url]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -96,8 +97,9 @@ export function BrowserWindow({ initialUrl = '', currentUrl, onNavigate }: Brows
 
   const openExternally = useCallback((): void => {
     if (!url) return;
+    notifyNavigate(url, 'external_open');
     window.open(url, '_blank', 'noopener,noreferrer');
-  }, [url]);
+  }, [notifyNavigate, url]);
 
   return (
     <div className="win95-browser">

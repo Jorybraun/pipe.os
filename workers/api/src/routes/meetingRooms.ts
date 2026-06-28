@@ -151,6 +151,8 @@ const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'go_button',
   'history_back',
   'history_forward',
+  'reload_button',
+  'external_open',
   'open_window_initial_url',
   'shared_state_sync',
 ]);

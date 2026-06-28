@@ -1347,6 +1347,64 @@ describe('meeting room recording living-context route', () => {
       roomPhase: 'connected',
     });
 
+    const reloadBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'reload_button',
+          browserNavigationId: 'browser-navigation:guest:1782601300001:browser:reload_button:nav_54d2c495',
+          capturedAtMs: 1782601300001,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(reloadBrowserNavigationRes.status).toBe(200);
+
+    const externalOpenBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'external_open',
+          browserNavigationId: 'browser-navigation:guest:1782601300002:browser:external_open:nav_54d2c495',
+          capturedAtMs: 1782601300002,
+          urlFingerprint: 'nav_54d2c495',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(externalOpenBrowserNavigationRes.status).toBe(200);
+
     const fakeChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

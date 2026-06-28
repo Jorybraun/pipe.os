@@ -75,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Win95 browser reload and external-open clicks now emit source-backed browser navigation evidence, so repeated or blocked-site browsing remains synced and replayable across shared desktop sessions.
 - Clippy/Devin bridge evidence now carries a hashed Devin API run reference through prompt handoffs, API responses, room actions, browser fallbacks, and source refs so real agent interactions remain joinable without exposing raw provider session ids.
 - Dev-container sessions now clear stale live error messages when the real container recovers to a non-error state, while preserving the original failure as immutable assessment evidence.
 - Win95 peer cursor sharing now rate-limits raw pointer broadcasts while still preserving source-backed cursor evidence samples, reducing remote cursor rendering noise during live interviews.
