@@ -123,6 +123,8 @@ const WINDOW_STATE_ACTIONS = new Set([
 ]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
+const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
+const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -349,6 +351,61 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Room surface evidence must come from shared room surface controls with actor, previous surface, next surface, action, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'clippy_action') {
+    const source = properties.source;
+    const actionIdOk = hasString(properties.actionId);
+    const surfaceContextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase);
+    if (typeof source === 'string' && CLIPPY_UI_SOURCES.has(source)) {
+      const originOk = source === 'clippy_tray_ui'
+        ? properties.origin === 'tray' && properties.actionSource === 'win95_taskbar_tray'
+        : properties.origin === 'prompt' && properties.actionSource === 'clippy_prompt_ui';
+      const actorOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.executedBy === event.actor;
+      const statusOk = typeof properties.executionStatus === 'string'
+        && CLIPPY_UI_EXECUTION_STATUSES.has(properties.executionStatus);
+      const noFakeAgentOk = properties.agentResponseClaimed === false;
+      if (actionIdOk && surfaceContextOk && originOk && actorOk && statusOk && noFakeAgentOk) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Clippy UI action evidence must come from tray or prompt UI with actor, action source, execution status, surface, and no claimed agent response.',
+        path: ['properties'],
+      });
+      return;
+    }
+    if (source === 'clippy_agent_bridge') {
+      const commonOk = actionIdOk
+        && properties.origin === 'agent'
+        && hasString(properties.actionSource)
+        && hasString(properties.agent)
+        && hasString(properties.actionProtocol)
+        && properties.bridgeEventType === 'ROOM_ACTION';
+      const suggestedOk = event.actor === 'agent'
+        && properties.executionStatus === 'suggested'
+        && hasString(properties.observedAt)
+        && typeof properties.bridgePersisted === 'boolean';
+      const executedOk = (event.actor === 'host' || event.actor === 'guest')
+        && properties.executionStatus === 'executed'
+        && properties.executedBy === event.actor
+        && hasString(properties.agentActionObservedAt)
+        && typeof properties.agentActionBridgePersisted === 'boolean'
+        && surfaceContextOk
+        && properties.agentResponseClaimed === false;
+      if (commonOk && (suggestedOk || executedOk)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Clippy agent action evidence must come from the real bridge with ROOM_ACTION metadata and either a suggested agent event or a browser execution linked to that bridge event.',
+        path: ['properties'],
+      });
+      return;
+    }
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Clippy action evidence must come from a recognized Clippy UI or agent bridge source.',
       path: ['properties'],
     });
     return;

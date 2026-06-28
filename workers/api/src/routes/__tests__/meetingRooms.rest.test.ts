@@ -1595,7 +1595,7 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
-    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+    const fakeClippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1608,28 +1608,102 @@ describe('meeting room recording living-context route', () => {
         },
       }),
     }, env, ctx);
+    expect(fakeClippyActionRes.status).toBe(422);
+
+    const clippyActionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy action: start recording',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'start-recording',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          agent: 'devin',
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
     expect(clippyActionRes.status).toBe(200);
 
-    const clippyNode = sqlite.prepare(
+    const clippyAgentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'devin suggested room action: open-terminal',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          origin: 'agent',
+          executionStatus: 'suggested',
+          actionId: 'open-terminal',
+          actionSource: 'agent_stdout',
+          actionProtocol: 'clippy_room_action_tag',
+          bridgeEventType: 'ROOM_ACTION',
+          agent: 'devin',
+          agentActionLabel: 'Open Terminal',
+          agentActionText: 'Open a terminal so we can inspect the failure.',
+          autoExecute: false,
+          url: null,
+          observedAt: '2026-06-27T21:10:00.000Z',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentSuggestionRes.status).toBe(200);
+
+    const clippyNodes = sqlite.prepare(
       `SELECT node_type, narrative_text, source_type, extracted_properties_json
          FROM candidate_nodes
-        WHERE candidate_id = ? AND node_type = 'session_clippy_action'`,
-    ).get(linked?.candidate_id) as {
+        WHERE candidate_id = ? AND node_type = 'session_clippy_action'
+        ORDER BY narrative_text`,
+    ).all(linked?.candidate_id) as Array<{
       node_type: string;
       narrative_text: string;
       source_type: string;
       extracted_properties_json: string;
-    } | undefined;
-    expect(clippyNode).toMatchObject({
-      node_type: 'session_clippy_action',
-      source_type: 'meeting_session',
-    });
-    expect(clippyNode?.narrative_text).toContain('Clippy action: start recording');
-    expect(JSON.parse(clippyNode?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'host',
-      actionId: 'start-recording',
-      surface: 'win95',
-    });
+    }>;
+    expect(clippyNodes).toHaveLength(2);
+    expect(clippyNodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy action: start recording'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('devin suggested room action: open-terminal'),
+      }),
+    ]));
+    expect(clippyNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_prompt_ui',
+        actionId: 'start-recording',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        actionId: 'open-terminal',
+        bridgeEventType: 'ROOM_ACTION',
+        observedAt: '2026-06-27T21:10:00.000Z',
+        bridgePersisted: true,
+      }),
+    ]));
 
     const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',

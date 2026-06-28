@@ -1,11 +1,18 @@
 import type { RoomSurface } from '../hooks/useRoomConnection';
+import type { AgentRoomAction } from '../hooks/useAgentConnection';
 import type { RoomPhase } from '../types';
 
 export type ClippyUiActionId = 'open-clippy-chat' | 'dismiss-clippy';
 export type ClippyUiActionOrigin = 'tray' | 'prompt';
+export type ClippyRoomActionOrigin = 'prompt' | 'agent';
 export type ClippyEvidenceActor = 'host' | 'guest';
 
 export interface ClippyUiActionEvidence {
+  text: string;
+  properties: Record<string, unknown>;
+}
+
+export interface ClippyRoomActionExecutionEvidence {
   text: string;
   properties: Record<string, unknown>;
 }
@@ -55,6 +62,47 @@ export function buildClippyUiActionEvidence(input: {
       workspaceSessionId: input.workspaceSessionId,
       agent: 'devin',
       agentWorkspaceReady: input.agentWorkspaceReady,
+      agentResponseClaimed: false,
+    },
+  };
+}
+
+export function buildClippyRoomActionExecutionEvidence(input: {
+  actionId: string;
+  text: string;
+  origin: ClippyRoomActionOrigin;
+  actor: ClippyEvidenceActor;
+  agentAction?: AgentRoomAction;
+  surface: RoomSurface;
+  roomPhase: RoomPhase;
+  workspaceStatus: string | null;
+  workspaceSessionId: string | null;
+}): ClippyRoomActionExecutionEvidence {
+  const agent = input.agentAction?.agentName ?? 'devin';
+  return {
+    text: input.text,
+    properties: {
+      source: input.origin === 'agent' ? 'clippy_agent_bridge' : 'clippy_prompt_ui',
+      actionId: input.actionId,
+      origin: input.origin,
+      executedBy: input.actor,
+      actionSource: input.origin === 'agent'
+        ? input.agentAction?.source ?? 'agent_stdout_action'
+        : 'clippy_prompt_ui',
+      agent,
+      agentActionLabel: input.agentAction?.label ?? null,
+      agentActionText: input.agentAction?.text ?? null,
+      bridgeEventType: input.agentAction?.bridgeEventType ?? null,
+      actionProtocol: input.agentAction?.protocol ?? null,
+      agentActionObservedAt: input.agentAction?.observedAt ?? null,
+      agentActionBridgePersisted: input.agentAction?.persisted ?? null,
+      executionStatus: 'executed',
+      autoExecute: input.agentAction?.autoExecute ?? null,
+      url: input.agentAction?.url ?? null,
+      surface: input.surface,
+      roomPhase: input.roomPhase,
+      workspaceStatus: input.workspaceStatus,
+      workspaceSessionId: input.workspaceSessionId,
       agentResponseClaimed: false,
     },
   };

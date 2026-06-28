@@ -36,6 +36,7 @@ import {
 } from './lib/roomSurfaceEvidence';
 import {
   buildClippyAgentChatFallbackEvidence,
+  buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
 } from './lib/clippyEvidence';
 import {
@@ -1549,27 +1550,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       agentAction?: AgentRoomAction;
     },
   ): void => {
-    captureSessionEvent('clippy_action', text, roomActor, {
+    const evidence = buildClippyRoomActionExecutionEvidence({
       actionId,
+      text,
       origin: options.origin,
-      executedBy: roomActor,
-      actionSource: options.origin === 'agent'
-        ? options.agentAction?.source ?? 'agent_stdout_action'
-        : 'clippy_prompt_ui',
-      agent: options.agentAction?.agentName ?? null,
-      agentActionLabel: options.agentAction?.label ?? null,
-      agentActionText: options.agentAction?.text ?? null,
-      bridgeEventType: options.agentAction?.bridgeEventType ?? null,
-      actionProtocol: options.agentAction?.protocol ?? null,
-      agentActionObservedAt: options.agentAction?.observedAt ?? null,
-      agentActionBridgePersisted: options.agentAction?.persisted ?? null,
-      executionStatus: 'executed',
-      autoExecute: options.agentAction?.autoExecute ?? null,
-      url: options.agentAction?.url ?? null,
+      actor: roomActor,
+      agentAction: options.agentAction,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
+      workspaceSessionId: workspaceSession?.sessionId ?? null,
     });
+    captureSessionEvent('clippy_action', evidence.text, roomActor, evidence.properties);
   };
 
   const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
