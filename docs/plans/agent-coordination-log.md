@@ -139,3 +139,40 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-28 — Session 3ca1d2be (Devin)
+
+**Action:** Analyze, consolidate, and prepare final merge PR for all living context graph work.
+
+**Open PRs analyzed:**
+- PRs #105–#119: 15 progressive draft PRs from earlier sessions, each consolidating or extending the living context graph work
+- PR #119 is the latest and most comprehensive, superseding all others
+- Created PR #120 as clean single-commit squash of #119 onto fresh branch from main
+
+**PR #120:** https://github.com/Jorybraun/pipe.os/pull/120
+- Single squash commit (39 files, +6192 lines)
+- 168 test files, 1536 tests pass, 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — identical to main/PR #104)
+- Auto-drafted by network policy — owner must mark ready and merge
+
+**Blockers noted:**
+- `git_close_pr` returns "User is not connected to GitHub" — cannot close old PRs #105-#119 programmatically
+- Owner must manually close PRs #105-#119 after merging #120
+
+**All 8 acceptance criteria verified complete:**
+1. Living person graph: 7 entity types, unified person graph, continuous ingestion
+2. Preserve original meaning: source spans, searchSourceContent, exact text provenance
+3. Learn semantics dynamically: conceptRegistry + openTerms, zero hard-coded concepts
+4. Understand repositories: 3-pass crawl pipeline, repo-semantic analysis, AST helpers
+5. Evidence-based matching: d1Matcher, quality gates, role guardrails, evaluation corpus
+6. Explain every match: matchNarrative API + MatchNarrativePanel frontend
+7. Visualize the living graph: LivingContextGraph.tsx with 7+ panels
+8. Production quality: BackfillOrchestrator, scheduled cron (7 tasks), rollout gates, E2E proofs
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
