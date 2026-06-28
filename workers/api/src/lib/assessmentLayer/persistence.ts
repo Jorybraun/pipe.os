@@ -321,6 +321,26 @@ function claimRequiresSessionBackedSourceRef(claim: AssessmentEvaluationClaimInp
   return claim.polarity !== 'diagnostic';
 }
 
+function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return value !== undefined && value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function assertRepoTaskAssessmentOutputStatusMatchesReport(
+  input: AssessmentEvaluationReportInput,
+): void {
+  if (!isJsonObject(input.output)) return;
+  if (input.output.schemaVersion !== 'repo-task-assessment-output-v1') return;
+  if (input.output.status === undefined) return;
+  if (typeof input.output.status !== 'string') {
+    throw new Error('repo-task assessment output status must be a string when provided');
+  }
+  if (input.output.status !== input.status) {
+    throw new Error(
+      `repo-task assessment output status ${input.output.status} must match evaluation report status ${input.status}`,
+    );
+  }
+}
+
 function diagnosticMetadata(input: AssessmentEvaluationDiagnosticInput): DiagnosticMetadata {
   const metadata = input.metadata ?? DEFAULT_JSON_OBJECT;
   const provider = input.provider ?? (typeof metadata.provider === 'string' ? metadata.provider : null);
@@ -637,6 +657,7 @@ export class AssessmentLayerStore {
     const session = await fetchSession(this.#db, requireNonEmpty(input.sessionId, 'sessionId'));
     const ingestionKey = requireNonEmpty(input.ingestionKey, 'ingestionKey');
     const summary = requireNonEmpty(input.summary, 'summary');
+    assertRepoTaskAssessmentOutputStatusMatchesReport(input);
     for (const claim of input.claims) {
       requireNonEmpty(claim.id, 'claim.id');
       requireNonEmpty(claim.dimension, `claim ${claim.id} dimension`);

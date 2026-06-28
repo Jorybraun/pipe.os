@@ -219,6 +219,7 @@ function storeErrorResponse(c: Parameters<typeof apiError>[0], error: unknown): 
     message.includes('requires')
     || message.includes('cannot transition')
     || message.includes('evaluation claim')
+    || message.includes('evaluation report status')
     || message.includes('must be')
     || message.includes('is required')
   ) {

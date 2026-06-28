@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workers AI model routing now retries the live default model when Cloudflare reports a stale configured model as deprecated, preserving repo/challenge discovery instead of blocking on old dashboard overrides.
 - Repo-task assessment reports now reject diagnostic-only `EVALUATED` outputs, requiring missing evidence to persist under an explicit diagnostic status instead of masquerading as a completed evaluation.
 - Repo-task assessment evaluation now requires every non-diagnostic claim, including negative outcomes, to cite exact evidence already captured in the same assessment session.
+- Repo-task assessment outputs now reject report/output status contradictions, preserving rebuildable evaluation projections from the canonical assessment spine.
 
 ### Fixed — 95 Until Infinity desktop tools
 

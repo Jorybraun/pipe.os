@@ -707,6 +707,61 @@ describe('repo task assessment session routes', () => {
     });
   });
 
+  it('rejects repo-task outputs whose status contradicts the evaluation report', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:contradictory-output-status',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-contradictory-status',
+    });
+    const diffText = 'diff --git a/src/task.ts b/src/task.ts\n+export const fixed = true;';
+    const diffSourceRef = await sourceRef('code_diff', 'diff-status-1', diffText);
+
+    expect((await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:contradictory-status-diff',
+        kind: 'code_diff',
+        actorType: 'candidate',
+        actorId: 'candidate-contradictory-status',
+        narrative: 'Candidate submitted a source-backed implementation change.',
+        payload: { filePath: 'src/task.ts' },
+        sourceRefs: [diffSourceRef],
+      }),
+      env,
+    )).status).toBe(201);
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:contradictory-output-status',
+        status: 'EVALUATED',
+        summary: 'Candidate submitted source-backed work, but the output status contradicts the report.',
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status: 'PROVENANCE_INCOMPLETE',
+        },
+        claims: [{
+          id: 'claim-contradictory-status-work',
+          polarity: 'positive',
+          dimension: 'implementation_correctness',
+          narrative: 'Candidate submitted a source-backed implementation change.',
+          sourceRefs: [diffSourceRef],
+        }],
+        diagnostics: [],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'repo-task assessment output status PROVENANCE_INCOMPLETE must match evaluation report status EVALUATED',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+  });
+
   it('persists evaluation reports only when positive claims cite exact source evidence', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:evaluation',
