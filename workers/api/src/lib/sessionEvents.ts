@@ -259,6 +259,33 @@ function hasSourceBackedWindowStateEvidence(
     && typeof evidence.durableObjectReplayExpected === 'boolean';
 }
 
+function hasSourceBackedRoomSurfaceEvidence(
+  event: Record<string, unknown>,
+  actor: SessionEvent['actor'],
+  surface: string,
+): boolean {
+  const previousSurface = stringOrNull(event.previousSurface);
+  const action = stringOrNull(event.action);
+  const source = stringOrNull(event.source);
+  const surfaceControlEventSource = stringOrNull(event.surfaceControlEventSource);
+  const surfaceChangeId = stringOrNull(event.surfaceChangeId);
+  const capturedAtMs = numberOrNull(event.capturedAtMs);
+  const roomPhase = stringOrNull(event.roomPhase);
+  return (actor === 'host' || actor === 'guest')
+    && source === 'room_surface_control'
+    && surfaceControlEventSource === 'browser_room_surface_toggle'
+    && event.actor === actor
+    && (surface === 'standard' || surface === 'win95')
+    && (previousSurface === 'standard' || previousSurface === 'win95')
+    && previousSurface !== surface
+    && action === (surface === 'win95' ? 'enter_desktop' : 'exit_desktop')
+    && surfaceChangeId === `surface:${actor}:${capturedAtMs}:${previousSurface}:${surface}`
+    && capturedAtMs !== null
+    && capturedAtMs >= 0
+    && roomPhase !== null
+    && event.durableObjectReplayExpected === true;
+}
+
 function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
@@ -274,6 +301,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
   if (event.kind === 'SET_ROOM_SURFACE') {
     const surface = stringOrNull(event.surface);
     if (!surface) return null;
+    if (!hasSourceBackedRoomSurfaceEvidence(event, actor, surface)) return null;
     const properties: Record<string, unknown> = { ...base, surface };
     const previousSurface = stringOrNull(event.previousSurface);
     const action = stringOrNull(event.action);
@@ -284,7 +312,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const roomPhase = stringOrNull(event.roomPhase);
     if (previousSurface) properties.previousSurface = previousSurface;
     if (action) properties.action = action;
-    properties.source = source ?? 'room_surface_durable_object';
+    properties.source = source;
     if (surfaceControlEventSource) properties.surfaceControlEventSource = surfaceControlEventSource;
     if (surfaceChangeId) properties.surfaceChangeId = surfaceChangeId;
     if (capturedAtMs !== null) properties.capturedAtMs = capturedAtMs;

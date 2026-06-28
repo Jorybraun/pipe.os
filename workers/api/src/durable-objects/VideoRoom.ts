@@ -500,7 +500,22 @@ export class VideoRoom {
   }
 
   private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
-    if (event.kind === 'SET_ROOM_SURFACE' || event.kind === 'WORKSPACE_STATE_CHANGED') return true;
+    if (event.kind === 'SET_ROOM_SURFACE') {
+      const actor = this.isHostRole(role) ? 'host' : 'guest';
+      const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
+      return event.source === 'room_surface_control'
+        && event.surfaceControlEventSource === 'browser_room_surface_toggle'
+        && event.action === expectedAction
+        && event.previousSurface !== undefined
+        && event.previousSurface !== event.surface
+        && typeof event.surfaceChangeId === 'string'
+        && typeof event.capturedAtMs === 'number'
+        && Number.isFinite(event.capturedAtMs)
+        && event.surfaceChangeId === `surface:${actor}:${event.capturedAtMs}:${event.previousSurface}:${event.surface}`
+        && typeof event.roomPhase === 'string'
+        && event.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'WORKSPACE_STATE_CHANGED') return true;
     const evidence = event.evidence;
     if (!this.isRecord(evidence)) return false;
     const actor = this.isHostRole(role) ? 'host' : 'guest';

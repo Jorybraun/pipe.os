@@ -194,10 +194,22 @@ describe('sessionEvents', () => {
               action: 'enter_desktop',
               source: 'room_surface_control',
               surfaceControlEventSource: 'browser_room_surface_toggle',
+              actor: 'host',
               surfaceChangeId: 'surface:host:1700000000000:standard:win95',
               capturedAtMs: 1700000000000,
               roomPhase: 'connected',
               durableObjectReplayExpected: true,
+            },
+          },
+          {
+            role: 'HOST',
+            recordedAt: 1700000001000,
+            event: {
+              id: 'evt-source-less-surface',
+              clientId: 'host-client',
+              createdAt: 1700000000500,
+              kind: 'SET_ROOM_SURFACE',
+              surface: 'standard',
             },
           },
           {
@@ -696,6 +708,7 @@ describe('sessionEvents', () => {
         }),
       ]));
       for (const fallbackSource of [
+        'room_surface_durable_object',
         'window_lifecycle_durable_object',
         'browser_navigation_durable_object',
         'window_data_durable_object',

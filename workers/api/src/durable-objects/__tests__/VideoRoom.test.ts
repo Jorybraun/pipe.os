@@ -423,17 +423,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'guest-client',
         createdAt: 1,
         kind: 'SET_ROOM_SURFACE',
-        surface: 'standard',
+        surface: 'win95',
+        previousSurface: 'standard',
+        action: 'enter_desktop',
+        source: 'room_surface_control',
+        surfaceControlEventSource: 'browser_room_surface_toggle',
+        surfaceChangeId: 'surface:guest:1:standard:win95',
+        capturedAtMs: 1,
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
       },
     }));
 
-    expect(storage.get('roomSurface')).toBe('standard');
+    expect(storage.get('roomSurface')).toBe('win95');
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
       type: 'ROOM_DESKTOP_EVENT',
       role: 'GUEST',
       payload: expect.objectContaining({
         kind: 'SET_ROOM_SURFACE',
-        surface: 'standard',
+        surface: 'win95',
+        source: 'room_surface_control',
+        surfaceChangeId: 'surface:guest:1:standard:win95',
       }),
     }));
 
@@ -444,17 +454,27 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         clientId: 'host-client',
         createdAt: 2,
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'standard',
+        previousSurface: 'win95',
+        action: 'exit_desktop',
+        source: 'room_surface_control',
+        surfaceControlEventSource: 'browser_room_surface_toggle',
+        surfaceChangeId: 'surface:host:2:win95:standard',
+        capturedAtMs: 2,
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
       },
     }));
 
-    expect(storage.get('roomSurface')).toBe('win95');
+    expect(storage.get('roomSurface')).toBe('standard');
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
       type: 'ROOM_DESKTOP_EVENT',
       role: 'HOST',
       payload: expect.objectContaining({
         kind: 'SET_ROOM_SURFACE',
-        surface: 'win95',
+        surface: 'standard',
+        source: 'room_surface_control',
+        surfaceChangeId: 'surface:host:2:win95:standard',
       }),
     }));
     expect(storage.get('desktopActivityLog')).toEqual([
@@ -463,7 +483,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'evt-guest-surface',
           kind: 'SET_ROOM_SURFACE',
-          surface: 'standard',
+          surface: 'win95',
+          surfaceChangeId: 'surface:guest:1:standard:win95',
         }),
       }),
       expect.objectContaining({
@@ -471,10 +492,42 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         event: expect.objectContaining({
           id: 'evt-host-surface',
           kind: 'SET_ROOM_SURFACE',
-          surface: 'win95',
+          surface: 'standard',
+          surfaceChangeId: 'surface:host:2:win95:standard',
         }),
       }),
     ]);
+  });
+
+  it('rejects shared room surface changes without browser source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-source-less-surface',
+        clientId: 'guest-client',
+        createdAt: 2.5,
+        kind: 'SET_ROOM_SURFACE',
+        surface: 'win95',
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+    }));
+    expect(storage.has('roomSurface')).toBe(false);
+    expect(storage.has('desktopActivityLog')).toBe(false);
   });
 
   it('broadcasts workspace state changes without changing shared windows', async () => {
@@ -1012,6 +1065,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 1000,
         kind: 'SET_ROOM_SURFACE',
         surface: 'win95',
+        previousSurface: 'standard',
+        action: 'enter_desktop',
+        source: 'room_surface_control',
+        surfaceControlEventSource: 'browser_room_surface_toggle',
+        surfaceChangeId: 'surface:host:1000:standard:win95',
+        capturedAtMs: 1000,
+        roomPhase: 'connected',
+        durableObjectReplayExpected: true,
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
@@ -1081,6 +1142,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-enter-95',
           kind: 'SET_ROOM_SURFACE',
           surface: 'win95',
+          source: 'room_surface_control',
+          surfaceChangeId: 'surface:host:1000:standard:win95',
         }),
       }),
     ]);

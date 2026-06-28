@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synced Win95 Notepad/Paint saves and deletes now carry actor-bound file-change ids, capture timestamps, and browser file evidence through Durable Object replay.
 - Shared Win95 file-system events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of becoming source-less `file_change` graph nodes.
 - Shared Win95 window open/navigation/data/state events without browser source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
+- Shared room surface changes without browser-toggle source evidence are now rejected by the room Durable Object and skipped during replay instead of gaining `room_surface_durable_object` fallback provenance.
 - Workers AI model routing now remaps deprecated Llama 3.1 8B variants before inference so repo/challenge discovery does not fail on stale environment overrides.
 - Synced Notepad/Paint window-data updates now carry stable window-data ids, capture timestamps, changed keys, and value fingerprints through shared desktop state, Durable Object replay, and session-event validation.
 - Synced Microsoft Edge navigations now carry stable browser navigation ids, capture timestamps, and URL fingerprints through shared desktop state, Durable Object replay, and session-event validation.
