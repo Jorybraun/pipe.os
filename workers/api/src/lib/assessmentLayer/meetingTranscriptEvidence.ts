@@ -229,8 +229,11 @@ async function captureEvidencePlanTranscriptEvidence(
   const metadata = parseSessionMetadata(planSession.metadata_json);
   const store = new AssessmentLayerStore(db, () => input.observedAt);
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [];
+  const responseSegments = input.segments.filter((segment) =>
+    actorForSegment(segment).actorType === 'candidate'
+  );
 
-  for (const segment of input.segments) {
+  for (const segment of responseSegments) {
     const sourceRef = await transcriptSegmentSourceRef({
       meetingId: input.meetingId,
       scheduledInterviewId: input.scheduledInterviewId ?? null,
@@ -267,6 +270,8 @@ async function captureEvidencePlanTranscriptEvidence(
       sourceRefs: [sourceRef],
     });
   }
+
+  if (sourceRefs.length === 0) return;
 
   await transitionIfState(db, store, {
     sessionId: planSession.id,

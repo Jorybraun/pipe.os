@@ -622,16 +622,16 @@ describe('meeting transcript living-context ingestion', () => {
       exact_text: string;
       locator_json: string;
     }>;
-    expect(planEvents).toHaveLength(2);
-    expect(planEvents[1]).toMatchObject({
-      sequence: 2,
+    expect(planEvents).toHaveLength(1);
+    expect(planEvents[0]).toMatchObject({
+      sequence: 1,
       kind: 'evidence_plan_response_span',
       actor_type: 'candidate',
       actor_id: 'contact-1',
       evidence_role: 'evidence_plan_response_span',
       exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
     });
-    expect(JSON.parse(planEvents[1].locator_json)).toMatchObject({
+    expect(JSON.parse(planEvents[0].locator_json)).toMatchObject({
       meetingId: 'meeting-1',
       scheduledInterviewId: 'scheduled-interview-1',
       stableSegmentId: 'guest-1',
@@ -643,13 +643,13 @@ describe('meeting transcript living-context ingestion', () => {
         WHERE session_id = 'assessment-plan-1'`,
     ).get() as { status: string; summary: string; output_json: string };
     expect(report.status).toBe('NEEDS_HUMAN_REVIEW');
-    expect(report.summary).toBe('Evidence call captured 2 source-backed transcript spans for repo-match refresh.');
+    expect(report.summary).toBe('Evidence call captured 1 source-backed transcript span for repo-match refresh.');
     expect(JSON.parse(report.output_json)).toMatchObject({
       schemaVersion: 'code-review-evidence-plan-result-v1',
       status: 'READY_FOR_REPO_MATCH_REFRESH',
       meetingId: 'meeting-1',
       scheduledInterviewId: 'scheduled-interview-1',
-      sourceSpanCount: 2,
+      sourceSpanCount: 1,
       originalInterviewId: 'code-review-1',
       contextCallInterviewId: 'scheduled-interview-1',
       matchRunId: 'match-run-1',
@@ -675,11 +675,12 @@ describe('meeting transcript living-context ingestion', () => {
       evidence_role: string;
       exact_text: string;
     }>;
-    expect(claim).toHaveLength(2);
+    expect(claim).toHaveLength(1);
     expect(claim[0]).toMatchObject({
       polarity: 'neutral',
       dimension: 'repo_match_refresh_readiness',
       evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
     });
 
     const transitions = sqlite.prepare(

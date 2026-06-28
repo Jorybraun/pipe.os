@@ -17,9 +17,9 @@ import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mo
 import {
   ensureCandidateLivingContext,
   ensureContactLivingContext,
+  ingestMeetingTranscriptToLivingContext,
   LivingContextStore,
 } from '../../../lib/livingContext';
-import { ingestMeetingTranscriptAssessmentEvidence } from '../../../lib/assessmentLayer/meetingTranscriptEvidence';
 import * as d1Matcher from '../../../lib/challengeMatching/d1Matcher';
 import type { Env, Variables } from '../../../types';
 import {
@@ -2367,81 +2367,104 @@ describe('GET /interviews/:id detail', () => {
     });
 
     const transcriptText = 'I reviewed retry idempotency in Kafka order processing and verified duplicate delivery safeguards.';
-    const artifactId = 'artifact-context-call-loop-transcript';
-    const artifactVersionId = 'artifact-version-context-call-loop-transcript-v1';
-    const sourceSpanId = 'source-span-context-call-loop-guest-1';
     const observedAt = '2026-06-22T19:10:00.000Z';
 
     sqlite!.prepare(
-      `INSERT INTO artifacts (
-         id, ingestion_key, workspace_person_id, interaction_id, artifact_type,
-         logical_key, metadata_json, created_at, updated_at
-       ) VALUES (?, ?, NULL, NULL, 'meeting_transcript', ?, '{}', ?, ?)`,
+      `INSERT INTO contacts (
+         id, owner_id, email, name, company, role, phone, linkedin, notes, type,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, NULL, ?, NULL, NULL, NULL, ?, ?, ?)`,
     ).run(
-      artifactId,
-      'artifact:context-call-loop-transcript',
-      `meeting-transcript:${body.contextCall.id}`,
+      'contact-candidate-1',
+      'owner-1',
+      'ada@example.com',
+      'Ada Lovelace',
+      'Candidate',
+      'candidate',
       observedAt,
       observedAt,
     );
     sqlite!.prepare(
-      `INSERT INTO artifact_versions (
-         id, ingestion_key, artifact_id, version_number, content_hash,
-         media_type, content_text, storage_key, byte_length, metadata_json,
-         created_at
-       ) VALUES (?, ?, ?, 1, ?, 'text/plain', ?, NULL, ?, '{}', ?)`,
-    ).run(
-      artifactVersionId,
-      'artifact-version:context-call-loop-transcript:v1',
-      artifactId,
-      sha256Hex(transcriptText),
-      transcriptText,
-      transcriptText.length,
-      observedAt,
-    );
+      `INSERT INTO meetings (
+         id, owner_id, scheduled_interview_id, title, description, status,
+         scheduled_at, started_at, ended_at, duration_secs, meeting_url,
+         meeting_type, scheduling_provider, external_event_id,
+         transcript_status, transcript_summary, transcript_json,
+         transcript_analysis_json, transcript_error, recording_r2_key,
+         created_at, updated_at
+       ) VALUES (
+         'meeting-context-call-loop', 'owner-1', ?, 'Ada evidence follow-up', NULL,
+         'COMPLETED', NULL, '2026-06-22T19:00:00.000Z', ?, 600, NULL,
+         'SCREENING_INTERVIEW', NULL, NULL,
+         'READY', 'Captured code-review evidence.', NULL, NULL, NULL, NULL,
+         ?, ?
+       )`,
+    ).run(body.contextCall.id, observedAt, observedAt, observedAt);
     sqlite!.prepare(
-      `INSERT INTO source_spans (
-         id, ingestion_key, artifact_version_id, stable_segment_id,
-         byte_start, byte_end, char_start, char_end, line_start, line_end,
-         timestamp_start_ms, timestamp_end_ms, exact_text, exact_text_hash,
-         metadata_json, created_at
-       ) VALUES (?, ?, ?, 'guest-1', 0, ?, 0, ?, 1, 1, 0, 5000, ?, ?, '{}', ?)`,
-    ).run(
-      sourceSpanId,
-      'source-span:context-call-loop-transcript:guest-1',
-      artifactVersionId,
-      transcriptText.length,
-      transcriptText.length,
-      transcriptText,
-      sha256Hex(transcriptText),
-      observedAt,
-    );
+      `INSERT INTO meeting_participants (
+         id, meeting_id, contact_id, role, invite_sent_at, joined_at, left_at,
+         created_at, updated_at
+       ) VALUES (
+         'participant-context-call-candidate', 'meeting-context-call-loop',
+         'contact-candidate-1', 'ATTENDEE', NULL,
+         '2026-06-22T19:00:00.000Z', ?, ?, ?
+       )`,
+    ).run(observedAt, observedAt, observedAt);
 
-    await ingestMeetingTranscriptAssessmentEvidence(createMockD1(sqlite!), {
+    await ingestMeetingTranscriptToLivingContext(createMockD1(sqlite!), {
       meetingId: 'meeting-context-call-loop',
       ownerId: 'owner-1',
       scheduledInterviewId: body.contextCall.id,
-      artifactId,
-      artifactVersionId,
-      versionNumber: 1,
       provider: 'test-transcript',
+      startedAt: '2026-06-22T19:00:00.000Z',
+      endedAt: observedAt,
       personContextMode: 'attributed',
-      observedAt,
-      segments: [{
-        stableSegmentId: 'guest-1',
-        text: transcriptText,
-        sourceSpanId,
-        charStart: 0,
-        charEnd: transcriptText.length,
-        lineStart: 1,
-        lineEnd: 1,
-        speakerRole: 'guest',
-        speakerLabel: 'Guest',
-        contactId: 'candidate-1',
-        timestampStartMs: 0,
-        timestampEndMs: 5000,
-        confidence: 0.98,
+      segments: [
+        {
+          stableSegmentId: 'host-1',
+          text: 'Which review work best matches this challenge?',
+          speakerRole: 'host',
+          speakerLabel: 'Host',
+          timestampStartMs: 0,
+          timestampEndMs: 1500,
+        },
+        {
+          stableSegmentId: 'guest-1',
+          text: transcriptText,
+          speakerRole: 'guest',
+          speakerLabel: 'Guest',
+          contactId: 'contact-candidate-1',
+          timestampStartMs: 2000,
+          timestampEndMs: 7000,
+          confidence: 0.98,
+        },
+      ],
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'reviewed',
+        narrative: 'Candidate reviewed retry idempotency and duplicate delivery safeguards.',
+        objectType: 'source-described code review evidence',
+        objectValue: { surface: 'retry idempotency duplicate delivery safeguards' },
+        confidence: 0.96,
+        concepts: [
+          {
+            surface: 'Kafka',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+          {
+            surface: 'retry idempotency',
+            relationship: 'about',
+            weight: 1,
+            evidenceLevel: 'validated',
+            strength: 1,
+          },
+        ],
       }],
+      extractorVersion: 'code-review-evidence-plan-test-v1',
     });
 
     const completedPlan = sqlite!.prepare(
@@ -2463,6 +2486,53 @@ describe('GET /interviews/:id detail', () => {
       contextCallInterviewId: body.contextCall.id,
       sourceSpanCount: 1,
     });
+
+    const candidatePerson = sqlite!.prepare(
+      `SELECT wp.person_id
+         FROM applications app
+         JOIN workspace_people wp ON wp.id = app.workspace_person_id
+        WHERE app.legacy_candidate_id = 'candidate-1'`,
+    ).get() as { person_id: string };
+    const contactPerson = sqlite!.prepare(
+      `SELECT wp.person_id
+         FROM workspace_people wp
+        WHERE json_extract(wp.context_json, '$.contactId') = 'contact-candidate-1'`,
+    ).get() as { person_id: string };
+    expect(contactPerson.person_id).toBe(candidatePerson.person_id);
+
+    const followUpAssertions = sqlite!.prepare(
+      `SELECT cr.record_type,
+              cr.predicate,
+              ss.exact_text,
+              c.canonical_key
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crsr.source_span_id
+         JOIN context_record_concepts crc ON crc.context_record_id = cr.id
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE cr.record_type = 'meeting_transcript_assertion'
+          AND ss.exact_text = ?
+        ORDER BY c.canonical_key`,
+    ).all(transcriptText) as Array<{
+      record_type: string;
+      predicate: string;
+      exact_text: string;
+      canonical_key: string;
+    }>;
+    expect(followUpAssertions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        record_type: 'meeting_transcript_assertion',
+        predicate: 'reviewed',
+        exact_text: transcriptText,
+        canonical_key: 'term:kafka',
+      }),
+      expect.objectContaining({
+        record_type: 'meeting_transcript_assertion',
+        predicate: 'reviewed',
+        exact_text: transcriptText,
+        canonical_key: 'term:retry-idempotency',
+      }),
+    ]));
 
     const originalDetailResponse = await app.request('/interviews/interview-code-review-blocked');
     expect(originalDetailResponse.status).toBe(200);
