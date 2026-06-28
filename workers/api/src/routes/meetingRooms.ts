@@ -358,6 +358,14 @@ const sessionEventSchema = z.object({
     });
     return;
   }
+  if (event.type === 'participant_join' || event.type === 'participant_leave') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Participant lifecycle evidence must be captured by the meeting-room lifecycle route, not direct session-event submission.',
+      path: ['properties'],
+    });
+    return;
+  }
   if (event.type === 'workspace_state') {
     const sourceOk = properties.source === 'workspace_state_client_submit'
       && properties.workspaceEventSource === 'browser_workspace_state_observer';
@@ -765,15 +773,18 @@ async function syncRoomActivityEvidenceForToken(
 function roomLifecycleEvidencePayload(
   room: ResolvedRoom,
   event: z.infer<typeof roomEventSchema>['event'],
-  options: { recordingWasActive: boolean },
+  options: { recordingWasActive: boolean; observedAt: string; timestamp: number },
 ): { type: SessionEventType; text: string; properties: Record<string, unknown> } | null {
   const roleLabel = room.role === 'GUEST' ? 'Guest' : 'Host';
   const sharedProperties = {
     source: 'meeting_room_lifecycle',
+    roomLifecycleEventSource: 'meeting_room_event_route',
     lifecycleEvent: event,
     participantRole: room.role,
     roomId: room.room_id,
     meetingId: room.meeting_id,
+    roomLifecycleObservedAt: options.observedAt,
+    roomLifecycleTimestamp: options.timestamp,
   };
 
   if (event === 'JOINED') {
@@ -820,11 +831,14 @@ async function captureRoomLifecycleEvidenceForToken(
   room: ResolvedRoom,
   event: z.infer<typeof roomEventSchema>['event'],
   timestamp: number,
-  options: { recordingWasActive: boolean },
+  options: { recordingWasActive: boolean; observedAt: string },
 ): Promise<RoomLifecycleEvidenceCaptureResult | null> {
   if (!c.env.VIDEO_ROOM) return null;
 
-  const payload = roomLifecycleEvidencePayload(room, event, options);
+  const payload = roomLifecycleEvidencePayload(room, event, {
+    ...options,
+    timestamp,
+  });
   if (!payload) return null;
 
   try {
@@ -2166,7 +2180,7 @@ meetingRooms.post('/:token/events', async (c) => {
     room,
     event,
     Math.floor(new Date(now).getTime() / 1000),
-    { recordingWasActive },
+    { recordingWasActive, observedAt: now },
   );
 
   return c.json({ accepted: true, sessionEvidence, lifecycleEvidence });

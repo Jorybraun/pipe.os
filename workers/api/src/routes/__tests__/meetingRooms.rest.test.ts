@@ -1637,6 +1637,22 @@ describe('meeting room recording living-context route', () => {
     });
     expect(JSON.stringify(workspaceStateProperties)).not.toContain('/workspace/proxy/');
 
+    const fakeParticipantJoinRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'participant_join',
+        text: 'Host joined the 95 Until Infinity room',
+        actor: 'host',
+        properties: {
+          source: 'meeting_room_lifecycle',
+          lifecycleEvent: 'JOINED',
+          participantRole: 'HOST',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeParticipantJoinRes.status).toBe(422);
+
     const contextEntities = sqlite.prepare(
       `SELECT entity_type, entity_id, relationship, value_json, metadata_json
          FROM context_record_entities
@@ -3053,8 +3069,11 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.parse(guestJoin?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'meeting_room_lifecycle',
+      roomLifecycleEventSource: 'meeting_room_event_route',
       lifecycleEvent: 'JOINED',
       participantRole: 'GUEST',
+      roomLifecycleObservedAt: expect.any(String),
+      roomLifecycleTimestamp: expect.any(Number),
     });
 
     const contextRows = sqlite.prepare(
