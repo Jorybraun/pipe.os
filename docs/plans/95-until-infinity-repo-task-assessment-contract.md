@@ -198,6 +198,11 @@ The controlling product rule remains:
   update the canonical D1 session row before projection, so Clippy availability,
   room workspace state, and assessment evidence reflect the real container
   lifecycle instead of a stale `READY` session.
+- Stale/deprecated Workers AI candidate-discovery failures are now repairable by
+  both room RPC refresh and the scheduled Worker: the retry reopens the original
+  R2 text/PDF source, marks ingestion `retry_queued`, and reruns the normal
+  source-backed candidate evidence pipeline instead of clearing errors or
+  fabricating fallback match evidence.
 - Live peer cursor presence now keeps one receive-timestamped cursor per remote
   role and renders movement with transform-only compositing, so host/guest
   pointer presence stays synced without stale visual trails.

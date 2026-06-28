@@ -23,7 +23,6 @@ import { scoreImplementationSubmission } from '../lib/implementationScorer/imple
 import { processResumeFromR2 } from '../lib/enrichment/resumeIngestion';
 import { buildRuleBasedParsedCV, persistParsedCV } from '../lib/cvParser';
 import { runCandidateIngestion } from '../lib/candidateDiscovery/orchestrate';
-import { markIngestionFailed } from '../lib/candidateDiscovery/persist';
 import type { Env } from '../types';
 import { matchReposForCandidateNeo4j } from '../lib/neo4j/matchingQueries';
 import { matchReposByGroundedEdges } from '../lib/neo4j/contextualGraph';
@@ -46,6 +45,7 @@ import {
   type CandidateSafeMatchStatus,
 } from '../lib/challengeMatching/candidateSafeQualityGate';
 import type { MatchExplanation, RoleSourceReference, SourceRef } from '../lib/challengeMatching';
+import { maybeQueueRetryableStandaloneIngestion } from '../lib/candidateDiscovery/staleWorkersAiRetry';
 
 // ─── Blocking gate for post-screener enrichment ─────────────────────────────
 
@@ -1370,121 +1370,6 @@ function optionalExecutionContext(c: { readonly executionCtx: ExecutionContext }
   } catch {
     return null;
   }
-}
-
-function isRetryableStaleWorkersAIModelFailure(row: {
-  status: string | null;
-  current_step: string | null;
-  error_text: string | null;
-}): boolean {
-  if (row.status !== 'failed') return false;
-  const errorText = (row.error_text ?? '').toLowerCase();
-  if (!errorText) return false;
-  const currentStep = row.current_step ?? '';
-  const failedDuringDiscovery = currentStep === 'discover_profile'
-    || errorText.includes('discovery failed');
-  if (!failedDuringDiscovery) return false;
-  return errorText.includes('5028')
-    || errorText.includes('deprecated')
-    || errorText.includes('decommissioned');
-}
-
-async function retryCandidateEvidenceIngestionFromSource(
-  env: Env,
-  candidateId: string,
-  resumeS3Key: string,
-): Promise<void> {
-  if (resumeS3Key.startsWith('text-intake/')) {
-    if (!env.STORAGE) {
-      await markIngestionFailed(env.DB, candidateId, 'Retry failed: original text intake source is unavailable because R2 storage is not configured.');
-      return;
-    }
-    const object = await env.STORAGE.get(resumeS3Key);
-    if (!object) {
-      await markIngestionFailed(env.DB, candidateId, `Retry failed: original text intake source not found in R2: ${resumeS3Key}`);
-      return;
-    }
-    const resumeText = (await object.text()).trim();
-    if (resumeText.length < 20) {
-      await markIngestionFailed(env.DB, candidateId, 'Retry failed: original text intake source is too short for source-backed candidate evidence.');
-      return;
-    }
-    const parsedCV = buildRuleBasedParsedCV(resumeText);
-    await persistParsedCV(env.DB, candidateId, parsedCV);
-    await runCandidateIngestion({
-      env,
-      db: env.DB,
-      candidateId,
-      parsed: parsedCV,
-      resumeText,
-      decompositionResult: null,
-    });
-    return;
-  }
-
-  const result = await processResumeFromR2({
-    env,
-    db: env.DB,
-    candidateId,
-    r2Key: resumeS3Key,
-  });
-  if (!result.success) {
-    await markIngestionFailed(
-      env.DB,
-      candidateId,
-      `Retry failed: ${result.error ?? 'resume ingestion did not complete'}`,
-    );
-  }
-}
-
-async function maybeQueueRetryableStandaloneIngestion(
-  env: Env,
-  executionCtx: ExecutionContext | null,
-  candidateId: string,
-): Promise<boolean> {
-  const row = await env.DB.prepare(
-    `SELECT c.resume_s3_key,
-            ci.status,
-            ci.current_step,
-            ci.error_text
-       FROM candidates c
-       LEFT JOIN candidate_ingestion ci ON ci.candidate_id = c.id
-      WHERE c.id = ?1
-        /* retryable_standalone_ingestion */`,
-  ).bind(candidateId).first<{
-    resume_s3_key: string | null;
-    status: string | null;
-    current_step: string | null;
-    error_text: string | null;
-  }>();
-
-  if (!row?.resume_s3_key || !isRetryableStaleWorkersAIModelFailure(row)) {
-    return false;
-  }
-
-  const now = new Date().toISOString();
-  await env.DB.prepare(
-    `INSERT INTO candidate_ingestion (candidate_id, status, current_step, error_text, created_at, updated_at)
-     VALUES (?1, 'pending', 'retry_queued', NULL, ?2, ?2)
-     ON CONFLICT(candidate_id) DO UPDATE SET
-       status = 'pending',
-       current_step = 'retry_queued',
-       error_text = NULL,
-       updated_at = excluded.updated_at`,
-  ).bind(candidateId, now).run();
-
-  const retryPromise = retryCandidateEvidenceIngestionFromSource(env, candidateId, row.resume_s3_key)
-    .catch(async (err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[standaloneReview] retryable candidate ingestion failed for ${candidateId}:`, msg);
-      await markIngestionFailed(env.DB, candidateId, `Retry failed: ${msg}`);
-    });
-  if (executionCtx) {
-    executionCtx.waitUntil(retryPromise);
-  } else {
-    await retryPromise;
-  }
-  return true;
 }
 
 /** True when a pipeline code stage should be gated behind CV intake for this candidate. */
