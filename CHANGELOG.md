@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Living context graph & match explanation completeness
+
+- Added `searchSourceContent()` to the living context read model for cross-artifact semantic source search (criterion #2). Searches all source spans linked to a workspace person, falls back to assertion narratives when no spans match, and returns hits with citing assertions, context records, and concept keys.
+- Added `GET /api/v1/contacts/:id/living-context/search?q=...` and `GET /api/v1/candidates/:candidateId/living-context/search?q=...` endpoints for recruiter-facing source content search.
+- Surfaced `stretchAreas` and `unmatchedDemandIds` through the standalone review match API and frontend types (criteria #6/#7). Each alignment now includes its `stretch` field (dimension, atomConcept, demandConcept), and the match record exposes derived stretch areas and unmatched demand IDs.
+- Added `StretchAreasPanel` and `UnmatchedDemandsPanel` UI components to the living context graph visualization, rendering stretch dimensions with source refs and unmatched PR demands with concept keys.
+- Added `GET /api/v1/internal/rollout-gate?stage=shadow|canary|production` endpoint for live rollout readiness checks against the staged acceptance thresholds (criterion #8).
+- Added proof test suites: `searchSourceContent.test.ts` (9 tests), `rolloutGate.test.ts` (7 tests), `matchExplanation.test.ts` (4 tests) — validating criteria #2, #5/#6, and #8.
+
+### Fixed — Test suite stabilization
+
+- Migrated `backfillLivingContext.ts` from `node:sqlite` to `better-sqlite3` with D1-style `?N` param rewriting, fixing `No such built-in module` on Node 20.
+- Added missing `packet_json` column to `checkReviewChallengeGraphReadiness` test fixtures, fixing `no such column: rcp.packet_json` schema mismatch.
+- Added `it.skipIf(!hasGo)` guard to Go parser test in `sourceAnalysis.test.ts` so CI skips gracefully when Go toolchain is absent.
+
 ### Fixed — 95 Until Infinity desktop tools
 
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
