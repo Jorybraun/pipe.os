@@ -421,11 +421,10 @@ async function nextEventSequence(db: D1Database, sessionId: string): Promise<num
   return (row?.max_sequence ?? 0) + 1;
 }
 
-async function requireClaimSourceBackedBySessionEvent(input: {
+async function requireSourceRefBackedBySessionEvent(input: {
   db: D1Database;
   sessionId: string;
-  claimId: string;
-  claimPolarity: AssessmentEvaluationClaimPolarity;
+  owner: string;
   sourceRef: AssessmentEvidenceSourceRefInput;
 }): Promise<void> {
   const evidenceRole = input.sourceRef.evidenceRole ?? 'support';
@@ -453,7 +452,7 @@ async function requireClaimSourceBackedBySessionEvent(input: {
   ).first<{ event_id: string }>();
   if (!row) {
     throw new Error(
-      `${input.claimPolarity} evaluation claim ${input.claimId} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
+      `${input.owner} source ref ${input.sourceRef.sourceRefType}:${input.sourceRef.sourceRefId} is not backed by assessment session evidence`,
     );
   }
 }
@@ -669,11 +668,10 @@ export class AssessmentLayerStore {
       for (const sourceRef of claim.sourceRefs) {
         if (requiresSessionBackedSourceRef) {
           assertExactEvaluationClaimSourceRef(sourceRef, claim);
-          await requireClaimSourceBackedBySessionEvent({
+          await requireSourceRefBackedBySessionEvent({
             db: this.#db,
             sessionId: session.id,
-            claimId: claim.id,
-            claimPolarity: claim.polarity,
+            owner: `${claim.polarity} evaluation claim ${claim.id}`,
             sourceRef,
           });
         } else {
@@ -685,6 +683,15 @@ export class AssessmentLayerStore {
       requireNonEmpty(diagnostic.code, 'diagnostic code');
       requireNonEmpty(diagnostic.severity, 'diagnostic severity');
       requireNonEmpty(diagnostic.message, 'diagnostic message');
+      for (const sourceRef of diagnostic.sourceRefs ?? []) {
+        assertExactEventSourceRef(sourceRef, `assessment diagnostic ${diagnostic.code}`);
+        await requireSourceRefBackedBySessionEvent({
+          db: this.#db,
+          sessionId: session.id,
+          owner: `assessment diagnostic ${diagnostic.code}`,
+          sourceRef,
+        });
+      }
     }
 
     const now = this.#clock();
@@ -816,7 +823,6 @@ export class AssessmentLayerStore {
       ).run();
 
       for (const sourceRef of uniqueSourceRefs(diagnostic.sourceRefs ?? [])) {
-        assertExactEventSourceRef(sourceRef, `assessment diagnostic ${diagnosticId}`);
         const diagnosticSourceRefId = await deterministicEntityId(
           'assessment_diagnostic_source_ref',
           `${diagnosticId}:${sourceRefKey(sourceRef)}`,

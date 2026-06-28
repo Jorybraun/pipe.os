@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repo-task assessment evaluation now requires every non-diagnostic claim, including negative outcomes, to cite exact evidence already captured in the same assessment session.
 - Repo-task assessment outputs now reject report/output status contradictions, preserving rebuildable evaluation projections from the canonical assessment spine.
 - Repo-task assessment diagnostics now preserve exact source refs through evaluation reports and context-record projections instead of dropping diagnostic provenance at the facade.
+- Repo-task assessment diagnostics now reject forged source refs that were not previously captured as immutable evidence in the same assessment session.
 
 ### Fixed — 95 Until Infinity desktop tools
 

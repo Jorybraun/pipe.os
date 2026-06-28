@@ -716,6 +716,38 @@ describe('repo task assessment session routes', () => {
     const diagnosticText = 'No reviewable repository task packet was assigned to this assessment.';
     const diagnosticSourceRef = await sourceRef('system_diagnostic', 'missing-task-packet-1', diagnosticText);
 
+    const forgedDiagnosticResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:forged-diagnostic-source-ref',
+        status: 'PROVENANCE_INCOMPLETE',
+        summary: 'Unable to evaluate because no reviewable repository task packet was assigned.',
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status: 'PROVENANCE_INCOMPLETE',
+        },
+        claims: [],
+        diagnostics: [{
+          code: 'MISSING_REPO_TASK_PACKET',
+          severity: 'blocking',
+          message: 'No reviewable repository task packet was assigned.',
+          sourceRefs: [await sourceRef('system_diagnostic', 'missing-task-packet-forged', diagnosticText)],
+        }],
+      }),
+      env,
+    );
+
+    expect(forgedDiagnosticResponse.status).toBe(400);
+    const forgedDiagnosticBody = await forgedDiagnosticResponse.json() as {
+      error: { message: string };
+    };
+    expect(forgedDiagnosticBody.error.message).toContain(
+      'source ref system_diagnostic:missing-task-packet-forged is not backed by assessment session evidence',
+    );
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assessment_evaluation_reports').get()).toEqual({
+      count: 0,
+    });
+
     expect((await app.request(
       `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
       jsonRequest({
