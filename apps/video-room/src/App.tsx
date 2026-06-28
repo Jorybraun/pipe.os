@@ -392,6 +392,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     void postRoomEvent(token, 'STARTED');
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
 
+  const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
+
   const publishWorkspaceStateEvent = useCallback((
     nextWorkspace: RoomWorkspace | null,
     source: 'initial_load' | 'launch' | 'refresh' | 'error',
@@ -473,7 +475,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     return () => window.clearInterval(timer);
   }, [refreshWorkspace, workspace?.enabled, workspace?.session?.status]);
 
-  const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
   const usesWin95Desktop = room.roomSurface === 'win95';
   const canControlRoomSurface = canControlSharedRoomSurface(metadata.role);
   const chatMessages: ChatMessage[] = room.chatMessages.map((message) => ({

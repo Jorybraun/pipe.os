@@ -499,7 +499,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       createdAt: value.createdAt,
       kind: 'WORKSPACE_STATE_CHANGED',
       actor: value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined,
-      workspaceStateEventId: stringOrNull(value.workspaceStateEventId),
+      workspaceStateEventId: stringOrNull(value.workspaceStateEventId) ?? undefined,
       capturedAtMs: numberOrNull(value.capturedAtMs) ?? undefined,
       status: typeof value.status === 'string' ? value.status : null,
       workspaceSessionId: stringOrNull(value.workspaceSessionId),
