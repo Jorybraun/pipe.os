@@ -737,6 +737,73 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('redacts workspace error diagnostics before broadcast and storage', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+    const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
+    const rawRoomToken = 'room-token-secret-123';
+    const rawQueryToken = 'query-token-secret-456';
+    const rawDiagnostic = `Init failed DEVIN_API_KEY=${rawServiceKey} at /api/v1/meeting-rooms/${rawRoomToken}/workspace?token=${rawQueryToken}`;
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-workspace-error',
+        clientId: 'host-client',
+        createdAt: 4,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        actor: 'host',
+        workspaceStateEventId: 'workspace-state:host:4:error:no-session:ERROR',
+        capturedAtMs: 4,
+        status: 'ERROR',
+        workspaceSessionId: null,
+        errorMessage: rawDiagnostic,
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        githubPrNumber: null,
+        matchedRepoId: 42,
+        challengeStatus: 'github_pr_assigned',
+        challengeKind: 'github_pr',
+        challengeSource: 'scheduled_interview.github_pr_number',
+        challengeMessage: null,
+        ttlSeconds: null,
+        ttlSource: null,
+        expiringSoon: false,
+        source: 'browser_workspace_state_observer',
+        workspaceEventSource: 'browser_workspace_state_observer',
+        workspaceStateSource: 'error',
+        workspaceTelemetryPersisted: true,
+        proxyUrlPersisted: false,
+      },
+    }));
+
+    const guestEvent = parseSent(guest).find((message) =>
+      message.type === 'ROOM_DESKTOP_EVENT'
+      && (message.payload as { id?: string } | undefined)?.id === 'evt-workspace-error',
+    );
+    expect(guestEvent).toEqual(expect.objectContaining({
+      payload: expect.objectContaining({
+        errorMessage: 'Init failed DEVIN_API_KEY=[REDACTED_SECRET] at /api/v1/meeting-rooms/[REDACTED_SECRET]/workspace?token=[REDACTED_SECRET]',
+      }),
+    }));
+
+    const activityLog = storage.get('desktopActivityLog') as Array<{
+      event?: { errorMessage?: string | null };
+    }>;
+    expect(activityLog[0]?.event?.errorMessage).toBe(
+      'Init failed DEVIN_API_KEY=[REDACTED_SECRET] at /api/v1/meeting-rooms/[REDACTED_SECRET]/workspace?token=[REDACTED_SECRET]',
+    );
+
+    const serialized = JSON.stringify({ guestEvent, activityLog });
+    expect(serialized).not.toContain(rawServiceKey);
+    expect(serialized).not.toContain(rawRoomToken);
+    expect(serialized).not.toContain(rawQueryToken);
+  });
+
   it('rejects workspace state changes without browser observer evidence', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

@@ -3,6 +3,7 @@ import {
   buildCodeEditorOpenEvidence,
   buildCodeServerFileChangeEvidence,
   buildWorkspaceStateDesktopEvent,
+  redactWorkspaceDiagnostic,
 } from './workspaceEvidence';
 import type { RoomWorkspace } from '../types';
 
@@ -233,6 +234,31 @@ describe('buildWorkspaceStateDesktopEvent', () => {
       workspaceTelemetryPersisted: true,
       proxyUrlPersisted: false,
     });
+  });
+
+  it('redacts secrets and room tokens from workspace diagnostics before evidence is built', () => {
+    const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
+    const rawRoomToken = 'room-token-secret-123';
+    const rawQueryToken = 'query-token-secret-456';
+    const diagnostic = `Init failed DEVIN_API_KEY=${rawServiceKey} at /api/v1/meeting-rooms/${rawRoomToken}/workspace?token=${rawQueryToken}`;
+
+    expect(redactWorkspaceDiagnostic(diagnostic)).toBe(
+      'Init failed DEVIN_API_KEY=[REDACTED_SECRET] at /api/v1/meeting-rooms/[REDACTED_SECRET]/workspace?token=[REDACTED_SECRET]',
+    );
+
+    const event = buildWorkspaceStateDesktopEvent({
+      workspace: { ...workspace, session: null, repoUrl: null, canLaunch: true },
+      actor: 'host',
+      source: 'error',
+      capturedAtMs: 1700000006000,
+      errorMessage: diagnostic,
+    });
+
+    expect(event.errorMessage).toContain('DEVIN_API_KEY=[REDACTED_SECRET]');
+    expect(event.errorMessage).toContain('/api/v1/meeting-rooms/[REDACTED_SECRET]/workspace');
+    expect(event.errorMessage).not.toContain(rawServiceKey);
+    expect(event.errorMessage).not.toContain(rawRoomToken);
+    expect(event.errorMessage).not.toContain(rawQueryToken);
   });
 
   it('records a matched repo with no PR as an explicit reviewable-task gap', () => {

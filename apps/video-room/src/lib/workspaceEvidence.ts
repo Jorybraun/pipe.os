@@ -4,6 +4,15 @@ export type RoomEvidenceActor = 'host' | 'guest';
 export type RoomEvidenceSurface = 'standard' | 'win95';
 
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
+const WORKSPACE_DIAGNOSTIC_LIMIT = 500;
+const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
+const BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
+const GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
+const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
+const ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
+const SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
+const ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s]+/g;
 
 export interface CodeEditorOpenEvidence {
   text: string;
@@ -41,6 +50,20 @@ export interface WorkspaceStateDesktopEvent {
   workspaceStateSource: 'initial_load' | 'launch' | 'refresh' | 'error';
   workspaceTelemetryPersisted: true;
   proxyUrlPersisted: false;
+}
+
+export function redactWorkspaceDiagnostic(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  const redacted = trimmed
+    .replace(ENV_SECRET_ASSIGNMENT_RE, (_match, name: string) => `${name}=${WORKSPACE_REDACTED_SECRET}`)
+    .replace(BEARER_TOKEN_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`)
+    .replace(GITHUB_PAT_RE, WORKSPACE_REDACTED_SECRET)
+    .replace(OPENAI_KEY_RE, WORKSPACE_REDACTED_SECRET)
+    .replace(BARE_SECRET_RE, WORKSPACE_REDACTED_SECRET)
+    .replace(SECRET_QUERY_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`)
+    .replace(ROOM_TOKEN_PATH_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`);
+  return redacted.slice(0, WORKSPACE_DIAGNOSTIC_LIMIT);
 }
 
 export function buildCodeEditorOpenEvidence(input: {
@@ -145,7 +168,7 @@ export function buildWorkspaceStateDesktopEvent(input: {
   errorMessage?: string | null;
 }): WorkspaceStateDesktopEvent {
   const session = input.workspace?.session ?? null;
-  const errorMessage = session?.errorMessage ?? input.errorMessage ?? null;
+  const errorMessage = redactWorkspaceDiagnostic(session?.errorMessage ?? input.errorMessage ?? null);
   const status = session?.status ?? (errorMessage ? 'ERROR' : null);
   const workspaceSessionId = session?.sessionId ?? null;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;

@@ -61,6 +61,14 @@ const START_MENU_EVENT_SOURCES = new Set([
   'win95_start_menu_item',
 ]);
 const START_MENU_EVENT_ID_RE = /^start-menu:(host|guest):\d+:(open|close):[a-z0-9_]+$/;
+const WORKSPACE_REDACTED_SECRET = '[REDACTED_SECRET]';
+const WORKSPACE_BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
+const WORKSPACE_GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const WORKSPACE_OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{8,}\b/g;
+const WORKSPACE_BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
+const WORKSPACE_ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
+const WORKSPACE_SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
+const WORKSPACE_ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s]+/g;
 
 interface SignalMessage {
   type:
@@ -700,7 +708,7 @@ export class VideoRoom {
         capturedAtMs: this.safeNumberOrNull(value.capturedAtMs) ?? undefined,
         status,
         workspaceSessionId: this.safeTextOrNull(value.workspaceSessionId, 160),
-        errorMessage: this.safeTextOrNull(value.errorMessage, 500),
+        errorMessage: this.safeWorkspaceDiagnosticOrNull(value.errorMessage, 500),
         repoUrl: this.safeTextOrNull(value.repoUrl, 500),
         githubPrNumber: this.safeNumberOrNull(value.githubPrNumber),
         matchedRepoId: this.safeNumberOrNull(value.matchedRepoId),
@@ -2057,6 +2065,22 @@ export class VideoRoom {
   private safeTextOrNull(value: unknown, maxLength: number): string | null | undefined {
     if (value === null) return null;
     return this.isSafeFileText(value, maxLength) ? value : undefined;
+  }
+
+  private safeWorkspaceDiagnosticOrNull(value: unknown, maxLength: number): string | null | undefined {
+    if (value === null) return null;
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    return trimmed
+      .replace(WORKSPACE_ENV_SECRET_ASSIGNMENT_RE, (_match, name: string) => `${name}=${WORKSPACE_REDACTED_SECRET}`)
+      .replace(WORKSPACE_BEARER_TOKEN_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`)
+      .replace(WORKSPACE_GITHUB_PAT_RE, WORKSPACE_REDACTED_SECRET)
+      .replace(WORKSPACE_OPENAI_KEY_RE, WORKSPACE_REDACTED_SECRET)
+      .replace(WORKSPACE_BARE_SECRET_RE, WORKSPACE_REDACTED_SECRET)
+      .replace(WORKSPACE_SECRET_QUERY_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`)
+      .replace(WORKSPACE_ROOM_TOKEN_PATH_RE, (_match, prefix: string) => `${prefix}${WORKSPACE_REDACTED_SECRET}`)
+      .slice(0, maxLength);
   }
 
   private safeNumberOrNull(value: unknown): number | null | undefined {

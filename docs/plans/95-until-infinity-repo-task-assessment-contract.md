@@ -211,6 +211,10 @@ The controlling product rule remains:
   the container can update its own row, the candidate-owned session is rechecked
   and marked `ERROR` with a bounded redacted diagnostic for UI and evidence
   projections.
+- Workspace-state diagnostics are redacted before becoming browser evidence and
+  again inside the VideoRoom Durable Object before broadcast/storage, so
+  source-backed `WORKSPACE_STATE_CHANGED` events cannot preserve room tokens,
+  Devin/Cognition tokens, API keys, bearer tokens, or secret query parameters.
 - Stale/deprecated Workers AI candidate-discovery failures are now repairable by
   both room RPC refresh and the scheduled Worker: the retry reopens the original
   R2 text/PDF source, marks ingestion `retry_queued`, and reruns the normal

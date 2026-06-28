@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Workspace-state diagnostics now redact room tokens, Devin/Cognition tokens, API keys, bearer tokens, and secret query parameters in both browser-built evidence and the VideoRoom Durable Object activity log.
 - Standalone dev-container launches now mark candidate sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, and the status API returns that diagnostic to the UI.
 - Room workspace launches now mark dev-container sessions `ERROR` with a redacted diagnostic when the background Durable Object init request fails before the container can report status, preventing broken workspaces from polling forever as `LAUNCHING`.
 - The Win95 Clippy tray icon now reflects whether the Clippy chat panel is actually open, while keeping the tray entry available after prompt dismissal or chat close for the next real-agent interaction.
