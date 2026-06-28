@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Workspace/dev-container state without browser observer evidence is now rejected by the room Durable Object and skipped during replay instead of gaining Durable Object fallback provenance.
 - Clippy UI and agent room-action evidence now carries stable action ids and capture timestamps across tray, prompt, browser-executed, and persisted bridge suggestion paths.
 - Clippy/Devin agent reply evidence now carries stable CHAT_RESPONSE ids, capture timestamps, response fingerprints, and lengths across browser fallback and persisted bridge paths.
 - Clippy/Devin agent status evidence now carries stable bridge status ids and capture timestamps across browser-observed states and persisted container diagnostics.

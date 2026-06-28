@@ -638,6 +638,38 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('rejects workspace state changes without browser observer evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-source-less-workspace',
+        clientId: 'host-client',
+        createdAt: 3,
+        kind: 'WORKSPACE_STATE_CHANGED',
+        actor: 'host',
+        status: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+    }));
+    expect(storage.has('desktopActivityLog')).toBe(false);
+  });
+
   it('broadcasts live room cursor presence without persisting activity', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

@@ -243,6 +243,19 @@ describe('sessionEvents', () => {
             },
           },
           {
+            role: 'HOST',
+            recordedAt: 1700000001100,
+            event: {
+              id: 'evt-source-less-workspace',
+              clientId: 'host-client',
+              createdAt: 1700000001100,
+              kind: 'WORKSPACE_STATE_CHANGED',
+              actor: 'host',
+              status: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+            },
+          },
+          {
             role: 'GUEST',
             recordedAt: 1700000001250,
             event: {
@@ -574,7 +587,7 @@ describe('sessionEvents', () => {
             ttlSeconds: 3600,
             ttlSource: 'default',
             expiringSoon: false,
-            source: 'workspace_state_durable_object',
+            source: 'browser_workspace_state_observer',
             workspaceEventSource: 'browser_workspace_state_observer',
             workspaceStateSource: 'launch',
             workspaceTelemetryPersisted: true,

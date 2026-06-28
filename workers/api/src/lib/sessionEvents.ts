@@ -286,6 +286,33 @@ function hasSourceBackedRoomSurfaceEvidence(
     && event.durableObjectReplayExpected === true;
 }
 
+function hasSourceBackedWorkspaceStateEvidence(
+  event: Record<string, unknown>,
+  actor: SessionEvent['actor'],
+  status: string,
+): boolean {
+  const source = stringOrNull(event.source);
+  const workspaceEventSource = stringOrNull(event.workspaceEventSource);
+  const workspaceStateSource = stringOrNull(event.workspaceStateSource);
+  const workspaceStateEventId = stringOrNull(event.workspaceStateEventId);
+  const capturedAtMs = numberOrNull(event.capturedAtMs);
+  const workspaceSessionId = stringOrNull(event.workspaceSessionId);
+  const stateIdSession = workspaceSessionId ?? 'no-session';
+  return (actor === 'host' || actor === 'guest')
+    && event.actor === actor
+    && source === 'browser_workspace_state_observer'
+    && workspaceEventSource === 'browser_workspace_state_observer'
+    && workspaceStateSource !== null
+    && WORKSPACE_STATE_SOURCES.has(workspaceStateSource)
+    && capturedAtMs !== null
+    && Number.isInteger(capturedAtMs)
+    && capturedAtMs >= 0
+    && workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
+    && (status === 'ERROR' || workspaceSessionId !== null)
+    && event.workspaceTelemetryPersisted === true
+    && event.proxyUrlPersisted === false;
+}
+
 function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
@@ -330,10 +357,12 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
   }
 
   if (event.kind === 'WORKSPACE_STATE_CHANGED') {
-    const status = stringOrNull(event.status) ?? 'unknown';
+    const status = stringOrNull(event.status);
+    if (!status) return null;
+    if (!hasSourceBackedWorkspaceStateEvidence(event, actor, status)) return null;
     const properties: Record<string, unknown> = {
       ...base,
-      source: 'workspace_state_durable_object',
+      source: 'browser_workspace_state_observer',
       workspaceStatus: status,
     };
     const workspaceSessionId = stringOrNull(event.workspaceSessionId);

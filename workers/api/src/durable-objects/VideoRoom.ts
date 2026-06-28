@@ -499,9 +499,40 @@ export class VideoRoom {
     return null;
   }
 
+  private hasSourceBackedWorkspaceStateEvidence(
+    event: Extract<RoomDesktopEvent, { kind: 'WORKSPACE_STATE_CHANGED' }>,
+    actor: 'host' | 'guest',
+  ): boolean {
+    const status = typeof event.status === 'string' && event.status.length > 0 ? event.status : null;
+    const capturedAtMs = event.capturedAtMs;
+    const workspaceStateSource = event.workspaceStateSource;
+    const workspaceSessionId = typeof event.workspaceSessionId === 'string' && event.workspaceSessionId.length > 0
+      ? event.workspaceSessionId
+      : null;
+    const stateIdSession = workspaceSessionId ?? 'no-session';
+    return event.actor === actor
+      && status !== null
+      && event.source === 'browser_workspace_state_observer'
+      && event.workspaceEventSource === 'browser_workspace_state_observer'
+      && typeof workspaceStateSource === 'string'
+      && (
+        workspaceStateSource === 'initial_load'
+        || workspaceStateSource === 'launch'
+        || workspaceStateSource === 'refresh'
+        || workspaceStateSource === 'error'
+      )
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && event.workspaceStateEventId === `workspace-state:${actor}:${capturedAtMs}:${workspaceStateSource}:${stateIdSession}:${status}`
+      && (status === 'ERROR' || workspaceSessionId !== null)
+      && event.workspaceTelemetryPersisted === true
+      && event.proxyUrlPersisted === false;
+  }
+
   private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
     if (event.kind === 'SET_ROOM_SURFACE') {
-      const actor = this.isHostRole(role) ? 'host' : 'guest';
       const expectedAction = event.surface === 'win95' ? 'enter_desktop' : 'exit_desktop';
       return event.source === 'room_surface_control'
         && event.surfaceControlEventSource === 'browser_room_surface_toggle'
@@ -515,10 +546,11 @@ export class VideoRoom {
         && typeof event.roomPhase === 'string'
         && event.durableObjectReplayExpected === true;
     }
-    if (event.kind === 'WORKSPACE_STATE_CHANGED') return true;
+    if (event.kind === 'WORKSPACE_STATE_CHANGED') {
+      return this.hasSourceBackedWorkspaceStateEvidence(event, actor);
+    }
     const evidence = event.evidence;
     if (!this.isRecord(evidence)) return false;
-    const actor = this.isHostRole(role) ? 'host' : 'guest';
     if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
       const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
       const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
