@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW scoring now uses a resilient single-pass Workers AI scorer with current model fallbacks, retries stale `scoring` sessions from the scheduled Worker backlog, and persists the full score report on both `review_sessions` and `challenge_submissions`.
 - Standalone CODE_REVIEW matching now derives deterministic source-backed match facets from the candidate's exact CV evidence, preserving repo/domain signals such as Workers/runtime/deployments instead of collapsing rich decomposition evidence into generic TypeScript overlap.
 - Standalone CODE_REVIEW matching keeps derived CV source terms in the concept channel instead of flooding sparse mechanism/domain dimensions, preventing valid Workers-style matches from being rejected as weak.
 - Roleless CODE_REVIEW repo matching now accepts exact, multi-span source-backed candidate/repo alignments at the sparse-decomposition threshold and measures contrast against different repositories instead of same-repo PR near-ties.

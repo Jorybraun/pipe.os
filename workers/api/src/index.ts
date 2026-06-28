@@ -49,6 +49,7 @@ import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
+import { processCodeReviewScoringBacklog } from './lib/review/scoringBacklog';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
 
 // Unified Agent Runtime plugin registration (ADR-034)
@@ -319,5 +320,6 @@ export default {
   fetch: app.fetch,
   scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(processProjectionOutbox(env));
+    ctx.waitUntil(processCodeReviewScoringBacklog(env));
   },
 };

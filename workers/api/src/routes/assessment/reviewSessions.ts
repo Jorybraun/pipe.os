@@ -480,7 +480,7 @@ reviewSessions.post('/:sessionId/rescore', async (c) => {
   const session = await c.env.DB.prepare(`
     SELECT rs.id, rs.challenge_id, rs.assessment_id, rs.candidate_id,
            rs.status, rs.transcript, rs.implementer_persona,
-           rs.current_round, rs.max_rounds
+           rs.current_round, rs.max_rounds, rs.updated_at
     FROM review_sessions rs
     JOIN assessments a ON a.id = rs.assessment_id
     JOIN candidates cand ON cand.id = rs.candidate_id
@@ -498,15 +498,21 @@ reviewSessions.post('/:sessionId/rescore', async (c) => {
       implementer_persona: string;
       current_round: number;
       max_rounds: number;
+      updated_at: string;
     }>();
 
   if (!session) {
     return c.json({ error: { code: 'NOT_FOUND', message: 'Review session not found.' } }, 404);
   }
 
-  if (session.status !== 'scoring_failed' && session.status !== 'verdict_submitted') {
+  const staleScoring =
+    session.status === 'scoring' &&
+    Number.isFinite(Date.parse(session.updated_at)) &&
+    Date.parse(session.updated_at) <= Date.now() - 120_000;
+
+  if (session.status !== 'scoring_failed' && session.status !== 'verdict_submitted' && !staleScoring) {
     return c.json(
-      { error: { code: 'BAD_REQUEST', message: 'Session must be in scoring_failed or verdict_submitted state to rescore.' } },
+      { error: { code: 'BAD_REQUEST', message: 'Session must be in scoring_failed, verdict_submitted, or stale scoring state to rescore.' } },
       400,
     );
   }
