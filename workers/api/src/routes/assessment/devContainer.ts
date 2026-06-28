@@ -25,6 +25,7 @@ import {
   insertSession,
   getChallengeTtlMeta,
   getSessionByIdForCandidate,
+  markError,
   markStopped,
   mintExchangeToken,
   consumeExchangeToken,
@@ -36,11 +37,35 @@ import { signJwt, verifyJwt } from '../../lib/jwt';
 const DEFAULT_GLOBAL_TTL = 3600; // 60 min
 const DEFAULT_MAX_TTL = 7200; // 2 hours
 const DEFAULT_INSTANCE_TYPE = 'standard-1';
+const MAX_DEV_CONTAINER_INIT_DIAGNOSTIC_CHARS = 1_000;
 
 function parseIntEnv(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function sanitizeDevContainerInitDiagnostic(value: string): string {
+  const redacted = value
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
+    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]')
+    .trim();
+  if (redacted.length <= MAX_DEV_CONTAINER_INIT_DIAGNOSTIC_CHARS) return redacted;
+  return `${redacted.slice(0, MAX_DEV_CONTAINER_INIT_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
+}
+
+async function markInitFailedIfStillLaunching(input: {
+  db: D1Database;
+  sessionId: string;
+  candidateId: string;
+  diagnostic: string;
+}): Promise<void> {
+  const session = await getSessionByIdForCandidate(input.db, input.sessionId, input.candidateId);
+  if (!session || session.status !== 'LAUNCHING') return;
+  await markError(input.db, input.sessionId, input.diagnostic);
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -205,8 +230,31 @@ devContainer.post('/launch', async (c) => {
         challengeBranch,
       }),
     })
-    .catch((err: unknown) => {
-      console.error('[devContainer.launch] DO init failed:', err);
+    .then(async (response) => {
+      if (response.ok) return;
+      const responseText = await response.text().catch(() => '');
+      const diagnostic = sanitizeDevContainerInitDiagnostic(
+        `Dev-container init returned HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`,
+      );
+      console.error('[devContainer.launch] DO init returned non-OK:', diagnostic);
+      await markInitFailedIfStillLaunching({
+        db: c.env.DB,
+        sessionId,
+        candidateId,
+        diagnostic,
+      });
+    })
+    .catch(async (err: unknown) => {
+      const diagnostic = sanitizeDevContainerInitDiagnostic(
+        `Dev-container init request failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      console.error('[devContainer.launch] DO init failed:', diagnostic);
+      await markInitFailedIfStillLaunching({
+        db: c.env.DB,
+        sessionId,
+        candidateId,
+        diagnostic,
+      });
     });
   c.executionCtx.waitUntil(initPromise);
 
@@ -231,6 +279,7 @@ interface StatusResponseBody {
   warnedAt: string | null;
   url: string | null;
   expiringSoon: boolean;
+  errorMessage: string | null;
 }
 
 devContainer.get('/:sessionId/status', async (c) => {
@@ -254,6 +303,7 @@ devContainer.get('/:sessionId/status', async (c) => {
     warnedAt: row.warned_at,
     url: row.url,
     expiringSoon: row.warned_at != null,
+    errorMessage: row.error_message,
   };
   return c.json(response, 200);
 });

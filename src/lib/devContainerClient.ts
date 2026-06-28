@@ -44,6 +44,7 @@ export interface StatusResponse {
   warnedAt: string | null;
   url: string | null;
   expiringSoon: boolean;
+  errorMessage: string | null;
 }
 
 export interface DestroyResponse {

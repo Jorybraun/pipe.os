@@ -7,7 +7,7 @@
  * captured bind params.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { rpcAuth, rpcPublic } from '../routes/rpc';
 import { signJwt } from '../lib/jwt';
 import { DevContainerDO } from '../durable-objects/DevContainerDO';
@@ -162,6 +162,38 @@ function fakeDevContainerNamespace(env: Env): FakeDevContainerNamespace {
           const bodyText = req.method === 'POST' || req.method === 'PUT' ? await clone.text() : null;
           calls.push({ sessionId: name, url: req.url, body: bodyText });
           return instance!.fetch(req);
+        },
+        id,
+        name,
+      } as unknown as DurableObjectStub;
+    },
+    jurisdiction: () => ({} as unknown as DurableObjectNamespace),
+    __calls: calls,
+  } as unknown as FakeDevContainerNamespace;
+}
+
+function failingDevContainerNamespace(error: unknown): FakeDevContainerNamespace {
+  const calls: DoCall[] = [];
+
+  return {
+    idFromName: (name: string) => ({
+      toString: () => name,
+      name,
+      equals: () => false,
+    }) as unknown as DurableObjectId,
+    idFromString: (s: string) =>
+      ({ toString: () => s, name: s, equals: () => false }) as unknown as DurableObjectId,
+    newUniqueId: () =>
+      ({ toString: () => 'unique', name: 'unique', equals: () => false }) as unknown as DurableObjectId,
+    get: (id: DurableObjectId) => {
+      const name = id.toString();
+      return {
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          const req = input instanceof Request ? input : new Request(input, init);
+          const clone = req.clone();
+          const bodyText = req.method === 'POST' || req.method === 'PUT' ? await clone.text() : null;
+          calls.push({ sessionId: name, url: req.url, body: bodyText });
+          throw error;
         },
         id,
         name,
@@ -490,6 +522,91 @@ describe('POST /rpc/dev-container/launch', () => {
     );
     expect(updateCall).toBeTruthy();
   });
+
+  it('marks the session ERROR with a redacted diagnostic when background DO init fails', async () => {
+    const rawToken = 'session-secret-do-not-log';
+    const rawServiceKey = 'cog_abcdefghijklmnopqrstuvwxyz123456';
+    const db = fakeD1({
+      firstResponders: [
+        {
+          match: 'FROM dev_container_sessions',
+          value: {
+            id: 'row_1',
+            session_id: 'sess_from_fake_d1',
+            candidate_id: 'cand_1',
+            challenge_id: null,
+            pipeline_id: 'pipe_1',
+            status: 'LAUNCHING',
+            instance_type: 'standard-1',
+            ttl_seconds: 3600,
+            ttl_source: 'GLOBAL',
+            expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            warned_at: null,
+            url: null,
+            repo_git_url: null,
+            challenge_branch: null,
+            started_at: null,
+            stopped_at: null,
+            error_message: null,
+            created_at: '2026-04-10T00:00:00.000Z',
+            updated_at: '2026-04-10T00:00:00.000Z',
+          },
+        },
+      ],
+    });
+    const env = buildEnv({
+      DB: db,
+      DEV_CONTAINER: failingDevContainerNamespace(
+        new Error(
+          `spawn failed DEVIN_API_KEY=${rawServiceKey} url=https://example.test/auth?token=${rawToken}`,
+        ),
+      ),
+    });
+    const { ctx, waitUntilAll } = buildCtx();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const res = await rpcAuth.request(
+        '/dev-container/launch',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: await authHeader(),
+          },
+          body: JSON.stringify({}),
+        },
+        env,
+        ctx,
+      );
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { sessionId: string; status: string };
+      expect(body.status).toBe('LAUNCHING');
+
+      await waitUntilAll();
+
+      expect(env.DEV_CONTAINER.__calls).toHaveLength(1);
+      const updateCall = db.__calls.find(
+        (c) =>
+          c.sql.includes('UPDATE dev_container_sessions') &&
+          c.ran &&
+          c.params[0] === 'ERROR',
+      );
+      expect(updateCall).toBeTruthy();
+      expect(updateCall?.params[5]).toBe(body.sessionId);
+
+      const diagnostic = updateCall?.params[4];
+      expect(typeof diagnostic).toBe('string');
+      expect(diagnostic).toContain('Dev-container init request failed');
+      expect(diagnostic).toContain('DEVIN_API_KEY=[redacted]');
+      expect(diagnostic).toContain('token=[redacted]');
+      expect(diagnostic).not.toContain(rawServiceKey);
+      expect(diagnostic).not.toContain(rawToken);
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
 });
 
 describe('GET /rpc/dev-container/:sessionId/status', () => {
@@ -566,6 +683,7 @@ describe('GET /rpc/dev-container/:sessionId/status', () => {
       warnedAt: string | null;
       url: string | null;
       expiringSoon: boolean;
+      errorMessage: string | null;
     };
     expect(body.sessionId).toBe('sess_1');
     expect(body.status).toBe('READY');
@@ -575,6 +693,7 @@ describe('GET /rpc/dev-container/:sessionId/status', () => {
     expect(body.warnedAt).toBe(null);
     expect(body.url).toBe('https://example.test/proxy/');
     expect(body.expiringSoon).toBe(false);
+    expect(body.errorMessage).toBe(null);
 
     // Ownership query binds (sessionId, candidateId)
     const selectCall = db.__calls.find((c) =>

@@ -206,6 +206,11 @@ The controlling product rule remains:
   with a redacted diagnostic when the background Durable Object init request
   fails before the container can report status, so a broken workspace does not
   remain an indefinite `LAUNCHING` state.
+- Standalone candidate dev-container launch now follows the same failure rule:
+  if the background Durable Object init request throws or returns non-OK before
+  the container can update its own row, the candidate-owned session is rechecked
+  and marked `ERROR` with a bounded redacted diagnostic for UI and evidence
+  projections.
 - Stale/deprecated Workers AI candidate-discovery failures are now repairable by
   both room RPC refresh and the scheduled Worker: the retry reopens the original
   R2 text/PDF source, marks ingestion `retry_queued`, and reruns the normal
