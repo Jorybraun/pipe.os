@@ -51,9 +51,20 @@ async function writeFakeDevin(scriptBody) {
   mkdirSync(binDir);
   const devinPath = path.join(binDir, 'devin');
   writeFileSync(devinPath, `#!/usr/bin/env node
+const fs = require('node:fs');
 const args = process.argv.slice(2);
+function fakeAuthStatus() {
+  if (process.env.FAKE_DEVIN_AUTH_STATUS_FILE) {
+    try {
+      return fs.readFileSync(process.env.FAKE_DEVIN_AUTH_STATUS_FILE, 'utf8').trim();
+    } catch {
+      return '';
+    }
+  }
+  return process.env.FAKE_DEVIN_AUTH_STATUS || '';
+}
 if (args[0] === 'auth' && args[1] === 'status') {
-  if (process.env.FAKE_DEVIN_AUTH_STATUS === 'not_logged_in') {
+  if (fakeAuthStatus() === 'not_logged_in') {
     process.stdout.write('Not logged in.\\n  Credentials path: /tmp/devin-test/credentials.toml\\nRun \`devin auth login\` to authenticate.\\n');
     process.exit(0);
   }
@@ -275,6 +286,44 @@ setInterval(() => {}, 1000);
       message.type === 'CHAT_RESPONSE'
       && String(message.text || '').includes('This should not start')
     ))).toBe(false);
+    ws.close();
+  });
+
+  it('rechecks real Devin CLI auth and starts the agent after terminal login completes', async () => {
+    const statusDir = mkdtempSync(path.join(tmpdir(), 'pipe-devin-auth-status-'));
+    const statusFile = path.join(statusDir, 'status');
+    writeFileSync(statusFile, 'not_logged_in');
+    const { port } = await startBridge(`
+process.stdin.setEncoding('utf8');
+process.stdin.once('data', () => {});
+setInterval(() => {}, 1000);
+`, {
+      FAKE_DEVIN_AUTH_STATUS_FILE: statusFile,
+      AGENT_READY_AFTER_PRIMER_MS: '35',
+      AGENT_START_READY_TIMEOUT_MS: '2000',
+    });
+
+    const { ws, messages } = await connectAgent(port);
+    const authNeeded = await waitForMessage(messages, (message) => message.type === 'AUTH_NEEDED');
+    expect(authNeeded).toMatchObject({
+      agent: 'devin',
+      message: expect.stringContaining('Not logged in.'),
+    });
+    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+
+    writeFileSync(statusFile, 'logged_in');
+    ws.send(JSON.stringify({ type: 'AUTH_START', agent: 'devin' }));
+
+    const starting = await waitForMessage(
+      messages,
+      (message) => message.type === 'AGENT_STATUS' && message.status === 'starting',
+    );
+    expect(starting).toMatchObject({ agent: 'devin' });
+    const ready = await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+    expect(ready).toMatchObject({
+      agent: 'devin',
+      capabilities: ['read', 'write', 'run', 'browse'],
+    });
     ws.close();
   });
 

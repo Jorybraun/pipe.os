@@ -430,13 +430,22 @@ export function ClippyAssistant({
           )}
 
           {agentEnabled && agentConn.status === 'auth_needed' && !agentConn.authUrl && onOpenAuthTerminal && (
-            <button
-              className="win95-clippy-chat-auth-btn"
-              onClick={handleAuthTerminalClick}
-              data-testid="clippy-open-auth-terminal"
-            >
-              Open Devin login terminal
-            </button>
+            <>
+              <button
+                className="win95-clippy-chat-auth-btn"
+                onClick={handleAuthTerminalClick}
+                data-testid="clippy-open-auth-terminal"
+              >
+                Open Devin login terminal
+              </button>
+              <button
+                className="win95-clippy-chat-auth-btn"
+                onClick={handleAuthClick}
+                data-testid="clippy-check-auth"
+              >
+                Check Devin auth
+              </button>
+            </>
           )}
 
           {!agentEnabled && canLaunchAgentWorkspace && (

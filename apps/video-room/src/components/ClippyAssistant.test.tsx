@@ -195,6 +195,7 @@ describe('ClippyAssistant', () => {
 
   it('opens a real Devin login terminal when the bridge reports auth needed without a browser auth URL', async () => {
     const onOpenAuthTerminal = vi.fn();
+    const startAuth = vi.fn();
     const sendMessage = vi.fn(() => null);
     mockAgentConnection({
       connected: true,
@@ -203,6 +204,7 @@ describe('ClippyAssistant', () => {
       authMessage: 'Devin CLI is not logged in. Run devin auth login --force-manual-token-flow.',
       capabilities: [],
       sendMessage,
+      startAuth,
     });
 
     render(
@@ -222,6 +224,8 @@ describe('ClippyAssistant', () => {
 
     fireEvent.click(screen.getByTestId('clippy-open-auth-terminal'));
     expect(onOpenAuthTerminal).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('clippy-check-auth'));
+    expect(startAuth).toHaveBeenCalledTimes(1);
     expect(sendMessage).not.toHaveBeenCalled();
   });
 });
