@@ -127,6 +127,8 @@ const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui']);
 const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'dismissed', 'executed']);
 const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 'clippy_agent_bridge']);
+const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
+const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -588,6 +590,46 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Terminal output evidence must come from the browser terminal WebSocket with output id, sequence, fingerprint, bounded length, workspace context, and system actor.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'ai_agent_status') {
+    const bridgeMessageSource = properties.bridgeMessageSource;
+    const status = properties.status;
+    const statusOk = status === null
+      || status === undefined
+      || (typeof status === 'string' && AGENT_STATUSES.has(status));
+    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const actorOk = event.actor === 'agent';
+    const agentOk = hasString(properties.agent);
+    const observedOk = hasString(properties.observedAt);
+    const bridgeMessageOk = typeof bridgeMessageSource === 'string'
+      && AGENT_STATUS_MESSAGE_SOURCES.has(bridgeMessageSource);
+    const browserObservationOk = properties.agentStatusEventSource === 'browser_clippy_agent_ws'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasFiniteNonNegativeNumber(properties.messageTimestamp)
+      && properties.agentResponseClaimed === false
+      && (
+        (bridgeMessageSource === 'agent_status' && typeof status === 'string' && AGENT_STATUSES.has(status))
+        || (bridgeMessageSource !== 'agent_status' && hasString(properties.diagnosticSource))
+      );
+    const persistedDiagnosticOk = bridgeMessageSource === 'bridge_diagnostic'
+      && properties.bridgePersisted === true
+      && hasString(properties.diagnosticSource);
+    if (
+      sourceOk
+      && actorOk
+      && agentOk
+      && statusOk
+      && observedOk
+      && bridgeMessageOk
+      && (browserObservationOk || persistedDiagnosticOk)
+    ) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Agent status evidence must come from the Clippy/Devin bridge with observed status or persisted diagnostic provenance.',
       path: ['properties'],
     });
     return;

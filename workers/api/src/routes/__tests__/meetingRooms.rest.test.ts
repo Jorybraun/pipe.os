@@ -1861,6 +1861,102 @@ describe('meeting room recording living-context route', () => {
       }),
     ]));
 
+    const fakeAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin is definitely ready.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          status: 'idle',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeAgentStatusRes.status).toBe(422);
+
+    const browserAgentStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin is starting from the real container bridge.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agentStatusEventSource: 'browser_clippy_agent_ws',
+          agent: 'devin',
+          status: 'starting',
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T21:12:00.000Z',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782601920000,
+          agentResponseClaimed: false,
+        },
+      }),
+    }, env, ctx);
+    expect(browserAgentStatusRes.status).toBe(200);
+
+    const bridgeDiagnosticStatusRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_agent_status',
+        text: 'devin chat prompt delivered to process stdin.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          status: 'thinking',
+          diagnosticSource: 'agent_prompt_sent',
+          bridgeMessageSource: 'bridge_diagnostic',
+          observedAt: '2026-06-27T21:13:00.000Z',
+          promptType: 'chat_prompt',
+          deliveredToAgent: true,
+          promptLength: 120,
+          promptFingerprint: 'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+          bridgePersisted: true,
+        },
+      }),
+    }, env, ctx);
+    expect(bridgeDiagnosticStatusRes.status).toBe(200);
+
+    const agentStatusNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ? AND node_type = 'session_agent_status'
+        ORDER BY narrative_text`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(agentStatusNodes).toHaveLength(2);
+    expect(agentStatusNodes.map((entry) => JSON.parse(entry.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agentStatusEventSource: 'browser_clippy_agent_ws',
+        bridgeMessageSource: 'agent_status',
+        observedAt: '2026-06-27T21:12:00.000Z',
+        agentResponseClaimed: false,
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        bridgeMessageSource: 'bridge_diagnostic',
+        diagnosticSource: 'agent_prompt_sent',
+        observedAt: '2026-06-27T21:13:00.000Z',
+        bridgePersisted: true,
+      }),
+    ]));
+
     const fakeCursorPresenceRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

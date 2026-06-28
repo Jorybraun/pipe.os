@@ -1677,18 +1677,21 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const diagnosticText = isAgentResponse
       ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
       : message.text;
+    const observedAt = message.observedAt ?? new Date().toISOString();
     captureSessionEvent('ai_agent_status', diagnosticText, 'agent', {
       source: 'clippy_agent_bridge',
+      agentStatusEventSource: 'browser_clippy_agent_ws',
       agent: message.agentName ?? 'devin',
       status: message.agentStatus ?? null,
       diagnosticSource: isAgentResponse
         ? 'agent_response_missing_source_metadata'
         : message.diagnosticSource ?? message.source,
       bridgeMessageSource: message.source,
-      observedAt: message.observedAt ?? null,
+      observedAt,
       exitCode: message.exitCode ?? null,
       signal: message.signal ?? null,
       truncated: message.truncated ?? null,
+      bridgePersisted: message.persisted ?? null,
       promptType: message.promptType ?? null,
       deliveredToAgent: message.deliveredToAgent ?? null,
       promptLength: message.promptLength ?? null,
@@ -1704,18 +1707,25 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       messageTimestamp: message.timestamp,
+      agentResponseClaimed: false,
     });
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
+    const observedAt = new Date().toISOString();
     captureSessionEvent('ai_agent_status', agentStatusEvidenceText(status, agentName), 'agent', {
       source: 'clippy_agent_bridge',
+      agentStatusEventSource: 'browser_clippy_agent_ws',
       agent: agentName,
       status,
+      bridgeMessageSource: 'agent_status',
+      observedAt,
       surface: room.roomSurface,
       roomPhase: room.phase,
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
+      messageTimestamp: Date.now(),
+      agentResponseClaimed: false,
     });
   };
 

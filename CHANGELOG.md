@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin agent status evidence now requires bridge provenance, observed timestamps, and either browser WebSocket context or persisted bridge diagnostics before entering the meeting-session graph.
 - Participant join/leave evidence now requires meeting-room lifecycle route provenance with observed timestamps and matching host/guest roles before entering the meeting-session graph.
 - Clippy prompt evidence now preserves browser proactive prompt triggers, room/workspace context, and explicit no-agent-response provenance through Durable Object replay, while rejecting source-less direct prompt claims.
 - Workspace-state evidence now separates browser observer provenance from launch/refresh/error lifecycle source, preserves that metadata through Durable Object replay, and rejects source-less direct workspace-state claims.
