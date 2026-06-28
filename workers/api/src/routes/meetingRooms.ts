@@ -132,6 +132,8 @@ const CLIPPY_PROMPT_EVENT_SOURCES = new Set(['browser_proactive_clippy_prompt', 
 const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth_needed', 'disconnected']);
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'bridge_diagnostic', 'bridge_observation', 'agent_stdout']);
 const AGENT_STATUS_EVENT_ID_RE = /^agent-status:[a-zA-Z0-9:_-]+:\d+:(agent_status|bridge_diagnostic|bridge_observation|agent_stdout):[a-zA-Z0-9:_-]+:[a-zA-Z0-9:_-]+$/;
+const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
+const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const BROWSER_NAVIGATION_TRIGGERS = new Set([
   'address_bar',
   'go_button',
@@ -859,6 +861,8 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'ai_chat_agent') {
+    const capturedAtMs = properties.capturedAtMs;
+    const responseFingerprint = properties.responseFingerprint;
     const sourceOk = properties.source === 'clippy_agent_bridge';
     const actorOk = event.actor === 'agent';
     const agentOk = hasString(properties.agent);
@@ -866,6 +870,19 @@ const sessionEventSchema = z.object({
       && properties.bridgeMessageSource === 'agent_stdout';
     const observedAt = properties.observedAt;
     const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
+    const responseFingerprintOk = typeof responseFingerprint === 'string'
+      && AGENT_CHAT_RESPONSE_FINGERPRINT_RE.test(responseFingerprint);
+    const responseLengthOk = typeof properties.responseLength === 'number'
+      && properties.responseLength === event.text.length;
+    const expectedResponseId = capturedAtOk && agentOk && responseFingerprintOk
+      ? `agent-chat:${safeEvidenceIdPart(properties.agent)}:${capturedAtMs}:CHAT_RESPONSE:${responseFingerprint}`
+      : null;
+    const responseIdOk = typeof properties.agentChatResponseId === 'string'
+      && AGENT_CHAT_RESPONSE_ID_RE.test(properties.agentChatResponseId)
+      && properties.agentChatResponseId === expectedResponseId;
     const persistedOk = properties.bridgePersisted === true
       && hasFiniteNonNegativeNumber(properties.actionCount);
     const browserFallbackOk = properties.bridgePersisted === false
@@ -874,10 +891,21 @@ const sessionEventSchema = z.object({
       && hasString(properties.roomPhase)
       && hasFiniteNonNegativeNumber(properties.messageTimestamp)
       && properties.agentResponseClaimed === true;
-    if (sourceOk && actorOk && agentOk && chatResponseOk && hasObservedAt && (persistedOk || browserFallbackOk)) return;
+    if (
+      sourceOk
+      && actorOk
+      && agentOk
+      && chatResponseOk
+      && hasObservedAt
+      && capturedAtOk
+      && responseFingerprintOk
+      && responseLengthOk
+      && responseIdOk
+      && (persistedOk || browserFallbackOk)
+    ) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with persisted bridge or browser fallback provenance.',
+      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with stable response id, capture timestamp, fingerprint, length, and persisted bridge or browser fallback provenance.',
       path: ['properties'],
     });
     return;

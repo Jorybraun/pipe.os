@@ -86,6 +86,27 @@ export function buildClippyAgentStatusEventId(input: {
   return `agent-status:${agent}:${capturedAtMs}:${bridgeMessageSource}:${status}:${diagnosticSource}`;
 }
 
+export function clippyAgentResponseFingerprint(text: string): string {
+  let hash = FNV_32_OFFSET;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_32_PRIME);
+  }
+  return `agent_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function buildClippyAgentChatResponseId(input: {
+  agentName: string | null;
+  capturedAtMs: number;
+  responseFingerprint: string;
+}): string {
+  const capturedAtMs = Number.isFinite(input.capturedAtMs)
+    ? Math.max(0, Math.round(input.capturedAtMs))
+    : 0;
+  const agent = safeEvidenceIdPart(input.agentName);
+  return `agent-chat:${agent}:${capturedAtMs}:CHAT_RESPONSE:${input.responseFingerprint}`;
+}
+
 export function buildClippyUiActionEvidence(input: {
   actionId: ClippyUiActionId;
   origin: ClippyUiActionOrigin;
@@ -277,6 +298,9 @@ export function buildClippyAgentChatFallbackEvidence(input: {
   messageTimestamp: number;
 }): ClippyAgentChatFallbackEvidence {
   const agent = input.agentName?.trim() || 'devin';
+  const observedAtMs = Date.parse(input.observedAt);
+  const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : input.messageTimestamp;
+  const responseFingerprint = clippyAgentResponseFingerprint(input.text);
   return {
     text: input.text,
     properties: {
@@ -285,6 +309,14 @@ export function buildClippyAgentChatFallbackEvidence(input: {
       bridgeEventType: 'CHAT_RESPONSE',
       bridgeMessageSource: 'agent_stdout',
       observedAt: input.observedAt,
+      capturedAtMs,
+      agentChatResponseId: buildClippyAgentChatResponseId({
+        agentName: agent,
+        capturedAtMs,
+        responseFingerprint,
+      }),
+      responseFingerprint,
+      responseLength: input.text.length,
       bridgePersisted: false,
       persistenceFallback: 'browser_after_bridge_persist_failed',
       surface: input.surface,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildClippyAgentChatFallbackEvidence,
+  buildClippyAgentChatResponseId,
   buildClippyAgentStatusEvidence,
   buildClippyAgentStatusEventId,
+  clippyAgentResponseFingerprint,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
   buildClippyUserChatEvidence,
@@ -193,6 +195,10 @@ describe('clippy evidence', () => {
         bridgeEventType: 'CHAT_RESPONSE',
         bridgeMessageSource: 'agent_stdout',
         observedAt: '2026-06-27T21:05:00.000Z',
+        capturedAtMs: 1782594300000,
+        agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_314a13fc',
+        responseFingerprint: 'agent_314a13fc',
+        responseLength: 29,
         bridgePersisted: false,
         persistenceFallback: 'browser_after_bridge_persist_failed',
         surface: 'win95',
@@ -203,6 +209,16 @@ describe('clippy evidence', () => {
         agentResponseClaimed: true,
       },
     });
+  });
+
+  it('derives response ids from agent, capture time, and response fingerprint', () => {
+    const responseFingerprint = clippyAgentResponseFingerprint('I inspected the failing test.');
+    expect(responseFingerprint).toBe('agent_314a13fc');
+    expect(buildClippyAgentChatResponseId({
+      agentName: 'devin',
+      capturedAtMs: 1782594300000,
+      responseFingerprint,
+    })).toBe('agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_314a13fc');
   });
 
   it('builds stable source-backed status evidence for browser-observed Devin bridge states', () => {

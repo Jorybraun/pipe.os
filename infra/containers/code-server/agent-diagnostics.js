@@ -86,6 +86,31 @@ function agentStatusEventId({
   ].join(':');
 }
 
+function agentResponseFingerprint(value) {
+  const text = String(value || '');
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `agent_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function agentChatResponseId({
+  agent = 'devin',
+  capturedAtMs = 0,
+  responseFingerprint = 'agent_00000000',
+}) {
+  const captured = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
+  return [
+    'agent-chat',
+    safeEvidenceIdPart(agent),
+    String(captured),
+    'CHAT_RESPONSE',
+    safeEvidenceIdPart(responseFingerprint),
+  ].join(':');
+}
+
 function agentDiagnosticMessage({
   agent = 'devin',
   status = 'disconnected',
@@ -206,16 +231,29 @@ function agentChatSessionEvent({
   observedAt = new Date().toISOString(),
   actionCount = 0,
 }) {
+  const responseText = String(text || '');
+  const safeAgent = String(agent || 'devin');
+  const parsedObservedAt = typeof observedAt === 'string' ? Date.parse(observedAt) : Number.NaN;
+  const capturedAtMs = Number.isFinite(parsedObservedAt) ? parsedObservedAt : Date.now();
+  const responseFingerprint = agentResponseFingerprint(responseText);
   return {
     type: 'ai_chat_agent',
-    text: String(text || ''),
+    text: responseText,
     actor: 'agent',
     properties: {
       source: 'clippy_agent_bridge',
-      agent: String(agent || 'devin'),
+      agent: safeAgent,
       bridgeEventType: 'CHAT_RESPONSE',
       bridgeMessageSource: 'agent_stdout',
       observedAt,
+      capturedAtMs,
+      agentChatResponseId: agentChatResponseId({
+        agent: safeAgent,
+        capturedAtMs,
+        responseFingerprint,
+      }),
+      responseFingerprint,
+      responseLength: responseText.length,
       actionCount: Number.isFinite(actionCount) ? Math.max(0, Math.floor(actionCount)) : 0,
       bridgePersisted: true,
     },
