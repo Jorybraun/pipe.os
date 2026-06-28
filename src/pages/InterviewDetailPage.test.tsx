@@ -593,6 +593,9 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('MATCHED');
     expect(screen.getByTestId('interview-code-review-match')).toHaveTextContent('MATCHED');
     expect(screen.getByText('Repo match refreshed from captured evidence: pipe-labs/orders PR #314.')).toBeTruthy();
+    expect(screen.getByTestId('interview-code-review-evidence-refresh')).toHaveTextContent('Evidence used for current match');
+    expect(screen.getByTestId('interview-code-review-evidence-refresh')).toHaveTextContent('These source-backed follow-up spans were used to select the current PR assignment.');
+    expect(screen.queryByTestId('interview-code-review-refresh-match-cta')).toBeNull();
   });
 
   it('shows explicit feedback when refreshed evidence still does not produce a repo match', async () => {

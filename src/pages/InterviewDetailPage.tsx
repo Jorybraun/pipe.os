@@ -1072,6 +1072,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
+  const codeReviewEvidenceRefreshUsed = Boolean(
+    codeReviewEvidenceRefresh && codeReviewMatch?.status === 'MATCHED',
+  );
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0 && !codeReviewEvidenceRefresh;
   const codeReviewDecisionSignals = [
     {
@@ -1299,10 +1302,16 @@ export default function InterviewDetailPage(): JSX.Element {
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
               {codeReviewEvidenceRefresh && (
                 <div data-testid="interview-code-review-evidence-refresh" style={DECISION_FOLLOW_UP}>
-                  <div style={FIELD_LABEL}>New evidence is ready</div>
-                  <div style={DECISION_PLAN_SIGNAL}>Rerun repo matching</div>
+                  <div style={FIELD_LABEL}>
+                    {codeReviewEvidenceRefreshUsed ? 'Evidence used for current match' : 'New evidence is ready'}
+                  </div>
+                  <div style={DECISION_PLAN_SIGNAL}>
+                    {codeReviewEvidenceRefreshUsed ? 'Current PR assignment is evidence-backed' : 'Rerun repo matching'}
+                  </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
-                    Use the new source-backed spans to try PR selection again.
+                    {codeReviewEvidenceRefreshUsed
+                      ? 'These source-backed follow-up spans were used to select the current PR assignment.'
+                      : 'Use the new source-backed spans to try PR selection again.'}
                   </div>
                   <div style={DECISION_FOLLOW_UP_ITEM}>
                     <div style={FIELD_LABEL}>Captured follow-up assessment</div>
@@ -1323,17 +1332,19 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                   )}
-                  <button
-                    data-testid="interview-code-review-refresh-match-cta"
-                    onClick={() => void refreshCodeReviewMatch()}
-                    disabled={isRefreshingMatch}
-                    style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
-                  >
-                    {isRefreshingMatch
-                      ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-                      : <Network size={14} />}
-                    RERUN REPO MATCH
-                  </button>
+                  {!codeReviewEvidenceRefreshUsed && (
+                    <button
+                      data-testid="interview-code-review-refresh-match-cta"
+                      onClick={() => void refreshCodeReviewMatch()}
+                      disabled={isRefreshingMatch}
+                      style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                    >
+                      {isRefreshingMatch
+                        ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        : <Network size={14} />}
+                      RERUN REPO MATCH
+                    </button>
+                  )}
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (
                     <button
                       data-testid="interview-code-review-open-evidence-call"
