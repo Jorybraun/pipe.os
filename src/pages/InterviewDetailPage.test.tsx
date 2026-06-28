@@ -362,6 +362,39 @@ describe('InterviewDetailPage', () => {
     expect(sourceProof).not.toHaveAttribute('open');
   });
 
+  it('labels blocked code-review matching as an assignment issue, not a candidate delay', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['The deterministic repo matcher did not return a quality-gated PR.'],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('No confident repo match yet');
+    expect(decision).toHaveTextContent('Schedule a short background call to gather source-backed context, or choose a reviewable PR manually if you already know the candidate fit.');
+    expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
+    expect(decision).toHaveTextContent('schedule context call or select PR');
+    expect(decision).not.toHaveTextContent('Waiting for candidate review');
+  });
+
   it('shows code-review evidence hyperedges for recruiter match justification', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

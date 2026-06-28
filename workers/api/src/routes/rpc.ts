@@ -1048,7 +1048,7 @@ export function qualityGateFor(
     validatorVerdict: validatorAgent?.verdict,
     assessmentQualityVerdict: assessmentQuality?.verdict,
     assessmentQualityMetrics: assessmentQuality?.metrics,
-    requireContrastSeparation: roleSourceCount > 0,
+    requireContrastSeparation: true,
   });
 }
 
@@ -1111,8 +1111,7 @@ function standaloneAutomaticMatchPasses(
   explanation: CandidateSafeMatchExplanation | null | undefined,
 ): boolean {
   const qualityChecks = new Set(explanation?.qualityGate.checks ?? []);
-  const contrastAccepted = qualityChecks.has('contrast_separation_verified')
-    || qualityChecks.has('contrast_separation_not_required_roleless');
+  const contrastAccepted = qualityChecks.has('contrast_separation_verified');
   return explanation?.status === 'MATCHED'
     && explanation.qualityGate.verdict === 'PASSED'
     && contrastAccepted;

@@ -179,6 +179,24 @@ Both should select `https://github.com/mui/base-ui` PR `#973`, return `MATCHED`,
 
 Set `CODE_REVIEW_SMOKE_SUBMIT=1` for the stronger end-to-end gate. That mode keeps the browser assess smoke, drives the visible candidate UI to add an inline diff comment, submits the first review round in the browser, waits for the author response/thread, then completes with `request_changes`, submits the review-session reference through `/rpc/submit-challenge-response`, verifies both `/api/v1/scheduling/interviews/:id` and `/api/v1/candidates/:id` expose the completed recruiter result, fails if scheduled detail loses transcript rounds, reviewer comments, or AI developer responses, checks the judge-example replay queue contains the review session with candidate comments, AI pushback, `human_label_queue`, and `cross_model_calibration` metadata, and polls D1 until `review_sessions.score_report`, `challenge_submissions.score_report_json`, `challenge_submissions.score`, and `assessments.score` are durable. In auto-match mode it also requires recruiter-visible evidence hyperedges. The score-persistence check uses local `pipe-db` for localhost and remote `pipe-db-test` for app-dev; override with `CODE_REVIEW_SMOKE_D1_DATABASE` only when deliberately targeting another D1 database.
 
+To run the stronger app-dev gate across multiple realistic candidate profiles, use:
+
+```bash
+npm run smoke:code-review-assess-dev:matrix
+```
+
+The matrix creates fresh CODE_REVIEW invites and covers both happy-path and
+pushback behavior. The matchable profile submits a full browser-visible review,
+waits for AI developer pushback, verifies recruiter/profile projections, and
+checks remote D1 score persistence. The accessibility-state and
+frontend-quality profiles are intentional ambiguous/near-tie lanes: they must
+return explicit blocked `repo_matching` attention states with diagnostics, no
+auto-refresh loop, and no video-room fallback. Use
+`CODE_REVIEW_SMOKE_MATRIX_PROFILES=react-interaction-platform,frontend-quality-infra`
+to run only the full-submit profiles, `CODE_REVIEW_SMOKE_MATRIX_REPEAT=2` for
+repeated runs, and `CODE_REVIEW_SMOKE_MATRIX_STOP_ON_FAILURE=1` when you want
+the first failure to stop the batch.
+
 To audit the local judge/feedback improvement queue without calling an LLM:
 
 ```bash

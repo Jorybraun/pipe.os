@@ -26,6 +26,7 @@ const EXPECT_AUTOMATCH = process.env.CODE_REVIEW_EXPECT_AUTOMATCH
   ?? (AUTO_MATCH ? '1' : '0');
 const REQUIRE_CONTRAST = process.env.CODE_REVIEW_REQUIRE_CONTRAST
   ?? (!REPO_URL && !PR_NUMBER ? '1' : '0');
+const EXPECT_BLOCKED_MATCH = process.env.CODE_REVIEW_EXPECT_BLOCKED_MATCH === '1';
 
 const DEFAULT_RESUME_TEXT = [
   'Senior frontend platform engineer with deep React and TypeScript experience.',
@@ -521,15 +522,21 @@ async function bootstrapStageConfig(sessionToken) {
   return stageConfig;
 }
 
-async function pollCodeReviewChallenge(sessionToken, order = 0) {
+async function pollCodeReviewChallenge(sessionToken, order = 0, options = {}) {
   const deadline = Date.now() + 120_000;
   let last = null;
   while (Date.now() < deadline) {
     last = await getChallenge(sessionToken, order);
-    if (last?.type === 'CODE_REVIEW') return last;
+    if (last?.type === 'CODE_REVIEW') {
+      if (options.expectBlocked) {
+        throw new Error(`Expected repo matching to block, but CODE_REVIEW became ready: ${JSON.stringify(challengePreview(last))}`);
+      }
+      return last;
+    }
     if (last?.type !== 'WAITING_FOR_MATCH') {
       throw new Error(`Expected CODE_REVIEW or WAITING_FOR_MATCH, got: ${JSON.stringify(last).slice(0, 800)}`);
     }
+    if (options.expectBlocked && last?.config?.state === 'blocked') return last;
     await sleep(5_000);
   }
   throw new Error(`CODE_REVIEW challenge did not become ready. Last response: ${JSON.stringify(last).slice(0, 1200)}`);
@@ -1065,7 +1072,55 @@ async function main() {
     await submitIntake(session.sessionToken);
     const initialStageConfig = await bootstrapStageConfig(session.sessionToken);
     const challengeOrder = ROLE_BACKED ? 1 : 0;
-    const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder);
+    const challenge = await pollCodeReviewChallenge(session.sessionToken, challengeOrder, {
+      expectBlocked: EXPECT_BLOCKED_MATCH,
+    });
+    if (EXPECT_BLOCKED_MATCH) {
+      assert(challenge?.type === 'WAITING_FOR_MATCH', `Expected WAITING_FOR_MATCH, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.config?.state === 'blocked', `Expected blocked repo matching state, got: ${JSON.stringify(challenge)}`);
+      assert(challenge?.config?.autoRefresh === false, `Blocked repo matching should not auto-refresh: ${JSON.stringify(challenge)}`);
+      assert(
+        challenge?.config?.diagnostics?.phase === 'repo_matching',
+        `Expected repo_matching diagnostics, got: ${JSON.stringify(challenge?.config?.diagnostics)}`,
+      );
+      assert(
+        Array.isArray(challenge?.config?.diagnostics?.pipeline)
+          && challenge.config.diagnostics.pipeline.some((step) =>
+            step?.id === 'repo_matching' && step?.status === 'blocked'
+          ),
+        `Expected repo_matching pipeline step to be blocked: ${JSON.stringify(challenge?.config?.diagnostics?.pipeline)}`,
+      );
+
+      console.log(JSON.stringify({
+        ok: true,
+        interviewId: invite.interviewId,
+        roleContextId: invite.roleContextId ?? null,
+        pipelineId: invite.pipelineId ?? session.pipelineId ?? null,
+        stageId: invite.stageId ?? null,
+        emailSent: SEND_EMAIL,
+        matchMode: currentMatchMode(),
+        expectedOutcome: 'blocked',
+        deliveredUrl: cleanUrl(invite.deliveredUrl),
+        roomGuestUrl: cleanUrl(invite.invited?.room?.guestUrl),
+        blockedMatch: {
+          title: challenge.title ?? null,
+          state: challenge.config.state,
+          reason: challenge.config.reason ?? null,
+          phase: challenge.config.diagnostics.phase ?? null,
+          matchableNodeCount: challenge.config.diagnostics.matchableNodeCount ?? null,
+          rawNodeCount: challenge.config.diagnostics.rawNodeCount ?? null,
+          autoRefresh: challenge.config.autoRefresh ?? null,
+        },
+        stageConfig: {
+          initialStageId: initialStageConfig.stageId,
+          initialCurrentIndex: initialStageConfig.currentIndex ?? null,
+          initialChallengeTypes: Array.isArray(initialStageConfig.challenges)
+            ? initialStageConfig.challenges.map((candidateChallenge) => candidateChallenge?.type ?? null)
+            : [],
+        },
+      }, null, 2));
+      return;
+    }
     const readyStageConfig = await bootstrapStageConfig(session.sessionToken);
     const preview = challengePreview(challenge);
     assert(challenge.githubRepoUrl, `CODE_REVIEW challenge missing githubRepoUrl: ${JSON.stringify(preview)}`);

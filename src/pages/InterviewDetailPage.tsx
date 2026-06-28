@@ -307,7 +307,10 @@ function countLabel(count: number, singular: string, plural = `${singular}s`): s
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function codeReviewVerdictLabel(verdict: string | null | undefined): string {
+function codeReviewVerdictLabel(
+  verdict: string | null | undefined,
+  match: CodeReviewMatchDetail | null,
+): string {
   switch ((verdict ?? '').toLowerCase()) {
     case 'request_changes':
     case 'changes_requested':
@@ -319,6 +322,9 @@ function codeReviewVerdictLabel(verdict: string | null | undefined): string {
     case 'commented':
       return 'Candidate left review comments';
     default:
+      if (!verdict && match && match.status !== 'MATCHED') {
+        return 'No confident repo match yet';
+      }
       return verdict ? `Candidate submitted ${titleCaseToken(verdict)}` : 'Waiting for candidate review';
   }
 }
@@ -340,6 +346,9 @@ function codeReviewActionText(
   if (match?.status === 'MATCHED') {
     return 'The PR assignment is ready. Wait for the candidate review before making a hiring decision.';
   }
+  if (match && match.status !== 'MATCHED') {
+    return 'Schedule a short background call to gather source-backed context, or choose a reviewable PR manually if you already know the candidate fit.';
+  }
   return 'Resolve the assignment issue before relying on this assessment.';
 }
 
@@ -347,6 +356,7 @@ function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
   if (match?.assessmentQuality) {
     return `${titleCaseToken(match.assessmentQuality.verdict.toLowerCase())} assessment fit`;
   }
+  if (match?.status && match.status !== 'MATCHED') return titleCaseToken(match.status);
   if (match?.status) return `${titleCaseToken(match.status)} assignment`;
   return 'No assignment yet';
 }
@@ -354,6 +364,9 @@ function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
 function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
   if (match?.assessmentQuality) {
     return `${match.assessmentQuality.score}/${match.assessmentQuality.maxScore}`;
+  }
+  if (match?.status && match.status !== 'MATCHED') {
+    return 'schedule context call or select PR';
   }
   const score = formatMatchScore(match?.score);
   return score ? `confidence ${score}` : 'waiting for source-backed match';
@@ -853,7 +866,7 @@ export default function InterviewDetailPage(): JSX.Element {
       : guestRoomUrl
         ? 'Transcript will appear here after the host and guest complete a recorded call.'
         : 'Send an invite or open the host room to start collecting call evidence.';
-  const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict);
+  const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict, codeReviewMatch);
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
   const codeReviewDecisionSignals = [
     {

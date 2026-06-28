@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Candidate CODE_REVIEW waiting states now expose a six-step pipeline for CV intake, evidence decomposition, repo matching, challenge assignment, review, and scoring instead of collapsing every delay into generic matching copy.
+- Public candidate `/assess/:token` links now mount without requiring recruiter Clerk configuration, while recruiter routes still show the missing-auth configuration screen.
+- Recruiter CODE_REVIEW details now label blocked repo matching as an assignment/evidence issue and recommend a context call or manual PR selection instead of implying the candidate has not submitted their review.
+- Automatic CODE_REVIEW matching now requires positive contrast separation before serving a roleless PR, turning near-tie candidate/repo matches into explicit repo-matching attention states instead of overclaiming a best assessment.
+- Added a CODE_REVIEW app-dev profile matrix smoke that creates fresh candidates across realistic frontend profiles, verifies full-submit auto-match/browser/pushback/scoring for matchable profiles, and verifies explicit blocked repo-matching diagnostics for an ambiguous near-tie profile.
 - CODE_REVIEW recruiter detail pages now lead with a compact recruiter decision summary and keep candidate line-comment details collapsed by default, reducing default screen noise while preserving the audit trail.
 - CODE_REVIEW recruiter detail pages now visually prioritize the review assignment, match decision, and submitted review result ahead of scheduling/person-context accounting so the first read answers whether the assessment was useful.
 - Recruiter code-review detail pages now lead with review assignment, match decision, assessment fit, and candidate result while moving validator/source-span graph internals into opt-in proof drawers.

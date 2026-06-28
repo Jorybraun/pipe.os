@@ -1656,7 +1656,7 @@ describe('POST /rpc/get-challenge', () => {
     )).toBe(true);
   });
 
-  it('serves a roleless automatic standalone CODE_REVIEW match when contrast is explicitly not required', async () => {
+  it('blocks roleless automatic standalone CODE_REVIEW near-ties with repo-matching diagnostics', async () => {
     vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
       status: 'MATCHED',
       repoId: 973,
@@ -1727,28 +1727,39 @@ describe('POST /rpc/get-challenge', () => {
     expect(res.status).toBe(200);
     const body = await res.json() as {
       type: string;
-      githubPrNumber?: number | null;
-      matchExplanation?: {
-        qualityGate?: { verdict: string; checks: string[] };
-        assessmentQuality?: { metrics?: Array<{ id: string; score: number }> };
+      config?: {
+        state?: string;
+        autoRefresh?: boolean;
+        reason?: string;
+        diagnostics?: {
+          phase?: string;
+          pipeline?: Array<{ id: string; status: string }>;
+        };
       };
     };
-    expect(body.type).toBe('CODE_REVIEW');
-    expect(body.githubPrNumber).toBe(973);
-    expect(body.matchExplanation?.qualityGate).toEqual(expect.objectContaining({
-      verdict: 'PASSED',
-      checks: expect.arrayContaining(['contrast_separation_not_required_roleless']),
-    }));
-    expect(body.matchExplanation?.assessmentQuality?.metrics?.find((metric) =>
-      metric.id === 'contrast_separation'
-    )?.score).toBe(0);
+    expect(body).toMatchObject({
+      type: 'WAITING_FOR_MATCH',
+      config: {
+        state: 'blocked',
+        autoRefresh: false,
+        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
+        diagnostics: {
+          phase: 'repo_matching',
+          pipeline: expect.arrayContaining([
+            expect.objectContaining({ id: 'intake', status: 'complete' }),
+            expect.objectContaining({ id: 'decomposition', status: 'complete' }),
+            expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
+            expect.objectContaining({ id: 'challenge', status: 'pending' }),
+            expect.objectContaining({ id: 'review', status: 'pending' }),
+            expect.objectContaining({ id: 'scoring', status: 'pending' }),
+          ]),
+        },
+      },
+    });
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
     expect(db.__calls.some((call) =>
-      call.ran
-      && call.sql.includes('SET matched_repo_id = ?1')
-      && call.params.includes(973)
-      && call.params.includes('https://github.com/mui/base-ui')
-    )).toBe(true);
+      call.ran && call.sql.includes('SET matched_repo_id = ?1')
+    )).toBe(false);
   });
 
   it('routes standalone OPEN_SOURCE_BUG_FIX invites into a repo-backed implementation challenge', async () => {

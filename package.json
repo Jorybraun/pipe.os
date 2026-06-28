@@ -18,6 +18,7 @@
     "smoke:video-room-dev": "node scripts/smoke-video-room-dev.mjs",
     "smoke:scheduling-invite-dev": "node scripts/smoke-scheduling-invite-dev.mjs",
     "smoke:code-review-assess-dev": "node scripts/smoke-code-review-assess-dev.mjs",
+    "smoke:code-review-assess-dev:matrix": "node scripts/smoke-code-review-assess-dev-matrix.mjs",
     "smoke:code-review-workspace-dev": "node scripts/smoke-code-review-workspace-dev.mjs",
     "turn:usage": "node scripts/check-cloudflare-turn-usage.mjs",
     "storybook": "storybook dev -p 6006",
