@@ -20,6 +20,7 @@ import {
   ensureCandidateLivingContext,
   loadCandidateLivingContext,
   LivingContextStore,
+  searchSourceContent,
 } from '../../lib/livingContext';
 import {
   hasSourceBackedReviewPacket,
@@ -161,12 +162,23 @@ interface StandaloneReviewRoleSource {
   contentHash?: string;
 }
 
+interface StandaloneReviewStretchArea {
+  atomId: string;
+  demandId: string;
+  atomConcept: string;
+  demandConcept: string;
+  dimension: string;
+  candidateSourceRefs: StandaloneReviewSourceRef[];
+  challengeSourceRefs: StandaloneReviewSourceRef[];
+}
+
 interface StandaloneReviewAlignment {
   atomId: string;
   demandId: string;
   purpose: string | null;
   pairScore: number;
   sharedConcepts: string[];
+  stretch: { dimension: string; atomConcept: string; demandConcept: string } | null;
   roleSourceRefs: StandaloneReviewRoleSource[];
   candidateSourceRefs: StandaloneReviewSourceRef[];
   challengeSourceRefs: StandaloneReviewSourceRef[];
@@ -184,6 +196,8 @@ interface StandaloneReviewRankedResult {
   provenanceComplete: boolean;
   eligible: boolean;
   alignments: StandaloneReviewAlignment[];
+  stretchAreas: StandaloneReviewStretchArea[];
+  unmatchedDemandIds: string[];
   rejectionReasons: string[];
 }
 
@@ -563,12 +577,20 @@ function parseStandaloneReviewRankedResults(
           }
           const sharedConcepts = asStringArray(alignment.sharedConcepts);
           const hasPersistedRoleSourceRefs = Array.isArray(alignment.roleSourceRefs);
+          const stretchRaw = isRecord(alignment.stretch) ? alignment.stretch : null;
+          const stretch = stretchRaw
+            && typeof stretchRaw.dimension === 'string'
+            && typeof stretchRaw.atomConcept === 'string'
+            && typeof stretchRaw.demandConcept === 'string'
+            ? { dimension: stretchRaw.dimension, atomConcept: stretchRaw.atomConcept, demandConcept: stretchRaw.demandConcept }
+            : null;
           return [{
             atomId,
             demandId,
             purpose: typeof alignment.purpose === 'string' ? alignment.purpose : null,
             pairScore,
             sharedConcepts,
+            stretch,
             roleSourceRefs: hasPersistedRoleSourceRefs
               ? parseStandaloneReviewRoleSources(alignment.roleSourceRefs)
               : roleSourcesForSharedConcepts(fallbackRoleSources, sharedConcepts),
@@ -577,6 +599,18 @@ function parseStandaloneReviewRankedResults(
           }];
         })
       : [];
+    const stretchAreas: StandaloneReviewStretchArea[] = alignments
+      .filter((entry): entry is StandaloneReviewAlignment & { stretch: NonNullable<StandaloneReviewAlignment['stretch']> } =>
+        entry.stretch !== null)
+      .map((entry) => ({
+        atomId: entry.atomId,
+        demandId: entry.demandId,
+        atomConcept: entry.stretch.atomConcept,
+        demandConcept: entry.stretch.demandConcept,
+        dimension: entry.stretch.dimension,
+        candidateSourceRefs: entry.candidateSourceRefs,
+        challengeSourceRefs: entry.challengeSourceRefs,
+      }));
     return [{
       rank,
       recallRank,
@@ -589,6 +623,8 @@ function parseStandaloneReviewRankedResults(
       provenanceComplete,
       eligible,
       alignments,
+      stretchAreas,
+      unmatchedDemandIds: asStringArray(item.unmatchedDemandIds),
       rejectionReasons: asStringArray(item.rejectionReasons),
     }];
   });
@@ -1449,6 +1485,34 @@ candidateOps.get('/:candidateId/living-context', async (c) => {
   return c.json({ livingContext });
 });
 
+// GET /:candidateId/living-context/search?q=... — search candidate source content
+candidateOps.get('/:candidateId/living-context/search', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const query = c.req.query('q') ?? '';
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return c.json({ personId: candidateId, query, hits: [] });
+
+  const result = await searchSourceContent(db, wp.id, query);
+  return c.json(result);
+});
+
 // GET /:candidateId — full profile with stages + challenge submissions
 candidateOps.get('/:candidateId', async (c) => {
   const userId = c.var.userId;
@@ -1887,6 +1951,8 @@ candidateOps.get('/:candidateId', async (c) => {
     summary: string;
     evidence: StandaloneReviewAlignment[];
     roleSources: StandaloneReviewRoleSource[];
+    stretchAreas: StandaloneReviewStretchArea[];
+    unmatchedDemandIds: string[];
     gaps: string[];
     diagnostics: StandaloneReviewDiagnostics;
     packet: StandaloneReviewPacketDetail | null;
@@ -2040,6 +2106,8 @@ candidateOps.get('/:candidateId', async (c) => {
         candidateId,
         standaloneInterview.submission_json,
       );
+      const selectedStretchAreas = selectedResultForDisplay?.stretchAreas ?? [];
+      const selectedUnmatchedDemandIds = selectedResultForDisplay?.unmatchedDemandIds ?? [];
       standaloneReviewMatch = {
         interviewId: standaloneInterview.id,
         interviewStatus: standaloneInterview.status,
@@ -2056,6 +2124,8 @@ candidateOps.get('/:candidateId', async (c) => {
         summary: summary.summary,
         evidence: summary.evidence,
         roleSources,
+        stretchAreas: selectedStretchAreas,
+        unmatchedDemandIds: selectedUnmatchedDemandIds,
         gaps: [...graphContextGaps, ...summary.gaps],
         diagnostics,
         packet: selectedPacketDetail,
