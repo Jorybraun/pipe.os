@@ -1585,7 +1585,9 @@ async function persistCodeReviewContextCallRecommendation(
       : null;
   if (!identity) return;
 
-  const applicationId = 'applicationId' in identity ? identity.applicationId : null;
+  const applicationId: string | null = 'applicationId' in identity && typeof identity.applicationId === 'string'
+    ? identity.applicationId
+    : null;
   const store = new LivingContextStore(db, () => input.createdAt);
   const interaction = await store.upsertInteraction({
     ingestionKey: `code-review-context-call:${input.originalInterviewId}:${input.contextCallInterviewId}`,
