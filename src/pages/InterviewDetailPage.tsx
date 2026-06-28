@@ -941,6 +941,8 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict, codeReviewMatch);
   const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
+  const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
+  const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0 && !codeReviewEvidenceRefresh;
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -1112,7 +1114,27 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
-              {codeReviewEvidencePlan.length > 0 && (
+              {codeReviewEvidenceRefresh && (
+                <div data-testid="interview-code-review-evidence-refresh" style={DECISION_FOLLOW_UP}>
+                  <div style={FIELD_LABEL}>Evidence captured</div>
+                  <div style={DECISION_PLAN_SIGNAL}>Ready to refresh repo match</div>
+                  <div>{codeReviewEvidenceRefresh.summary}</div>
+                  <div style={CONTEXT_RECORD_NARRATIVE}>
+                    {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
+                  </div>
+                  {codeReviewEvidenceRefresh.contextCallInterviewId && (
+                    <button
+                      data-testid="interview-code-review-open-evidence-call"
+                      onClick={() => navigate(`/interviews/${codeReviewEvidenceRefresh.contextCallInterviewId}`)}
+                      style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                    >
+                      <CheckCircle size={14} />
+                      OPEN EVIDENCE CALL
+                    </button>
+                  )}
+                </div>
+              )}
+              {shouldShowEvidencePlan && (
                 <div data-testid="interview-code-review-evidence-plan" style={DECISION_FOLLOW_UP}>
                   <div style={FIELD_LABEL}>Resolve missing evidence</div>
                   <div style={DECISION_FOLLOW_UP_LIST}>

@@ -521,6 +521,20 @@ interface ScheduledCodeReviewMatchDetail {
   evidenceHyperedges: ScheduledCodeReviewHyperedge[];
   gaps: string[];
   evidencePlan: ScheduledCodeReviewEvidencePlanItem[];
+  evidenceRefresh: ScheduledCodeReviewEvidenceRefresh | null;
+}
+
+interface ScheduledCodeReviewEvidenceRefresh {
+  status: string;
+  assessmentSessionId: string;
+  contextCallInterviewId: string | null;
+  reportId: string;
+  summary: string;
+  sourceSpanCount: number | null;
+  matchRunId: string | null;
+  matchStatus: string | null;
+  completedAt: string | null;
+  updatedAt: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -539,6 +553,16 @@ function stringArray(value: unknown): string[] {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReviewSourceRef[] {
@@ -1195,12 +1219,94 @@ async function loadManualCodeReviewMatchDetail(
     evidenceHyperedges: [],
     gaps: ['Manual override did not run automatic candidate-to-PR contrast ranking.'],
     evidencePlan: [],
+    evidenceRefresh: null,
   };
+}
+
+async function loadCodeReviewEvidenceRefresh(
+  db: D1Database,
+  originalInterviewId: string,
+  candidateId: string | null,
+): Promise<ScheduledCodeReviewEvidenceRefresh | null> {
+  if (!await tableExists(db, 'assessment_sessions')
+    || !await tableExists(db, 'assessment_evaluation_reports')) {
+    return null;
+  }
+
+  const rows = await db.prepare(
+    `SELECT s.id AS assessment_session_id,
+            s.interview_id AS context_call_interview_id,
+            s.metadata_json AS session_metadata_json,
+            s.completed_at AS session_completed_at,
+            s.updated_at AS session_updated_at,
+            r.id AS report_id,
+            r.summary AS report_summary,
+            r.output_json AS report_output_json,
+            r.created_at AS report_created_at,
+            r.updated_at AS report_updated_at
+       FROM assessment_sessions s
+       JOIN assessment_evaluation_reports r ON r.session_id = s.id
+      WHERE s.created_by = 'code-review-evidence-plan'
+        AND (?2 IS NULL OR s.candidate_id = ?2)
+        AND (
+          json_extract(s.metadata_json, '$.originalInterviewId') = ?1
+          OR json_extract(r.output_json, '$.originalInterviewId') = ?1
+        )
+        AND json_extract(r.output_json, '$.status') = 'READY_FOR_REPO_MATCH_REFRESH'
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT 5`,
+  ).bind(originalInterviewId, candidateId).all<{
+    assessment_session_id: string;
+    context_call_interview_id: string | null;
+    session_metadata_json: string | null;
+    session_completed_at: string | null;
+    session_updated_at: string | null;
+    report_id: string;
+    report_summary: string;
+    report_output_json: string | null;
+    report_created_at: string | null;
+    report_updated_at: string | null;
+  }>();
+
+  for (const row of rows.results ?? []) {
+    const metadata = parseJsonObject(row.session_metadata_json);
+    const output = parseJsonObject(row.report_output_json);
+    const outputOriginalInterviewId = optionalString(output.originalInterviewId);
+    const metadataOriginalInterviewId = optionalString(metadata.originalInterviewId);
+    if (
+      outputOriginalInterviewId !== originalInterviewId
+      && metadataOriginalInterviewId !== originalInterviewId
+    ) {
+      continue;
+    }
+
+    const status = optionalString(output.status);
+    if (status !== 'READY_FOR_REPO_MATCH_REFRESH') continue;
+
+    const sourceSpanCount = numberOrNull(output.sourceSpanCount);
+    return {
+      status,
+      assessmentSessionId: row.assessment_session_id,
+      contextCallInterviewId: optionalString(output.contextCallInterviewId)
+        ?? optionalString(metadata.contextCallInterviewId)
+        ?? row.context_call_interview_id,
+      reportId: row.report_id,
+      summary: row.report_summary,
+      sourceSpanCount,
+      matchRunId: optionalString(output.matchRunId) ?? optionalString(metadata.matchRunId) ?? null,
+      matchStatus: optionalString(output.matchStatus) ?? optionalString(metadata.matchStatus) ?? null,
+      completedAt: row.session_completed_at ?? row.report_created_at,
+      updatedAt: row.report_updated_at ?? row.session_updated_at,
+    };
+  }
+
+  return null;
 }
 
 async function loadScheduledCodeReviewMatchDetail(
   db: D1Database,
   interview: {
+    id: string;
     candidate_id: string | null;
     interview_type: string | null;
     matched_repo_id: number | null;
@@ -1209,6 +1315,7 @@ async function loadScheduledCodeReviewMatchDetail(
   },
 ): Promise<ScheduledCodeReviewMatchDetail | null> {
   if (interview.interview_type !== 'CODE_REVIEW' || !interview.candidate_id) return null;
+  const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, interview.id, interview.candidate_id);
 
   const run = await db.prepare(
     `SELECT id, status, ranked_results_json, selected_packet_id, query_json
@@ -1240,7 +1347,10 @@ async function loadScheduledCodeReviewMatchDetail(
     query_json: string | null;
   }>();
 
-  if (!run) return loadManualCodeReviewMatchDetail(db, interview);
+  if (!run) {
+    const manual = await loadManualCodeReviewMatchDetail(db, interview);
+    return manual ? { ...manual, evidenceRefresh } : null;
+  }
 
   const rankedResults = parseScheduledCodeReviewRankedResults(run.ranked_results_json);
   const selected = rankedResults.find((result) => result.challengeId === run.selected_packet_id)
@@ -1279,6 +1389,7 @@ async function loadScheduledCodeReviewMatchDetail(
       matchRunId: run.id,
       gaps: uniqueGaps,
     }),
+    evidenceRefresh,
   };
 }
 

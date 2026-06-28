@@ -243,6 +243,20 @@ export interface CodeReviewMatchDetail {
   evidenceHyperedges: CodeReviewMatchHyperedge[];
   gaps: string[];
   evidencePlan?: CodeReviewEvidencePlanItem[];
+  evidenceRefresh?: CodeReviewEvidenceRefresh | null;
+}
+
+export interface CodeReviewEvidenceRefresh {
+  status: string;
+  assessmentSessionId: string;
+  contextCallInterviewId: string | null;
+  reportId: string;
+  summary: string;
+  sourceSpanCount: number | null;
+  matchRunId: string | null;
+  matchStatus: string | null;
+  completedAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface LinkedMeetingSummary {

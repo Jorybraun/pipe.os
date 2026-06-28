@@ -415,6 +415,65 @@ describe('InterviewDetailPage', () => {
     expect(evidencePlan).toHaveTextContent('CREATE EVIDENCE CALL');
   });
 
+  it('shows completed evidence-plan refresh state instead of the old missing-evidence prompt', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [{
+            id: 'candidate-source-evidence:NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            missingSignal: 'Source-backed candidate work evidence',
+            whyItMatters: 'PIPE cannot fairly select a real PR challenge until it has evidence of what kinds of engineering work this person has actually done.',
+            recommendedAssessment: 'recorded_evidence_question',
+            expectedEvidence: 'A short recorded or written answer with a concrete project, personal actions, technical constraints, and verification details.',
+            question: 'Walk me through a real code review or debugging task that best matches the work PIPE should assess here.',
+            source: {
+              matchRunId: 'match-run-blocked-1',
+              matchStatus: 'NEEDS_MORE_EVIDENCE',
+              gap: 'NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE',
+            },
+          }],
+          evidenceRefresh: {
+            status: 'READY_FOR_REPO_MATCH_REFRESH',
+            assessmentSessionId: 'assessment-plan-refresh-ready',
+            contextCallInterviewId: 'context-call-refresh-ready',
+            reportId: 'assessment-report-refresh-ready',
+            summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
+            sourceSpanCount: 3,
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            completedAt: '2026-06-22T19:00:00.000Z',
+            updatedAt: '2026-06-22T19:01:00.000Z',
+          },
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const refresh = screen.getByTestId('interview-code-review-evidence-refresh');
+    expect(refresh).toHaveTextContent('Evidence captured');
+    expect(refresh).toHaveTextContent('Ready to refresh repo match');
+    expect(refresh).toHaveTextContent('Evidence call captured 3 source-backed transcript spans for repo-match refresh.');
+    expect(refresh).toHaveTextContent('3 source-backed transcript spans are linked to this original code-review match.');
+    expect(screen.getByTestId('interview-code-review-open-evidence-call')).toHaveTextContent('OPEN EVIDENCE CALL');
+    expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
+  });
+
   it('creates a linked context call from a blocked code-review match', async () => {
     mocks.api.get
       .mockResolvedValueOnce({

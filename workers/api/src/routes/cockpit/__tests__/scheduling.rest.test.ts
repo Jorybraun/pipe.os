@@ -1075,6 +1075,110 @@ describe('GET /interviews/:id detail', () => {
     ]);
   });
 
+  it('returns completed evidence-plan refresh state on the original CODE_REVIEW interview', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-ready', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-refresh-ready', 'candidate-1', 'standalone-code-review-v1',
+        'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T17:46:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-refresh-ready',
+        'assessment-session:code-review-evidence-plan:interview-code-review-refresh-ready:context-call-refresh-ready',
+        'context-call-refresh-ready', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-refresh-ready',
+      contextCallInterviewId: 'context-call-refresh-ready',
+      matchRunId: 'match-run-refresh-ready',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-refresh-ready',
+        'assessment-report:code-review-evidence-plan:assessment-plan-refresh-ready:ready',
+        'assessment-plan-refresh-ready', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      )
+    `).run(JSON.stringify({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-refresh-ready',
+      contextCallInterviewId: 'context-call-refresh-ready',
+      matchRunId: 'match-run-refresh-ready',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      sourceSpanCount: 3,
+    }));
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-ready');
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      interview: {
+        codeReviewMatch: {
+          evidenceRefresh: {
+            status: string;
+            assessmentSessionId: string;
+            contextCallInterviewId: string | null;
+            reportId: string;
+            summary: string;
+            sourceSpanCount: number | null;
+            matchRunId: string | null;
+            matchStatus: string | null;
+          } | null;
+        } | null;
+      };
+    };
+
+    expect(body.interview.codeReviewMatch?.evidenceRefresh).toEqual({
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      assessmentSessionId: 'assessment-plan-refresh-ready',
+      contextCallInterviewId: 'context-call-refresh-ready',
+      reportId: 'assessment-report-refresh-ready',
+      summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
+      sourceSpanCount: 3,
+      matchRunId: 'match-run-refresh-ready',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      completedAt: '2026-06-22T19:00:00.000Z',
+      updatedAt: '2026-06-22T19:01:00.000Z',
+    });
+  });
+
   it('downgrades stale role-backed CODE_REVIEW validator proof when contrast was unmeasured', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`
