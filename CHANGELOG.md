@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Summary-only meeting transcript analysis now strips model-produced semantic assertions from stored analysis JSON and records suppression metadata, preventing mixed-audio transcripts from leaving candidate-shaped claims outside the source-backed ingestion gate.
 - Clippy auth-needed chat now opens the real container terminal and queues `devin auth login --force-manual-token-flow` for the user, while terminal evidence redacts auth tokens before commands/output are persisted.
 - Clippy/Devin now preflights real `devin auth status` before starting the CLI, treats service API keys as insufficient for CLI login, surfaces precise auth-needed diagnostics, and shows the live agent state on the Win95 tray icon beside the clock.
 - Clippy/Devin bridge readiness now requires an actual Devin CLI executable in the dev-container image, passes optional `DEVIN_ORG_ID` into room-scoped containers, and emits real missing-CLI/auth-needed diagnostics instead of reporting `AGENT_READY` when Devin is absent or login is canceled.

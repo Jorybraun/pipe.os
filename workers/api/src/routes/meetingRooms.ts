@@ -1984,18 +1984,30 @@ async function processRecording(
           'Meeting transcript analysis',
         );
     const personContextMode = hasAttributedGuestAudio ? 'attributed' : 'summary_only';
+    const personContextReason = hasAttributedGuestAudio
+      ? null
+      : structured
+        ? !speakerMetadata
+          ? 'speaker_metadata_missing'
+          : room.guest_contact_id
+            ? 'guest_audio_channel_missing'
+            : 'guest_contact_id_missing'
+        : 'mixed_audio_without_speaker_attribution';
+    const semanticAssertionsForStorage = hasAttributedGuestAudio
+      ? analysis.semanticAssertions
+      : [];
+    const semanticAssertionsSuppressed = hasAttributedGuestAudio
+      ? 0
+      : analysis.semanticAssertions.length;
     const analysisForStorage = {
       ...analysis,
+      semanticAssertions: semanticAssertionsForStorage,
+      semanticAssertionsSuppressed,
+      semanticAssertionsSuppressedReason: semanticAssertionsSuppressed > 0
+        ? personContextReason
+        : null,
       personContextMode,
-      personContextReason: hasAttributedGuestAudio
-        ? null
-        : structured
-          ? !speakerMetadata
-            ? 'speaker_metadata_missing'
-            : room.guest_contact_id
-              ? 'guest_audio_channel_missing'
-              : 'guest_contact_id_missing'
-          : 'mixed_audio_without_speaker_attribution',
+      personContextReason,
       speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
     };
     const transcriptJson = JSON.stringify(segments.map((segment) => ({
@@ -2036,7 +2048,7 @@ async function processRecording(
       transcript,
       segments,
       summary: analysis.summary,
-      semanticAssertions: hasAttributedGuestAudio ? analysis.semanticAssertions : [],
+      semanticAssertions: semanticAssertionsForStorage,
       extractorVersion: 'meeting-transcript-open-v1',
       startedAt: room.started_at,
       endedAt: room.ended_at,
@@ -2045,7 +2057,7 @@ async function processRecording(
       provider,
       speakerMetadata: speakerMetadata ? speakerMetadataJsonObject(speakerMetadata) : null,
       personContextMode,
-      personContextReason: analysisForStorage.personContextReason,
+      personContextReason,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

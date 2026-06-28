@@ -5373,6 +5373,31 @@ describe('meeting room recording living-context route', () => {
       headers: {
         'Content-Type': 'video/webm',
         'Content-Length': '3',
+        'X-Pipe-E2E-Meeting-Analysis': JSON.stringify({
+          summary: 'Mixed audio discussed lattice replay buffers.',
+          decisions: [],
+          actionItems: [],
+          topics: ['lattice replay buffers'],
+          followUps: [],
+          semanticAssertions: [{
+            sourceSegmentIds: ['mixed-0001'],
+            subjectSegmentId: 'mixed-0001',
+            predicate: 'implemented a source-described recovery mechanism',
+            narrative: 'Implemented lattice replay buffers for ecommerce order recovery.',
+            objectType: 'source-described mechanism',
+            objectValue: { surface: 'lattice replay buffers' },
+            qualifiers: {},
+            confidence: 0.92,
+            polarity: 1,
+            concepts: [{
+              surface: 'lattice replay buffers',
+              relationship: 'mechanism implemented for ecommerce order recovery',
+              weight: 0.9,
+              evidenceLevel: 'implemented',
+              strength: 0.88,
+            }],
+          }],
+        }),
       },
       body: new Uint8Array([9, 9, 9]),
     }, env, ctx);
@@ -5393,6 +5418,9 @@ describe('meeting room recording living-context route', () => {
       `meetings/owner-1/${created.meeting.id}/recording.webm`,
     );
     expect(JSON.parse(meetingRow.transcript_analysis_json)).toMatchObject({
+      semanticAssertions: [],
+      semanticAssertionsSuppressed: 1,
+      semanticAssertionsSuppressedReason: 'mixed_audio_without_speaker_attribution',
       personContextMode: 'summary_only',
       personContextReason: 'mixed_audio_without_speaker_attribution',
     });
