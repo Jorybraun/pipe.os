@@ -27,9 +27,11 @@ const DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS: Record<string, string> = {
 };
 
 export function normalizeCloudflareAIModel(model: string): string {
-  const replacement = DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS[model];
-  if (!replacement) return model;
-  console.warn(`[cloudflareAIProvider] Workers AI model ${model} is deprecated; using ${replacement} instead.`);
+  const trimmed = model.trim();
+  if (trimmed.length === 0) return DEFAULT_CLOUDFLARE_MODEL;
+  const replacement = DEPRECATED_CLOUDFLARE_MODEL_REPLACEMENTS[trimmed.toLowerCase()];
+  if (!replacement) return trimmed;
+  console.warn(`[cloudflareAIProvider] Workers AI model ${trimmed} is deprecated; using ${replacement} instead.`);
   return replacement;
 }
 

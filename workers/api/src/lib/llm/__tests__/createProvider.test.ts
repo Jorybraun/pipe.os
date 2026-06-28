@@ -5,6 +5,7 @@ import {
   DEFAULT_CLOUDFLARE_MODEL,
   createCandidateAgentProvider,
   createGenerationProvider,
+  createRoleAgentProvider,
 } from '../createProvider';
 
 function createAi(): Ai {
@@ -48,6 +49,30 @@ describe('createCandidateAgentProvider', () => {
 
     expect(provider).toBeInstanceOf(CloudflareAIProvider);
     expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+  });
+
+  it('trims and remaps stale role-agent model overrides before repo discovery inference', async () => {
+    const ai = createAi();
+    const provider = createRoleAgentProvider({
+      AI: ai,
+      ROLE_AGENT_MODEL: '  @CF/META/LLAMA-3.1-8B-INSTRUCT  ',
+    });
+
+    expect(provider).toBeInstanceOf(CloudflareAIProvider);
+    expect((provider as CloudflareAIProvider).model).toBe(DEFAULT_CLOUDFLARE_MODEL);
+
+    await provider?.complete([{ role: 'user', content: 'Return JSON.' }], { forceJson: true });
+
+    expect(ai.run).toHaveBeenCalledWith(
+      DEFAULT_CLOUDFLARE_MODEL,
+      expect.objectContaining({
+        messages: expect.any(Array),
+      }),
+    );
+    expect(ai.run).not.toHaveBeenCalledWith(
+      '@cf/meta/llama-3.1-8b-instruct',
+      expect.anything(),
+    );
   });
 
   it('remaps deprecated Workers AI Llama 3.1 8B variants before inference', async () => {
