@@ -25,6 +25,7 @@ import {
   getLatestSessionForRoom,
   getSessionByIdForRoom,
   insertRoomSession,
+  markError,
   markStopped,
   type DevContainerSessionRow,
 } from '../lib/devContainerSessions';
@@ -98,6 +99,7 @@ const E2E_TRANSCRIPT_OVERRIDE_MAX_BYTES = 24 * 1024;
 const DEFAULT_DEV_CONTAINER_TTL_SECONDS = 3600;
 const DEFAULT_DEV_CONTAINER_MAX_TTL_SECONDS = 7200;
 const DEFAULT_DEV_CONTAINER_INSTANCE_TYPE = 'standard-1';
+const MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS = 1_000;
 const WORKSPACE_INTERVIEW_TYPES = new Set(['DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX']);
 const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
@@ -1656,6 +1658,29 @@ function parsePositiveIntEnv(value: string | undefined, fallback: number): numbe
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function sanitizeWorkspaceInitDiagnostic(value: string): string {
+  const redacted = value
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[redacted]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,})\b/g, 'sk-[redacted]')
+    .replace(/\b(cog_[A-Za-z0-9]{16,})\b/g, 'cog_[redacted]')
+    .replace(/\b((?:DEVIN_API_KEY|API_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*)[^\s]+/gi, '$1[redacted]')
+    .replace(/([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi, '$1[redacted]')
+    .trim();
+  if (redacted.length <= MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS) return redacted;
+  return `${redacted.slice(0, MAX_WORKSPACE_INIT_DIAGNOSTIC_CHARS)}\n[diagnostic truncated]`;
+}
+
+async function markWorkspaceInitFailedIfStillLaunching(input: {
+  db: D1Database;
+  sessionId: string;
+  meetingRoomId: string;
+  diagnostic: string;
+}): Promise<void> {
+  const session = await getSessionByIdForRoom(input.db, input.sessionId, input.meetingRoomId);
+  if (!session || session.status !== 'LAUNCHING') return;
+  await markError(input.db, input.sessionId, input.diagnostic);
+}
+
 function workspaceProxyPath(token: string, sessionId: string): string {
   return `/api/v1/meeting-rooms/${encodeURIComponent(token)}/workspace/proxy/${encodeURIComponent(sessionId)}/`;
 }
@@ -2295,34 +2320,59 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
   const doStub = c.env.DEV_CONTAINER.get(doId);
-  c.executionCtx.waitUntil(
-    doStub.fetch('https://do.internal/__init', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId,
-        expiresAt,
-        ttlSeconds: effective.ttlSeconds,
-        repoGitUrl: effectiveRepoUrl,
-        challengeBranch,
-        matchedRepoId: workspace.matchedRepoId,
-        githubPrNumber: workspace.githubPrNumber,
-        challengeStatus: challenge.status,
-        challengeKind: challenge.kind,
-        challengeSource: challenge.source,
-        challengeMessage: challenge.message,
-        agentType: 'devin',
-        agentApiKey: c.env.DEVIN_API_KEY ?? null,
-        agentOrgId: c.env.DEVIN_ORG_ID ?? null,
-        pipeApiUrl: c.env.API_BASE_URL
-          ?? c.env.VIDEO_ROOM_APP_URL
-          ?? c.env.APP_BASE_URL
-          ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
-        roomToken: token,
-      }),
-    }).catch((err: unknown) => {
-      console.error('[meetingRooms.workspace.launch] DO init failed:', err);
+  const initRequest = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId,
+      expiresAt,
+      ttlSeconds: effective.ttlSeconds,
+      repoGitUrl: effectiveRepoUrl,
+      challengeBranch,
+      matchedRepoId: workspace.matchedRepoId,
+      githubPrNumber: workspace.githubPrNumber,
+      challengeStatus: challenge.status,
+      challengeKind: challenge.kind,
+      challengeSource: challenge.source,
+      challengeMessage: challenge.message,
+      agentType: 'devin',
+      agentApiKey: c.env.DEVIN_API_KEY ?? null,
+      agentOrgId: c.env.DEVIN_ORG_ID ?? null,
+      pipeApiUrl: c.env.API_BASE_URL
+        ?? c.env.VIDEO_ROOM_APP_URL
+        ?? c.env.APP_BASE_URL
+        ?? `https://${c.req.header('host') ?? 'api.pipe.os'}`,
+      roomToken: token,
     }),
+  } satisfies RequestInit;
+  c.executionCtx.waitUntil(
+    doStub.fetch('https://do.internal/__init', initRequest)
+      .then(async (response) => {
+        if (response.ok) return;
+        const responseText = await response.text().catch(() => '');
+        const diagnostic = sanitizeWorkspaceInitDiagnostic(
+          `Dev-container init returned HTTP ${response.status}${responseText ? `: ${responseText}` : ''}`,
+        );
+        console.error('[meetingRooms.workspace.launch] DO init returned non-OK:', diagnostic);
+        await markWorkspaceInitFailedIfStillLaunching({
+          db: c.env.DB,
+          sessionId,
+          meetingRoomId: room.room_id,
+          diagnostic,
+        });
+      })
+      .catch(async (err: unknown) => {
+        const diagnostic = sanitizeWorkspaceInitDiagnostic(
+          `Dev-container init request failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        console.error('[meetingRooms.workspace.launch] DO init failed:', diagnostic);
+        await markWorkspaceInitFailedIfStillLaunching({
+          db: c.env.DB,
+          sessionId,
+          meetingRoomId: room.room_id,
+          diagnostic,
+        });
+      }),
   );
 
   const session = await getSessionByIdForRoom(c.env.DB, sessionId, room.room_id);

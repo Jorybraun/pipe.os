@@ -4729,6 +4729,99 @@ describe('meeting room recording living-context route', () => {
     expect(JSON.stringify(body)).not.toContain('test-devin-api-key');
   });
 
+  it('marks room workspace launch as ERROR when dev-container init fails before the DO can report status', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    const leakedToken = 'cog_testtoken1234567890abcdef';
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const doFetch = vi.fn(async () => {
+      throw new Error(`network refused DEVIN_API_KEY=${leakedToken} https://example.test/?token=raw-token`);
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const scheduledInterviewId = 'scheduled-interview-workspace-init-failure';
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, interview_type, github_repo_url, github_pr_number, status, updated_at
+       ) VALUES (?, 'DEV_CONTAINER_CHALLENGE', ?, ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'https://github.com/pipe/runtime-diagnostics',
+      77,
+      new Date().toISOString(),
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Workspace Failure Guest',
+        recipientEmail: 'workspace-failure@example.com',
+        title: 'Workspace init failure',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        session: {
+          sessionId: string;
+          status: string;
+          proxyPath: string | null;
+        };
+      };
+    };
+    expect(body.workspace.session.status).toBe('LAUNCHING');
+    expect(body.workspace.session.proxyPath).toBeNull();
+
+    await waitUntilAll();
+    consoleSpy.mockRestore();
+
+    const row = sqlite.prepare(
+      `SELECT status, error_message
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId) as {
+      status: string;
+      error_message: string | null;
+    };
+
+    expect(row.status).toBe('ERROR');
+    expect(row.error_message).toContain('Dev-container init request failed');
+    expect(row.error_message).toContain('DEVIN_API_KEY=[redacted]');
+    expect(row.error_message).toContain('token=[redacted]');
+    expect(row.error_message).not.toContain(leakedToken);
+
+    const workspaceRes = await app.request(`/meeting/${created.hostToken}/workspace`, {
+      method: 'GET',
+    }, env, ctx);
+    expect(workspaceRes.status).toBe(200);
+    const workspaceBody = await workspaceRes.json() as {
+      workspace: {
+        session: {
+          status: string;
+          proxyPath: string | null;
+          errorMessage: string | null;
+        };
+      };
+    };
+    expect(workspaceBody.workspace.session.status).toBe('ERROR');
+    expect(workspaceBody.workspace.session.proxyPath).toBeNull();
+    expect(workspaceBody.workspace.session.errorMessage).toBe(row.error_message);
+  });
+
   it('surfaces a matched repo without a PR as a missing reviewable task diagnostic', async () => {
     const app = mountApp();
     const { ctx, waitUntilAll } = buildCtx();

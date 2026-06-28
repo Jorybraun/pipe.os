@@ -202,6 +202,10 @@ The controlling product rule remains:
   update the canonical D1 session row before projection, so Clippy availability,
   room workspace state, and assessment evidence reflect the real container
   lifecycle instead of a stale `READY` session.
+- Meeting-room workspace launch now marks the dev-container session `ERROR`
+  with a redacted diagnostic when the background Durable Object init request
+  fails before the container can report status, so a broken workspace does not
+  remain an indefinite `LAUNCHING` state.
 - Stale/deprecated Workers AI candidate-discovery failures are now repairable by
   both room RPC refresh and the scheduled Worker: the retry reopens the original
   R2 text/PDF source, marks ingestion `retry_queued`, and reruns the normal
