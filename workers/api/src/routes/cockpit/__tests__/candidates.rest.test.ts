@@ -233,6 +233,178 @@ describe('candidate identity normalization', () => {
   });
 });
 
+describe('POST / standalone assessment relationship model', () => {
+  let sqlite: BetterSqliteDb | null = null;
+
+  afterEach(() => {
+    sqlite?.close();
+    sqlite = null;
+  });
+
+  function seedStandaloneCandidateSchema(): void {
+    if (!sqlite) throw new Error('sqlite not initialized');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        pipeline_id TEXT,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        invite_token TEXT NOT NULL UNIQUE,
+        status TEXT NOT NULL,
+        current_stage_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE candidate_ingestion (
+        candidate_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE scheduled_interviews (
+        id TEXT PRIMARY KEY,
+        candidate_id TEXT,
+        pipeline_id TEXT,
+        stage_id TEXT,
+        owner_id TEXT NOT NULL,
+        interview_type TEXT,
+        status TEXT,
+        scheduled_at TEXT,
+        scheduling_provider TEXT,
+        scheduling_url TEXT,
+        sync_source TEXT,
+        github_repo_url TEXT,
+        github_pr_number INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+  }
+
+  function mountApp(): Hono<{ Bindings: Env }> {
+    if (!sqlite) throw new Error('sqlite not initialized');
+    const app = new Hono<{ Bindings: Env }>();
+    app.use('*', async (c, next) => {
+      // @ts-expect-error route test overrides Worker bindings.
+      c.env = {
+        DB: createMockD1(sqlite!),
+        CLERK_SECRET_KEY: 'test',
+        DEV_AUTH_BYPASS: 'true',
+        DEV_BYPASS_USER_ID: 'workspace-1',
+      };
+      await next();
+    });
+    app.route('/', candidateOps);
+    return app;
+  }
+
+  it('keeps one person identity while creating distinct assessment invite records for the same email', async () => {
+    sqlite = new Database(':memory:');
+    seedStandaloneCandidateSchema();
+    const app = mountApp();
+
+    const firstResponse = await app.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Ada Lovelace',
+        email: 'Ada@Example.com',
+        interviewType: 'CODE_REVIEW',
+        skipEmail: true,
+      }),
+    });
+    expect(firstResponse.status).toBe(201);
+    const first = await firstResponse.json() as {
+      candidate: { id: string; inviteToken: string; email: string };
+    };
+
+    const secondResponse = await app.request('/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Ada Lovelace',
+        email: 'ada@example.com',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+        skipEmail: true,
+      }),
+    });
+    expect(secondResponse.status).toBe(201);
+    const second = await secondResponse.json() as {
+      candidate: { id: string; inviteToken: string; email: string };
+    };
+
+    expect(first.candidate.id).not.toBe(second.candidate.id);
+    expect(first.candidate.inviteToken).not.toBe(second.candidate.inviteToken);
+    expect(first.candidate.email).toBe('ada@example.com');
+    expect(second.candidate.email).toBe('ada@example.com');
+
+    const candidateRows = sqlite.prepare(
+      `SELECT id, invite_token
+         FROM candidates
+        WHERE owner_id = 'workspace-1'
+          AND email = 'ada@example.com'
+        ORDER BY created_at ASC`,
+    ).all() as Array<{ id: string; invite_token: string }>;
+    expect(candidateRows).toHaveLength(2);
+    expect(candidateRows.map((row) => row.id)).toEqual([
+      first.candidate.id,
+      second.candidate.id,
+    ]);
+    expect(new Set(candidateRows.map((row) => row.invite_token)).size).toBe(2);
+
+    const interviewRows = sqlite.prepare(
+      `SELECT candidate_id, interview_type, github_repo_url, github_pr_number
+         FROM scheduled_interviews
+        WHERE owner_id = 'workspace-1'
+        ORDER BY created_at ASC`,
+    ).all() as Array<{
+      candidate_id: string;
+      interview_type: string;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    }>;
+    expect(interviewRows).toEqual([
+      {
+        candidate_id: first.candidate.id,
+        interview_type: 'CODE_REVIEW',
+        github_repo_url: null,
+        github_pr_number: null,
+      },
+      {
+        candidate_id: second.candidate.id,
+        interview_type: 'OPEN_SOURCE_BUG_FIX',
+        github_repo_url: 'https://github.com/hash-pipe/open-source-task',
+        github_pr_number: 101,
+      },
+    ]);
+
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM people WHERE primary_email = ?',
+    ).get('ada@example.com')).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM workspace_people WHERE workspace_id = ?',
+    ).get('workspace-1')).toEqual({ count: 1 });
+
+    const contextRow = sqlite.prepare(
+      `SELECT context_json
+         FROM workspace_people wp
+         JOIN people p ON p.id = wp.person_id
+        WHERE wp.workspace_id = ?
+          AND p.primary_email = ?`,
+    ).get('workspace-1', 'ada@example.com') as { context_json: string };
+    const context = JSON.parse(contextRow.context_json) as { legacyCandidateIds?: string[] };
+    expect(new Set(context.legacyCandidateIds)).toEqual(new Set([
+      first.candidate.id,
+      second.candidate.id,
+    ]));
+  });
+});
+
 // ─── SQL shape validation ────────────────────────────────────────────────────
 
 describe('Enrichment job SQL shapes', () => {

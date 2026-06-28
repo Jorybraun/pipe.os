@@ -49,6 +49,7 @@ export function CandidateIntakeModal({
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [scheduledInterviewId, setScheduledInterviewId] = useState<string | null>(null);
   const [meetingUrl, setMeetingUrl] = useState<string | null>(null);
+  const [deliveredInviteUrl, setDeliveredInviteUrl] = useState<string | null>(null);
   const [scheduledEmailSent, setScheduledEmailSent] = useState<boolean | null>(null);
   const [scheduledEmailError, setScheduledEmailError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -70,8 +71,8 @@ export function CandidateIntakeModal({
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://pipe.build';
   const assessInviteUrl = inviteToken ? `${baseUrl}/assess/${inviteToken}` : '';
-  const inviteUrl = meetingUrl ?? assessInviteUrl;
-  const inviteKind = meetingUrl ? 'room' : 'assessment';
+  const inviteUrl = deliveredInviteUrl ?? meetingUrl ?? assessInviteUrl;
+  const inviteKind = inviteUrl.includes('/room/') ? 'room' : 'assessment';
 
   const prepareScheduledInterviewInvite = async (
     interviewId: string | null | undefined,
@@ -88,6 +89,7 @@ export function CandidateIntakeModal({
       emailSent?: boolean;
       emailError?: string;
       meetingUrl?: string | null;
+      deliveredUrl?: string | null;
       room?: { guestUrl?: string | null };
     }>(
       `/api/v1/scheduling/interviews/${interviewId}/invite`,
@@ -95,6 +97,7 @@ export function CandidateIntakeModal({
     );
     const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
     if (guestUrl) setMeetingUrl(guestUrl);
+    setDeliveredInviteUrl(result.deliveredUrl ?? guestUrl);
     setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
     setScheduledEmailError(result.emailError ?? null);
   };
@@ -147,6 +150,7 @@ export function CandidateIntakeModal({
           emailSent?: boolean;
           emailError?: string;
           meetingUrl?: string | null;
+          deliveredUrl?: string | null;
           room?: { guestUrl?: string | null };
         }>(
           `/api/v1/scheduling/interviews/${scheduledInterviewId}/invite`,
@@ -154,6 +158,7 @@ export function CandidateIntakeModal({
         );
         const guestUrl = result.meetingUrl ?? result.room?.guestUrl ?? null;
         if (guestUrl) setMeetingUrl(guestUrl);
+        setDeliveredInviteUrl(result.deliveredUrl ?? guestUrl);
         setScheduledEmailSent(typeof result.emailSent === 'boolean' ? result.emailSent : null);
         setScheduledEmailError(result.emailError ?? null);
         if (result.emailError || result.emailSent === false) {
