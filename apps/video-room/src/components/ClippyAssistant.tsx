@@ -370,6 +370,39 @@ export function ClippyAssistant({
                 ? `Waiting for ${agentDisplayName} to report ready before chat is enabled.`
                 : `Connected to ${agentDisplayName}. Ask Clippy about the code or the interview workspace.`;
   const chatAgentName = agentEnabled ? agentDisplayName : 'agent bridge';
+  const bridgeChecks = [
+    {
+      label: 'Workspace',
+      value: agentEnabled ? 'Ready' : 'Required',
+      state: agentEnabled ? 'ok' : 'blocked',
+    },
+    {
+      label: 'WebSocket',
+      value: agentEnabled
+        ? agentConn.connected ? 'Connected' : 'Reconnecting'
+        : 'Offline',
+      state: agentEnabled && agentConn.connected ? 'ok' : 'waiting',
+    },
+    {
+      label: 'Agent',
+      value: reportedAgentName || 'Waiting',
+      state: reportedAgentName ? 'ok' : 'waiting',
+    },
+    {
+      label: 'State',
+      value: agentEnabled ? statusLabel[agentConn.status] || agentConn.status : 'Workspace required',
+      state: canSendToAgent
+        ? 'ok'
+        : agentConn.status === 'auth_needed' || !agentEnabled
+          ? 'blocked'
+          : 'waiting',
+    },
+    {
+      label: 'Capabilities',
+      value: agentConn.capabilities.length > 0 ? agentConn.capabilities.join(', ') : 'Waiting',
+      state: agentConn.capabilities.length > 0 ? 'ok' : 'waiting',
+    },
+  ] as const;
 
   return (
     <>
@@ -450,6 +483,19 @@ export function ClippyAssistant({
                 : 'Workspace required'}
             </span>
             {agentEnabled && !agentConn.connected && <span> — reconnecting...</span>}
+          </div>
+
+          <div className="win95-clippy-bridge-checklist" data-testid="clippy-bridge-checklist">
+            {bridgeChecks.map((check) => (
+              <div
+                className={`win95-clippy-bridge-check is-${check.state}`}
+                key={check.label}
+                data-testid={`clippy-bridge-check-${check.label.toLowerCase()}`}
+              >
+                <span>{check.label}</span>
+                <strong>{check.value}</strong>
+              </div>
+            ))}
           </div>
 
           {agentEnabled && agentConn.status === 'auth_needed' && agentConn.authUrl && (

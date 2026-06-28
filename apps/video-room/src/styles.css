@@ -2993,6 +2993,74 @@ button:focus-visible {
   background: #808080;
 }
 
+.win95-clippy-bridge-checklist {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  margin: 4px 8px;
+  padding: 4px;
+  background: #dfdfdf;
+  border: 1px inset #f4f4f4;
+  color: #101010;
+}
+
+.win95-clippy-bridge-check {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  align-items: center;
+  min-height: 18px;
+  column-gap: 6px;
+}
+
+.win95-clippy-bridge-check span {
+  color: #404040;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win95-clippy-bridge-check strong {
+  min-width: 0;
+  color: #000;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win95-clippy-bridge-check::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border: 1px solid #404040;
+  background: #808080;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.win95-clippy-bridge-check span {
+  padding-left: 12px;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.win95-clippy-bridge-check strong {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.win95-clippy-bridge-check.is-ok::before {
+  background: #008000;
+}
+
+.win95-clippy-bridge-check.is-waiting::before {
+  background: #ffcc00;
+}
+
+.win95-clippy-bridge-check.is-blocked::before {
+  background: #cc0000;
+}
+
 @keyframes clippy-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }

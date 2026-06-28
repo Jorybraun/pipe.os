@@ -151,6 +151,44 @@ describe('ClippyAssistant', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
+  it('shows a live bridge checklist so disabled Clippy chat is diagnosable without simulation', async () => {
+    const sendMessage = vi.fn(() => null);
+    mockAgentConnection({
+      connected: true,
+      status: 'idle',
+      agentName: 'devin',
+      capabilities: [],
+      sendMessage,
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+      />,
+    );
+
+    const diagnostics = await screen.findByTestId('clippy-bridge-checklist');
+    expect(diagnostics.textContent).toContain('Workspace');
+    expect(diagnostics.textContent).toContain('Ready');
+    expect(diagnostics.textContent).toContain('WebSocket');
+    expect(diagnostics.textContent).toContain('Connected');
+    expect(diagnostics.textContent).toContain('Agent');
+    expect(diagnostics.textContent).toContain('devin');
+    expect(diagnostics.textContent).toContain('Capabilities');
+    expect(diagnostics.textContent).toContain('Waiting');
+    expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
+
+    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+      target: { value: 'inspect the repo task' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('sends chat only through the connected Devin bridge', async () => {
     const userMessage: AgentChatMessage = {
       role: 'user',
