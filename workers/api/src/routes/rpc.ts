@@ -3578,6 +3578,20 @@ rpcAuth.get('/ingestion-status', async (c) => {
     return c.json({ status: 'not_started', current_step: null, candidate_searchable_profile: null, key_concepts_json: null, error_text: null, estimated_completion_at: null });
   }
 
+  if (await maybeQueueRetryableStandaloneIngestion(c.env, optionalExecutionContext(c), candidateId)) {
+    return c.json({
+      status: 'pending',
+      current_step: 'retry_queued',
+      candidate_searchable_profile: row.candidate_searchable_profile,
+      key_concepts_json: row.key_concepts_json,
+      error_text: null,
+      estimated_completion_at: row.estimated_completion_at,
+      updated_at: new Date().toISOString(),
+      retry_queued: true,
+      retry_reason: STANDALONE_RETRY_REASON,
+    });
+  }
+
   return c.json(row);
 });
 

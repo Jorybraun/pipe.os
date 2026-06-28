@@ -78,6 +78,7 @@ import {
   normalizeBrowserNavigationUrl,
   type BrowserNavigationTrigger,
 } from './lib/browserNavigationEvidence';
+import { routeAgentRoomAction } from './lib/agentRoomActionRouting';
 import { sharedWindowIdsMissingFromSnapshot } from './lib/desktopSnapshot';
 import {
   useRoomConnection,
@@ -2018,11 +2019,22 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const handleAgentRoomAction = (action: AgentRoomAction): void => {
-    if (action.bridgeEventType !== 'ROOM_ACTION' || action.protocol !== 'clippy_room_action_tag') {
-      executeRoomAction(action.id, { url: action.url });
+    const route = routeAgentRoomAction(action);
+    if (route.kind === 'reject') {
+      console.error('[handleAgentRoomAction] rejected unsupported bridge room action:', {
+        actionId: action.id,
+        bridgeEventType: action.bridgeEventType ?? null,
+        protocol: action.protocol ?? null,
+        source: action.source ?? null,
+        reason: route.reason,
+      });
       return;
     }
-    executeRoomAction(action.id, { url: action.url, source: 'agent', agentAction: action });
+    executeRoomAction(route.action.id, {
+      url: route.action.url,
+      source: route.source,
+      agentAction: route.kind === 'agent' ? route.action : undefined,
+    });
   };
 
   const captureClippyUserChatMessage = (message: AgentChatMessage): void => {
