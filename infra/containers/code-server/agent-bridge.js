@@ -16,7 +16,12 @@ const BRIDGE_PORT = Number(process.env.AGENT_BRIDGE_PORT || 8081);
 const CODE_SERVER_PORT = Number(process.env.CODE_SERVER_PORT || 8080);
 const WORKSPACE = process.env.WORKSPACE_DIR || '/workspace';
 const DEVIN_API_KEY = process.env.DEVIN_API_KEY || '';
-const AGENT_NAME = process.env.AGENT_TYPE || 'devin';
+const REQUESTED_AGENT_NAME = String(process.env.AGENT_TYPE || '').trim();
+const SUPPORTED_AGENT_TYPES = new Set(['devin']);
+const AGENT_NAME = SUPPORTED_AGENT_TYPES.has(REQUESTED_AGENT_NAME) ? REQUESTED_AGENT_NAME : '';
+const AGENT_UNCONFIGURED_MESSAGE = REQUESTED_AGENT_NAME
+  ? `Agent type "${REQUESTED_AGENT_NAME}" is not supported by this bridge. Configure a real bridge for that agent before enabling Clippy chat.`
+  : 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.';
 const PIPE_API_URL = process.env.PIPE_API_URL || '';
 const ROOM_TOKEN = process.env.ROOM_TOKEN || '';
 const AGENT_CONTEXT_MAX_LENGTH = Number(process.env.AGENT_CONTEXT_MAX_LENGTH || 6000);
@@ -28,10 +33,10 @@ const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_M
 const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 750, 25);
 const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
-const agentAuthed = Boolean(DEVIN_API_KEY);
+const agentAuthed = Boolean(AGENT_NAME) && Boolean(DEVIN_API_KEY);
 let agentProcess = null;
 let agentReady = false;
-let agentStatus = agentAuthed ? 'disconnected' : 'auth_needed';
+let agentStatus = AGENT_NAME ? (agentAuthed ? 'disconnected' : 'auth_needed') : 'disconnected';
 const clients = new Set();
 let agentStartReadyTimer = null;
 let agentPrimerReadyTimer = null;
@@ -109,6 +114,7 @@ function extractTaggedRoomActions(text) {
 }
 
 function send(ws, msg) {
+  if (!msg) return;
   if (!ws.alive) return;
   const payload = Buffer.from(JSON.stringify(msg));
   let header;
@@ -157,6 +163,7 @@ function sendBinary(ws, chunk) {
 }
 
 function broadcast(msg) {
+  if (!msg) return;
   for (const ws of clients) send(ws, msg);
 }
 
@@ -490,6 +497,7 @@ function startWorkspaceWatcher() {
 }
 
 function devinAuthNeededMessage() {
+  if (!AGENT_NAME) return null;
   return {
     type: 'AUTH_NEEDED',
     authUrl: null,
@@ -525,10 +533,12 @@ function clearAgentStartupTimers() {
 }
 
 function broadcastAgentReady() {
+  if (!AGENT_NAME) return;
   broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
 }
 
 function agentStatusMessage() {
+  if (!AGENT_NAME) return null;
   return { type: 'AGENT_STATUS', agent: AGENT_NAME, status: agentStatus };
 }
 
@@ -813,6 +823,12 @@ function devinCommand() {
 
 function startAgent() {
   if (agentProcess) return;
+  if (!AGENT_NAME) {
+    agentReady = false;
+    agentStatus = 'disconnected';
+    broadcastAgentStatus();
+    return;
+  }
   if (!agentAuthed) {
     markAgentAuthNeeded(DEVIN_AUTH_MESSAGE, 'auth_required');
     return;
@@ -945,6 +961,10 @@ async function handleAgentMessage(ws, msg) {
   if (msg.type === 'CHAT') {
     const text = String(msg.text || '').trim();
     if (!text) return;
+    if (!AGENT_NAME) {
+      send(ws, { type: 'ERROR', message: AGENT_UNCONFIGURED_MESSAGE });
+      return;
+    }
     if (!agentAuthed) {
       agentStatus = 'auth_needed';
       broadcastAgentStatus();
@@ -959,7 +979,7 @@ async function handleAgentMessage(ws, msg) {
       return;
     }
     if (!agentReady) {
-      send(ws, { type: 'ERROR', message: 'Real Devin is still starting. Wait for the bridge to report ready before sending chat.' });
+      send(ws, { type: 'ERROR', message: `${AGENT_NAME} is still starting. Wait for the bridge to report ready before sending chat.` });
       return;
     }
     if (!agentProcess) {
@@ -975,6 +995,10 @@ async function handleAgentMessage(ws, msg) {
       broadcastAgentStatus();
     }
   } else if (msg.type === 'AUTH_START') {
+    if (!AGENT_NAME) {
+      send(ws, { type: 'ERROR', message: AGENT_UNCONFIGURED_MESSAGE });
+      return;
+    }
     if (agentAuthed) {
       startAgent();
       return;

@@ -33,14 +33,15 @@ interface InitPayload {
 }
 
 function buildEnvVars(payload: InitPayload): Record<string, string> {
+  const agentType = payload.agentType?.trim();
   const env: Record<string, string> = {
     SESSION_ID: payload.sessionId,
     PASSWORD: 'pipe',
     WORKSPACE_DIR: '/workspace',
-    AGENT_TYPE: payload.agentType || 'devin',
     AGENT_BRIDGE_PORT: '8080',
     CODE_SERVER_PORT: '8082',
   };
+  if (agentType) env.AGENT_TYPE = agentType;
   if (payload.repoGitUrl) env.REPO_GIT_URL = payload.repoGitUrl;
   if (payload.challengeBranch) env.CHALLENGE_BRANCH = payload.challengeBranch;
   if (payload.agentApiKey) env.DEVIN_API_KEY = payload.agentApiKey;

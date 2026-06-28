@@ -320,5 +320,6 @@ describe('parseAgentBridgeMessage', () => {
     expect(agentStatusEvidenceText('disconnected', 'devin')).toBe(
       'devin bridge is disconnected.',
     );
+    expect(agentStatusEvidenceText('idle', '')).toBeNull();
   });
 });

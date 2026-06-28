@@ -261,8 +261,9 @@ function parseRoomAction(value: unknown, context: RoomActionParseContext): Agent
   };
 }
 
-export function agentStatusEvidenceText(status: AgentStatus, agentName = 'devin'): string {
-  const name = agentName.trim() || 'devin';
+export function agentStatusEvidenceText(status: AgentStatus, agentName: string): string | null {
+  const name = agentName.trim();
+  if (!name) return null;
   switch (status) {
     case 'starting':
       return `${name} is starting from the real container bridge.`;

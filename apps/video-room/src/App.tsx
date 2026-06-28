@@ -1833,8 +1833,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     if (!agentName.trim()) return;
     const capturedAtMs = Date.now();
     const observedAt = new Date(capturedAtMs).toISOString();
+    const text = agentStatusEvidenceText(status, agentName);
+    if (!text) return;
     const evidence = buildClippyAgentStatusEvidence({
-      text: agentStatusEvidenceText(status, agentName),
+      text,
       agentName,
       status,
       bridgeMessageSource: 'agent_status',

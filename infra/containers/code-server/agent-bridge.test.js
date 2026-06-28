@@ -82,6 +82,7 @@ async function startBridge(scriptBody, extraEnv = {}) {
         ...process.env,
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
         DEVIN_API_KEY: 'test-devin-key',
+        AGENT_TYPE: 'devin',
         AGENT_BRIDGE_PORT: String(port),
         CODE_SERVER_PORT: String(codeServerPort),
         WORKSPACE_DIR: workspaceDir,
@@ -169,6 +170,30 @@ afterEach(async () => {
 });
 
 describe('agent bridge readiness', () => {
+  it('does not fabricate a Devin bridge when AGENT_TYPE is missing', async () => {
+    const { port } = await startBridge(`
+process.stdin.setEncoding('utf8');
+process.stdin.once('data', () => process.stdout.write('This fake Devin process should not start.\\n'));
+setInterval(() => {}, 1000);
+`, {
+      AGENT_TYPE: '',
+    });
+
+    const { ws, messages } = await connectAgent(port);
+    await delay(150);
+    expect(messages.some((message) => message.agent === 'devin')).toBe(false);
+    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+
+    ws.send(JSON.stringify({ type: 'CHAT', text: 'hello?' }));
+    const error = await waitForMessage(messages, (message) => message.type === 'ERROR');
+    expect(error).toEqual({
+      type: 'ERROR',
+      message: 'No real agent is configured in this container. Set AGENT_TYPE to a supported bridge agent before enabling Clippy chat.',
+    });
+    expect(messages.some((message) => message.agent === 'devin')).toBe(false);
+    ws.close();
+  });
+
   it('reports AGENT_READY after the real Devin process accepts the source-backed room primer', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
