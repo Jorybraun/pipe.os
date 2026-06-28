@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
-- CODE_REVIEW PR-author pushback now retries malformed real-provider output through a strict JSON repair pass before surfacing `AI_DEVELOPER_UNAVAILABLE`, reducing app-dev review-round stalls without fabricating author replies.
+- CODE_REVIEW PR-author pushback now falls through current Workers AI author models and retries malformed non-empty provider output through a strict JSON repair pass before surfacing `AI_DEVELOPER_UNAVAILABLE`, reducing app-dev review-round stalls without fabricating author replies.
 - Standalone CODE_REVIEW matching now blocks stale non-progressing evidence ingestion with candidate-safe diagnostics instead of polling forever behind the generic matching screen, and ingestion step heartbeats update `updated_at` for reliable freshness checks.
 - Role-backed CODE_REVIEW matching now converts terminal deterministic no-match outcomes into blocked repo-matching diagnostics instead of repeatedly polling a generic matching screen.
 - The CODE_REVIEW app-dev full-submit smoke now polls D1 for durable review-session score reports, challenge-submission scores/reports, and assessment scores so scoring regressions fail the reliability gate.

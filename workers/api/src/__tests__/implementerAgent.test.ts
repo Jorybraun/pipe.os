@@ -248,7 +248,7 @@ I will add a regression before merge.",
     expect(results[0]!.updated_code).toBe('expect(encoded).toBe(true);');
   });
 
-  it('retries the Workers AI fallback model when the primary response is empty', async () => {
+  it('tries the next current Workers AI model when the primary response is empty', async () => {
     mockAiRun
       .mockResolvedValueOnce(workersAiResponse(''))
       .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
@@ -257,29 +257,32 @@ I will add a regression before merge.",
 
     const results = await callImplementerAgent(BASE_INPUT);
     expect(mockAiRun).toHaveBeenCalledTimes(2);
-    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/qwen/qwen2.5-coder-32b-instruct');
-    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
+    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
+    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/google/gemma-4-26b-a4b-it');
     expect(results).toHaveLength(1);
     expect(results[0]!.move).toBe('pushback');
   });
 
-  it('retries the Workers AI fallback model when the primary response is prose without JSON', async () => {
+  it('continues across current Workers AI models when earlier models return empty responses', async () => {
     mockAiRun
-      .mockResolvedValueOnce(workersAiResponse('I agree with the reviewer.'))
+      .mockResolvedValueOnce(workersAiResponse(''))
+      .mockResolvedValueOnce(workersAiResponse(''))
       .mockResolvedValueOnce(workersAiResponse(JSON.stringify([
         { to_comment_id: 1, content: 'I will add the regression coverage.', move: 'change', updated_code: 'test(\"encodes urls\", () => {});' },
       ])));
 
     const results = await callImplementerAgent(BASE_INPUT);
-    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(mockAiRun).toHaveBeenCalledTimes(3);
+    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
+    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/google/gemma-4-26b-a4b-it');
+    expect(mockAiRun.mock.calls[2]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
     expect(results[0]!.move).toBe('change');
     expect(results[0]!.updated_code).toBe('test("encodes urls", () => {});');
   });
 
-  it('repairs malformed real-provider output after primary and fallback JSON parsing fail', async () => {
+  it('repairs malformed real-provider output before trying another model', async () => {
     mockAiRun
       .mockResolvedValueOnce(workersAiResponse('I agree this is risky, I will add the regression before merge.'))
-      .mockResolvedValueOnce(workersAiResponse('Sure - pushing a small test change now.'))
       .mockResolvedValueOnce(workersAiResponse(JSON.stringify({
         responses: [
           {
@@ -293,9 +296,10 @@ I will add a regression before merge.",
 
     const results = await callImplementerAgent(BASE_INPUT);
 
-    expect(mockAiRun).toHaveBeenCalledTimes(3);
-    expect(mockAiRun.mock.calls[2]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
-    const repairPayload = mockAiRun.mock.calls[2]?.[1] as { messages?: Array<{ content?: string }> };
+    expect(mockAiRun).toHaveBeenCalledTimes(2);
+    expect(mockAiRun.mock.calls[0]?.[0]).toBe('@cf/openai/gpt-oss-20b');
+    expect(mockAiRun.mock.calls[1]?.[0]).toBe('@cf/google/gemma-4-26b-a4b-it');
+    const repairPayload = mockAiRun.mock.calls[1]?.[1] as { messages?: Array<{ content?: string }> };
     expect(repairPayload.messages?.[1]?.content).toContain('RAW_RESPONSE');
     expect(results).toEqual([
       {
