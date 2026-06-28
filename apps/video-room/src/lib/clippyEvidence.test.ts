@@ -3,6 +3,7 @@ import {
   buildClippyActionEventId,
   buildClippyAgentChatFallbackEvidence,
   buildClippyAgentChatResponseId,
+  buildClippyAgentMessageSessionEvidence,
   buildClippyAgentStatusEvidence,
   buildClippyAgentStatusEventId,
   clippyAgentResponseFingerprint,
@@ -233,6 +234,92 @@ describe('clippy evidence', () => {
         agentResponseClaimed: true,
       },
     });
+  });
+
+  it('converts browser-observed Devin replies into agent chat evidence only when source metadata is present', () => {
+    expect(buildClippyAgentMessageSessionEvidence({
+      text: 'I inspected the failing test.',
+      source: 'agent_stdout',
+      agentName: 'devin',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782603900000,
+    })).toMatchObject({
+      eventType: 'ai_chat_agent',
+      text: 'I inspected the failing test.',
+      properties: {
+        source: 'clippy_agent_bridge',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        agentResponseClaimed: true,
+      },
+    });
+  });
+
+  it('records source-backed diagnostics instead of fake replies when agent stdout lacks observation metadata', () => {
+    expect(buildClippyAgentMessageSessionEvidence({
+      text: 'I inspected the failing test.',
+      source: 'agent_stdout',
+      agentName: 'devin',
+      agentStatus: 'thinking',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1700000000000,
+    })).toEqual({
+      eventType: 'ai_agent_status',
+      text: 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.',
+      properties: {
+        source: 'clippy_agent_bridge',
+        agentStatusEventSource: 'browser_clippy_agent_ws',
+        agent: 'devin',
+        status: 'thinking',
+        diagnosticSource: 'agent_response_missing_source_metadata',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2023-11-14T22:13:20.000Z',
+        capturedAtMs: 1700000000000,
+        agentStatusEventId: 'agent-status:devin:1700000000000:agent_stdout:thinking:agent_response_missing_source_metadata',
+        exitCode: null,
+        signal: null,
+        truncated: null,
+        bridgePersisted: null,
+        promptType: null,
+        deliveredToAgent: null,
+        promptLength: null,
+        promptFingerprint: null,
+        roomContextStatus: null,
+        roomContextLength: null,
+        roomContextFingerprint: null,
+        userMessageLength: null,
+        userMessageFingerprint: null,
+        contextTruncated: null,
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-123',
+        messageTimestamp: 1700000000000,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
+  it('does not fabricate bridge diagnostics when an agent message has no bridge source', () => {
+    expect(buildClippyAgentMessageSessionEvidence({
+      text: 'A message with no bridge source.',
+      agentName: 'devin',
+      diagnosticSource: 'agent_exit',
+      observedAt: '2026-06-27T21:05:00.000Z',
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      messageTimestamp: 1782603900000,
+    })).toBeNull();
   });
 
   it('derives response ids from agent, capture time, and response fingerprint', () => {

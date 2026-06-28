@@ -35,7 +35,7 @@ import {
   canControlSharedRoomSurface,
 } from './lib/roomSurfaceEvidence';
 import {
-  buildClippyAgentChatFallbackEvidence,
+  buildClippyAgentMessageSessionEvidence,
   buildClippyAgentStatusEvidence,
   buildClippyRoomActionExecutionEvidence,
   buildClippyUiActionEvidence,
@@ -1717,43 +1717,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
-    if (message.persisted) return;
-    const isAgentResponse = message.source === 'agent_stdout';
-    if (isAgentResponse && message.observedAt) {
-      const evidence = buildClippyAgentChatFallbackEvidence({
-        text: message.text,
-        agentName: message.agentName ?? 'devin',
-        observedAt: message.observedAt,
-        surface: room.roomSurface,
-        roomPhase: room.phase,
-        workspaceStatus: workspaceSession?.status ?? null,
-        workspaceSessionId: workspaceSession?.sessionId ?? null,
-        messageTimestamp: message.timestamp,
-      });
-      captureSessionEvent('ai_chat_agent', evidence.text, 'agent', evidence.properties);
-      return;
-    }
-    const diagnosticText = isAgentResponse
-      ? 'Clippy/Devin response was not recorded as agent evidence because bridge source metadata was missing.'
-      : message.text;
-    const observedAt = message.observedAt ?? new Date().toISOString();
-    const observedAtMs = Date.parse(observedAt);
-    const capturedAtMs = Number.isFinite(observedAtMs) ? observedAtMs : message.timestamp;
-    const diagnosticSource = isAgentResponse
-      ? 'agent_response_missing_source_metadata'
-      : message.diagnosticSource ?? message.source ?? null;
-    const evidence = buildClippyAgentStatusEvidence({
-      text: diagnosticText,
+    const evidence = buildClippyAgentMessageSessionEvidence({
+      text: message.text,
+      source: message.source,
       agentName: message.agentName ?? 'devin',
-      status: message.agentStatus ?? null,
-      diagnosticSource,
-      bridgeMessageSource: message.source ?? 'bridge_diagnostic',
-      observedAt,
-      capturedAtMs,
+      agentStatus: message.agentStatus ?? null,
+      diagnosticSource: message.diagnosticSource ?? null,
+      observedAt: message.observedAt ?? null,
       exitCode: message.exitCode ?? null,
       signal: message.signal ?? null,
       truncated: message.truncated ?? null,
-      bridgePersisted: message.persisted ?? null,
+      persisted: message.persisted ?? null,
       promptType: message.promptType ?? null,
       deliveredToAgent: message.deliveredToAgent ?? null,
       promptLength: message.promptLength ?? null,
@@ -1770,7 +1744,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       messageTimestamp: message.timestamp,
     });
-    captureSessionEvent('ai_agent_status', evidence.text, 'agent', evidence.properties);
+    if (!evidence) return;
+    captureSessionEvent(evidence.eventType, evidence.text, 'agent', evidence.properties);
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
