@@ -2954,12 +2954,44 @@ describe('meeting room recording living-context route', () => {
           responseLength: 76,
           actionCount: 0,
           bridgePersisted: true,
+          browserPromptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
           surface: 'win95',
           workspaceSessionId: 'workspace-session-1',
         },
       }),
     }, env, ctx);
     expect(clippyAgentChatRes.status).toBe(200);
+
+    const malformedPromptRefAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The failing test is asserting replay idempotency after an inventory timeout.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_4c000d1c',
+          responseFingerprint: 'agent_4c000d1c',
+          responseLength: 76,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'source-less-prompt-ref',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 48,
+        },
+      }),
+    }, env, ctx);
+    expect(malformedPromptRefAgentChatRes.status).toBe(422);
 
     const clippyAgentFallbackRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',

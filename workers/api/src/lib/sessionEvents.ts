@@ -71,6 +71,7 @@ const WORKSPACE_STATE_SOURCES = new Set(['initial_load', 'launch', 'refresh', 'e
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
 const CLIPPY_ACTION_EVENT_ID_RE = /^clippy-action:(host|guest|agent):\d+:[a-z_]+:[a-z_]+:[a-z_]+:[a-zA-Z0-9:_-]+$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[a-f0-9]{8}$/;
 const AGENT_CHAT_RESPONSE_ID_RE = /^agent-chat:[a-zA-Z0-9:_-]+:\d+:CHAT_RESPONSE:agent_[a-f0-9]{8}$/;
@@ -139,6 +140,29 @@ function safeEvidenceIdPart(value: unknown): string {
     .replace(/[^a-zA-Z0-9:_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'none';
+}
+
+function hasOptionalBrowserPromptRef(evidence: Record<string, unknown>): boolean {
+  const promptId = evidence.browserPromptId;
+  const promptFingerprint = evidence.browserPromptFingerprint;
+  const promptTimestamp = evidence.browserPromptTimestamp;
+  const promptLength = evidence.browserPromptLength;
+  const hasAny = promptId !== undefined
+    || promptFingerprint !== undefined
+    || promptTimestamp !== undefined
+    || promptLength !== undefined;
+  if (!hasAny) return true;
+  return typeof promptId === 'string'
+    && BROWSER_PROMPT_ID_RE.test(promptId)
+    && typeof promptFingerprint === 'string'
+    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && typeof promptTimestamp === 'number'
+    && Number.isInteger(promptTimestamp)
+    && promptTimestamp >= 0
+    && typeof promptLength === 'number'
+    && Number.isInteger(promptLength)
+    && promptLength > 0
+    && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -813,6 +837,7 @@ function isSourceBackedClippyInteractionEvidence(
       && typeof evidence.agentChatResponseId === 'string'
       && AGENT_CHAT_RESPONSE_ID_RE.test(evidence.agentChatResponseId)
       && evidence.agentChatResponseId === expectedId
+      && hasOptionalBrowserPromptRef(evidence)
       && (persistedOk || fallbackOk);
   }
 
@@ -896,6 +921,7 @@ function isSourceBackedClippyInteractionEvidence(
         && idOk
         && origin === 'agent'
         && stringOrNull(evidence.agent) !== null
+        && hasOptionalBrowserPromptRef(evidence)
         && evidence.actionProtocol === 'clippy_room_action_tag'
         && evidence.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = actor === 'agent'

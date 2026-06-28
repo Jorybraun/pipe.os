@@ -1074,6 +1074,54 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyInteractionActivityLog')).toBe(false);
   });
 
+  it('rejects Clippy/Devin agent output with malformed browser prompt refs', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-agent-chat-malformed-prompt-ref',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_agent',
+        actor: 'agent',
+        text: 'I inspected the failing test.',
+        evidence: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:05:00.000Z',
+          capturedAtMs: 1782594300000,
+          agentChatResponseId: 'agent-chat:devin:1782594300000:CHAT_RESPONSE:agent_314a13fc',
+          responseFingerprint: 'agent_314a13fc',
+          responseLength: 'I inspected the failing test.'.length,
+          actionCount: 0,
+          bridgePersisted: true,
+          browserPromptId: 'source-less-prompt-ref',
+          browserPromptFingerprint: 'clippy_0123abcd',
+          browserPromptTimestamp: 1782603900000,
+          browserPromptLength: 'Can you inspect the failing test?'.length,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+    }));
+    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+  });
+
   it('rejects Clippy user prompts that claim a Devin agent attribution', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

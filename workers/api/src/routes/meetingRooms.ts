@@ -106,6 +106,7 @@ const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
+const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
@@ -176,6 +177,29 @@ function safeEvidenceIdPart(value: unknown): string {
     .replace(/[^a-zA-Z0-9:_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return normalized || 'none';
+}
+
+function hasOptionalBrowserPromptRef(properties: Record<string, unknown>): boolean {
+  const promptId = properties.browserPromptId;
+  const promptFingerprint = properties.browserPromptFingerprint;
+  const promptTimestamp = properties.browserPromptTimestamp;
+  const promptLength = properties.browserPromptLength;
+  const hasAny = promptId !== undefined
+    || promptFingerprint !== undefined
+    || promptTimestamp !== undefined
+    || promptLength !== undefined;
+  if (!hasAny) return true;
+  return typeof promptId === 'string'
+    && BROWSER_PROMPT_ID_RE.test(promptId)
+    && typeof promptFingerprint === 'string'
+    && CLIPPY_PROMPT_FINGERPRINT_RE.test(promptFingerprint)
+    && typeof promptTimestamp === 'number'
+    && Number.isInteger(promptTimestamp)
+    && promptTimestamp >= 0
+    && typeof promptLength === 'number'
+    && Number.isInteger(promptLength)
+    && promptLength > 0
+    && promptId.endsWith(`:${promptTimestamp}:${promptFingerprint}`);
 }
 
 const roomEventSchema = z.object({
@@ -675,6 +699,7 @@ const sessionEventSchema = z.object({
         && actionEventIdOk
         && properties.origin === 'agent'
         && hasString(properties.agent)
+        && hasOptionalBrowserPromptRef(properties)
         && properties.actionProtocol === 'clippy_room_action_tag'
         && properties.bridgeEventType === 'ROOM_ACTION';
       const suggestedOk = event.actor === 'agent'
@@ -908,6 +933,7 @@ const sessionEventSchema = z.object({
     const responseIdOk = typeof properties.agentChatResponseId === 'string'
       && AGENT_CHAT_RESPONSE_ID_RE.test(properties.agentChatResponseId)
       && properties.agentChatResponseId === expectedResponseId;
+    const browserPromptRefOk = hasOptionalBrowserPromptRef(properties);
     const persistedOk = properties.bridgePersisted === true
       && hasFiniteNonNegativeNumber(properties.actionCount);
     const browserFallbackOk = properties.bridgePersisted === false
@@ -926,6 +952,7 @@ const sessionEventSchema = z.object({
       && responseFingerprintOk
       && responseLengthOk
       && responseIdOk
+      && browserPromptRefOk
       && (persistedOk || browserFallbackOk)
     ) return;
     ctx.addIssue({
