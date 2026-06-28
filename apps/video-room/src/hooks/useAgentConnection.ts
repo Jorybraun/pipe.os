@@ -433,7 +433,10 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
     if (!agentName) return { kind: 'ignored' };
     const source = value.source === 'agent_api_response'
       ? 'agent_api_response_action'
-      : 'agent_stdout_action';
+      : value.source === 'agent_stdout'
+        ? 'agent_stdout_action'
+        : null;
+    if (!source) return { kind: 'ignored' };
     const action = parseRoomAction(value, {
       source,
       bridgeEventType: 'ROOM_ACTION',

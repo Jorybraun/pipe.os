@@ -36,6 +36,7 @@ describe('parseAgentBridgeMessage', () => {
   it('normalizes Devin room action messages into safe Clippy actions', () => {
     expect(parseAgentBridgeMessage({
       type: 'ROOM_ACTION',
+      source: 'agent_stdout',
       agent: 'devin',
       action: 'open_terminal',
       text: 'I can inspect that from the terminal.',
@@ -66,6 +67,17 @@ describe('parseAgentBridgeMessage', () => {
         persisted: true,
       },
     });
+  });
+
+  it('ignores bridge room actions without explicit stdout or API source metadata', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'ROOM_ACTION',
+      agent: 'devin',
+      action: 'open_terminal',
+      text: 'I can inspect that from the terminal.',
+      observedAt: '2026-06-27T21:10:00.000Z',
+      persisted: true,
+    })).toEqual({ kind: 'ignored' });
   });
 
   it('preserves Devin API run references on room action messages', () => {
