@@ -1564,10 +1564,11 @@ function assessmentEventKindForSessionEvent(type: SessionEventType): string {
 function assessmentActorForSessionEvent(event: SessionEvent): { actorType: AssessmentActorType; actorId: string | null } {
   const properties = jsonObject(event.properties);
   const source = stringProperty(properties, 'source');
-  const agentName = stringProperty(properties, 'agentName') ?? 'devin';
+  const explicitAgentId = stringProperty(properties, 'agent') ?? stringProperty(properties, 'agentName');
+  const agentActorType: AssessmentActorType = explicitAgentId === 'devin' ? 'devin' : 'ai_agent';
 
   if (event.type === 'ai_chat_agent' || event.type === 'ai_agent_status') {
-    return { actorType: 'devin', actorId: agentName };
+    return { actorType: agentActorType, actorId: explicitAgentId };
   }
 
   if (event.type === 'clippy_prompt') {
@@ -1576,13 +1577,13 @@ function assessmentActorForSessionEvent(event: SessionEvent): { actorType: Asses
 
   if (event.type === 'clippy_action') {
     return source === 'clippy_agent_bridge'
-      ? { actorType: 'devin', actorId: agentName }
+      ? { actorType: agentActorType, actorId: explicitAgentId }
       : { actorType: 'clippy', actorId: 'clippy' };
   }
 
   if (event.actor === 'guest') return { actorType: 'candidate', actorId: event.candidateId };
   if (event.actor === 'host') return { actorType: 'recruiter', actorId: 'host' };
-  if (event.actor === 'agent') return { actorType: 'ai_agent', actorId: agentName };
+  if (event.actor === 'agent') return { actorType: 'ai_agent', actorId: explicitAgentId };
   if (
     event.type === 'workspace_state'
     || event.type === 'code_editor_open'

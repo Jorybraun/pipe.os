@@ -191,6 +191,76 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const hermesAction: SessionEvent = {
+          type: 'clippy_action',
+          sessionId: 'meeting-session-agent-identity',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604100,
+          actor: 'agent',
+          text: 'hermes suggested room action: open-terminal',
+          properties: {
+            source: 'clippy_agent_bridge',
+            origin: 'agent',
+            executionStatus: 'suggested',
+            actionId: 'open-terminal',
+            actionSource: 'agent_stdout',
+            actionProtocol: 'clippy_room_action_tag',
+            bridgeEventType: 'ROOM_ACTION',
+            agent: 'hermes',
+            observedAt: '2026-06-27T21:10:00.000Z',
+            bridgePersisted: true,
+            surface: 'win95',
+          },
+        };
+        const missingIdentityStatus: SessionEvent = {
+          type: 'ai_agent_status',
+          sessionId: 'meeting-session-agent-identity',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604200,
+          actor: 'agent',
+          text: 'Agent status changed without explicit bridge identity.',
+          properties: {
+            source: 'clippy_agent_bridge',
+            status: 'thinking',
+            surface: 'win95',
+          },
+        };
+
+        await captureSessionEvent(realDb, hermesAction);
+        await captureSessionEvent(realDb, missingIdentityStatus);
+
+        const eventRows = sqlite.prepare(
+          `SELECT kind, actor_type, actor_id, narrative
+             FROM assessment_evidence_events
+            ORDER BY sequence`,
+        ).all() as Array<{
+          kind: string;
+          actor_type: string;
+          actor_id: string | null;
+          narrative: string;
+        }>;
+
+        expect(eventRows).toHaveLength(2);
+        expect(eventRows[0]).toMatchObject({
+          kind: 'ai_interaction',
+          actor_type: 'ai_agent',
+          actor_id: 'hermes',
+          narrative: expect.stringContaining('hermes suggested room action'),
+        });
+        expect(eventRows[1]).toMatchObject({
+          kind: 'ai_interaction',
+          actor_type: 'ai_agent',
+          actor_id: null,
+          narrative: expect.stringContaining('Agent status'),
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('should handle errors gracefully', async () => {
       const badDb: any = {
         prepare: vi.fn(() => {

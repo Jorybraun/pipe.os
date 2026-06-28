@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- 95 room assessment evidence now preserves explicit Clippy/Devin bridge agent identity from `agent`/`agentName` metadata and leaves missing agent ids absent instead of defaulting assessment actors to Devin.
 - Clippy UI action evidence from tray and prompt clicks now rejects any agent attribution server-side, keeping human Clippy interactions separate from real Devin bridge evidence.
 - Clippy/Devin bridge room-action validators now require the exact stdout tag source and `clippy_room_action_tag` protocol across HTTP session events, Durable Object replay, graph replay, and the container bridge helper instead of accepting generic bridge-shaped action strings.
 - Clippy prompt/tray actions no longer stamp Devin as the acting agent, and browser-executed Devin desktop actions now require source-backed `ROOM_ACTION` bridge metadata before executing or persisting.
