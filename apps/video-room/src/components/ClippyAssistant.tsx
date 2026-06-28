@@ -37,6 +37,7 @@ export interface ClippyAssistantProps {
   openChatRequest?: number;
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
+  onOpenAuthTerminal?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
   onUserChatMessage?: (message: AgentChatMessage) => void;
@@ -58,6 +59,7 @@ export function ClippyAssistant({
   openChatRequest,
   onOpenBrowser,
   onOpenTerminal,
+  onOpenAuthTerminal,
   onAction,
   onAgentRoomAction,
   onUserChatMessage,
@@ -275,6 +277,13 @@ export function ClippyAssistant({
     agentConn.startAuth();
   }, [agentConn, onOpenBrowser]);
 
+  const handleAuthTerminalClick = useCallback(() => {
+    if (agentRef.current) {
+      agentRef.current.animate();
+    }
+    onOpenAuthTerminal?.();
+  }, [onOpenAuthTerminal]);
+
   const handleActionClick = useCallback((actionId: string) => {
     if (agentRef.current) {
       agentRef.current.animate();
@@ -417,6 +426,16 @@ export function ClippyAssistant({
               onClick={handleAuthClick}
             >
               Authenticate {agentDisplayName}
+            </button>
+          )}
+
+          {agentEnabled && agentConn.status === 'auth_needed' && !agentConn.authUrl && onOpenAuthTerminal && (
+            <button
+              className="win95-clippy-chat-auth-btn"
+              onClick={handleAuthTerminalClick}
+              data-testid="clippy-open-auth-terminal"
+            >
+              Open Devin login terminal
             </button>
           )}
 

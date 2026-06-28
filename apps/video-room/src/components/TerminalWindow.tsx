@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
   collectTerminalCommands,
+  terminalCommandInputData,
   terminalInputMessage,
   terminalOutputEvidenceText,
   terminalResizeMessage,
@@ -13,13 +14,54 @@ export interface TerminalWindowProps {
   wsUrl: string;
   onCommand?: (command: string) => void;
   onOutput?: (output: string) => void;
+  queuedCommand?: string | null;
+  queuedCommandRequest?: number;
+  onQueuedCommandSent?: (command: string, request: number) => void;
 }
 
-export function TerminalWindow({ wsUrl, onCommand, onOutput }: TerminalWindowProps): JSX.Element {
+export function TerminalWindow({
+  wsUrl,
+  onCommand,
+  onOutput,
+  queuedCommand,
+  queuedCommandRequest = 0,
+  onQueuedCommandSent,
+}: TerminalWindowProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const commandBufferRef = useRef('');
+  const queuedCommandRef = useRef<string | null>(null);
+  const queuedCommandRequestRef = useRef(0);
+  const sentQueuedCommandRequestRef = useRef(0);
+  const onCommandRef = useRef(onCommand);
+  const onQueuedCommandSentRef = useRef(onQueuedCommandSent);
+
+  useEffect(() => {
+    onCommandRef.current = onCommand;
+  }, [onCommand]);
+
+  useEffect(() => {
+    onQueuedCommandSentRef.current = onQueuedCommandSent;
+  }, [onQueuedCommandSent]);
+
+  const flushQueuedCommand = (): void => {
+    const request = queuedCommandRequestRef.current;
+    const command = queuedCommandRef.current?.trim();
+    if (!command || request <= 0 || sentQueuedCommandRequestRef.current === request) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    sentQueuedCommandRequestRef.current = request;
+    ws.send(terminalInputMessage(terminalCommandInputData(command)));
+    onCommandRef.current?.(command);
+    onQueuedCommandSentRef.current?.(command, request);
+  };
+
+  useEffect(() => {
+    queuedCommandRef.current = queuedCommand ?? null;
+    queuedCommandRequestRef.current = queuedCommandRequest;
+    flushQueuedCommand();
+  }, [queuedCommand, queuedCommandRequest]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -70,6 +112,7 @@ export function TerminalWindow({ wsUrl, onCommand, onOutput }: TerminalWindowPro
       ws.onopen = () => {
         term.write('\r\x1b[2KConnected!\r\n');
         ws.send(terminalResizeMessage(term.cols, term.rows));
+        flushQueuedCommand();
       };
 
       ws.onmessage = (event) => {
@@ -105,7 +148,7 @@ export function TerminalWindow({ wsUrl, onCommand, onOutput }: TerminalWindowPro
         wsRef.current.send(terminalInputMessage(data));
         const result = collectTerminalCommands(commandBufferRef.current, data);
         commandBufferRef.current = result.buffer;
-        result.commands.forEach((command) => onCommand?.(command));
+        result.commands.forEach((command) => onCommandRef.current?.(command));
       }
     });
 
@@ -137,7 +180,7 @@ export function TerminalWindow({ wsUrl, onCommand, onOutput }: TerminalWindowPro
       termRef.current = null;
       commandBufferRef.current = '';
     };
-  }, [onCommand, onOutput, wsUrl]);
+  }, [onOutput, wsUrl]);
 
   return (
     <div className="win95-terminal-container" ref={containerRef} />

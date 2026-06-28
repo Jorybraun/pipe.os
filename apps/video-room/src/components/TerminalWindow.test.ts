@@ -3,6 +3,8 @@ import {
   buildTerminalCommandEvidence,
   buildTerminalOutputEvidence,
   collectTerminalCommands,
+  redactTerminalEvidenceText,
+  terminalCommandInputData,
   terminalInputMessage,
   terminalOutputEvidenceText,
   terminalResizeMessage,
@@ -14,11 +16,25 @@ describe('terminal WebSocket protocol', () => {
       type: 'TERMINAL_INPUT',
       data: 'ls\r',
     });
+    expect(terminalCommandInputData(' devin auth login --force-manual-token-flow ')).toBe(
+      'devin auth login --force-manual-token-flow\r',
+    );
     expect(JSON.parse(terminalResizeMessage(120, 32))).toEqual({
       type: 'TERMINAL_RESIZE',
       cols: 120,
       rows: 32,
     });
+  });
+
+  it('redacts auth tokens before terminal commands or output become evidence', () => {
+    const token = 'cog_oetjr6udnnd3vvvp5p6f577r7taxudks7fxdld7qnutgx55eewsa';
+    expect(redactTerminalEvidenceText(`DEVIN_API_KEY=${token}`)).toBe('DEVIN_API_KEY=[REDACTED_SECRET]');
+
+    const command = collectTerminalCommands('', `export DEVIN_API_KEY=${token}\r`);
+    expect(command.commands).toEqual(['export DEVIN_API_KEY=[REDACTED_SECRET]']);
+
+    const output = terminalOutputEvidenceText(`Paste this token: ${token}\n`);
+    expect(output).toBe('Paste this token: [REDACTED_SECRET]\n');
   });
 
   it('extracts completed terminal commands from real keystroke chunks', () => {
@@ -110,5 +126,37 @@ describe('terminal WebSocket protocol', () => {
         workspaceSessionId: 'workspace-session-1',
       }),
     });
+  });
+
+  it('redacts secrets before fingerprinting terminal evidence', () => {
+    const context = {
+      surface: 'win95',
+      roomPhase: 'ACTIVE',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+    };
+    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890';
+    const command = buildTerminalCommandEvidence({
+      command: `export GITHUB_TOKEN=${secret}`,
+      terminalSessionId: 'terminal-workspace-session-1-host',
+      commandSequence: 1,
+      actor: 'host',
+      capturedAtMs: 1700000000000,
+      context,
+    });
+    const output = buildTerminalOutputEvidence({
+      output: `authenticated with ${secret}\n`,
+      terminalSessionId: 'terminal-workspace-session-1-host',
+      outputSequence: 1,
+      activeCommandId: command.properties.terminalCommandId,
+      capturedAtMs: 1700000000100,
+      context,
+    });
+
+    expect(command.text).toBe('export GITHUB_TOKEN=[REDACTED_SECRET]');
+    expect(command.properties.commandLength).toBe(command.text.length);
+    expect(output.text).toBe('authenticated with [REDACTED_SECRET]\n');
+    expect(output.properties.outputLength).toBe(output.text.length);
   });
 });

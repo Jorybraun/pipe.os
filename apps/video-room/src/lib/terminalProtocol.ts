@@ -17,6 +17,10 @@ export function terminalInputMessage(data: string): string {
   return JSON.stringify(message);
 }
 
+export function terminalCommandInputData(command: string): string {
+  return `${command.trim()}\r`;
+}
+
 export function terminalResizeMessage(cols: number, rows: number): string {
   const message: TerminalResizeControlMessage = {
     type: 'TERMINAL_RESIZE',
@@ -35,6 +39,10 @@ const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const DEFAULT_TERMINAL_EVIDENCE_LIMIT = 4000;
 const FNV_32_OFFSET = 0x811c9dc5;
 const FNV_32_PRIME = 0x01000193;
+const TERMINAL_REDACTED_SECRET = '[REDACTED_SECRET]';
+const BARE_SECRET_RE = /\b(?:cog|ghp|gho|ghu|ghs|ghr|devin)_[A-Za-z0-9_-]{20,}\b/g;
+const GITHUB_PAT_RE = /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g;
+const ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
 
 export interface TerminalEvidenceContext {
   surface: string;
@@ -123,6 +131,13 @@ export function terminalTextFingerprint(text: string): string {
   return `terminal_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
+export function redactTerminalEvidenceText(text: string): string {
+  return text
+    .replace(ENV_SECRET_ASSIGNMENT_RE, (_match, name: string) => `${name}=${TERMINAL_REDACTED_SECRET}`)
+    .replace(GITHUB_PAT_RE, TERMINAL_REDACTED_SECRET)
+    .replace(BARE_SECRET_RE, TERMINAL_REDACTED_SECRET);
+}
+
 function terminalContextProperties(context: TerminalEvidenceContext): Pick<
   TerminalCommandEvidenceProperties,
   'source' | 'terminalEventSource' | 'surface' | 'roomPhase' | 'workspaceStatus' | 'workspaceSessionId' | 'repoUrl'
@@ -144,7 +159,7 @@ export function collectTerminalCommands(buffer: string, data: string): TerminalC
 
   for (const char of data) {
     if (char === '\r' || char === '\n') {
-      const command = nextBuffer.trim();
+      const command = redactTerminalEvidenceText(nextBuffer.trim());
       if (command.length > 0) commands.push(command);
       nextBuffer = '';
       continue;
@@ -169,9 +184,10 @@ export function terminalOutputEvidenceText(
   output: string,
   maxLength = DEFAULT_TERMINAL_EVIDENCE_LIMIT,
 ): string | null {
-  const visible = output.replace(ANSI_ESCAPE_RE, '').trim();
+  const redacted = redactTerminalEvidenceText(output);
+  const visible = redacted.replace(ANSI_ESCAPE_RE, '').trim();
   if (visible.length === 0) return null;
-  return output.slice(0, maxLength);
+  return redacted.slice(0, maxLength);
 }
 
 export function buildTerminalCommandEvidence({
@@ -184,9 +200,10 @@ export function buildTerminalCommandEvidence({
 }: TerminalCommandEvidenceInput): TerminalCommandEvidence {
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
   const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
-  const commandFingerprint = terminalTextFingerprint(command);
+  const redactedCommand = redactTerminalEvidenceText(command);
+  const commandFingerprint = terminalTextFingerprint(redactedCommand);
   return {
-    text: command,
+    text: redactedCommand,
     properties: {
       ...terminalContextProperties(context),
       terminalSessionId: safeSessionId,
@@ -195,7 +212,7 @@ export function buildTerminalCommandEvidence({
       actor,
       capturedAtMs: safeCapturedAtMs,
       commandFingerprint,
-      commandLength: command.length,
+      commandLength: redactedCommand.length,
     },
   };
 }
@@ -210,9 +227,10 @@ export function buildTerminalOutputEvidence({
 }: TerminalOutputEvidenceInput): TerminalOutputEvidence {
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
   const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
-  const outputFingerprint = terminalTextFingerprint(output);
+  const redactedOutput = redactTerminalEvidenceText(output);
+  const outputFingerprint = terminalTextFingerprint(redactedOutput);
   return {
-    text: output,
+    text: redactedOutput,
     properties: {
       ...terminalContextProperties(context),
       terminalSessionId: safeSessionId,
@@ -222,7 +240,7 @@ export function buildTerminalOutputEvidence({
       actor: 'system',
       capturedAtMs: safeCapturedAtMs,
       outputFingerprint,
-      outputLength: output.length,
+      outputLength: redactedOutput.length,
     },
   };
 }

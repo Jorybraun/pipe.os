@@ -118,6 +118,7 @@ const NOTEPAD_FILE_ID = 'desktop-notes';
 const PAINT_FILE_ID = 'desktop-paint';
 const NOTEPAD_FILE_NAME = 'notes.txt';
 const PAINT_FILE_NAME = 'drawing.pipe-paint';
+const DEVIN_AUTH_TERMINAL_COMMAND = 'devin auth login --force-manual-token-flow';
 
 function PipeMark({ className }: { className?: string }): JSX.Element {
   return (
@@ -361,6 +362,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [clippyVisible, setClippyVisible] = useState(true);
   const [clippyChatRequest, setClippyChatRequest] = useState(0);
   const [clippyAgentStatus, setClippyAgentStatus] = useState<AgentStatus>('disconnected');
+  const [queuedTerminalCommand, setQueuedTerminalCommand] = useState<string | null>(null);
+  const [queuedTerminalCommandRequest, setQueuedTerminalCommandRequest] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriptionRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
@@ -379,6 +382,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const terminalCommandSequenceRef = useRef(0);
   const terminalOutputSequenceRef = useRef(0);
   const activeTerminalCommandIdRef = useRef<string | null>(null);
+  const queuedTerminalCommandRequestRef = useRef(0);
   const cursorPresenceEvidenceRef = useRef<CursorPresenceEvidenceState | null>(null);
 
   const requestDevices = useCallback(async (): Promise<void> => {
@@ -1811,6 +1815,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
+  const openDevinAuthTerminal = (): void => {
+    if (!captureClippyAction(
+      'open-terminal',
+      'Clippy action: open terminal for Devin authentication',
+      { origin: 'prompt' },
+    )) return;
+    openTerminalWindow();
+    queuedTerminalCommandRequestRef.current += 1;
+    setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
+    setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);
+  };
+
   const handleClippyAction = (actionId: string): void => {
     executeRoomAction(actionId);
   };
@@ -2248,6 +2264,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               : ''}
             onCommand={captureTerminalCommand}
             onOutput={captureTerminalOutput}
+            queuedCommand={queuedTerminalCommand}
+            queuedCommandRequest={queuedTerminalCommandRequest}
+            onQueuedCommandSent={() => setQueuedTerminalCommand(null)}
           />
         );
 
@@ -2314,6 +2333,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           openChatRequest={clippyChatRequest}
           onOpenBrowser={openBrowserWindow}
           onOpenTerminal={openTerminalWindow}
+          onOpenAuthTerminal={openDevinAuthTerminal}
           onAction={handleClippyAction}
           onAgentRoomAction={handleAgentRoomAction}
           onUserChatMessage={captureClippyUserChatMessage}

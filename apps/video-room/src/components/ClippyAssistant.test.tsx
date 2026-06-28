@@ -192,4 +192,36 @@ describe('ClippyAssistant', () => {
     expect(screen.getByRole('button', { name: 'Send' }).hasAttribute('disabled')).toBe(true);
     expect(sendMessage).not.toHaveBeenCalled();
   });
+
+  it('opens a real Devin login terminal when the bridge reports auth needed without a browser auth URL', async () => {
+    const onOpenAuthTerminal = vi.fn();
+    const sendMessage = vi.fn(() => null);
+    mockAgentConnection({
+      connected: true,
+      status: 'auth_needed',
+      authUrl: null,
+      authMessage: 'Devin CLI is not logged in. Run devin auth login --force-manual-token-flow.',
+      capabilities: [],
+      sendMessage,
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+        onOpenAuthTerminal={onOpenAuthTerminal}
+      />,
+    );
+
+    const chat = await screen.findByTestId('clippy-chat');
+    expect(chat.textContent).toContain('Devin CLI is not logged in.');
+    expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
+
+    fireEvent.click(screen.getByTestId('clippy-open-auth-terminal'));
+    expect(onOpenAuthTerminal).toHaveBeenCalledTimes(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
 });
