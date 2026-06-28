@@ -903,7 +903,9 @@ export class VideoRoom {
         && evidence.agentChatEventSource === 'browser_clippy_chat_window'
         && evidence.bridgeMessageType === 'CHAT'
         && evidence.bridgeProtocol === 'clippy_dev_container_ws'
-        && evidence.deliveredToAgentBridge === true
+        && evidence.browserQueuedBridgeMessage === true
+        && evidence.bridgeDeliveryConfirmed === false
+        && evidence.deliveredToAgentBridge !== true
         && evidence.agentResponseClaimed === false
         && (evidence.agent === undefined || evidence.agent === null)
         && promptTimestamp !== null
