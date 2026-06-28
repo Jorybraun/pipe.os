@@ -29,7 +29,11 @@ import {
   preferredAudioRecordingOptions,
   preferredRecordingOptions,
 } from './lib/recording';
-import { buildRecordingLifecycleEvidence } from './lib/recordingEvidence';
+import {
+  buildRecordingLifecycleEvidence,
+  type RecordingFailureSource,
+  type RecordingFailureStage,
+} from './lib/recordingEvidence';
 import {
   buildRoomSurfaceChangeEvidence,
   canControlSharedRoomSurface,
@@ -953,11 +957,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     setRecordingState('uploading');
     setRecordingError(null);
     setRecordingNotice('Saving recording and starting transcript processing...');
+    let recordingFailureStage: RecordingFailureStage = 'stop_recorder';
+    let recordingFailureSource: RecordingFailureSource = 'browser_media_recorder_exception';
+    let capturedRecordingBytes: number | null = null;
+    let capturedRecordingMimeType: string | null = null;
+    let capturedTranscriptionBytes: number | null = null;
+    let capturedTranscriptionMimeType: string | null = null;
+    let capturedHasTranscriptionAudio = false;
     try {
       await Promise.all([
         stopRecorder(recorder),
         stopRecorder(transcriptionRecorderRef.current),
       ]);
+      recordingFailureStage = 'prepare_upload';
+      recordingFailureSource = 'browser_blob_builder_exception';
       const blob = new Blob(recordingChunksRef.current, {
         type: recorder.mimeType || 'video/webm',
       });
@@ -967,6 +980,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             type: transcriptionRecorder?.mimeType || 'audio/webm',
           })
         : undefined;
+      capturedRecordingBytes = blob.size;
+      capturedRecordingMimeType = blob.type || null;
+      capturedHasTranscriptionAudio = Boolean(transcriptionAudio);
+      capturedTranscriptionBytes = transcriptionAudio?.size ?? 0;
+      capturedTranscriptionMimeType = transcriptionAudio?.type ?? null;
       console.log('[room] Uploading recording', {
         token,
         recordingBytes: blob.size,
@@ -999,6 +1017,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         evidence: recordingStopEvidence,
       });
       captureSessionEvent('recording_stop', 'Recording stopped', 'host', recordingStopEvidence);
+      recordingFailureStage = 'upload_request';
+      recordingFailureSource = 'recording_upload_exception';
       const result = await uploadRecording(
         token,
         blob,
@@ -1063,7 +1083,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           recordingActive: false,
           speakerMetadata: recordingSpeakerMetadataRef.current,
           iceProvider: room.iceProvider,
-          hasTranscriptionAudio: transcriptionChunksRef.current.length > 0,
+          hasTranscriptionAudio: capturedHasTranscriptionAudio || transcriptionChunksRef.current.length > 0,
+          recordingBytes: capturedRecordingBytes,
+          recordingMimeType: capturedRecordingMimeType,
+          transcriptionBytes: capturedTranscriptionBytes,
+          transcriptionMimeType: capturedTranscriptionMimeType,
+          uploadStatus: 'failed',
+          recordingFailureStage,
+          recordingFailureSource,
+          recordingFailureMessage: message,
         }),
       });
       setRecordingError(message);

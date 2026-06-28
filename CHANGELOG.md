@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Failed video-room recording stops now broadcast and persist source-backed browser failure stage/source/message facts, while vague failed recording states are rejected instead of entering the evidence graph.
 - Candidate ingestion status now queues a source-backed retry for stale Workers AI model failures, so the challenge wait screen can recover from deprecated-model errors instead of replaying an old terminal failure.
 - Clippy room-action routing now rejects unsupported bridge action shapes instead of relabeling legacy agent suggestions as human prompt actions, while still allowing file-change observations to offer a user-clicked workspace prompt.
 - Clippy/Devin can now use a real Devin service-user API session from the dev-container bridge, preserving API replies and room-action suggestions as `agent_api_response` source-backed evidence instead of requiring CLI login or relabeling API output as stdout.

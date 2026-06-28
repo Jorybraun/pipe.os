@@ -1214,6 +1214,131 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('stores failed recording state only when browser failure facts are present', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_RECORDING_STATE',
+      payload: {
+        id: 'recording-state-failed',
+        clientId: 'host-client',
+        createdAt: 1700000000900,
+        role: 'HOST',
+        lifecycleKind: 'stop',
+        status: 'failed',
+        active: false,
+        evidence: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingStateEventSource: 'browser_media_recorder_state_sync',
+          actor: 'host',
+          recordingLifecycleKind: 'stop',
+          recordingStateEventId: 'recording:host:1700000000900:stop:failed',
+          capturedAtMs: 1700000000900,
+          surface: 'win95',
+          roomPhase: 'connected',
+          recordingStatus: 'failed',
+          recordingActive: false,
+          durableObjectReplayExpected: true,
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          uploadStatus: 'failed',
+          recordingFailureStage: 'upload_request',
+          recordingFailureSource: 'recording_upload_exception',
+          recordingFailureMessage: 'Request failed (500)',
+          recordingBytes: 12345,
+          recordingMimeType: 'video/webm',
+          transcriptionBytes: 2345,
+          transcriptionMimeType: 'audio/webm',
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      },
+    }));
+
+    expect(storage.get('roomRecordingState')).toEqual(expect.objectContaining({
+      role: 'HOST',
+      status: 'failed',
+      active: false,
+      evidence: expect.objectContaining({
+        uploadStatus: 'failed',
+        recordingFailureStage: 'upload_request',
+      }),
+    }));
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'recording-state-failed',
+        status: 'failed',
+        evidence: expect.objectContaining({
+          recordingFailureSource: 'recording_upload_exception',
+          recordingFailureMessage: 'Request failed (500)',
+        }),
+      }),
+    }));
+  });
+
+  it('rejects vague failed recording state without storing evidence', async () => {
+    const host = new FakeSocket();
+    const { state, storage } = makeState([[host, 'HOST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_RECORDING_STATE',
+      payload: {
+        id: 'recording-state-vague-failed',
+        clientId: 'host-client',
+        createdAt: 1700000000900,
+        role: 'HOST',
+        lifecycleKind: 'stop',
+        status: 'failed',
+        active: false,
+        evidence: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingStateEventSource: 'browser_media_recorder_state_sync',
+          actor: 'host',
+          recordingLifecycleKind: 'stop',
+          recordingStateEventId: 'recording:host:1700000000900:stop:failed',
+          capturedAtMs: 1700000000900,
+          surface: 'win95',
+          roomPhase: 'connected',
+          recordingStatus: 'failed',
+          recordingActive: false,
+          durableObjectReplayExpected: true,
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: false,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(storage.has('roomRecordingState')).toBe(false);
+    expect(storage.has('recordingActivityLog')).toBe(false);
+  });
+
   it('rejects guest recording state changes without storing evidence', async () => {
     const guest = new FakeSocket();
     const { state, storage } = makeState([[guest, 'GUEST']]);

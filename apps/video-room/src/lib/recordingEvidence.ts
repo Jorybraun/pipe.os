@@ -2,6 +2,11 @@ import type { IceServerProvider, RecordingSpeakerMetadata } from '../types';
 import type { RoomSurface } from '../hooks/useRoomConnection';
 
 export type RecordingStateStatus = 'recording' | 'uploading' | 'saved' | 'failed';
+export type RecordingFailureStage = 'stop_recorder' | 'prepare_upload' | 'upload_request';
+export type RecordingFailureSource =
+  | 'browser_media_recorder_exception'
+  | 'browser_blob_builder_exception'
+  | 'recording_upload_exception';
 
 export interface RecordingLifecycleEvidenceInput {
   lifecycleKind: 'start' | 'stop';
@@ -18,9 +23,16 @@ export interface RecordingLifecycleEvidenceInput {
   recordingMimeType?: string | null;
   transcriptionBytes?: number | null;
   transcriptionMimeType?: string | null;
-  uploadStatus?: 'attempting' | 'accepted';
+  uploadStatus?: 'attempting' | 'accepted' | 'failed';
   transcriptStatus?: string | null;
+  recordingFailureStage?: RecordingFailureStage;
+  recordingFailureSource?: RecordingFailureSource;
+  recordingFailureMessage?: string | null;
 }
+
+const MAX_FAILURE_MESSAGE_LENGTH = 240;
+const SECRET_LIKE_TOKEN_RE = /\b(?:cog|sk|pk|sess|token)_[A-Za-z0-9_-]{8,}\b/g;
+const SECRET_QUERY_PARAM_RE = /([?&](?:token|key|secret|password)=)[^&\s]+/gi;
 
 function finiteNonNegative(value: number | null | undefined): number | null {
   if (value === null || value === undefined || !Number.isFinite(value) || value < 0) {
@@ -34,6 +46,16 @@ function capturedTimestamp(value: number | null | undefined): number | null {
     return null;
   }
   return Math.round(value);
+}
+
+function sanitizedFailureMessage(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const collapsed = value.trim().replace(/\s+/g, ' ');
+  if (!collapsed) return null;
+  return collapsed
+    .replace(SECRET_LIKE_TOKEN_RE, '[redacted]')
+    .replace(SECRET_QUERY_PARAM_RE, '$1[redacted]')
+    .slice(0, MAX_FAILURE_MESSAGE_LENGTH);
 }
 
 export function buildRecordingLifecycleEvidence(
@@ -81,6 +103,10 @@ export function buildRecordingLifecycleEvidence(
   }
   if (input.uploadStatus) properties.uploadStatus = input.uploadStatus;
   if (input.transcriptStatus !== undefined) properties.transcriptStatus = input.transcriptStatus;
+  if (input.recordingFailureStage) properties.recordingFailureStage = input.recordingFailureStage;
+  if (input.recordingFailureSource) properties.recordingFailureSource = input.recordingFailureSource;
+  const failureMessage = sanitizedFailureMessage(input.recordingFailureMessage);
+  if (failureMessage !== null) properties.recordingFailureMessage = failureMessage;
 
   const recordingBytes = finiteNonNegative(input.recordingBytes);
   if (recordingBytes !== null) properties.recordingBytes = recordingBytes;

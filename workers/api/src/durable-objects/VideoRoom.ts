@@ -38,6 +38,13 @@ const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'a
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
+const RECORDING_FAILURE_STAGES = new Set(['stop_recorder', 'prepare_upload', 'upload_request']);
+const RECORDING_FAILURE_SOURCES = new Set([
+  'browser_media_recorder_exception',
+  'browser_blob_builder_exception',
+  'recording_upload_exception',
+]);
+const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
@@ -1628,7 +1635,31 @@ export class VideoRoom {
           || (typeof evidence.transcriptionMimeType === 'string' && evidence.transcriptionMimeType.length > 0)
         );
     }
-    return event.status === 'failed' && !event.active;
+    const recordingBytesOk = evidence.recordingBytes === undefined
+      || (typeof evidence.recordingBytes === 'number'
+        && Number.isFinite(evidence.recordingBytes)
+        && evidence.recordingBytes >= 0);
+    const transcriptionBytesOk = evidence.transcriptionBytes === undefined
+      || (typeof evidence.transcriptionBytes === 'number'
+        && Number.isFinite(evidence.transcriptionBytes)
+        && evidence.transcriptionBytes >= 0);
+    const recordingMimeTypeOk = evidence.recordingMimeType === undefined
+      || (typeof evidence.recordingMimeType === 'string' && evidence.recordingMimeType.length > 0);
+    const transcriptionMimeTypeOk = evidence.transcriptionMimeType === undefined
+      || (typeof evidence.transcriptionMimeType === 'string' && evidence.transcriptionMimeType.length > 0);
+    return event.lifecycleKind === 'stop'
+      && event.status === 'failed'
+      && !event.active
+      && evidence.uploadStatus === 'failed'
+      && RECORDING_FAILURE_STAGES.has(String(evidence.recordingFailureStage))
+      && RECORDING_FAILURE_SOURCES.has(String(evidence.recordingFailureSource))
+      && typeof evidence.recordingFailureMessage === 'string'
+      && evidence.recordingFailureMessage.length > 0
+      && evidence.recordingFailureMessage.length <= MAX_RECORDING_FAILURE_MESSAGE_LENGTH
+      && recordingBytesOk
+      && transcriptionBytesOk
+      && recordingMimeTypeOk
+      && transcriptionMimeTypeOk;
   }
 
   private parseRecordingState(value: unknown): RoomRecordingState | null {

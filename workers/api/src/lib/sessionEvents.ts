@@ -99,6 +99,13 @@ const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
+const RECORDING_FAILURE_STAGES = new Set(['stop_recorder', 'prepare_upload', 'upload_request']);
+const RECORDING_FAILURE_SOURCES = new Set([
+  'browser_media_recorder_exception',
+  'browser_blob_builder_exception',
+  'recording_upload_exception',
+]);
+const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
@@ -926,7 +933,23 @@ function isSourceBackedRecordingStateEvidence(
         || stringOrNull(evidence.transcriptionMimeType) !== null
       );
   }
-  return lifecycleKind === 'stop' && status === 'failed' && active === false;
+  const recordingFailureMessage = stringOrNull(evidence.recordingFailureMessage);
+  const recordingBytes = numberOrNull(evidence.recordingBytes);
+  const transcriptionBytes = numberOrNull(evidence.transcriptionBytes);
+  const recordingMimeType = stringOrNull(evidence.recordingMimeType);
+  const transcriptionMimeType = stringOrNull(evidence.transcriptionMimeType);
+  return lifecycleKind === 'stop'
+    && status === 'failed'
+    && active === false
+    && evidence.uploadStatus === 'failed'
+    && RECORDING_FAILURE_STAGES.has(String(evidence.recordingFailureStage))
+    && RECORDING_FAILURE_SOURCES.has(String(evidence.recordingFailureSource))
+    && recordingFailureMessage !== null
+    && recordingFailureMessage.length <= MAX_RECORDING_FAILURE_MESSAGE_LENGTH
+    && (evidence.recordingBytes === undefined || (recordingBytes !== null && recordingBytes >= 0))
+    && (evidence.transcriptionBytes === undefined || (transcriptionBytes !== null && transcriptionBytes >= 0))
+    && (evidence.recordingMimeType === undefined || recordingMimeType !== null)
+    && (evidence.transcriptionMimeType === undefined || transcriptionMimeType !== null);
 }
 
 function recordingActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
@@ -3109,6 +3132,9 @@ function directRoomActivitySourceSpec(
       metadata: {
         recordingEventSource: stringProperty(properties, 'recordingEventSource'),
         recordingStateEventSource: stringProperty(properties, 'recordingStateEventSource'),
+        uploadStatus: stringProperty(properties, 'uploadStatus'),
+        recordingFailureStage: stringProperty(properties, 'recordingFailureStage'),
+        recordingFailureSource: stringProperty(properties, 'recordingFailureSource'),
         hasTranscriptionAudio: properties.hasTranscriptionAudio === true,
         speakerMetadataVersion: numberProperty(properties, 'speakerMetadataVersion'),
       },

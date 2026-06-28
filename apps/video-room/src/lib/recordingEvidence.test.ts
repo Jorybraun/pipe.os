@@ -61,6 +61,43 @@ describe('buildRecordingLifecycleEvidence', () => {
     });
   });
 
+  it('captures failed upload source facts without leaking token-like secrets', () => {
+    expect(buildRecordingLifecycleEvidence({
+      lifecycleKind: 'stop',
+      actor: 'host',
+      capturedAtMs: 1700000000999,
+      surface: 'win95',
+      roomPhase: 'connected',
+      recordingStatus: 'failed',
+      recordingActive: false,
+      speakerMetadata,
+      iceProvider: 'cloudflare',
+      hasTranscriptionAudio: true,
+      recordingBytes: 12345,
+      recordingMimeType: 'video/webm',
+      transcriptionBytes: 2345,
+      transcriptionMimeType: 'audio/webm',
+      uploadStatus: 'failed',
+      recordingFailureStage: 'upload_request',
+      recordingFailureSource: 'recording_upload_exception',
+      recordingFailureMessage: 'Upload failed for token=cog_testsecret123456789 and ?key=abc123',
+    })).toMatchObject({
+      source: 'video_room_recording',
+      recordingStateEventSource: 'browser_media_recorder_state_sync',
+      recordingLifecycleKind: 'stop',
+      recordingStateEventId: 'recording:host:1700000000999:stop:failed',
+      recordingStatus: 'failed',
+      recordingActive: false,
+      uploadStatus: 'failed',
+      recordingFailureStage: 'upload_request',
+      recordingFailureSource: 'recording_upload_exception',
+      recordingFailureMessage: 'Upload failed for token=[redacted] and ?key=[redacted]',
+      recordingBytes: 12345,
+      transcriptionBytes: 2345,
+      speakerMetadataVersion: 1,
+    });
+  });
+
   it('adds source-backed room sync metadata when recording state is shared', () => {
     expect(buildRecordingLifecycleEvidence({
       lifecycleKind: 'start',
