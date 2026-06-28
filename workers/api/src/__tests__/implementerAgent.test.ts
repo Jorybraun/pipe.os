@@ -276,6 +276,37 @@ I will add a regression before merge.",
     expect(results[0]!.updated_code).toBe('test("encodes urls", () => {});');
   });
 
+  it('repairs malformed real-provider output after primary and fallback JSON parsing fail', async () => {
+    mockAiRun
+      .mockResolvedValueOnce(workersAiResponse('I agree this is risky, I will add the regression before merge.'))
+      .mockResolvedValueOnce(workersAiResponse('Sure - pushing a small test change now.'))
+      .mockResolvedValueOnce(workersAiResponse(JSON.stringify({
+        responses: [
+          {
+            to_comment_id: 1,
+            content: 'Sure - pushing a small regression test now.',
+            move: 'change',
+            updated_code: 'test("keeps popover open after impatient click", () => {});',
+          },
+        ],
+      })));
+
+    const results = await callImplementerAgent(BASE_INPUT);
+
+    expect(mockAiRun).toHaveBeenCalledTimes(3);
+    expect(mockAiRun.mock.calls[2]?.[0]).toBe('@cf/qwen/qwen3-30b-a3b-fp8');
+    const repairPayload = mockAiRun.mock.calls[2]?.[1] as { messages?: Array<{ content?: string }> };
+    expect(repairPayload.messages?.[1]?.content).toContain('RAW_RESPONSE');
+    expect(results).toEqual([
+      {
+        to_comment_id: 1,
+        move: 'change',
+        content: 'Sure - pushing a small regression test now.',
+        updated_code: 'test("keeps popover open after impatient click", () => {});',
+      },
+    ]);
+  });
+
   it('returns an AI_DEVELOPER_UNAVAILABLE diagnostic instead of a fake author response', async () => {
     await expect(callImplementerAgent({
       ...BASE_INPUT,

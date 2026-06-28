@@ -322,6 +322,101 @@ function parseImplementerResponseJson(raw: string): unknown {
   throw lastError instanceof Error ? lastError : new Error('No JSON payload found');
 }
 
+function normaliseImplementerResponses(parsed: unknown): ImplementerResponse[] {
+  if (!Array.isArray(parsed)) return [];
+
+  const results: ImplementerResponse[] = [];
+  for (const item of parsed) {
+    if (
+      item &&
+      typeof item === 'object' &&
+      typeof (item as Record<string, unknown>).to_comment_id === 'number' &&
+      typeof (item as Record<string, unknown>).content === 'string'
+    ) {
+      const rec = item as Record<string, unknown>;
+      const rawMove = typeof rec.move === 'string' ? rec.move.toLowerCase() : 'comment';
+      const move: ImplementerMove = VALID_MOVES.includes(rawMove as ImplementerMove)
+        ? (rawMove as ImplementerMove)
+        : 'comment';
+
+      const updatedCode = typeof rec.updated_code === 'string' && rec.updated_code.trim() !== ''
+        ? rec.updated_code
+        : undefined;
+
+      // Soft validation: warn if move=change but no updated_code
+      if (move === 'change' && updatedCode === undefined) {
+        console.warn(`[implementerAgent] move=change for comment #${rec.to_comment_id} but no updated_code provided`);
+      }
+
+      results.push({
+        to_comment_id: rec.to_comment_id as number,
+        move,
+        content: rec.content as string,
+        ...(updatedCode !== undefined ? { updated_code: updatedCode } : {}),
+      });
+    }
+  }
+
+  return results;
+}
+
+function buildJsonRepairUserMessage(raw: string, newComments: ReviewComment[]): string {
+  const commentIds = newComments.map((comment) => comment.id).join(', ');
+  return [
+    'Convert the raw PR author response into strict JSON.',
+    'Return ONLY this shape: {"responses":[{"to_comment_id":number,"move":"comment|change|pushback","content":"string","updated_code":"optional string"}]}',
+    `Allowed to_comment_id values: ${commentIds}.`,
+    'Preserve the PR author intent from the raw response. Do not add markdown fences, prose, or extra keys.',
+    '',
+    'RAW_RESPONSE:',
+    raw || '(empty response)',
+  ].join('\n');
+}
+
+async function callJsonRepairProvider(input: {
+  provider: LLMProvider;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+  ai?: Ai;
+  raw: string;
+  newComments: ReviewComment[];
+}): Promise<string> {
+  const systemPrompt = [
+    'You repair malformed model output for a code-review PR author agent.',
+    'You do not invent review content. You only convert the supplied raw answer into the required JSON object.',
+    'If the raw answer contains multiple comments, map each one to the closest allowed comment id.',
+  ].join('\n');
+  const userMessage = buildJsonRepairUserMessage(input.raw, input.newComments);
+
+  if (input.provider === 'workers-ai') {
+    if (!input.ai) {
+      throw new Error('Workers AI binding is not available for JSON repair.');
+    }
+    return callWorkersAI(input.ai, systemPrompt, userMessage, IMPLEMENTER_WORKERS_AI_FALLBACK_MODEL);
+  }
+  if (input.provider === 'kimi') {
+    return callKimi(input.apiKey, systemPrompt, userMessage, input.kimiBaseUrl, input.kimiModel);
+  }
+  throw new Error(`[implementerAgent] Provider '${input.provider}' is not supported for JSON repair.`);
+}
+
+async function repairAndParseImplementerResponse(input: {
+  provider: LLMProvider;
+  apiKey: string;
+  kimiBaseUrl?: string;
+  kimiModel?: string;
+  ai?: Ai;
+  raw: string;
+  newComments: ReviewComment[];
+}): Promise<unknown> {
+  if (input.raw.trim() === '') {
+    throw new Error('Cannot repair an empty provider response.');
+  }
+  const repairedRaw = await callJsonRepairProvider(input);
+  return parseImplementerResponseJson(repairedRaw);
+}
+
 // ─── Prompt builder for user message ────────────────────────────────────────
 
 /**
@@ -459,21 +554,53 @@ export async function callImplementerAgent(
           '[implementerAgent] Workers AI fallback failed to produce valid JSON:',
           fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
         );
-        throw new AiDeveloperUnavailableError({
-          provider,
-          reason: 'Review author agent provider returned invalid JSON.',
-          retryable: true,
-        });
+        try {
+          parsed = await repairAndParseImplementerResponse({
+            provider,
+            apiKey,
+            ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+            ...(kimiModel ? { kimiModel } : {}),
+            ai,
+            raw,
+            newComments,
+          });
+        } catch (repairError) {
+          console.error(
+            '[implementerAgent] JSON repair failed after fallback parse error:',
+            repairError instanceof Error ? repairError.message : String(repairError),
+          );
+          throw new AiDeveloperUnavailableError({
+            provider,
+            reason: 'Review author agent provider returned invalid JSON.',
+            retryable: true,
+          });
+        }
       }
     } else {
       console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-      throw new AiDeveloperUnavailableError({
-        provider,
-        reason: raw
-          ? 'Review author agent provider returned invalid JSON.'
-          : 'Review author agent provider returned an empty response.',
-        retryable: true,
-      });
+      try {
+        parsed = await repairAndParseImplementerResponse({
+          provider,
+          apiKey,
+          ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+          ...(kimiModel ? { kimiModel } : {}),
+          ai,
+          raw,
+          newComments,
+        });
+      } catch (repairError) {
+        console.error(
+          '[implementerAgent] JSON repair failed after parse error:',
+          repairError instanceof Error ? repairError.message : String(repairError),
+        );
+        throw new AiDeveloperUnavailableError({
+          provider,
+          reason: raw
+            ? 'Review author agent provider returned invalid JSON.'
+            : 'Review author agent provider returned an empty response.',
+          retryable: true,
+        });
+      }
     }
   }
 
@@ -493,54 +620,57 @@ export async function callImplementerAgent(
   }
 
   if (!Array.isArray(parsed)) {
-    console.error('[implementerAgent] Failed to parse JSON response:', raw.slice(0, 200));
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider response was not an array.',
-      retryable: true,
-    });
-  }
-
-  // Validate and normalise each item
-  const results: ImplementerResponse[] = [];
-  for (const item of parsed) {
-    if (
-      item &&
-      typeof item === 'object' &&
-      typeof (item as Record<string, unknown>).to_comment_id === 'number' &&
-      typeof (item as Record<string, unknown>).content === 'string'
-    ) {
-      const rec = item as Record<string, unknown>;
-      const rawMove = typeof rec.move === 'string' ? rec.move.toLowerCase() : 'comment';
-      const move: ImplementerMove = VALID_MOVES.includes(rawMove as ImplementerMove)
-        ? (rawMove as ImplementerMove)
-        : 'comment';
-
-      const updatedCode = typeof rec.updated_code === 'string' && rec.updated_code.trim() !== ''
-        ? rec.updated_code
-        : undefined;
-
-      // Soft validation: warn if move=change but no updated_code
-      if (move === 'change' && updatedCode === undefined) {
-        console.warn(`[implementerAgent] move=change for comment #${rec.to_comment_id} but no updated_code provided`);
-      }
-
-      results.push({
-        to_comment_id: rec.to_comment_id as number,
-        move,
-        content: rec.content as string,
-        ...(updatedCode !== undefined ? { updated_code: updatedCode } : {}),
+    try {
+      parsed = await repairAndParseImplementerResponse({
+        provider,
+        apiKey,
+        ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+        ...(kimiModel ? { kimiModel } : {}),
+        ai,
+        raw,
+        newComments,
+      });
+    } catch (repairError) {
+      console.error(
+        '[implementerAgent] JSON repair failed after non-array response:',
+        repairError instanceof Error ? repairError.message : String(repairError),
+      );
+      throw new AiDeveloperUnavailableError({
+        provider,
+        reason: 'Review author agent provider response was not an array.',
+        retryable: true,
       });
     }
   }
 
+  let results = normaliseImplementerResponses(parsed);
   if (results.length === 0) {
-    console.error('[implementerAgent] Parsed array had no valid items');
-    throw new AiDeveloperUnavailableError({
-      provider,
-      reason: 'Review author agent provider returned no valid responses.',
-      retryable: true,
-    });
+    try {
+      parsed = await repairAndParseImplementerResponse({
+        provider,
+        apiKey,
+        ...(kimiBaseUrl ? { kimiBaseUrl } : {}),
+        ...(kimiModel ? { kimiModel } : {}),
+        ai,
+        raw,
+        newComments,
+      });
+      results = normaliseImplementerResponses(parsed);
+    } catch (repairError) {
+      console.error(
+        '[implementerAgent] JSON repair failed after empty normalized responses:',
+        repairError instanceof Error ? repairError.message : String(repairError),
+      );
+    }
+
+    if (results.length === 0) {
+      console.error('[implementerAgent] Parsed array had no valid items');
+      throw new AiDeveloperUnavailableError({
+        provider,
+        reason: 'Review author agent provider returned no valid responses.',
+        retryable: true,
+      });
+    }
   }
 
   return results;
