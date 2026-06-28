@@ -1444,6 +1444,30 @@ async function loadCodeReviewEvidenceSnippets(
   }));
 }
 
+async function loadLatestCandidateMatchRun(
+  db: D1Database,
+  candidateId: string,
+): Promise<{ id: string; status: string; created_at: string | null } | null> {
+  if (!await tableExists(db, 'match_runs')) return null;
+  return await db.prepare(
+    `SELECT id, status, created_at
+       FROM match_runs
+      WHERE candidate_id = ?1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string; status: string; created_at: string | null }>();
+}
+
+function evidenceRefreshAlreadyTried(
+  evidenceRefresh: ScheduledCodeReviewEvidenceRefresh,
+  latestMatchRun: { id: string; created_at: string | null } | null,
+): boolean {
+  if (!latestMatchRun || !evidenceRefresh.matchRunId) return false;
+  if (latestMatchRun.id === evidenceRefresh.matchRunId) return false;
+  if (!latestMatchRun.created_at || !evidenceRefresh.updatedAt) return true;
+  return latestMatchRun.created_at >= evidenceRefresh.updatedAt;
+}
+
 function parseRoleContextVersion(rcdJson: string | null): string | null {
   if (!rcdJson) return null;
   try {
@@ -3690,6 +3714,14 @@ schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
   const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
   if (!evidenceRefresh) {
     return apiError(c, 'CONFLICT', 'A completed evidence-plan follow-up is required before refreshing repo matching.');
+  }
+  const latestMatchRun = await loadLatestCandidateMatchRun(db, source.candidate_id);
+  if (evidenceRefreshAlreadyTried(evidenceRefresh, latestMatchRun)) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This evidence refresh has already been tried. Capture new source-backed evidence before rerunning repo matching.',
+    );
   }
 
   const matchOptions = await loadScheduledCodeReviewMatchOptions(db, source.pipeline_id);

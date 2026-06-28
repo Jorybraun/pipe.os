@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - CODE_REVIEW repo matching now has a regression proving completed evidence-plan transcript evidence can move a candidate from `NEEDS_MORE_EVIDENCE` to a source-backed real PR match with the follow-up answer cited in the match run.
+- CODE_REVIEW evidence refresh now refuses to rerun matching with the same already-tried evidence report, preventing stale follow-up evidence from creating repeated matcher attempts without new source-backed context.
 - CODE_REVIEW recruiter evidence refresh cards now distinguish "new evidence ready" from "evidence tried, still insufficient," listing remaining match gaps and changing the rerun CTA to require new evidence after a failed refresh.
 - CODE_REVIEW evidence-plan transcript capture now treats only candidate/guest answer spans as refresh-ready evidence, while the route regression proves the completed follow-up answer grows the same candidate/person graph used for repo matching.
 - Pending CODE_REVIEW evidence-plan follow-ups are now reused and surfaced on the original interview instead of creating duplicate context-call meetings for the same unresolved match gap.
