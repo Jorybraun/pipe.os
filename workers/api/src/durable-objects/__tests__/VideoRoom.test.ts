@@ -887,6 +887,41 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     ]);
   });
 
+  it('rejects Clippy prompts without browser prompt evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_PROMPT',
+      payload: {
+        id: 'clippy-source-less',
+        clientId: 'host-client',
+        createdAt: 3,
+        source: 'system',
+        promptTrigger: 'missing_prompt_event_source',
+        surface: 'win95',
+        roomPhase: 'connected',
+        agentResponseClaimed: false,
+        text: 'This should not be saved as prompt evidence.',
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_PROMPT',
+    }));
+    expect(storage.has('currentClippyPrompt')).toBe(false);
+    expect(storage.has('clippyPromptActivityLog')).toBe(false);
+  });
+
   it('stores, broadcasts, and records shared room filesystem edits', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

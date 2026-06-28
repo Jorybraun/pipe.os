@@ -3367,7 +3367,7 @@ describe('meeting room recording living-context route', () => {
     });
     expect(graphBody.events.find((event) => event.nodeType === 'session_clippy_prompt')?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
-      source: 'clippy_prompt_durable_object',
+      source: 'clippy_prompt_client_submit',
       promptEventSource: 'browser_proactive_clippy_prompt',
       promptTrigger: 'host_waiting_prepare_workspace',
       surface: 'win95',

@@ -696,6 +696,21 @@ export class VideoRoom {
     };
   }
 
+  private hasSourceBackedClippyPromptEvidence(prompt: RoomClippyPrompt, role: VideoRole): boolean {
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    return actor === 'host'
+      && prompt.promptEventSource === 'browser_proactive_clippy_prompt'
+      && (prompt.source === 'system' || prompt.source === 'host')
+      && Number.isInteger(prompt.createdAt)
+      && prompt.createdAt >= 0
+      && typeof prompt.promptTrigger === 'string'
+      && prompt.promptTrigger.length > 0
+      && (prompt.surface === 'standard' || prompt.surface === 'win95')
+      && typeof prompt.roomPhase === 'string'
+      && prompt.roomPhase.length > 0
+      && prompt.agentResponseClaimed === false;
+  }
+
   private async getDesktopWindows(): Promise<RoomDesktopWindow[]> {
     return this.parseDesktopWindows(await this.state.storage.get<unknown>('desktopWindows'));
   }
@@ -1524,6 +1539,13 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_CLIPPY_PROMPT_REJECTED',
           reason: 'INVALID_PROMPT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedClippyPromptEvidence(prompt, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CLIPPY_PROMPT_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }

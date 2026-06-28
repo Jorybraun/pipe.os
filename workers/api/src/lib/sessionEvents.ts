@@ -560,12 +560,42 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
   });
 }
 
+function hasSourceBackedClippyPromptEvidence(
+  prompt: Record<string, unknown>,
+  actor: SessionEvent['actor'],
+  text: string,
+): boolean {
+  const promptId = stringOrNull(prompt.id);
+  const clientId = stringOrNull(prompt.clientId);
+  const promptSource = stringOrNull(prompt.source);
+  const promptEventSource = stringOrNull(prompt.promptEventSource);
+  const promptTrigger = stringOrNull(prompt.promptTrigger);
+  const surface = stringOrNull(prompt.surface);
+  const roomPhase = stringOrNull(prompt.roomPhase);
+  const promptCreatedAt = numberOrNull(prompt.createdAt);
+  return actor === 'host'
+    && promptEventSource === 'browser_proactive_clippy_prompt'
+    && (promptSource === 'system' || promptSource === 'host')
+    && promptId !== null
+    && clientId !== null
+    && promptCreatedAt !== null
+    && Number.isInteger(promptCreatedAt)
+    && promptCreatedAt >= 0
+    && promptTrigger !== null
+    && (surface === 'standard' || surface === 'win95')
+    && roomPhase !== null
+    && prompt.agentResponseClaimed === false
+    && text.length > 0;
+}
+
 function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.prompt)) return null;
   const prompt = value.prompt;
   const text = stringOrNull(prompt.text);
   if (!text) return null;
   const role = isRoomActivityRole(value.role) ? value.role : null;
+  const actor = actorFromRoomRole(role);
+  if (!hasSourceBackedClippyPromptEvidence(prompt, actor, text)) return null;
   const properties = roomActivityBaseProperties('clippy_prompt', role, value.recordedAt);
   const promptId = stringOrNull(prompt.id);
   const clientId = stringOrNull(prompt.clientId);
@@ -576,7 +606,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   const roomPhase = stringOrNull(prompt.roomPhase);
   const workspaceStatus = stringOrNull(prompt.workspaceStatus);
   const workspaceSessionId = stringOrNull(prompt.workspaceSessionId);
-  properties.source = 'clippy_prompt_durable_object';
+  properties.source = 'clippy_prompt_client_submit';
   if (promptId) properties.promptId = promptId;
   if (clientId) properties.clientId = clientId;
   if (promptSource) properties.promptSource = promptSource;
@@ -606,7 +636,7 @@ function clippyPromptActivityToSessionEvent(input: RoomActivitySyncInput, value:
   return createSessionEvent(input, {
     type: 'clippy_prompt',
     timestamp: unixTimestampFromActivity(prompt.createdAt, value.recordedAt),
-    actor: actorFromRoomRole(role),
+    actor,
     text,
     properties,
   });

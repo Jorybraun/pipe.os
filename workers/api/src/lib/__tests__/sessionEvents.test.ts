@@ -432,6 +432,21 @@ describe('sessionEvents', () => {
               actions: [{ id: 'open-workspace', label: 'Open workspace' }],
             },
           },
+          {
+            role: 'HOST',
+            recordedAt: 1700000003100,
+            prompt: {
+              id: 'prompt-source-less',
+              clientId: 'host-client',
+              createdAt: 1700000003100,
+              source: 'system',
+              promptTrigger: 'missing_prompt_event_source',
+              surface: 'win95',
+              roomPhase: 'connected',
+              agentResponseClaimed: false,
+              text: 'This prompt should not become graph evidence.',
+            },
+          },
         ],
         fileSystemActivityLog: [
           {
@@ -633,7 +648,7 @@ describe('sessionEvents', () => {
           actor: 'host',
           text: 'Would you like to open the workspace?',
           properties: expect.objectContaining({
-            source: 'clippy_prompt_durable_object',
+            source: 'clippy_prompt_client_submit',
             promptEventSource: 'browser_proactive_clippy_prompt',
             promptTrigger: 'host_waiting_prepare_workspace',
             surface: 'win95',
