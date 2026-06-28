@@ -1703,7 +1703,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         fileId: file.id,
         error: error instanceof Error ? error.message : String(error),
       });
-      publishWithEvidence();
     });
   };
 
