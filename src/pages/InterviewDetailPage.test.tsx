@@ -592,7 +592,7 @@ describe('InterviewDetailPage', () => {
     );
     expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('MATCHED');
     expect(screen.getByTestId('interview-code-review-match')).toHaveTextContent('MATCHED');
-    expect(screen.getByText('Repo match refreshed from captured evidence.')).toBeTruthy();
+    expect(screen.getByText('Repo match refreshed from captured evidence: pipe-labs/orders PR #314.')).toBeTruthy();
   });
 
   it('shows explicit feedback when refreshed evidence still does not produce a repo match', async () => {

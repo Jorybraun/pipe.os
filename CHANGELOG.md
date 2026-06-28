@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Successful CODE_REVIEW evidence refresh notices now name the selected GitHub repo and PR, making the rerun outcome recruiter-legible instead of a generic success toast.
 - Completed CODE_REVIEW evidence-plan refresh cards now include concrete source-backed follow-up answer snippets, so recruiters can see the captured evidence behind a rerun instead of only a span count.
 - Direct meeting creation now normalizes recipient emails and reuses the same contact for repeated meetings, preserving many-interaction-to-one-person relationships instead of splitting graph context by email casing.
 - Calendly webhook email fallback now refuses to mutate an arbitrary pending interview when the same person/email has multiple open invites; ambiguous provider events are imported as their own scheduled meeting while preserving the shared contact/person identity.

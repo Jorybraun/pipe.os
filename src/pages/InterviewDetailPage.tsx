@@ -400,6 +400,22 @@ function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
   return score ? `confidence ${score}` : 'waiting for source-backed match';
 }
 
+function githubRepoLabel(repoUrl: string | null | undefined): string | null {
+  const value = repoUrl?.trim();
+  if (!value) return null;
+  return value.replace(/^https:\/\/github\.com\//, '').replace(/\/$/, '') || value;
+}
+
+function codeReviewRefreshSuccessNotice(
+  result: Pick<CodeReviewMatchRefreshResponse, 'repoUrl' | 'prNumber'>,
+): string {
+  const repo = githubRepoLabel(result.repoUrl);
+  const pr = typeof result.prNumber === 'number' ? ` PR #${result.prNumber}` : '';
+  return repo || pr
+    ? `Repo match refreshed from captured evidence: ${repo ?? 'selected repo'}${pr}.`
+    : 'Repo match refreshed from captured evidence.';
+}
+
 function fallbackEvidencePlanItem(
   match: CodeReviewMatchDetail,
   gap: string,
@@ -879,7 +895,7 @@ export default function InterviewDetailPage(): JSX.Element {
           }
         : current);
       if (result.refreshed) {
-        setMatchRefreshNotice('Repo match refreshed from captured evidence.');
+        setMatchRefreshNotice(codeReviewRefreshSuccessNotice(result));
       } else {
         setMatchRefreshError(`Refresh ran, but matcher returned ${titleCaseToken(result.status)}.`);
       }
