@@ -5,6 +5,7 @@ import {
   applyRoomRecordingStateEvent,
   decideRoomSurfaceSnapshot,
   hasSourceBackedRoomFileSystemEvidence,
+  hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
   ROOM_CURSOR_SEND_INTERVAL_MS,
@@ -13,6 +14,7 @@ import {
   type RoomCursorPresence,
   type RoomFileSystemEvent,
   type RoomMediaControlState,
+  type RoomTerminalEvent,
 } from './useRoomConnection';
 
 describe('decideRoomSurfaceSnapshot', () => {
@@ -340,5 +342,47 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
 
   it('rejects file mutations attributed to the wrong room actor', () => {
     expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'GUEST')).toBe(false);
+  });
+});
+
+describe('hasSourceBackedTerminalEvidence', () => {
+  const sourceBackedCommand: RoomTerminalEvent = {
+    id: 'terminal-command-1',
+    clientId: 'guest-client',
+    createdAt: 1700000001000,
+    kind: 'COMMAND',
+    text: 'npm test',
+    evidence: {
+      source: 'container_terminal',
+      terminalEventSource: 'browser_terminal_ws',
+      terminalSessionId: 'terminal-workspace-session-1-guest',
+      terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+      terminalCommandSequence: 1,
+      actor: 'guest',
+      capturedAtMs: 1700000001000,
+      commandFingerprint: 'terminal_dc5964d6',
+      commandLength: 8,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-session-1',
+      repoUrl: 'https://github.com/cloudflare/workers-sdk',
+      durableObjectReplayExpected: true,
+    },
+  };
+
+  it('accepts terminal commands only when browser terminal evidence matches the event and actor', () => {
+    expect(hasSourceBackedTerminalEvidence(sourceBackedCommand, 'GUEST')).toBe(true);
+  });
+
+  it('rejects source-less terminal events before optimistic local state can change', () => {
+    expect(hasSourceBackedTerminalEvidence({
+      ...sourceBackedCommand,
+      evidence: undefined,
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('rejects terminal commands attributed to the wrong room actor', () => {
+    expect(hasSourceBackedTerminalEvidence(sourceBackedCommand, 'HOST')).toBe(false);
   });
 });

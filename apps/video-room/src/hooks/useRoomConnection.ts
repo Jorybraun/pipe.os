@@ -38,6 +38,8 @@ export type RoomClippyInteractionEventType = Extract<
 >;
 export type RoomCodeServerFileEventType = Extract<SessionEventType, 'code_editor_save' | 'file_change'>;
 export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
+const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
+const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 
 export interface RoomClippyAction {
   id: string;
@@ -1133,6 +1135,72 @@ function parseTerminalEvent(value: unknown): RoomTerminalEvent | null {
   return null;
 }
 
+export function hasSourceBackedTerminalEvidence(
+  event: RoomTerminalEvent,
+  role?: RoomRole,
+): boolean {
+  const evidence = event.evidence;
+  if (!isRecord(evidence)) return false;
+  const terminalSessionId = typeof evidence.terminalSessionId === 'string'
+    && evidence.terminalSessionId.trim().length > 0
+    ? evidence.terminalSessionId
+    : null;
+  const capturedAtMs = typeof evidence.capturedAtMs === 'number'
+    && Number.isInteger(evidence.capturedAtMs)
+    && evidence.capturedAtMs >= 0
+    ? evidence.capturedAtMs
+    : null;
+  const commonOk = evidence.source === 'container_terminal'
+    && evidence.terminalEventSource === 'browser_terminal_ws'
+    && terminalSessionId !== null
+    && capturedAtMs !== null
+    && (evidence.surface === 'standard' || evidence.surface === 'win95')
+    && typeof evidence.roomPhase === 'string'
+    && evidence.roomPhase.trim().length > 0
+    && typeof evidence.workspaceStatus === 'string'
+    && evidence.workspaceStatus.trim().length > 0
+    && typeof evidence.workspaceSessionId === 'string'
+    && evidence.workspaceSessionId.trim().length > 0
+    && (evidence.repoUrl === null || typeof evidence.repoUrl === 'string')
+    && evidence.durableObjectReplayExpected === true;
+  if (!commonOk) return false;
+
+  if (event.kind === 'COMMAND') {
+    const actor = role === 'HOST' ? 'host' : role === 'GUEST' ? 'guest' : evidence.actor;
+    const sequence = evidence.terminalCommandSequence;
+    const fingerprint = evidence.commandFingerprint;
+    return evidence.actor === actor
+      && (actor === 'host' || actor === 'guest')
+      && typeof sequence === 'number'
+      && Number.isInteger(sequence)
+      && sequence > 0
+      && typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+      && evidence.commandLength === event.text.length
+      && evidence.terminalCommandId === `${terminalSessionId}:command:${actor}:${capturedAtMs}:${sequence}:${fingerprint}`;
+  }
+
+  const sequence = evidence.terminalOutputSequence;
+  const fingerprint = evidence.outputFingerprint;
+  const commandId = evidence.terminalCommandId;
+  return evidence.actor === 'system'
+    && typeof sequence === 'number'
+    && Number.isInteger(sequence)
+    && sequence > 0
+    && typeof fingerprint === 'string'
+    && TERMINAL_FINGERPRINT_RE.test(fingerprint)
+    && evidence.outputLength === event.text.length
+    && evidence.terminalOutputChunkId === `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`
+    && (
+      commandId === null
+      || (
+        typeof commandId === 'string'
+        && commandId.startsWith(`${terminalSessionId}:command:`)
+        && TERMINAL_COMMAND_ID_RE.test(commandId)
+      )
+    );
+}
+
 export function mergeRoomChatMessage(
   previous: RoomChatMessage[],
   message: RoomChatMessage,
@@ -1971,7 +2039,14 @@ export function useRoomConnection(
           setCodeServerFileEvents((prev) => [...prev.slice(-199), event]);
         } else if (message.type === 'ROOM_TERMINAL_EVENT') {
           const terminalEvent = parseTerminalEvent(message.payload);
-          if (!terminalEvent || terminalEvent.clientId === desktopClientIdRef.current) return;
+          if (
+            !terminalEvent
+            || terminalEvent.clientId === desktopClientIdRef.current
+            || !hasSourceBackedTerminalEvidence(
+              terminalEvent,
+              isRoomRole(message.role) ? message.role : undefined,
+            )
+          ) return;
           setTerminalEvents((prev) => [...prev.slice(-199), terminalEvent]);
         } else if (message.type === 'ROOM_CURSOR') {
           const cursor = parseCursorPresence(message.payload, message.role);
@@ -2363,6 +2438,14 @@ export function useRoomConnection(
       clientId: desktopClientIdRef.current,
       createdAt,
     };
+    if (!hasSourceBackedTerminalEvidence(event, role)) {
+      console.error('[publishTerminalEvent] rejected terminal event without source-backed evidence:', {
+        kind: event.kind,
+        actor: role,
+        source: event.evidence?.source,
+      });
+      return;
+    }
     setTerminalEvents((prev) => [...prev.slice(-199), event]);
     if (!sendTerminalEvent(event)) {
       terminalOutboxRef.current.push(event);
