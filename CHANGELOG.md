@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy/Devin room context summaries now include compact source refs for each session event, preserving candidate node ids, session refs, captured timestamps, and stable event ids inside the real Devin prompt context.
 - Code-server save/delete observations from the real Clippy/Devin bridge now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
 - Clippy/Devin user prompts, bridge status/replies, and room-action executions now publish into a source-validated shared room activity log for replayable context-graph sync instead of existing only in one browser's direct session-event queue.
 - Container terminal command/output events now publish into the shared room Durable Object, replay into context graph sync, and reject source-less terminal claims instead of relying only on one browser's direct session-event POST.

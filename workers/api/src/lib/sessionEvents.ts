@@ -1864,7 +1864,7 @@ export async function getSessionContextSummary(
   for (const [category, nodes] of byCategory) {
     lines.push(`\n--- ${category.toUpperCase()} (${nodes.length} events) ---`);
     for (const node of nodes.slice(0, 20)) {
-      lines.push(node.narrativeText);
+      lines.push(`${node.narrativeText} ${formatContextSourceRef(node)}`);
     }
     if (nodes.length > 20) {
       lines.push(`... and ${nodes.length - 20} more`);
@@ -1881,6 +1881,54 @@ export interface SessionContextNode {
   properties: Record<string, unknown> | null;
   capturedAt: number;
   sessionId: string;
+}
+
+const CONTEXT_SOURCE_REF_KEYS = [
+  'roomMessageId',
+  'roomEventId',
+  'workspaceStateEventId',
+  'windowEventId',
+  'windowDataUpdateId',
+  'browserNavigationId',
+  'fileChangeId',
+  'codeEditorOpenId',
+  'terminalCommandId',
+  'terminalOutputChunkId',
+  'promptId',
+  'agentChatResponseId',
+  'agentStatusEventId',
+  'clippyActionEventId',
+  'recordingEventId',
+  'mediaControlId',
+  'cursorSampleId',
+] as const;
+
+function contextCapturedAtIso(capturedAt: number): string {
+  const ms = Number.isFinite(capturedAt) ? capturedAt * 1000 : Number.NaN;
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : 'unknown';
+}
+
+function contextPrimaryEventRef(properties: Record<string, unknown> | null): string | null {
+  if (!properties) return null;
+  for (const key of CONTEXT_SOURCE_REF_KEYS) {
+    const value = stringOrNull(properties[key]);
+    if (value) return `${key}=${value}`;
+  }
+  return null;
+}
+
+function formatContextSourceRef(node: SessionContextNode): string {
+  const parts = [
+    `node=${node.id}`,
+    `type=${node.nodeType}`,
+    `session=${node.sessionId || 'unknown'}`,
+    `capturedAt=${contextCapturedAtIso(node.capturedAt)}`,
+  ];
+  const source = stringOrNull(node.properties?.source);
+  if (source) parts.push(`source=${source}`);
+  const eventRef = contextPrimaryEventRef(node.properties);
+  if (eventRef) parts.push(eventRef);
+  return `[source_ref: ${parts.join('; ')}]`;
 }
 
 interface RoomResolutionRow {

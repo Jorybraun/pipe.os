@@ -268,7 +268,10 @@ describe('sessionEvents', () => {
           id: 'node-1',
           node_type: 'session_chat_user',
           narrative_text: '[2025-01-01T00:00:00.000Z] User asked: "Fix the bug"',
-          extracted_properties_json: null,
+          extracted_properties_json: JSON.stringify({
+            source: 'clippy_agent_chat_client_submit',
+            promptId: 'workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd',
+          }),
           captured_at: 1735689600,
           source_reference: 'test-session',
           candidate_id: 'cand-123',
@@ -285,7 +288,10 @@ describe('sessionEvents', () => {
           id: 'node-2',
           node_type: 'session_terminal_command',
           narrative_text: '[2025-01-01T00:01:00.000Z] Terminal command: npm test',
-          extracted_properties_json: null,
+          extracted_properties_json: JSON.stringify({
+            source: 'container_terminal',
+            terminalCommandId: 'terminal-workspace-1:command:guest:1735689660000:1:term_0123abcd',
+          }),
           captured_at: 1735689660,
           source_reference: 'test-session',
           candidate_id: 'cand-123',
@@ -314,6 +320,8 @@ describe('sessionEvents', () => {
       expect(summary).toContain('User asked');
       expect(summary).toContain('TERMINAL');
       expect(summary).toContain('npm test');
+      expect(summary).toContain('[source_ref: node=node-1; type=session_chat_user; session=test-session; capturedAt=2025-01-01T00:00:00.000Z; source=clippy_agent_chat_client_submit; promptId=workspace-session-1:guest:prompt:1735689600000:clippy_0123abcd]');
+      expect(summary).toContain('[source_ref: node=node-2; type=session_terminal_command; session=test-session; capturedAt=2025-01-01T00:01:00.000Z; source=container_terminal; terminalCommandId=terminal-workspace-1:command:guest:1735689660000:1:term_0123abcd]');
     });
   });
 
