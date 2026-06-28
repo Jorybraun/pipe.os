@@ -100,6 +100,7 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
       purpose: 'validation',
       pairScore: 0.91,
       sharedConcepts: ['term:kafka-order-events'],
+      stretch: null,
       roleSourceRefs: [{
         entityId: 'context-record-jd',
         locator: 'simple_job_description:source_span:jd-span-1',
@@ -134,6 +135,8 @@ function makeStandaloneReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'Add idempotent retry handling around order event publication.',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [
       'Candidate evidence does not yet prove ownership of Kafka partition rebalancing.',
     ],
@@ -209,6 +212,7 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
       demandId: 'demand-crystalline-quorum-ledger',
       purpose: 'source-backed-validation',
       pairScore: 0.93,
+      stretch: null,
       sharedConcepts: ['term:crystalline-quorum-ledger'],
       roleSourceRefs: [{
         entityId: 'context-record-role-backfill',
@@ -258,6 +262,8 @@ function makeBackfilledRepoReviewMatch(): StandaloneReviewMatchRecord {
         exactText: 'export function writeCrystallineQuorumLedger(orderId: string) { const ledgerKey = `crystalline:${orderId}`; return { ledgerKey, committed: true }; }',
       }],
     }],
+    stretchAreas: [],
+    unmatchedDemandIds: [],
     gaps: [],
     diagnostics: {
       recalledPacketIds: ['review-packet-77-42'],
