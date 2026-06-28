@@ -234,6 +234,35 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures Devin auth terminal opens as a distinct prompt action', () => {
+    expect(buildClippyRoomActionExecutionEvidence({
+      actionId: 'open-devin-auth-terminal',
+      text: 'Clippy action: open terminal for Devin authentication',
+      origin: 'prompt',
+      actor: 'host',
+      capturedAtMs: 1782594210000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+    })).toMatchObject({
+      text: 'Clippy action: open terminal for Devin authentication',
+      properties: {
+        source: 'clippy_prompt_ui',
+        actionId: 'open-devin-auth-terminal',
+        origin: 'prompt',
+        executedBy: 'host',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594210000,
+        clippyActionEventId: 'clippy-action:host:1782594210000:clippy_prompt_ui:prompt:executed:open-devin-auth-terminal',
+        agent: null,
+        agentResponseClaimed: false,
+        surface: 'win95',
+      },
+    });
+  });
+
   it('rejects agent-origin room executions without a real bridge action packet', () => {
     expect(buildClippyRoomActionExecutionEvidence({
       actionId: 'open-terminal',

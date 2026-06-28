@@ -1827,7 +1827,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
 
   const openDevinAuthTerminal = (): void => {
     if (!captureClippyAction(
-      'open-terminal',
+      'open-devin-auth-terminal',
       'Clippy action: open terminal for Devin authentication',
       { origin: 'prompt' },
     )) return;
