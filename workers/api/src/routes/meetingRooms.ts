@@ -137,6 +137,7 @@ const WINDOW_STATE_SOURCES = new Set([
 ]);
 const WINDOW_STATE_KEYS = new Set(['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused']);
 const WINDOW_DATA_ACTIONS = new Set(['edit_text', 'edit_paint', 'update_data']);
+const WINDOW_DATA_SOURCES = new Set(['win95_window_data_sync', 'win95_file_delete_sync']);
 const CHAT_DELIVERY_STATUSES = new Set(['pending', 'accepted', 'rejected']);
 const CLIPPY_UI_SOURCES = new Set(['clippy_tray_ui', 'clippy_prompt_ui', 'clippy_chat_ui']);
 const CLIPPY_UI_EXECUTION_STATUSES = new Set(['opened', 'closed', 'dismissed', 'executed']);
@@ -482,7 +483,8 @@ const sessionEventSchema = z.object({
           && WINDOW_DATA_FINGERPRINT_RE.test(dataValueFingerprints[key])
         ));
       const sourceOk = event.type === 'window_update'
-        && properties.dataSource === 'win95_window_data_sync';
+        && typeof properties.dataSource === 'string'
+        && WINDOW_DATA_SOURCES.has(properties.dataSource);
       const actionOk = typeof properties.action === 'string' && WINDOW_DATA_ACTIONS.has(properties.action);
       const actorOk = (event.actor === 'host' || event.actor === 'guest')
         && properties.actor === event.actor;
@@ -3201,6 +3203,8 @@ meetingsAuth.post('/', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Validation failed');
   }
   const data = parsed.data;
+  const recipientEmail = data.recipientEmail?.trim().toLowerCase();
+  const recipientName = data.recipientName?.trim();
 
   // Resolve a contact when contactId is provided; otherwise create one from recipient info.
   let contactId: string | null = null;
@@ -3211,27 +3215,41 @@ meetingsAuth.post('/', async (c) => {
       .first<{ id: string }>();
     if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
     contactId = contact.id;
-  } else if (data.recipientEmail && data.recipientName) {
+  } else if (recipientEmail && recipientName) {
     // Reuse an existing contact with this email if present, else create one.
+    const now = new Date().toISOString();
     const existing = await db
-      .prepare('SELECT id FROM contacts WHERE owner_id = ? AND email = ?')
-      .bind(userId, data.recipientEmail)
+      .prepare(
+        `SELECT id
+           FROM contacts
+          WHERE owner_id = ?
+            AND lower(email) = ?
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+      )
+      .bind(userId, recipientEmail)
       .first<{ id: string }>();
     if (existing) {
       contactId = existing.id;
+      await db.prepare(
+        `UPDATE contacts
+            SET email = ?,
+                name = COALESCE(NULLIF(name, ''), ?),
+                updated_at = ?
+          WHERE id = ?`,
+      ).bind(recipientEmail, recipientName, now, existing.id).run();
     } else {
       contactId = crypto.randomUUID();
-      const now = new Date().toISOString();
       await db.prepare(
         `INSERT INTO contacts (id, owner_id, email, name, type, created_at, updated_at)
          VALUES (?, ?, ?, ?, 'lead', ?, ?)`,
-      ).bind(contactId, userId, data.recipientEmail, data.recipientName, now, now).run();
+      ).bind(contactId, userId, recipientEmail, recipientName, now, now).run();
     }
   }
 
   const meetingId = crypto.randomUUID();
   const now = new Date().toISOString();
-  const title = data.title ?? (data.recipientName ?? 'Meeting');
+  const title = data.title ?? (recipientName ?? 'Meeting');
   const meetingType = data.meetingType ?? 'OTHER';
 
   await db.prepare(

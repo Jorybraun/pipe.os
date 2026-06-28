@@ -836,6 +836,63 @@ describe('meeting room recording living-context route', () => {
     sqlite.close();
   });
 
+  it('links repeated meetings for the same email to one normalized contact', async () => {
+    const app = mountApp();
+    const { ctx } = buildCtx();
+
+    const firstRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Uppercase',
+        recipientEmail: 'Ada.Relationships@Example.com',
+        title: 'First relationship interview',
+        meetingType: 'INTERVIEW',
+      }),
+    }, env, ctx);
+    expect(firstRes.status).toBe(201);
+    const first = await firstRes.json() as { meeting: { id: string; contactId: string } };
+
+    const secondRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Ada Lowercase',
+        recipientEmail: 'ada.relationships@example.com',
+        title: 'Second relationship interview',
+        meetingType: 'FOLLOW_UP',
+      }),
+    }, env, ctx);
+    expect(secondRes.status).toBe(201);
+    const second = await secondRes.json() as { meeting: { id: string; contactId: string } };
+
+    expect(second.meeting.id).not.toBe(first.meeting.id);
+    expect(second.meeting.contactId).toBe(first.meeting.contactId);
+    expect(sqlite.prepare(
+      `SELECT COUNT(*) AS count
+         FROM contacts
+        WHERE owner_id = 'owner-1'
+          AND lower(email) = 'ada.relationships@example.com'`,
+    ).get()).toEqual({ count: 1 });
+    expect(sqlite.prepare(
+      `SELECT email, name
+         FROM contacts
+        WHERE id = ?`,
+    ).get(first.meeting.contactId)).toEqual({
+      email: 'ada.relationships@example.com',
+      name: 'Ada Uppercase',
+    });
+    expect(sqlite.prepare(
+      `SELECT COUNT(DISTINCT meeting_id) AS meetingCount,
+              COUNT(DISTINCT contact_id) AS contactCount
+         FROM meeting_participants
+        WHERE contact_id = ?`,
+    ).get(first.meeting.contactId)).toEqual({
+      meetingCount: 2,
+      contactCount: 1,
+    });
+  });
+
   it('prepares stable guest and fresh host video room links for a meeting', async () => {
     const app = mountApp();
     const { ctx } = buildCtx();
