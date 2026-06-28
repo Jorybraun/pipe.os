@@ -404,6 +404,10 @@ interface RoomConnection {
   setRoomSurface: (surface: RoomSurface, evidence?: Record<string, unknown>) => void;
 }
 
+interface UseRoomConnectionOptions {
+  onChatDeliveryEvidence?: (message: RoomChatMessage) => void;
+}
+
 const FALLBACK_ICE: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -983,6 +987,7 @@ export function useRoomConnection(
   role: RoomRole,
   active: boolean,
   initialSurface: RoomSurface = 'standard',
+  options: UseRoomConnectionOptions = {},
 ): RoomConnection {
   const [phase, setPhase] = useState<RoomPhase>('disconnected');
   const [localStream, setLocalStreamState] = useState<MediaStream | null>(null);
@@ -994,6 +999,7 @@ export function useRoomConnection(
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
   const [clippyInteractionEvents, setClippyInteractionEvents] = useState<RoomClippyInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const chatMessagesRef = useRef<RoomChatMessage[]>([]);
   const [codeServerFileEvents, setCodeServerFileEvents] = useState<RoomCodeServerFileEvent[]>([]);
   const [terminalEvents, setTerminalEvents] = useState<RoomTerminalEvent[]>([]);
   const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
@@ -1024,11 +1030,14 @@ export function useRoomConnection(
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
   const surfaceEventSeenRef = useRef(false);
   const lastCursorSentAtRef = useRef(0);
+  const chatDeliveryEvidenceRef = useRef(options.onChatDeliveryEvidence);
   const desktopClientIdRef = useRef(
     typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `desktop-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
+  chatDeliveryEvidenceRef.current = options.onChatDeliveryEvidence;
+  chatMessagesRef.current = chatMessages;
   phaseRef.current = phase;
 
   useEffect(() => {
@@ -1485,14 +1494,32 @@ export function useRoomConnection(
           const chatMessage = parseChatMessage(message.payload);
           if (!chatMessage) return;
           setChatMessages((prev) => mergeRoomChatMessage(prev, chatMessage));
+          chatDeliveryEvidenceRef.current?.(chatMessage);
         } else if (message.type === 'ROOM_CHAT_MESSAGE_REJECTED') {
           const rejection = parseChatRejection(message.payload);
           if (!rejection.clientMessageId) return;
-          setChatMessages((prev) => prev.map((entry) => (
-            entry.id === rejection.clientMessageId
-              ? { ...entry, deliveryStatus: 'rejected' }
-              : entry
-          )));
+          const rejectedMessage = chatMessagesRef.current.find((entry) => entry.id === rejection.clientMessageId);
+          if (rejectedMessage) {
+            chatDeliveryEvidenceRef.current?.({
+              ...rejectedMessage,
+              deliveryStatus: 'rejected',
+              evidence: {
+                ...(rejectedMessage.evidence ?? {}),
+                deliveryStatus: 'rejected',
+              },
+            });
+          }
+          setChatMessages((prev) => prev.map((entry) => {
+            if (entry.id !== rejection.clientMessageId) return entry;
+            return {
+              ...entry,
+              deliveryStatus: 'rejected',
+              evidence: {
+                ...(entry.evidence ?? {}),
+                deliveryStatus: 'rejected',
+              },
+            };
+          }));
         } else if (message.type === 'ROOM_CHAT_STATE') {
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;

@@ -73,6 +73,7 @@ import {
 } from './lib/browserNavigationEvidence';
 import {
   useRoomConnection,
+  type RoomChatMessage,
   type RoomClippyPromptDraft,
   type RoomFile,
   type RoomSurface,
@@ -106,6 +107,7 @@ import type {
   IceServerProvider,
   RecordingSpeakerMetadata,
   RoomMetadata,
+  RoomPhase,
   RoomWorkspace,
 } from './types';
 
@@ -306,11 +308,36 @@ function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
   const [enteredRoom, setEnteredRoom] = useState(false);
   const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
-  const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface);
+  const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
+  const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
+  const chatDeliveryEvidenceKeysRef = useRef<Set<string>>(new Set());
+  const captureChatDeliveryEvidence = useCallback((message: RoomChatMessage): void => {
+    const deliveryStatus = message.deliveryStatus ?? 'unknown';
+    const evidenceKey = `${message.id}:${deliveryStatus}`;
+    if (chatDeliveryEvidenceKeysRef.current.has(evidenceKey)) return;
+    chatDeliveryEvidenceKeysRef.current.add(evidenceKey);
+    const evidenceSurface = message.evidence?.surface;
+    const surface: RoomSurface = evidenceSurface === 'standard' || evidenceSurface === 'win95'
+      ? evidenceSurface
+      : initialRoomSurface;
+    const evidenceRoomPhase = message.evidence?.roomPhase;
+    const roomPhase: RoomPhase = typeof evidenceRoomPhase === 'string' && evidenceRoomPhase.trim().length > 0
+      ? evidenceRoomPhase as RoomPhase
+      : 'connected';
+    const evidence = buildRoomChatEvidence({
+      message,
+      actor: roomActor,
+      surface,
+      roomPhase,
+    });
+    captureSessionEvent('chat_message', evidence.text, roomActor, evidence.properties);
+  }, [captureSessionEvent, initialRoomSurface, roomActor]);
+  const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface, {
+    onChatDeliveryEvidence: captureChatDeliveryEvidence,
+  });
   const publishTerminalEvent = room.publishTerminalEvent;
   const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
   const publishCodeServerFileEvent = room.publishCodeServerFileEvent;
-  const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
@@ -396,8 +423,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     callStartedRef.current = true;
     void postRoomEvent(token, 'STARTED');
   }, [metadata.role, room.localStream, room.phase, room.remoteStream, token]);
-
-  const roomActor = metadata.role === 'HOST' ? 'host' : 'guest';
 
   const publishWorkspaceStateEvent = useCallback((
     nextWorkspace: RoomWorkspace | null,
