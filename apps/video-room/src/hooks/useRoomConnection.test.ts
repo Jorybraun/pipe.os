@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyRoomMediaControlEvent,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
   type RoomChatMessage,
   type RoomCursorPresence,
+  type RoomMediaControlState,
 } from './useRoomConnection';
 
 describe('mergePeerCursorPresence', () => {
@@ -92,5 +94,52 @@ describe('mergeRoomChatMessage', () => {
     };
 
     expect(mergeRoomChatMessage([pending], accepted)).toEqual([accepted]);
+  });
+});
+
+describe('applyRoomMediaControlEvent', () => {
+  it('keeps one media state per role while preserving the other control state', () => {
+    const previous: RoomMediaControlState[] = [
+      {
+        role: 'GUEST',
+        microphoneEnabled: true,
+        cameraEnabled: true,
+        updatedAt: 1000,
+      },
+      {
+        role: 'HOST',
+        microphoneEnabled: true,
+        cameraEnabled: true,
+        updatedAt: 1000,
+      },
+    ];
+
+    const next = applyRoomMediaControlEvent(previous, {
+      id: 'media-guest-camera-off',
+      clientId: 'guest-client',
+      createdAt: 2000,
+      role: 'GUEST',
+      control: 'camera',
+      previousEnabled: true,
+      enabled: false,
+      evidence: {
+        source: 'video_room_media_controls',
+      },
+    });
+
+    expect(next).toEqual([
+      {
+        role: 'HOST',
+        microphoneEnabled: true,
+        cameraEnabled: true,
+        updatedAt: 1000,
+      },
+      {
+        role: 'GUEST',
+        microphoneEnabled: true,
+        cameraEnabled: false,
+        updatedAt: 2000,
+      },
+    ]);
   });
 });

@@ -50,6 +50,7 @@ interface SignalMessage {
     | 'ROOM_CLIPPY_INTERACTION'
     | 'ROOM_CHAT_MESSAGE'
     | 'ROOM_CURSOR'
+    | 'ROOM_MEDIA_CONTROL'
     | 'ROOM_CODE_SERVER_FILE_EVENT'
     | 'ROOM_TERMINAL_EVENT'
     | 'ROOM_FILE_SYSTEM_EVENT';
@@ -205,6 +206,32 @@ type RoomDesktopEvent =
 
 interface RoomDesktopActivityEntry {
   event: RoomDesktopEvent;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+type RoomMediaControlKind = 'microphone' | 'camera';
+
+interface RoomMediaControlEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: VideoRole;
+  control: RoomMediaControlKind;
+  previousEnabled: boolean;
+  enabled: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+interface RoomMediaControlState {
+  role: VideoRole;
+  microphoneEnabled?: boolean;
+  cameraEnabled?: boolean;
+  updatedAt: number;
+}
+
+interface RoomMediaControlActivityEntry {
+  event: RoomMediaControlEvent;
   role: VideoRole;
   recordedAt: number;
 }
@@ -1208,6 +1235,138 @@ export class VideoRoom {
     return this.parseChatMessages(await this.state.storage.get<unknown>('chatMessages'));
   }
 
+  private isRoomMediaControlKind(value: unknown): value is RoomMediaControlKind {
+    return value === 'microphone' || value === 'camera';
+  }
+
+  private parseMediaControlEvent(value: unknown): RoomMediaControlEvent | null {
+    if (!this.isRecord(value)) return null;
+    if (
+      !this.isSafeFileText(value.id, 160)
+      || !this.isSafeFileText(value.clientId, 160)
+      || typeof value.createdAt !== 'number'
+      || !Number.isFinite(value.createdAt)
+      || !this.isVideoRole(value.role)
+      || !this.isRoomMediaControlKind(value.control)
+      || typeof value.previousEnabled !== 'boolean'
+      || typeof value.enabled !== 'boolean'
+      || value.previousEnabled === value.enabled
+    ) {
+      return null;
+    }
+    return {
+      id: value.id,
+      clientId: value.clientId,
+      createdAt: value.createdAt,
+      role: value.role,
+      control: value.control,
+      previousEnabled: value.previousEnabled,
+      enabled: value.enabled,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private hasSourceBackedMediaControlEvidence(event: RoomMediaControlEvent, role: VideoRole): boolean {
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const action = event.enabled ? 'enabled' : 'disabled';
+    const controlSurface = evidence.surface === 'win95'
+      ? 'win95_video_window'
+      : 'standard_video_call';
+    return event.role === role
+      && evidence.source === 'video_room_media_controls'
+      && evidence.mediaControlEventSource === 'browser_video_control_button'
+      && evidence.actor === actor
+      && evidence.control === event.control
+      && evidence.previousEnabled === event.previousEnabled
+      && evidence.enabled === event.enabled
+      && evidence.action === action
+      && evidence.controlAction === 'toggle'
+      && (evidence.surface === 'standard' || evidence.surface === 'win95')
+      && typeof evidence.roomPhase === 'string'
+      && evidence.roomPhase.length > 0
+      && evidence.controlSurface === controlSurface
+      && evidence.mediaSource === 'local_media_stream'
+      && evidence.rawMediaStreamPersisted === false
+      && typeof evidence.capturedAtMs === 'number'
+      && Number.isInteger(evidence.capturedAtMs)
+      && evidence.capturedAtMs >= 0
+      && evidence.mediaControlId === `media:${actor}:${event.control}:${evidence.capturedAtMs}:${action}`;
+  }
+
+  private parseMediaControlStates(value: unknown): RoomMediaControlState[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((entry): entry is RoomMediaControlState => (
+        this.isRecord(entry)
+        && this.isVideoRole(entry.role)
+        && (entry.microphoneEnabled === undefined || typeof entry.microphoneEnabled === 'boolean')
+        && (entry.cameraEnabled === undefined || typeof entry.cameraEnabled === 'boolean')
+        && typeof entry.updatedAt === 'number'
+        && Number.isFinite(entry.updatedAt)
+      ));
+  }
+
+  private async getMediaControlStates(): Promise<RoomMediaControlState[]> {
+    return this.parseMediaControlStates(await this.state.storage.get<unknown>('mediaControlStates'));
+  }
+
+  private async persistMediaControlState(event: RoomMediaControlEvent, role: VideoRole): Promise<RoomMediaControlState[]> {
+    const previous = await this.getMediaControlStates();
+    const prior = previous.find((entry) => entry.role === role);
+    const nextState: RoomMediaControlState = {
+      role,
+      updatedAt: event.createdAt,
+    };
+    if (event.control === 'microphone') {
+      nextState.microphoneEnabled = event.enabled;
+    } else if (prior?.microphoneEnabled !== undefined) {
+      nextState.microphoneEnabled = prior.microphoneEnabled;
+    }
+    if (event.control === 'camera') {
+      nextState.cameraEnabled = event.enabled;
+    } else if (prior?.cameraEnabled !== undefined) {
+      nextState.cameraEnabled = prior.cameraEnabled;
+    }
+    const next = [
+      ...previous.filter((entry) => entry.role !== role),
+      nextState,
+    ];
+    await this.state.storage.put('mediaControlStates', next);
+    return next;
+  }
+
+  private parseMediaControlActivityEntry(value: unknown): RoomMediaControlActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const event = this.parseMediaControlEvent(value.event);
+    if (
+      event === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { event, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseMediaControlActivityLog(value: unknown): RoomMediaControlActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseMediaControlActivityEntry(entry))
+      .filter((entry): entry is RoomMediaControlActivityEntry => entry !== null);
+  }
+
+  private async recordMediaControlActivity(event: RoomMediaControlEvent, role: VideoRole): Promise<void> {
+    const previous = this.parseMediaControlActivityLog(await this.state.storage.get<unknown>('mediaControlActivityLog'));
+    const next = [
+      ...previous.slice(-249),
+      { event, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('mediaControlActivityLog', next);
+  }
+
   private parseChatActivityEntry(value: unknown): RoomChatActivityEntry | null {
     if (!this.isRecord(value)) return null;
     const message = this.parseChatMessage(value.message);
@@ -1960,6 +2119,9 @@ export class VideoRoom {
         clippyInteractionActivityLog: this.parseClippyInteractionActivityLog(
           await this.state.storage.get<unknown>('clippyInteractionActivityLog'),
         ),
+        mediaControlActivityLog: this.parseMediaControlActivityLog(
+          await this.state.storage.get<unknown>('mediaControlActivityLog'),
+        ),
         fileSystemActivityLog: this.parseFileSystemActivityLog(
           await this.state.storage.get<unknown>('fileSystemActivityLog'),
         ),
@@ -2017,6 +2179,12 @@ export class VideoRoom {
       server.send(JSON.stringify({
         type: 'ROOM_CHAT_STATE',
         payload: { messages: chatMessages },
+      }));
+
+      const mediaControlStates = await this.getMediaControlStates();
+      server.send(JSON.stringify({
+        type: 'ROOM_MEDIA_CONTROL_STATE',
+        payload: { states: mediaControlStates },
       }));
 
       const roomFileSystem = await this.getRoomFileSystem();
@@ -2279,6 +2447,44 @@ export class VideoRoom {
         type: 'ROOM_CHAT_MESSAGE',
         role: senderRole,
         payload: persistedMessage,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_MEDIA_CONTROL') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_MEDIA_CONTROL_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const event = this.parseMediaControlEvent(message.payload);
+      if (!event) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_MEDIA_CONTROL_REJECTED',
+          reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedMediaControlEvidence(event, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_MEDIA_CONTROL_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
+        }));
+        return;
+      }
+      await this.persistMediaControlState(event, senderRole);
+      await this.recordMediaControlActivity(event, senderRole);
+      ws.send(JSON.stringify({
+        type: 'ROOM_MEDIA_CONTROL_ACK',
+        role: senderRole,
+        payload: event,
+      }));
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_MEDIA_CONTROL',
+        role: senderRole,
+        payload: event,
       }));
       return;
     }

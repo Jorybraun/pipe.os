@@ -76,6 +76,7 @@ import {
   type RoomChatMessage,
   type RoomClippyPromptDraft,
   type RoomFile,
+  type RoomMediaControlState,
   type RoomSurface,
 } from './hooks/useRoomConnection';
 import { useWindowManager } from './hooks/useWindowManager';
@@ -303,6 +304,13 @@ function paintItemsEqual(a: PaintCanvasItem[], b: PaintCanvasItem[]): boolean {
 
 function findRoomFile(files: RoomFile[], id: string): RoomFile | undefined {
   return files.find((file) => file.id === id);
+}
+
+function mediaStatusLabel(state: Pick<RoomMediaControlState, 'microphoneEnabled' | 'cameraEnabled'>): string {
+  const parts: string[] = [];
+  if (state.microphoneEnabled === false) parts.push('mic off');
+  if (state.cameraEnabled === false) parts.push('camera off');
+  return parts.join(', ');
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
@@ -1450,7 +1458,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     control: MediaControlKind,
     previousEnabled: boolean,
     enabled: boolean,
-  ): void => {
+  ): ReturnType<typeof buildMediaControlEvidence> => {
     const evidence = buildMediaControlEvidence({
       actor: roomActor,
       control,
@@ -1461,20 +1469,33 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs: Date.now(),
     });
     captureSessionEvent('media_control', evidence.text, roomActor, evidence.properties);
+    return evidence;
   };
 
   const toggleMicrophone = (): void => {
     const previousEnabled = room.micEnabled;
     const enabled = !previousEnabled;
     room.toggleMic();
-    captureMediaControlChange('microphone', previousEnabled, enabled);
+    const evidence = captureMediaControlChange('microphone', previousEnabled, enabled);
+    room.publishMediaControlEvent({
+      control: 'microphone',
+      previousEnabled,
+      enabled,
+      evidence: evidence.properties,
+    });
   };
 
   const toggleCamera = (): void => {
     const previousEnabled = room.cameraEnabled;
     const enabled = !previousEnabled;
     room.toggleCamera();
-    captureMediaControlChange('camera', previousEnabled, enabled);
+    const evidence = captureMediaControlChange('camera', previousEnabled, enabled);
+    room.publishMediaControlEvent({
+      control: 'camera',
+      previousEnabled,
+      enabled,
+      evidence: evidence.properties,
+    });
   };
 
   const publishAndCaptureRoomFileChange = (operation: RoomFileEvidenceOperation, file: RoomFile): void => {
@@ -1955,6 +1976,15 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
+  const remoteParticipantLabel = metadata.role === 'HOST' ? 'Guest' : 'Host';
+  const remoteParticipantRole = metadata.role === 'HOST' ? 'GUEST' : 'HOST';
+  const remoteMediaState = room.mediaControlStates.find((state) => state.role === remoteParticipantRole);
+  const remoteMediaStatus = remoteMediaState ? mediaStatusLabel(remoteMediaState) : '';
+  const localMediaStatus = mediaStatusLabel({
+    microphoneEnabled: room.micEnabled,
+    cameraEnabled: room.cameraEnabled,
+  });
+
   const renderWindowContent = (win: WindowState): JSX.Element => {
     switch (win.windowType) {
       case 'video':
@@ -1990,7 +2020,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                   </div>
                 )}
                 <span className="win95-video-tile-name">
-                  {metadata.role === 'HOST' ? 'Guest' : 'Host'}
+                  <span>{remoteParticipantLabel}</span>
+                  {remoteMediaStatus && (
+                    <span className="win95-video-tile-status">{remoteMediaStatus}</span>
+                  )}
                 </span>
               </div>
 
@@ -2004,7 +2037,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
                     <span className="win95-video-tile-label">Camera off</span>
                   </div>
                 )}
-                <span className="win95-video-tile-name">You</span>
+                <span className="win95-video-tile-name">
+                  <span>You</span>
+                  {localMediaStatus && (
+                    <span className="win95-video-tile-status">{localMediaStatus}</span>
+                  )}
+                </span>
               </div>
             </div>
 

@@ -3313,6 +3313,7 @@ button:focus-visible {
   bottom: 0;
   left: 0;
   right: 0;
+  min-height: 18px;
   padding: 2px 6px;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
@@ -3320,6 +3321,19 @@ button:focus-visible {
   font-weight: 600;
   text-align: center;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  line-height: 1.1;
+}
+
+.win95-video-tile-status {
+  color: #ffdf7a;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .win95-video-controls {

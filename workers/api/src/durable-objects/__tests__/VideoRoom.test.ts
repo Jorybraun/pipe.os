@@ -815,6 +815,113 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     }));
   });
 
+  it('stores and broadcasts source-backed media control state', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_MEDIA_CONTROL',
+      payload: {
+        id: 'media-event-1',
+        clientId: 'host-client',
+        createdAt: 1700000000000,
+        role: 'HOST',
+        control: 'microphone',
+        previousEnabled: true,
+        enabled: false,
+        evidence: {
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          actor: 'host',
+          mediaControlId: 'media:host:microphone:1700000000000:disabled',
+          capturedAtMs: 1700000000000,
+          control: 'microphone',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          controlAction: 'toggle',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      },
+    }));
+
+    expect(storage.get('mediaControlStates')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        microphoneEnabled: false,
+        updatedAt: 1700000000000,
+      }),
+    ]);
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_MEDIA_CONTROL_ACK',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'media-event-1',
+        control: 'microphone',
+        enabled: false,
+      }),
+    }));
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_MEDIA_CONTROL',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        id: 'media-event-1',
+        control: 'microphone',
+        enabled: false,
+        evidence: expect.objectContaining({
+          source: 'video_room_media_controls',
+          mediaControlId: 'media:host:microphone:1700000000000:disabled',
+        }),
+      }),
+    }));
+    expect(storage.get('mediaControlActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'HOST',
+        event: expect.objectContaining({
+          id: 'media-event-1',
+          evidence: expect.objectContaining({
+            source: 'video_room_media_controls',
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects media control changes without browser source evidence', async () => {
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([[guest, 'GUEST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_MEDIA_CONTROL',
+      payload: {
+        id: 'media-source-less',
+        clientId: 'guest-client',
+        createdAt: 1700000000000,
+        role: 'GUEST',
+        control: 'camera',
+        previousEnabled: true,
+        enabled: false,
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_MEDIA_CONTROL_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(storage.has('mediaControlStates')).toBe(false);
+    expect(storage.has('mediaControlActivityLog')).toBe(false);
+  });
+
   it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -1805,6 +1912,35 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_MEDIA_CONTROL',
+      payload: {
+        id: 'media-camera-activity',
+        clientId: 'guest-client',
+        createdAt: 2200,
+        role: 'GUEST',
+        control: 'camera',
+        previousEnabled: true,
+        enabled: false,
+        evidence: {
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          actor: 'guest',
+          mediaControlId: 'media:guest:camera:2200:disabled',
+          capturedAtMs: 2200,
+          control: 'camera',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          controlAction: 'toggle',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
+      },
+    }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_CLIPPY_INTERACTION',
       payload: {
         id: 'clippy-user-chat-activity',
@@ -1931,6 +2067,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const body = await response.json() as {
       desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
+      mediaControlActivityLog: unknown[];
       clippyInteractionActivityLog: unknown[];
       codeServerFileActivityLog: unknown[];
       terminalActivityLog: unknown[];
@@ -1965,6 +2102,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             deliveryStatus: 'accepted',
             surface: 'win95',
             roomPhase: 'connected',
+          }),
+        }),
+      }),
+    ]);
+    expect(body.mediaControlActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'media-camera-activity',
+          control: 'camera',
+          enabled: false,
+          evidence: expect.objectContaining({
+            source: 'video_room_media_controls',
+            mediaControlId: 'media:guest:camera:2200:disabled',
           }),
         }),
       }),

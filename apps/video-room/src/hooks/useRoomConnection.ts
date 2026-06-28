@@ -105,6 +105,33 @@ export interface RoomChatMessage {
   evidence?: Record<string, unknown>;
 }
 
+export type RoomMediaControlKind = 'microphone' | 'camera';
+
+export interface RoomMediaControlEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  role: RoomRole;
+  control: RoomMediaControlKind;
+  previousEnabled: boolean;
+  enabled: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+export interface RoomMediaControlEventDraft {
+  control: RoomMediaControlKind;
+  previousEnabled: boolean;
+  enabled: boolean;
+  evidence?: Record<string, unknown>;
+}
+
+export interface RoomMediaControlState {
+  role: RoomRole;
+  microphoneEnabled?: boolean;
+  cameraEnabled?: boolean;
+  updatedAt: number;
+}
+
 export interface RoomCodeServerFileEvent {
   id: string;
   clientId: string;
@@ -380,6 +407,7 @@ interface RoomConnection {
   clippyPrompt: RoomClippyPrompt | null;
   clippyInteractionEvents: RoomClippyInteractionEvent[];
   chatMessages: RoomChatMessage[];
+  mediaControlStates: RoomMediaControlState[];
   codeServerFileEvents: RoomCodeServerFileEvent[];
   terminalEvents: RoomTerminalEvent[];
   peerCursors: RoomCursorPresence[];
@@ -397,6 +425,7 @@ interface RoomConnection {
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
   publishClippyInteractionEvent: (event: RoomClippyInteractionEventDraft) => void;
   publishChatMessage: (text: string) => RoomChatMessage | null;
+  publishMediaControlEvent: (event: RoomMediaControlEventDraft) => void;
   publishCodeServerFileEvent: (event: RoomCodeServerFileEventDraft) => void;
   publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
   publishCursorPresence: (position: { x: number; y: number }) => void;
@@ -771,6 +800,95 @@ function parseChatRejection(value: unknown): { clientMessageId: string | null } 
   };
 }
 
+function isRoomMediaControlKind(value: unknown): value is RoomMediaControlKind {
+  return value === 'microphone' || value === 'camera';
+}
+
+function parseMediaControlEvent(value: unknown): RoomMediaControlEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || !Number.isFinite(value.createdAt)
+    || !isRoomRole(value.role)
+    || !isRoomMediaControlKind(value.control)
+    || typeof value.previousEnabled !== 'boolean'
+    || typeof value.enabled !== 'boolean'
+    || value.previousEnabled === value.enabled
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    role: value.role,
+    control: value.control,
+    previousEnabled: value.previousEnabled,
+    enabled: value.enabled,
+    evidence: recordOrUndefined(value.evidence),
+  };
+}
+
+function parseMediaControlState(value: unknown): RoomMediaControlState | null {
+  if (!isRecord(value)) return null;
+  if (
+    !isRoomRole(value.role)
+    || typeof value.updatedAt !== 'number'
+    || !Number.isFinite(value.updatedAt)
+    || (value.microphoneEnabled !== undefined && typeof value.microphoneEnabled !== 'boolean')
+    || (value.cameraEnabled !== undefined && typeof value.cameraEnabled !== 'boolean')
+  ) {
+    return null;
+  }
+  const state: RoomMediaControlState = {
+    role: value.role,
+    updatedAt: value.updatedAt,
+  };
+  if (typeof value.microphoneEnabled === 'boolean') {
+    state.microphoneEnabled = value.microphoneEnabled;
+  }
+  if (typeof value.cameraEnabled === 'boolean') {
+    state.cameraEnabled = value.cameraEnabled;
+  }
+  return state;
+}
+
+function parseMediaControlSnapshot(value: unknown): { states: RoomMediaControlState[] } | null {
+  if (!isRecord(value) || !Array.isArray(value.states)) return null;
+  return {
+    states: value.states
+      .map(parseMediaControlState)
+      .filter((entry): entry is RoomMediaControlState => entry !== null),
+  };
+}
+
+export function applyRoomMediaControlEvent(
+  previous: RoomMediaControlState[],
+  event: RoomMediaControlEvent,
+): RoomMediaControlState[] {
+  const existing = previous.find((entry) => entry.role === event.role);
+  const nextState: RoomMediaControlState = {
+    role: event.role,
+    updatedAt: event.createdAt,
+  };
+  if (event.control === 'microphone') {
+    nextState.microphoneEnabled = event.enabled;
+  } else if (existing?.microphoneEnabled !== undefined) {
+    nextState.microphoneEnabled = existing.microphoneEnabled;
+  }
+  if (event.control === 'camera') {
+    nextState.cameraEnabled = event.enabled;
+  } else if (existing?.cameraEnabled !== undefined) {
+    nextState.cameraEnabled = existing.cameraEnabled;
+  }
+  return [
+    ...previous.filter((entry) => entry.role !== event.role),
+    nextState,
+  ];
+}
+
 function isRoomCodeServerFileEventType(value: unknown): value is RoomCodeServerFileEventType {
   return value === 'code_editor_save' || value === 'file_change';
 }
@@ -1000,6 +1118,7 @@ export function useRoomConnection(
   const [clippyInteractionEvents, setClippyInteractionEvents] = useState<RoomClippyInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const chatMessagesRef = useRef<RoomChatMessage[]>([]);
+  const [mediaControlStates, setMediaControlStates] = useState<RoomMediaControlState[]>([]);
   const [codeServerFileEvents, setCodeServerFileEvents] = useState<RoomCodeServerFileEvent[]>([]);
   const [terminalEvents, setTerminalEvents] = useState<RoomTerminalEvent[]>([]);
   const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
@@ -1025,6 +1144,7 @@ export function useRoomConnection(
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
   const clippyInteractionOutboxRef = useRef<RoomClippyInteractionEvent[]>([]);
   const chatOutboxRef = useRef<RoomChatMessage[]>([]);
+  const mediaControlOutboxRef = useRef<RoomMediaControlEvent[]>([]);
   const codeServerFileOutboxRef = useRef<RoomCodeServerFileEvent[]>([]);
   const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
@@ -1109,6 +1229,13 @@ export function useRoomConnection(
     return true;
   }, []);
 
+  const sendMediaControlEvent = useCallback((event: RoomMediaControlEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_MEDIA_CONTROL', payload: event }));
+    return true;
+  }, []);
+
   const sendCodeServerFileEvent = useCallback((event: RoomCodeServerFileEvent): boolean => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -1180,6 +1307,17 @@ export function useRoomConnection(
       }
     }
   }, [sendChatMessage]);
+
+  const flushMediaControlOutbox = useCallback((): void => {
+    if (mediaControlOutboxRef.current.length === 0) return;
+    const pending = mediaControlOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendMediaControlEvent(event)) {
+        mediaControlOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendMediaControlEvent]);
 
   const flushCodeServerFileOutbox = useCallback((): void => {
     if (codeServerFileOutboxRef.current.length === 0) return;
@@ -1370,6 +1508,7 @@ export function useRoomConnection(
         flushClippyOutbox();
         flushClippyInteractionOutbox();
         flushChatOutbox();
+        flushMediaControlOutbox();
         flushCodeServerFileOutbox();
         flushTerminalOutbox();
         flushFileSystemOutbox();
@@ -1524,6 +1663,18 @@ export function useRoomConnection(
           const snapshot = parseChatSnapshot(message.payload);
           if (!snapshot) return;
           setChatMessages(sortChatMessages(snapshot.messages));
+        } else if (message.type === 'ROOM_MEDIA_CONTROL') {
+          const event = parseMediaControlEvent(message.payload);
+          if (!event || event.clientId === desktopClientIdRef.current) return;
+          setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
+        } else if (message.type === 'ROOM_MEDIA_CONTROL_ACK') {
+          const event = parseMediaControlEvent(message.payload);
+          if (!event) return;
+          setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
+        } else if (message.type === 'ROOM_MEDIA_CONTROL_STATE') {
+          const snapshot = parseMediaControlSnapshot(message.payload);
+          if (!snapshot) return;
+          setMediaControlStates(snapshot.states);
         } else if (message.type === 'ROOM_CODE_SERVER_FILE_EVENT') {
           const event = parseCodeServerFileEvent(message.payload);
           if (!event || event.clientId === desktopClientIdRef.current) return;
@@ -1583,6 +1734,7 @@ export function useRoomConnection(
     flushCodeServerFileOutbox,
     flushDesktopOutbox,
     flushFileSystemOutbox,
+    flushMediaControlOutbox,
     flushTerminalOutbox,
     role,
     scheduleHostRenegotiation,
@@ -1840,6 +1992,23 @@ export function useRoomConnection(
     return message;
   }, [role, roomSurface, sendChatMessage]);
 
+  const publishMediaControlEvent = useCallback((draft: RoomMediaControlEventDraft): void => {
+    const createdAt = Date.now();
+    const event: RoomMediaControlEvent = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `media-${createdAt}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt,
+      role,
+    };
+    setMediaControlStates((prev) => applyRoomMediaControlEvent(prev, event));
+    if (!sendMediaControlEvent(event)) {
+      mediaControlOutboxRef.current.push(event);
+    }
+  }, [role, sendMediaControlEvent]);
+
   const publishCodeServerFileEvent = useCallback((draft: RoomCodeServerFileEventDraft): void => {
     if (!draft.text.trim()) return;
     const createdAt = Date.now();
@@ -1975,6 +2144,7 @@ export function useRoomConnection(
     clippyPrompt,
     clippyInteractionEvents,
     chatMessages,
+    mediaControlStates,
     codeServerFileEvents,
     terminalEvents,
     peerCursors,
@@ -1992,6 +2162,7 @@ export function useRoomConnection(
     publishClippyPrompt,
     publishClippyInteractionEvent,
     publishChatMessage,
+    publishMediaControlEvent,
     publishCodeServerFileEvent,
     publishTerminalEvent,
     publishCursorPresence,
