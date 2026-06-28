@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import { scheduleFullProjectionRebuild } from '../../lib/livingContext/projection';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -140,6 +141,21 @@ app.get('/living-context-health', async (c) => {
   return c.json({
     healthy: allHealthy,
     subsystems,
+  });
+});
+
+/**
+ * POST /api/v1/internal/living-context-rebuild-projections
+ *
+ * Enqueue rebuild operations for all workspace persons. The projection outbox
+ * cron will pick these up and re-project each person from D1 into Neo4j.
+ */
+app.post('/living-context-rebuild-projections', async (c) => {
+  const db = c.env.DB;
+  const result = await scheduleFullProjectionRebuild(db);
+  return c.json({
+    status: 'scheduled',
+    enqueued: result.enqueued,
   });
 });
 
