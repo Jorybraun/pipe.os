@@ -1254,6 +1254,116 @@ describe('meeting room recording living-context route', () => {
       roomPhase: 'connected',
     });
 
+    const fakeTerminalCommandRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_command',
+        text: 'npm test',
+        actor: 'guest',
+        properties: {
+          source: 'terminal_claim',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandSequence: 1,
+          commandLength: 8,
+        },
+      }),
+    }, env, ctx);
+    expect(fakeTerminalCommandRes.status).toBe(422);
+
+    const terminalCommandRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_command',
+        text: 'npm test',
+        actor: 'guest',
+        properties: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:1:terminal_dc5964d6',
+          terminalCommandSequence: 1,
+          commandFingerprint: 'terminal_dc5964d6',
+          commandLength: 8,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        },
+      }),
+    }, env, ctx);
+    expect(terminalCommandRes.status).toBe(200);
+
+    const terminalOutputRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'terminal_output',
+        text: 'PASS src/app.test.ts\n',
+        actor: 'system',
+        properties: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:1:terminal_dc5964d6',
+          terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:1:terminal_4f2d0d8f',
+          terminalOutputSequence: 1,
+          outputFingerprint: 'terminal_4f2d0d8f',
+          outputLength: 21,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        },
+      }),
+    }, env, ctx);
+    expect(terminalOutputRes.status).toBe(200);
+
+    const terminalNodes = sqlite.prepare(
+      `SELECT node_type, narrative_text, source_type, extracted_properties_json
+         FROM candidate_nodes
+        WHERE candidate_id = ?
+          AND node_type IN ('session_terminal_command', 'session_terminal_output')
+        ORDER BY node_type`,
+    ).all(linked?.candidate_id) as Array<{
+      node_type: string;
+      narrative_text: string;
+      source_type: string;
+      extracted_properties_json: string;
+    }>;
+    expect(terminalNodes).toHaveLength(2);
+    expect(terminalNodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        node_type: 'session_terminal_command',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Terminal command: npm test'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_terminal_output',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Terminal output: PASS src/app.test.ts'),
+      }),
+    ]));
+    expect(terminalNodes.map((node) => JSON.parse(node.extracted_properties_json))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
+        terminalSessionId: 'terminal-workspace-session-1-guest',
+        terminalCommandId: 'terminal-workspace-session-1-guest:command:1:terminal_dc5964d6',
+        workspaceSessionId: 'workspace-session-1',
+      }),
+      expect.objectContaining({
+        source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
+        terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:1:terminal_4f2d0d8f',
+        terminalCommandId: 'terminal-workspace-session-1-guest:command:1:terminal_dc5964d6',
+        workspaceSessionId: 'workspace-session-1',
+      }),
+    ]));
+
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-27T23:05:00.000Z'));
 

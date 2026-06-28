@@ -46,6 +46,7 @@ export interface TerminalEvidenceContext {
 
 export interface TerminalCommandEvidenceProperties extends Record<string, unknown> {
   source: 'container_terminal';
+  terminalEventSource: 'browser_terminal_ws';
   terminalSessionId: string;
   terminalCommandId: string;
   terminalCommandSequence: number;
@@ -60,6 +61,7 @@ export interface TerminalCommandEvidenceProperties extends Record<string, unknow
 
 export interface TerminalOutputEvidenceProperties extends Record<string, unknown> {
   source: 'container_terminal';
+  terminalEventSource: 'browser_terminal_ws';
   terminalSessionId: string;
   terminalCommandId: string | null;
   terminalOutputChunkId: string;
@@ -114,10 +116,11 @@ export function terminalTextFingerprint(text: string): string {
 
 function terminalContextProperties(context: TerminalEvidenceContext): Pick<
   TerminalCommandEvidenceProperties,
-  'source' | 'surface' | 'roomPhase' | 'workspaceStatus' | 'workspaceSessionId' | 'repoUrl'
+  'source' | 'terminalEventSource' | 'surface' | 'roomPhase' | 'workspaceStatus' | 'workspaceSessionId' | 'repoUrl'
 > {
   return {
     source: 'container_terminal',
+    terminalEventSource: 'browser_terminal_ws',
     surface: context.surface,
     roomPhase: context.roomPhase,
     workspaceStatus: context.workspaceStatus,

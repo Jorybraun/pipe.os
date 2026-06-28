@@ -102,6 +102,7 @@ const WORKSPACE_TERMINAL_STATUSES = new Set(['ERROR', 'STOPPED', 'EXPIRED']);
 const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'SLEEPING']);
 const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
@@ -166,7 +167,7 @@ const sessionEventSchema = z.object({
   properties: z.record(z.string(), z.unknown()).optional(),
 }).superRefine((event, ctx) => {
   const properties = event.properties ?? {};
-  const hasString = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+  const hasString = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
   const hasFiniteNonNegativeNumber = (value: unknown): boolean => (
     typeof value === 'number' && Number.isFinite(value) && value >= 0
   );
@@ -324,6 +325,76 @@ const sessionEventSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Room surface evidence must come from shared room surface controls with actor, previous surface, next surface, action, and room phase.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'terminal_command') {
+    const commandSequence = properties.terminalCommandSequence;
+    const commandLength = properties.commandLength;
+    const fingerprint = properties.commandFingerprint;
+    const sessionId = properties.terminalSessionId;
+    const commandId = properties.terminalCommandId;
+    const sourceOk = properties.source === 'container_terminal'
+      && properties.terminalEventSource === 'browser_terminal_ws';
+    const actorOk = event.actor === 'host' || event.actor === 'guest';
+    const sequenceOk = typeof commandSequence === 'number'
+      && Number.isInteger(commandSequence)
+      && commandSequence > 0;
+    const commandLengthOk = typeof commandLength === 'number'
+      && commandLength === event.text.length;
+    const fingerprintOk = typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint);
+    const idsOk = hasString(sessionId)
+      && typeof commandId === 'string'
+      && typeof commandSequence === 'number'
+      && typeof fingerprint === 'string'
+      && commandId === `${sessionId}:command:${commandSequence}:${fingerprint}`;
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (sourceOk && actorOk && sequenceOk && commandLengthOk && fingerprintOk && idsOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Terminal command evidence must come from the browser terminal WebSocket with command id, sequence, fingerprint, length, workspace context, and participant actor.',
+      path: ['properties'],
+    });
+    return;
+  }
+  if (event.type === 'terminal_output') {
+    const outputSequence = properties.terminalOutputSequence;
+    const outputLength = properties.outputLength;
+    const fingerprint = properties.outputFingerprint;
+    const sessionId = properties.terminalSessionId;
+    const outputChunkId = properties.terminalOutputChunkId;
+    const commandId = properties.terminalCommandId;
+    const sourceOk = properties.source === 'container_terminal'
+      && properties.terminalEventSource === 'browser_terminal_ws';
+    const actorOk = event.actor === 'system';
+    const sequenceOk = typeof outputSequence === 'number'
+      && Number.isInteger(outputSequence)
+      && outputSequence > 0;
+    const outputLengthOk = typeof outputLength === 'number'
+      && outputLength === event.text.length;
+    const fingerprintOk = typeof fingerprint === 'string'
+      && TERMINAL_FINGERPRINT_RE.test(fingerprint);
+    const idsOk = hasString(sessionId)
+      && typeof outputChunkId === 'string'
+      && typeof outputSequence === 'number'
+      && typeof fingerprint === 'string'
+      && outputChunkId === `${sessionId}:output:${outputSequence}:${fingerprint}`
+      && (commandId === null || (typeof commandId === 'string' && commandId.startsWith(`${sessionId}:command:`)));
+    const contextOk = hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasString(properties.workspaceStatus)
+      && hasString(properties.workspaceSessionId)
+      && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
+    if (sourceOk && actorOk && sequenceOk && outputLengthOk && fingerprintOk && idsOk && contextOk) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Terminal output evidence must come from the browser terminal WebSocket with output id, sequence, fingerprint, bounded length, workspace context, and system actor.',
       path: ['properties'],
     });
     return;

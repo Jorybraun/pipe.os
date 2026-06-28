@@ -70,6 +70,7 @@ describe('terminal WebSocket protocol', () => {
       text: 'npm test',
       properties: expect.objectContaining({
         source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
         terminalSessionId: 'terminal-workspace-session-1-guest',
         terminalCommandSequence: 7,
         terminalCommandId: expect.stringMatching(/^terminal-workspace-session-1-guest:command:7:/),
@@ -82,6 +83,7 @@ describe('terminal WebSocket protocol', () => {
       text: 'PASS src/app.test.ts\n',
       properties: expect.objectContaining({
         source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
         terminalSessionId: 'terminal-workspace-session-1-guest',
         terminalCommandId: command.properties.terminalCommandId,
         terminalOutputSequence: 12,
