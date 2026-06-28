@@ -229,6 +229,38 @@ describe('sessionEvents', () => {
           },
           {
             role: 'GUEST',
+            recordedAt: 1700000001250,
+            event: {
+              id: 'evt-browser-navigate',
+              clientId: 'guest-client',
+              createdAt: 1700000001250,
+              kind: 'UPDATE_WINDOW_DATA',
+              windowId: 'browser',
+              data: {
+                currentUrl: 'https://example.com/review?step=1',
+              },
+              evidence: {
+                source: 'room_browser_window',
+                navigationSource: 'browser_window_client_submit',
+                actor: 'guest',
+                windowId: 'browser',
+                navigationTrigger: 'go_button',
+                browserNavigationId: 'browser-navigation:guest:1700000001250:browser:go_button:nav_54d2c495',
+                capturedAtMs: 1700000001250,
+                urlFingerprint: 'nav_54d2c495',
+                url: 'https://example.com/review?step=1',
+                urlHost: 'example.com',
+                urlProtocol: 'https',
+                urlPath: '/review?step=1',
+                knownEmbedBlocked: false,
+                surface: 'win95',
+                roomPhase: 'connected',
+                durableObjectReplayExpected: true,
+              },
+            },
+          },
+          {
+            role: 'GUEST',
             recordedAt: 1700000001500,
             event: {
               id: 'evt-browser-moved',
@@ -355,6 +387,24 @@ describe('sessionEvents', () => {
           }),
         }),
         expect.objectContaining({
+          type: 'browser_navigation',
+          actor: 'guest',
+          text: 'https://example.com/review?step=1',
+          properties: expect.objectContaining({
+            roomActivitySource: 'durable_object',
+            source: 'room_browser_window',
+            navigationSource: 'browser_window_client_submit',
+            navigationTrigger: 'go_button',
+            browserNavigationId: 'browser-navigation:guest:1700000001250:browser:go_button:nav_54d2c495',
+            capturedAtMs: 1700000001250,
+            urlFingerprint: 'nav_54d2c495',
+            urlHost: 'example.com',
+            urlProtocol: 'https',
+            surface: 'win95',
+            roomPhase: 'connected',
+          }),
+        }),
+        expect.objectContaining({
           type: 'window_update',
           actor: 'guest',
           text: 'browser',
@@ -415,7 +465,7 @@ describe('sessionEvents', () => {
           text: 'notes.txt',
         }),
       ]);
-      expect(events[1]!.properties).toMatchObject({
+      expect(events[2]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         source: 'window_state_client_submit',
         stateSource: 'win95_window_chrome',
@@ -435,15 +485,15 @@ describe('sessionEvents', () => {
           y: 140,
         },
       });
-      expect(events[5]!.properties).toMatchObject({
+      expect(events[6]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'upsert',
         fileId: 'notepad',
         fileKind: 'text',
         contentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[5]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
-      expect(events[6]!.properties).toMatchObject({
+      expect(events[6]!.properties?.contentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[7]!.properties).toMatchObject({
         roomActivitySource: 'durable_object',
         operation: 'delete',
         fileId: 'notepad',
@@ -452,7 +502,7 @@ describe('sessionEvents', () => {
         deletedContentLength: 'Candidate identified retry bug evidence.'.length,
         deletedContentPreview: 'Candidate identified retry bug evidence.',
       });
-      expect(events[6]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
+      expect(events[7]!.properties?.deletedContentHash).toMatch(/^content_[a-f0-9]{32}$/);
     });
   });
 

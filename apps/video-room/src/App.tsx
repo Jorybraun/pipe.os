@@ -635,26 +635,28 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     options?: { browserNavigationTrigger?: BrowserNavigationTrigger },
   ): void => {
     wm.updateWindowData(id, data);
+    const currentUrl = data.currentUrl;
+    const navigationEvidence = typeof currentUrl === 'string'
+      ? buildBrowserNavigationEvidence({
+          actor: roomActor,
+          windowId: id,
+          url: currentUrl,
+          trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
+          surface: room.roomSurface,
+          roomPhase: room.phase,
+          capturedAtMs: Date.now(),
+        })
+      : null;
     if (room.roomSurface === 'win95') {
       room.publishDesktopEvent({
         kind: 'UPDATE_WINDOW_DATA',
         windowId: id,
         data,
+        evidence: navigationEvidence?.properties,
       });
     }
-    const currentUrl = data.currentUrl;
-    if (typeof currentUrl === 'string') {
-      const evidence = buildBrowserNavigationEvidence({
-        actor: roomActor,
-        windowId: id,
-        url: currentUrl,
-        trigger: options?.browserNavigationTrigger ?? 'shared_state_sync',
-        surface: room.roomSurface,
-        roomPhase: room.phase,
-      });
-      if (evidence) {
-        captureSessionEvent('browser_navigation', evidence.text, roomActor, evidence.properties);
-      }
+    if (navigationEvidence) {
+      captureSessionEvent('browser_navigation', navigationEvidence.text, roomActor, navigationEvidence.properties);
     }
   }, [captureSessionEvent, room, roomActor, wm]);
 
@@ -1460,6 +1462,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         trigger: 'open_window_initial_url',
         surface: room.roomSurface,
         roomPhase: room.phase,
+        capturedAtMs: Date.now(),
       });
       if (evidence) {
         captureSessionEvent('browser_navigation', evidence.text, roomActor, evidence.properties);

@@ -189,6 +189,43 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       }),
     }));
 
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-browser-nav',
+        clientId: 'host-client',
+        createdAt: 1.5,
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: 'browser',
+        data: { currentUrl: 'https://example.com/review?step=1' },
+        evidence: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          browserNavigationId: 'browser-navigation:host:1500:browser:go_button:nav_54d2c495',
+        },
+      },
+    }));
+
+    expect(storage.get('desktopWindows')).toEqual([
+      expect.objectContaining({
+        id: 'browser',
+        data: { currentUrl: 'https://example.com/review?step=1' },
+      }),
+    ]);
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+      role: 'HOST',
+      payload: expect.objectContaining({
+        kind: 'UPDATE_WINDOW_DATA',
+        windowId: 'browser',
+        evidence: expect.objectContaining({
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          browserNavigationId: 'browser-navigation:host:1500:browser:go_button:nav_54d2c495',
+        }),
+      }),
+    }));
+
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_DESKTOP_EVENT',
       payload: {

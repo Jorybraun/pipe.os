@@ -21,6 +21,7 @@ describe('browser navigation evidence', () => {
       trigger: 'go_button',
       surface: 'win95',
       roomPhase: 'connected',
+      capturedAtMs: 1000,
     });
 
     expect(evidence).toMatchObject({
@@ -31,6 +32,9 @@ describe('browser navigation evidence', () => {
         actor: 'guest',
         windowId: 'browser',
         navigationTrigger: 'go_button',
+        browserNavigationId: 'browser-navigation:guest:1000:browser:go_button:nav_54d2c495',
+        capturedAtMs: 1000,
+        urlFingerprint: 'nav_54d2c495',
         url: 'https://example.com/review?step=1',
         urlHost: 'example.com',
         urlProtocol: 'https',

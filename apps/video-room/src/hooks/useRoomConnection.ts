@@ -151,6 +151,7 @@ export type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -221,6 +222,7 @@ export type RoomDesktopEventDraft =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+      evidence?: Record<string, unknown>;
     }
   | {
       kind: 'UPDATE_WINDOW_STATE';
@@ -447,6 +449,7 @@ function parseDesktopEvent(value: unknown): RoomDesktopEvent | null {
       kind: 'UPDATE_WINDOW_DATA',
       windowId: value.windowId,
       data: value.data,
+      evidence: recordOrUndefined(value.evidence),
     };
   }
   if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {

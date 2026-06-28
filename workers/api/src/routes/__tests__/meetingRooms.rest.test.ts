@@ -1226,6 +1226,32 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(fakeBrowserNavigationRes.status).toBe(422);
 
+    const sourceOnlyBrowserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'browser_navigation',
+        text: 'https://example.com/review?step=1',
+        actor: 'guest',
+        properties: {
+          source: 'room_browser_window',
+          navigationSource: 'browser_window_client_submit',
+          actor: 'guest',
+          windowId: 'browser',
+          navigationTrigger: 'go_button',
+          url: 'https://example.com/review?step=1',
+          urlHost: 'example.com',
+          urlProtocol: 'https',
+          urlPath: '/review?step=1',
+          knownEmbedBlocked: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
+      }),
+    }, env, ctx);
+    expect(sourceOnlyBrowserNavigationRes.status).toBe(422);
+
     const browserNavigationRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1239,6 +1265,9 @@ describe('meeting room recording living-context route', () => {
           actor: 'guest',
           windowId: 'browser',
           navigationTrigger: 'go_button',
+          browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
+          capturedAtMs: 1782601300000,
+          urlFingerprint: 'nav_54d2c495',
           url: 'https://example.com/review?step=1',
           urlHost: 'example.com',
           urlProtocol: 'https',
@@ -1273,6 +1302,9 @@ describe('meeting room recording living-context route', () => {
       navigationSource: 'browser_window_client_submit',
       windowId: 'browser',
       navigationTrigger: 'go_button',
+      browserNavigationId: 'browser-navigation:guest:1782601300000:browser:go_button:nav_54d2c495',
+      capturedAtMs: 1782601300000,
+      urlFingerprint: 'nav_54d2c495',
       urlHost: 'example.com',
       urlProtocol: 'https',
       surface: 'win95',

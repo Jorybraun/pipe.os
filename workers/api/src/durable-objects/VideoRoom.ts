@@ -109,6 +109,7 @@ type RoomDesktopEvent =
       kind: 'UPDATE_WINDOW_DATA';
       windowId: string;
       data: Record<string, unknown>;
+      evidence?: Record<string, unknown>;
     }
   | {
       id: string;
@@ -422,6 +423,7 @@ export class VideoRoom {
         kind: 'UPDATE_WINDOW_DATA',
         windowId: value.windowId,
         data: value.data,
+        evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
       };
     }
     if (value.kind === 'UPDATE_WINDOW_STATE' && typeof value.windowId === 'string') {

@@ -146,6 +146,17 @@ const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified']);
 const SURFACE_CHANGE_ID_RE = /^surface:(host|guest):\d+:(standard|win95):(standard|win95)$/;
 const WINDOW_LIFECYCLE_ID_RE = /^window-lifecycle:(host|guest):\d+:(open|close):[^:]+$/;
 const WINDOW_STATE_CHANGE_ID_RE = /^window-state:(host|guest):\d+:[^:]+:[a-z_]+$/;
+const BROWSER_NAVIGATION_ID_RE = /^browser-navigation:(host|guest):\d+:[^:]+:[a-z_]+:nav_[a-f0-9]{8}$/;
+const BROWSER_NAVIGATION_FINGERPRINT_RE = /^nav_[a-f0-9]{8}$/;
+
+function browserNavigationFingerprint(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `nav_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 const roomEventSchema = z.object({
   event: z.enum(['JOINED', 'LEFT', 'STARTED', 'RECORDING_STARTED', 'ENDED']),
@@ -313,13 +324,28 @@ const sessionEventSchema = z.object({
       && properties.urlProtocol === protocol;
     const triggerOk = typeof properties.navigationTrigger === 'string'
       && BROWSER_NAVIGATION_TRIGGERS.has(properties.navigationTrigger);
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && properties.actor === event.actor;
+    const capturedAtMs = properties.capturedAtMs;
+    const navigationId = properties.browserNavigationId;
+    const urlFingerprint = properties.urlFingerprint;
+    const idOk = typeof navigationId === 'string'
+      && BROWSER_NAVIGATION_ID_RE.test(navigationId)
+      && typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0
+      && typeof urlFingerprint === 'string'
+      && BROWSER_NAVIGATION_FINGERPRINT_RE.test(urlFingerprint)
+      && typeof url === 'string'
+      && urlFingerprint === browserNavigationFingerprint(url)
+      && navigationId === `browser-navigation:${event.actor}:${capturedAtMs}:${properties.windowId}:${properties.navigationTrigger}:${urlFingerprint}`;
     const contextOk = hasString(properties.windowId)
       && (properties.surface === 'standard' || properties.surface === 'win95')
       && hasString(properties.roomPhase);
-    if (sourceOk && urlOk && urlPartsOk && triggerOk && contextOk) return;
+    if (sourceOk && urlOk && urlPartsOk && triggerOk && actorOk && idOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Browser navigation evidence must come from the room browser window with normalized URL, trigger, and room context.',
+      message: 'Browser navigation evidence must come from the room browser window with actor, stable navigation id, timestamp, normalized URL, trigger, and room context.',
       path: ['properties'],
     });
     return;

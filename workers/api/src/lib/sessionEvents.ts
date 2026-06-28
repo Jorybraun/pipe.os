@@ -297,12 +297,21 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     if (!windowId || !isRecord(event.data)) return null;
     const currentUrl = stringOrNull(event.data.currentUrl);
     if (currentUrl) {
+      const evidence = isRecord(event.evidence) ? event.evidence : null;
+      const text = stringOrNull(evidence?.url) ?? currentUrl;
       return createSessionEvent(input, {
         type: 'browser_navigation',
         timestamp,
         actor,
-        text: currentUrl,
-        properties: { ...base, windowId },
+        text,
+        properties: {
+          ...base,
+          ...(evidence ?? {
+            source: 'browser_navigation_durable_object',
+            url: currentUrl,
+          }),
+          windowId,
+        },
       });
     }
     return createSessionEvent(input, {
