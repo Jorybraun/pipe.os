@@ -296,7 +296,7 @@ export function buildClippyUserChatEvidence(input: {
       promptLength: input.message.text.length,
       promptTimestamp: input.message.timestamp,
       deliveredToAgentBridge: true,
-      agent: input.message.agentName ?? 'devin',
+      agent: null,
       surface: input.surface,
       roomPhase: input.roomPhase,
       workspaceStatus: input.workspaceStatus,

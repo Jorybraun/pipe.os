@@ -765,6 +765,7 @@ function isSourceBackedClippyInteractionEvidence(
       && evidence.bridgeProtocol === 'clippy_dev_container_ws'
       && evidence.deliveredToAgentBridge === true
       && evidence.agentResponseClaimed === false
+      && (evidence.agent === undefined || evidence.agent === null)
       && promptTimestamp !== null
       && promptTimestamp >= 0
       && promptFingerprint !== null

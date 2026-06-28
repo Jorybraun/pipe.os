@@ -950,7 +950,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 1782603900000,
           deliveredToAgentBridge: true,
-          agent: 'devin',
+          agent: null,
           surface: 'win95',
           roomPhase: 'connected',
           workspaceStatus: 'READY',
@@ -1059,6 +1059,57 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         evidence: {
           source: 'clippy_agent_chat',
           promptLength: 'This should not be saved.'.length,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+    }));
+    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+  });
+
+  it('rejects Clippy user prompts that claim a Devin agent attribution', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-attributed-user-chat',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'Can you inspect the failing test?',
+        evidence: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 'Can you inspect the failing test?'.length,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
         },
       },
     }));
@@ -1672,7 +1723,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           promptLength: 'Can you inspect the failing test?'.length,
           promptTimestamp: 2400,
           deliveredToAgentBridge: true,
-          agent: 'devin',
+          agent: null,
           surface: 'win95',
           roomPhase: 'connected',
           workspaceStatus: 'READY',

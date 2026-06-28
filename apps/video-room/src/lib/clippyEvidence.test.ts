@@ -231,7 +231,7 @@ describe('clippy evidence', () => {
         promptLength: 48,
         promptTimestamp: 1782603900000,
         deliveredToAgentBridge: true,
-        agent: 'devin',
+        agent: null,
         surface: 'win95',
         roomPhase: 'connected',
         workspaceStatus: 'READY',

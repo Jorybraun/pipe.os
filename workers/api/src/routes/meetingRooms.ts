@@ -718,6 +718,7 @@ const sessionEventSchema = z.object({
       && properties.bridgeProtocol === 'clippy_dev_container_ws'
       && properties.deliveredToAgentBridge === true
       && properties.agentResponseClaimed === false;
+    const noAgentAttributionOk = properties.agent === undefined || properties.agent === null;
     const promptOk = typeof promptTimestamp === 'number'
       && Number.isFinite(promptTimestamp)
       && promptTimestamp >= 0
@@ -733,10 +734,10 @@ const sessionEventSchema = z.object({
       && hasString(properties.workspaceStatus)
       && hasString(workspaceSessionId)
       && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
-    if (actorOk && sourceOk && bridgeOk && promptOk && contextOk) return;
+    if (actorOk && sourceOk && bridgeOk && noAgentAttributionOk && promptOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a delivered bridge CHAT prompt id, fingerprint, length, and workspace context.',
+      message: 'Clippy user chat evidence must come from the browser Clippy chat window and include a delivered bridge CHAT prompt id, fingerprint, length, workspace context, and no agent attribution.',
       path: ['properties'],
     });
     return;
