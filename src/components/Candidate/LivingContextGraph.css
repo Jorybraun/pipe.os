@@ -805,6 +805,26 @@ html[data-theme="pipe-blue"] .living-context {
   color: var(--pipe-text-muted);
 }
 
+.living-context__match-narrative {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(124, 58, 237, 0.22);
+  border-radius: 7px;
+  background: rgba(124, 58, 237, 0.04);
+}
+
+.living-context__narrative-section {
+  margin-top: 10px;
+}
+
+.living-context__narrative-section ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--pipe-text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .living-context__review-gaps {
   margin-top: 14px;
 }

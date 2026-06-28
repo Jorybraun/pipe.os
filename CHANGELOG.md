@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Match narrative visualization in LivingContextGraph (criterion #6/#7)
+
+- Added `MatchNarrativePanel` component to `LivingContextGraph.tsx` — renders the recruiter-facing match narrative inline with title, verdict, and structured sections (strong alignments, evidence gaps).
+- Added CSS for `.living-context__match-narrative` and `.living-context__narrative-section` panels.
+- Added 2 tests: narrative panel renders when `matchNarrative` is present; hides when null.
+
 ### Added — Match narrative API endpoint (criterion #6)
 
 - Added `GET /api/v1/candidates/:id/living-context/match-narrative` endpoint serving recruiter-facing human-readable match narratives with strength-classified evidence alignments, stretch areas, and evidence gaps linked to original source locators.

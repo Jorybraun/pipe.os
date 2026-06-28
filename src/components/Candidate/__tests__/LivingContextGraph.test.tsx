@@ -940,4 +940,58 @@ describe('LivingContextGraph empty state quietness', () => {
     expect(screen.queryAllByText('Source evidence')).toHaveLength(0);
     expect(screen.queryByLabelText('Search living context')).not.toBeInTheDocument();
   });
+
+  it('renders the match narrative panel when matchNarrative is present', () => {
+    mocks.livingContext = makeLivingContext();
+
+    const match: StandaloneReviewMatchRecord = {
+      ...makeStandaloneReviewMatch(),
+      matchNarrative: {
+        title: 'Strong Kafka alignment',
+        verdict: 'Candidate demonstrates strong Kafka retry expertise.',
+        sections: [
+          {
+            heading: 'Strong alignments',
+            items: [
+              'Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)',
+            ],
+          },
+          {
+            heading: 'Evidence gaps',
+            items: ['No partition rebalancing experience found.'],
+          },
+        ],
+        plainText: 'Strong Kafka alignment\nCandidate demonstrates strong Kafka retry expertise.',
+      },
+    };
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={match}
+      />,
+    );
+
+    const narrativePanel = screen.getByTestId('match-narrative-panel');
+    expect(screen.getByLabelText('Match narrative')).toBe(narrativePanel);
+    expect(within(narrativePanel).getByText('Strong Kafka alignment')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Candidate demonstrates strong Kafka retry expertise.')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Strong alignments')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Kafka retry publishing (91% — resume line 7 + src/orders/retry.ts:18)')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('Evidence gaps')).toBeInTheDocument();
+    expect(within(narrativePanel).getByText('No partition rebalancing experience found.')).toBeInTheDocument();
+  });
+
+  it('hides the match narrative panel when matchNarrative is null', () => {
+    mocks.livingContext = makeLivingContext();
+
+    render(
+      <LivingContextGraph
+        candidateId="candidate-1"
+        standaloneReviewMatch={makeStandaloneReviewMatch()}
+      />,
+    );
+
+    expect(screen.queryByTestId('match-narrative-panel')).toBeNull();
+  });
 });

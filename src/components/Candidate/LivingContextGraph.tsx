@@ -26,6 +26,7 @@ import type {
   StandaloneReviewPacketQualityGate,
   StandaloneReviewRoleSource,
   StandaloneReviewSourceRef,
+  StandaloneReviewMatchNarrative,
   StandaloneReviewStretchArea,
 } from '../../lib/api/types';
 import { useLivingContext } from '../../hooks/useLivingContext';
@@ -928,6 +929,39 @@ function UnmatchedDemandsPanel({
   );
 }
 
+function MatchNarrativePanel({
+  narrative,
+}: {
+  narrative: StandaloneReviewMatchNarrative | null;
+}): JSX.Element | null {
+  if (!narrative) return null;
+  return (
+    <section
+      className="living-context__match-narrative"
+      aria-label="Match narrative"
+      data-testid="match-narrative-panel"
+    >
+      <div className="living-context__section-head">
+        <div>
+          <div className="living-context__section-title">{narrative.title}</div>
+          <div className="living-context__eyebrow">{narrative.verdict}</div>
+        </div>
+        <Quote size={14} color="var(--lc-source)" />
+      </div>
+      {narrative.sections.map((section) => (
+        <div key={section.heading} className="living-context__narrative-section">
+          <div className="living-context__eyebrow">{section.heading}</div>
+          <ul>
+            {section.items.map((item, index) => (
+              <li key={`${section.heading}:${index}`}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function StandaloneReviewMatchPanel({
   match,
 }: {
@@ -1091,6 +1125,8 @@ function StandaloneReviewMatchPanel({
         unmatchedDemandIds={match.unmatchedDemandIds}
         packet={match.packet}
       />
+
+      <MatchNarrativePanel narrative={match.matchNarrative} />
 
       {match.gaps.length > 0 && (
         <div className="living-context__review-gaps">
