@@ -1007,6 +1007,7 @@ async function seedMeetingTranscriptCandidateEvidence(
     provider: 'test-transcript-provider',
     startedAt: '2026-06-14T07:30:00.000Z',
     endedAt: OBSERVED_AT,
+    personContextMode: 'attributed',
   });
   const identity = await ensureCandidateLivingContext(db, 'candidate-1');
   expect(identity).not.toBeNull();
@@ -1248,6 +1249,7 @@ async function seedMuiBaseUiMeetingTranscriptCandidateEvidence(
     provider: 'test-transcript-provider',
     startedAt: '2026-06-14T07:30:00.000Z',
     endedAt: OBSERVED_AT,
+    personContextMode: 'attributed',
   });
   const identity = await ensureCandidateLivingContext(db, 'candidate-1');
   expect(identity).not.toBeNull();

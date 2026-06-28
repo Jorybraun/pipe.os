@@ -533,7 +533,7 @@ export async function ingestMeetingTranscriptToLivingContext(
       ? 'attributed'
       : null;
   const personContextReason = input.personContextReason?.trim() || null;
-  const canAttachPersonContext = personContextMode !== 'summary_only';
+  const canAttachPersonContext = personContextMode === 'attributed';
   const participants = await db.prepare(
     `SELECT mp.contact_id, mp.role, m.started_at, m.ended_at, m.updated_at
        FROM meeting_participants mp

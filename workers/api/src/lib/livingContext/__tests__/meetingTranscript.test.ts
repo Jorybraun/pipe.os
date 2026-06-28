@@ -317,6 +317,7 @@ describe('meeting transcript living-context ingestion', () => {
       }],
       extractorVersion: 'open-meeting-test-v1',
       provider: 'deepgram-multichannel',
+      personContextMode: 'attributed' as const,
     };
     const first = await ingestMeetingTranscriptToLivingContext(db, input);
     const replay = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -568,6 +569,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     const result = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -773,6 +775,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -886,6 +889,7 @@ describe('meeting transcript living-context ingestion', () => {
         timestampEndMs: 2_000,
       }],
       provider: 'source-test',
+      personContextMode: 'attributed' as const,
     };
     await ingestMeetingTranscriptToLivingContext(db, {
       ...base,
@@ -927,9 +931,11 @@ describe('meeting transcript living-context ingestion', () => {
       segments: [{
         stableSegmentId: 'guest-1',
         text: 'I implemented source-preserving replay.',
+        speakerRole: 'guest',
         contactId: 'contact-1',
       }],
       provider: 'source-test',
+      personContextMode: 'attributed' as const,
     };
     await ingestMeetingTranscriptToLivingContext(db, {
       ...base,
@@ -1047,6 +1053,50 @@ describe('meeting transcript living-context ingestion', () => {
     });
   });
 
+  it('requires explicit attributed mode before contact ids can create person evidence', async () => {
+    const result = await ingestMeetingTranscriptToLivingContext(db, {
+      meetingId: 'meeting-1',
+      ownerId: 'workspace-1',
+      segments: [{
+        stableSegmentId: 'guest-1',
+        text: 'I implemented aurora queue recovery, and this segment has an unverified contact id.',
+        speakerLabel: 'Guest',
+        speakerRole: 'guest',
+        contactId: 'contact-1',
+        channel: 1,
+      }],
+      provider: 'deepgram-multichannel',
+      semanticAssertions: [{
+        sourceSegmentIds: ['guest-1'],
+        subjectSegmentId: 'guest-1',
+        predicate: 'implemented',
+        narrative: 'Implemented aurora queue recovery.',
+        concepts: [{
+          surface: 'aurora queue recovery',
+          relationship: 'mechanism named in source',
+          weight: 0.9,
+          evidenceLevel: 'implemented',
+          strength: 0.8,
+        }],
+      }],
+    });
+
+    expect(result.assertionCount).toBe(0);
+    expect(result.sourceSpanCount).toBe(1);
+    expect(count(sqlite, 'source_span_attributions')).toBe(0);
+    expect(count(sqlite, 'semantic_assertions')).toBe(0);
+    expect(count(sqlite, 'signal_evidence')).toBe(0);
+    expect(count(sqlite, 'context_records')).toBe(1);
+
+    const sourceSpan = sqlite.prepare(
+      `SELECT metadata_json FROM source_spans WHERE stable_segment_id = 'guest-1'`,
+    ).get() as { metadata_json: string };
+    expect(JSON.parse(sourceSpan.metadata_json)).toMatchObject({
+      speakerRole: 'guest',
+      channel: 1,
+    });
+  });
+
   it('regression: a previously unseen concept survives as an open concept with source-backed spans', async () => {
     // "phosphor lattice accumulator" is a deliberately unseen surface — no
     // hard-coded skill/domain alias should map or reject it. It must survive as
@@ -1095,6 +1145,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     const result = await ingestMeetingTranscriptToLivingContext(db, input);
@@ -1188,6 +1239,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -1273,6 +1325,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
@@ -1388,6 +1441,7 @@ describe('meeting transcript living-context ingestion', () => {
       provider: 'deepgram-multichannel',
       startedAt: '2026-06-13T10:00:00.000Z',
       endedAt: '2026-06-13T10:30:00.000Z',
+      personContextMode: 'attributed' as const,
     };
 
     await ingestMeetingTranscriptToLivingContext(db, input);
