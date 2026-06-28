@@ -112,6 +112,9 @@ The controlling product rule remains:
   activity log as source-backed `media_control` evidence, preserving actor,
   surface, room phase, previous state, next state, and browser-control
   provenance across both standard and Win95 room surfaces.
+- Sampled Win95 peer-cursor movements now replay from the Durable Object
+  activity log as source-backed `cursor_presence` evidence. Raw cursor moves
+  remain live-only and are explicitly marked as not persisted.
 - Browser chat sends are optimistic client submissions until the Durable Object
   acknowledges or rejects the exact message id. Client-side evidence marks
   those submissions as pending; the synced Durable Object chat activity log is

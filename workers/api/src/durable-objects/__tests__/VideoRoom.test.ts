@@ -922,6 +922,137 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('mediaControlActivityLog')).toBe(false);
   });
 
+  it('broadcasts raw cursor moves live without persisting cursor evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CURSOR',
+      payload: {
+        clientId: 'guest-client',
+        role: 'GUEST',
+        x: 0.42,
+        y: 0.61,
+        updatedAt: 1761592321000,
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        clientId: 'guest-client',
+        x: 0.42,
+        y: 0.61,
+      }),
+    }));
+    expect(storage.has('cursorActivityLog')).toBe(false);
+  });
+
+  it('records source-backed sampled cursor evidence for replay', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CURSOR',
+      payload: {
+        clientId: 'guest-client',
+        role: 'GUEST',
+        x: 0.42,
+        y: 0.61,
+        updatedAt: 1761592321000,
+        evidence: {
+          source: 'win95_cursor_presence_client_sample',
+          cursorEventSource: 'browser_win95_desktop_pointermove',
+          actor: 'guest',
+          cursorSampleId: 'cursor:guest:1761592321000:420:610',
+          sampledAtMs: 1761592321000,
+          surface: 'win95',
+          roomPhase: 'connected',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+          previousNormalizedX: null,
+          previousNormalizedY: null,
+          distanceFromPrevious: null,
+          evidenceSampling: 'presence_sample',
+          sampleIntervalMs: 15000,
+          movementThreshold: 0.03,
+          rawCursorMovesPersisted: false,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR',
+      role: 'GUEST',
+      payload: expect.objectContaining({
+        clientId: 'guest-client',
+        evidence: expect.objectContaining({
+          source: 'win95_cursor_presence_client_sample',
+          cursorSampleId: 'cursor:guest:1761592321000:420:610',
+        }),
+      }),
+    }));
+    expect(storage.get('cursorActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        cursor: expect.objectContaining({
+          clientId: 'guest-client',
+          evidence: expect.objectContaining({
+            source: 'win95_cursor_presence_client_sample',
+            cursorSampleId: 'cursor:guest:1761592321000:420:610',
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects cursor samples with source-less evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CURSOR',
+      payload: {
+        clientId: 'guest-client',
+        role: 'GUEST',
+        x: 0.42,
+        y: 0.61,
+        updatedAt: 1761592321000,
+        evidence: {
+          source: 'room_cursor_claim',
+          actor: 'guest',
+          normalizedX: 0.42,
+          normalizedY: 0.61,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CURSOR',
+    }));
+    expect(storage.has('cursorActivityLog')).toBe(false);
+  });
+
   it('stores and broadcasts shared Clippy prompts for proactive room guidance', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();

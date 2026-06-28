@@ -81,6 +81,9 @@ const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'b
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 
 interface RoomActivitySyncEnv {
   VIDEO_ROOM?: DurableObjectNamespace;
@@ -110,6 +113,10 @@ function stringOrNull(value: unknown): string | null {
 
 function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function unitNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
 }
 
 function isRoomActivityRole(value: unknown): value is RoomActivityRole {
@@ -704,6 +711,83 @@ function mediaControlActivityToSessionEvent(input: RoomActivitySyncInput, value:
   });
 }
 
+function cursorPresenceText(actor: SessionEvent['actor']): string {
+  const actorLabel = actor === 'host' ? 'Host' : 'Guest';
+  return `${actorLabel} cursor presence sampled on 95 Until Infinity desktop`;
+}
+
+function isSourceBackedCursorEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  cursorX: number,
+  cursorY: number,
+): evidence is Record<string, unknown> {
+  if (evidence === null) return false;
+  if (actor !== 'host' && actor !== 'guest') return false;
+  const normalizedX = unitNumberOrNull(evidence.normalizedX);
+  const normalizedY = unitNumberOrNull(evidence.normalizedY);
+  if (normalizedX === null || normalizedY === null) return false;
+  const previousX = evidence.previousNormalizedX;
+  const previousY = evidence.previousNormalizedY;
+  const distance = evidence.distanceFromPrevious;
+  if (previousX !== null && unitNumberOrNull(previousX) === null) return false;
+  if (previousY !== null && unitNumberOrNull(previousY) === null) return false;
+  if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
+    return false;
+  }
+  const sampledAtMs = numberOrNull(evidence.sampledAtMs);
+  const cursorSampleId = stringOrNull(evidence.cursorSampleId);
+  if (sampledAtMs === null || !Number.isInteger(sampledAtMs) || sampledAtMs < 0 || cursorSampleId === null) {
+    return false;
+  }
+  const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
+  return evidence.source === 'win95_cursor_presence_client_sample'
+    && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+    && evidence.actor === actor
+    && evidence.surface === 'win95'
+    && stringOrNull(evidence.roomPhase) !== null
+    && evidence.evidenceSampling === 'presence_sample'
+    && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+    && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+    && evidence.rawCursorMovesPersisted === false
+    && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
+    && cursorSampleId === expectedSampleId
+    && Math.abs(cursorX - normalizedX) <= 0.001
+    && Math.abs(cursorY - normalizedY) <= 0.001;
+}
+
+function cursorActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
+  if (!isRecord(value) || !isRecord(value.cursor)) return null;
+  const cursor = value.cursor;
+  const role = isRoomActivityRole(value.role)
+    ? value.role
+    : isRoomActivityRole(cursor.role)
+      ? cursor.role
+      : null;
+  if (!role) return null;
+  if (isRoomActivityRole(cursor.role) && cursor.role !== role) return null;
+  const actor = actorFromRoomRole(role);
+  if (actor !== 'host' && actor !== 'guest') return null;
+  const x = unitNumberOrNull(cursor.x);
+  const y = unitNumberOrNull(cursor.y);
+  if (x === null || y === null) return null;
+  const evidence = isRecord(cursor.evidence) ? cursor.evidence : null;
+  if (!isSourceBackedCursorEvidence(evidence, actor, x, y)) return null;
+  const properties = {
+    ...roomActivityBaseProperties('cursor_presence', role, value.recordedAt),
+    ...evidence,
+  };
+  const clientId = stringOrNull(cursor.clientId);
+  if (clientId) properties.clientId = clientId;
+  return createSessionEvent(input, {
+    type: 'cursor_presence',
+    timestamp: unixTimestampFromActivity(evidence.sampledAtMs, cursor.updatedAt ?? value.recordedAt),
+    actor,
+    text: cursorPresenceText(actor),
+    properties,
+  });
+}
+
 function isSourceBackedCodeServerFileEvidence(
   eventType: unknown,
   text: string,
@@ -1259,6 +1343,7 @@ export async function roomActivitySnapshotToSessionEvents(
   const mediaControlActivityLog = Array.isArray(snapshot.mediaControlActivityLog)
     ? snapshot.mediaControlActivityLog
     : [];
+  const cursorActivityLog = Array.isArray(snapshot.cursorActivityLog) ? snapshot.cursorActivityLog : [];
   const clippyPromptActivityLog = Array.isArray(snapshot.clippyPromptActivityLog)
     ? snapshot.clippyPromptActivityLog
     : [];
@@ -1272,6 +1357,7 @@ export async function roomActivitySnapshotToSessionEvents(
   codeServerFileActivityLog.forEach((entry) => pushMapped(codeServerFileActivityToSessionEvent(input, entry)));
   terminalActivityLog.forEach((entry) => pushMapped(terminalActivityToSessionEvent(input, entry)));
   mediaControlActivityLog.forEach((entry) => pushMapped(mediaControlActivityToSessionEvent(input, entry)));
+  cursorActivityLog.forEach((entry) => pushMapped(cursorActivityToSessionEvent(input, entry)));
   clippyPromptActivityLog.forEach((entry) => pushMapped(clippyPromptActivityToSessionEvent(input, entry)));
   clippyInteractionActivityLog.forEach((entry) => pushMapped(clippyInteractionActivityToSessionEvent(input, entry)));
   for (const entry of fileSystemActivityLog) {

@@ -185,6 +185,7 @@ export interface RoomCursorPresence {
   x: number;
   y: number;
   updatedAt: number;
+  evidence?: Record<string, unknown>;
 }
 
 export interface RoomFile {
@@ -428,7 +429,7 @@ interface RoomConnection {
   publishMediaControlEvent: (event: RoomMediaControlEventDraft) => void;
   publishCodeServerFileEvent: (event: RoomCodeServerFileEventDraft) => void;
   publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
-  publishCursorPresence: (position: { x: number; y: number }) => void;
+  publishCursorPresence: (position: { x: number; y: number }, evidence?: Record<string, unknown>) => void;
   publishFileSystemEvent: (event: RoomFileSystemEventDraft) => void;
   setRoomSurface: (surface: RoomSurface, evidence?: Record<string, unknown>) => void;
 }
@@ -982,6 +983,7 @@ function parseCursorPresence(value: unknown, role: unknown): RoomCursorPresence 
     x: Math.min(1, Math.max(0, value.x)),
     y: Math.min(1, Math.max(0, value.y)),
     updatedAt: value.updatedAt,
+    evidence: recordOrUndefined(value.evidence),
   };
 }
 
@@ -2043,16 +2045,20 @@ export function useRoomConnection(
     }
   }, [sendTerminalEvent]);
 
-  const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
-    const now = Date.now();
-    if (now - lastCursorSentAtRef.current < 90) return;
+  const publishCursorPresence = useCallback((position: { x: number; y: number }, evidence?: Record<string, unknown>): void => {
+    const sampledAtMs = numberOrUndefined(evidence?.sampledAtMs);
+    const now = sampledAtMs ?? Date.now();
+    if (!evidence && now - lastCursorSentAtRef.current < 90) return;
     lastCursorSentAtRef.current = now;
+    const x = numberOrUndefined(evidence?.normalizedX) ?? position.x;
+    const y = numberOrUndefined(evidence?.normalizedY) ?? position.y;
     const cursor: RoomCursorPresence = {
       clientId: desktopClientIdRef.current,
       role,
-      x: Math.min(1, Math.max(0, position.x)),
-      y: Math.min(1, Math.max(0, position.y)),
+      x: Math.min(1, Math.max(0, x)),
+      y: Math.min(1, Math.max(0, y)),
       updatedAt: now,
+      ...(evidence ? { evidence } : {}),
     };
     sendCursorPresence(cursor);
   }, [role, sendCursorPresence]);

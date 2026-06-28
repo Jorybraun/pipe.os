@@ -37,6 +37,9 @@ const AGENT_STATUSES = new Set(['starting', 'idle', 'thinking', 'working', 'auth
 const AGENT_STATUS_MESSAGE_SOURCES = new Set(['agent_status', 'agent_stdout', 'bridge_diagnostic', 'bridge_observation']);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
+const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
+const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
+const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
 
 interface SignalMessage {
   type:
@@ -232,6 +235,21 @@ interface RoomMediaControlState {
 
 interface RoomMediaControlActivityEntry {
   event: RoomMediaControlEvent;
+  role: VideoRole;
+  recordedAt: number;
+}
+
+interface RoomCursorPresence {
+  clientId: string;
+  role: VideoRole;
+  x: number;
+  y: number;
+  updatedAt: number;
+  evidence?: Record<string, unknown>;
+}
+
+interface RoomCursorActivityEntry {
+  cursor: RoomCursorPresence;
   role: VideoRole;
   recordedAt: number;
 }
@@ -477,6 +495,10 @@ export class VideoRoom {
 
   private optionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private isUnitNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
   }
 
   private parseDesktopWindow(value: unknown): RoomDesktopWindow | null {
@@ -1367,6 +1389,99 @@ export class VideoRoom {
     await this.state.storage.put('mediaControlActivityLog', next);
   }
 
+  private parseCursorPresence(value: unknown, fallbackRole?: VideoRole): RoomCursorPresence | null {
+    if (!this.isRecord(value)) return null;
+    const role = this.isVideoRole(value.role) ? value.role : fallbackRole;
+    if (
+      !this.isSafeFileText(value.clientId, 160)
+      || !role
+      || !this.isUnitNumber(value.x)
+      || !this.isUnitNumber(value.y)
+      || typeof value.updatedAt !== 'number'
+      || !Number.isFinite(value.updatedAt)
+      || value.updatedAt < 0
+    ) {
+      return null;
+    }
+    return {
+      clientId: value.clientId,
+      role,
+      x: value.x,
+      y: value.y,
+      updatedAt: value.updatedAt,
+      evidence: this.isRecord(value.evidence) ? value.evidence : undefined,
+    };
+  }
+
+  private hasSourceBackedCursorEvidence(cursor: RoomCursorPresence, role: VideoRole): boolean {
+    const evidence = cursor.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    const normalizedX = this.isUnitNumber(evidence.normalizedX) ? evidence.normalizedX : null;
+    const normalizedY = this.isUnitNumber(evidence.normalizedY) ? evidence.normalizedY : null;
+    const previousX = evidence.previousNormalizedX;
+    const previousY = evidence.previousNormalizedY;
+    const distance = evidence.distanceFromPrevious;
+    const sampledAtMs = evidence.sampledAtMs;
+    const cursorSampleId = evidence.cursorSampleId;
+    if (normalizedX === null || normalizedY === null) return false;
+    if (previousX !== null && !this.isUnitNumber(previousX)) return false;
+    if (previousY !== null && !this.isUnitNumber(previousY)) return false;
+    if (distance !== null && (typeof distance !== 'number' || !Number.isFinite(distance) || distance < 0)) {
+      return false;
+    }
+    if (typeof sampledAtMs !== 'number' || !Number.isInteger(sampledAtMs) || sampledAtMs < 0) {
+      return false;
+    }
+    const expectedSampleId = `cursor:${actor}:${sampledAtMs}:${Math.round(normalizedX * 1000)}:${Math.round(normalizedY * 1000)}`;
+    return cursor.role === role
+      && evidence.source === 'win95_cursor_presence_client_sample'
+      && evidence.cursorEventSource === 'browser_win95_desktop_pointermove'
+      && evidence.actor === actor
+      && evidence.surface === 'win95'
+      && typeof evidence.roomPhase === 'string'
+      && evidence.roomPhase.length > 0
+      && evidence.evidenceSampling === 'presence_sample'
+      && evidence.sampleIntervalMs === CURSOR_PRESENCE_SAMPLE_INTERVAL_MS
+      && evidence.movementThreshold === CURSOR_PRESENCE_MOVEMENT_THRESHOLD
+      && evidence.rawCursorMovesPersisted === false
+      && typeof cursorSampleId === 'string'
+      && CURSOR_SAMPLE_ID_RE.test(cursorSampleId)
+      && cursorSampleId === expectedSampleId
+      && Math.abs(cursor.x - normalizedX) <= 0.001
+      && Math.abs(cursor.y - normalizedY) <= 0.001;
+  }
+
+  private parseCursorActivityEntry(value: unknown): RoomCursorActivityEntry | null {
+    if (!this.isRecord(value)) return null;
+    const cursor = this.parseCursorPresence(value.cursor);
+    if (
+      cursor === null
+      || !this.isVideoRole(value.role)
+      || typeof value.recordedAt !== 'number'
+      || !Number.isFinite(value.recordedAt)
+    ) {
+      return null;
+    }
+    return { cursor, role: value.role, recordedAt: value.recordedAt };
+  }
+
+  private parseCursorActivityLog(value: unknown): RoomCursorActivityEntry[] {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => this.parseCursorActivityEntry(entry))
+      .filter((entry): entry is RoomCursorActivityEntry => entry !== null);
+  }
+
+  private async recordCursorActivity(cursor: RoomCursorPresence, role: VideoRole): Promise<void> {
+    const previous = this.parseCursorActivityLog(await this.state.storage.get<unknown>('cursorActivityLog'));
+    const next = [
+      ...previous.slice(-249),
+      { cursor, role, recordedAt: Date.now() },
+    ];
+    await this.state.storage.put('cursorActivityLog', next);
+  }
+
   private parseChatActivityEntry(value: unknown): RoomChatActivityEntry | null {
     if (!this.isRecord(value)) return null;
     const message = this.parseChatMessage(value.message);
@@ -2122,6 +2237,9 @@ export class VideoRoom {
         mediaControlActivityLog: this.parseMediaControlActivityLog(
           await this.state.storage.get<unknown>('mediaControlActivityLog'),
         ),
+        cursorActivityLog: this.parseCursorActivityLog(
+          await this.state.storage.get<unknown>('cursorActivityLog'),
+        ),
         fileSystemActivityLog: this.parseFileSystemActivityLog(
           await this.state.storage.get<unknown>('fileSystemActivityLog'),
         ),
@@ -2583,6 +2701,50 @@ export class VideoRoom {
         type: 'ROOM_FILE_SYSTEM_EVENT',
         role: senderRole,
         payload: enrichedEvent,
+      }));
+      return;
+    }
+
+    if (message.type === 'ROOM_CURSOR') {
+      if (this.sessionStatus === 'ENDED') {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CURSOR_REJECTED',
+          reason: 'ROOM_ENDED',
+        }));
+        return;
+      }
+      const cursor = this.parseCursorPresence(message.payload, senderRole);
+      if (!cursor || cursor.role !== senderRole) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_CURSOR_REJECTED',
+          reason: 'INVALID_CURSOR',
+        }));
+        return;
+      }
+      if (cursor.evidence) {
+        if (!this.hasSourceBackedCursorEvidence(cursor, senderRole)) {
+          ws.send(JSON.stringify({
+            type: 'ROOM_CURSOR_REJECTED',
+            reason: 'MISSING_SOURCE_EVIDENCE',
+          }));
+          return;
+        }
+        await this.recordCursorActivity(cursor, senderRole);
+      }
+      const payloadHadRole = this.isRecord(message.payload) && this.isVideoRole(message.payload.role);
+      const cursorPayload = payloadHadRole
+        ? cursor
+        : {
+            clientId: cursor.clientId,
+            x: cursor.x,
+            y: cursor.y,
+            updatedAt: cursor.updatedAt,
+            ...(cursor.evidence ? { evidence: cursor.evidence } : {}),
+          };
+      this.broadcastExcept(ws, JSON.stringify({
+        type: 'ROOM_CURSOR',
+        role: senderRole,
+        payload: cursorPayload,
       }));
       return;
     }
