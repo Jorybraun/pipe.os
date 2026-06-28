@@ -2991,10 +2991,13 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 
   // For assessment-type interviews, the candidate should land on the assess URL
   // (which renders the code review / dev container challenge), not the video room.
-  const deliveredUrl = schedulingInviteUrl ?? (assessUrl ?? meetingUrl);
-  const inviteVerb = schedulingInviteUrl ? 'schedule an interview' : needsAssessmentLink ? 'start your assessment' : 'join a video call';
-  const inviteCta = schedulingInviteUrl ? 'SCHEDULE INTERVIEW' : needsAssessmentLink ? 'START ASSESSMENT' : 'JOIN VIDEO CALL';
-  const linkLabel = schedulingInviteUrl ? 'Scheduling link' : 'Link';
+  // Assessment links also take precedence over any stale scheduling URL that may
+  // exist on the row from earlier flows.
+  const effectiveSchedulingInviteUrl = needsAssessmentLink ? null : schedulingInviteUrl;
+  const deliveredUrl = assessUrl ?? effectiveSchedulingInviteUrl ?? meetingUrl;
+  const inviteVerb = needsAssessmentLink ? 'start your assessment' : effectiveSchedulingInviteUrl ? 'schedule an interview' : 'join a video call';
+  const inviteCta = needsAssessmentLink ? 'START ASSESSMENT' : effectiveSchedulingInviteUrl ? 'SCHEDULE INTERVIEW' : 'JOIN VIDEO CALL';
+  const linkLabel = effectiveSchedulingInviteUrl ? 'Scheduling link' : 'Link';
 
   const scheduledTime = interview.scheduled_at
     ? new Date(interview.scheduled_at).toLocaleString('en-US', {
@@ -3047,7 +3050,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
 </div>`;
 
   const rawPipelineTitle = interview.pipeline_title ?? 'Interview';
-  const subjectPrefix = schedulingInviteUrl
+  const subjectPrefix = effectiveSchedulingInviteUrl
     ? 'Schedule interview'
     : needsAssessmentLink
       ? 'Assessment invitation'
@@ -3084,7 +3087,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3133,7 +3136,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       emailSent: false,
       emailError,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3172,7 +3175,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
       success: true,
       emailSent: false,
       meetingUrl,
-      schedulingUrl: schedulingInviteUrl,
+      schedulingUrl: effectiveSchedulingInviteUrl,
       deliveredUrl,
       room: {
         id: roomLinks.roomId,
@@ -3215,7 +3218,7 @@ schedulingAuth.post('/interviews/:id/invite', async (c) => {
     success: true,
     emailSent: true,
     meetingUrl,
-    schedulingUrl: schedulingInviteUrl,
+    schedulingUrl: effectiveSchedulingInviteUrl,
     deliveredUrl,
     provider: result.provider,
     room: {

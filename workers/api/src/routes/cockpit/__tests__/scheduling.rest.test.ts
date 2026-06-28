@@ -1907,7 +1907,7 @@ describe('GET /interviews/:id detail', () => {
     ]));
   });
 
-  it('sends Calendly scheduling URL while still preparing the room link', async () => {
+  it('sends Calendly scheduling URL for live interviews while still preparing the room link', async () => {
     seedInterviewDetailFixture();
     const sentMessages: Array<{
       to: unknown;
@@ -1925,7 +1925,7 @@ describe('GET /interviews/:id detail', () => {
       OUTBOUND_EMAIL_FROM: 'no-reply@hire-pipe.com',
     } as Partial<Env>);
 
-    const schedulingUrl = 'https://calendly.com/pipe/code-review';
+    const schedulingUrl = 'https://calendly.com/pipe/video';
     const createResponse = await app.request('/interviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1933,7 +1933,7 @@ describe('GET /interviews/:id detail', () => {
         recipientName: 'Grace Hopper',
         recipientEmail: 'grace@example.com',
         meetingType: 'DIRECT_VIDEO_CALL',
-        interviewType: 'CODE_REVIEW',
+        interviewType: 'VIDEO',
         schedulingProvider: 'CALENDLY',
         schedulingUrl,
       }),
@@ -2014,6 +2014,89 @@ describe('GET /interviews/:id detail', () => {
       'Email sent: yes',
       'Provider message id: cf-calendly-message-1',
     ]));
+  });
+
+  it('delivers assessment URL for CODE_REVIEW even when a stale scheduling URL exists', async () => {
+    seedInterviewDetailFixture();
+    const app = mountSchedulingApp();
+
+    const schedulingUrl = 'https://calendly.com/pipe/stale-code-review';
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Frances Allen',
+        recipientEmail: 'frances@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'CODE_REVIEW',
+        schedulingProvider: 'CALENDLY',
+        schedulingUrl,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string };
+    };
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'frances@example.com', sendEmail: false }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      meetingUrl: string;
+      schedulingUrl: string | null;
+      deliveredUrl: string;
+    };
+
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: false,
+      schedulingUrl: null,
+    });
+    expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
+    expect(inviteBody.deliveredUrl).not.toBe(schedulingUrl);
+    expect(inviteBody.deliveredUrl).not.toContain('/room/');
+    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+
+    const scheduledRow = sqlite!.prepare(
+      `SELECT meeting_url, scheduling_provider, scheduling_url
+         FROM scheduled_interviews
+        WHERE id = ?`,
+    ).get(created.interview.id) as {
+      meeting_url: string | null;
+      scheduling_provider: string | null;
+      scheduling_url: string | null;
+    };
+    expect(scheduledRow).toMatchObject({
+      meeting_url: inviteBody.meetingUrl,
+      scheduling_provider: 'CALENDLY',
+      scheduling_url: schedulingUrl,
+    });
+
+    const deliverySource = sqlite!.prepare(
+      `SELECT ss.exact_text
+         FROM people p
+         JOIN workspace_people wp ON wp.person_id = p.id
+         JOIN context_records cr ON cr.workspace_person_id = wp.id
+         JOIN context_record_source_spans crss ON crss.context_record_id = cr.id
+         JOIN source_spans ss ON ss.id = crss.source_span_id
+        WHERE p.primary_email = ?
+          AND cr.record_type = 'scheduled_interview_invite_delivery'
+        LIMIT 1`,
+    ).get('frances@example.com') as { exact_text: string } | undefined;
+    expect(deliverySource?.exact_text.split('\n')).toEqual(expect.arrayContaining([
+      'Recipient email: frances@example.com',
+      'Subject: Assessment invitation — Interview',
+      `Delivered URL: ${inviteBody.deliveredUrl}`,
+      `Room URL: ${inviteBody.meetingUrl}`,
+      'Email sent: no',
+      'Provider message id: none',
+    ]));
+    expect(deliverySource?.exact_text).not.toContain(schedulingUrl);
   });
 
   it('does not poll Calendly bookings during sync; webhooks are the source of truth', async () => {
@@ -2526,6 +2609,59 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
         created_at TEXT,
         updated_at TEXT
       );
+      CREATE TABLE meetings (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        scheduled_interview_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        scheduled_at TEXT,
+        started_at TEXT,
+        ended_at TEXT,
+        duration_secs INTEGER,
+        meeting_url TEXT,
+        meeting_type TEXT NOT NULL,
+        scheduling_provider TEXT,
+        external_event_id TEXT,
+        transcript_status TEXT DEFAULT 'NONE',
+        transcript_summary TEXT,
+        transcript_json TEXT,
+        transcript_analysis_json TEXT,
+        transcript_error TEXT,
+        recording_r2_key TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meeting_rooms (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        session_id TEXT,
+        status TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      );
+      CREATE TABLE meeting_participants (
+        id TEXT PRIMARY KEY,
+        meeting_id TEXT NOT NULL,
+        contact_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'ATTENDEE',
+        invite_sent_at TEXT,
+        joined_at TEXT,
+        left_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE meeting_room_tokens (
+        id TEXT PRIMARY KEY,
+        room_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        role TEXT NOT NULL,
+        participant_id TEXT,
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL
+      );
     `);
     sqlite.exec(livingContextMigration);
     sqlite.exec(transcriptProjectionMigration);
@@ -2662,6 +2798,71 @@ describe('POST /interviews dev-container challenge (HAS-80)', () => {
     expect(row.candidate_id).toBeNull();
     expect(row.recipient_name).toBe('Margaret Hamilton');
     expect(row.recipient_email).toBe('margaret@example.com');
+  });
+
+  it('delivers OPEN_SOURCE_BUG_FIX invites to the assessment surface when a repo task is assigned', async () => {
+    seedDevContainerFixture();
+    const app = mountSchedulingApp();
+
+    const createResponse = await app.request('/interviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Katherine Johnson',
+        recipientEmail: 'katherine@example.com',
+        meetingType: 'DIRECT_VIDEO_CALL',
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        githubRepoUrl: 'https://github.com/hash-pipe/open-source-task',
+        githubPrNumber: 101,
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+    const created = await createResponse.json() as {
+      interview: { id: string; candidateId: string | null };
+    };
+    expect(created.interview.candidateId).toBeNull();
+
+    const inviteResponse = await app.request(`/interviews/${created.interview.id}/invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'katherine@example.com', sendEmail: false }),
+    });
+    expect(inviteResponse.status).toBe(200);
+    const inviteBody = await inviteResponse.json() as {
+      success: boolean;
+      emailSent: boolean;
+      meetingUrl: string;
+      deliveredUrl: string;
+    };
+
+    expect(inviteBody).toMatchObject({
+      success: true,
+      emailSent: false,
+    });
+    expect(inviteBody.deliveredUrl).toMatch(/^http:\/\/localhost:5173\/assess\/.+/);
+    expect(inviteBody.deliveredUrl).not.toContain('/room/');
+    expect(inviteBody.meetingUrl).toMatch(/^http:\/\/localhost:5175\/room\/.+/);
+
+    const row = sqlite!.prepare(
+      `SELECT si.interview_type, si.candidate_id, si.github_repo_url, si.github_pr_number, c.invite_token
+         FROM scheduled_interviews si
+         JOIN candidates c ON c.id = si.candidate_id
+        WHERE si.id = ?`,
+    ).get(created.interview.id) as {
+      interview_type: string;
+      candidate_id: string | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+      invite_token: string | null;
+    };
+    expect(row).toMatchObject({
+      interview_type: 'OPEN_SOURCE_BUG_FIX',
+      github_repo_url: 'https://github.com/hash-pipe/open-source-task',
+      github_pr_number: 101,
+    });
+    expect(row.candidate_id).toEqual(expect.any(String));
+    expect(row.invite_token).not.toMatch(/^CLAIMED::/);
+    expect(inviteBody.deliveredUrl).toContain(`/assess/${row.invite_token}`);
   });
 
   it('rejects CODE_REVIEW with partial manual repo (url without PR number)', async () => {
