@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy-opened Win95 tool windows now persist `window_open` lifecycle evidence with `lifecycleSource: clippy_action` instead of misattributing those opens to direct desktop UI clicks.
 - Clippy’s Devin login terminal button now records `open-devin-auth-terminal` evidence instead of the generic `open-terminal` action id.
 - Clippy’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
 - Room Chat’s paperclip launcher now records `clippy_chat_ui` provenance instead of misattributing the Clippy open action to the Win95 taskbar tray.

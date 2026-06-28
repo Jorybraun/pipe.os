@@ -50,6 +50,7 @@ import {
   buildWindowDataUpdateEvidence,
   buildWindowLifecycleEvidence,
   buildWindowStateUpdateEvidence,
+  type WindowLifecycleSource,
 } from './lib/windowEvidence';
 import {
   buildCursorPresenceEvidence,
@@ -640,7 +641,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [enteredRoom, room.fileSystem, wm.updateWindowData, wm.windows]);
 
-  const openSharedWindow = useCallback((config: OpenWindowConfig & { id: string }): void => {
+  const openSharedWindow = useCallback((
+    config: OpenWindowConfig & { id: string },
+    lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui',
+  ): void => {
     wm.openWindow(config);
     const capturedAtMs = Date.now();
     const evidence = buildWindowLifecycleEvidence({
@@ -649,7 +653,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       windowId: config.id,
       windowType: config.windowType,
       windowTitle: config.title,
-      source: 'win95_desktop_ui',
+      source: lifecycleSource,
       surface: room.roomSurface,
       roomPhase: room.phase,
       capturedAtMs,
@@ -1581,7 +1585,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     captureSessionEvent('cursor_presence', evidence.text, roomActor, evidence.properties);
   }, [captureSessionEvent, room, roomActor]);
 
-  const openWorkspaceWindow = (): void => {
+  const openWorkspaceWindow = (lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui'): void => {
     if (!showWorkspacePanel) return;
     openSharedWindow({
       id: 'workspace',
@@ -1591,10 +1595,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 80,
       width: 800,
       height: 500,
-    });
+    }, lifecycleSource);
   };
 
-  const openBrowserWindow = (url = ''): void => {
+  const openBrowserWindow = (
+    url = '',
+    lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui',
+  ): void => {
     const currentUrl = url ? normalizeBrowserNavigationUrl(url) ?? '' : '';
     openSharedWindow({
       id: 'browser',
@@ -1605,7 +1612,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       width: 800,
       height: 560,
       data: { currentUrl },
-    });
+    }, lifecycleSource);
     if (currentUrl) {
       const evidence = buildBrowserNavigationEvidence({
         actor: roomActor,
@@ -1622,7 +1629,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   };
 
-  const openTerminalWindow = (): void => {
+  const openTerminalWindow = (lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui'): void => {
     openSharedWindow({
       id: 'terminal',
       windowType: 'terminal',
@@ -1631,10 +1638,10 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 80,
       width: 640,
       height: 400,
-    });
+    }, lifecycleSource);
   };
 
-  const openFilesWindow = (): void => {
+  const openFilesWindow = (lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui'): void => {
     openSharedWindow({
       id: 'tasks',
       windowType: 'tasks',
@@ -1643,10 +1650,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       y: 120,
       width: 520,
       height: 420,
-    });
+    }, lifecycleSource);
   };
 
-  const openNotepadWindow = (text?: string): void => {
+  const openNotepadWindow = (
+    text?: string,
+    lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui',
+  ): void => {
     const file = findRoomFile(room.fileSystem, NOTEPAD_FILE_ID);
     openSharedWindow({
       id: 'notepad',
@@ -1657,10 +1667,13 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       width: 520,
       height: 420,
       data: { text: text ?? file?.content ?? '' },
-    });
+    }, lifecycleSource);
   };
 
-  const openPaintWindow = (strokes?: PaintCanvasItem[]): void => {
+  const openPaintWindow = (
+    strokes?: PaintCanvasItem[],
+    lifecycleSource: WindowLifecycleSource = 'win95_desktop_ui',
+  ): void => {
     const file = findRoomFile(room.fileSystem, PAINT_FILE_ID);
     openSharedWindow({
       id: 'paint',
@@ -1671,7 +1684,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       width: 640,
       height: 480,
       data: { strokes: strokes ?? (file ? parsePaintFileContent(file.content) : []) },
-    });
+    }, lifecycleSource);
   };
 
   const saveNotepadText = (text: string): void => {
@@ -1793,32 +1806,32 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         break;
       case 'launch-workspace':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: launch workspace`, actionEvidence)) return;
-        openWorkspaceWindow();
+        openWorkspaceWindow('clippy_action');
         void launchWorkspace();
         break;
       case 'open-workspace':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open workspace`, actionEvidence)) return;
-        openWorkspaceWindow();
+        openWorkspaceWindow('clippy_action');
         break;
       case 'open-terminal':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open terminal`, actionEvidence)) return;
-        openTerminalWindow();
+        openTerminalWindow('clippy_action');
         break;
       case 'open-browser':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open browser`, actionEvidence)) return;
-        openBrowserWindow(options.url ?? '');
+        openBrowserWindow(options.url ?? '', 'clippy_action');
         break;
       case 'open-files':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open files`, actionEvidence)) return;
-        openFilesWindow();
+        openFilesWindow('clippy_action');
         break;
       case 'open-notepad':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open notepad`, actionEvidence)) return;
-        openNotepadWindow();
+        openNotepadWindow(undefined, 'clippy_action');
         break;
       case 'open-paint':
         if (!captureClippyAction(actionId, `${source === 'agent' ? 'Agent' : 'Clippy'} action: open paint`, actionEvidence)) return;
-        openPaintWindow();
+        openPaintWindow(undefined, 'clippy_action');
         break;
       default:
         break;
@@ -1831,7 +1844,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       'Clippy action: open terminal for Devin authentication',
       { origin: 'prompt' },
     )) return;
-    openTerminalWindow();
+    openTerminalWindow('clippy_action');
     queuedTerminalCommandRequestRef.current += 1;
     setQueuedTerminalCommand(DEVIN_AUTH_TERMINAL_COMMAND);
     setQueuedTerminalCommandRequest(queuedTerminalCommandRequestRef.current);

@@ -62,6 +62,32 @@ describe('window evidence', () => {
     });
   });
 
+  it('preserves Clippy as the initiator when an action opens a shared Win95 window', () => {
+    expect(buildWindowLifecycleEvidence({
+      kind: 'open',
+      actor: 'host',
+      windowId: 'terminal',
+      windowType: 'terminal',
+      windowTitle: 'Container terminal',
+      source: 'clippy_action',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 2500,
+    })).toMatchObject({
+      text: 'Container terminal',
+      properties: {
+        source: 'window_lifecycle_client_submit',
+        lifecycleKind: 'open',
+        lifecycleSource: 'clippy_action',
+        windowLifecycleId: 'window-lifecycle:host:2500:open:terminal',
+        actor: 'host',
+        windowId: 'terminal',
+        windowType: 'terminal',
+        windowTitle: 'Container terminal',
+      },
+    });
+  });
+
   it('builds direct source-backed evidence for Win95 window movement', () => {
     expect(buildWindowStateUpdateEvidence({
       actor: 'guest',

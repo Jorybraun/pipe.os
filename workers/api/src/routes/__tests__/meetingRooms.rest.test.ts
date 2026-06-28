@@ -1072,7 +1072,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_desktop_ui',
+          lifecycleSource: 'clippy_action',
           lifecycleKind: 'open',
           actor: 'guest',
           windowId: 'browser',
@@ -1095,7 +1095,7 @@ describe('meeting room recording living-context route', () => {
         actor: 'guest',
         properties: {
           source: 'window_lifecycle_client_submit',
-          lifecycleSource: 'win95_desktop_ui',
+          lifecycleSource: 'clippy_action',
           lifecycleKind: 'open',
           windowLifecycleId: 'window-lifecycle:guest:1782601200000:open:browser',
           capturedAtMs: 1782601200000,
@@ -1159,6 +1159,7 @@ describe('meeting room recording living-context route', () => {
       actor: 'guest',
       sessionId: node?.source_reference,
       windowId: 'browser',
+      lifecycleSource: 'clippy_action',
       surface: 'win95',
     });
 
@@ -1231,6 +1232,7 @@ describe('meeting room recording living-context route', () => {
       properties: {
         actor: 'guest',
         windowId: 'browser',
+        lifecycleSource: 'clippy_action',
         surface: 'win95',
       },
       candidateNodeId: node?.id,
