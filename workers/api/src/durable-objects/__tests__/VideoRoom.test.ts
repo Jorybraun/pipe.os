@@ -542,8 +542,31 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 42,
         role: 'HOST',
         text: 'Can you see this message?',
+        deliveryStatus: 'pending',
+        evidence: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'host',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
       },
     }));
+
+    const acceptedEvidence = {
+      source: 'room_chat_client_submit',
+      chatEventSource: 'browser_room_chat_window',
+      actor: 'host',
+      roomMessageId: 'chat-1',
+      clientId: 'host-client',
+      messageCreatedAt: 42,
+      messageLength: 'Can you see this message?'.length,
+      deliveryStatus: 'accepted',
+      surface: 'win95',
+      roomPhase: 'connected',
+      durableObjectReplayExpected: true,
+    };
 
     expect(storage.get('chatMessages')).toEqual([
       {
@@ -552,6 +575,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 42,
         role: 'HOST',
         text: 'Can you see this message?',
+        deliveryStatus: 'accepted',
+        evidence: acceptedEvidence,
       },
     ]);
     expect(parseSent(guest)).toContainEqual(expect.objectContaining({
@@ -561,6 +586,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         id: 'chat-1',
         role: 'HOST',
         text: 'Can you see this message?',
+        deliveryStatus: 'accepted',
+        evidence: acceptedEvidence,
       }),
     }));
     expect(parseSent(host)).toContainEqual(expect.objectContaining({
@@ -570,6 +597,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         id: 'chat-1',
         role: 'HOST',
         text: 'Can you see this message?',
+        deliveryStatus: 'accepted',
+        evidence: acceptedEvidence,
       }),
     }));
     expect(storage.get('chatActivityLog')).toEqual([
@@ -578,6 +607,8 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         message: expect.objectContaining({
           id: 'chat-1',
           text: 'Can you see this message?',
+          deliveryStatus: 'accepted',
+          evidence: acceptedEvidence,
         }),
       }),
     ]);
@@ -859,6 +890,15 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 2000,
         role: 'GUEST',
         text: 'I found the retry bug in the queue worker.',
+        deliveryStatus: 'pending',
+        evidence: {
+          source: 'room_chat_client_submit',
+          chatEventSource: 'browser_room_chat_window',
+          actor: 'guest',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
       },
     }));
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
@@ -918,6 +958,17 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         message: expect.objectContaining({
           id: 'chat-guest-question',
           text: 'I found the retry bug in the queue worker.',
+          deliveryStatus: 'accepted',
+          evidence: expect.objectContaining({
+            source: 'room_chat_client_submit',
+            chatEventSource: 'browser_room_chat_window',
+            actor: 'guest',
+            roomMessageId: 'chat-guest-question',
+            clientId: 'guest-client',
+            deliveryStatus: 'accepted',
+            surface: 'win95',
+            roomPhase: 'connected',
+          }),
         }),
       }),
     ]);

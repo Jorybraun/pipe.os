@@ -370,6 +370,8 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
 function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.message)) return null;
   const message = value.message;
+  const evidence = isRecord(message.evidence) ? message.evidence : null;
+  if (!evidence) return null;
   const role = isRoomActivityRole(value.role)
     ? value.role
     : isRoomActivityRole(message.role)
@@ -377,11 +379,19 @@ function chatActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown
       : null;
   const text = stringOrNull(message.text);
   if (!text) return null;
-  const properties = roomActivityBaseProperties('chat', role, value.recordedAt);
+  const properties = {
+    ...roomActivityBaseProperties('chat', role, value.recordedAt),
+    ...evidence,
+  };
   const messageId = stringOrNull(message.id);
   const clientId = stringOrNull(message.clientId);
   if (messageId) properties.roomMessageId = messageId;
   if (clientId) properties.clientId = clientId;
+  properties.messageCreatedAt = numberOrNull(message.createdAt) ?? properties.messageCreatedAt;
+  properties.messageLength = text.length;
+  if (message.deliveryStatus === 'pending' || message.deliveryStatus === 'accepted' || message.deliveryStatus === 'rejected') {
+    properties.deliveryStatus = message.deliveryStatus;
+  }
   return createSessionEvent(input, {
     type: 'chat_message',
     timestamp: unixTimestampFromActivity(message.createdAt, value.recordedAt),

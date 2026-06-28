@@ -200,6 +200,8 @@ interface RoomChatMessage {
   createdAt: number;
   role: VideoRole;
   text: string;
+  deliveryStatus?: 'pending' | 'accepted' | 'rejected';
+  evidence?: Record<string, unknown>;
 }
 
 interface RoomChatActivityEntry {
@@ -642,12 +644,65 @@ export class VideoRoom {
     ) {
       return null;
     }
+    const deliveryStatus = this.parseChatDeliveryStatus(value.deliveryStatus);
     return {
       id: value.id,
       clientId: value.clientId,
       createdAt: value.createdAt,
       role: value.role,
       text: value.text.trim(),
+      deliveryStatus: deliveryStatus ?? undefined,
+      evidence: this.parseChatEvidence(value.evidence),
+    };
+  }
+
+  private parseChatDeliveryStatus(value: unknown): 'pending' | 'accepted' | 'rejected' | null {
+    return value === 'pending' || value === 'accepted' || value === 'rejected'
+      ? value
+      : null;
+  }
+
+  private parseChatEvidence(value: unknown): Record<string, unknown> | undefined {
+    if (!this.isRecord(value)) return undefined;
+    const evidence: Record<string, unknown> = {};
+    const source = this.safeTextOrNull(value.source, 80);
+    const chatEventSource = this.safeTextOrNull(value.chatEventSource, 120);
+    const actor = value.actor === 'host' || value.actor === 'guest' ? value.actor : undefined;
+    const surface = value.surface === 'standard' || value.surface === 'win95' ? value.surface : undefined;
+    const roomPhase = this.safeTextOrNull(value.roomPhase, 80);
+    const deliveryStatus = this.parseChatDeliveryStatus(value.deliveryStatus);
+    const roomMessageId = this.safeTextOrNull(value.roomMessageId, 120);
+    const clientId = this.safeTextOrNull(value.clientId, 120);
+    if (typeof source === 'string') evidence.source = source;
+    if (typeof chatEventSource === 'string') evidence.chatEventSource = chatEventSource;
+    if (actor) evidence.actor = actor;
+    if (typeof roomMessageId === 'string') evidence.roomMessageId = roomMessageId;
+    if (typeof clientId === 'string') evidence.clientId = clientId;
+    if (typeof value.messageCreatedAt === 'number' && Number.isFinite(value.messageCreatedAt)) {
+      evidence.messageCreatedAt = value.messageCreatedAt;
+    }
+    if (typeof value.messageLength === 'number' && Number.isFinite(value.messageLength)) {
+      evidence.messageLength = value.messageLength;
+    }
+    if (deliveryStatus) evidence.deliveryStatus = deliveryStatus;
+    if (surface) evidence.surface = surface;
+    if (typeof roomPhase === 'string') evidence.roomPhase = roomPhase;
+    if (typeof value.durableObjectReplayExpected === 'boolean') {
+      evidence.durableObjectReplayExpected = value.durableObjectReplayExpected;
+    }
+    return Object.keys(evidence).length > 0 ? evidence : undefined;
+  }
+
+  private acceptedChatEvidence(message: RoomChatMessage, role: VideoRole): Record<string, unknown> | undefined {
+    if (!message.evidence) return undefined;
+    return {
+      ...message.evidence,
+      actor: this.isHostRole(role) ? 'host' : 'guest',
+      roomMessageId: message.id,
+      clientId: message.clientId,
+      messageCreatedAt: message.createdAt,
+      messageLength: message.text.length,
+      deliveryStatus: 'accepted',
     };
   }
 
@@ -1358,7 +1413,12 @@ export class VideoRoom {
         }));
         return;
       }
-      const persistedMessage = { ...chatMessage, role: senderRole };
+      const persistedMessage = {
+        ...chatMessage,
+        role: senderRole,
+        deliveryStatus: 'accepted' as const,
+        evidence: this.acceptedChatEvidence(chatMessage, senderRole),
+      };
       await this.persistChatMessage(persistedMessage, senderRole);
       await this.recordChatActivity(persistedMessage, senderRole);
       ws.send(JSON.stringify({

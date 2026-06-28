@@ -14,9 +14,11 @@ export function buildRoomChatEvidence(input: {
   surface: RoomSurface;
   roomPhase: RoomPhase;
 }): RoomChatEvidence {
+  const sourceEvidence = input.message.evidence ?? {};
   return {
     text: input.message.text,
     properties: {
+      ...sourceEvidence,
       source: 'room_chat_client_submit',
       chatEventSource: 'browser_room_chat_window',
       actor: input.actor,

@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Win95 shared cursor presence now records sampled source-backed `cursor_presence` evidence instead of keeping the mouse layer as live-only state.
 - Win95 shared cursor presence now renders peer cursors relative to the desktop overlay instead of viewport units, preventing host/guest pointer trails from drifting across nested room surfaces.
 - Room Chat now exposes a Win95 paperclip launcher for the existing real Clippy/Devin panel without rerouting human chat or fabricating assistant replies.
+- Durable room-chat replay now preserves accepted delivery status and browser-source provenance before projecting chat into meeting-session evidence.
 - Video room microphone/camera toggles now persist as validated source-backed `media_control` evidence with surface and room phase metadata.
 - Win95 Notepad/Paint saves and deletes now submit validated source-backed `file_change` evidence immediately with file identity, content hashes, and delete snapshots.
 - Microsoft Edge navigation now submits validated source-backed `browser_navigation` evidence with normalized URL, trigger, host, surface, and room phase metadata.

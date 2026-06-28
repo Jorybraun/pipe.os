@@ -79,6 +79,7 @@ export interface RoomChatMessage {
   role: RoomRole;
   text: string;
   deliveryStatus?: 'pending' | 'accepted' | 'rejected';
+  evidence?: Record<string, unknown>;
 }
 
 export interface RoomCursorPresence {
@@ -626,13 +627,19 @@ function parseChatMessage(value: unknown): RoomChatMessage | null {
   ) {
     return null;
   }
+  const deliveryStatus = value.deliveryStatus === 'pending'
+    || value.deliveryStatus === 'accepted'
+    || value.deliveryStatus === 'rejected'
+    ? value.deliveryStatus
+    : 'accepted';
   return {
     id: value.id,
     clientId: value.clientId,
     createdAt: value.createdAt,
     role: value.role,
     text: value.text,
-    deliveryStatus: 'accepted',
+    deliveryStatus,
+    evidence: isRecord(value.evidence) ? value.evidence : undefined,
   };
 }
 
@@ -1521,13 +1528,23 @@ export function useRoomConnection(
       role,
       text: trimmed,
       deliveryStatus: 'pending',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        actor: role === 'HOST' ? 'host' : 'guest',
+        messageLength: trimmed.length,
+        deliveryStatus: 'pending',
+        surface: roomSurface,
+        roomPhase: phaseRef.current,
+        durableObjectReplayExpected: true,
+      },
     };
     setChatMessages((prev) => mergeRoomChatMessage(prev, message));
     if (!sendChatMessage(message)) {
       chatOutboxRef.current.push(message);
     }
     return message;
-  }, [role, sendChatMessage]);
+  }, [role, roomSurface, sendChatMessage]);
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }): void => {
     const now = Date.now();

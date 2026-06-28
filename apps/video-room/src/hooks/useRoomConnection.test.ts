@@ -73,11 +73,22 @@ describe('mergeRoomChatMessage', () => {
       role: 'HOST',
       text: 'Can you see this?',
       deliveryStatus: 'pending',
+      evidence: {
+        source: 'room_chat_client_submit',
+        chatEventSource: 'browser_room_chat_window',
+        deliveryStatus: 'pending',
+        surface: 'win95',
+        roomPhase: 'connected',
+      },
     };
 
     const accepted: RoomChatMessage = {
       ...pending,
       deliveryStatus: 'accepted',
+      evidence: {
+        ...pending.evidence,
+        deliveryStatus: 'accepted',
+      },
     };
 
     expect(mergeRoomChatMessage([pending], accepted)).toEqual([accepted]);
