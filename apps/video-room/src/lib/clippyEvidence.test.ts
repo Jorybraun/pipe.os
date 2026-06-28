@@ -198,6 +198,7 @@ describe('clippy evidence', () => {
         workspaceStatus: 'READY',
         workspaceSessionId: 'workspace-123',
         messageTimestamp: 1782603900000,
+        agentResponseClaimed: true,
       },
     });
   });

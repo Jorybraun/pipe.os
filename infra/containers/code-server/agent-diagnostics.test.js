@@ -180,6 +180,7 @@ describe('agent diagnostics', () => {
         source: 'clippy_agent_bridge',
         agent: 'devin',
         bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
         observedAt: '2026-06-27T21:05:00.000Z',
         actionCount: 1,
         bridgePersisted: true,

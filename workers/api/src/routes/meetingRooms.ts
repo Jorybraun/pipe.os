@@ -635,14 +635,25 @@ const sessionEventSchema = z.object({
     return;
   }
   if (event.type === 'ai_chat_agent') {
-    const hasBridgeSource = properties.source === 'clippy_agent_bridge';
-    const hasChatResponseType = properties.bridgeEventType === 'CHAT_RESPONSE';
+    const sourceOk = properties.source === 'clippy_agent_bridge';
+    const actorOk = event.actor === 'agent';
+    const agentOk = hasString(properties.agent);
+    const chatResponseOk = properties.bridgeEventType === 'CHAT_RESPONSE'
+      && properties.bridgeMessageSource === 'agent_stdout';
     const observedAt = properties.observedAt;
     const hasObservedAt = typeof observedAt === 'string' && observedAt.trim().length > 0;
-    if (hasBridgeSource && hasChatResponseType && hasObservedAt) return;
+    const persistedOk = properties.bridgePersisted === true
+      && hasFiniteNonNegativeNumber(properties.actionCount);
+    const browserFallbackOk = properties.bridgePersisted === false
+      && properties.persistenceFallback === 'browser_after_bridge_persist_failed'
+      && hasRoomSurface(properties.surface)
+      && hasString(properties.roomPhase)
+      && hasFiniteNonNegativeNumber(properties.messageTimestamp)
+      && properties.agentResponseClaimed === true;
+    if (sourceOk && actorOk && agentOk && chatResponseOk && hasObservedAt && (persistedOk || browserFallbackOk)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE.',
+      message: 'Agent chat evidence must come from a real Clippy/Devin bridge CHAT_RESPONSE with persisted bridge or browser fallback provenance.',
       path: ['properties'],
     });
     return;

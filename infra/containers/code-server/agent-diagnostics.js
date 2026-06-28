@@ -174,6 +174,7 @@ function agentChatSessionEvent({
       source: 'clippy_agent_bridge',
       agent: String(agent || 'devin'),
       bridgeEventType: 'CHAT_RESPONSE',
+      bridgeMessageSource: 'agent_stdout',
       observedAt,
       actionCount: Number.isFinite(actionCount) ? Math.max(0, Math.floor(actionCount)) : 0,
       bridgePersisted: true,

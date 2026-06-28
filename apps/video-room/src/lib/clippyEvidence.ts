@@ -194,6 +194,7 @@ export function buildClippyAgentChatFallbackEvidence(input: {
       workspaceStatus: input.workspaceStatus,
       workspaceSessionId: input.workspaceSessionId,
       messageTimestamp: input.messageTimestamp,
+      agentResponseClaimed: true,
     },
   };
 }

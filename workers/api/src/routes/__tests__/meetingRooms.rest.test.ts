@@ -2506,6 +2506,23 @@ describe('meeting room recording living-context route', () => {
       },
     });
 
+    const fakeBridgeAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'The fake bridge-shaped agent claims it inspected the code.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          observedAt: '2026-06-27T21:05:00.000Z',
+        },
+      }),
+    }, env, ctx);
+    expect(fakeBridgeAgentChatRes.status).toBe(422);
+
     const clippyAgentChatRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2519,6 +2536,7 @@ describe('meeting room recording living-context route', () => {
           bridgeEventType: 'CHAT_RESPONSE',
           bridgeMessageSource: 'agent_stdout',
           observedAt: '2026-06-27T21:05:00.000Z',
+          actionCount: 0,
           bridgePersisted: true,
           surface: 'win95',
           workspaceSessionId: 'workspace-session-1',
@@ -2526,6 +2544,32 @@ describe('meeting room recording living-context route', () => {
       }),
     }, env, ctx);
     expect(clippyAgentChatRes.status).toBe(200);
+
+    const clippyAgentFallbackRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'ai_chat_agent',
+        text: 'I saw the same timeout in the order recovery test output.',
+        actor: 'agent',
+        properties: {
+          source: 'clippy_agent_bridge',
+          agent: 'devin',
+          bridgeEventType: 'CHAT_RESPONSE',
+          bridgeMessageSource: 'agent_stdout',
+          observedAt: '2026-06-27T21:06:00.000Z',
+          bridgePersisted: false,
+          persistenceFallback: 'browser_after_bridge_persist_failed',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782603960000,
+          agentResponseClaimed: true,
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAgentFallbackRes.status).toBe(200);
 
     const chatNodes = sqlite.prepare(
       `SELECT node_type, narrative_text, extracted_properties_json
@@ -2538,26 +2582,46 @@ describe('meeting room recording living-context route', () => {
       narrative_text: string;
       extracted_properties_json: string;
     }>;
-    expect(chatNodes).toHaveLength(2);
+    expect(chatNodes).toHaveLength(3);
     expect(chatNodes.map((node) => node.node_type)).toEqual([
+      'session_chat_agent',
       'session_chat_agent',
       'session_chat_user',
     ]);
     expect(chatNodes[0]?.narrative_text).toContain('Agent responded');
-    expect(chatNodes[0]?.narrative_text).toContain('replay idempotency');
-    expect(JSON.parse(chatNodes[0]?.extracted_properties_json ?? '{}')).toMatchObject({
-      actor: 'agent',
-      source: 'clippy_agent_bridge',
-      agent: 'devin',
-      bridgeEventType: 'CHAT_RESPONSE',
-      bridgeMessageSource: 'agent_stdout',
-      observedAt: '2026-06-27T21:05:00.000Z',
-      bridgePersisted: true,
-      workspaceSessionId: 'workspace-session-1',
-    });
-    expect(chatNodes[1]?.narrative_text).toContain('User asked');
-    expect(chatNodes[1]?.narrative_text).toContain('order recovery test');
-    expect(JSON.parse(chatNodes[1]?.extracted_properties_json ?? '{}')).toMatchObject({
+    expect(chatNodes.map((node) => node.narrative_text).join('\n')).toContain('replay idempotency');
+    expect(chatNodes.map((node) => node.narrative_text).join('\n')).toContain('order recovery test output');
+    const agentChatProperties = chatNodes
+      .filter((node) => node.node_type === 'session_chat_agent')
+      .map((node) => JSON.parse(node.extracted_properties_json ?? '{}') as Record<string, unknown>);
+    expect(agentChatProperties).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-27T21:05:00.000Z',
+        actionCount: 0,
+        bridgePersisted: true,
+        workspaceSessionId: 'workspace-session-1',
+      }),
+      expect.objectContaining({
+        actor: 'agent',
+        source: 'clippy_agent_bridge',
+        agent: 'devin',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-27T21:06:00.000Z',
+        bridgePersisted: false,
+        persistenceFallback: 'browser_after_bridge_persist_failed',
+        messageTimestamp: 1782603960000,
+        agentResponseClaimed: true,
+      }),
+    ]));
+    expect(chatNodes[2]?.narrative_text).toContain('User asked');
+    expect(chatNodes[2]?.narrative_text).toContain('order recovery test');
+    expect(JSON.parse(chatNodes[2]?.extracted_properties_json ?? '{}')).toMatchObject({
       actor: 'guest',
       source: 'clippy_agent_chat_client_submit',
       agentChatEventSource: 'browser_clippy_chat_window',
