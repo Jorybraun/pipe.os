@@ -317,6 +317,48 @@ describe('sessionEvents', () => {
               },
             },
           },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000002600,
+            event: {
+              id: 'evt-source-less-open',
+              clientId: 'guest-client',
+              createdAt: 1700000002600,
+              kind: 'OPEN_WINDOW',
+              window: {
+                id: 'source-less-notepad',
+                windowType: 'notepad',
+                title: 'Source-less Notepad',
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000002700,
+            event: {
+              id: 'evt-source-less-nav',
+              clientId: 'guest-client',
+              createdAt: 1700000002700,
+              kind: 'UPDATE_WINDOW_DATA',
+              windowId: 'browser',
+              data: {
+                currentUrl: 'https://example.com/source-less',
+              },
+            },
+          },
+          {
+            role: 'GUEST',
+            recordedAt: 1700000002800,
+            event: {
+              id: 'evt-source-less-state',
+              clientId: 'guest-client',
+              createdAt: 1700000002800,
+              kind: 'UPDATE_WINDOW_STATE',
+              windowId: 'browser',
+              x: 300,
+              y: 180,
+            },
+          },
         ],
         chatActivityLog: [
           {
@@ -499,7 +541,7 @@ describe('sessionEvents', () => {
         expect.objectContaining({
           type: 'window_update',
           actor: 'guest',
-          text: 'browser',
+          text: 'Window state updated: browser',
         }),
         expect.objectContaining({
           type: 'workspace_state',
@@ -653,6 +695,20 @@ describe('sessionEvents', () => {
           }),
         }),
       ]));
+      for (const fallbackSource of [
+        'window_lifecycle_durable_object',
+        'browser_navigation_durable_object',
+        'window_data_durable_object',
+        'window_state_durable_object',
+      ]) {
+        expect(events).not.toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              source: fallbackSource,
+            }),
+          }),
+        ]));
+      }
     });
   });
 

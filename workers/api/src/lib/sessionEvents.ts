@@ -170,6 +170,95 @@ function isSourceBackedRoomFileEvidence(
     && Number.isFinite(evidence.capturedAtMs);
 }
 
+function hasSourceBackedWindowLifecycleEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  kind: 'open' | 'close',
+  windowId: string,
+): evidence is Record<string, unknown> {
+  return evidence !== null
+    && (actor === 'host' || actor === 'guest')
+    && evidence.source === 'window_lifecycle_client_submit'
+    && typeof evidence.lifecycleSource === 'string'
+    && evidence.lifecycleKind === kind
+    && evidence.actor === actor
+    && evidence.windowId === windowId
+    && typeof evidence.windowType === 'string'
+    && typeof evidence.windowTitle === 'string'
+    && typeof evidence.windowLifecycleId === 'string'
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs)
+    && typeof evidence.surface === 'string'
+    && typeof evidence.roomPhase === 'string'
+    && typeof evidence.durableObjectReplayExpected === 'boolean';
+}
+
+function hasSourceBackedBrowserNavigationEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  windowId: string,
+): evidence is Record<string, unknown> {
+  return evidence !== null
+    && (actor === 'host' || actor === 'guest')
+    && evidence.source === 'room_browser_window'
+    && evidence.navigationSource === 'browser_window_client_submit'
+    && evidence.actor === actor
+    && evidence.windowId === windowId
+    && typeof evidence.browserNavigationId === 'string'
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs)
+    && typeof evidence.url === 'string'
+    && typeof evidence.urlFingerprint === 'string'
+    && typeof evidence.navigationTrigger === 'string'
+    && typeof evidence.surface === 'string'
+    && typeof evidence.roomPhase === 'string'
+    && typeof evidence.durableObjectReplayExpected === 'boolean';
+}
+
+function hasSourceBackedWindowDataEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  windowId: string,
+): evidence is Record<string, unknown> {
+  return evidence !== null
+    && (actor === 'host' || actor === 'guest')
+    && evidence.source === 'window_data_client_submit'
+    && evidence.dataSource === 'win95_window_data_sync'
+    && evidence.actor === actor
+    && evidence.windowId === windowId
+    && typeof evidence.windowDataUpdateId === 'string'
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs)
+    && Array.isArray(evidence.dataKeys)
+    && evidence.dataKeys.length > 0
+    && typeof evidence.dataValueFingerprints === 'object'
+    && evidence.dataValueFingerprints !== null
+    && !Array.isArray(evidence.dataValueFingerprints)
+    && typeof evidence.surface === 'string'
+    && typeof evidence.roomPhase === 'string'
+    && typeof evidence.durableObjectReplayExpected === 'boolean';
+}
+
+function hasSourceBackedWindowStateEvidence(
+  evidence: Record<string, unknown> | null,
+  actor: SessionEvent['actor'],
+  windowId: string,
+): evidence is Record<string, unknown> {
+  return evidence !== null
+    && (actor === 'host' || actor === 'guest')
+    && evidence.source === 'window_state_client_submit'
+    && evidence.stateSource === 'win95_window_chrome'
+    && evidence.actor === actor
+    && evidence.windowId === windowId
+    && typeof evidence.windowStateChangeId === 'string'
+    && typeof evidence.capturedAtMs === 'number'
+    && Number.isFinite(evidence.capturedAtMs)
+    && typeof evidence.action === 'string'
+    && typeof evidence.surface === 'string'
+    && typeof evidence.roomPhase === 'string'
+    && typeof evidence.durableObjectReplayExpected === 'boolean';
+}
+
 function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unknown): SessionEvent | null {
   if (!isRecord(value) || !isRecord(value.event)) return null;
   const event = value.event;
@@ -277,6 +366,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const windowType = stringOrNull(event.window.windowType);
     if (!title || !windowId || !windowType) return null;
     const evidence = isRecord(event.evidence) ? event.evidence : null;
+    if (!hasSourceBackedWindowLifecycleEvidence(evidence, actor, 'open', windowId)) return null;
     return createSessionEvent(input, {
       type: 'window_open',
       timestamp,
@@ -284,11 +374,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
       text: title,
       properties: {
         ...base,
-        ...(evidence ?? {
-          source: 'window_lifecycle_durable_object',
-          lifecycleKind: 'open',
-          windowTitle: title,
-        }),
+        ...evidence,
         windowId,
         windowType,
       },
@@ -299,6 +385,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const windowId = stringOrNull(event.windowId);
     if (!windowId) return null;
     const evidence = isRecord(event.evidence) ? event.evidence : null;
+    if (!hasSourceBackedWindowLifecycleEvidence(evidence, actor, 'close', windowId)) return null;
     const title = stringOrNull(evidence?.windowTitle) ?? windowId;
     return createSessionEvent(input, {
       type: 'window_close',
@@ -307,10 +394,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
       text: title,
       properties: {
         ...base,
-        ...(evidence ?? {
-          source: 'window_lifecycle_durable_object',
-          lifecycleKind: 'close',
-        }),
+        ...evidence,
         windowId,
       },
     });
@@ -322,6 +406,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     const currentUrl = stringOrNull(event.data.currentUrl);
     if (currentUrl) {
       const evidence = isRecord(event.evidence) ? event.evidence : null;
+      if (!hasSourceBackedBrowserNavigationEvidence(evidence, actor, windowId)) return null;
       const text = stringOrNull(evidence?.url) ?? currentUrl;
       return createSessionEvent(input, {
         type: 'browser_navigation',
@@ -330,15 +415,13 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
         text,
         properties: {
           ...base,
-          ...(evidence ?? {
-            source: 'browser_navigation_durable_object',
-            url: currentUrl,
-          }),
+          ...evidence,
           windowId,
         },
       });
     }
     const evidence = isRecord(event.evidence) ? event.evidence : null;
+    if (!hasSourceBackedWindowDataEvidence(evidence, actor, windowId)) return null;
     const dataKeys = Object.keys(event.data).sort();
     return createSessionEvent(input, {
       type: 'window_update',
@@ -347,7 +430,7 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
       text: `Window data updated: ${windowId}`,
       properties: {
         ...base,
-        ...(evidence ?? { source: 'window_data_durable_object' }),
+        ...evidence,
         windowId,
         dataKeys,
       },
@@ -367,14 +450,15 @@ function desktopActivityToSessionEvent(input: RoomActivitySyncInput, value: unkn
     }
     const stateKeys = Object.keys(statePatch).sort();
     if (stateKeys.length === 0) return null;
+    if (!hasSourceBackedWindowStateEvidence(evidence, actor, windowId)) return null;
     return createSessionEvent(input, {
       type: 'window_update',
       timestamp,
       actor,
-      text: windowId,
+      text: `Window state updated: ${windowId}`,
       properties: {
         ...base,
-        ...(evidence ?? { source: 'window_state_durable_object' }),
+        ...evidence,
         windowId,
         statePatch,
         stateKeys,

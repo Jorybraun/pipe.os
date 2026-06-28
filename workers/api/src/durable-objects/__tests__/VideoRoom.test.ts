@@ -169,6 +169,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           height: 560,
           data: { currentUrl: 'https://example.com' },
         },
+        evidence: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_desktop_ui',
+          lifecycleKind: 'open',
+          windowLifecycleId: 'window-lifecycle:host:1:open:browser',
+          capturedAtMs: 1,
+          actor: 'host',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -201,7 +215,16 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         evidence: {
           source: 'room_browser_window',
           navigationSource: 'browser_window_client_submit',
+          actor: 'host',
+          windowId: 'browser',
+          navigationTrigger: 'go_button',
           browserNavigationId: 'browser-navigation:host:1500:browser:go_button:nav_54d2c495',
+          capturedAtMs: 1500,
+          url: 'https://example.com/review?step=1',
+          urlFingerprint: 'nav_54d2c495',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
         },
       },
     }));
@@ -234,6 +257,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         createdAt: 2,
         kind: 'CLOSE_WINDOW',
         windowId: 'browser',
+        evidence: {
+          source: 'window_lifecycle_client_submit',
+          lifecycleSource: 'win95_window_chrome',
+          lifecycleKind: 'close',
+          windowLifecycleId: 'window-lifecycle:guest:2:close:browser',
+          capturedAtMs: 2,
+          actor: 'guest',
+          windowId: 'browser',
+          windowType: 'browser',
+          windowTitle: 'Microsoft Edge',
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -280,6 +317,18 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         y: 140,
         minimized: false,
         focused: true,
+        evidence: {
+          source: 'window_state_client_submit',
+          stateSource: 'win95_window_chrome',
+          actor: 'host',
+          windowId: 'browser',
+          action: 'restore_or_focus',
+          windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
+          capturedAtMs: 3,
+          surface: 'win95',
+          roomPhase: 'connected',
+          durableObjectReplayExpected: true,
+        },
       },
     }));
 
@@ -310,9 +359,52 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           id: 'evt-move-browser',
           kind: 'UPDATE_WINDOW_STATE',
           windowId: 'browser',
+          evidence: expect.objectContaining({
+            source: 'window_state_client_submit',
+            windowStateChangeId: 'window-state:host:3:browser:restore_or_focus',
+          }),
         }),
       }),
     ]);
+  });
+
+  it('rejects shared desktop window events without browser source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_DESKTOP_EVENT',
+      payload: {
+        id: 'evt-source-less-open',
+        clientId: 'host-client',
+        createdAt: 3.5,
+        kind: 'OPEN_WINDOW',
+        window: {
+          id: 'notepad',
+          windowType: 'notepad',
+          title: 'Notepad',
+          x: 80,
+          y: 60,
+          width: 520,
+          height: 420,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(guest)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_DESKTOP_EVENT',
+    }));
+    expect(storage.has('desktopWindows')).toBe(false);
+    expect(storage.has('desktopActivityLog')).toBe(false);
   });
 
   it('persists participant-controlled desktop surface changes and records activity', async () => {

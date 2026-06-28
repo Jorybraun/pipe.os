@@ -499,6 +499,75 @@ export class VideoRoom {
     return null;
   }
 
+  private hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role: VideoRole): boolean {
+    if (event.kind === 'SET_ROOM_SURFACE' || event.kind === 'WORKSPACE_STATE_CHANGED') return true;
+    const evidence = event.evidence;
+    if (!this.isRecord(evidence)) return false;
+    const actor = this.isHostRole(role) ? 'host' : 'guest';
+    if (event.kind === 'OPEN_WINDOW' || event.kind === 'CLOSE_WINDOW') {
+      const kind = event.kind === 'OPEN_WINDOW' ? 'open' : 'close';
+      const windowId = event.kind === 'OPEN_WINDOW' ? event.window.id : event.windowId;
+      return evidence.source === 'window_lifecycle_client_submit'
+        && typeof evidence.lifecycleSource === 'string'
+        && evidence.lifecycleKind === kind
+        && evidence.actor === actor
+        && evidence.windowId === windowId
+        && typeof evidence.windowType === 'string'
+        && typeof evidence.windowTitle === 'string'
+        && typeof evidence.windowLifecycleId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'UPDATE_WINDOW_DATA') {
+      const isBrowserNavigation = this.isRecord(event.data) && typeof event.data.currentUrl === 'string';
+      if (isBrowserNavigation) {
+        return evidence.source === 'room_browser_window'
+          && evidence.navigationSource === 'browser_window_client_submit'
+          && evidence.actor === actor
+          && evidence.windowId === event.windowId
+          && typeof evidence.browserNavigationId === 'string'
+          && typeof evidence.capturedAtMs === 'number'
+          && Number.isFinite(evidence.capturedAtMs)
+          && typeof evidence.navigationTrigger === 'string'
+          && typeof evidence.url === 'string'
+          && typeof evidence.urlFingerprint === 'string'
+          && evidence.surface === 'win95'
+          && typeof evidence.roomPhase === 'string'
+          && evidence.durableObjectReplayExpected === true;
+      }
+      return evidence.source === 'window_data_client_submit'
+        && evidence.dataSource === 'win95_window_data_sync'
+        && evidence.actor === actor
+        && evidence.windowId === event.windowId
+        && typeof evidence.windowDataUpdateId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && Array.isArray(evidence.dataKeys)
+        && evidence.dataKeys.length > 0
+        && this.isRecord(evidence.dataValueFingerprints)
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    if (event.kind === 'UPDATE_WINDOW_STATE') {
+      return evidence.source === 'window_state_client_submit'
+        && evidence.stateSource === 'win95_window_chrome'
+        && evidence.actor === actor
+        && evidence.windowId === event.windowId
+        && typeof evidence.windowStateChangeId === 'string'
+        && typeof evidence.capturedAtMs === 'number'
+        && Number.isFinite(evidence.capturedAtMs)
+        && typeof evidence.action === 'string'
+        && evidence.surface === 'win95'
+        && typeof evidence.roomPhase === 'string'
+        && evidence.durableObjectReplayExpected === true;
+    }
+    return false;
+  }
+
   private parseDesktopWindows(value: unknown): RoomDesktopWindow[] {
     if (!Array.isArray(value)) return [];
     return value
@@ -1368,6 +1437,13 @@ export class VideoRoom {
         ws.send(JSON.stringify({
           type: 'ROOM_DESKTOP_EVENT_REJECTED',
           reason: 'INVALID_EVENT',
+        }));
+        return;
+      }
+      if (!this.hasSourceBackedDesktopEventEvidence(event, senderRole)) {
+        ws.send(JSON.stringify({
+          type: 'ROOM_DESKTOP_EVENT_REJECTED',
+          reason: 'MISSING_SOURCE_EVIDENCE',
         }));
         return;
       }
