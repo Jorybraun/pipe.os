@@ -57,10 +57,10 @@ const ROLE_SELECTED_TERMS = (
         'React',
         'TypeScript',
         'usePopoverRoot',
-        'popup trigger id ownership',
-        'DOM id registry',
-        'patient click threshold',
-        'JavaScript test runner',
+        'rendered trigger id ownership',
+        'DOM id versus internal registry state',
+        'patient click thresholds',
+        'JavaScript test runner regression tests',
       ]
 );
 const DEFAULT_REVIEW_SUMMARY = [
