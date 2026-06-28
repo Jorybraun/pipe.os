@@ -169,22 +169,25 @@ afterEach(async () => {
 });
 
 describe('agent bridge readiness', () => {
-  it('does not report AGENT_READY until real Devin stdout is observed', async () => {
+  it('reports AGENT_READY after the real Devin process accepts the source-backed room primer', async () => {
     const { port } = await startBridge(`
 process.stdin.setEncoding('utf8');
-process.stdin.once('data', () => {
-  setTimeout(() => process.stdout.write('Primer accepted by real Devin\\n'), 500);
-});
+process.stdin.once('data', () => {});
 setInterval(() => {}, 1000);
-`, { AGENT_START_READY_TIMEOUT_MS: '2000' });
+`, {
+      AGENT_READY_AFTER_PRIMER_MS: '35',
+      AGENT_START_READY_TIMEOUT_MS: '2000',
+    });
 
     const { ws, messages } = await connectAgent(port);
     const startingStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'starting');
     expect(startingStatus).toMatchObject({ agent: 'devin' });
-    await delay(150);
-    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
 
-    await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+    const ready = await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+    expect(ready).toMatchObject({
+      agent: 'devin',
+      capabilities: ['read', 'write', 'run', 'browse'],
+    });
     ws.close();
   });
 
@@ -195,7 +198,7 @@ process.stdin.once('data', () => {
   setTimeout(() => process.stderr.write('Please run devin auth login before continuing.\\n'), 50);
 });
 setInterval(() => {}, 1000);
-`);
+`, { AGENT_READY_AFTER_PRIMER_MS: '1000' });
 
     const { ws, messages } = await connectAgent(port);
     const authStatus = await waitForMessage(messages, (message) => message.type === 'AGENT_STATUS' && message.status === 'auth_needed');
@@ -209,19 +212,34 @@ setInterval(() => {}, 1000);
     ws.close();
   });
 
-  it('records a diagnostic when Devin never proves readiness', async () => {
+  it('allows chat after a quiet real Devin process accepts the room primer', async () => {
     const { port } = await startBridge(`
-process.stdin.resume();
+process.stdin.setEncoding('utf8');
+let buffer = '';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  if (buffer.includes('Current Clippy chat message:')) {
+    process.stdout.write('Real Devin received the candidate request.\\n');
+  }
+});
 setInterval(() => {}, 1000);
-`, { AGENT_START_READY_TIMEOUT_MS: '120' });
+`, {
+      AGENT_READY_AFTER_PRIMER_MS: '35',
+      AGENT_START_READY_TIMEOUT_MS: '2000',
+    });
 
     const { ws, messages } = await connectAgent(port);
-    await waitForMessage(messages, (message) => (
-      message.type === 'AGENT_DIAGNOSTIC'
-      && message.diagnosticSource === 'agent_start_timeout'
+    await waitForMessage(messages, (message) => message.type === 'AGENT_READY');
+    ws.send(JSON.stringify({ type: 'CHAT', text: 'Please inspect the task.' }));
+    const response = await waitForMessage(messages, (message) => (
+      message.type === 'CHAT_RESPONSE'
+      && message.text.includes('Real Devin received the candidate request.')
     ));
 
-    expect(messages.some((message) => message.type === 'AGENT_READY')).toBe(false);
+    expect(response).toMatchObject({
+      agent: 'devin',
+      source: 'agent_stdout',
+    });
     ws.close();
   });
 

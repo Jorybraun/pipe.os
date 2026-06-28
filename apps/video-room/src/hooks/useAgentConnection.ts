@@ -276,6 +276,7 @@ export function parseAgentBridgeMessage(value: unknown): ParsedAgentBridgeMessag
   if (value.type === 'CHAT_RESPONSE') {
     const text = stringOrNull(value.text);
     if (!text) return { kind: 'ignored' };
+    if (value.source !== 'agent_stdout') return { kind: 'ignored' };
     const actions = parseRoomActions(value.actions, {
       source: 'agent_stdout_action',
       bridgeEventType: 'CHAT_RESPONSE',

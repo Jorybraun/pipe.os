@@ -198,6 +198,7 @@ describe('parseAgentBridgeMessage', () => {
   it('marks real bridge chat responses as agent stdout', () => {
     expect(parseAgentBridgeMessage({
       type: 'CHAT_RESPONSE',
+      source: 'agent_stdout',
       text: 'I inspected the failing test.',
       agent: 'devin',
       observedAt: '2026-06-27T21:05:00.000Z',
@@ -214,6 +215,14 @@ describe('parseAgentBridgeMessage', () => {
       },
       actions: undefined,
     });
+  });
+
+  it('ignores bridge chat responses without explicit stdout source metadata', () => {
+    expect(parseAgentBridgeMessage({
+      type: 'CHAT_RESPONSE',
+      text: 'I inspected the failing test.',
+      agent: 'devin',
+    })).toEqual({ kind: 'ignored' });
   });
 
   it('turns bridge status into explicit evidence text', () => {

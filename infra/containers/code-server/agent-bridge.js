@@ -25,6 +25,7 @@ const WORKSPACE_MAX_SCAN_FILES = positiveIntEnv('WORKSPACE_MAX_SCAN_FILES', 1500
 const WORKSPACE_MAX_HASH_BYTES = positiveIntEnv('WORKSPACE_MAX_HASH_BYTES', 1024 * 1024, 1024);
 const WORKSPACE_PREVIEW_BYTES = positiveIntEnv('WORKSPACE_PREVIEW_BYTES', 2048, 0);
 const AGENT_START_READY_TIMEOUT_MS = positiveIntEnv('AGENT_START_READY_TIMEOUT_MS', 15000, 1000);
+const AGENT_READY_AFTER_PRIMER_MS = positiveIntEnv('AGENT_READY_AFTER_PRIMER_MS', 750, 25);
 const DEVIN_AUTH_MESSAGE = 'Devin is not authenticated in this container. Provide a real DEVIN_API_KEY or wire a verified Devin auth flow before using Clippy chat.';
 
 const agentAuthed = Boolean(DEVIN_API_KEY);
@@ -33,6 +34,7 @@ let agentReady = false;
 let agentStatus = agentAuthed ? 'disconnected' : 'auth_needed';
 const clients = new Set();
 let agentStartReadyTimer = null;
+let agentPrimerReadyTimer = null;
 let workspaceBaselineReady = false;
 let workspaceScanInFlight = false;
 let workspaceWatcherTimer = null;
@@ -260,7 +262,7 @@ function sendAgentDiagnostic(ws, message) {
 function broadcastAgentChat(message) {
   void captureAgentChatEvidence(message)
     .then((persisted) => {
-      broadcast({ type: 'CHAT_RESPONSE', ...message, persisted });
+      broadcast({ type: 'CHAT_RESPONSE', source: 'agent_stdout', ...message, persisted });
     });
 }
 
@@ -472,6 +474,17 @@ function clearAgentStartReadyTimer() {
   agentStartReadyTimer = null;
 }
 
+function clearAgentPrimerReadyTimer() {
+  if (!agentPrimerReadyTimer) return;
+  clearTimeout(agentPrimerReadyTimer);
+  agentPrimerReadyTimer = null;
+}
+
+function clearAgentStartupTimers() {
+  clearAgentStartReadyTimer();
+  clearAgentPrimerReadyTimer();
+}
+
 function broadcastAgentReady() {
   broadcast({ type: 'AGENT_READY', agent: AGENT_NAME, capabilities: ['read', 'write', 'run', 'browse'] });
 }
@@ -490,7 +503,7 @@ function sendAgentStatus(ws) {
 
 function markAgentReady() {
   if (agentReady) return;
-  clearAgentStartReadyTimer();
+  clearAgentStartupTimers();
   agentReady = true;
   agentStatus = 'idle';
   broadcastAgentStatus();
@@ -498,7 +511,7 @@ function markAgentReady() {
 }
 
 function markAgentDisconnected(message, diagnosticSource, processToStop = agentProcess) {
-  clearAgentStartReadyTimer();
+  clearAgentStartupTimers();
   agentReady = false;
   agentStatus = 'disconnected';
   broadcastAgentStatus();
@@ -526,8 +539,17 @@ function scheduleAgentStartReadyTimeout(targetProcess) {
   }, AGENT_START_READY_TIMEOUT_MS);
 }
 
+function scheduleAgentPrimerReady(targetProcess) {
+  clearAgentPrimerReadyTimer();
+  agentPrimerReadyTimer = setTimeout(() => {
+    agentPrimerReadyTimer = null;
+    if (agentProcess !== targetProcess || agentReady || agentStatus !== 'starting') return;
+    markAgentReady();
+  }, AGENT_READY_AFTER_PRIMER_MS);
+}
+
 function markAgentAuthNeeded(message, diagnosticSource = 'auth_required') {
-  clearAgentStartReadyTimer();
+  clearAgentStartupTimers();
   agentReady = false;
   agentStatus = 'auth_needed';
   broadcastAgentStatus();
@@ -768,7 +790,9 @@ function startAgent() {
             'context_primer_not_delivered',
             startedProcess,
           );
+          return;
         }
+        scheduleAgentPrimerReady(startedProcess);
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
@@ -820,7 +844,7 @@ function startAgent() {
     });
     agentProcess.on('exit', (code, signal) => {
       if (agentProcess !== startedProcess && agentProcess !== null) return;
-      clearAgentStartReadyTimer();
+      clearAgentStartupTimers();
       const wasAuthNeeded = agentStatus === 'auth_needed';
       agentProcess = null;
       agentReady = false;
@@ -837,7 +861,7 @@ function startAgent() {
     });
     agentProcess.on('error', (error) => {
       if (agentProcess !== startedProcess && agentProcess !== null) return;
-      clearAgentStartReadyTimer();
+      clearAgentStartupTimers();
       agentProcess = null;
       agentReady = false;
       agentStatus = 'disconnected';
@@ -850,7 +874,7 @@ function startAgent() {
       broadcastAgentStatus();
     });
   } catch (error) {
-    clearAgentStartReadyTimer();
+    clearAgentStartupTimers();
     agentReady = false;
     agentStatus = 'disconnected';
     broadcastAgentStatus();
