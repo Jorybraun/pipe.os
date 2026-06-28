@@ -72,6 +72,25 @@ interface WaitingChallengeDiagnostics {
   updatedAt?: string | null;
   estimatedCompletionAt?: string | null;
   staleAfterSeconds?: number;
+  pipeline?: WaitingPipelineStep[];
+}
+
+type WaitingPipelineStepId =
+  | 'intake'
+  | 'decomposition'
+  | 'repo_matching'
+  | 'challenge'
+  | 'review'
+  | 'scoring';
+
+type WaitingPipelineStepStatus = 'pending' | 'active' | 'complete' | 'blocked';
+
+interface WaitingPipelineStep {
+  id: WaitingPipelineStepId;
+  label: string;
+  status: WaitingPipelineStepStatus;
+  detail?: string | null;
+  updatedAt?: string | null;
 }
 
 interface GateResult {
@@ -214,10 +233,11 @@ async function checkMatchingGate(
       const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
       return waitingForMatch(`Deterministic challenge matcher returned ${match.status}`, {
         terminal: true,
-        diagnostics: {
-          ...diagnosticsForStandaloneReviewReadiness(readiness),
+        diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
           phase: 'repo_matching',
-        },
+          repoMatchingStatus: 'blocked',
+          repoMatchingDetail: `Deterministic challenge matcher returned ${match.status}`,
+        }),
       });
     }
 
@@ -228,10 +248,11 @@ async function checkMatchingGate(
       const readiness = await standaloneReviewEvidenceReadiness(db, candidateId);
       return waitingForMatch('Matched challenge repository is unavailable', {
         terminal: true,
-        diagnostics: {
-          ...diagnosticsForStandaloneReviewReadiness(readiness),
+        diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
           phase: 'repo_matching',
-        },
+          repoMatchingStatus: 'blocked',
+          repoMatchingDetail: 'Matched challenge repository is unavailable',
+        }),
       });
     }
 
@@ -460,9 +481,15 @@ function standaloneWaitingChallengeForReadiness(
 
 function diagnosticsForStandaloneReviewReadiness(
   readiness: StandaloneReviewEvidenceReadiness,
+  options: {
+    phase?: 'candidate_evidence' | 'repo_matching';
+    repoMatchingStatus?: WaitingPipelineStepStatus;
+    repoMatchingDetail?: string | null;
+  } = {},
 ): WaitingChallengeDiagnostics {
+  const phase = options.phase ?? 'candidate_evidence';
   return {
-    phase: 'candidate_evidence',
+    phase,
     ingestionStatus: readiness.status,
     currentStep: readiness.currentStep,
     matchableNodeCount: readiness.nodeCount,
@@ -470,7 +497,75 @@ function diagnosticsForStandaloneReviewReadiness(
     updatedAt: readiness.updatedAt,
     estimatedCompletionAt: readiness.estimatedCompletionAt,
     staleAfterSeconds: STANDALONE_EVIDENCE_STALE_AFTER_MS / 1000,
+    pipeline: standaloneCodeReviewPipeline(readiness, {
+      phase,
+      repoMatchingStatus: options.repoMatchingStatus,
+      repoMatchingDetail: options.repoMatchingDetail,
+    }),
   };
+}
+
+function standaloneCodeReviewPipeline(
+  readiness: StandaloneReviewEvidenceReadiness,
+  options: {
+    phase: 'candidate_evidence' | 'repo_matching';
+    repoMatchingStatus?: WaitingPipelineStepStatus;
+    repoMatchingDetail?: string | null;
+  },
+): WaitingPipelineStep[] {
+  const hasRawEvidence = readiness.rawNodeCount > 0;
+  const hasMatchableEvidence = readiness.nodeCount > 0;
+  const candidateEvidenceBlocked = readiness.terminal && !hasMatchableEvidence;
+  const decompositionStatus: WaitingPipelineStepStatus = hasMatchableEvidence
+    ? 'complete'
+    : candidateEvidenceBlocked
+      ? 'blocked'
+      : 'active';
+  const repoMatchingStatus: WaitingPipelineStepStatus = options.repoMatchingStatus
+    ?? (options.phase === 'repo_matching'
+      ? 'active'
+      : hasMatchableEvidence
+        ? 'active'
+        : 'pending');
+
+  return [
+    {
+      id: 'intake',
+      label: 'CV intake',
+      status: readiness.status || hasRawEvidence || hasMatchableEvidence ? 'complete' : 'active',
+      detail: readiness.status,
+      updatedAt: readiness.updatedAt,
+    },
+    {
+      id: 'decomposition',
+      label: 'Evidence decomposition',
+      status: decompositionStatus,
+      detail: readiness.currentStep,
+      updatedAt: readiness.updatedAt,
+    },
+    {
+      id: 'repo_matching',
+      label: 'Repo matching',
+      status: repoMatchingStatus,
+      detail: options.repoMatchingDetail ?? null,
+      updatedAt: readiness.updatedAt,
+    },
+    {
+      id: 'challenge',
+      label: 'Challenge assignment',
+      status: 'pending',
+    },
+    {
+      id: 'review',
+      label: 'Candidate review',
+      status: 'pending',
+    },
+    {
+      id: 'scoring',
+      label: 'Scoring',
+      status: 'pending',
+    },
+  ];
 }
 
 function isInProgressStandaloneIngestionStatus(status: string | null): boolean {
@@ -2525,10 +2620,16 @@ rpcAuth.post('/get-challenge', async (c) => {
       if (!readiness.ready) {
         return c.json(standaloneWaitingChallengeForReadiness(readiness));
       }
+      const reason = 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.';
       return c.json(standaloneWaitingChallenge({
         state: 'blocked',
         autoRefresh: false,
-        reason: 'The deterministic repo matcher did not return a quality-gated, source-backed PR challenge.',
+        reason,
+        diagnostics: diagnosticsForStandaloneReviewReadiness(readiness, {
+          phase: 'repo_matching',
+          repoMatchingStatus: 'blocked',
+          repoMatchingDetail: reason,
+        }),
       }));
     }
 

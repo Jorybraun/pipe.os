@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Candidate CODE_REVIEW waiting states now expose a six-step pipeline for CV intake, evidence decomposition, repo matching, challenge assignment, review, and scoring instead of collapsing every delay into generic matching copy.
 - CODE_REVIEW recruiter detail pages now visually prioritize the review assignment, match decision, and submitted review result ahead of scheduling/person-context accounting so the first read answers whether the assessment was useful.
 - Recruiter code-review detail pages now lead with review assignment, match decision, assessment fit, and candidate result while moving validator/source-span graph internals into opt-in proof drawers.
 - Role-backed CODE_REVIEW matching now separates role/PR relevance from candidate evidence coverage, allowing source-backed sparse candidate decompositions to match strongly role-relevant real PRs without hiding behind terminal no-match states.

@@ -13,6 +13,17 @@ export interface WaitingForMatchDiagnostics {
   updatedAt?: string | null;
   estimatedCompletionAt?: string | null;
   staleAfterSeconds?: number;
+  pipeline?: WaitingPipelineStep[];
+}
+
+export type WaitingPipelineStepStatus = 'pending' | 'active' | 'complete' | 'blocked';
+
+export interface WaitingPipelineStep {
+  id: 'intake' | 'decomposition' | 'repo_matching' | 'challenge' | 'review' | 'scoring';
+  label: string;
+  status: WaitingPipelineStepStatus;
+  detail?: string | null;
+  updatedAt?: string | null;
 }
 
 interface WaitingForMatchProps {
@@ -46,6 +57,18 @@ async function fetchProfile(sessionToken: string): Promise<CandidateProfile | nu
 
 function formatDiagnosticLabel(value: string): string {
   return value.replace(/_/g, ' ').toUpperCase();
+}
+
+function formatStatusLabel(value: WaitingPipelineStepStatus): string {
+  if (value === 'blocked') return 'NEEDS ATTENTION';
+  return value.toUpperCase();
+}
+
+function statusColor(value: WaitingPipelineStepStatus): string {
+  if (value === 'complete') return '#4ade80';
+  if (value === 'active') return '#60a5fa';
+  if (value === 'blocked') return '#fbbf24';
+  return 'var(--pipe-text-dim)';
 }
 
 function formatUpdatedAt(value: string | null | undefined): string | null {
@@ -84,6 +107,44 @@ function diagnosticRows(diagnostics: WaitingForMatchDiagnostics | undefined): Ar
   return rows;
 }
 
+function currentPipelineStep(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+): WaitingPipelineStep | null {
+  const pipeline = diagnostics?.pipeline ?? [];
+  if (pipeline.length === 0) return null;
+  if (isBlocked) {
+    return pipeline.find((step) => step.status === 'blocked') ?? pipeline.find((step) => step.status === 'active') ?? null;
+  }
+  return pipeline.find((step) => step.status === 'active') ?? pipeline.find((step) => step.status === 'blocked') ?? null;
+}
+
+function fallbackPipelineStatus(
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+  dots: string,
+): string {
+  if (diagnostics?.phase === 'candidate_evidence') {
+    return isBlocked ? 'CANDIDATE EVIDENCE NEEDS ATTENTION' : `CANDIDATE EVIDENCE IN PROGRESS${dots}`;
+  }
+  if (diagnostics?.phase === 'repo_matching') {
+    return isBlocked ? 'REPO MATCHING NEEDS ATTENTION' : `REPO MATCHING IN PROGRESS${dots}`;
+  }
+  return isBlocked ? 'MATCHING NEEDS ATTENTION' : `MATCHING IN PROGRESS${dots}`;
+}
+
+function pipelineStatusText(
+  step: WaitingPipelineStep | null,
+  diagnostics: WaitingForMatchDiagnostics | undefined,
+  isBlocked: boolean,
+  dots: string,
+): string {
+  if (!step) return fallbackPipelineStatus(diagnostics, isBlocked, dots);
+  if (step.status === 'blocked') return `${step.label} needs attention`.toUpperCase();
+  if (step.status === 'active') return `${step.label} active`.toUpperCase();
+  return fallbackPipelineStatus(diagnostics, isBlocked, dots);
+}
+
 export function WaitingForMatch({
   title,
   instructions,
@@ -94,6 +155,7 @@ export function WaitingForMatch({
   const intervalSeconds = config.refreshIntervalSeconds ?? 30;
   const isBlocked = config.state === 'blocked';
   const rows = diagnosticRows(config.diagnostics);
+  const pipeline = config.diagnostics?.pipeline ?? [];
 
   const [dots, setDots] = useState('');
   const [showProfile, setShowProfile] = useState(false);
@@ -125,6 +187,8 @@ export function WaitingForMatch({
     setProfileLoading(false);
     setShowProfile(true);
   };
+  const activePipelineStep = currentPipelineStep(config.diagnostics, isBlocked);
+  const statusText = pipelineStatusText(activePipelineStep, config.diagnostics, isBlocked, dots);
 
   if (showProfile && profile) {
     return (
@@ -269,6 +333,77 @@ export function WaitingForMatch({
           </div>
         )}
 
+        {pipeline.length > 0 && (
+          <div
+            data-testid="code-review-pipeline"
+            style={{
+              display: 'grid',
+              gap: 6,
+              margin: '0 0 24px',
+              textAlign: 'left',
+            }}
+          >
+            {pipeline.map((step) => (
+              <div
+                key={step.id}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '12px minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '9px 10px',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: step.status === 'active'
+                    ? 'rgba(96,165,250,0.08)'
+                    : step.status === 'blocked'
+                      ? 'rgba(251,191,36,0.08)'
+                      : 'rgba(12,12,14,0.24)',
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: statusColor(step.status),
+                  }}
+                />
+                <span
+                  style={{
+                    display: 'grid',
+                    gap: 3,
+                    minWidth: 0,
+                    fontFamily: '"Space Mono", monospace',
+                  }}
+                >
+                  <span style={{ color: 'var(--pipe-text, #fff)', fontSize: 10, lineHeight: 1.3 }}>
+                    {step.label}
+                  </span>
+                  {step.detail && (
+                    <span style={{ color: 'var(--pipe-text-dim)', fontSize: 9, lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+                      {step.detail}
+                    </span>
+                  )}
+                </span>
+                <span
+                  style={{
+                    color: statusColor(step.status),
+                    fontFamily: '"Space Mono", monospace',
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {formatStatusLabel(step.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div
           style={{
             display: 'flex',
@@ -286,6 +421,7 @@ export function WaitingForMatch({
             />
           )}
           <span
+            data-testid="code-review-pipeline-status"
             style={{
               fontSize: 11,
               color: isBlocked ? '#fbbf24' : 'var(--pipe-text-dim)',
@@ -293,7 +429,7 @@ export function WaitingForMatch({
               letterSpacing: '0.05em',
             }}
           >
-            {isBlocked ? 'MATCHING NEEDS ATTENTION' : `MATCHING IN PROGRESS${dots}`}
+            {statusText}
           </span>
         </div>
 

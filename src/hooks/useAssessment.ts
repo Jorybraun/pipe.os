@@ -44,6 +44,17 @@ export interface WaitingChallengeDiagnostics {
   updatedAt?: string | null;
   estimatedCompletionAt?: string | null;
   staleAfterSeconds?: number;
+  pipeline?: WaitingPipelineStep[];
+}
+
+export type WaitingPipelineStepStatus = 'pending' | 'active' | 'complete' | 'blocked';
+
+export interface WaitingPipelineStep {
+  id: 'intake' | 'decomposition' | 'repo_matching' | 'challenge' | 'review' | 'scoring';
+  label: string;
+  status: WaitingPipelineStepStatus;
+  detail?: string | null;
+  updatedAt?: string | null;
 }
 
 export interface WaitingChallengeDTO {

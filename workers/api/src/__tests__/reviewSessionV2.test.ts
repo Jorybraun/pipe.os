@@ -701,6 +701,7 @@ describe('POST /rpc/get-stage-config', () => {
             matchableNodeCount?: number;
             rawNodeCount?: number;
             updatedAt?: string | null;
+            pipeline?: Array<{ id: string; status: string }>;
           };
         };
       };
@@ -717,6 +718,14 @@ describe('POST /rpc/get-stage-config', () => {
         matchableNodeCount: 0,
         rawNodeCount: 0,
         updatedAt: '2000-01-01T00:00:00.000Z',
+        pipeline: expect.arrayContaining([
+          expect.objectContaining({ id: 'intake', status: 'complete' }),
+          expect.objectContaining({ id: 'decomposition', status: 'blocked' }),
+          expect.objectContaining({ id: 'repo_matching', status: 'pending' }),
+          expect.objectContaining({ id: 'challenge', status: 'pending' }),
+          expect.objectContaining({ id: 'review', status: 'pending' }),
+          expect.objectContaining({ id: 'scoring', status: 'pending' }),
+        ]),
       },
     });
   });
@@ -816,6 +825,7 @@ describe('POST /rpc/get-stage-config', () => {
             ingestionStatus?: string | null;
             currentStep?: string | null;
             matchableNodeCount?: number;
+            pipeline?: Array<{ id: string; status: string }>;
           };
         };
       };
@@ -831,6 +841,14 @@ describe('POST /rpc/get-stage-config', () => {
         ingestionStatus: 'pending',
         currentStep: 'decompose_resume',
         matchableNodeCount: 16,
+        pipeline: expect.arrayContaining([
+          expect.objectContaining({ id: 'intake', status: 'complete' }),
+          expect.objectContaining({ id: 'decomposition', status: 'complete' }),
+          expect.objectContaining({ id: 'repo_matching', status: 'blocked' }),
+          expect.objectContaining({ id: 'challenge', status: 'pending' }),
+          expect.objectContaining({ id: 'review', status: 'pending' }),
+          expect.objectContaining({ id: 'scoring', status: 'pending' }),
+        ]),
       },
     });
     expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
