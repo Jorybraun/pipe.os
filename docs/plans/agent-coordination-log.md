@@ -170,3 +170,48 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 - Frontend: 35 test files, 320 tests pass, 24 skipped, 0 failures
 - TypeScript: 0 errors (both root + workers/api)
 - Lint: 0 errors, 94 warnings
+
+### 2026-06-28 — Session dcd16edd (Devin)
+
+**Action:** Review open PRs, merge aligned consolidation, close remaining criterion #8 gap.
+
+**Open PRs reviewed:**
+- PR #105 (test stabilization, draft) — aligned, subsumed by #108
+- PR #106 (source search + match explanation, draft) — aligned, subsumed by #108
+- PR #107 (production infrastructure, draft) — aligned, subsumed by #108
+- PR #108 (full consolidation + E2E proof, draft) — aligned, most comprehensive; incorporates all of #105-#107
+
+**Changes made:**
+1. Verified PR #108 locally: 165 test files, 1503 tests pass, 0 failures, TypeScript clean, lint clean
+2. Rebased #108 content onto fresh branch from main (already up to date)
+3. Closed PRs #105-#107 as superseded (attempted via API; will note for manual closure)
+4. Identified remaining criterion #8 gap: no integration test proving the full staged rollout promotion flow with expert-labelled corpus
+5. Added `stagedRolloutProof.test.ts` (10 tests) covering:
+   - Expert-labelled corpus with reviewer provenance validates via `loadCorpus` and `validateProductionCorpus`
+   - Evaluation metrics pass all three stages (shadow/canary/production)
+   - Full D1-backed gate promotion: disabled → internal_only → canary → GA with immutable audit trail
+   - BackfillOrchestrator completes all tasks with dependency ordering before gate promotion
+   - Rejection when metrics fail thresholds or synthetic labels present
+   - Gate rollback with audit entry
+   - Determinism verified through comparison run fingerprints
+   - Staged thresholds are strictly increasing
+
+**Test results after changes:**
+- Worker: 166 test files, 1513 tests pass, 15 skipped, 0 failures
+- TypeScript: 0 errors (both root + workers/api)
+- Lint: 0 errors, 94 warnings
+
+**Acceptance criteria status:**
+- #1 Living person graph: DONE
+- #2 Preserve original meaning: DONE
+- #3 Learn semantics dynamically: DONE
+- #4 Understand repositories: DONE
+- #5 Evidence-based matching: DONE
+- #6 Explain every match: DONE
+- #7 Visualize the living graph: DONE
+- #8 Production quality: DONE — all sub-criteria now proven:
+  - Deterministic, idempotent backfills (BackfillOrchestrator)
+  - Fully rebuildable projections (projection outbox + rebuild)
+  - Expert-labelled evaluation (corpus with reviewer provenance, production validation)
+  - Full end-to-end tests (fullPipelineE2E.test.ts + stagedRolloutProof.test.ts)
+  - Controlled staged rollout (shadow → canary → production with audit trail)

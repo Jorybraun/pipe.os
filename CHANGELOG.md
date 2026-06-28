@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Staged rollout proof (criterion #8 completion)
+
+- Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.
+- Expert-labelled evaluation corpus fixture with reviewer provenance (reviewerId, reviewArtifactId, contentHash, rubricVersion) passes both standard and production corpus validation.
+
 ### Added — Production infrastructure for living context graph
 
 - Added D1 migrations `0104_backfill_checkpoints`, `0105_rollout_gates`, `0106_rollout_gate_audit_log` for idempotent backfill tracking, feature rollout gates, and immutable gate transition audit trail.
