@@ -560,6 +560,87 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByText('Repo match refreshed from captured evidence.')).toBeTruthy();
   });
 
+  it('shows explicit feedback when refreshed evidence still does not produce a repo match', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [],
+          evidenceRefresh: {
+            status: 'READY_FOR_REPO_MATCH_REFRESH',
+            assessmentSessionId: 'assessment-plan-refresh-ready',
+            contextCallInterviewId: 'context-call-refresh-ready',
+            reportId: 'assessment-report-refresh-ready',
+            summary: 'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+            sourceSpanCount: 1,
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            completedAt: '2026-06-22T19:00:00.000Z',
+            updatedAt: '2026-06-22T19:01:00.000Z',
+          },
+        },
+      }),
+    });
+    mocks.api.post.mockResolvedValueOnce({
+      refreshed: false,
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId: 'match-run-after-refresh-still-blocked',
+      codeReviewMatch: {
+        status: 'NEEDS_MORE_EVIDENCE',
+        matchRunId: 'match-run-after-refresh-still-blocked',
+        packetId: null,
+        summary: 'PIPE needs more source-backed candidate evidence before assigning a fair code-review challenge.',
+        score: null,
+        assessmentQuality: null,
+        reviewProfile: null,
+        validatorAgent: null,
+        roleSources: [],
+        evidence: [],
+        evidenceHyperedges: [],
+        gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+        evidencePlan: [],
+        evidenceRefresh: {
+          status: 'READY_FOR_REPO_MATCH_REFRESH',
+          assessmentSessionId: 'assessment-plan-refresh-ready',
+          contextCallInterviewId: 'context-call-refresh-ready',
+          reportId: 'assessment-report-refresh-ready',
+          summary: 'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+          sourceSpanCount: 1,
+          matchRunId: 'match-run-blocked-1',
+          matchStatus: 'NEEDS_MORE_EVIDENCE',
+          completedAt: '2026-06-22T19:00:00.000Z',
+          updatedAt: '2026-06-22T19:01:00.000Z',
+        },
+      },
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    fireEvent.click(screen.getByTestId('interview-code-review-refresh-match-cta'));
+    await flushAsyncUpdates();
+
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/code-review-match/refresh',
+      {},
+    );
+    expect(screen.getByText('Refresh ran, but matcher returned NEEDS MORE EVIDENCE.')).toBeTruthy();
+    expect(screen.getByTestId('interview-code-review-decision-summary')).toHaveTextContent('NEEDS MORE EVIDENCE');
+  });
+
   it('creates a linked context call from a blocked code-review match', async () => {
     mocks.api.get
       .mockResolvedValueOnce({

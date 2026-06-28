@@ -1363,6 +1363,117 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('returns an explicit no-match refresh result without mutating the CODE_REVIEW assignment', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-still-blocked', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-refresh-still-blocked',
+        'assessment-session:code-review-evidence-plan:interview-code-review-refresh-still-blocked:context-call-refresh-still-blocked',
+        'context-call-refresh-still-blocked', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-refresh-still-blocked',
+      contextCallInterviewId: 'context-call-refresh-still-blocked',
+      matchRunId: 'match-run-before-refresh',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-refresh-still-blocked',
+        'assessment-report:code-review-evidence-plan:assessment-plan-refresh-still-blocked:ready',
+        'assessment-plan-refresh-still-blocked', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      )
+    `).run(JSON.stringify({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-refresh-still-blocked',
+      contextCallInterviewId: 'context-call-refresh-still-blocked',
+      matchRunId: 'match-run-before-refresh',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      sourceSpanCount: 1,
+    }));
+    vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
+      sqlite!.prepare(`
+        INSERT INTO match_runs (
+          id, candidate_id, role_snapshot_id, status, ranked_results_json,
+          selected_packet_id, query_json, created_at
+        ) VALUES (
+          'match-run-after-refresh-still-blocked', 'candidate-1', 'standalone-code-review-v1',
+          'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T19:02:00.000Z'
+        )
+      `).run();
+      return {
+        status: 'NEEDS_MORE_EVIDENCE',
+        matchRunId: 'match-run-after-refresh-still-blocked',
+      };
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-still-blocked/code-review-match/refresh', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      refreshed: boolean;
+      status: string;
+      matchRunId: string;
+      codeReviewMatch: { status: string; matchRunId: string | null } | null;
+    };
+    expect(body).toMatchObject({
+      refreshed: false,
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId: 'match-run-after-refresh-still-blocked',
+      codeReviewMatch: {
+        status: 'NEEDS_MORE_EVIDENCE',
+      },
+    });
+    const row = sqlite!.prepare(
+      `SELECT matched_repo_id, github_repo_url, github_pr_number
+         FROM scheduled_interviews
+        WHERE id = 'interview-code-review-refresh-still-blocked'`,
+    ).get() as {
+      matched_repo_id: number | null;
+      github_repo_url: string | null;
+      github_pr_number: number | null;
+    };
+    expect(row).toEqual({
+      matched_repo_id: null,
+      github_repo_url: null,
+      github_pr_number: null,
+    });
+  });
+
   it('downgrades stale role-backed CODE_REVIEW validator proof when contrast was unmeasured', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`
