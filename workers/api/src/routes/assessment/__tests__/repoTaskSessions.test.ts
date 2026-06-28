@@ -707,6 +707,77 @@ describe('repo task assessment session routes', () => {
     });
   });
 
+  it('persists diagnostic source refs through repo-task evaluation reports', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:diagnostic-source-ref',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-diagnostic-source-ref',
+    });
+    const diagnosticText = 'No reviewable repository task packet was assigned to this assessment.';
+    const diagnosticSourceRef = await sourceRef('system_diagnostic', 'missing-task-packet-1', diagnosticText);
+
+    expect((await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/events`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:missing-task-packet',
+        kind: 'system_diagnostic',
+        actorType: 'system',
+        actorId: 'assessment-router',
+        narrative: 'The assessment could not find a source-backed repository task packet.',
+        payload: { diagnosticCode: 'MISSING_REPO_TASK_PACKET' },
+        sourceRefs: [diagnosticSourceRef],
+      }),
+      env,
+    )).status).toBe(201);
+
+    const reportResponse = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/evaluation-reports`,
+      jsonRequest({
+        ingestionKey: 'evaluation:diagnostic-source-ref',
+        status: 'PROVENANCE_INCOMPLETE',
+        summary: 'Unable to evaluate because no reviewable repository task packet was assigned.',
+        output: {
+          schemaVersion: 'repo-task-assessment-output-v1',
+          status: 'PROVENANCE_INCOMPLETE',
+        },
+        claims: [],
+        diagnostics: [{
+          code: 'MISSING_REPO_TASK_PACKET',
+          severity: 'blocking',
+          message: 'No reviewable repository task packet was assigned.',
+          sourceRefs: [diagnosticSourceRef],
+        }],
+      }),
+      env,
+    );
+
+    expect(reportResponse.status).toBe(201);
+    const reportBody = await reportResponse.json() as {
+      report: { id: string; contextRecordId: string; status: string };
+    };
+    expect(reportBody.report.status).toBe('PROVENANCE_INCOMPLETE');
+    expect(sqlite.prepare(
+      `SELECT dsr.source_ref_type, dsr.source_ref_id, dsr.exact_text
+         FROM assessment_diagnostic_source_refs dsr
+         JOIN assessment_diagnostics d ON d.id = dsr.diagnostic_id
+        WHERE d.report_id = ?`,
+    ).get(reportBody.report.id)).toEqual({
+      source_ref_type: 'system_diagnostic',
+      source_ref_id: 'missing-task-packet-1',
+      exact_text: diagnosticText,
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text
+         FROM context_record_source_refs
+        WHERE context_record_id = ?
+          AND source_ref_type = 'system_diagnostic'`,
+    ).get(reportBody.report.contextRecordId)).toEqual({
+      source_ref_type: 'system_diagnostic',
+      source_ref_id: 'missing-task-packet-1',
+      exact_text: diagnosticText,
+    });
+  });
+
   it('rejects repo-task outputs whose status contradicts the evaluation report', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:contradictory-output-status',

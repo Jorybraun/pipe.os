@@ -265,6 +265,7 @@ function normalizeDiagnostics(
     code: diagnostic.code,
     severity: diagnostic.severity,
     message: diagnostic.message,
+    sourceRefs: diagnostic.sourceRefs ?? [],
     metadata: {
       ...(diagnostic.provider ? { provider: diagnostic.provider } : {}),
       ...(diagnostic.retryable !== undefined ? { retryable: diagnostic.retryable } : {}),
