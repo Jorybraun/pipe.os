@@ -318,7 +318,8 @@ describe('InterviewDetailPage', () => {
     expect(reviewProfile).toHaveTextContent('28');
 
     const hyperedges = screen.getByTestId('interview-code-review-match-hyperedges');
-    expect(hyperedges).toHaveTextContent('Evidence hyperedges');
+    expect(screen.getByText('Source proof')).toBeTruthy();
+    expect(hyperedges).toHaveTextContent('Evidence trace');
     expect(hyperedges).toHaveTextContent('Person evidence');
     expect(hyperedges).toHaveTextContent('Role source');
     expect(hyperedges).toHaveTextContent('Repo challenge');
@@ -510,7 +511,7 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const defenseThreads = screen.getByTestId('interview-code-review-defense-threads');
-    expect(defenseThreads).toHaveTextContent('AI developer defense');
+    expect(defenseThreads).toHaveTextContent('Review interaction');
     expect(defenseThreads).toHaveTextContent('Candidate comment');
     expect(defenseThreads).toHaveTextContent('AI developer · pushback · round 1');
     expect(defenseThreads).toHaveTextContent('Can you point to a user-visible failure?');

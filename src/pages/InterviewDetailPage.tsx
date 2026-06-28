@@ -769,6 +769,17 @@ export default function InterviewDetailPage(): JSX.Element {
   const matchHyperedges = codeReviewMatch?.evidenceHyperedges ?? [];
   const matchScore = formatMatchScore(codeReviewMatch?.score);
   const codeReviewProfile = asCodeReviewReviewProfile(codeReviewMatch?.reviewProfile);
+  const assessmentMetrics = codeReviewMatch?.assessmentQuality?.metrics ?? [];
+  const recruiterAssessmentMetrics = assessmentMetrics
+    .filter((metric) => [
+      'skill_stack_overlap',
+      'pr_reviewability',
+      'match_specificity',
+    ].includes(metric.id))
+    .slice(0, 3);
+  const matchPathLabel = primaryMatchHasRoleContext
+    ? 'role context -> person evidence -> repo challenge'
+    : 'candidate evidence -> repo challenge';
   const isCodeReviewInterview = interview.interviewType === 'CODE_REVIEW';
   const usesWorkspaceInterview = interview.interviewType === 'DEV_CONTAINER_CHALLENGE'
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
@@ -1061,13 +1072,13 @@ export default function InterviewDetailPage(): JSX.Element {
         </Section>
 
         {hasCodeReviewEvidence && (
-          <Section title="Code-review evidence" icon={<GitPullRequest size={15} />}>
+          <Section title="Review assignment" icon={<GitPullRequest size={15} />}>
             <div style={EVIDENCE_LIST}>
               {interview.githubRepoUrl && (
                 <div style={EVIDENCE_ROW}>
                   <span style={FIELD_LABEL}>Repository</span>
                   <a href={interview.githubRepoUrl} target="_blank" rel="noopener noreferrer" style={INLINE_LINK}>
-                    {interview.githubRepoUrl}
+                    {interview.githubRepoUrl.replace(/^https:\/\/github\.com\//, '')}
                   </a>
                 </div>
               )}
@@ -1077,10 +1088,10 @@ export default function InterviewDetailPage(): JSX.Element {
                   <span style={FIELD_VALUE}>#{interview.githubPrNumber}</span>
                 </div>
               )}
-              {interview.matchedRepoId && (
-                <div style={EVIDENCE_ROW}>
-                  <span style={FIELD_LABEL}>Repo id</span>
-                  <span style={FIELD_VALUE}>{interview.matchedRepoId}</span>
+              {codeReviewMatch?.summary && (
+                <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
+                  <span style={FIELD_LABEL}>Why this PR</span>
+                  <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewMatch.summary}</span>
                 </div>
               )}
             </div>
@@ -1088,27 +1099,34 @@ export default function InterviewDetailPage(): JSX.Element {
         )}
 
         {codeReviewMatch && (
-          <Section title="Code-review match" icon={<Network size={15} />}>
+          <Section title="Match decision" icon={<Network size={15} />}>
             <div data-testid="interview-code-review-match" style={EVIDENCE_LIST}>
-              <div style={EVIDENCE_ROW}>
-                <span style={FIELD_LABEL}>Status</span>
-                <span style={FIELD_VALUE}>{titleCaseToken(codeReviewMatch.status)}</span>
-              </div>
-              {matchScore && (
-                <div style={EVIDENCE_ROW}>
-                  <span style={FIELD_LABEL}>Score</span>
-                  <span style={FIELD_VALUE}>{matchScore}</span>
+              <div style={MATCH_DECISION_GRID}>
+                <div style={MATCH_DECISION_CARD}>
+                  <div style={FIELD_LABEL}>Match</div>
+                  <div style={MATCH_DECISION_VALUE}>{titleCaseToken(codeReviewMatch.status)}</div>
                 </div>
-              )}
-              <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
-                <span style={FIELD_LABEL}>Summary</span>
-                <span style={{ ...FIELD_VALUE, lineHeight: 1.6 }}>{codeReviewMatch.summary}</span>
+                {codeReviewMatch.assessmentQuality && (
+                  <div style={MATCH_DECISION_CARD}>
+                    <div style={FIELD_LABEL}>Assessment fit</div>
+                    <div style={MATCH_DECISION_VALUE}>{codeReviewMatch.assessmentQuality.verdict}</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>
+                      {codeReviewMatch.assessmentQuality.score}/{codeReviewMatch.assessmentQuality.maxScore}
+                    </div>
+                  </div>
+                )}
+                {matchScore && (
+                  <div style={MATCH_DECISION_CARD}>
+                    <div style={FIELD_LABEL}>Confidence</div>
+                    <div style={MATCH_DECISION_VALUE}>{matchScore}</div>
+                  </div>
+                )}
               </div>
 
               {codeReviewMatch.assessmentQuality && (
                 <div data-testid="interview-code-review-match-quality" style={CONTEXT_RECORD}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div style={FIELD_LABEL}>Assessment quality</div>
+                    <div style={FIELD_LABEL}>Why this is useful</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={MATCH_BADGE}>{codeReviewMatch.assessmentQuality.verdict}</span>
                       <span style={FIELD_VALUE}>
@@ -1117,7 +1135,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     </div>
                   </div>
                   <div style={{ display: 'grid', gap: 8 }}>
-                    {codeReviewMatch.assessmentQuality.metrics.map((metric) => (
+                    {recruiterAssessmentMetrics.map((metric) => (
                       <div key={metric.id} style={MATCH_METRIC_ROW}>
                         <div style={{ minWidth: 0 }}>
                           <div style={TRANSCRIPT_ROLE}>{metric.label}</div>
@@ -1134,8 +1152,15 @@ export default function InterviewDetailPage(): JSX.Element {
                 <ReviewProfileCard profile={codeReviewProfile} />
               )}
 
-              {codeReviewMatch.validatorAgent && (
-                <div data-testid="interview-code-review-match-validator" style={CONTEXT_RECORD}>
+              {(codeReviewMatch.validatorAgent || matchHyperedges.length > 0 || primaryMatchEvidence || codeReviewMatch.gaps.length > 0) && (
+                <details style={DETAILS_CARD}>
+                  <summary style={DETAILS_SUMMARY}>
+                    Source proof
+                    <span style={DETAILS_HINT}>candidate, role, repo, and scoring provenance</span>
+                  </summary>
+
+                  {codeReviewMatch.validatorAgent && (
+                    <div data-testid="interview-code-review-match-validator" style={CONTEXT_RECORD}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                     <div style={FIELD_LABEL}>Validator agent</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1172,13 +1197,13 @@ export default function InterviewDetailPage(): JSX.Element {
                         ))}
                     </div>
                   )}
-                </div>
-              )}
+                    </div>
+                  )}
 
-              {matchHyperedges.length > 0 && (
-                <div data-testid="interview-code-review-match-hyperedges" style={CONTEXT_RECORD}>
+                  {matchHyperedges.length > 0 && (
+                    <div data-testid="interview-code-review-match-hyperedges" style={CONTEXT_RECORD}>
                   <div style={{ display: 'grid', gap: 5 }}>
-                    <div style={FIELD_LABEL}>Evidence hyperedges</div>
+                    <div style={FIELD_LABEL}>Evidence trace</div>
                     <div style={CONTEXT_RECORD_NARRATIVE}>
                       {hyperedgePathLabel(matchHyperedges)}
                     </div>
@@ -1224,17 +1249,15 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                    </div>
+                  )}
 
-              {primaryMatchEvidence && (
-                <div data-testid="interview-code-review-evidence-bridge" style={CONTEXT_RECORD}>
+                  {primaryMatchEvidence && (
+                    <div data-testid="interview-code-review-evidence-bridge" style={CONTEXT_RECORD}>
                   <div style={{ display: 'grid', gap: 5 }}>
                     <div style={FIELD_LABEL}>Evidence bridge</div>
                     <div style={CONTEXT_RECORD_NARRATIVE}>
-                      {primaryMatchHasRoleContext
-                        ? 'role context -> person context -> repo challenge'
-                        : 'candidate evidence -> repo challenge'}
+                      {matchPathLabel}
                     </div>
                     {primaryMatchEvidence.sharedConcepts.length > 0 && (
                       <div style={TAG_ROW}>
@@ -1284,16 +1307,18 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                    </div>
+                  )}
 
-              {codeReviewMatch.gaps.length > 0 && (
-                <div style={CONTEXT_RECORD}>
+                  {codeReviewMatch.gaps.length > 0 && (
+                    <div style={CONTEXT_RECORD}>
                   <div style={FIELD_LABEL}>Gaps</div>
                   {codeReviewMatch.gaps.slice(0, 3).map((gap) => (
                     <div key={gap} style={CONTEXT_RECORD_NARRATIVE}>{gap}</div>
                   ))}
-                </div>
+                    </div>
+                  )}
+                </details>
               )}
             </div>
           </Section>
@@ -1335,11 +1360,11 @@ export default function InterviewDetailPage(): JSX.Element {
                 </div>
               )}
               {codeReviewSubmission.defenseThreads.length > 0 && (
-                <div data-testid="interview-code-review-defense-threads" style={CONTEXT_RECORD}>
-                  <div style={FIELD_LABEL}>AI developer defense</div>
-                  <div style={CONTEXT_RECORD_NARRATIVE}>
-                    Candidate comments paired with the developer pushback and follow-up reasoning captured during the async review.
-                  </div>
+                <details data-testid="interview-code-review-defense-threads" style={DETAILS_CARD}>
+                  <summary style={DETAILS_SUMMARY}>
+                    Review interaction
+                    <span style={DETAILS_HINT}>candidate comments and AI developer pushback</span>
+                  </summary>
                   <div style={{ display: 'grid', gap: 12 }}>
                     {codeReviewSubmission.defenseThreads.slice(0, 4).map((thread) => (
                       <div key={thread.commentId} style={DEFENSE_THREAD}>
@@ -1373,7 +1398,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     ))}
                   </div>
-                </div>
+                </details>
               )}
             </div>
           </Section>
@@ -1803,6 +1828,60 @@ const CONTEXT_RECORD_NARRATIVE: CSSProperties = {
   color: 'var(--pipe-text-dim)',
   fontSize: 12,
   lineHeight: 1.55,
+};
+
+const MATCH_DECISION_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+  gap: 10,
+};
+
+const MATCH_DECISION_CARD: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid var(--pipe-accent-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-accent-surface)',
+};
+
+const MATCH_DECISION_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 17,
+  fontWeight: 800,
+  lineHeight: 1.1,
+  overflowWrap: 'anywhere',
+};
+
+const DETAILS_CARD: CSSProperties = {
+  display: 'grid',
+  gap: 10,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DETAILS_SUMMARY: CSSProperties = {
+  cursor: 'pointer',
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
+const DETAILS_HINT: CSSProperties = {
+  display: 'block',
+  marginTop: 5,
+  color: 'var(--pipe-text-dim)',
+  fontSize: 10,
+  fontWeight: 500,
+  letterSpacing: 0,
+  textTransform: 'none',
 };
 
 const MATCH_BADGE: CSSProperties = {
