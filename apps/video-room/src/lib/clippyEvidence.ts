@@ -10,7 +10,7 @@ import {
 
 export { clippyTextFingerprint } from './clippyPromptIdentity';
 
-export type ClippyUiActionId = 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth';
+export type ClippyUiActionId = 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth';
 export type ClippyUiActionOrigin = 'tray' | 'prompt' | 'chat';
 export type ClippyRoomActionOrigin = 'prompt' | 'agent';
 export type ClippyEvidenceActor = 'host' | 'guest';
@@ -64,6 +64,8 @@ function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOr
       return 'Clippy chat window closed';
     case 'dismiss-clippy':
       return 'Clippy prompt dismissed';
+    case 'open-devin-auth-browser':
+      return 'Clippy opened Devin browser authentication';
     case 'check-devin-auth':
       return 'Clippy requested a real Devin CLI auth recheck';
     default:

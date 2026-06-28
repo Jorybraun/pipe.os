@@ -39,6 +39,7 @@ export interface ClippyAssistantProps {
   onOpenBrowser?: (url: string) => void;
   onOpenTerminal?: () => void;
   onOpenAuthTerminal?: () => void;
+  onOpenAuthBrowser?: () => void;
   onCheckAuth?: () => void;
   onAction?: (actionId: string) => void;
   onAgentRoomAction?: (action: AgentRoomAction) => void;
@@ -63,6 +64,7 @@ export function ClippyAssistant({
   onOpenBrowser,
   onOpenTerminal,
   onOpenAuthTerminal,
+  onOpenAuthBrowser,
   onCheckAuth,
   onAction,
   onAgentRoomAction,
@@ -280,12 +282,14 @@ export function ClippyAssistant({
   }, [chatInput, agentConn, onUserChatMessage]);
 
   const handleAuthClick = useCallback(() => {
-    onCheckAuth?.();
     if (agentConn.authUrl && onOpenBrowser) {
+      onOpenAuthBrowser?.();
       onOpenBrowser(agentConn.authUrl);
+    } else {
+      onCheckAuth?.();
     }
     agentConn.startAuth();
-  }, [agentConn, onCheckAuth, onOpenBrowser]);
+  }, [agentConn, onCheckAuth, onOpenAuthBrowser, onOpenBrowser]);
 
   const handleAuthTerminalClick = useCallback(() => {
     if (agentRef.current) {
@@ -452,6 +456,7 @@ export function ClippyAssistant({
             <button
               className="win95-clippy-chat-auth-btn"
               onClick={handleAuthClick}
+              data-testid="clippy-open-auth-browser"
             >
               Authenticate {agentDisplayName}
             </button>

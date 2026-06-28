@@ -1039,7 +1039,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     }
   }, [hasActiveWorkspace, workspaceSession?.sessionId]);
   const captureClippyUiAction = (
-    actionId: 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'check-devin-auth',
+    actionId: 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth',
     origin: 'tray' | 'prompt' | 'chat',
   ): void => {
     const evidence = buildClippyUiActionEvidence({
@@ -1080,6 +1080,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
   const checkDevinAuth = (): void => {
     captureClippyUiAction('check-devin-auth', 'prompt');
+  };
+  const openDevinAuthBrowser = (): void => {
+    captureClippyUiAction('open-devin-auth-browser', 'prompt');
   };
   const terminalSessionId = `terminal-${workspaceSession?.sessionId ?? 'no-workspace'}-${metadata.role.toLowerCase()}`;
   const terminalEvidenceContext: TerminalEvidenceContext = useMemo(() => ({
@@ -2340,6 +2343,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
           promptWorkspaceSessionId={workspaceSession?.sessionId ?? null}
           openChatRequest={clippyChatRequest}
           onOpenBrowser={openBrowserWindow}
+          onOpenAuthBrowser={openDevinAuthBrowser}
           onOpenTerminal={openTerminalWindow}
           onOpenAuthTerminal={openDevinAuthTerminal}
           onCheckAuth={checkDevinAuth}

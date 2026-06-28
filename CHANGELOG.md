@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy’s browser-based Devin auth button now records `open-devin-auth-browser` evidence instead of collapsing the click into a CLI auth recheck.
 - Room Chat’s paperclip launcher now records `clippy_chat_ui` provenance instead of misattributing the Clippy open action to the Win95 taskbar tray.
 - Closing the Clippy chat window now clears the Win95 tray active state and persists a source-backed `clippy_chat_ui` close action instead of disappearing as local-only UI state.
 - Clippy chat’s generic “Open Terminal” button now routes through source-backed `open-terminal` Clippy action evidence before opening the shared terminal window.

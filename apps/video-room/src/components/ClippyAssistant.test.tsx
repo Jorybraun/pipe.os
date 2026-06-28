@@ -253,6 +253,41 @@ describe('ClippyAssistant', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
+  it('opens browser Devin auth as its own source-backed UI intent', async () => {
+    const onOpenBrowser = vi.fn();
+    const onOpenAuthBrowser = vi.fn();
+    const onCheckAuth = vi.fn();
+    const startAuth = vi.fn();
+    mockAgentConnection({
+      connected: true,
+      status: 'auth_needed',
+      authUrl: 'https://app.devin.ai/auth',
+      authMessage: 'Devin needs browser authentication.',
+      capabilities: [],
+      startAuth,
+    });
+
+    render(
+      <ClippyAssistant
+        messages={[]}
+        onDismiss={vi.fn()}
+        agentEnabled
+        agentWsUrl="wss://room.test/agent"
+        openChatRequest={1}
+        onOpenBrowser={onOpenBrowser}
+        onOpenAuthBrowser={onOpenAuthBrowser}
+        onCheckAuth={onCheckAuth}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId('clippy-open-auth-browser'));
+
+    expect(onOpenAuthBrowser).toHaveBeenCalledTimes(1);
+    expect(onOpenBrowser).toHaveBeenCalledWith('https://app.devin.ai/auth');
+    expect(startAuth).toHaveBeenCalledTimes(1);
+    expect(onCheckAuth).not.toHaveBeenCalled();
+  });
+
   it('routes the generic Open Terminal button through source-backed Clippy action handling', async () => {
     const onAction = vi.fn();
     const onOpenTerminal = vi.fn();

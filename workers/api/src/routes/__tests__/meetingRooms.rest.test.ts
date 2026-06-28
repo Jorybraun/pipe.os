@@ -2074,6 +2074,33 @@ describe('meeting room recording living-context route', () => {
     }, env, ctx);
     expect(clippyChatCloseRes.status).toBe(200);
 
+    const clippyAuthBrowserRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'clippy_action',
+        text: 'Clippy opened Devin browser authentication',
+        actor: 'host',
+        properties: {
+          source: 'clippy_prompt_ui',
+          actionId: 'open-devin-auth-browser',
+          origin: 'prompt',
+          executedBy: 'host',
+          actionSource: 'clippy_prompt_ui',
+          executionStatus: 'executed',
+          capturedAtMs: 1782594350000,
+          clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
+          agent: null,
+          agentResponseClaimed: false,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+        },
+      }),
+    }, env, ctx);
+    expect(clippyAuthBrowserRes.status).toBe(200);
+
     const clippyAgentSuggestionRes = await app.request(`/meeting/${created.hostToken}/session-events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2118,7 +2145,7 @@ describe('meeting room recording living-context route', () => {
       source_type: string;
       extracted_properties_json: string;
     }>;
-    expect(clippyNodes).toHaveLength(4);
+    expect(clippyNodes).toHaveLength(5);
     expect(clippyNodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
         node_type: 'session_clippy_action',
@@ -2134,6 +2161,11 @@ describe('meeting room recording living-context route', () => {
         node_type: 'session_clippy_action',
         source_type: 'meeting_session',
         narrative_text: expect.stringContaining('Clippy chat window closed'),
+      }),
+      expect.objectContaining({
+        node_type: 'session_clippy_action',
+        source_type: 'meeting_session',
+        narrative_text: expect.stringContaining('Clippy opened Devin browser authentication'),
       }),
       expect.objectContaining({
         node_type: 'session_clippy_action',
@@ -2170,6 +2202,16 @@ describe('meeting room recording living-context route', () => {
         executionStatus: 'closed',
         capturedAtMs: 1782594300000,
         clippyActionEventId: 'clippy-action:host:1782594300000:clippy_chat_ui:chat:closed:close-clippy-chat',
+        surface: 'win95',
+      }),
+      expect.objectContaining({
+        actor: 'host',
+        source: 'clippy_prompt_ui',
+        actionId: 'open-devin-auth-browser',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594350000,
+        clippyActionEventId: 'clippy-action:host:1782594350000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
         surface: 'win95',
       }),
       expect.objectContaining({

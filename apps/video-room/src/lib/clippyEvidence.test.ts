@@ -166,6 +166,34 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures Devin browser auth opens as prompt UI evidence', () => {
+    expect(buildClippyUiActionEvidence({
+      actionId: 'open-devin-auth-browser',
+      origin: 'prompt',
+      actor: 'host',
+      capturedAtMs: 1782594130000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: 'READY',
+      workspaceSessionId: 'workspace-123',
+      agentWorkspaceReady: true,
+    })).toMatchObject({
+      text: 'Clippy opened Devin browser authentication',
+      properties: {
+        source: 'clippy_prompt_ui',
+        actionId: 'open-devin-auth-browser',
+        origin: 'prompt',
+        executedBy: 'host',
+        actionSource: 'clippy_prompt_ui',
+        executionStatus: 'executed',
+        capturedAtMs: 1782594130000,
+        clippyActionEventId: 'clippy-action:host:1782594130000:clippy_prompt_ui:prompt:executed:open-devin-auth-browser',
+        agent: null,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
   it('captures prompt-button executions as source-backed UI evidence', () => {
     expect(buildClippyRoomActionExecutionEvidence({
       actionId: 'start-recording',
