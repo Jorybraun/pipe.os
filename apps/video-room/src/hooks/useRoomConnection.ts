@@ -492,6 +492,17 @@ const PEER_DISCONNECT_GRACE_MS = 15000;
 const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
 const PEER_CURSOR_TTL_MS = 4000;
+const SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS = 5000;
+
+interface PendingLocalSurfaceEvent {
+  surface: RoomSurface;
+  createdAt: number;
+}
+
+interface SurfaceSnapshotDecision {
+  applySnapshot: boolean;
+  clearPendingLocalSurface: boolean;
+}
 
 function createPeerConfiguration(iceServers: RTCIceServer[]): RTCConfiguration {
   return {
@@ -535,6 +546,29 @@ function recordOrUndefined(value: unknown): Record<string, unknown> | undefined 
 
 function isRoomSurface(value: unknown): value is RoomSurface {
   return value === 'standard' || value === 'win95';
+}
+
+export function decideRoomSurfaceSnapshot(input: {
+  snapshotSurface: RoomSurface;
+  surfaceEventSeenOnSocket: boolean;
+  pendingLocalSurfaceEvent: PendingLocalSurfaceEvent | null;
+  nowMs: number;
+  guardMs?: number;
+}): SurfaceSnapshotDecision {
+  const guardMs = input.guardMs ?? SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS;
+  const pending = input.pendingLocalSurfaceEvent;
+  if (pending) {
+    const pendingAgeMs = Math.max(0, input.nowMs - pending.createdAt);
+    const pendingIsFresh = pendingAgeMs <= guardMs;
+    if (pendingIsFresh && pending.surface !== input.snapshotSurface) {
+      return { applySnapshot: false, clearPendingLocalSurface: false };
+    }
+    return { applySnapshot: true, clearPendingLocalSurface: true };
+  }
+  if (input.surfaceEventSeenOnSocket) {
+    return { applySnapshot: false, clearPendingLocalSurface: false };
+  }
+  return { applySnapshot: true, clearPendingLocalSurface: false };
 }
 
 function parseDesktopWindow(value: unknown): RoomDesktopWindowConfig | null {
@@ -1292,6 +1326,7 @@ export function useRoomConnection(
   const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
   const surfaceEventSeenRef = useRef(false);
+  const pendingLocalSurfaceEventRef = useRef<PendingLocalSurfaceEvent | null>(null);
   const lastCursorSentAtRef = useRef(0);
   const chatDeliveryEvidenceRef = useRef(options.onChatDeliveryEvidence);
   const desktopClientIdRef = useRef(
@@ -1306,6 +1341,7 @@ export function useRoomConnection(
   useEffect(() => {
     if (!active) {
       surfaceEventSeenRef.current = false;
+      pendingLocalSurfaceEventRef.current = null;
       setRoomSurfaceState(initialSurface);
       setDesktopStartMenuOpen(null);
     }
@@ -1661,6 +1697,7 @@ export function useRoomConnection(
     const connect = (): void => {
       if (disposed) return;
       clearReconnect();
+      surfaceEventSeenRef.current = false;
       const ws = new WebSocket(roomWebSocketUrl(token));
       wsRef.current = ws;
 
@@ -1766,6 +1803,7 @@ export function useRoomConnection(
           if (!event || event.clientId === desktopClientIdRef.current) return;
           if (event.kind === 'SET_ROOM_SURFACE') {
             surfaceEventSeenRef.current = true;
+            pendingLocalSurfaceEventRef.current = null;
             setRoomSurfaceState(event.surface);
           } else if (event.kind === 'START_MENU_STATE') {
             setDesktopStartMenuOpen(event.open);
@@ -1774,8 +1812,19 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_DESKTOP_STATE') {
           const snapshot = parseDesktopSnapshot(message.payload);
           if (!snapshot) return;
-          if (snapshot.surface && !surfaceEventSeenRef.current) {
-            setRoomSurfaceState(snapshot.surface);
+          if (snapshot.surface) {
+            const decision = decideRoomSurfaceSnapshot({
+              snapshotSurface: snapshot.surface,
+              surfaceEventSeenOnSocket: surfaceEventSeenRef.current,
+              pendingLocalSurfaceEvent: pendingLocalSurfaceEventRef.current,
+              nowMs: Date.now(),
+            });
+            if (decision.clearPendingLocalSurface) {
+              pendingLocalSurfaceEventRef.current = null;
+            }
+            if (decision.applySnapshot) {
+              setRoomSurfaceState(snapshot.surface);
+            }
           }
           if (snapshot.startMenuOpen !== undefined) {
             setDesktopStartMenuOpen(snapshot.startMenuOpen);
@@ -2103,6 +2152,10 @@ export function useRoomConnection(
     };
     if (event.kind === 'SET_ROOM_SURFACE') {
       surfaceEventSeenRef.current = true;
+      pendingLocalSurfaceEventRef.current = {
+        surface: event.surface,
+        createdAt: event.createdAt,
+      };
       setRoomSurfaceState(event.surface);
     } else if (event.kind === 'START_MENU_STATE') {
       setDesktopStartMenuOpen(event.open);

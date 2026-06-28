@@ -2,12 +2,71 @@ import { describe, expect, it } from 'vitest';
 import {
   applyRoomMediaControlEvent,
   applyRoomRecordingStateEvent,
+  decideRoomSurfaceSnapshot,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
   type RoomChatMessage,
   type RoomCursorPresence,
   type RoomMediaControlState,
 } from './useRoomConnection';
+
+describe('decideRoomSurfaceSnapshot', () => {
+  it('applies the Durable Object snapshot on a new socket so missed surface changes resync', () => {
+    expect(decideRoomSurfaceSnapshot({
+      snapshotSurface: 'standard',
+      surfaceEventSeenOnSocket: false,
+      pendingLocalSurfaceEvent: null,
+      nowMs: 10_000,
+    })).toEqual({
+      applySnapshot: true,
+      clearPendingLocalSurface: false,
+    });
+  });
+
+  it('does not let an older snapshot overwrite a fresh local surface toggle queued during reconnect', () => {
+    expect(decideRoomSurfaceSnapshot({
+      snapshotSurface: 'standard',
+      surfaceEventSeenOnSocket: false,
+      pendingLocalSurfaceEvent: {
+        surface: 'win95',
+        createdAt: 9_900,
+      },
+      nowMs: 10_000,
+      guardMs: 5_000,
+    })).toEqual({
+      applySnapshot: false,
+      clearPendingLocalSurface: false,
+    });
+  });
+
+  it('ignores snapshots after a live surface event on the current socket', () => {
+    expect(decideRoomSurfaceSnapshot({
+      snapshotSurface: 'standard',
+      surfaceEventSeenOnSocket: true,
+      pendingLocalSurfaceEvent: null,
+      nowMs: 10_000,
+    })).toEqual({
+      applySnapshot: false,
+      clearPendingLocalSurface: false,
+    });
+  });
+
+  it('clears a pending local marker when the authoritative snapshot catches up', () => {
+    expect(decideRoomSurfaceSnapshot({
+      snapshotSurface: 'win95',
+      surfaceEventSeenOnSocket: false,
+      pendingLocalSurfaceEvent: {
+        surface: 'win95',
+        createdAt: 9_900,
+      },
+      nowMs: 10_000,
+      guardMs: 5_000,
+    })).toEqual({
+      applySnapshot: true,
+      clearPendingLocalSurface: true,
+    });
+  });
+});
 
 describe('mergePeerCursorPresence', () => {
   it('keeps one fresh cursor per role and uses receive time for presence expiry', () => {
