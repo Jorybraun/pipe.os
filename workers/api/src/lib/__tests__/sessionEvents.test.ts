@@ -448,6 +448,150 @@ describe('sessionEvents', () => {
       }
     });
 
+    it('preserves code-server file observations as source refs without claiming full file content', async () => {
+      const { sqlite, db: realDb } = createSessionEvidenceDb();
+      try {
+        const fileContentHash = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+        const preview = 'export const answer = 42;';
+        const event: SessionEvent = {
+          type: 'code_editor_save',
+          sessionId: 'meeting-session-code-server-file',
+          candidateId: 'cand-assessment',
+          timestamp: 1782604500,
+          actor: 'system',
+          text: 'src/app.ts',
+          properties: {
+            source: 'code_server_workspace',
+            observedBy: 'clippy_agent_bridge',
+            bridgeEventType: 'FILE_CHANGED',
+            editorSurface: 'code-server',
+            action: 'modified',
+            surface: 'win95',
+            roomPhase: 'connected',
+            workspaceStatus: 'READY',
+            workspaceSessionId: 'workspace-session-1',
+            repoUrl: 'https://github.com/cloudflare/workers-sdk',
+            path: 'src/app.ts',
+            observedAt: '2026-06-27T20:01:40.000Z',
+            contentHash: fileContentHash,
+            sizeBytes: 421,
+            contentPreview: preview,
+            bridgePersisted: false,
+            durableObjectReplayExpected: true,
+          },
+        };
+
+        const node = await captureSessionEvent(realDb, event);
+        expect(node).not.toBeNull();
+
+        const contextSource = sqlite.prepare(
+          `SELECT csr.source_ref_type, csr.source_ref_id, csr.evidence_role,
+                  csr.exact_text, csr.content_hash, csr.locator_json, csr.metadata_json
+             FROM context_record_source_refs csr
+             JOIN context_records cr ON cr.id = csr.context_record_id
+            WHERE cr.record_type = 'meeting_session_event'
+              AND csr.source_ref_type = 'code_server_file_observation'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+          locator_json: string;
+          metadata_json: string;
+        } | undefined;
+
+        expect(contextSource).toMatchObject({
+          source_ref_type: 'code_server_file_observation',
+          source_ref_id: `${node!.id}:modified:src/app.ts:${fileContentHash.slice(0, 16)}`,
+          evidence_role: 'workspace_file_save',
+        });
+        expect(contextSource?.content_hash).toBe(await sha256Hex(contextSource?.exact_text ?? ''));
+        expect(JSON.parse(contextSource?.exact_text ?? '{}')).toMatchObject({
+          sourceKind: 'code_server_workspace.file_observation',
+          eventType: 'code_editor_save',
+          sessionId: 'meeting-session-code-server-file',
+          candidateId: 'cand-assessment',
+          candidateNodeId: node!.id,
+          actor: 'system',
+          path: 'src/app.ts',
+          action: 'modified',
+          fileContentHash,
+          sizeBytes: 421,
+          contentPreview: preview,
+          observedBy: 'clippy_agent_bridge',
+          bridgePersisted: false,
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        });
+        expect(JSON.parse(contextSource?.locator_json ?? '{}')).toMatchObject({
+          sessionId: 'meeting-session-code-server-file',
+          candidateId: 'cand-assessment',
+          candidateNodeId: node!.id,
+          eventType: 'code_editor_save',
+          path: 'src/app.ts',
+          action: 'modified',
+          observedAt: '2026-06-27T20:01:40.000Z',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        });
+        expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
+          sourceKind: 'code_server_workspace.file_observation',
+          observedBy: 'clippy_agent_bridge',
+          bridgePersisted: false,
+          fileContentHash,
+          sizeBytes: 421,
+          hasContentPreview: true,
+        });
+
+        const assessmentSource = sqlite.prepare(
+          `SELECT source_ref_type, source_ref_id, evidence_role, exact_text, content_hash
+             FROM assessment_event_source_refs
+            WHERE source_ref_type = 'code_server_file_observation'`,
+        ).get() as {
+          source_ref_type: string;
+          source_ref_id: string;
+          evidence_role: string;
+          exact_text: string;
+          content_hash: string;
+        } | undefined;
+        expect(assessmentSource).toMatchObject({
+          source_ref_type: 'code_server_file_observation',
+          source_ref_id: contextSource?.source_ref_id,
+          evidence_role: 'workspace_file_save',
+          exact_text: contextSource?.exact_text,
+          content_hash: contextSource?.content_hash,
+        });
+
+        const fileEntity = sqlite.prepare(
+          `SELECT entity_type, entity_id, relationship, metadata_json
+             FROM context_record_entities
+            WHERE entity_type = 'code_server_file'`,
+        ).get() as {
+          entity_type: string;
+          entity_id: string;
+          relationship: string;
+          metadata_json: string;
+        } | undefined;
+        expect(fileEntity).toMatchObject({
+          entity_type: 'code_server_file',
+          entity_id: 'workspace-session-1:src/app.ts',
+          relationship: 'affected_workspace_file',
+        });
+        expect(JSON.parse(fileEntity?.metadata_json ?? '{}')).toMatchObject({
+          path: 'src/app.ts',
+          action: 'modified',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          contentHash: fileContentHash,
+          sizeBytes: 421,
+          observedAt: '2026-06-27T20:01:40.000Z',
+        });
+      } finally {
+        sqlite.close();
+      }
+    });
+
     it('preserves explicit agent identity in 95 room assessment evidence without defaulting to Devin', async () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {

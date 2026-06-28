@@ -1979,6 +1979,30 @@ function sessionEventEntities(input: {
     });
   }
 
+  const codeServerPath = stringProperty(properties, 'path');
+  if (
+    codeServerPath
+    && properties.source === 'code_server_workspace'
+    && properties.bridgeEventType === 'FILE_CHANGED'
+  ) {
+    const workspaceSessionId = stringProperty(properties, 'workspaceSessionId');
+    entities.push({
+      entityType: 'code_server_file',
+      entityId: `${workspaceSessionId ?? event.sessionId}:${codeServerPath}`,
+      relationship: 'affected_workspace_file',
+      metadata: {
+        path: codeServerPath,
+        action: stringProperty(properties, 'action'),
+        workspaceSessionId,
+        workspaceRoot: stringProperty(properties, 'workspaceRoot'),
+        repoUrl: stringProperty(properties, 'repoUrl'),
+        contentHash: stringProperty(properties, 'contentHash'),
+        sizeBytes: numberProperty(properties, 'sizeBytes'),
+        observedAt: stringProperty(properties, 'observedAt'),
+      },
+    });
+  }
+
   return entities;
 }
 
@@ -2113,6 +2137,117 @@ async function terminalTextSourceRef(input: {
   };
 }
 
+function codeServerFileObservationIsSourceBacked(
+  event: SessionEvent,
+  properties: JsonObject,
+): boolean {
+  if (event.type !== 'code_editor_save' && event.type !== 'file_change') return false;
+  if (properties.source !== 'code_server_workspace') return false;
+  if (properties.bridgeEventType !== 'FILE_CHANGED') return false;
+  if (properties.editorSurface !== 'code-server') return false;
+  const path = stringProperty(properties, 'path');
+  if (!path || path !== event.text) return false;
+  const action = stringProperty(properties, 'action');
+  if (!action) return false;
+  if (event.type === 'code_editor_save' && !CODE_SERVER_SAVE_ACTIONS.has(action)) return false;
+  if (event.type === 'file_change' && action !== 'deleted') return false;
+  const observedAt = stringProperty(properties, 'observedAt');
+  if (!observedAt) return false;
+  const contentHash = stringProperty(properties, 'contentHash');
+  if (!contentHash || !SHA256_HEX_RE.test(contentHash)) return false;
+  const sizeBytes = numberProperty(properties, 'sizeBytes');
+  if (sizeBytes === null || sizeBytes < 0) return false;
+
+  if (properties.bridgePersisted === true) {
+    return properties.observedBy === 'agent_bridge'
+      && Boolean(stringProperty(properties, 'workspaceRoot'));
+  }
+
+  if (properties.bridgePersisted === false) {
+    return properties.observedBy === 'clippy_agent_bridge'
+      && (properties.surface === 'standard' || properties.surface === 'win95')
+      && Boolean(stringProperty(properties, 'roomPhase'))
+      && Boolean(stringProperty(properties, 'workspaceStatus'))
+      && Boolean(stringProperty(properties, 'workspaceSessionId'))
+      && properties.durableObjectReplayExpected === true;
+  }
+
+  return false;
+}
+
+async function codeServerFileObservationSourceRef(input: {
+  event: SessionEvent;
+  node: CandidateNode;
+  properties: JsonObject;
+}): Promise<SessionEventExactSourceRef | null> {
+  if (!codeServerFileObservationIsSourceBacked(input.event, input.properties)) return null;
+
+  const action = stringProperty(input.properties, 'action')!;
+  const path = stringProperty(input.properties, 'path')!;
+  const observedAt = stringProperty(input.properties, 'observedAt')!;
+  const fileContentHash = stringProperty(input.properties, 'contentHash')!;
+  const sizeBytes = numberProperty(input.properties, 'sizeBytes')!;
+  const workspaceSessionId = stringProperty(input.properties, 'workspaceSessionId');
+  const workspaceRoot = stringProperty(input.properties, 'workspaceRoot');
+  const repoUrl = stringProperty(input.properties, 'repoUrl');
+  const contentPreview = typeof input.properties.contentPreview === 'string'
+    ? input.properties.contentPreview
+    : null;
+  const observation = {
+    sourceKind: 'code_server_workspace.file_observation',
+    eventType: input.event.type,
+    sessionId: input.event.sessionId,
+    candidateId: input.event.candidateId,
+    candidateNodeId: input.node.id,
+    actor: input.event.actor,
+    path,
+    action,
+    observedAt,
+    fileContentHash,
+    sizeBytes,
+    contentPreview,
+    observedBy: stringProperty(input.properties, 'observedBy'),
+    bridgeEventType: 'FILE_CHANGED',
+    editorSurface: 'code-server',
+    bridgePersisted: input.properties.bridgePersisted === true,
+    workspaceSessionId,
+    workspaceRoot,
+    workspaceStatus: stringProperty(input.properties, 'workspaceStatus'),
+    repoUrl,
+    surface: stringProperty(input.properties, 'surface'),
+    roomPhase: stringProperty(input.properties, 'roomPhase'),
+  };
+  const exactText = stableJson(observation);
+
+  return {
+    sourceRefType: 'code_server_file_observation',
+    sourceRefId: `${input.node.id}:${action}:${path}:${fileContentHash.slice(0, 16)}`,
+    evidenceRole: input.event.type === 'file_change' ? 'workspace_file_delete' : 'workspace_file_save',
+    locator: {
+      sessionId: input.event.sessionId,
+      candidateId: input.event.candidateId,
+      candidateNodeId: input.node.id,
+      eventType: input.event.type,
+      path,
+      action,
+      observedAt,
+      workspaceSessionId,
+      workspaceRoot,
+      repoUrl,
+    },
+    exactText,
+    contentHash: await sha256Hex(exactText),
+    metadata: {
+      sourceKind: 'code_server_workspace.file_observation',
+      observedBy: stringProperty(input.properties, 'observedBy'),
+      bridgePersisted: input.properties.bridgePersisted === true,
+      fileContentHash,
+      sizeBytes,
+      hasContentPreview: contentPreview !== null,
+    },
+  };
+}
+
 async function persistSessionEventContextRecord(
   db: D1Database,
   event: SessionEvent,
@@ -2142,6 +2277,7 @@ async function persistSessionEventContextRecord(
   const sourceSpanId = await findCandidateNodeSourceSpanId(db, node.id);
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
+  const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sources: ContextRecordSourceInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -2166,6 +2302,7 @@ async function persistSessionEventContextRecord(
   ];
   if (roomFileContentSource) sources.push(roomFileContentSource);
   if (terminalTextSource) sources.push(terminalTextSource);
+  if (codeServerFileSource) sources.push(codeServerFileSource);
   if (sourceSpanId) {
     sources.push({
       sourceSpanId,
@@ -2339,6 +2476,7 @@ async function persistSessionEventAssessmentEvidence(
   const sourceExactText = stableJson(sessionEventSourcePayload(event, node));
   const roomFileContentSource = await roomTextFileContentSourceRef({ event, node, properties });
   const terminalTextSource = await terminalTextSourceRef({ event, node, properties });
+  const codeServerFileSource = await codeServerFileObservationSourceRef({ event, node, properties });
   const sourceRefs: AssessmentEvidenceSourceRefInput[] = [
     {
       sourceRefType: 'meeting_session_event',
@@ -2362,6 +2500,7 @@ async function persistSessionEventAssessmentEvidence(
     },
     ...(roomFileContentSource ? [roomFileContentSource] : []),
     ...(terminalTextSource ? [terminalTextSource] : []),
+    ...(codeServerFileSource ? [codeServerFileSource] : []),
   ];
 
   await store.recordAssessmentEvent({
