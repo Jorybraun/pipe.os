@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Native resume ingestion + scheduled backfill
+
+- Added `ingestResumeToLivingContext()` for native resume-to-living-context ingestion — splits resume text into structural sections, creates per-section source spans with exact char/byte/line positions, dynamically learns concepts, creates signal evidence at appropriate evidence levels, and enqueues neo4j projections. Fully idempotent. Supports pre-extracted LLM semantic assertions. (criteria #1, #2, #3)
+- Added `splitResumeIntoSections()` — detects uppercase heading patterns to split resume text into typed sections (summary, experience, education, skills, etc.), with paragraph-based fallback.
+- Added `runScheduledBackfill()` — scheduled backfill runner with 4 dependency-ordered tasks (candidates → contacts → resumes → projection drain), cursor-based batch processing, gated by `living_context_backfill` rollout gate. Wired to Workers cron `scheduled` event. (criterion #8)
+- Added 14 new tests in `resumeIngestion.test.ts` verifying idempotency, source span creation, concept extraction, signal evidence, context records, and projection job enqueue.
+
 ### Added — Staged rollout proof (criterion #8 completion)
 
 - Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.

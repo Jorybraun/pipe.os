@@ -300,4 +300,54 @@ All 4 CI failures on PR #110 are identical to those on main:
 - Owner: merge PR #111 into main (draft forced by network policy on automation session)
 - Owner: close superseded PRs #105-#110
 - Owner: apply D1 migrations to production: `cd workers/api && npx wrangler d1 migrations apply pipe-db --env production`
+
+### 2026-06-28 — Session 698f9716 (Devin)
+
+**Action:** Continue advancing living context goal — native resume ingestion + backfill scheduler.
+
+**Previous PRs reviewed:**
+- PR #113 (from session a71915d5) — consolidation PR, already created, pending merge
+
+**Changes made:**
+1. Implemented native resume-to-living-context ingestion (`resumeIngestion.ts`):
+   - Splits resume text into structural sections (heading detection + fallback paragraph split)
+   - Creates per-section source spans with exact char/byte/line positions
+   - Creates assertions linked to source spans for each section
+   - Dynamically learns concepts from resume content (technical terms, tools)
+   - Creates signal evidence at appropriate evidence levels (experience→implemented, skills→used)
+   - Produces context records with full source provenance
+   - Enqueues neo4j projection jobs
+   - Fully idempotent — re-ingestion produces identical results
+   - Supports pre-extracted LLM semantic assertions as input
+
+2. Created scheduled backfill runner (`backfillScheduled.ts`):
+   - Defines 4 dependency-ordered tasks:
+     - `candidates_to_living_context` (no deps)
+     - `contacts_to_living_context` (no deps)
+     - `resumes_to_living_context` (depends on candidates)
+     - `projection_outbox_drain` (depends on all above)
+   - Cursor-based batch processing (50 items/batch)
+   - Gated by `living_context_backfill` rollout gate
+   - Wired to Workers cron `scheduled` event
+   - Respects checkpoint persistence for restart recovery
+
+3. Wired into Workers entry point (`index.ts`):
+   - `runScheduledBackfill(env)` called in cron trigger alongside `processProjectionOutbox`
+
+**Test results after changes:**
+- 167 test files pass, 0 failures (was 166 / 1513 tests → now 167 / 1527 tests)
+- TypeScript: 0 errors
+- Lint: 0 errors, 94 pre-existing warnings
+
+**Acceptance criteria advanced:**
+- #1 (Living person graph): native resume ingestion bypasses legacy bridge
+- #2 (Preserve original meaning): per-section source spans with exact positions
+- #3 (Learn semantics dynamically): concept extraction from resume text
+- #8 (Production quality): scheduled backfill with rollout gate control
+
+**Next priorities:**
+1. Merge PR #113 (infrastructure from previous session)
+2. Create/merge this PR (native ingestion + backfill scheduler)
+3. Enable `living_context_backfill` gate in production (internal_only → canary → GA)
+4. Monitor backfill progress via health endpoint
 - Owner: deploy worker: `cd workers/api && npx wrangler deploy --env production`
