@@ -19,6 +19,7 @@ import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import type {
   CodeReviewMatchAlignment,
+  CodeReviewMatchDetail,
   CodeReviewMatchHyperedge,
   CodeReviewMatchHyperedgeNode,
   CodeReviewMatchSourceRef,
@@ -300,6 +301,62 @@ function parseCodeReviewSubmission(raw: string | null | undefined): CodeReviewSu
   } catch {
     return null;
   }
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function codeReviewVerdictLabel(verdict: string | null | undefined): string {
+  switch ((verdict ?? '').toLowerCase()) {
+    case 'request_changes':
+    case 'changes_requested':
+      return 'Candidate requested changes';
+    case 'approve':
+    case 'approved':
+      return 'Candidate approved the PR';
+    case 'comment':
+    case 'commented':
+      return 'Candidate left review comments';
+    default:
+      return verdict ? `Candidate submitted ${titleCaseToken(verdict)}` : 'Waiting for candidate review';
+  }
+}
+
+function codeReviewActionText(
+  submission: CodeReviewSubmissionDetail | null,
+  match: CodeReviewMatchDetail | null,
+): string {
+  const verdict = submission?.verdict?.toLowerCase() ?? null;
+  if (verdict === 'request_changes' || verdict === 'changes_requested') {
+    return 'Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.';
+  }
+  if (verdict === 'approve' || verdict === 'approved') {
+    return 'Check whether the candidate found enough risk before treating the approval as a positive signal.';
+  }
+  if (submission) {
+    return 'Read the candidate comments and developer replies before deciding whether this review shows the judgment you need.';
+  }
+  if (match?.status === 'MATCHED') {
+    return 'The PR assignment is ready. Wait for the candidate review before making a hiring decision.';
+  }
+  return 'Resolve the assignment issue before relying on this assessment.';
+}
+
+function codeReviewFitLabel(match: CodeReviewMatchDetail | null): string {
+  if (match?.assessmentQuality) {
+    return `${titleCaseToken(match.assessmentQuality.verdict.toLowerCase())} assessment fit`;
+  }
+  if (match?.status) return `${titleCaseToken(match.status)} assignment`;
+  return 'No assignment yet';
+}
+
+function codeReviewFitDetail(match: CodeReviewMatchDetail | null): string {
+  if (match?.assessmentQuality) {
+    return `${match.assessmentQuality.score}/${match.assessmentQuality.maxScore}`;
+  }
+  const score = formatMatchScore(match?.score);
+  return score ? `confidence ${score}` : 'waiting for source-backed match';
 }
 
 function parseTranscriptJson(raw: string | null | undefined): TranscriptEntry[] {
@@ -796,6 +853,32 @@ export default function InterviewDetailPage(): JSX.Element {
       : guestRoomUrl
         ? 'Transcript will appear here after the host and guest complete a recorded call.'
         : 'Send an invite or open the host room to start collecting call evidence.';
+  const codeReviewOutcome = codeReviewVerdictLabel(codeReviewSubmission?.verdict);
+  const codeReviewAction = codeReviewActionText(codeReviewSubmission, codeReviewMatch);
+  const codeReviewDecisionSignals = [
+    {
+      label: 'Assignment',
+      value: codeReviewFitLabel(codeReviewMatch),
+      detail: codeReviewFitDetail(codeReviewMatch),
+    },
+    {
+      label: 'Candidate review',
+      value: countLabel(codeReviewSubmission?.annotations.length ?? 0, 'annotation'),
+      detail: codeReviewSubmission?.summary ?? 'no submitted review yet',
+    },
+    {
+      label: 'Pushback',
+      value: countLabel(codeReviewSubmission?.defenseThreads.length ?? 0, 'pushback thread'),
+      detail: (codeReviewSubmission?.defenseThreads.length ?? 0) > 0
+        ? 'developer replies are available for judgment calibration'
+        : 'no developer pushback captured yet',
+    },
+    {
+      label: 'Proof',
+      value: countLabel(matchHyperedges.length, 'evidence bridge'),
+      detail: codeReviewMatch?.summary ?? 'source trail appears after a match is selected',
+    },
+  ];
 
   return (
     <div style={PAGE}>
@@ -926,6 +1009,36 @@ export default function InterviewDetailPage(): JSX.Element {
       )}
 
       <main style={EVIDENCE_GRID}>
+        {isCodeReviewInterview && (codeReviewMatch || codeReviewSubmission) && (
+          <Section
+            title="Recruiter decision"
+            icon={<CheckCircle size={15} />}
+            style={CODE_REVIEW_DECISION_SECTION}
+          >
+            <div data-testid="interview-code-review-decision-summary" style={DECISION_SUMMARY}>
+              <div style={DECISION_HEADER}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={FIELD_LABEL}>Review outcome</div>
+                  <div style={DECISION_TITLE}>{codeReviewOutcome}</div>
+                </div>
+                {codeReviewMatch?.status && (
+                  <span style={MATCH_BADGE}>{titleCaseToken(codeReviewMatch.status)}</span>
+                )}
+              </div>
+              <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              <div style={DECISION_SIGNAL_GRID}>
+                {codeReviewDecisionSignals.map((signal) => (
+                  <div key={signal.label} style={DECISION_SIGNAL_CARD}>
+                    <div style={TRANSCRIPT_ROLE}>{signal.label}</div>
+                    <div style={DECISION_SIGNAL_VALUE}>{signal.value}</div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>{signal.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Section>
+        )}
+
         <Section
           title="Scheduling"
           icon={<CalendarCheck size={15} />}
@@ -1372,18 +1485,26 @@ export default function InterviewDetailPage(): JSX.Element {
                 </span>
               </div>
               {codeReviewSubmission.annotations.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {codeReviewSubmission.annotations.map((annotation, index) => (
-                    <div key={`${annotation.file}:${annotation.line ?? 'x'}:${index}`} style={CONTEXT_RECORD}>
-                      <div style={TRANSCRIPT_ROLE}>
-                        {annotation.file}
-                        {annotation.line !== null ? ` · line ${annotation.line}` : ''}
-                        {annotation.severity ? ` · ${annotation.severity}` : ''}
+                <details data-testid="interview-code-review-annotations" style={DETAILS_CARD}>
+                  <summary style={DETAILS_SUMMARY}>
+                    Review annotations
+                    <span style={DETAILS_HINT}>
+                      {countLabel(codeReviewSubmission.annotations.length, 'line comment')}
+                    </span>
+                  </summary>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {codeReviewSubmission.annotations.map((annotation, index) => (
+                      <div key={`${annotation.file}:${annotation.line ?? 'x'}:${index}`} style={CONTEXT_RECORD}>
+                        <div style={TRANSCRIPT_ROLE}>
+                          {annotation.file}
+                          {annotation.line !== null ? ` · line ${annotation.line}` : ''}
+                          {annotation.severity ? ` · ${annotation.severity}` : ''}
+                        </div>
+                        <div style={TRANSCRIPT_TEXT}>{annotation.comment}</div>
                       </div>
-                      <div style={TRANSCRIPT_TEXT}>{annotation.comment}</div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </details>
               )}
               {codeReviewSubmission.defenseThreads.length > 0 && (
                 <details data-testid="interview-code-review-defense-threads" style={DETAILS_CARD}>
@@ -1538,6 +1659,11 @@ const SECTION: CSSProperties = {
 
 const CODE_REVIEW_ASSIGNMENT_SECTION: CSSProperties = {
   order: -30,
+};
+
+const CODE_REVIEW_DECISION_SECTION: CSSProperties = {
+  order: -40,
+  gridColumn: '1 / -1',
 };
 
 const CODE_REVIEW_MATCH_SECTION: CSSProperties = {
@@ -1878,6 +2004,61 @@ const CONTEXT_RECORD_NARRATIVE: CSSProperties = {
   color: 'var(--pipe-text-dim)',
   fontSize: 12,
   lineHeight: 1.55,
+};
+
+const DECISION_SUMMARY: CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  minWidth: 0,
+};
+
+const DECISION_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 14,
+  minWidth: 0,
+};
+
+const DECISION_TITLE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 24,
+  fontWeight: 800,
+  lineHeight: 1.2,
+  letterSpacing: 0,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_ACTION: CSSProperties = {
+  maxWidth: 880,
+  color: 'var(--pipe-text)',
+  fontSize: 14,
+  lineHeight: 1.65,
+};
+
+const DECISION_SIGNAL_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 10,
+};
+
+const DECISION_SIGNAL_CARD: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  minWidth: 0,
+  padding: 12,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_SIGNAL_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.25,
+  overflowWrap: 'anywhere',
 };
 
 const MATCH_DECISION_GRID: CSSProperties = {

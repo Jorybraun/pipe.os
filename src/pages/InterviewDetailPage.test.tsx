@@ -234,6 +234,134 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByText('meeting-katherine')).toBeTruthy();
   });
 
+  it('leads completed code-review interviews with recruiter decision value', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'COMPLETED',
+        githubRepoUrl: 'https://github.com/mui/base-ui',
+        githubPrNumber: 973,
+        matchedRepoId: 973,
+        submissionJson: JSON.stringify({
+          type: 'CODE_REVIEW',
+          verdict: 'request_changes',
+          summary: 'The click timing behavior needs a regression test before this should merge.',
+          annotations: [
+            {
+              file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+              line: 66,
+              severity: 'major',
+              comment: 'This threshold changes click semantics and needs a focused impatient-click regression.',
+            },
+          ],
+          transcript: {
+            rounds: [
+              {
+                round: 1,
+                reviewer_comments: [
+                  {
+                    id: 'comment-1',
+                    file: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                    line: 66,
+                    severity: 'major',
+                    comment: 'This threshold changes click semantics and needs a focused impatient-click regression.',
+                  },
+                ],
+                implementer_responses: [
+                  {
+                    to_comment_id: 'comment-1',
+                    move: 'pushback',
+                    content: 'Can you explain why 500ms is too broad for intentional clicks?',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        codeReviewMatch: {
+          status: 'MATCHED',
+          matchRunId: 'match-run-1',
+          packetId: 'packet-1',
+          summary: 'Matched 6 source-backed demands.',
+          score: 0.82,
+          assessmentQuality: {
+            verdict: 'STRONG',
+            score: 10,
+            maxScore: 12,
+            metrics: [
+              {
+                id: 'skill_stack_overlap',
+                label: 'Skill stack overlap',
+                score: 2,
+                maxScore: 2,
+                reason: 'Candidate evidence and repo demand both cover React interaction behavior.',
+              },
+            ],
+          },
+          reviewProfile: null,
+          validatorAgent: {
+            agentName: 'quality-gate',
+            agentVersion: '1',
+            mode: 'source_backed',
+            verdict: 'PASSED',
+            rationale: 'The match is grounded in candidate, role, and repo evidence.',
+            checks: [],
+            sourceBridge: {
+              prNumber: 973,
+              candidateSourceCount: 2,
+              roleSourceCount: 1,
+              repoSourceCount: 6,
+              alignedDemandCount: 6,
+              stretchCount: 0,
+              provenanceComplete: true,
+            },
+          },
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [
+            {
+              relation: 'candidate_repo_evidence_alignment',
+              label: 'Candidate evidence bridge 1',
+              pairScore: 0.74,
+              nodes: [
+                {
+                  kind: 'person_evidence',
+                  label: 'Person evidence',
+                  sourceRef: {
+                    exactText: 'Implemented popover trigger click handling in usePopoverRoot',
+                    locator: 'resume:span-1',
+                  },
+                },
+                {
+                  kind: 'repo_challenge',
+                  label: 'Repo challenge',
+                  sourceRef: {
+                    exactText: 'Ignore impatient trigger clicks within 500ms',
+                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                  },
+                },
+              ],
+            },
+          ],
+          gaps: [],
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const decision = screen.getByTestId('interview-code-review-decision-summary');
+    expect(decision).toHaveTextContent('Candidate requested changes');
+    expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
+    expect(decision).toHaveTextContent('Strong assessment fit');
+    expect(decision).toHaveTextContent('1 annotation');
+    expect(decision).toHaveTextContent('1 pushback thread');
+
+    const sourceProof = screen.getByText('Source proof').closest('details');
+    expect(sourceProof).not.toHaveAttribute('open');
+  });
+
   it('shows code-review evidence hyperedges for recruiter match justification', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
