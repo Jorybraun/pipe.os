@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Production observability endpoints (criterion #8)
+
+- Added `GET /api/v1/internal/living-context-stats` — returns per-entity-type counts (people, workspace_people, interactions, artifacts, source_spans, assertions, context_records, concepts, signal_evidence, signal_snapshots, semantic_relationships) plus interaction type and artifact type breakdowns. Essential for monitoring staged rollout ingestion progress.
+- Added `GET /api/v1/internal/living-context-backfill` — returns per-task backfill checkpoint detail including cursor position, items processed/failed, progress percentage, duration, description, dependency status, and timing. Provides granular visibility into the 7-task backfill orchestrator during production rollout.
+- Added 4 new tests covering both endpoints (entity counts with populated graph, empty graph, per-task checkpoint detail, unavailable table handling).
+
 ### Added — Match narrative visualization in LivingContextGraph (criterion #6/#7)
 
 - Added `MatchNarrativePanel` component to `LivingContextGraph.tsx` — renders the recruiter-facing match narrative inline with title, verdict, and structured sections (strong alignments, evidence gaps).

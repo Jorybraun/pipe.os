@@ -3,6 +3,12 @@
  *
  * GET /api/v1/internal/living-context-health
  * Returns structured per-subsystem status for the living context graph.
+ *
+ * GET /api/v1/internal/living-context-stats
+ * Returns entity counts, interaction type breakdowns, and per-task backfill progress.
+ *
+ * GET /api/v1/internal/living-context-backfill
+ * Returns per-task backfill checkpoint detail including cursor, processed, timing.
  */
 
 import { Hono } from 'hono';
@@ -157,6 +163,198 @@ app.post('/living-context-rebuild-projections', async (c) => {
     status: 'scheduled',
     enqueued: result.enqueued,
   });
+});
+
+/**
+ * GET /api/v1/internal/living-context-stats
+ *
+ * Entity counts, interaction type breakdowns, and assertion/signal coverage.
+ * Used for production rollout observability.
+ */
+app.get('/living-context-stats', async (c) => {
+  const db = c.env.DB;
+
+  interface CountRow { cnt: number }
+  interface InteractionTypeRow { interaction_type: string; cnt: number }
+  interface ArtifactTypeRow { artifact_type: string; cnt: number }
+
+  const safeCount = async (table: string): Promise<number> => {
+    try {
+      const row = await db.prepare(`SELECT COUNT(*) AS cnt FROM ${table}`).first<CountRow>();
+      return row?.cnt ?? 0;
+    } catch {
+      return -1;
+    }
+  };
+
+  const [
+    people,
+    workspacePeople,
+    applications,
+    interactions,
+    artifacts,
+    artifactVersions,
+    sourceSpans,
+    assertions,
+    contextRecords,
+    concepts,
+    signalEvidence,
+    signalSnapshots,
+    semanticRelationships,
+  ] = await Promise.all([
+    safeCount('people'),
+    safeCount('workspace_people'),
+    safeCount('applications'),
+    safeCount('interactions'),
+    safeCount('artifacts'),
+    safeCount('artifact_versions'),
+    safeCount('source_spans'),
+    safeCount('semantic_assertions'),
+    safeCount('context_records'),
+    safeCount('concepts'),
+    safeCount('signal_evidence'),
+    safeCount('signal_snapshots'),
+    safeCount('semantic_relationships'),
+  ]);
+
+  let interactionBreakdown: Record<string, number> = {};
+  try {
+    const rows = await db.prepare(
+      `SELECT interaction_type, COUNT(*) AS cnt FROM interactions GROUP BY interaction_type ORDER BY cnt DESC`,
+    ).all<InteractionTypeRow>();
+    interactionBreakdown = Object.fromEntries(
+      (rows.results ?? []).map((r) => [r.interaction_type, r.cnt]),
+    );
+  } catch { /* table may not exist */ }
+
+  let artifactBreakdown: Record<string, number> = {};
+  try {
+    const rows = await db.prepare(
+      `SELECT artifact_type, COUNT(*) AS cnt FROM artifacts GROUP BY artifact_type ORDER BY cnt DESC`,
+    ).all<ArtifactTypeRow>();
+    artifactBreakdown = Object.fromEntries(
+      (rows.results ?? []).map((r) => [r.artifact_type, r.cnt]),
+    );
+  } catch { /* table may not exist */ }
+
+  return c.json({
+    entities: {
+      people,
+      workspacePeople,
+      applications,
+      interactions,
+      artifacts,
+      artifactVersions,
+      sourceSpans,
+      assertions,
+      contextRecords,
+      concepts,
+      signalEvidence,
+      signalSnapshots,
+      semanticRelationships,
+    },
+    interactionBreakdown,
+    artifactBreakdown,
+  });
+});
+
+/**
+ * GET /api/v1/internal/living-context-backfill
+ *
+ * Per-task backfill checkpoint detail. Returns each registered task with its
+ * cursor position, items processed/failed, timing, and dependency status.
+ */
+app.get('/living-context-backfill', async (c) => {
+  const db = c.env.DB;
+
+  interface CheckpointRow {
+    task_key: string;
+    cursor: string | null;
+    status: string;
+    total_items: number | null;
+    processed: number;
+    failed: number;
+    last_error: string | null;
+    metadata_json: string;
+    started_at: string | null;
+    completed_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }
+
+  try {
+    const rows = await db.prepare(
+      `SELECT task_key, cursor, status, total_items, processed, failed,
+              last_error, metadata_json, started_at, completed_at, created_at, updated_at
+         FROM backfill_checkpoints
+        ORDER BY created_at ASC`,
+    ).all<CheckpointRow>();
+
+    const tasks = (rows.results ?? []).map((row) => {
+      let metadata: Record<string, unknown> = {};
+      try {
+        const parsed: unknown = JSON.parse(row.metadata_json);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          metadata = parsed as Record<string, unknown>;
+        }
+      } catch { /* ignore */ }
+
+      const progressPercent = row.total_items && row.total_items > 0
+        ? Math.round((row.processed / row.total_items) * 100)
+        : null;
+
+      const durationMs = row.started_at && row.completed_at
+        ? new Date(row.completed_at).getTime() - new Date(row.started_at).getTime()
+        : row.started_at
+          ? Date.now() - new Date(row.started_at).getTime()
+          : null;
+
+      return {
+        taskKey: row.task_key,
+        status: row.status,
+        cursor: row.cursor,
+        totalItems: row.total_items,
+        processed: row.processed,
+        failed: row.failed,
+        progressPercent,
+        durationMs,
+        lastError: row.last_error,
+        description: typeof metadata.description === 'string' ? metadata.description : null,
+        dependsOn: Array.isArray(metadata.dependsOn) ? metadata.dependsOn : [],
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        updatedAt: row.updated_at,
+      };
+    });
+
+    const completedCount = tasks.filter((t) => t.status === 'completed').length;
+    const failedCount = tasks.filter((t) => t.status === 'failed').length;
+    const runningCount = tasks.filter((t) => t.status === 'running').length;
+
+    let overallStatus: string = 'idle';
+    if (runningCount > 0) overallStatus = 'running';
+    else if (failedCount > 0) overallStatus = 'failed';
+    else if (completedCount === tasks.length && tasks.length > 0) overallStatus = 'completed';
+
+    return c.json({
+      overallStatus,
+      totalTasks: tasks.length,
+      completedCount,
+      runningCount,
+      failedCount,
+      tasks,
+    });
+  } catch {
+    return c.json({
+      overallStatus: 'unavailable',
+      totalTasks: 0,
+      completedCount: 0,
+      runningCount: 0,
+      failedCount: 0,
+      tasks: [],
+      error: 'backfill_checkpoints table not available',
+    });
+  }
 });
 
 export default app;

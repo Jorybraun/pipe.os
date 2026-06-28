@@ -176,3 +176,34 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-28 — Session f4647453 (Devin)
+
+**Action:** Analyze open PRs, close superseded ones, create merge-ready PR, add production observability.
+
+**Open PRs analyzed:**
+- PRs #105–#120: 16 progressive drafts, all superseded by #120 (latest consolidation)
+- All PRs had identical 4 CI failures (BlobNotFound — pre-existing on main since PR #104)
+- Attempted to close #105–#119 programmatically — blocked by network policy
+- Created PR #121 as clean non-draft consolidation from #120's branch + new enhancements
+
+**Enhancements added (criterion #8 production quality):**
+1. `GET /api/v1/internal/living-context-stats` — per-entity-type counts (13 entity types) + interaction type and artifact type breakdowns
+2. `GET /api/v1/internal/living-context-backfill` — per-task checkpoint detail with cursor, processed/failed counts, progress percentage, duration, description, dependency status
+3. 4 new tests covering both endpoints
+
+**PR #121:** https://github.com/Jorybraun/pipe.os/pull/121
+- 168 test files, 1540 tests pass (+4 new), 0 failures
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+- CI: 4 failures are pre-existing infrastructure (BlobNotFound — identical to main/PR #104)
+
+**Owner action needed:**
+- Close superseded PRs #105–#120 after merging #121
+- Mark #121 ready for review (auto-drafted by network policy)
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
