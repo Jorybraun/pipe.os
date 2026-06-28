@@ -921,9 +921,12 @@ function contrastSeparationScore(
 function standaloneAutomaticMatchPasses(
   explanation: CandidateSafeMatchExplanation | null | undefined,
 ): boolean {
+  const qualityChecks = new Set(explanation?.qualityGate.checks ?? []);
+  const contrastAccepted = qualityChecks.has('contrast_separation_verified')
+    || qualityChecks.has('contrast_separation_not_required_roleless');
   return explanation?.status === 'MATCHED'
     && explanation.qualityGate.verdict === 'PASSED'
-    && (contrastSeparationScore(explanation) ?? 0) > 0;
+    && contrastAccepted;
 }
 
 function sanitizeMatchExplanation(explanation: MatchExplanation | undefined): CandidateSafeMatchExplanation | null {

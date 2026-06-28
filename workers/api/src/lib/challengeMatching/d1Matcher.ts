@@ -206,11 +206,16 @@ const CANDIDATE_SIGNAL_STOPWORDS = new Set([
   'years',
 ]);
 
-const CANDIDATE_MECHANISM_SEGMENTS = new Set([
+function canonicalTerm(surface: string): string | null {
+  const term = openSemanticTerm(surface);
+  return term?.canonicalKey ?? null;
+}
+
+const CANDIDATE_EXACT_MECHANISM_SEGMENTS = new Set([
   'api',
   'apis',
+  'click',
   'configuration',
-  'cron',
   'deploy',
   'deployment',
   'deployments',
@@ -219,56 +224,19 @@ const CANDIDATE_MECHANISM_SEGMENTS = new Set([
   'queues',
   'request',
   'routing',
+  'runner',
   'runtime',
-  'schedule',
-  'schedules',
   'sdk',
   'serverless',
   'source',
-  'sourcemap',
-  'stack',
   'test',
-  'tests',
+  'threshold',
   'tooling',
   'trigger',
-  'triggers',
   'workflow',
   'workflows',
   'wrangler',
 ]);
-
-const CANDIDATE_DOMAIN_SEGMENTS = new Set([
-  'cloud',
-  'cloudflare',
-  'developer',
-  'edge',
-  'infrastructure',
-  'platform',
-  'platforms',
-  'serverless',
-  'worker',
-  'workers',
-  'wrangler',
-]);
-
-const CANDIDATE_PROBLEM_SEGMENTS = new Set([
-  'crash',
-  'error',
-  'errors',
-  'failed',
-  'failure',
-  'failures',
-  'latency',
-  'regression',
-  'reliability',
-  'timeout',
-  'timeouts',
-]);
-
-function canonicalTerm(surface: string): string | null {
-  const term = openSemanticTerm(surface);
-  return term?.canonicalKey ?? null;
-}
 
 function termSegments(canonicalKey: string): string[] {
   return canonicalKey
@@ -283,7 +251,7 @@ function addCanonicalTerm(terms: Set<string>, surface: string): void {
   if (term) terms.add(term);
 }
 
-function sourceTextOpenTerms(text: string, limit = 48): string[] {
+function sourceTextOpenTerms(text: string, limit = 24): string[] {
   const tokens = normalizeOpenTermSurface(text)
     .split(' ')
     .map((token) => token.replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, ''))
@@ -299,16 +267,20 @@ function sourceTextOpenTerms(text: string, limit = 48): string[] {
     if (terms.size >= limit) return [...terms];
   }
 
-  for (let size = 4; size >= 2; size -= 1) {
-    for (let index = 0; index <= tokens.length - size; index += 1) {
-      const phrase = tokens.slice(index, index + size);
-      if (!phrase.some((segment) => segment.length >= 4)) continue;
-      addCanonicalTerm(terms, phrase.join(' '));
-      if (terms.size >= limit) return [...terms];
-    }
-  }
-
   return [...terms];
+}
+
+function relatedSourceTextOpenTerms(text: string, concepts: string[]): string[] {
+  const conceptSegments = new Set(
+    concepts
+      .flatMap(termSegments)
+      .filter((segment) => !CANDIDATE_SIGNAL_STOPWORDS.has(segment)),
+  );
+  const textTerms = sourceTextOpenTerms(text);
+  if (conceptSegments.size === 0) return textTerms;
+  return textTerms.filter((term) =>
+    termSegments(term).some((segment) => conceptSegments.has(segment))
+  );
 }
 
 export function deriveCandidateSignalFacets(input: {
@@ -317,46 +289,21 @@ export function deriveCandidateSignalFacets(input: {
   concepts: string[];
 }): Pick<CandidateSignal, 'concepts' | 'problems' | 'mechanisms' | 'domains' | 'businessObjects' | 'ownershipActions'> {
   const sourceText = `${input.exactText}\n${input.narrative}`;
-  const textTerms = sourceTextOpenTerms(sourceText);
-  const concepts = new Set(input.concepts.length > 0 ? input.concepts : textTerms);
-  const facetTerms = new Set([...input.concepts, ...textTerms]);
-  const problems = new Set<string>();
-  const mechanisms = new Set<string>();
-  const domains = new Set<string>();
-  const businessObjects = new Set<string>();
-  const ownershipActions = new Set<string>();
-
-  for (const term of facetTerms) {
-    const segments = termSegments(term);
-    const hasProblemSegment = segments.some((segment) => CANDIDATE_PROBLEM_SEGMENTS.has(segment));
-    const hasMechanismSegment = segments.some((segment) => CANDIDATE_MECHANISM_SEGMENTS.has(segment));
-    const hasDomainSegment = segments.some((segment) => CANDIDATE_DOMAIN_SEGMENTS.has(segment));
-
-    if (hasProblemSegment) {
-      problems.add(term);
-    }
-    if (hasMechanismSegment) {
-      mechanisms.add(term);
-    }
-    if (hasDomainSegment) {
-      domains.add(term);
-    }
-    if (
-      segments.length >= 2
-      && (hasMechanismSegment || hasDomainSegment || hasProblemSegment)
-      && !segments.every((segment) => CANDIDATE_SIGNAL_STOPWORDS.has(segment))
-    ) {
-      businessObjects.add(term);
-    }
-  }
+  const textTerms = relatedSourceTextOpenTerms(sourceText, input.concepts);
+  const concepts = new Set([...input.concepts, ...textTerms]);
+  const mechanisms = input.concepts.filter((concept) => {
+    const segments = termSegments(concept);
+    return segments.length <= 3
+      && segments.some((segment) => CANDIDATE_EXACT_MECHANISM_SEGMENTS.has(segment));
+  });
 
   return {
     concepts: [...concepts].sort(),
-    problems: [...problems].sort(),
-    mechanisms: [...mechanisms].sort(),
-    domains: [...domains].sort(),
-    businessObjects: [...businessObjects].sort(),
-    ownershipActions: [...ownershipActions].sort(),
+    problems: [],
+    mechanisms: [...new Set(mechanisms)].sort(),
+    domains: [],
+    businessObjects: [],
+    ownershipActions: [],
   };
 }
 
@@ -1670,7 +1617,9 @@ export async function matchCandidateToReviewChallenge(
   );
   const scoreSeparationByChallengeId = new Map<string, number | null>();
   evaluated.forEach((alignment, index) => {
-    const next = evaluated[index + 1];
+    const next = evaluated.slice(index + 1).find((candidate) =>
+      candidate.challenge.repoId !== alignment.challenge.repoId
+    );
     scoreSeparationByChallengeId.set(
       alignment.challenge.id,
       next ? Math.max(0, alignment.finalScore - next.finalScore) : null,

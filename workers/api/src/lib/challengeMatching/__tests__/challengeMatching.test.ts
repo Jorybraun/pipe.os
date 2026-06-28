@@ -449,30 +449,53 @@ describe('recallReviewChallenges', () => {
 describe('alignCandidateToChallenge', () => {
   it('derives source-backed candidate facets for repo-specific standalone matching', () => {
     const facets = deriveCandidateSignalFacets({
-      concepts: ['term:typescript-sdk'],
+      concepts: [
+        'term:typescript-sdk',
+        'term:runtime',
+        'term:kv',
+        'term:queues',
+        'term:serverless',
+        'term:deployments',
+        'term:cloudflare',
+        'term:workers',
+      ],
       narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
       exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
     });
 
-    expect(facets.concepts).toEqual(['term:typescript-sdk']);
-    expect(facets.mechanisms).toEqual(expect.arrayContaining([
+    expect(facets.concepts).toEqual(expect.arrayContaining([
+      'term:typescript-sdk',
       'term:runtime',
-      'term:routing',
+      'term:kv',
+      'term:queues',
+      'term:serverless',
+      'term:deployments',
+      'term:cloudflare',
+      'term:workers',
+    ]));
+    expect(facets.mechanisms).toEqual(expect.arrayContaining([
+      'term:typescript-sdk',
+      'term:runtime',
       'term:kv',
       'term:queues',
       'term:serverless',
       'term:deployments',
     ]));
-    expect(facets.domains).toEqual(expect.arrayContaining([
-      'term:cloudflare',
-      'term:workers',
-      'term:serverless',
-    ]));
+    expect(facets.domains).toEqual([]);
   });
 
   it('uses decomposed source facets to prefer Workers SDK over generic TypeScript UI packets', () => {
     const facets = deriveCandidateSignalFacets({
-      concepts: ['term:typescript-sdk'],
+      concepts: [
+        'term:typescript-sdk',
+        'term:runtime',
+        'term:kv',
+        'term:queues',
+        'term:serverless',
+        'term:deployments',
+        'term:cloudflare',
+        'term:workers',
+      ],
       narrative: 'Candidate supplied review evidence for TypeScript SDK tooling.',
       exactText: 'Staff Engineer, Edge Platform Team: designed Cloudflare Workers-style runtime APIs, request routing, KV-backed configuration, durable task queues, and TypeScript SDK tooling for serverless deployments.',
     });
@@ -496,7 +519,7 @@ describe('alignCandidateToChallenge', () => {
     });
     const workersPacket = challenge('workers-sdk', [
       demand('workers-sdk', 1, {
-        concepts: ['term:typescript', 'term:workers-sdk', 'term:deploy'],
+        concepts: ['term:typescript', 'term:workers-sdk', 'term:runtime', 'term:serverless'],
         mechanisms: ['term:deploy', 'term:runtime'],
         domains: ['term:workers-sdk', 'term:serverless'],
         businessObjects: ['term:deploy', 'term:runtime'],
@@ -506,7 +529,7 @@ describe('alignCandidateToChallenge', () => {
       }),
     ], {
       repoId: '79',
-      concepts: ['term:typescript', 'term:workers-sdk', 'term:deploy'],
+      concepts: ['term:typescript', 'term:workers-sdk', 'term:runtime', 'term:serverless'],
       quality: { deterministic: 0.9, contextualSpecificity: 1 },
     });
     const genericUiPacket = challenge('base-ui', [

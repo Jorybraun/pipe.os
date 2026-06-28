@@ -1044,6 +1044,12 @@ describe('POST /rpc/get-challenge', () => {
       explanation: automaticMatchExplanation(973, 2),
     } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
     const packet = sourceBackedPacket('repo-span-auto');
+    const weakCachedMatch = persistedRankedResult(5110, 0);
+    weakCachedMatch.assessmentQuality = {
+      ...assessmentQuality(0),
+      verdict: 'WEAK',
+      score: 6,
+    };
     const db = fakeD1({
       firstResponders: [
         { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 38 } },
@@ -1081,7 +1087,7 @@ describe('POST /rpc/get-challenge', () => {
           match: 'FROM match_runs',
           value: [{
             status: 'MATCHED',
-            ranked_results_json: JSON.stringify([persistedRankedResult(5110, 0)]),
+            ranked_results_json: JSON.stringify([weakCachedMatch]),
           }],
         },
         {
@@ -1128,6 +1134,101 @@ describe('POST /rpc/get-challenge', () => {
     expect(db.__calls.some((call) =>
       call.ran && call.sql.includes('SET matched_repo_id = NULL')
     )).toBe(true);
+    expect(db.__calls.some((call) =>
+      call.ran
+      && call.sql.includes('SET matched_repo_id = ?1')
+      && call.params.includes(973)
+      && call.params.includes('https://github.com/mui/base-ui')
+    )).toBe(true);
+  });
+
+  it('serves a roleless automatic standalone CODE_REVIEW match when contrast is explicitly not required', async () => {
+    vi.mocked(matchCandidateToReviewChallenge).mockResolvedValueOnce({
+      status: 'MATCHED',
+      repoId: 973,
+      prNumber: 973,
+      explanation: automaticMatchExplanation(973, 0),
+    } as Awaited<ReturnType<typeof matchCandidateToReviewChallenge>>);
+    const packet = sourceBackedPacket('repo-span-auto');
+    const db = fakeD1({
+      firstResponders: [
+        { match: 'FROM candidates c WHERE c.id', value: { resume_s3_key: 'resume.pdf', node_count: 38 } },
+        {
+          match: "interview_type IN ('DEV_CONTAINER_CHALLENGE', 'OPEN_SOURCE_BUG_FIX')",
+          value: null,
+        },
+        {
+          match: "interview_type = 'CODE_REVIEW'",
+          value: {
+            id: 'standalone_auto_roleless',
+            status: 'INVITED',
+            matched_repo_id: null,
+            github_repo_url: null,
+            github_pr_number: null,
+            submission_json: null,
+          },
+        },
+        {
+          match: 'LEFT JOIN candidate_ingestion',
+          value: {
+            resume_s3_key: 'resume.pdf',
+            status: 'embedded',
+            current_step: 'embed_profile',
+            error_text: null,
+            node_count: 38,
+          },
+        },
+        { match: 'SELECT github_url FROM qualified_repos', value: { github_url: 'https://github.com/mui/base-ui' } },
+        { match: 'SELECT owner_id FROM candidates', value: { owner_id: 'owner_1' } },
+        { match: 'FROM review_challenge_packets', value: { packet_json: JSON.stringify(packet) } },
+      ],
+      allResponders: [
+        {
+          match: 'FROM repo_source_spans',
+          value: [{
+            id: 'repo-span-auto',
+            path: 'src/component.tsx',
+            exact_text: 'React state update code under review.',
+            line_start: 12,
+            line_end: 12,
+          }],
+        },
+      ],
+    });
+    const env = buildEnv({ DB: db });
+
+    const res = await rpcAuth.request(
+      '/get-challenge',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: await authHeaderWithoutPipeline(),
+        },
+        body: JSON.stringify({ order: 0 }),
+      },
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      type: string;
+      githubPrNumber?: number | null;
+      matchExplanation?: {
+        qualityGate?: { verdict: string; checks: string[] };
+        assessmentQuality?: { metrics?: Array<{ id: string; score: number }> };
+      };
+    };
+    expect(body.type).toBe('CODE_REVIEW');
+    expect(body.githubPrNumber).toBe(973);
+    expect(body.matchExplanation?.qualityGate).toEqual(expect.objectContaining({
+      verdict: 'PASSED',
+      checks: expect.arrayContaining(['contrast_separation_not_required_roleless']),
+    }));
+    expect(body.matchExplanation?.assessmentQuality?.metrics?.find((metric) =>
+      metric.id === 'contrast_separation'
+    )?.score).toBe(0);
+    expect(matchCandidateToReviewChallenge).toHaveBeenCalledOnce();
     expect(db.__calls.some((call) =>
       call.ran
       && call.sql.includes('SET matched_repo_id = ?1')

@@ -1927,7 +1927,6 @@ describe('matchCandidateToReviewChallenge', () => {
     expect(sqlite.prepare('SELECT COUNT(*) AS count FROM assertion_concepts').get()).toEqual({ count: 0 });
 
     const result = await matchCandidateToReviewChallenge(createNodeSqliteD1(sqlite), 'candidate-1');
-
     expect(result.status).toBe('MATCHED');
     expect(result.repoId).toBe(3);
     expect(result.prNumber).toBe(data.packet.pullRequest.number);

@@ -680,9 +680,21 @@ function rolelessExactSourceBackedAlignment(input: {
   provenanceComplete: boolean;
   stretchCount: number;
 }): boolean {
+  const candidateSourceCount = uniqueSourceRefCount(
+    input.alignments.flatMap((entry) => entry.atom.sourceRefs),
+  );
+  const repoSourceCount = uniqueSourceRefCount(
+    input.alignments.flatMap((entry) => entry.demand.sourceRefs),
+  );
+  const directExactFloorPasses = input.candidateEvidenceAlignment >= 0.10;
+  const sparseMultiSpanFloorPasses = input.candidateEvidenceAlignment >= 0.07
+    && input.alignments.length >= 2
+    && candidateSourceCount >= 2
+    && repoSourceCount >= 1;
   return !input.hasRoleRequirements
     && input.alignments.length > 0
-    && input.candidateEvidenceAlignment >= 0.10
+    && repoSourceCount >= 1
+    && (directExactFloorPasses || sparseMultiSpanFloorPasses)
     && input.challengeQuality >= 0.85
     && input.contextualSpecificity >= 0.75
     && input.hasNonGenericAlignment
