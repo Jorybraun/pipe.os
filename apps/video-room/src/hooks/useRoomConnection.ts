@@ -492,6 +492,7 @@ const PEER_DISCONNECT_GRACE_MS = 15000;
 const PEER_FAILED_GRACE_MS = 12000;
 const PEER_RENEGOTIATE_DELAY_MS = 750;
 const PEER_CURSOR_TTL_MS = 4000;
+export const ROOM_CURSOR_SEND_INTERVAL_MS = 160;
 const SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS = 5000;
 
 interface PendingLocalSurfaceEvent {
@@ -1272,6 +1273,18 @@ export function mergePeerCursorPresence(
     )),
     receivedCursor,
   ];
+}
+
+export function shouldSendCursorPresence(input: {
+  hasEvidence: boolean;
+  nowMs: number;
+  lastSentAtMs: number;
+  intervalMs?: number;
+}): boolean {
+  if (input.hasEvidence) return true;
+  if (input.lastSentAtMs <= 0) return true;
+  if (input.nowMs < input.lastSentAtMs) return true;
+  return input.nowMs - input.lastSentAtMs >= (input.intervalMs ?? ROOM_CURSOR_SEND_INTERVAL_MS);
 }
 
 export function useRoomConnection(
@@ -2316,7 +2329,11 @@ export function useRoomConnection(
   const publishCursorPresence = useCallback((position: { x: number; y: number }, evidence?: Record<string, unknown>): void => {
     const sampledAtMs = numberOrUndefined(evidence?.sampledAtMs);
     const now = sampledAtMs ?? Date.now();
-    if (!evidence && now - lastCursorSentAtRef.current < 90) return;
+    if (!shouldSendCursorPresence({
+      hasEvidence: Boolean(evidence),
+      nowMs: now,
+      lastSentAtMs: lastCursorSentAtRef.current,
+    })) return;
     lastCursorSentAtRef.current = now;
     const x = numberOrUndefined(evidence?.normalizedX) ?? position.x;
     const y = numberOrUndefined(evidence?.normalizedY) ?? position.y;

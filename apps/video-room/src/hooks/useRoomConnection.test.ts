@@ -5,6 +5,8 @@ import {
   decideRoomSurfaceSnapshot,
   mergePeerCursorPresence,
   mergeRoomChatMessage,
+  ROOM_CURSOR_SEND_INTERVAL_MS,
+  shouldSendCursorPresence,
   type RoomChatMessage,
   type RoomCursorPresence,
   type RoomMediaControlState,
@@ -123,6 +125,34 @@ describe('mergePeerCursorPresence', () => {
         updatedAt: 5000,
       },
     ]);
+  });
+});
+
+describe('shouldSendCursorPresence', () => {
+  it('rate-limits raw cursor moves while always preserving source-backed samples', () => {
+    expect(shouldSendCursorPresence({
+      hasEvidence: false,
+      nowMs: 1000,
+      lastSentAtMs: 0,
+    })).toBe(true);
+
+    expect(shouldSendCursorPresence({
+      hasEvidence: false,
+      nowMs: 1000 + ROOM_CURSOR_SEND_INTERVAL_MS - 1,
+      lastSentAtMs: 1000,
+    })).toBe(false);
+
+    expect(shouldSendCursorPresence({
+      hasEvidence: false,
+      nowMs: 1000 + ROOM_CURSOR_SEND_INTERVAL_MS,
+      lastSentAtMs: 1000,
+    })).toBe(true);
+
+    expect(shouldSendCursorPresence({
+      hasEvidence: true,
+      nowMs: 1001,
+      lastSentAtMs: 1000,
+    })).toBe(true);
   });
 });
 
