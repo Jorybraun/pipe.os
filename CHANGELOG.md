@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
-- Clippy chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
+- Clippy chat now shows a live bridge readiness checklist for workspace, WebSocket, agent identity, state, and capabilities with distinct status dots, so disabled Devin chat is diagnosable without enabling fake or source-less messages.
 - Host recording start/stop/upload state now syncs through the room Durable Object to both Win95 and standard layouts, with source-backed MediaRecorder provenance replayable into session evidence instead of remaining host-local UI state.
 - Win95 room file saves now fail closed when source-backed file evidence cannot be built, preventing source-less Notepad/Paint mutations from becoming local room state.
 - Win95 Start menu open/close now syncs between room participants and replays as source-backed `desktop_menu_toggle` evidence instead of staying local-only UI state.

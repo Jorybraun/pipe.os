@@ -180,6 +180,8 @@ describe('ClippyAssistant', () => {
     expect(diagnostics.textContent).toContain('devin');
     expect(diagnostics.textContent).toContain('Capabilities');
     expect(diagnostics.textContent).toContain('Waiting');
+    expect(screen.getByTestId('clippy-bridge-check-state').classList.contains('is-ok')).toBe(true);
+    expect(screen.getByTestId('clippy-bridge-check-capabilities').classList.contains('is-waiting')).toBe(true);
     expect(screen.getByTestId('clippy-chat-input').hasAttribute('disabled')).toBe(true);
 
     fireEvent.change(screen.getByTestId('clippy-chat-input'), {

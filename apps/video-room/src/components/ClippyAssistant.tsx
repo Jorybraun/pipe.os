@@ -370,6 +370,11 @@ export function ClippyAssistant({
                 ? `Waiting for ${agentDisplayName} to report ready before chat is enabled.`
                 : `Connected to ${agentDisplayName}. Ask Clippy about the code or the interview workspace.`;
   const chatAgentName = agentEnabled ? agentDisplayName : 'agent bridge';
+  const agentStateCheckState = !agentEnabled || agentConn.status === 'auth_needed'
+    ? 'blocked'
+    : agentConn.status === 'starting' || agentConn.status === 'disconnected'
+      ? 'waiting'
+      : 'ok';
   const bridgeChecks = [
     {
       label: 'Workspace',
@@ -391,11 +396,7 @@ export function ClippyAssistant({
     {
       label: 'State',
       value: agentEnabled ? statusLabel[agentConn.status] || agentConn.status : 'Workspace required',
-      state: canSendToAgent
-        ? 'ok'
-        : agentConn.status === 'auth_needed' || !agentEnabled
-          ? 'blocked'
-          : 'waiting',
+      state: agentStateCheckState,
     },
     {
       label: 'Capabilities',
