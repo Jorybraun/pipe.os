@@ -1021,6 +1021,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       command,
       terminalSessionId,
       commandSequence: terminalCommandSequenceRef.current,
+      actor: roomActor,
+      capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
     activeTerminalCommandIdRef.current = evidence.properties.terminalCommandId;
@@ -1038,6 +1040,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       terminalSessionId,
       outputSequence: terminalOutputSequenceRef.current,
       activeCommandId: activeTerminalCommandIdRef.current,
+      capturedAtMs: Date.now(),
       context: terminalEvidenceContext,
     });
     captureSessionEvent('terminal_output', evidence.text, 'system', evidence.properties);

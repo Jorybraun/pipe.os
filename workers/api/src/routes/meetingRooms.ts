@@ -103,6 +103,7 @@ const WORKSPACE_PROXY_ALLOWED_STATUS: ReadonlySet<string> = new Set(['READY', 'S
 const LIVING_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[a-f0-9]{8}$/;
+const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[a-f0-9]{8}$/;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[a-f0-9]{8}$/;
 const ROOM_SURFACES = new Set(['standard', 'win95']);
 const WINDOW_LIFECYCLE_SOURCES = new Set([
@@ -697,9 +698,14 @@ const sessionEventSchema = z.object({
     const fingerprint = properties.commandFingerprint;
     const sessionId = properties.terminalSessionId;
     const commandId = properties.terminalCommandId;
+    const capturedAtMs = properties.capturedAtMs;
     const sourceOk = properties.source === 'container_terminal'
       && properties.terminalEventSource === 'browser_terminal_ws';
-    const actorOk = event.actor === 'host' || event.actor === 'guest';
+    const actorOk = (event.actor === 'host' || event.actor === 'guest')
+      && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
     const sequenceOk = typeof commandSequence === 'number'
       && Number.isInteger(commandSequence)
       && commandSequence > 0;
@@ -711,16 +717,17 @@ const sessionEventSchema = z.object({
       && typeof commandId === 'string'
       && typeof commandSequence === 'number'
       && typeof fingerprint === 'string'
-      && commandId === `${sessionId}:command:${commandSequence}:${fingerprint}`;
+      && capturedAtOk
+      && commandId === `${sessionId}:command:${event.actor}:${capturedAtMs}:${commandSequence}:${fingerprint}`;
     const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && hasString(properties.workspaceStatus)
       && hasString(properties.workspaceSessionId)
       && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
-    if (sourceOk && actorOk && sequenceOk && commandLengthOk && fingerprintOk && idsOk && contextOk) return;
+    if (sourceOk && actorOk && capturedAtOk && sequenceOk && commandLengthOk && fingerprintOk && idsOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Terminal command evidence must come from the browser terminal WebSocket with command id, sequence, fingerprint, length, workspace context, and participant actor.',
+      message: 'Terminal command evidence must come from the browser terminal WebSocket with actor-bound command id, capture timestamp, sequence, fingerprint, length, workspace context, and participant actor.',
       path: ['properties'],
     });
     return;
@@ -732,9 +739,13 @@ const sessionEventSchema = z.object({
     const sessionId = properties.terminalSessionId;
     const outputChunkId = properties.terminalOutputChunkId;
     const commandId = properties.terminalCommandId;
+    const capturedAtMs = properties.capturedAtMs;
     const sourceOk = properties.source === 'container_terminal'
       && properties.terminalEventSource === 'browser_terminal_ws';
-    const actorOk = event.actor === 'system';
+    const actorOk = event.actor === 'system' && propertyActorMatches;
+    const capturedAtOk = typeof capturedAtMs === 'number'
+      && Number.isInteger(capturedAtMs)
+      && capturedAtMs >= 0;
     const sequenceOk = typeof outputSequence === 'number'
       && Number.isInteger(outputSequence)
       && outputSequence > 0;
@@ -746,17 +757,25 @@ const sessionEventSchema = z.object({
       && typeof outputChunkId === 'string'
       && typeof outputSequence === 'number'
       && typeof fingerprint === 'string'
-      && outputChunkId === `${sessionId}:output:${outputSequence}:${fingerprint}`
-      && (commandId === null || (typeof commandId === 'string' && commandId.startsWith(`${sessionId}:command:`)));
+      && capturedAtOk
+      && outputChunkId === `${sessionId}:output:system:${capturedAtMs}:${outputSequence}:${fingerprint}`
+      && (
+        commandId === null
+        || (
+          typeof commandId === 'string'
+          && commandId.startsWith(`${sessionId}:command:`)
+          && TERMINAL_COMMAND_ID_RE.test(commandId)
+        )
+      );
     const contextOk = hasRoomSurface(properties.surface)
       && hasString(properties.roomPhase)
       && hasString(properties.workspaceStatus)
       && hasString(properties.workspaceSessionId)
       && (properties.repoUrl === null || properties.repoUrl === undefined || hasString(properties.repoUrl));
-    if (sourceOk && actorOk && sequenceOk && outputLengthOk && fingerprintOk && idsOk && contextOk) return;
+    if (sourceOk && actorOk && capturedAtOk && sequenceOk && outputLengthOk && fingerprintOk && idsOk && contextOk) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Terminal output evidence must come from the browser terminal WebSocket with output id, sequence, fingerprint, bounded length, workspace context, and system actor.',
+      message: 'Terminal output evidence must come from the browser terminal WebSocket with system output id, capture timestamp, sequence, fingerprint, bounded length, workspace context, and system actor.',
       path: ['properties'],
     });
     return;

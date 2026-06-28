@@ -44,12 +44,16 @@ export interface TerminalEvidenceContext {
   repoUrl: string | null;
 }
 
+export type TerminalEvidenceActor = 'host' | 'guest';
+
 export interface TerminalCommandEvidenceProperties extends Record<string, unknown> {
   source: 'container_terminal';
   terminalEventSource: 'browser_terminal_ws';
   terminalSessionId: string;
   terminalCommandId: string;
   terminalCommandSequence: number;
+  actor: TerminalEvidenceActor;
+  capturedAtMs: number;
   commandFingerprint: string;
   commandLength: number;
   surface: string;
@@ -66,6 +70,8 @@ export interface TerminalOutputEvidenceProperties extends Record<string, unknown
   terminalCommandId: string | null;
   terminalOutputChunkId: string;
   terminalOutputSequence: number;
+  actor: 'system';
+  capturedAtMs: number;
   outputFingerprint: string;
   outputLength: number;
   surface: string;
@@ -79,6 +85,8 @@ export interface TerminalCommandEvidenceInput {
   command: string;
   terminalSessionId: string;
   commandSequence: number;
+  actor: TerminalEvidenceActor;
+  capturedAtMs: number;
   context: TerminalEvidenceContext;
 }
 
@@ -87,6 +95,7 @@ export interface TerminalOutputEvidenceInput {
   terminalSessionId: string;
   outputSequence: number;
   activeCommandId: string | null;
+  capturedAtMs: number;
   context: TerminalEvidenceContext;
 }
 
@@ -169,17 +178,22 @@ export function buildTerminalCommandEvidence({
   command,
   terminalSessionId,
   commandSequence,
+  actor,
+  capturedAtMs,
   context,
 }: TerminalCommandEvidenceInput): TerminalCommandEvidence {
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
+  const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   const commandFingerprint = terminalTextFingerprint(command);
   return {
     text: command,
     properties: {
       ...terminalContextProperties(context),
       terminalSessionId: safeSessionId,
-      terminalCommandId: `${safeSessionId}:command:${commandSequence}:${commandFingerprint}`,
+      terminalCommandId: `${safeSessionId}:command:${actor}:${safeCapturedAtMs}:${commandSequence}:${commandFingerprint}`,
       terminalCommandSequence: commandSequence,
+      actor,
+      capturedAtMs: safeCapturedAtMs,
       commandFingerprint,
       commandLength: command.length,
     },
@@ -191,9 +205,11 @@ export function buildTerminalOutputEvidence({
   terminalSessionId,
   outputSequence,
   activeCommandId,
+  capturedAtMs,
   context,
 }: TerminalOutputEvidenceInput): TerminalOutputEvidence {
   const safeSessionId = safeTerminalIdPart(terminalSessionId);
+  const safeCapturedAtMs = Number.isFinite(capturedAtMs) ? Math.max(0, Math.round(capturedAtMs)) : 0;
   const outputFingerprint = terminalTextFingerprint(output);
   return {
     text: output,
@@ -201,8 +217,10 @@ export function buildTerminalOutputEvidence({
       ...terminalContextProperties(context),
       terminalSessionId: safeSessionId,
       terminalCommandId: activeCommandId,
-      terminalOutputChunkId: `${safeSessionId}:output:${outputSequence}:${outputFingerprint}`,
+      terminalOutputChunkId: `${safeSessionId}:output:system:${safeCapturedAtMs}:${outputSequence}:${outputFingerprint}`,
       terminalOutputSequence: outputSequence,
+      actor: 'system',
+      capturedAtMs: safeCapturedAtMs,
       outputFingerprint,
       outputLength: output.length,
     },

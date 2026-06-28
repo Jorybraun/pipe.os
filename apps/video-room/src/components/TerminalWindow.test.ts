@@ -55,6 +55,17 @@ describe('terminal WebSocket protocol', () => {
       command: 'npm test',
       terminalSessionId: 'terminal-workspace-session-1-guest',
       commandSequence: 7,
+      actor: 'guest',
+      capturedAtMs: 1700000000000,
+      context,
+    });
+
+    const retriedCommand = buildTerminalCommandEvidence({
+      command: 'npm test',
+      terminalSessionId: 'terminal-workspace-session-1-guest',
+      commandSequence: 7,
+      actor: 'guest',
+      capturedAtMs: 1700000005000,
       context,
     });
 
@@ -63,6 +74,7 @@ describe('terminal WebSocket protocol', () => {
       terminalSessionId: 'terminal-workspace-session-1-guest',
       outputSequence: 12,
       activeCommandId: command.properties.terminalCommandId,
+      capturedAtMs: 1700000000100,
       context,
     });
 
@@ -73,12 +85,15 @@ describe('terminal WebSocket protocol', () => {
         terminalEventSource: 'browser_terminal_ws',
         terminalSessionId: 'terminal-workspace-session-1-guest',
         terminalCommandSequence: 7,
-        terminalCommandId: expect.stringMatching(/^terminal-workspace-session-1-guest:command:7:/),
+        terminalCommandId: expect.stringMatching(/^terminal-workspace-session-1-guest:command:guest:1700000000000:7:/),
+        actor: 'guest',
+        capturedAtMs: 1700000000000,
         commandFingerprint: expect.stringMatching(/^terminal_[a-f0-9]{8}$/),
         commandLength: 8,
         workspaceSessionId: 'workspace-session-1',
       }),
     });
+    expect(retriedCommand.properties.terminalCommandId).not.toBe(command.properties.terminalCommandId);
     expect(output).toEqual({
       text: 'PASS src/app.test.ts\n',
       properties: expect.objectContaining({
@@ -87,7 +102,9 @@ describe('terminal WebSocket protocol', () => {
         terminalSessionId: 'terminal-workspace-session-1-guest',
         terminalCommandId: command.properties.terminalCommandId,
         terminalOutputSequence: 12,
-        terminalOutputChunkId: expect.stringMatching(/^terminal-workspace-session-1-guest:output:12:/),
+        terminalOutputChunkId: expect.stringMatching(/^terminal-workspace-session-1-guest:output:system:1700000000100:12:/),
+        actor: 'system',
+        capturedAtMs: 1700000000100,
         outputFingerprint: expect.stringMatching(/^terminal_[a-f0-9]{8}$/),
         outputLength: 21,
         workspaceSessionId: 'workspace-session-1',
