@@ -308,6 +308,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const initialRoomSurface = metadata.workspace?.enabled ? 'win95' : 'standard';
   const room = useRoomConnection(token, metadata.role, enteredRoom, initialRoomSurface);
   const publishTerminalEvent = room.publishTerminalEvent;
+  const publishClippyInteractionEvent = room.publishClippyInteractionEvent;
   const { capture: captureSessionEvent } = useSessionEvents({ token, apiBase: API_BASE });
   const [workspace, setWorkspace] = useState<RoomWorkspace | null>(metadata.workspace ?? null);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -1000,7 +1001,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       agentWorkspaceReady: hasActiveWorkspace,
     });
-    captureSessionEvent('clippy_action', evidence.text, roomActor, evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent('clippy_action', evidence.text, roomActor, properties);
+    publishClippyInteractionEvent({
+      eventType: 'clippy_action',
+      actor: roomActor,
+      text: evidence.text,
+      evidence: properties,
+    });
   };
   const openClippyChat = (): void => {
     captureClippyUiAction('open-clippy-chat', 'tray');
@@ -1667,7 +1678,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceStatus: workspaceSession?.status ?? null,
       workspaceSessionId: workspaceSession?.sessionId ?? null,
     });
-    captureSessionEvent('clippy_action', evidence.text, roomActor, evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent('clippy_action', evidence.text, roomActor, properties);
+    publishClippyInteractionEvent({
+      eventType: 'clippy_action',
+      actor: roomActor,
+      text: evidence.text,
+      evidence: properties,
+    });
   };
 
   const executeRoomAction = (actionId: string, options: { url?: string; source?: 'prompt' | 'agent'; agentAction?: AgentRoomAction } = {}): void => {
@@ -1734,7 +1755,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       workspaceSessionId: workspaceSession?.sessionId ?? null,
       repoUrl: workspace?.repoUrl ?? null,
     });
-    captureSessionEvent('ai_chat_user', evidence.text, roomActor, evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent('ai_chat_user', evidence.text, roomActor, properties);
+    publishClippyInteractionEvent({
+      eventType: 'ai_chat_user',
+      actor: roomActor,
+      text: evidence.text,
+      evidence: properties,
+    });
   };
 
   const captureClippyAgentChatMessage = (message: AgentChatMessage): void => {
@@ -1766,7 +1797,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       messageTimestamp: message.timestamp,
     });
     if (!evidence) return;
-    captureSessionEvent(evidence.eventType, evidence.text, 'agent', evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent(evidence.eventType, evidence.text, 'agent', properties);
+    publishClippyInteractionEvent({
+      eventType: evidence.eventType,
+      actor: 'agent',
+      text: evidence.text,
+      evidence: properties,
+    });
   };
 
   const captureClippyAgentStatus = (status: AgentStatus, agentName: string): void => {
@@ -1786,7 +1827,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       capturedAtMs,
       messageTimestamp: capturedAtMs,
     });
-    captureSessionEvent('ai_agent_status', evidence.text, 'agent', evidence.properties);
+    const properties = {
+      ...evidence.properties,
+      durableObjectReplayExpected: true,
+    };
+    captureSessionEvent('ai_agent_status', evidence.text, 'agent', properties);
+    publishClippyInteractionEvent({
+      eventType: 'ai_agent_status',
+      actor: 'agent',
+      text: evidence.text,
+      evidence: properties,
+    });
   };
 
   const captureClippyFileChange = (event: AgentFileChangeEvent): void => {

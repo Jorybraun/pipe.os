@@ -922,6 +922,157 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('clippyPromptActivityLog')).toBe(false);
   });
 
+  it('broadcasts and records source-backed Clippy/Devin interaction events', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-user-chat-1',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'Can you inspect the failing test?',
+        evidence: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 'Can you inspect the failing test?'.length,
+          promptTimestamp: 1782603900000,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-agent-status-1',
+        clientId: 'guest-client',
+        createdAt: 1782604000000,
+        eventType: 'ai_agent_status',
+        actor: 'agent',
+        text: 'devin is ready.',
+        evidence: {
+          source: 'clippy_agent_bridge',
+          agentStatusEventSource: 'browser_clippy_agent_ws',
+          agent: 'devin',
+          status: 'idle',
+          diagnosticSource: null,
+          bridgeMessageSource: 'agent_status',
+          observedAt: '2026-06-27T20:00:00.000Z',
+          capturedAtMs: 1782604000000,
+          agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          messageTimestamp: 1782604000000,
+          agentResponseClaimed: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'ROOM_CLIPPY_INTERACTION',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          eventType: 'ai_chat_user',
+          actor: 'guest',
+          text: 'Can you inspect the failing test?',
+          evidence: expect.objectContaining({
+            source: 'clippy_agent_chat_client_submit',
+            promptId: 'workspace-session-1:guest:prompt:1782603900000:clippy_0123abcd',
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        type: 'ROOM_CLIPPY_INTERACTION',
+        role: 'GUEST',
+        payload: expect.objectContaining({
+          eventType: 'ai_agent_status',
+          actor: 'agent',
+          evidence: expect.objectContaining({
+            source: 'clippy_agent_bridge',
+            agentStatusEventId: 'agent-status:devin:1782604000000:agent_status:idle:none',
+          }),
+        }),
+      }),
+    ]));
+    expect(storage.get('clippyInteractionActivityLog')).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'clippy-user-chat-1',
+          eventType: 'ai_chat_user',
+        }),
+      }),
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'clippy-agent-status-1',
+          eventType: 'ai_agent_status',
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects Clippy/Devin interaction events without source evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-fake-user-chat',
+        clientId: 'guest-client',
+        createdAt: 1782603900000,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'This should not be saved.',
+        evidence: {
+          source: 'clippy_agent_chat',
+          promptLength: 'This should not be saved.'.length,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CLIPPY_INTERACTION',
+    }));
+    expect(storage.has('clippyInteractionActivityLog')).toBe(false);
+  });
+
   it('stores, broadcasts, and records shared room filesystem edits', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -1308,6 +1459,37 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       },
     }));
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CLIPPY_INTERACTION',
+      payload: {
+        id: 'clippy-user-chat-activity',
+        clientId: 'guest-client',
+        createdAt: 2400,
+        eventType: 'ai_chat_user',
+        actor: 'guest',
+        text: 'Can you inspect the failing test?',
+        evidence: {
+          source: 'clippy_agent_chat_client_submit',
+          agentChatEventSource: 'browser_clippy_chat_window',
+          bridgeMessageType: 'CHAT',
+          bridgeProtocol: 'clippy_dev_container_ws',
+          promptId: 'workspace-session-1:guest:prompt:2400:clippy_0123abcd',
+          promptFingerprint: 'clippy_0123abcd',
+          promptLength: 'Can you inspect the failing test?'.length,
+          promptTimestamp: 2400,
+          deliveredToAgentBridge: true,
+          agent: 'devin',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          agentResponseClaimed: false,
+          actor: 'guest',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_TERMINAL_EVENT',
       payload: {
         id: 'terminal-command-activity',
@@ -1372,6 +1554,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     const body = await response.json() as {
       desktopActivityLog: unknown[];
       chatActivityLog: unknown[];
+      clippyInteractionActivityLog: unknown[];
       terminalActivityLog: unknown[];
       fileSystemActivityLog: unknown[];
     };
@@ -1404,6 +1587,20 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
             deliveryStatus: 'accepted',
             surface: 'win95',
             roomPhase: 'connected',
+          }),
+        }),
+      }),
+    ]);
+    expect(body.clippyInteractionActivityLog).toEqual([
+      expect.objectContaining({
+        role: 'GUEST',
+        event: expect.objectContaining({
+          id: 'clippy-user-chat-activity',
+          eventType: 'ai_chat_user',
+          text: 'Can you inspect the failing test?',
+          evidence: expect.objectContaining({
+            source: 'clippy_agent_chat_client_submit',
+            agentChatEventSource: 'browser_clippy_chat_window',
           }),
         }),
       }),

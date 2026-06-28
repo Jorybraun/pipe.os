@@ -8,6 +8,7 @@ import type {
   SdpPayload,
 } from '../types';
 import type { OpenWindowConfig, WindowType } from './useWindowManager';
+import type { SessionEventType } from './useSessionEvents';
 
 const WINDOW_TYPES = new Set<WindowType>([
   'video',
@@ -31,6 +32,10 @@ export interface RoomDesktopWindowConfig extends OpenWindowConfig {
 
 export type RoomSurface = 'standard' | 'win95';
 export type RoomClippyPromptSource = 'system' | 'agent' | 'host' | 'guest';
+export type RoomClippyInteractionEventType = Extract<
+  SessionEventType,
+  'ai_chat_user' | 'ai_chat_agent' | 'ai_agent_status' | 'clippy_action'
+>;
 export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
 
 export interface RoomClippyAction {
@@ -70,6 +75,23 @@ export interface RoomClippyPromptDraft {
   hold?: boolean;
   targetRoles?: RoomRole[];
   actions?: RoomClippyAction[];
+}
+
+export interface RoomClippyInteractionEvent {
+  id: string;
+  clientId: string;
+  createdAt: number;
+  eventType: RoomClippyInteractionEventType;
+  actor: 'host' | 'guest' | 'agent' | 'system';
+  text: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface RoomClippyInteractionEventDraft {
+  eventType: RoomClippyInteractionEventType;
+  actor: 'host' | 'guest' | 'agent' | 'system';
+  text: string;
+  evidence?: Record<string, unknown>;
 }
 
 export interface RoomChatMessage {
@@ -338,6 +360,7 @@ interface RoomConnection {
   desktopEvents: RoomDesktopEvent[];
   desktopSnapshot: RoomDesktopWindowConfig[] | null;
   clippyPrompt: RoomClippyPrompt | null;
+  clippyInteractionEvents: RoomClippyInteractionEvent[];
   chatMessages: RoomChatMessage[];
   terminalEvents: RoomTerminalEvent[];
   peerCursors: RoomCursorPresence[];
@@ -353,6 +376,7 @@ interface RoomConnection {
   retryConnection: () => void;
   publishDesktopEvent: (event: RoomDesktopEventDraft) => void;
   publishClippyPrompt: (prompt: RoomClippyPromptDraft) => void;
+  publishClippyInteractionEvent: (event: RoomClippyInteractionEventDraft) => void;
   publishChatMessage: (text: string) => RoomChatMessage | null;
   publishTerminalEvent: (event: RoomTerminalEventDraft) => void;
   publishCursorPresence: (position: { x: number; y: number }) => void;
@@ -646,6 +670,38 @@ function parseClippySnapshot(value: unknown): { prompt: RoomClippyPrompt | null 
   return { prompt: value.prompt === null ? null : parseClippyPrompt(value.prompt) };
 }
 
+function isRoomClippyInteractionEventType(value: unknown): value is RoomClippyInteractionEventType {
+  return value === 'ai_chat_user'
+    || value === 'ai_chat_agent'
+    || value === 'ai_agent_status'
+    || value === 'clippy_action';
+}
+
+function parseClippyInteractionEvent(value: unknown): RoomClippyInteractionEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string'
+    || typeof value.clientId !== 'string'
+    || typeof value.createdAt !== 'number'
+    || !Number.isFinite(value.createdAt)
+    || !isRoomClippyInteractionEventType(value.eventType)
+    || (value.actor !== 'host' && value.actor !== 'guest' && value.actor !== 'agent' && value.actor !== 'system')
+    || typeof value.text !== 'string'
+    || value.text.trim().length === 0
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    clientId: value.clientId,
+    createdAt: value.createdAt,
+    eventType: value.eventType,
+    actor: value.actor,
+    text: value.text,
+    evidence: recordOrUndefined(value.evidence),
+  };
+}
+
 function parseChatMessage(value: unknown): RoomChatMessage | null {
   if (!isRecord(value)) return null;
   if (
@@ -887,6 +943,7 @@ export function useRoomConnection(
   const [desktopEvents, setDesktopEvents] = useState<RoomDesktopEvent[]>([]);
   const [desktopSnapshot, setDesktopSnapshot] = useState<RoomDesktopWindowConfig[] | null>(null);
   const [clippyPrompt, setClippyPrompt] = useState<RoomClippyPrompt | null>(null);
+  const [clippyInteractionEvents, setClippyInteractionEvents] = useState<RoomClippyInteractionEvent[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const [terminalEvents, setTerminalEvents] = useState<RoomTerminalEvent[]>([]);
   const [peerCursors, setPeerCursors] = useState<RoomCursorPresence[]>([]);
@@ -910,6 +967,7 @@ export function useRoomConnection(
   const autoStartTimerRef = useRef<number | null>(null);
   const desktopOutboxRef = useRef<RoomDesktopEvent[]>([]);
   const clippyOutboxRef = useRef<RoomClippyPrompt[]>([]);
+  const clippyInteractionOutboxRef = useRef<RoomClippyInteractionEvent[]>([]);
   const chatOutboxRef = useRef<RoomChatMessage[]>([]);
   const terminalOutboxRef = useRef<RoomTerminalEvent[]>([]);
   const fileSystemOutboxRef = useRef<RoomFileSystemEvent[]>([]);
@@ -977,6 +1035,13 @@ export function useRoomConnection(
     return true;
   }, []);
 
+  const sendClippyInteractionEvent = useCallback((event: RoomClippyInteractionEvent): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ type: 'ROOM_CLIPPY_INTERACTION', payload: event }));
+    return true;
+  }, []);
+
   const sendChatMessage = useCallback((message: RoomChatMessage): boolean => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -1026,6 +1091,17 @@ export function useRoomConnection(
       }
     }
   }, [sendClippyPrompt]);
+
+  const flushClippyInteractionOutbox = useCallback((): void => {
+    if (clippyInteractionOutboxRef.current.length === 0) return;
+    const pending = clippyInteractionOutboxRef.current.splice(0);
+    for (const event of pending) {
+      if (!sendClippyInteractionEvent(event)) {
+        clippyInteractionOutboxRef.current.unshift(event, ...pending.slice(pending.indexOf(event) + 1));
+        return;
+      }
+    }
+  }, [sendClippyInteractionEvent]);
 
   const flushChatOutbox = useCallback((): void => {
     if (chatOutboxRef.current.length === 0) return;
@@ -1214,6 +1290,7 @@ export function useRoomConnection(
         reconnectAttemptRef.current = 0;
         flushDesktopOutbox();
         flushClippyOutbox();
+        flushClippyInteractionOutbox();
         flushChatOutbox();
         flushTerminalOutbox();
         flushFileSystemOutbox();
@@ -1326,6 +1403,10 @@ export function useRoomConnection(
           const snapshot = parseClippySnapshot(message.payload);
           if (!snapshot) return;
           setClippyPrompt(snapshot.prompt);
+        } else if (message.type === 'ROOM_CLIPPY_INTERACTION') {
+          const event = parseClippyInteractionEvent(message.payload);
+          if (!event || event.clientId === desktopClientIdRef.current) return;
+          setClippyInteractionEvents((prev) => [...prev.slice(-199), event]);
         } else if (message.type === 'ROOM_CHAT_MESSAGE') {
           const chatMessage = parseChatMessage(message.payload);
           if (!chatMessage || chatMessage.clientId === desktopClientIdRef.current) return;
@@ -1395,6 +1476,7 @@ export function useRoomConnection(
     clearPeerDisconnectTimer,
     closePeer,
     drainIce,
+    flushClippyInteractionOutbox,
     flushChatOutbox,
     flushClippyOutbox,
     flushDesktopOutbox,
@@ -1609,6 +1691,23 @@ export function useRoomConnection(
     }
   }, [sendClippyPrompt]);
 
+  const publishClippyInteractionEvent = useCallback((draft: RoomClippyInteractionEventDraft): void => {
+    if (!draft.text.trim()) return;
+    const createdAt = Date.now();
+    const event: RoomClippyInteractionEvent = {
+      ...draft,
+      id: typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `clippy-interaction-${createdAt}-${Math.random().toString(36).slice(2)}`,
+      clientId: desktopClientIdRef.current,
+      createdAt,
+    };
+    setClippyInteractionEvents((prev) => [...prev.slice(-199), event]);
+    if (!sendClippyInteractionEvent(event)) {
+      clippyInteractionOutboxRef.current.push(event);
+    }
+  }, [sendClippyInteractionEvent]);
+
   const publishChatMessage = useCallback((text: string): RoomChatMessage | null => {
     const trimmed = text.trim();
     if (!trimmed) return null;
@@ -1755,6 +1854,7 @@ export function useRoomConnection(
     desktopEvents,
     desktopSnapshot,
     clippyPrompt,
+    clippyInteractionEvents,
     chatMessages,
     terminalEvents,
     peerCursors,
@@ -1770,6 +1870,7 @@ export function useRoomConnection(
     retryConnection,
     publishDesktopEvent,
     publishClippyPrompt,
+    publishClippyInteractionEvent,
     publishChatMessage,
     publishTerminalEvent,
     publishCursorPresence,

@@ -3309,6 +3309,70 @@ describe('meeting room recording living-context route', () => {
           },
         },
       ],
+      clippyInteractionActivityLog: [
+        {
+          role: 'GUEST',
+          recordedAt: 1700000003200,
+          event: {
+            id: 'clippy-user-chat-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000003200,
+            eventType: 'ai_chat_user',
+            actor: 'guest',
+            text: 'Can you inspect the failing test?',
+            evidence: {
+              source: 'clippy_agent_chat_client_submit',
+              agentChatEventSource: 'browser_clippy_chat_window',
+              bridgeMessageType: 'CHAT',
+              bridgeProtocol: 'clippy_dev_container_ws',
+              promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
+              promptFingerprint: 'clippy_0123abcd',
+              promptLength: 'Can you inspect the failing test?'.length,
+              promptTimestamp: 1700000003200,
+              deliveredToAgentBridge: true,
+              agent: 'devin',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              repoUrl: 'https://github.com/cloudflare/workers-sdk',
+              agentResponseClaimed: false,
+              actor: 'guest',
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+        {
+          role: 'GUEST',
+          recordedAt: 1700000003300,
+          event: {
+            id: 'clippy-agent-status-sync',
+            clientId: 'guest-client',
+            createdAt: 1700000003300,
+            eventType: 'ai_agent_status',
+            actor: 'agent',
+            text: 'devin is ready.',
+            evidence: {
+              source: 'clippy_agent_bridge',
+              agentStatusEventSource: 'browser_clippy_agent_ws',
+              agent: 'devin',
+              status: 'idle',
+              diagnosticSource: null,
+              bridgeMessageSource: 'agent_status',
+              observedAt: '2026-06-27T20:00:00.000Z',
+              capturedAtMs: 1700000003300,
+              agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
+              surface: 'win95',
+              roomPhase: 'connected',
+              workspaceStatus: 'READY',
+              workspaceSessionId: 'workspace-session-1',
+              messageTimestamp: 1700000003300,
+              agentResponseClaimed: false,
+              durableObjectReplayExpected: true,
+            },
+          },
+        },
+      ],
       fileSystemActivityLog: [
         {
           role: 'GUEST',
@@ -3406,6 +3470,8 @@ describe('meeting room recording living-context route', () => {
       'session_chat_message',
       'session_terminal_command',
       'session_terminal_output',
+      'session_agent_status',
+      'session_chat_user',
       'session_clippy_prompt',
       'session_file_change',
     ]);
@@ -3477,6 +3543,29 @@ describe('meeting room recording living-context route', () => {
       promptCreatedAt: 1700000003000,
       promptLength: 'Would you like to open the workspace?'.length,
     });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_chat_user')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'clippy_interaction',
+      source: 'clippy_agent_chat_client_submit',
+      agentChatEventSource: 'browser_clippy_chat_window',
+      promptId: 'workspace-session-1:guest:prompt:1700000003200:clippy_0123abcd',
+      deliveredToAgentBridge: true,
+      actor: 'guest',
+      roomEventId: 'clippy-user-chat-sync',
+      workspaceSessionId: 'workspace-session-1',
+    });
+    expect(graphBody.events.find((event) => event.nodeType === 'session_agent_status')?.properties).toMatchObject({
+      roomActivitySource: 'durable_object',
+      roomActivityKind: 'clippy_interaction',
+      source: 'clippy_agent_bridge',
+      agentStatusEventSource: 'browser_clippy_agent_ws',
+      agent: 'devin',
+      status: 'idle',
+      agentStatusEventId: 'agent-status:devin:1700000003300:agent_status:idle:none',
+      actor: 'agent',
+      roomEventId: 'clippy-agent-status-sync',
+      workspaceSessionId: 'workspace-session-1',
+    });
     expect(graphBody.events.at(-1)?.properties).toMatchObject({
       roomActivitySource: 'durable_object',
       operation: 'upsert',
@@ -3489,7 +3578,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterFirstRead.count).toBe(9);
+    expect(nodeCountAfterFirstRead.count).toBe(11);
     const windowUpdateRows = sqlite.prepare(
       `SELECT extracted_properties_json
          FROM candidate_nodes
@@ -3513,7 +3602,7 @@ describe('meeting room recording living-context route', () => {
          FROM candidate_nodes
         WHERE candidate_id = ? AND source_type = 'meeting_session'`,
     ).get(graphBody.candidateId) as { count: number };
-    expect(nodeCountAfterSecondRead.count).toBe(9);
+    expect(nodeCountAfterSecondRead.count).toBe(11);
     expect(doFetch).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://do/activity-log',
     }));
