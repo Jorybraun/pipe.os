@@ -1711,7 +1711,7 @@ export default function InterviewDetailPage(): JSX.Element {
                   <div style={CONTEXT_RECORD_NARRATIVE}>
                     Ask one targeted question and capture the answer as source evidence. Use the answer to rerun repo matching.
                   </div>
-                  <div style={FIELD_LABEL}>Recommended next step</div>
+                  <div style={FIELD_LABEL}>Evidence to collect</div>
                   <div style={DECISION_FOLLOW_UP_LIST}>
                     {codeReviewEvidencePlan.map((item) => (
                       <div key={item.id} style={DECISION_FOLLOW_UP_ITEM}>

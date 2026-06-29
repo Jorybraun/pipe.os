@@ -466,10 +466,13 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Resolve the missing source-backed evidence before relying on this code-review assignment.');
     expect(decision).toHaveTextContent('NEEDS MORE EVIDENCE');
     expect(decision).toHaveTextContent('resolve missing evidence');
+    expect(decision).toHaveTextContent('Recommended next step');
+    expect(decision).toHaveTextContent('Collect missing evidence');
     expect(decision).not.toHaveTextContent('Waiting for candidate review');
     const evidencePlan = screen.getByTestId('interview-code-review-evidence-plan');
     expect(evidencePlan).toHaveTextContent('Resolve missing evidence');
-    expect(evidencePlan).toHaveTextContent('Recommended next step');
+    expect(evidencePlan).toHaveTextContent('Evidence to collect');
+    expect(evidencePlan).not.toHaveTextContent('Recommended next step');
     expect(evidencePlan).toHaveTextContent('Plan a follow-up assessment');
     expect(evidencePlan).toHaveTextContent('Use the answer to rerun repo matching.');
     expect(evidencePlan).toHaveTextContent('What PIPE needs');
