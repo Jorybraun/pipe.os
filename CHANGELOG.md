@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Person profile next-action CTAs now open the new-interview flow with the current person prefilled, turning missing-context and calibration recommendations into an actionable follow-up path.
 - Person profile timelines now expose quiet `Open interaction` actions for evidence tied to scheduled interviews, making related meetings actionable without showing raw interview ids.
 - Recruiter interview details now recover the candidate assessment URL from an existing unclaimed invite token when the delivery artifact is missing, and label assessment links as one-use candidate invites so recruiters do not accidentally consume them.
 - CODE_REVIEW interview decision cards now show compact uncertainty and missing-context summaries at the top of the single-meeting recruiter view, keeping gaps visible without opening the raw proof drawer.

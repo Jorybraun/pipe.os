@@ -40,7 +40,19 @@ vi.mock('./InterviewCard', () => ({
 }));
 
 vi.mock('./InviteCreationModal', () => ({
-  InviteCreationModal: () => null,
+  InviteCreationModal: (props: {
+    isOpen: boolean;
+    initialRecipientName?: string;
+    initialRecipientEmail?: string;
+    initialInterviewType?: string;
+  }) => props.isOpen ? (
+    <div
+      data-testid="invite-modal"
+      data-recipient-name={props.initialRecipientName ?? ''}
+      data-recipient-email={props.initialRecipientEmail ?? ''}
+      data-interview-type={props.initialInterviewType ?? ''}
+    />
+  ) : null,
 }));
 
 function makeInterview(overrides: Partial<ScheduledInterview> & {
@@ -62,7 +74,7 @@ function cardNames(): string[] {
   return screen.getAllByTestId('interview-card').map((card) => card.textContent ?? '');
 }
 
-function renderDashboard(interviews: ScheduledInterview[]): void {
+function renderDashboard(interviews: ScheduledInterview[], initialEntry = '/interviews'): void {
   mocks.useScheduledInterviews.mockReturnValue({
     interviews,
     isLoading: false,
@@ -78,7 +90,7 @@ function renderDashboard(interviews: ScheduledInterview[]): void {
   });
 
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <SchedulingDashboard />
     </MemoryRouter>,
   );
@@ -139,5 +151,17 @@ describe('SchedulingDashboard interview ordering', () => {
 
     expect(screen.getByText('OLDEST CREATED')).toBeInTheDocument();
     expect(cardNames()).toEqual(['Oldest invite', 'Middle invite', 'Newest invite']);
+  });
+
+  it('opens the invite modal from a person next-action URL with prefilled context', () => {
+    renderDashboard(
+      interviews,
+      '/interviews?new=1&recipientName=Ada+Reviewer&recipientEmail=ada%40example.com&interviewType=VIDEO',
+    );
+
+    const modal = screen.getByTestId('invite-modal');
+    expect(modal).toHaveAttribute('data-recipient-name', 'Ada Reviewer');
+    expect(modal).toHaveAttribute('data-recipient-email', 'ada@example.com');
+    expect(modal).toHaveAttribute('data-interview-type', 'VIDEO');
   });
 });

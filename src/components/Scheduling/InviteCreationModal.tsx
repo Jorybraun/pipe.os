@@ -45,6 +45,8 @@ interface InviteCreationModalProps {
     assessmentSetup?: AssessmentSetupProjection | null;
   }>;
   initialInterviewType?: InterviewType;
+  initialRecipientName?: string;
+  initialRecipientEmail?: string;
 }
 
 interface CreatedInviteState {
@@ -110,6 +112,8 @@ export function InviteCreationModal({
   onClose,
   onCreateInvite,
   initialInterviewType = 'VIDEO',
+  initialRecipientName = '',
+  initialRecipientEmail = '',
 }: InviteCreationModalProps): JSX.Element | null {
   const { connection } = useSchedulingConnection();
   const [recipientName, setRecipientName] = useState('');
@@ -138,6 +142,8 @@ export function InviteCreationModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
+      setRecipientName(initialRecipientName);
+      setRecipientEmail(initialRecipientEmail);
       setInterviewType(initialInterviewType);
       setSchedulingMode('manual');
       setGithubRepoUrl('');
@@ -148,8 +154,11 @@ export function InviteCreationModal({
       setChallengeInstructions('');
       setChallengeSuccessCriteria('');
       setChallengeExpectedEvidence('');
+      setCreateError(null);
+      setCreatedInvite(null);
+      setCopied(false);
     }
-  }, [isOpen, initialInterviewType]);
+  }, [isOpen, initialInterviewType, initialRecipientEmail, initialRecipientName]);
 
   // Auto-select Calendly mode for live interviews when Calendly is connected.
   useEffect(() => {

@@ -20,6 +20,12 @@ type TimelineGroup = 'TODAY' | 'TOMORROW' | 'THIS_WEEK' | 'LATER' | 'PAST' | 'UN
 type InterviewSortMode = 'CREATED_DESC' | 'TIMELINE' | 'CREATED_ASC';
 type InterviewListGroup = TimelineGroup | 'CREATED_DESC' | 'CREATED_ASC';
 
+interface InvitePrefill {
+  recipientName: string;
+  recipientEmail: string;
+  interviewType: InterviewType;
+}
+
 interface InviteResponse {
   success: boolean;
   emailSent: boolean;
@@ -28,6 +34,15 @@ interface InviteResponse {
   deliveredUrl?: string | null;
   provider?: string;
   emailError?: string;
+}
+
+function isInterviewType(value: string | null): value is InterviewType {
+  return value === 'VIDEO'
+    || value === 'SCREENING'
+    || value === 'CULTURE'
+    || value === 'CODE_REVIEW'
+    || value === 'DEV_CONTAINER_CHALLENGE'
+    || value === 'OPEN_SOURCE_BUG_FIX';
 }
 
 function getTimelineGroup(scheduledAt: string | null): TimelineGroup {
@@ -151,6 +166,11 @@ export function SchedulingDashboard(): JSX.Element {
   const { notifications, isConnected } = useBookingNotifications();
   const api = useApiClient();
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitePrefill, setInvitePrefill] = useState<InvitePrefill>({
+    recipientName: '',
+    recipientEmail: '',
+    interviewType: 'VIDEO',
+  });
   const [sortMode, setSortMode] = useState<InterviewSortMode>('CREATED_DESC');
   const [searchParams, setSearchParams] = useSearchParams();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -158,9 +178,18 @@ export function SchedulingDashboard(): JSX.Element {
 
   useEffect(() => {
     if (searchParams.get('new') !== '1') return;
+    const requestedInterviewType = searchParams.get('interviewType');
+    setInvitePrefill({
+      recipientName: searchParams.get('recipientName') ?? '',
+      recipientEmail: searchParams.get('recipientEmail') ?? '',
+      interviewType: isInterviewType(requestedInterviewType) ? requestedInterviewType : 'VIDEO',
+    });
     setShowInviteModal(true);
     const next = new URLSearchParams(searchParams);
     next.delete('new');
+    next.delete('recipientName');
+    next.delete('recipientEmail');
+    next.delete('interviewType');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -465,6 +494,9 @@ export function SchedulingDashboard(): JSX.Element {
       <InviteCreationModal
         isOpen={showInviteModal}
         onClose={() => setShowInviteModal(false)}
+        initialRecipientName={invitePrefill.recipientName}
+        initialRecipientEmail={invitePrefill.recipientEmail}
+        initialInterviewType={invitePrefill.interviewType}
         onCreateInvite={async (data: {
           recipientName: string;
           recipientEmail: string;

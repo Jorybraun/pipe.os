@@ -11,6 +11,29 @@ vi.mock('../../hooks/useSchedulingConnection', () => ({
 }));
 
 describe('InviteCreationModal open-source challenge packets', () => {
+  it('prefills person context when opened from a profile next action', () => {
+    mocks.useSchedulingConnection.mockReturnValue({
+      connection: null,
+    });
+
+    render(
+      <InviteCreationModal
+        isOpen
+        onClose={vi.fn()}
+        onCreateInvite={vi.fn()}
+        initialRecipientName="Ada Reviewer"
+        initialRecipientEmail="ada@example.com"
+        initialInterviewType="VIDEO"
+      />,
+    );
+
+    expect(screen.getByPlaceholderText('Jane Doe')).toHaveValue('Ada Reviewer');
+    expect(screen.getByPlaceholderText('jane@example.com')).toHaveValue('ada@example.com');
+    expect(screen.getByRole('button', { name: /Video/i })).toHaveStyle({
+      color: '#60a5fa',
+    });
+  });
+
   it('submits a complete manual open-source challenge packet for assessment invites', async () => {
     mocks.useSchedulingConnection.mockReturnValue({
       connection: null,

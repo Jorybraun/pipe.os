@@ -541,6 +541,31 @@ function nextActionForDecision(
   };
 }
 
+function nextInterviewCtaLabel(decision: CodeReviewDecisionProjection | null): string {
+  const nextAction = decision?.nextAction.toLowerCase() ?? '';
+  if (nextAction.includes('evidence')) return 'Create evidence interview';
+  if (nextAction.includes('calibration')) return 'Create calibration interview';
+  if (nextAction.includes('fairness')) return 'Create fairness review';
+  return 'Create context interview';
+}
+
+function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionProjection | null): string {
+  const params = new URLSearchParams({
+    new: '1',
+    interviewType: 'VIDEO',
+  });
+  const name = contact.name?.trim();
+  const email = contact.email?.trim();
+  if (name) params.set('recipientName', name);
+  if (email) params.set('recipientEmail', email);
+  if (!name && email) params.set('recipientName', email);
+  const action = decision?.nextAction.toLowerCase() ?? '';
+  if (action.includes('code review') || action.includes('review signal')) {
+    params.set('interviewType', 'CODE_REVIEW');
+  }
+  return `/interviews?${params.toString()}`;
+}
+
 function uncertaintyForDecision(input: {
   score: CodeReviewScoreProjection | null;
   challenge: CodeReviewChallengeProjection | null;
@@ -773,9 +798,11 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
 function ProfileDecisionCockpit({
   decision,
   livingContext,
+  onCreateNextInterview,
 }: {
   decision: CodeReviewDecisionProjection | null;
   livingContext: LivingContextReadModel | null;
+  onCreateNextInterview: () => void;
 }): JSX.Element {
   const hasEvidence = (livingContext?.summary.interactionCount ?? 0) > 0
     || (livingContext?.summary.contextRecordCount ?? 0) > 0
@@ -859,6 +886,17 @@ function ProfileDecisionCockpit({
             <p style={PROFILE_COCKPIT_DETAIL}>{card.detail}</p>
           </div>
         ))}
+      </div>
+      <div style={PROFILE_COCKPIT_ACTION_ROW}>
+        <button
+          type="button"
+          data-testid="person-next-action-cta"
+          onClick={onCreateNextInterview}
+          style={PROFILE_COCKPIT_ACTION}
+        >
+          <Calendar size={14} />
+          {nextInterviewCtaLabel(decision)}
+        </button>
       </div>
     </section>
   );
@@ -1106,7 +1144,11 @@ export default function PersonProfilePage(): JSX.Element {
         </div>
       </section>
 
-      <ProfileDecisionCockpit decision={codeReviewDecision} livingContext={livingContext} />
+      <ProfileDecisionCockpit
+        decision={codeReviewDecision}
+        livingContext={livingContext}
+        onCreateNextInterview={() => navigate(nextInterviewPath(contact, codeReviewDecision))}
+      />
 
       {codeReviewDecision && (
         <CodeReviewDecisionCard decision={codeReviewDecision} />
@@ -1470,6 +1512,32 @@ const PROFILE_COCKPIT_DETAIL: CSSProperties = {
   color: 'var(--pipe-text-muted)',
   fontSize: 11,
   lineHeight: 1.5,
+};
+
+const PROFILE_COCKPIT_ACTION_ROW: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  borderTop: '1px solid var(--pipe-border-light)',
+  paddingTop: 12,
+};
+
+const PROFILE_COCKPIT_ACTION: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  minHeight: 38,
+  border: '1px solid var(--pipe-accent-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-text)',
+  color: 'var(--pipe-bg)',
+  cursor: 'pointer',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: '0.08em',
+  padding: '10px 14px',
+  textTransform: 'uppercase',
 };
 
 const EYEBROW: CSSProperties = recruiterEyebrowStyle;

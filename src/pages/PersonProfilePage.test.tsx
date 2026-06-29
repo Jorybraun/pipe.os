@@ -1,5 +1,5 @@
-import { act, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PersonProfilePage from './PersonProfilePage';
 import type {
@@ -324,9 +324,15 @@ function renderPage(): void {
     <MemoryRouter initialEntries={['/people/person-1']}>
       <Routes>
         <Route path="/people/:personId" element={<PersonProfilePage />} />
+        <Route path="/interviews" element={<LocationEcho />} />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+function LocationEcho(): JSX.Element {
+  const location = useLocation();
+  return <div data-testid="location-echo">{location.pathname}{location.search}</div>;
 }
 
 function renderPageWithoutPersonId(): void {
@@ -405,6 +411,14 @@ describe('PersonProfilePage', () => {
     expect(screen.queryByText('candidate_node_625b5cd373443f0aef79af73749894fb')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create calibration interview' }));
+    const location = screen.getByTestId('location-echo');
+    expect(location).toHaveTextContent('/interviews?');
+    expect(location).toHaveTextContent('new=1');
+    expect(location).toHaveTextContent('interviewType=VIDEO');
+    expect(location).toHaveTextContent('recipientName=Ada+Reviewer');
+    expect(location).toHaveTextContent('recipientEmail=ada%40example.com');
   });
 
   it('does not trust a scored code review when repo-match provenance is missing', async () => {
