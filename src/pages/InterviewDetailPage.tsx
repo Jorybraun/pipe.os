@@ -1433,7 +1433,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       </div>
                     </div>
                   )}
-                  {!codeReviewEvidenceRefreshUsed && (
+                  {!codeReviewEvidenceRefreshUsed && !codeReviewEvidenceRefreshStillMissing && (
                     <button
                       data-testid="interview-code-review-refresh-match-cta"
                       onClick={() => void refreshCodeReviewMatch()}
@@ -1448,6 +1448,19 @@ export default function InterviewDetailPage(): JSX.Element {
                         : codeReviewEvidenceRefreshStillMissing ? 'RERUN AFTER NEW EVIDENCE' : 'RERUN REPO MATCH'}
                     </button>
                   )}
+                  {codeReviewEvidenceRefreshStillMissing && (
+                    <button
+                      data-testid="interview-code-review-next-follow-up-cta"
+                      onClick={() => void createContextCall()}
+                      disabled={isCreatingContextCall}
+                      style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
+                    >
+                      {isCreatingContextCall
+                        ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                        : <CalendarCheck size={14} />}
+                      CREATE NEXT FOLLOW-UP ASSESSMENT
+                    </button>
+                  )}
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (
                     <button
                       data-testid="interview-code-review-open-evidence-call"
@@ -1460,6 +1473,7 @@ export default function InterviewDetailPage(): JSX.Element {
                   )}
                   {matchRefreshNotice && <div style={SUCCESS_NOTE}>{matchRefreshNotice}</div>}
                   {matchRefreshError && <div style={ERROR_NOTE}>{matchRefreshError}</div>}
+                  {contextCallError && <div style={ERROR_NOTE}>{contextCallError}</div>}
                 </div>
               )}
               {codeReviewEvidenceFollowUp && !codeReviewEvidenceRefresh && (

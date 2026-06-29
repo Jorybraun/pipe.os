@@ -2273,6 +2273,142 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('creates a fresh follow-up assessment after a consumed refresh still lacks evidence', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-next-follow-up', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO match_runs (
+        id, candidate_id, role_snapshot_id, status, ranked_results_json,
+        selected_packet_id, query_json, created_at
+      ) VALUES (
+        'match-run-after-refresh-still-needs-evidence', 'candidate-1', 'standalone-code-review-v1',
+        'NEEDS_MORE_EVIDENCE', '[]', NULL, '{}', '2026-06-22T19:02:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-consumed-still-needs-evidence',
+        'assessment-session:code-review-evidence-plan:interview-code-review-next-follow-up:context-call-consumed-still-needs-evidence',
+        'context-call-consumed-still-needs-evidence', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-next-follow-up',
+      contextCallInterviewId: 'context-call-consumed-still-needs-evidence',
+      matchRunId: 'match-run-before-consumed-refresh',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-consumed-refresh-ready',
+        'assessment-report:code-review-evidence-plan:assessment-plan-consumed-still-needs-evidence:ready',
+        'assessment-plan-consumed-still-needs-evidence', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      ), (
+        'assessment-report-consumed-refresh-used',
+        'assessment-report:code-review-evidence-plan:assessment-plan-consumed-still-needs-evidence:ready:match-run-after-refresh-still-needs-evidence:consumed',
+        'assessment-plan-consumed-still-needs-evidence', 'NEEDS_MORE_EVIDENCE',
+        'Evidence-plan follow-up was consumed by a repo-match rerun, but the matcher returned NEEDS_MORE_EVIDENCE.',
+        ?, '[]',
+        '2026-06-22T19:02:00.000Z',
+        '2026-06-22T19:02:00.000Z'
+      )
+    `).run(
+      JSON.stringify({
+        schemaVersion: 'code-review-evidence-plan-result-v1',
+        status: 'READY_FOR_REPO_MATCH_REFRESH',
+        originalInterviewId: 'interview-code-review-next-follow-up',
+        contextCallInterviewId: 'context-call-consumed-still-needs-evidence',
+        matchRunId: 'match-run-before-consumed-refresh',
+        matchStatus: 'NEEDS_MORE_EVIDENCE',
+        sourceSpanCount: 1,
+      }),
+      JSON.stringify({
+        schemaVersion: 'code-review-evidence-plan-consumption-v1',
+        status: 'USED_FOR_REPO_MATCH_REFRESH',
+        originalInterviewId: 'interview-code-review-next-follow-up',
+        readyReportId: 'assessment-report-consumed-refresh-ready',
+        assessmentSessionId: 'assessment-plan-consumed-still-needs-evidence',
+        consumedByMatchRunId: 'match-run-after-refresh-still-needs-evidence',
+        consumedByMatchStatus: 'NEEDS_MORE_EVIDENCE',
+        refreshed: false,
+        consumedAt: '2026-06-22T19:02:00.000Z',
+      }),
+    );
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-next-follow-up/context-call', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      contextCall: {
+        id: string;
+        originalInterviewId: string;
+        evidenceAssessmentSessionId: string;
+        reused?: boolean;
+      };
+    };
+    expect(body.contextCall).toMatchObject({
+      originalInterviewId: 'interview-code-review-next-follow-up',
+    });
+    expect(body.contextCall.id).not.toBe('context-call-consumed-still-needs-evidence');
+    expect(body.contextCall.evidenceAssessmentSessionId).not.toBe('assessment-plan-consumed-still-needs-evidence');
+    expect(body.contextCall.reused).toBeUndefined();
+
+    const newPlan = sqlite!.prepare(
+      `SELECT id, interview_id, state, created_by, metadata_json
+         FROM assessment_sessions
+        WHERE id = ?`,
+    ).get(body.contextCall.evidenceAssessmentSessionId) as {
+      id: string;
+      interview_id: string;
+      state: string;
+      created_by: string;
+      metadata_json: string;
+    };
+    expect(newPlan).toMatchObject({
+      interview_id: body.contextCall.id,
+      state: 'IN_PROGRESS',
+      created_by: 'code-review-evidence-plan',
+    });
+    expect(JSON.parse(newPlan.metadata_json)).toMatchObject({
+      originalInterviewId: 'interview-code-review-next-follow-up',
+      contextCallInterviewId: body.contextCall.id,
+      matchRunId: 'match-run-after-refresh-still-needs-evidence',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    });
+  });
+
   it('does not rerun CODE_REVIEW matching when the same evidence refresh was already tried', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`

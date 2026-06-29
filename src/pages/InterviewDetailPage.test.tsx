@@ -987,6 +987,16 @@ describe('InterviewDetailPage', () => {
         },
       },
     });
+    mocks.api.post.mockResolvedValueOnce({
+      contextCall: {
+        id: 'context-call-after-still-blocked',
+        originalInterviewId: 'interview-1',
+        candidateId: 'candidate-1',
+        evidenceAssessmentSessionId: 'assessment-plan-after-still-blocked',
+        questions: [SOURCE_BACKED_WORK_EVIDENCE_QUESTION],
+        recruiterNotes: 'PIPE context call for blocked code-review matching.',
+      },
+    });
 
     renderDetail();
 
@@ -1005,7 +1015,16 @@ describe('InterviewDetailPage', () => {
     expect(refresh).toHaveTextContent('Capture another concrete source-backed answer before rerunning.');
     expect(refresh).toHaveTextContent('Still missing');
     expect(refresh).toHaveTextContent('NO SCOREABLE SOURCE BACKED CANDIDATE EVIDENCE');
-    expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('RERUN AFTER NEW EVIDENCE');
+    expect(screen.queryByTestId('interview-code-review-refresh-match-cta')).toBeNull();
+
+    const nextFollowUp = screen.getByTestId('interview-code-review-next-follow-up-cta');
+    expect(nextFollowUp).toHaveTextContent('CREATE NEXT FOLLOW-UP ASSESSMENT');
+    fireEvent.click(nextFollowUp);
+    await flushAsyncUpdates();
+    expect(mocks.api.post).toHaveBeenLastCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/context-call',
+      {},
+    );
   });
 
   it('shows the source-backed follow-up assessment plan on created context-call interviews', async () => {
