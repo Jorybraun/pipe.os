@@ -15,12 +15,8 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@clerk/react', () => ({
-  useAuth: () => ({ getToken: vi.fn().mockResolvedValue('test-token') }),
-}));
-
-vi.mock('../lib/api/client', () => ({
-  createApiClient: () => mocks.api,
+vi.mock('../hooks/useApiClient', () => ({
+  useApiClient: () => mocks.api,
 }));
 
 vi.mock('../components/Candidate/LivingContextGraph', () => ({
@@ -293,6 +289,16 @@ function renderPage(): void {
   );
 }
 
+function renderPageWithoutPersonId(): void {
+  render(
+    <MemoryRouter initialEntries={['/people']}>
+      <Routes>
+        <Route path="/people" element={<PersonProfilePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('PersonProfilePage', () => {
   beforeEach(() => {
     mocks.api.get.mockReset();
@@ -334,5 +340,14 @@ describe('PersonProfilePage', () => {
     expect(proof).toHaveTextContent('review-session-1');
     expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
+  });
+
+  it('shows a visible profile error instead of spinning forever when the person id is missing', async () => {
+    renderPageWithoutPersonId();
+    await flushAsyncUpdates();
+
+    expect(screen.queryByText('Loading person context...')).not.toBeInTheDocument();
+    expect(screen.getByText('Missing person id for this profile.')).toBeInTheDocument();
+    expect(mocks.api.get).not.toHaveBeenCalled();
   });
 });

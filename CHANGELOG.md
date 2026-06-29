@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - CODE_REVIEW interview scheduling panels now show a human meeting-room linked state instead of raw internal Pipe meeting ids.
+- Person profiles now use the same Clerk-bound API client as interview detail pages and show a visible profile-route error instead of staying on an infinite loading state when person context cannot be addressed.
 - CODE_REVIEW interview related-evidence rows now describe follow-up meetings and same-person assessments as human evidence moments without exposing raw linked-meeting ids in the hiring-manager cockpit.
 - Dev-container assessment rooms now expose a room-token commit submission endpoint that records real candidate commits through the source-backed assessment session spine while hiding internal assessment ids from candidate responses.
 - Win95 dev-container assessment rooms now include a Submit Work window that posts exact commit and diff evidence to the room-token assessment endpoint, making real commit submission available from the candidate room UI.

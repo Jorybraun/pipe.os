@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '@clerk/react';
 import {
   ArrowLeft,
   Briefcase,
@@ -15,7 +14,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
-import { createApiClient } from '../lib/api/client';
+import { useApiClient } from '../hooks/useApiClient';
 import type {
   LivingContextReadModel,
   LivingContextRecord,
@@ -732,8 +731,7 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
 export default function PersonProfilePage(): JSX.Element {
   const { personId } = useParams<{ personId: string }>();
   const navigate = useNavigate();
-  const { getToken } = useAuth();
-  const api = useMemo(() => createApiClient({ getToken }), [getToken]);
+  const api = useApiClient();
 
   const [contact, setContact] = useState<PersonContact | null>(null);
   const [livingContext, setLivingContext] = useState<LivingContextReadModel | null>(null);
@@ -744,7 +742,13 @@ export default function PersonProfilePage(): JSX.Element {
   const contextEndpoint = personId ? `/api/v1/contacts/${personId}/living-context` : null;
 
   const load = useCallback(async (): Promise<void> => {
-    if (!personId || !contextEndpoint) return;
+    if (!personId || !contextEndpoint) {
+      setError('Missing person id for this profile.');
+      setContact(null);
+      setLivingContext(null);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
