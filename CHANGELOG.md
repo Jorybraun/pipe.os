@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Win95 shared window-state events now reconstruct state patches, actions, and source ids before replaying, preventing stale move, resize, focus, minimize, or maximize evidence from syncing across participants.
 - Win95 shared window-data and browser-navigation events now reconstruct fingerprints and source ids from the exact shared payload before replaying, preventing stale Notepad/Paint/browser state from being accepted as source-backed desktop evidence.
 - Win95 shared file-system events and snapshots now require exact saved/deleted file content provenance before replaying, preventing Notepad, Paint, JSON, or link files from hydrating as source-backed evidence from hash-only or stale projections.
 - Clippy no longer mounts the unmanaged `clippyjs` paperclip sprite over the Win95 desktop; the controlled tray, proactive card, and chat window remain as the only Clippy surfaces.

@@ -332,6 +332,29 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
       durableObjectReplayExpected: true,
     },
   };
+  const windowStateEvent: RoomDesktopEvent = {
+    id: 'window-state-event-1',
+    clientId: 'guest-client',
+    createdAt: 1700000006000,
+    kind: 'UPDATE_WINDOW_STATE',
+    windowId: 'workspace',
+    x: 120,
+    y: 80,
+    evidence: {
+      source: 'window_state_client_submit',
+      stateSource: 'win95_window_chrome',
+      actor: 'guest',
+      windowId: 'workspace',
+      action: 'move',
+      windowStateChangeId: 'window-state:guest:1700000006000:workspace:move',
+      capturedAtMs: 1700000006000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      statePatch: { x: 120, y: 80 },
+      stateKeys: ['x', 'y'],
+      durableObjectReplayExpected: true,
+    },
+  };
 
   it('accepts surface changes only when browser toggle evidence matches the room actor and transition', () => {
     expect(hasSourceBackedDesktopEventEvidence(surfaceEvent, 'HOST')).toBe(true);
@@ -395,6 +418,30 @@ describe('hasSourceBackedDesktopEventEvidence', () => {
         browserNavigationId: 'browser-navigation:host:1700000005000:browser:reload_button:nav_54d2c495',
       },
     }, 'HOST')).toBe(false);
+  });
+
+  it('accepts window state updates only when evidence reconstructs from the exact shared state patch', () => {
+    expect(hasSourceBackedDesktopEventEvidence(windowStateEvent, 'GUEST')).toBe(true);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...windowStateEvent,
+      x: 121,
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...windowStateEvent,
+      evidence: {
+        ...windowStateEvent.evidence!,
+        statePatch: { x: 120, y: 80, width: 640 },
+        stateKeys: ['width', 'x', 'y'],
+      },
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedDesktopEventEvidence({
+      ...windowStateEvent,
+      evidence: {
+        ...windowStateEvent.evidence!,
+        action: 'resize',
+        windowStateChangeId: 'window-state:guest:1700000006000:workspace:resize',
+      },
+    }, 'GUEST')).toBe(false);
   });
 });
 

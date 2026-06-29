@@ -14,6 +14,7 @@ import {
 } from '../lib/browserNavigationEvidence';
 import {
   inferWindowDataAction,
+  inferWindowStateAction,
   windowDataValueFingerprint,
 } from '../lib/windowEvidence';
 import type { OpenWindowConfig, WindowType } from './useWindowManager';
@@ -898,6 +899,43 @@ function hasMatchingWindowDataEvidence(
   ));
 }
 
+function windowStatePatchFromEvent(event: Extract<RoomDesktopEvent, { kind: 'UPDATE_WINDOW_STATE' }>): Record<string, number | boolean> {
+  const patch: Record<string, number | boolean> = {};
+  for (const key of ['x', 'y', 'width', 'height', 'minimized', 'maximized', 'focused'] as const) {
+    const value = event[key];
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      patch[key] = value;
+    }
+  }
+  return patch;
+}
+
+function hasMatchingWindowStateEvidence(
+  event: Extract<RoomDesktopEvent, { kind: 'UPDATE_WINDOW_STATE' }>,
+  evidence: Record<string, unknown>,
+): { ok: boolean; action: string | null } {
+  const statePatch = windowStatePatchFromEvent(event);
+  const stateKeys = Object.keys(statePatch).sort();
+  const evidencePatch = evidence.statePatch;
+  if (stateKeys.length === 0 || !isRecord(evidencePatch)) {
+    return { ok: false, action: null };
+  }
+  const evidenceKeys = Array.isArray(evidence.stateKeys) ? evidence.stateKeys : [];
+  if (
+    evidenceKeys.length !== stateKeys.length
+    || !evidenceKeys.every((key): key is string => typeof key === 'string')
+  ) {
+    return { ok: false, action: null };
+  }
+  const sortedEvidenceKeys = [...evidenceKeys].sort();
+  if (!stateKeys.every((key, index) => key === sortedEvidenceKeys[index])) {
+    return { ok: false, action: null };
+  }
+  const patchMatches = stateKeys.every((key) => evidencePatch[key] === statePatch[key]);
+  if (!patchMatches) return { ok: false, action: null };
+  return { ok: true, action: inferWindowStateAction(statePatch) };
+}
+
 export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, role?: RoomRole): boolean {
   const actor = roleActor(role);
   if (!actor) return false;
@@ -1015,15 +1053,26 @@ export function hasSourceBackedDesktopEventEvidence(event: RoomDesktopEvent, rol
       && evidence.durableObjectReplayExpected === true;
   }
   if (event.kind === 'UPDATE_WINDOW_STATE') {
+    const capturedAtMs = evidence.capturedAtMs;
+    const stateEvidence = hasMatchingWindowStateEvidence(event, evidence);
+    const expectedAction = stateEvidence.action;
     return evidence.source === 'window_state_client_submit'
       && typeof evidence.stateSource === 'string'
       && WINDOW_STATE_SOURCES.has(evidence.stateSource)
       && evidence.actor === actor
       && evidence.windowId === event.windowId
       && typeof evidence.windowStateChangeId === 'string'
-      && typeof evidence.capturedAtMs === 'number'
-      && Number.isFinite(evidence.capturedAtMs)
-      && typeof evidence.action === 'string'
+      && typeof capturedAtMs === 'number'
+      && Number.isFinite(capturedAtMs)
+      && stateEvidence.ok
+      && evidence.action === expectedAction
+      && evidence.windowStateChangeId === [
+        'window-state',
+        actor,
+        Math.max(0, Math.round(capturedAtMs)),
+        event.windowId,
+        expectedAction,
+      ].join(':')
       && evidence.surface === 'win95'
       && typeof evidence.roomPhase === 'string'
       && evidence.durableObjectReplayExpected === true;

@@ -42,7 +42,7 @@ function supportedWindowStateEntry(value: unknown): value is number | boolean {
   return typeof value === 'number' || typeof value === 'boolean';
 }
 
-function inferWindowStateAction(statePatch: Record<string, number | boolean>): string {
+export function inferWindowStateAction(statePatch: Record<string, number | boolean>): string {
   if (statePatch.minimized === true) return 'minimize';
   if (statePatch.minimized === false && statePatch.focused === true) return 'restore_or_focus';
   if (statePatch.maximized === true) return 'maximize';
