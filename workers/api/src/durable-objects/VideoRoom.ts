@@ -57,6 +57,28 @@ const MAX_RECORDING_FAILURE_MESSAGE_LENGTH = 240;
 const CURSOR_PRESENCE_SAMPLE_INTERVAL_MS = 15_000;
 const CURSOR_PRESENCE_MOVEMENT_THRESHOLD = 0.03;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d+:\d+$/;
+const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
+const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
+  'source',
+  'fileEventSource',
+  'fileChangeId',
+  'actor',
+  'operation',
+  'action',
+  'fileId',
+  'fileName',
+  'fileKind',
+  'mimeType',
+  'path',
+  'surface',
+  'roomPhase',
+  'capturedAtMs',
+  'durableObjectReplayExpected',
+  'contentLength',
+  'contentHash',
+  'fileCreatedAt',
+  'fileUpdatedAt',
+] as const;
 const WINDOW_LIFECYCLE_SOURCES = new Set([
   'win95_desktop_ui',
   'win95_file_system',
@@ -2463,6 +2485,30 @@ export class VideoRoom {
     await this.state.storage.put('terminalActivityLog', next);
   }
 
+  private roomFileProjectionEvidenceFromEvent(event: RoomFileSystemEvent): Record<string, unknown> | undefined {
+    const evidence = event.evidence;
+    if (event.kind !== 'UPSERT_FILE' || !this.isRecord(evidence)) return undefined;
+    const projection: Record<string, unknown> = {};
+    for (const key of ROOM_FILE_PROJECTION_EVIDENCE_KEYS) {
+      if (evidence[key] !== undefined) {
+        projection[key] = evidence[key];
+      }
+    }
+    return projection;
+  }
+
+  private roomFileWithProjectionEvidence(file: RoomFile, event: RoomFileSystemEvent): RoomFile {
+    const evidence = this.roomFileProjectionEvidenceFromEvent(event);
+    if (!evidence) return file;
+    return {
+      ...file,
+      metadata: {
+        ...(file.metadata ?? {}),
+        [ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY]: evidence,
+      },
+    };
+  }
+
   private async persistFileSystemEvent(event: RoomFileSystemEvent, role: VideoRole): Promise<RoomFile[]> {
     const files = await this.getRoomFileSystem();
     if (event.kind === 'DELETE_FILE') {
@@ -2470,10 +2516,10 @@ export class VideoRoom {
       await this.state.storage.put('roomFileSystem', nextFiles);
       return nextFiles;
     }
-    const nextFile = {
+    const nextFile = this.roomFileWithProjectionEvidence({
       ...event.file,
       updatedBy: role,
-    };
+    }, event);
     const nextFiles = [
       ...files.filter((file) => file.id !== event.file.id),
       nextFile,

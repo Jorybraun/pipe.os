@@ -44,6 +44,29 @@ const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 const CURSOR_SAMPLE_ID_RE = /^cursor:(host|guest):\d+:\d{1,4}:\d{1,4}$/;
+const ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY = 'roomFileProjectionEvidence';
+const ROOM_FILE_CONTENT_HASH_RE = /^content_[a-f0-9]{32}$/;
+const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
+  'source',
+  'fileEventSource',
+  'fileChangeId',
+  'actor',
+  'operation',
+  'action',
+  'fileId',
+  'fileName',
+  'fileKind',
+  'mimeType',
+  'path',
+  'surface',
+  'roomPhase',
+  'capturedAtMs',
+  'durableObjectReplayExpected',
+  'contentLength',
+  'contentHash',
+  'fileCreatedAt',
+  'fileUpdatedAt',
+] as const;
 const CLIPPY_PROMPT_FINGERPRINT_RE = /^clippy_[0-9a-f]{8}$/;
 const BROWSER_PROMPT_ID_RE = /^[a-zA-Z0-9:_-]+:(host|guest):prompt:\d+:clippy_[0-9a-f]{8}$/;
 const AGENT_CHAT_RESPONSE_FINGERPRINT_RE = /^agent_[0-9a-f]{8}$/;
@@ -2077,13 +2100,38 @@ function sortChatMessages(messages: RoomChatMessage[]): RoomChatMessage[] {
   return [...messages].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
 
+function roomFileProjectionEvidenceFromEvent(event: RoomFileSystemEvent): Record<string, unknown> | undefined {
+  const evidence = event.evidence;
+  if (event.kind !== 'UPSERT_FILE' || !isRecord(evidence)) return undefined;
+  const projection: Record<string, unknown> = {};
+  for (const key of ROOM_FILE_PROJECTION_EVIDENCE_KEYS) {
+    if (evidence[key] !== undefined) {
+      projection[key] = evidence[key];
+    }
+  }
+  return projection;
+}
+
+function roomFileWithProjectionEvidence(file: RoomFile, event: RoomFileSystemEvent): RoomFile {
+  const evidence = roomFileProjectionEvidenceFromEvent(event);
+  if (!evidence) return file;
+  return {
+    ...file,
+    metadata: {
+      ...(file.metadata ?? {}),
+      [ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY]: evidence,
+    },
+  };
+}
+
 function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): RoomFile[] {
   if (event.kind === 'DELETE_FILE') {
     return files.filter((file) => file.id !== event.fileId);
   }
+  const file = roomFileWithProjectionEvidence(event.file, event);
   return sortRoomFiles([
     ...files.filter((file) => file.id !== event.file.id),
-    event.file,
+    file,
   ]);
 }
 
@@ -2109,6 +2157,41 @@ export function hasSourceBackedRoomFileSystemEvidence(
     && typeof evidence.roomPhase === 'string'
     && evidence.roomPhase.trim().length > 0
     && evidence.durableObjectReplayExpected === true;
+}
+
+export function hasSourceBackedRoomFileSnapshotEvidence(file: RoomFile): boolean {
+  const projection = file.metadata?.[ROOM_FILE_PROJECTION_EVIDENCE_METADATA_KEY];
+  if (!isRecord(projection)) return false;
+  const actor = projection.actor === 'host' || projection.actor === 'guest' ? projection.actor : null;
+  if (actor === null) return false;
+  const expectedRole: RoomRole = actor === 'host' ? 'HOST' : 'GUEST';
+  const capturedAtMs = projection.capturedAtMs;
+  const contentLength = projection.contentLength;
+  const contentHash = projection.contentHash;
+  return (file.updatedBy === undefined || file.updatedBy === expectedRole)
+    && projection.source === 'win95_shared_file_system'
+    && projection.fileEventSource === 'browser_client_submit'
+    && projection.operation === 'upsert'
+    && projection.action === 'upsert'
+    && projection.fileId === file.id
+    && projection.fileName === file.name
+    && projection.fileKind === file.kind
+    && (projection.mimeType === undefined || projection.mimeType === file.mimeType)
+    && (projection.path === undefined || typeof projection.path === 'string')
+    && typeof capturedAtMs === 'number'
+    && Number.isFinite(capturedAtMs)
+    && projection.fileChangeId === `file:${actor}:${capturedAtMs}:upsert:${file.id}`
+    && projection.surface === 'win95'
+    && typeof projection.roomPhase === 'string'
+    && projection.roomPhase.trim().length > 0
+    && projection.durableObjectReplayExpected === true
+    && typeof contentLength === 'number'
+    && Number.isFinite(contentLength)
+    && contentLength === file.content.length
+    && typeof contentHash === 'string'
+    && ROOM_FILE_CONTENT_HASH_RE.test(contentHash)
+    && projection.fileCreatedAt === file.createdAt
+    && projection.fileUpdatedAt === file.updatedAt;
 }
 
 export function mergePeerCursorPresence(
@@ -2857,11 +2940,11 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_FILE_SYSTEM_EVENT_REJECTED') {
           const snapshot = parseFileSystemSnapshot(message.payload);
           if (!snapshot) return;
-          setFileSystem(sortRoomFiles(snapshot.files));
+          setFileSystem(sortRoomFiles(snapshot.files.filter(hasSourceBackedRoomFileSnapshotEvidence)));
         } else if (message.type === 'ROOM_FILE_SYSTEM_STATE') {
           const snapshot = parseFileSystemSnapshot(message.payload);
           if (!snapshot) return;
-          setFileSystem(sortRoomFiles(snapshot.files));
+          setFileSystem(sortRoomFiles(snapshot.files.filter(hasSourceBackedRoomFileSnapshotEvidence)));
         }
       };
       ws.onerror = () => {

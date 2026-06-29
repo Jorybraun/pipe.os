@@ -14,6 +14,7 @@ import {
   hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
   hasSourceBackedRecordingStateSnapshotEvidence,
+  hasSourceBackedRoomFileSnapshotEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
   mergePeerCursorPresence,
@@ -26,6 +27,7 @@ import {
   type RoomCodeServerFileEvent,
   type RoomCursorPresence,
   type RoomDesktopEvent,
+  type RoomFile,
   type RoomFileSystemEvent,
   type RoomMediaControlEvent,
   type RoomMediaControlState,
@@ -871,10 +873,16 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
       fileId: 'desktop-notes',
       fileName: 'notes.txt',
       fileKind: 'text',
+      mimeType: 'text/plain',
       surface: 'win95',
       roomPhase: 'connected',
       capturedAtMs: 4,
       durableObjectReplayExpected: true,
+      action: 'upsert',
+      contentLength: 'Candidate asked about testing strategy.'.length,
+      contentHash: 'content_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      fileCreatedAt: 4,
+      fileUpdatedAt: 4,
     },
   };
 
@@ -891,6 +899,37 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
 
   it('rejects file mutations attributed to the wrong room actor', () => {
     expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'GUEST')).toBe(false);
+  });
+
+  it('accepts file snapshots only when metadata carries source-backed upsert projection evidence', () => {
+    const file: RoomFile = {
+      ...sourceBackedUpsert.file,
+      metadata: {
+        roomFileProjectionEvidence: {
+          ...sourceBackedUpsert.evidence,
+        },
+      },
+    };
+
+    expect(hasSourceBackedRoomFileSnapshotEvidence(file)).toBe(true);
+  });
+
+  it('rejects source-thin or content-mismatched file snapshot projections', () => {
+    const sourceThinFile: RoomFile = {
+      ...sourceBackedUpsert.file,
+    };
+    const contentMismatchedFile: RoomFile = {
+      ...sourceBackedUpsert.file,
+      content: 'Different content should not hydrate.',
+      metadata: {
+        roomFileProjectionEvidence: {
+          ...sourceBackedUpsert.evidence,
+        },
+      },
+    };
+
+    expect(hasSourceBackedRoomFileSnapshotEvidence(sourceThinFile)).toBe(false);
+    expect(hasSourceBackedRoomFileSnapshotEvidence(contentMismatchedFile)).toBe(false);
   });
 });
 
