@@ -83,6 +83,7 @@ describe('Win95Desktop', () => {
 
     fireEvent.click(clippy);
     expect(onClippyClick).toHaveBeenCalledTimes(1);
+    expect(onClippyClick.mock.calls[0]).toEqual([]);
   });
 
   it('keeps the Clippy tray entry available without marking chat active', () => {

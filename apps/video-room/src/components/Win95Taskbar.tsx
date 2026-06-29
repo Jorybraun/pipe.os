@@ -112,7 +112,10 @@ export function Win95Taskbar({
           <button
             type="button"
             className={`win95-tray-button${clippyActive ? ' is-active' : ''}`}
-            onClick={onClippyClick}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClippyClick();
+            }}
             title={`Ask Clippy - ${clippyStatusLabel(clippyStatus)}`}
             aria-label="Ask Clippy"
             data-clippy-status={clippyStatus}
