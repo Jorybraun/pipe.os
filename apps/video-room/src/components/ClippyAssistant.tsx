@@ -110,6 +110,7 @@ export function ClippyAssistant({
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [localChatMessages, setLocalChatMessages] = useState<AgentChatMessage[]>([]);
+  const [dismissedPromptSignature, setDismissedPromptSignature] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const executedAgentActionsRef = useRef<Set<string>>(new Set());
   const capturedAgentMessagesRef = useRef<Set<string>>(new Set());
@@ -176,10 +177,6 @@ export function ClippyAssistant({
     latestAgentRoomActionSignature,
     onAgentRoomAction,
   ]);
-
-  const handleDismiss = useCallback(() => {
-    onDismiss();
-  }, [onDismiss]);
 
   const openChat = useCallback(() => {
     setChatOpen(true);
@@ -248,7 +245,19 @@ export function ClippyAssistant({
     : null;
 
   const currentPrompt = agentRoomActionPrompt ?? (messages.length > 0 ? messages[messages.length - 1] : null);
-  const showPrompt = Boolean(currentPrompt && !chatOpen);
+  const currentPromptSignature = currentPrompt
+    ? [
+        currentPrompt.text,
+        currentPrompt.hold ? 'hold' : 'release',
+        currentPrompt.actions?.map((action) => `${action.id}:${action.label}:${action.disabled ? 'disabled' : 'enabled'}`).join('|') ?? '',
+      ].join('::')
+    : null;
+  const showPrompt = Boolean(currentPrompt && !chatOpen && currentPromptSignature !== dismissedPromptSignature);
+
+  const handleDismiss = useCallback(() => {
+    setDismissedPromptSignature((current) => currentPromptSignature ?? current);
+    onDismiss();
+  }, [currentPromptSignature, onDismiss]);
 
   const statusLabel: Record<string, string> = {
     starting: 'Starting...',
@@ -386,8 +395,7 @@ export function ClippyAssistant({
   return (
     <>
       {showPrompt && currentPrompt && (
-        <div className="win95-clippy-prompt-shell">
-          <ClippyCharacter status={agentEnabled ? agentConn.status : 'unavailable'} />
+        <div className="win95-clippy-prompt-shell" data-testid="clippy-proactive-shell">
           <div className="win95-clippy-prompt" data-testid="clippy-proactive-card">
             <div className="win95-clippy-prompt-title">
               <span>Clippy</span>
@@ -417,6 +425,7 @@ export function ClippyAssistant({
               </div>
             )}
           </div>
+          <ClippyCharacter status={agentEnabled ? agentConn.status : 'unavailable'} />
         </div>
       )}
 

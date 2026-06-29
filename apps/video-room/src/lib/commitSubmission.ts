@@ -2,6 +2,7 @@ import type {
   RoomCommitChangedFile,
   RoomCommitChangedFileStatus,
   RoomCommitSubmissionRequest,
+  RoomWorkspaceChallengePacket,
 } from '../types';
 
 export interface CommitSubmissionFormFields {
@@ -19,6 +20,18 @@ export interface CommitSubmissionFormFields {
   diffText: string;
 }
 
+export interface CommitSubmissionDefaultInput {
+  repositoryUrl?: string | null;
+  challengePacket?: RoomWorkspaceChallengePacket | null;
+  assessmentBranchName?: string | null;
+}
+
+export interface CommitSubmissionDefaults {
+  repositoryUrl: string;
+  branchName: string;
+  baseCommitSha: string;
+}
+
 const CHANGED_FILE_STATUSES: ReadonlySet<RoomCommitChangedFileStatus> = new Set([
   'added',
   'modified',
@@ -26,10 +39,50 @@ const CHANGED_FILE_STATUSES: ReadonlySet<RoomCommitChangedFileStatus> = new Set(
   'renamed',
   'copied',
 ]);
+const DEFAULT_ASSESSMENT_BRANCH = 'pipe-assessment';
+const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
 
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = locator[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+export function buildCommitSubmissionDefaults(
+  input: CommitSubmissionDefaultInput,
+): CommitSubmissionDefaults {
+  const packet = input.challengePacket ?? null;
+  const packetRepositoryUrl = packet
+    ? firstLocatorString(packet.locator, ['repositoryUrl', 'githubRepoUrl', 'repoUrl'])
+    : null;
+  const baseCommitSha = packet
+    ? firstLocatorString(packet.locator, [
+      'baseCommitSha',
+      'baseCommit',
+      'base_commit_sha',
+      'base_commit',
+    ])
+    : null;
+  const normalizedBaseCommitSha = baseCommitSha && GIT_COMMIT_SHA_PATTERN.test(baseCommitSha)
+    ? baseCommitSha.toLowerCase()
+    : '';
+
+  return {
+    repositoryUrl: packetRepositoryUrl ?? input.repositoryUrl?.trim() ?? '',
+    branchName: normalizedBaseCommitSha
+      ? input.assessmentBranchName?.trim() || DEFAULT_ASSESSMENT_BRANCH
+      : '',
+    baseCommitSha: normalizedBaseCommitSha,
+  };
 }
 
 export function parseChangedFiles(value: string): RoomCommitChangedFile[] {

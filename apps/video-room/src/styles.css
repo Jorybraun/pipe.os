@@ -2794,7 +2794,7 @@ button:focus-visible {
 /* Clippy Chat UI */
 .win95-clippy-prompt-shell {
   position: fixed;
-  right: 24px;
+  right: 18px;
   bottom: 74px;
   display: flex;
   align-items: flex-end;
@@ -2813,6 +2813,11 @@ button:focus-visible {
   color: #7a7f87;
   filter: drop-shadow(2px 3px 0 rgba(0, 0, 0, 0.35));
   pointer-events: none;
+}
+
+.win95-clippy-prompt-shell > .win95-clippy-character {
+  z-index: 2;
+  margin-bottom: -3px;
 }
 
 .win95-clippy-character.is-compact {
@@ -2901,12 +2906,12 @@ button:focus-visible {
 .win95-clippy-prompt::after {
   content: '';
   position: absolute;
-  left: -12px;
-  bottom: 20px;
+  right: -12px;
+  bottom: 24px;
   width: 18px;
   height: 18px;
   background: #ffffe1;
-  border-left: 2px solid #f8f8f8;
+  border-right: 2px solid #0a0a0a;
   border-bottom: 2px solid #0a0a0a;
   transform: rotate(45deg);
 }

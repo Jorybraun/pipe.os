@@ -1,12 +1,52 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCommitSubmissionDefaults,
   buildCommitSubmissionPayload,
   parseChangedFiles,
   sha256ContentHash,
 } from './commitSubmission';
 
 describe('commit submission payloads', () => {
+  it('derives safe submission defaults from the source-backed challenge packet', () => {
+    expect(buildCommitSubmissionDefaults({
+      repositoryUrl: 'https://github.com/fallback/repo',
+      challengePacket: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Repo and base commit packet',
+        contentHash: 'sha256:packet',
+        locator: {
+          repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+          baseCommitSha: 'ABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
+        },
+      },
+    })).toEqual({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: 'pipe-assessment',
+      baseCommitSha: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    });
+  });
+
+  it('does not invent a base commit or assessment branch without a valid packet SHA', () => {
+    expect(buildCommitSubmissionDefaults({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      challengePacket: {
+        sourceRefType: 'open_source_challenge_packet',
+        evidenceRole: 'assigned_challenge',
+        exactText: 'Repo without valid base commit',
+        contentHash: 'sha256:packet',
+        locator: {
+          baseCommitSha: 'branch-main',
+        },
+      },
+    })).toEqual({
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      branchName: '',
+      baseCommitSha: '',
+    });
+  });
+
   it('parses changed files with explicit statuses and modified-by-default paths', () => {
     expect(parseChangedFiles('added src/new.ts\nsrc/existing.ts\nrenamed src/new-name.ts')).toEqual([
       { path: 'src/new.ts', status: 'added' },

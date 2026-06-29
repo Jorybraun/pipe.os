@@ -1276,7 +1276,6 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const dismissClippy = (): void => {
     captureClippyUiAction('dismiss-clippy', 'prompt');
     setClippyChatOpen(false);
-    setClippyVisible(false);
   };
   const checkDevinAuth = (): void => {
     captureClippyUiAction('check-devin-auth', 'prompt');
@@ -2601,6 +2600,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         return (
           <CommitSubmissionWindow
             defaultRepositoryUrl={workspace?.repoUrl ?? null}
+            challengePacket={workspace?.challenge?.packet ?? null}
             disabledReason={workspace?.enabled
               ? null
               : 'Commit submission is only available for dev-container assessment rooms.'}

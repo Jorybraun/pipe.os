@@ -2,12 +2,18 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { CheckCircle2, Loader2, Send, TriangleAlert } from 'lucide-react';
 import {
   buildCommitSubmissionPayload,
+  buildCommitSubmissionDefaults,
   type CommitSubmissionFormFields,
 } from '../lib/commitSubmission';
-import type { RoomCommitSubmissionRequest, RoomCommitSubmissionResponse } from '../types';
+import type {
+  RoomCommitSubmissionRequest,
+  RoomCommitSubmissionResponse,
+  RoomWorkspaceChallengePacket,
+} from '../types';
 
 interface CommitSubmissionWindowProps {
   defaultRepositoryUrl: string | null;
+  challengePacket?: RoomWorkspaceChallengePacket | null;
   disabledReason?: string | null;
   onSubmit: (payload: RoomCommitSubmissionRequest) => Promise<RoomCommitSubmissionResponse>;
 }
@@ -29,25 +35,42 @@ const EMPTY_FIELDS: CommitSubmissionFormFields = {
 
 export function CommitSubmissionWindow({
   defaultRepositoryUrl,
+  challengePacket,
   disabledReason,
   onSubmit,
 }: CommitSubmissionWindowProps): JSX.Element {
+  const submissionDefaults = buildCommitSubmissionDefaults({
+    repositoryUrl: defaultRepositoryUrl,
+    challengePacket,
+  });
   const [fields, setFields] = useState<CommitSubmissionFormFields>({
     ...EMPTY_FIELDS,
-    repositoryUrl: defaultRepositoryUrl ?? '',
+    ...submissionDefaults,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RoomCommitSubmissionResponse | null>(null);
 
   useEffect(() => {
-    if (!defaultRepositoryUrl) return;
     setFields((current) => (
-      current.repositoryUrl.trim()
-        ? current
-        : { ...current, repositoryUrl: defaultRepositoryUrl }
+      {
+        ...current,
+        repositoryUrl: current.repositoryUrl.trim()
+          ? current.repositoryUrl
+          : submissionDefaults.repositoryUrl,
+        branchName: current.branchName.trim()
+          ? current.branchName
+          : submissionDefaults.branchName,
+        baseCommitSha: current.baseCommitSha.trim()
+          ? current.baseCommitSha
+          : submissionDefaults.baseCommitSha,
+      }
     ));
-  }, [defaultRepositoryUrl]);
+  }, [
+    submissionDefaults.repositoryUrl,
+    submissionDefaults.branchName,
+    submissionDefaults.baseCommitSha,
+  ]);
 
   const setField = (key: keyof CommitSubmissionFormFields, value: string | boolean): void => {
     setFields((current) => ({ ...current, [key]: value }));

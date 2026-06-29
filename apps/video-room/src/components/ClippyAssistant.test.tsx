@@ -51,6 +51,59 @@ describe('ClippyAssistant', () => {
     expect(screen.getByTestId('clippy-proactive-card').textContent).toContain('Need help opening the workspace?');
   });
 
+  it('anchors the proactive speech bubble to a visible Clippy character', () => {
+    render(
+      <ClippyAssistant
+        messages={[{ text: 'I can help when the workspace is ready.', hold: true }]}
+        onDismiss={vi.fn()}
+        agentEnabled={false}
+        agentWsUrl={null}
+      />,
+    );
+
+    const shell = screen.getByTestId('clippy-proactive-shell');
+    const card = screen.getByTestId('clippy-proactive-card');
+    const character = screen.getByTestId('clippy-character');
+
+    expect(shell.contains(card)).toBe(true);
+    expect(shell.contains(character)).toBe(true);
+    expect(shell.children.item(shell.children.length - 1)).toBe(character);
+  });
+
+  it('dismisses only the current prompt, leaving Clippy chat recoverable', async () => {
+    const onDismiss = vi.fn();
+    const onChatOpen = vi.fn();
+    const { rerender } = render(
+      <ClippyAssistant
+        messages={[{ text: 'Need help opening the workspace?', hold: true }]}
+        onDismiss={onDismiss}
+        onChatOpen={onChatOpen}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={0}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('clippy-dismiss'));
+
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
+
+    rerender(
+      <ClippyAssistant
+        messages={[{ text: 'Need help opening the workspace?', hold: true }]}
+        onDismiss={onDismiss}
+        onChatOpen={onChatOpen}
+        agentEnabled={false}
+        agentWsUrl={null}
+        openChatRequest={1}
+      />,
+    );
+
+    expect(await screen.findByTestId('clippy-chat')).toBeTruthy();
+    expect(onChatOpen).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps a controlled Clippy character visible in the agent bridge chat', async () => {
     render(
       <ClippyAssistant
