@@ -30,8 +30,24 @@ import type {
   TranscriptArtifact,
   TranscriptEntry,
 } from '../lib/scheduling/types';
-
-const FONT = '"Space Mono", monospace';
+import {
+  RECRUITER_FONT as FONT,
+  recruiterBackButtonStyle,
+  recruiterEmptyTextStyle,
+  recruiterEyebrowStyle,
+  recruiterFieldLabelStyle,
+  recruiterFieldValueStyle,
+  recruiterHeaderStyle,
+  recruiterInlineLinkStyle,
+  recruiterPageStyle,
+  recruiterPrimaryButtonStyle,
+  recruiterSectionStyle,
+  recruiterSectionTitleStyle,
+  recruiterSubtitleStyle,
+  recruiterTagStyle,
+  recruiterTextButtonStyle,
+  recruiterTitleStyle,
+} from '../styles/recruiterSurface';
 
 const STATUS_COLORS: Record<string, string> = {
   READY: '#9ca3af',
@@ -2502,28 +2518,9 @@ export default function InterviewDetailPage(): JSX.Element {
   );
 }
 
-const HEADER: CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  justifyContent: 'space-between',
-  gap: 20,
-  paddingBottom: 24,
-  borderBottom: '1px solid var(--pipe-border)',
-};
+const HEADER: CSSProperties = recruiterHeaderStyle;
 
-const PAGE: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 20,
-  width: '100%',
-  maxWidth: 1180,
-  margin: '0 auto',
-  padding: 22,
-  border: '1px solid var(--pipe-border)',
-  borderRadius: 8,
-  background: 'var(--pipe-surface-elevated)',
-  boxShadow: '0 24px 80px var(--pipe-shadow)',
-};
+const PAGE: CSSProperties = recruiterPageStyle;
 
 const ROOM_PANEL: CSSProperties = {
   display: 'grid',
@@ -2676,12 +2673,7 @@ const EVIDENCE_ROW: CSSProperties = {
   alignItems: 'baseline',
 };
 
-const SECTION: CSSProperties = {
-  border: '1px solid var(--pipe-border)',
-  borderRadius: 8,
-  background: 'var(--pipe-surface-solid)',
-  padding: 18,
-};
+const SECTION: CSSProperties = recruiterSectionStyle;
 
 const CODE_REVIEW_ASSIGNMENT_SECTION: CSSProperties = {
   order: -30,
@@ -2712,62 +2704,17 @@ const CODE_REVIEW_PERSON_CONTEXT_SECTION: CSSProperties = {
   order: 40,
 };
 
-const SECTION_TITLE: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  marginBottom: 16,
-  color: 'var(--pipe-text)',
-  fontFamily: FONT,
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-};
+const SECTION_TITLE: CSSProperties = recruiterSectionTitleStyle;
 
-const FIELD_LABEL: CSSProperties = {
-  marginBottom: 5,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 9,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-};
+const FIELD_LABEL: CSSProperties = recruiterFieldLabelStyle;
 
-const FIELD_VALUE: CSSProperties = {
-  minWidth: 0,
-  overflowWrap: 'anywhere',
-  color: 'var(--pipe-text)',
-  fontSize: 13,
-  lineHeight: 1.5,
-};
+const FIELD_VALUE: CSSProperties = recruiterFieldValueStyle;
 
-const EYEBROW: CSSProperties = {
-  marginBottom: 8,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.18em',
-};
+const EYEBROW: CSSProperties = recruiterEyebrowStyle;
 
-const TITLE: CSSProperties = {
-  margin: 0,
-  color: 'var(--pipe-text)',
-  fontSize: 32,
-  fontWeight: 800,
-  lineHeight: 1.1,
-  letterSpacing: 0,
-};
+const TITLE: CSSProperties = recruiterTitleStyle;
 
-const SUBTITLE: CSSProperties = {
-  marginTop: 8,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 12,
-  lineHeight: 1.5,
-};
+const SUBTITLE: CSSProperties = recruiterSubtitleStyle;
 
 const ACTION_ROW: CSSProperties = {
   display: 'flex',
@@ -2777,53 +2724,13 @@ const ACTION_ROW: CSSProperties = {
   flexWrap: 'wrap',
 };
 
-const BACK_BUTTON: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  width: 'fit-content',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--pipe-text-dim)',
-  cursor: 'pointer',
-  fontFamily: FONT,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  padding: 0,
-};
+const BACK_BUTTON: CSSProperties = recruiterBackButtonStyle;
 
-const PRIMARY_BUTTON: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  padding: '10px 14px',
-  borderRadius: 6,
-  border: '1px solid var(--pipe-border)',
-  background: 'var(--pipe-surface)',
-  color: 'var(--pipe-text)',
-  cursor: 'pointer',
-  fontFamily: FONT,
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '0.06em',
-};
+const PRIMARY_BUTTON: CSSProperties = recruiterPrimaryButtonStyle;
 
-const TEXT_BUTTON: CSSProperties = {
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--pipe-accent)',
-  cursor: 'pointer',
-  fontFamily: FONT,
-  fontSize: 12,
-  fontWeight: 700,
-};
+const TEXT_BUTTON: CSSProperties = recruiterTextButtonStyle;
 
-const INLINE_LINK: CSSProperties = {
-  color: 'var(--pipe-accent)',
-  textDecoration: 'none',
-  overflowWrap: 'anywhere',
-};
+const INLINE_LINK: CSSProperties = recruiterInlineLinkStyle;
 
 const ROOM_ACTIONS: CSSProperties = {
   display: 'grid',
@@ -2927,26 +2834,9 @@ const TAG_ROW: CSSProperties = {
   gap: 8,
 };
 
-const TAG: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  maxWidth: '100%',
-  padding: '5px 8px',
-  borderRadius: 999,
-  border: '1px solid var(--pipe-border)',
-  background: 'var(--pipe-surface)',
-  color: 'var(--pipe-text)',
-  fontFamily: FONT,
-  fontSize: 10,
-  lineHeight: 1.4,
-  overflowWrap: 'anywhere',
-};
+const TAG: CSSProperties = recruiterTagStyle;
 
-const EMPTY_TEXT: CSSProperties = {
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 12,
-};
+const EMPTY_TEXT: CSSProperties = recruiterEmptyTextStyle;
 
 const TRANSCRIPT_ROW: CSSProperties = {
   display: 'flex',

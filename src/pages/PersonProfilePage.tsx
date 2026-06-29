@@ -26,8 +26,20 @@ import {
   contextRecordTitle,
   contextRecordTypeLabel,
 } from '../lib/livingContextDisplay';
-
-const FONT = '"Space Mono", monospace';
+import {
+  RECRUITER_FONT as FONT,
+  recruiterBackButtonStyle,
+  recruiterEyebrowStyle,
+  recruiterFieldLabelStyle,
+  recruiterFieldValueStyle,
+  recruiterHeaderStyle,
+  recruiterInsetCardStyle,
+  recruiterPageStyle,
+  recruiterSectionStyle,
+  recruiterSectionTitleStyle,
+  recruiterSubtitleStyle,
+  recruiterTitleStyle,
+} from '../styles/recruiterSurface';
 
 interface PersonContact {
   id: string;
@@ -1188,29 +1200,9 @@ function Panel({ title, icon, children }: { title: string; icon: JSX.Element; ch
   );
 }
 
-const PAGE: CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 20,
-  width: '100%',
-  maxWidth: 1180,
-  margin: '0 auto',
-  padding: 22,
-  border: '1px solid var(--pipe-border)',
-  borderRadius: 8,
-  background: 'var(--pipe-surface-elevated)',
-  boxShadow: '0 24px 80px var(--pipe-shadow)',
-};
+const PAGE: CSSProperties = recruiterPageStyle;
 
-const HEADER: CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  justifyContent: 'space-between',
-  gap: 22,
-  paddingBottom: 24,
-  borderBottom: '1px solid var(--pipe-border)',
-  flexWrap: 'wrap',
-};
+const HEADER: CSSProperties = recruiterHeaderStyle;
 
 const HEADER_PRIMARY: CSSProperties = {
   display: 'flex',
@@ -1323,48 +1315,20 @@ const EVIDENCE_GRID: CSSProperties = {
 };
 
 const SECTION: CSSProperties = {
+  ...recruiterSectionStyle,
   minHeight: 240,
-  border: '1px solid var(--pipe-border)',
-  borderRadius: 8,
-  background: 'var(--pipe-surface-solid)',
-  padding: 18,
 };
 
-const SECTION_TITLE: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  marginBottom: 16,
-  color: 'var(--pipe-text)',
-  fontFamily: FONT,
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-};
+const SECTION_TITLE: CSSProperties = recruiterSectionTitleStyle;
 
 const PANEL_BODY: CSSProperties = {
   display: 'grid',
   gap: 10,
 };
 
-const FIELD_LABEL: CSSProperties = {
-  marginBottom: 5,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 9,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-};
+const FIELD_LABEL: CSSProperties = recruiterFieldLabelStyle;
 
-const FIELD_VALUE: CSSProperties = {
-  minWidth: 0,
-  overflowWrap: 'anywhere',
-  color: 'var(--pipe-text)',
-  fontSize: 12,
-  lineHeight: 1.5,
-};
+const FIELD_VALUE: CSSProperties = recruiterFieldValueStyle;
 
 const BODY_COPY: CSSProperties = {
   color: 'var(--pipe-text-muted)',
@@ -1440,55 +1404,15 @@ const PROFILE_COCKPIT_DETAIL: CSSProperties = {
   lineHeight: 1.5,
 };
 
-const EYEBROW: CSSProperties = {
-  marginBottom: 8,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.18em',
-  textTransform: 'uppercase',
-};
+const EYEBROW: CSSProperties = recruiterEyebrowStyle;
 
-const TITLE: CSSProperties = {
-  margin: 0,
-  color: 'var(--pipe-text)',
-  fontSize: 32,
-  fontWeight: 800,
-  lineHeight: 1.1,
-  letterSpacing: 0,
-  overflowWrap: 'anywhere',
-};
+const TITLE: CSSProperties = recruiterTitleStyle;
 
-const SUBTITLE: CSSProperties = {
-  marginTop: 8,
-  color: 'var(--pipe-text-dim)',
-  fontFamily: FONT,
-  fontSize: 12,
-  lineHeight: 1.5,
-};
+const SUBTITLE: CSSProperties = recruiterSubtitleStyle;
 
-const backButtonStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 8,
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--pipe-text-dim)',
-  cursor: 'pointer',
-  fontFamily: FONT,
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: '0.12em',
-  padding: 0,
-} satisfies CSSProperties;
+const backButtonStyle: CSSProperties = recruiterBackButtonStyle;
 
-const listItemStyle = {
-  border: '1px solid var(--pipe-border-light)',
-  borderRadius: 6,
-  background: 'var(--pipe-surface)',
-  padding: 12,
-} satisfies CSSProperties;
+const listItemStyle: CSSProperties = recruiterInsetCardStyle;
 
 const CODE_REVIEW_DECISION: CSSProperties = {
   border: '1px solid var(--pipe-accent-border)',

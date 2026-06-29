@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Person profile and interview detail pages now share the same recruiter surface tokens for page shells, headers, cards, labels, buttons, links, and evidence chips, reducing visual drift across the hiring-manager cockpit.
 - Contact/profile route coverage now locks the same-email contact-to-roleless-candidate relationship, proving the person graph stays attached after candidate evidence is added.
 - Dev-container assessment rooms now carry the latest source-backed open-source challenge packet into the room workspace payload and render it in the Win95 workspace with repo, PR, base commit, exact task text, and content hash while hiding internal assessment ids.
 - The Win95 challenge packet panel now accepts alternate persisted repo, PR, and base-commit locator keys so source-backed packets from different writers still show the concrete task metadata.
