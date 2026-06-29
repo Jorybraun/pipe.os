@@ -6,6 +6,7 @@ import type { Env, Variables } from '../../types';
 import {
   RepoTaskInterviewSessionStore,
   type AssessmentActorType,
+  type CommitSubmissionChangedFileStatus,
   type AssessmentDiagnosticSeverity,
   type AssessmentEvidenceEventKind,
   type AssessmentEvaluationClaimPolarity,
@@ -58,6 +59,7 @@ const eventKindSchema = z.enum([
   'ai_interaction',
   'tool_usage',
   'transcript_span',
+  'commit_submission',
   'final_submission',
   'recruiter_note',
   'dev_container_event',
@@ -74,6 +76,7 @@ const finalSubmissionArtifactKindSchema = z.enum([
   'ai_interaction',
   'tool_usage',
   'transcript_span',
+  'commit_submission',
   'recruiter_note',
   'dev_container_event',
 ] satisfies [FinalSubmissionEvidenceArtifactInput['kind'], ...FinalSubmissionEvidenceArtifactInput['kind'][]]);
@@ -208,6 +211,40 @@ const finalSubmissionBundleSchema = z.object({
   artifacts: z.array(finalSubmissionArtifactSchema).min(1),
 });
 
+const changedFileStatusSchema = z.enum([
+  'added',
+  'modified',
+  'deleted',
+  'renamed',
+  'copied',
+] satisfies [CommitSubmissionChangedFileStatus, ...CommitSubmissionChangedFileStatus[]]);
+
+const commitSubmissionChangedFileSchema = z.object({
+  path: z.string().trim().min(1),
+  status: changedFileStatusSchema,
+  previousPath: z.string().trim().min(1).nullable().optional(),
+  additions: z.number().int().min(0).nullable().optional(),
+  deletions: z.number().int().min(0).nullable().optional(),
+});
+
+const commitSubmissionSchema = z.object({
+  ingestionKey: z.string().trim().min(1),
+  actorType: actorTypeSchema,
+  actorId: z.string().trim().min(1).nullable().optional(),
+  narrative: z.string().trim().min(1),
+  repositoryUrl: z.string().trim().min(1),
+  forkRepositoryUrl: z.string().trim().min(1).nullable().optional(),
+  branchName: z.string().trim().min(1),
+  baseCommitSha: z.string().trim().min(1),
+  commitSha: z.string().trim().min(1),
+  commitUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPullRequestUrl: z.string().trim().min(1).nullable().optional(),
+  upstreamPrConsent: z.boolean().optional(),
+  changedFiles: z.array(commitSubmissionChangedFileSchema).min(1),
+  occurredAt: z.string().trim().min(1).nullable().optional(),
+  sourceRefs: z.array(sourceRefSchema).min(2),
+});
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Request failed.';
 }
@@ -290,6 +327,23 @@ repoTaskSessions.post('/sessions/:sessionId/final-submission-bundles', async (c)
       ...body.data,
     });
     return c.json({ bundle }, 201);
+  } catch (error) {
+    return storeErrorResponse(c, error);
+  }
+});
+
+repoTaskSessions.post('/sessions/:sessionId/commit-submissions', async (c) => {
+  const body = commitSubmissionSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) {
+    return apiError(c, 'BAD_REQUEST', body.error.issues[0]?.message ?? 'Invalid commit submission body.');
+  }
+  try {
+    const store = new RepoTaskInterviewSessionStore(c.env.DB);
+    const submission = await store.submitCommit({
+      sessionId: c.req.param('sessionId'),
+      ...body.data,
+    });
+    return c.json({ submission }, 201);
   } catch (error) {
     return storeErrorResponse(c, error);
   }

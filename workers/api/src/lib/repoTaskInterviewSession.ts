@@ -40,6 +40,7 @@ export type AssessmentEvidenceEventKind =
   | 'ai_interaction'
   | 'tool_usage'
   | 'transcript_span'
+  | 'commit_submission'
   | 'final_submission'
   | 'recruiter_note'
   | 'dev_container_event'
@@ -194,6 +195,45 @@ export interface PersistedFinalAssessmentBundle {
   transition: PersistedAssessmentStateTransition | null;
 }
 
+export type CommitSubmissionChangedFileStatus =
+  | 'added'
+  | 'modified'
+  | 'deleted'
+  | 'renamed'
+  | 'copied';
+
+export interface CommitSubmissionChangedFileInput {
+  path: string;
+  status: CommitSubmissionChangedFileStatus;
+  previousPath?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+}
+
+export interface SubmitCommitAssessmentInput {
+  sessionId: string;
+  ingestionKey: string;
+  actorType: RepoTaskAssessmentActorType;
+  actorId?: string | null;
+  narrative: string;
+  repositoryUrl: string;
+  forkRepositoryUrl?: string | null;
+  branchName: string;
+  baseCommitSha: string;
+  commitSha: string;
+  commitUrl?: string | null;
+  upstreamPullRequestUrl?: string | null;
+  upstreamPrConsent?: boolean;
+  changedFiles: readonly CommitSubmissionChangedFileInput[];
+  occurredAt?: string | null;
+  sourceRefs: readonly AssessmentEvidenceSourceRefInput[];
+}
+
+export interface PersistedCommitAssessmentSubmission {
+  event: PersistedAssessmentEvent;
+  transition: PersistedAssessmentStateTransition | null;
+}
+
 const ALLOWED_TRANSITIONS: Record<RepoTaskInterviewState, readonly RepoTaskInterviewState[]> = {
   INTAKE: ['IN_PROGRESS', 'DIAGNOSTIC', 'CANCELLED'],
   IN_PROGRESS: ['FINAL_SUBMITTED', 'DIAGNOSTIC', 'CANCELLED'],
@@ -315,6 +355,148 @@ function primitiveDiagnosticDetails(
     }
   }
   return Object.keys(primitives).length > 0 ? primitives : undefined;
+}
+
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/i;
+const SAFE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
+
+function normalizeGitHubRepositoryUrl(value: string, fieldName: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${fieldName} must be a valid GitHub HTTPS repository URL`);
+  }
+  if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'github.com') {
+    throw new Error(`${fieldName} must be a GitHub HTTPS repository URL`);
+  }
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length !== 2) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
+  const [owner, repoWithSuffix] = segments;
+  const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
+  if (!owner || !repo) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function assertCommitSha(value: string, fieldName: string): void {
+  if (!COMMIT_SHA_PATTERN.test(value)) {
+    throw new Error(`${fieldName} must be a 40-character Git commit SHA`);
+  }
+}
+
+function assertSafeBranchName(branchName: string): void {
+  if (
+    branchName.length === 0
+    || branchName.length > 255
+    || !SAFE_BRANCH_PATTERN.test(branchName)
+    || branchName.startsWith('/')
+    || branchName.endsWith('/')
+    || branchName.includes('..')
+    || branchName.includes('//')
+    || branchName.includes('@{')
+    || branchName.endsWith('.')
+    || branchName.endsWith('.lock')
+    || branchName.split('/').some((segment) => segment.startsWith('.'))
+  ) {
+    throw new Error('branchName must be a safe Git branch name');
+  }
+}
+
+function normalizeCommitUrl(value: string | null | undefined, commitSha: string): string | null {
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('commitUrl must be a valid GitHub commit URL');
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname.toLowerCase() !== 'github.com'
+    || !url.pathname.includes('/commit/')
+    || !url.pathname.toLowerCase().endsWith(commitSha.toLowerCase())
+  ) {
+    throw new Error('commitUrl must be a GitHub HTTPS commit URL for commitSha');
+  }
+  return url.toString();
+}
+
+function normalizePullRequestUrl(
+  value: string | null | undefined,
+  consent: boolean | undefined,
+): string | null {
+  if (!value) return null;
+  if (consent !== true) {
+    throw new Error('upstreamPrConsent is required before storing an upstreamPullRequestUrl');
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('upstreamPullRequestUrl must be a valid GitHub pull request URL');
+  }
+  if (
+    url.protocol !== 'https:'
+    || url.hostname.toLowerCase() !== 'github.com'
+    || !/\/pull\/\d+$/.test(url.pathname)
+  ) {
+    throw new Error('upstreamPullRequestUrl must be a GitHub HTTPS pull request URL');
+  }
+  return url.toString();
+}
+
+function assertChangedFiles(files: readonly CommitSubmissionChangedFileInput[]): void {
+  if (files.length === 0) {
+    throw new Error('commit submission requires at least one changed file');
+  }
+  for (const file of files) {
+    if (file.path.trim().length === 0 || file.path.startsWith('/') || file.path.includes('..')) {
+      throw new Error('commit submission changed file path must be repository-relative');
+    }
+    if (file.previousPath && (file.previousPath.startsWith('/') || file.previousPath.includes('..'))) {
+      throw new Error('commit submission previous file path must be repository-relative');
+    }
+  }
+}
+
+function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): void {
+  const commitRef = input.sourceRefs.find((ref) =>
+    ref.sourceRefType === 'git_commit'
+    && ref.sourceRefId.toLowerCase() === input.commitSha.toLowerCase()
+    && ref.exactText.toLowerCase().includes(input.commitSha.toLowerCase()));
+  if (!commitRef) {
+    throw new Error('commit submission requires a git_commit source ref whose exact text contains commitSha');
+  }
+
+  const changedPaths = input.changedFiles.map((file) => file.path);
+  const diffRef = input.sourceRefs.find((ref) =>
+    ref.sourceRefType === 'code_diff'
+    && (
+      ref.exactText.includes('diff --git')
+      || changedPaths.some((path) => ref.exactText.includes(path))
+    ));
+  if (!diffRef) {
+    throw new Error('commit submission requires a code_diff source ref for the submitted changes');
+  }
+}
+
+function changedFilesToJson(
+  files: readonly CommitSubmissionChangedFileInput[],
+): JsonValue[] {
+  return files.map((file) => {
+    const changedFile: JsonObject = {
+      path: file.path,
+      status: file.status,
+    };
+    if (file.previousPath) changedFile.previousPath = file.previousPath;
+    if (file.additions !== undefined && file.additions !== null) changedFile.additions = file.additions;
+    if (file.deletions !== undefined && file.deletions !== null) changedFile.deletions = file.deletions;
+    return changedFile;
+  });
 }
 
 export class RepoTaskInterviewSessionStore {
@@ -456,6 +638,85 @@ export class RepoTaskInterviewSessionStore {
     return {
       event,
       artifactEvents,
+      transition,
+    };
+  }
+
+  async submitCommit(
+    input: SubmitCommitAssessmentInput,
+  ): Promise<PersistedCommitAssessmentSubmission> {
+    assertCommitSha(input.baseCommitSha, 'baseCommitSha');
+    assertCommitSha(input.commitSha, 'commitSha');
+    if (input.baseCommitSha.toLowerCase() === input.commitSha.toLowerCase()) {
+      throw new Error('commitSha must differ from baseCommitSha');
+    }
+    assertSafeBranchName(input.branchName);
+    assertChangedFiles(input.changedFiles);
+    assertCommitSubmissionSourceRefs(input);
+
+    const repositoryUrl = normalizeGitHubRepositoryUrl(input.repositoryUrl, 'repositoryUrl');
+    const forkRepositoryUrl = input.forkRepositoryUrl
+      ? normalizeGitHubRepositoryUrl(input.forkRepositoryUrl, 'forkRepositoryUrl')
+      : null;
+    const commitUrl = normalizeCommitUrl(input.commitUrl, input.commitSha);
+    const upstreamPullRequestUrl = normalizePullRequestUrl(
+      input.upstreamPullRequestUrl,
+      input.upstreamPrConsent,
+    );
+
+    const initialSession = await this.loadSession(input.sessionId);
+    if (!['INTAKE', 'IN_PROGRESS', 'FINAL_SUBMITTED'].includes(initialSession.state)) {
+      throw new Error(
+        `assessment session must be INTAKE, IN_PROGRESS, or FINAL_SUBMITTED before commit submission; `
+        + `current state is ${initialSession.state}`,
+      );
+    }
+    if (initialSession.state === 'INTAKE') {
+      await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'IN_PROGRESS',
+        reason: 'Commit submission received.',
+        createdBy: input.actorId,
+      });
+    }
+
+    const payload: JsonObject = {
+      repositoryUrl,
+      branchName: input.branchName,
+      baseCommitSha: input.baseCommitSha.toLowerCase(),
+      commitSha: input.commitSha.toLowerCase(),
+      changedFiles: changedFilesToJson(input.changedFiles),
+      upstreamPrConsent: input.upstreamPrConsent === true,
+    };
+    if (forkRepositoryUrl) payload.forkRepositoryUrl = forkRepositoryUrl;
+    if (commitUrl) payload.commitUrl = commitUrl;
+    if (upstreamPullRequestUrl) payload.upstreamPullRequestUrl = upstreamPullRequestUrl;
+
+    const event = await this.recordEvent({
+      sessionId: input.sessionId,
+      ingestionKey: input.ingestionKey,
+      kind: 'commit_submission',
+      actorType: input.actorType,
+      actorId: input.actorId,
+      narrative: input.narrative,
+      payload,
+      occurredAt: input.occurredAt,
+      sourceRefs: input.sourceRefs,
+    });
+
+    const latestSession = await this.loadSession(input.sessionId);
+    const transition = latestSession.state === 'FINAL_SUBMITTED'
+      ? null
+      : await this.transitionState({
+        sessionId: input.sessionId,
+        toState: 'FINAL_SUBMITTED',
+        reason: input.narrative,
+        eventId: event.id,
+        createdBy: input.actorId,
+      });
+
+    return {
+      event,
       transition,
     };
   }

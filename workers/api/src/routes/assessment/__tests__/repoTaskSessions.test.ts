@@ -406,6 +406,151 @@ describe('repo task assessment session routes', () => {
     });
   });
 
+  it('submits a real commit as source-backed assessment evidence and marks the session final', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+      candidateId: 'candidate-commit',
+    });
+    const baseCommitSha = '1111111111111111111111111111111111111111';
+    const commitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const commitText = `commit ${commitSha}
+Author: Candidate <candidate@example.com>
+
+Fix stale popover listener cleanup.`;
+    const diffText = `diff --git a/src/popover.ts b/src/popover.ts
+index 5c7b20a..7f9a12e 100644
+--- a/src/popover.ts
++++ b/src/popover.ts
+@@ -42,6 +42,7 @@ export function closePopover() {
++  cleanupStaleHandler();
+ }`;
+
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission',
+        actorType: 'candidate',
+        actorId: 'candidate-commit',
+        narrative: 'Candidate submitted a real assessment commit for review.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{
+          path: 'src/popover.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+        }],
+        sourceRefs: [
+          await sourceRef('git_commit', commitSha, commitText),
+          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as {
+      submission: {
+        event: { id: string; kind: string; contextRecordId: string };
+        transition: { toState: string } | null;
+      };
+    };
+    expect(body.submission.event.kind).toBe('commit_submission');
+    expect(body.submission.event.contextRecordId).toBeTruthy();
+    expect(body.submission.transition?.toState).toBe('FINAL_SUBMITTED');
+
+    expect(sqlite.prepare(
+      'SELECT state FROM assessment_sessions WHERE id = ?',
+    ).get(session.id)).toEqual({ state: 'FINAL_SUBMITTED' });
+
+    const persistedEvent = sqlite.prepare(
+      `SELECT kind, actor_type, actor_id, payload_json
+         FROM assessment_evidence_events
+        WHERE id = ?`,
+    ).get(body.submission.event.id) as {
+      kind: string;
+      actor_type: string;
+      actor_id: string;
+      payload_json: string;
+    };
+    expect(persistedEvent.kind).toBe('commit_submission');
+    expect(persistedEvent.actor_type).toBe('candidate');
+    expect(persistedEvent.actor_id).toBe('candidate-commit');
+    expect(JSON.parse(persistedEvent.payload_json)).toEqual({
+      repositoryUrl: 'https://github.com/open-source/widgets',
+      forkRepositoryUrl: 'https://github.com/candidate/widgets',
+      branchName: 'pipe-assessment/popover-cleanup',
+      baseCommitSha,
+      commitSha,
+      commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+      changedFiles: [{
+        path: 'src/popover.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 0,
+      }],
+      upstreamPrConsent: false,
+    });
+    expect(sqlite.prepare(
+      `SELECT source_ref_type, source_ref_id, exact_text
+         FROM assessment_event_source_refs
+        WHERE event_id = ?
+        ORDER BY source_ref_type`,
+    ).all(body.submission.event.id)).toEqual([
+      {
+        source_ref_type: 'code_diff',
+        source_ref_id: `${commitSha}:diff`,
+        exact_text: diffText,
+      },
+      {
+        source_ref_type: 'git_commit',
+        source_ref_id: commitSha,
+        exact_text: commitText,
+      },
+    ]);
+  });
+
+  it('rejects commit submissions that are not backed by exact commit and diff source refs', async () => {
+    const session = await createSession(app, env, {
+      ingestionKey: 'assessment-session:commit-submission-rejection',
+      mode: 'OPEN_SOURCE_BUG_FIX',
+    });
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const diffText = 'diff --git a/src/popover.ts b/src/popover.ts';
+    const response = await app.request(
+      `/api/v1/assessment/repo-task/sessions/${session.id}/commit-submissions`,
+      jsonRequest({
+        ingestionKey: 'assessment-event:commit-submission-forged',
+        actorType: 'candidate',
+        narrative: 'Candidate tried to submit a commit without exact commit evidence.',
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        branchName: 'pipe-assessment/popover-cleanup',
+        baseCommitSha: '2222222222222222222222222222222222222222',
+        commitSha,
+        changedFiles: [{ path: 'src/popover.ts', status: 'modified' }],
+        sourceRefs: [
+          await sourceRef('code_diff', `${commitSha}:diff`, diffText),
+          await sourceRef('transcript_span', 'transcript-commit-claim', `I committed ${commitSha}`),
+        ],
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { message: string } };
+    expect(body.error.message).toContain(
+      'commit submission requires a git_commit source ref whose exact text contains commitSha',
+    );
+    expect(sqlite.prepare(
+      'SELECT COUNT(*) AS count FROM assessment_evidence_events WHERE session_id = ?',
+    ).get(session.id)).toEqual({ count: 0 });
+  });
+
   it('rejects unsupported positive claims and records unavailable AI providers as diagnostics', async () => {
     const session = await createSession(app, env, {
       ingestionKey: 'assessment-session:unsupported-positive',
