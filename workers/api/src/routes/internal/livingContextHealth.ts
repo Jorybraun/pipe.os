@@ -16,6 +16,8 @@ import { z } from 'zod';
 import { scheduleFullProjectionRebuild } from '../../lib/livingContext/projection';
 import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/backfillScheduled';
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
+import { runEvaluation, generateHumanReadableReport } from '../../lib/challengeMatching/evaluation/cli';
+import type { AcceptanceThresholds } from '../../lib/challengeMatching/evaluation/types';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -603,6 +605,220 @@ app.post('/evaluation-corpus-seed', async (c) => {
     labelCount: result.corpus.expertLabels.length,
     expectedPacketCount: result.corpus.expectedPackets?.length ?? 0,
     warnings: result.warnings,
+  });
+});
+
+/**
+ * POST /api/v1/internal/evaluation-run
+ *
+ * Runs the full matching evaluation pipeline against a stored corpus and returns
+ * metrics. Optionally persists the result for use by the rollout gate readiness
+ * check.
+ *
+ * Body: { corpusId: string, matchRunIds?: string[], comparisonMatchRunIds?: string[],
+ *         thresholds?: Partial<AcceptanceThresholds>, persistResult?: boolean }
+ */
+app.post('/evaluation-run', async (c) => {
+  interface EvaluationRunBody {
+    corpusId?: string;
+    matchRunIds?: string[];
+    comparisonMatchRunIds?: string[];
+    thresholds?: Partial<AcceptanceThresholds>;
+    persistResult?: boolean;
+  }
+  const body: EvaluationRunBody = await c.req.json<EvaluationRunBody>().catch(() => ({} as EvaluationRunBody));
+
+  if (!body.corpusId || typeof body.corpusId !== 'string') {
+    return c.json({ error: 'corpusId is required' }, 400);
+  }
+
+  try {
+    const result = await runEvaluation(c.env.DB, {
+      corpusId: body.corpusId,
+      matchRunIds: body.matchRunIds,
+      comparisonMatchRunIds: body.comparisonMatchRunIds,
+      thresholds: body.thresholds,
+      persistResult: body.persistResult,
+    });
+
+    return c.json({
+      passed: result.passed,
+      persisted: body.persistResult === true,
+      failures: result.failures,
+      warnings: result.warnings,
+      metrics: {
+        corpusId: result.metrics.corpusId,
+        recallAt50: result.metrics.recallAt50,
+        precisionAt3: result.metrics.precisionAt3,
+        ndcgAt5: result.metrics.ndcgAt5,
+        guardrailViolationCount: result.metrics.guardrailViolationCount,
+        multiStretchViolationCount: result.metrics.multiStretchViolationCount,
+        missingProvenanceCount: result.metrics.missingProvenanceCount,
+        missingMatchRunCount: result.metrics.missingMatchRunCount,
+        byteIdenticalRerun: result.metrics.byteIdenticalRerun,
+        expertLabelCount: result.metrics.expertLabelCount,
+        syntheticFixtureCount: result.metrics.syntheticFixtureCount,
+        evaluatedPairCount: result.metrics.evaluatedPairCount,
+        totalEvaluations: result.metrics.totalEvaluations,
+        matchRunIds: result.metrics.matchRunIds,
+        pairCoverage: result.metrics.pairCoverage,
+        comparisonCoverage: result.metrics.comparisonCoverage,
+        packetCoverage: result.metrics.packetCoverage,
+      },
+      humanReadableReport: generateHumanReadableReport(result),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json({ error: message }, 422);
+  }
+});
+
+/**
+ * GET /api/v1/internal/concept-graph
+ *
+ * Queries the learned concept taxonomy. Returns concepts with their aliases,
+ * observation counts, and co-occurrence adjacencies. Supports filtering by
+ * namespace, prefix search, and minimum observation count.
+ *
+ * Query params:
+ *   namespace? — filter concepts by namespace
+ *   q?        — prefix/substring search on canonical_key or label
+ *   minObs?   — minimum observation_count (default 1)
+ *   limit?    — max concepts to return (default 50, max 200)
+ *   withAdj?  — include adjacency edges (default false)
+ */
+app.get('/concept-graph', async (c) => {
+  const db = c.env.DB;
+  const namespace = c.req.query('namespace') ?? null;
+  const query = c.req.query('q') ?? null;
+  const minObsParam = c.req.query('minObs');
+  const limitParam = c.req.query('limit');
+  const withAdj = c.req.query('withAdj') === 'true';
+
+  const minObs = minObsParam ? Math.max(parseInt(minObsParam, 10) || 1, 0) : 1;
+  const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 200) : 50;
+
+  interface ConceptRow {
+    id: string;
+    canonical_key: string;
+    namespace: string;
+    label: string;
+    description: string | null;
+    aliases_json: string | null;
+    metadata_json: string | null;
+    observation_count: number;
+    first_observed_at: number | null;
+    last_observed_at: number | null;
+    created_at: string;
+    updated_at: string;
+  }
+
+  let sql = `SELECT id, canonical_key, namespace, label, description,
+                    aliases_json, metadata_json, observation_count,
+                    first_observed_at, last_observed_at, created_at, updated_at
+               FROM concepts
+              WHERE observation_count >= ?1`;
+  const binds: Array<string | number> = [minObs];
+  let bindIndex = 2;
+
+  if (namespace) {
+    sql += ` AND namespace = ?${bindIndex}`;
+    binds.push(namespace);
+    bindIndex++;
+  }
+  if (query) {
+    sql += ` AND (canonical_key LIKE ?${bindIndex} OR label LIKE ?${bindIndex})`;
+    binds.push(`%${query}%`);
+    bindIndex++;
+  }
+
+  sql += ` ORDER BY observation_count DESC, canonical_key ASC LIMIT ?${bindIndex}`;
+  binds.push(limit);
+
+  const conceptRows = await db.prepare(sql).bind(...binds).all<ConceptRow>();
+
+  interface AdjacencyRow {
+    from_concept_id: string;
+    to_concept_id: string;
+    dimension: string;
+    stretch_allowed: number;
+    confidence: number | null;
+    from_key: string;
+    to_key: string;
+  }
+
+  const concepts = (conceptRows.results ?? []).map((row) => {
+    let aliases: string[] = [];
+    try {
+      aliases = row.aliases_json ? JSON.parse(row.aliases_json) as string[] : [];
+    } catch { /* empty */ }
+
+    let metadata: Record<string, unknown> = {};
+    try {
+      metadata = row.metadata_json ? JSON.parse(row.metadata_json) as Record<string, unknown> : {};
+    } catch { /* empty */ }
+
+    return {
+      id: row.id,
+      canonicalKey: row.canonical_key,
+      namespace: row.namespace,
+      label: row.label,
+      description: row.description,
+      aliases,
+      metadata,
+      observationCount: row.observation_count,
+      firstObservedAt: row.first_observed_at,
+      lastObservedAt: row.last_observed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
+
+  let adjacencies: Array<{
+    fromConceptKey: string;
+    toConceptKey: string;
+    dimension: string;
+    stretchAllowed: boolean;
+    confidence: number | null;
+  }> = [];
+
+  if (withAdj && concepts.length > 0) {
+    const conceptIdSet = new Set(concepts.map((concept) => concept.id));
+    const adjResults: AdjacencyRow[] = [];
+    for (const concept of concepts) {
+      const rows = await db.prepare(
+        `SELECT ca.from_concept_id, ca.to_concept_id, ca.dimension, ca.stretch_allowed,
+                ca.confidence, c1.canonical_key AS from_key, c2.canonical_key AS to_key
+           FROM concept_adjacency ca
+           JOIN concepts c1 ON c1.id = ca.from_concept_id
+           JOIN concepts c2 ON c2.id = ca.to_concept_id
+          WHERE ca.from_concept_id = ?1 OR ca.to_concept_id = ?1`,
+      ).bind(concept.id).all<AdjacencyRow>();
+      for (const row of rows.results ?? []) {
+        if (conceptIdSet.has(row.from_concept_id) || conceptIdSet.has(row.to_concept_id)) {
+          adjResults.push(row);
+        }
+      }
+    }
+    const seen = new Set<string>();
+    adjacencies = adjResults.filter((row) => {
+      const key = `${row.from_concept_id}:${row.to_concept_id}:${row.dimension}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map((row) => ({
+      fromConceptKey: row.from_key,
+      toConceptKey: row.to_key,
+      dimension: row.dimension,
+      stretchAllowed: row.stretch_allowed === 1,
+      confidence: row.confidence,
+    }));
+  }
+
+  return c.json({
+    totalConcepts: concepts.length,
+    concepts,
+    ...(withAdj ? { adjacencies } : {}),
   });
 });
 

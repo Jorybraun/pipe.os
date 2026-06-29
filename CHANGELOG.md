@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Contact living context parity (criterion #1)
+
+- `GET /api/v1/cockpit/contacts/:id/living-context/timeline` — chronological evidence accumulation feed for contacts. Resolves contact → workspace person via `context_json` and delegates to `loadPersonEvidenceTimeline`. Supports `limit`, `before`, `after` pagination. Gated behind `living_context_read`.
+- `GET /api/v1/cockpit/contacts/:id/living-context/evidence-depth` — per-source-type evidence scoring for contacts. Returns source diversity, interaction breakdown, assertion/source-span/context-record counts, and top 20 learned concepts by evidence count. Gated behind `living_context_read`.
+- 6 new tests covering empty state, workspace person resolution, timeline loading, source diversity computation, and top concept extraction.
+
+### Added — Evaluation run endpoint (criterion #8)
+
+- `POST /api/v1/internal/evaluation-run` runs the full matching evaluation pipeline against a stored corpus and returns structured metrics (recall@50, precision@3, nDCG@5, guardrail violations, determinism proof, pair/packet coverage). Optionally persists results for rollout gate readiness checks. Returns human-readable report alongside structured JSON.
+- 3 new tests covering missing corpusId validation, non-existent corpus handling, and successful evaluation with sample corpus fixture.
+
+### Added — Concept graph query endpoint (criterion #3)
+
+- `GET /api/v1/internal/concept-graph` queries the learned concept taxonomy. Returns concepts with canonical keys, namespaces, labels, aliases, observation counts, and timestamps. Supports filtering by `namespace`, substring search via `q`, minimum observation count via `minObs`, and optional adjacency edge inclusion via `withAdj=true`.
+- 7 new tests covering empty state, ordering by observation count, namespace filtering, query string filtering, minObs filtering, adjacency inclusion, and adjacency omission by default.
+
 ### Added — Evaluation corpus seeder (criterion #8)
 
 - `POST /api/v1/internal/evaluation-corpus-seed` extracts evaluation corpus data from real match decisions in D1. Loads candidate living context evidence (assertions + source spans), role requirements, challenge packets, and generates draft expert labels from match scores. Draft labels are marked `labeledBy: 'corpus-seeder'` so they fail the production corpus gate until experts upgrade them.

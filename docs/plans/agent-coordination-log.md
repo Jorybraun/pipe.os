@@ -4,6 +4,30 @@ Inter-agent handoff log for the living context graph goal. Each agent appends a 
 
 ## Log
 
+### 2026-06-29 — Session 8de9cbc6 (Devin Automation)
+
+**Action:** Analyze open PRs, continue building toward living context acceptance criteria.
+
+**Finding:** PR #135 consolidates all prior work (#105–#134). All 8 acceptance criteria implemented and tested (1591 tests, 0 failures). Identified three parity/completeness gaps and built them out:
+
+**New code added (this session):**
+1. `GET /contacts/:id/living-context/timeline` — chronological evidence feed for contacts (parity with candidates, criterion #1)
+2. `GET /contacts/:id/living-context/evidence-depth` — per-source-type evidence scoring for contacts (criterion #1)
+3. `POST /api/v1/internal/evaluation-run` — runs full evaluation pipeline against stored corpus, returns metrics + human-readable report (criterion #8)
+4. `GET /api/v1/internal/concept-graph` — query learned concept taxonomy with namespace/prefix/minObs filters + adjacency edges (criterion #3)
+5. 16 new tests across 2 test files
+
+**Test results:** All tests pass, TypeScript clean (0 errors), lint clean (0 errors)
+
+**Blockers:** Cannot merge PR #135 (GitHub write ops blocked by network policy). Created new PR from branch.
+
+**Next priorities:**
+- Merge the new PR to main
+- Close superseded PRs #105–#134 manually
+- Deploy to production and run D1 migrations
+
+---
+
 ### 2026-06-29 — Session ceb4da80 (Devin)
 
 **Action:** Consolidate PRs #105–#134 into non-draft PR #135, add evaluation corpus seeder.
