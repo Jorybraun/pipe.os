@@ -372,6 +372,8 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Usable source-backed signal');
     expect(cockpit).toHaveTextContent('Uncertainty');
     expect(cockpit).toHaveTextContent('Focused calibration needed');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('Calibration probe recommended');
     expect(cockpit).toHaveTextContent('Next action');
     expect(cockpit).toHaveTextContent('Schedule focused technical calibration');
 
@@ -441,6 +443,9 @@ describe('PersonProfilePage', () => {
     expect(cockpit).toHaveTextContent('Partial source-backed signal');
     expect(cockpit).toHaveTextContent('Uncertainty');
     expect(cockpit).toHaveTextContent('Repo fit unknown');
+    expect(cockpit).toHaveTextContent('Missing context');
+    expect(cockpit).toHaveTextContent('Source-backed repo challenge selection');
+    expect(cockpit).toHaveTextContent('1 more blocking gap');
     expect(cockpit).toHaveTextContent('Next action');
     expect(cockpit).toHaveTextContent('Schedule evidence-gathering call');
 

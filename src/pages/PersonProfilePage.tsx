@@ -566,6 +566,45 @@ function nextInterviewPath(contact: PersonContact, decision: CodeReviewDecisionP
   return `/interviews?${params.toString()}`;
 }
 
+function missingContextCardForDecision(
+  decision: CodeReviewDecisionProjection | null,
+  hasEvidence: boolean,
+): { value: string; detail: string } {
+  if (!decision) {
+    return {
+      value: hasEvidence ? 'Assessment evidence incomplete' : 'First source evidence missing',
+      detail: hasEvidence
+        ? 'Add a scored code review, source-backed repo match, or targeted context call before treating this as a hiring signal.'
+        : 'Start with an invite, resume, recorded call, or assessment so the profile can earn claims from source evidence.',
+    };
+  }
+  const blockingItems = decision.missingContext.filter((item) =>
+    !item.toLowerCase().startsWith('probe:')
+      && !item.toLowerCase().startsWith('no blocking evidence gap')
+  );
+  if (blockingItems.length > 0) {
+    const firstItem = blockingItems[0] ?? 'Source-backed evidence';
+    const remainingCount = Math.max(blockingItems.length - 1, 0);
+    return {
+      value: firstItem,
+      detail: remainingCount > 0
+        ? `${remainingCount} more blocking ${remainingCount === 1 ? 'gap' : 'gaps'} need evidence before the profile is reliable.`
+        : 'This is the main blocking gap before the profile can support a reliable decision.',
+    };
+  }
+  const probe = decision.missingContext.find((item) => item.toLowerCase().startsWith('probe:'));
+  if (probe) {
+    return {
+      value: 'Calibration probe recommended',
+      detail: probe.replace(/^probe:\s*/i, ''),
+    };
+  }
+  return {
+    value: 'No blocking evidence gap',
+    detail: 'The decision can be used as source-backed signal; confirm it transfers beyond this PR.',
+  };
+}
+
 function uncertaintyForDecision(input: {
   score: CodeReviewScoreProjection | null;
   challenge: CodeReviewChallengeProjection | null;
@@ -811,6 +850,7 @@ function ProfileDecisionCockpit({
   const proofLabel = decision
     ? `source proof ${proofCount === 1 ? 'item' : 'items'}`
     : `source ${proofCount === 1 ? 'span' : 'spans'}`;
+  const missingContextCard = missingContextCardForDecision(decision, hasEvidence);
   const cards = decision
     ? [
         {
@@ -827,6 +867,11 @@ function ProfileDecisionCockpit({
           label: 'Uncertainty',
           value: decision.uncertainty,
           detail: decision.uncertaintyDetail,
+        },
+        {
+          label: 'Missing context',
+          value: missingContextCard.value,
+          detail: missingContextCard.detail,
         },
         {
           label: 'Next action',
@@ -851,6 +896,11 @@ function ProfileDecisionCockpit({
           label: 'Uncertainty',
           value: 'Decision not ready',
           detail: 'The profile needs role, candidate, or assessment evidence before a hiring manager can rely on it.',
+        },
+        {
+          label: 'Missing context',
+          value: missingContextCard.value,
+          detail: missingContextCard.detail,
         },
         {
           label: 'Next action',

@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Person profile decision cockpits now surface missing context as a top-level card, so hiring managers can see blocking evidence gaps or calibration probes without opening raw proof.
 - CODE_REVIEW assessment invite panels now surface link status, shareability, and the next safe action as a compact validity summary, making claimed or stale candidate links obvious before recruiters try to share them.
 - Related evidence rows on CODE_REVIEW interview details now describe same-person items by interview kind, such as related code reviews or conversations, instead of the generic “same person assessment” label.
 - CODE_REVIEW assessment invite panels now distinguish active, claimed, and stale candidate links, hide copy actions for used links, and offer a resend action directly from the interview detail so recruiters can recover without sharing a burned token.
