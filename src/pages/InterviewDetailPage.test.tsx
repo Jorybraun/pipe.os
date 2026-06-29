@@ -1871,15 +1871,15 @@ describe('InterviewDetailPage', () => {
             {
               atomId: 'candidate-atom-1',
               demandId: 'repo-demand-1',
-              sharedConcepts: ['term:popover', 'term:trigger'],
+              sharedConcepts: [],
               roleSourceRefs: [],
               candidateSourceRefs: [{
-                exactText: 'Implemented popover trigger click handling in usePopoverRoot',
-                locator: 'resume:span-1',
+                sourceRefId: 'candidate-ref-raw-1',
+                sourceSpanId: 'candidate-source-span-raw-1',
               }],
               challengeSourceRefs: [{
-                exactText: 'Ignore impatient trigger clicks within 500ms',
-                locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                sourceRefId: 'repo-ref-raw-1',
+                sourceSpanId: 'repo-source-span-raw-1',
               }],
             },
           ],
@@ -1893,16 +1893,16 @@ describe('InterviewDetailPage', () => {
                   kind: 'person_evidence',
                   label: 'Person evidence',
                   sourceRef: {
-                    exactText: 'Implemented popover trigger click handling in usePopoverRoot',
-                    locator: 'resume:span-1',
+                    sourceRefId: 'candidate-hyperedge-ref-raw-1',
+                    sourceSpanId: 'candidate-hyperedge-source-span-raw-1',
                   },
                 },
                 {
                   kind: 'repo_challenge',
                   label: 'Repo challenge',
                   sourceRef: {
-                    exactText: 'Ignore impatient trigger clicks within 500ms',
-                    locator: 'packages/react/src/popover/root/usePopoverRoot.ts',
+                    sourceRefId: 'repo-hyperedge-ref-raw-1',
+                    sourceSpanId: 'repo-hyperedge-source-span-raw-1',
                   },
                 },
               ],
@@ -1920,12 +1920,21 @@ describe('InterviewDetailPage', () => {
     expect(hyperedges).toHaveTextContent('candidate evidence -> repo challenge');
     expect(hyperedges).toHaveTextContent('CANDIDATE_REPO');
     expect(hyperedges).not.toHaveTextContent('PERSON_ROLE_REPO');
-    expect(hyperedges).toHaveTextContent('Implemented popover trigger click handling');
-    expect(hyperedges).toHaveTextContent('Ignore impatient trigger clicks');
+    expect(hyperedges).toHaveTextContent('Candidate source evidence');
+    expect(hyperedges).toHaveTextContent('Repo challenge evidence');
+    expect(hyperedges).not.toHaveTextContent('candidate-hyperedge-source-span-raw-1');
+    expect(hyperedges).not.toHaveTextContent('repo-hyperedge-source-span-raw-1');
     const bridge = screen.getByTestId('interview-code-review-evidence-bridge');
     expect(bridge).toHaveTextContent('candidate evidence -> repo challenge');
     expect(bridge).toHaveTextContent('Match concepts');
     expect(bridge).not.toHaveTextContent('Role requirement');
+    expect(bridge).toHaveTextContent('Source-backed match alignment');
+    expect(bridge).toHaveTextContent('Candidate source evidence');
+    expect(bridge).toHaveTextContent('Repo challenge evidence');
+    expect(bridge).not.toHaveTextContent('candidate-atom-1');
+    expect(bridge).not.toHaveTextContent('repo-demand-1');
+    expect(bridge).not.toHaveTextContent('candidate-source-span-raw-1');
+    expect(bridge).not.toHaveTextContent('repo-source-span-raw-1');
   });
 
   it('shows submitted code-review verdict, summary, and annotations to recruiters', async () => {

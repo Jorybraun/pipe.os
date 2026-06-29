@@ -293,10 +293,8 @@ function assessmentEvidenceSummary(input: {
 
 function sourceRefText(ref: CodeReviewMatchSourceRef | null | undefined): string | null {
   if (!ref) return null;
-  return ref.exactText
-    ?? ref.locator
-    ?? ref.sourceSpanId
-    ?? ref.sourceRefId
+  return compactEvidenceText(ref.exactText ?? '')
+    ?? compactEvidenceText(ref.locator ?? '')
     ?? null;
 }
 
@@ -312,11 +310,24 @@ function alignmentLabel(alignment: CodeReviewMatchAlignment): string {
   if (alignment.sharedConcepts.length > 0) {
     return alignment.sharedConcepts.slice(0, 3).join(', ');
   }
-  return `${alignment.atomId} -> ${alignment.demandId}`;
+  return 'Source-backed match alignment';
 }
 
 function hyperedgeNodeTitle(node: CodeReviewMatchHyperedgeNode): string {
   return node.label || titleCaseToken(node.kind);
+}
+
+function sourceEvidenceFallback(kind: string): string {
+  switch (kind) {
+    case 'person_evidence':
+      return 'Candidate source evidence';
+    case 'role_source':
+      return 'Role requirement evidence';
+    case 'repo_challenge':
+      return 'Repo challenge evidence';
+    default:
+      return `${titleCaseToken(kind)} evidence`;
+  }
 }
 
 function hyperedgeHasRoleSource(edge: CodeReviewMatchHyperedge): boolean {
@@ -2583,7 +2594,7 @@ export default function InterviewDetailPage(): JSX.Element {
                             <div key={`${node.kind}:${nodeIndex}`} style={MATCH_BRIDGE_CARD}>
                               <div style={TRANSCRIPT_ROLE}>{hyperedgeNodeTitle(node)}</div>
                               <div style={TRANSCRIPT_TEXT}>
-                                {sourceRefText(node.sourceRef) ?? node.kind}
+                                {sourceRefText(node.sourceRef) ?? sourceEvidenceFallback(node.kind)}
                               </div>
                               {node.sourceRef.conceptKeys && node.sourceRef.conceptKeys.length > 0 && (
                                 <div style={TAG_ROW}>
@@ -2644,7 +2655,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       <div style={TRANSCRIPT_ROLE}>Person evidence</div>
                       <div style={TRANSCRIPT_TEXT}>
                         {firstSourceRefText(primaryMatchEvidence.candidateSourceRefs)
-                          ?? primaryMatchEvidence.atomId}
+                          ?? 'Candidate source evidence'}
                       </div>
                     </div>
 
@@ -2652,7 +2663,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       <div style={TRANSCRIPT_ROLE}>Repo challenge</div>
                       <div style={TRANSCRIPT_TEXT}>
                         {firstSourceRefText(primaryMatchEvidence.challengeSourceRefs)
-                          ?? primaryMatchEvidence.demandId}
+                          ?? 'Repo challenge evidence'}
                       </div>
                     </div>
                   </div>
@@ -2663,7 +2674,7 @@ export default function InterviewDetailPage(): JSX.Element {
                     <div style={CONTEXT_RECORD}>
                   <div style={FIELD_LABEL}>Gaps</div>
                   {codeReviewMatch.gaps.slice(0, 3).map((gap) => (
-                    <div key={gap} style={CONTEXT_RECORD_NARRATIVE}>{gap}</div>
+                    <div key={gap} style={CONTEXT_RECORD_NARRATIVE}>{readableGapLabel(gap)}</div>
                   ))}
                     </div>
                   )}
