@@ -17,10 +17,10 @@ import { redactAgentDiagnosticText } from './agentDiagnosticRedaction';
 export { clippyTextFingerprint } from './clippyPromptIdentity';
 
 export type ClippyUiActionId = 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth';
-export type ClippyUiActionOrigin = 'tray' | 'prompt' | 'chat';
+export type ClippyUiActionOrigin = 'tray' | 'prompt' | 'chat' | 'call';
 export type ClippyRoomActionOrigin = 'prompt' | 'agent';
 export type ClippyEvidenceActor = 'host' | 'guest';
-type ClippyUiActionSource = 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_chat_ui';
+type ClippyUiActionSource = 'clippy_tray_ui' | 'clippy_prompt_ui' | 'clippy_chat_ui' | 'clippy_call_controls_ui';
 type ClippyActionExecutionStatus = 'opened' | 'closed' | 'dismissed' | 'executed' | 'suggested';
 
 export interface ClippyUiActionEvidence {
@@ -72,9 +72,9 @@ const FNV_32_PRIME = 0x01000193;
 function clippyUiActionText(actionId: ClippyUiActionId, origin: ClippyUiActionOrigin): string {
   switch (actionId) {
     case 'open-clippy-chat':
-      return origin === 'chat'
-        ? 'Clippy chat opened from the room chat window'
-        : 'Clippy chat opened from the Win95 taskbar tray';
+      if (origin === 'chat') return 'Clippy chat opened from the room chat window';
+      if (origin === 'call') return 'AI assistant opened from the video call controls';
+      return 'Clippy chat opened from the Win95 taskbar tray';
     case 'close-clippy-chat':
       return 'Clippy chat window closed';
     case 'dismiss-clippy':
@@ -208,12 +208,16 @@ export function buildClippyUiActionEvidence(input: {
     ? 'clippy_tray_ui'
     : input.origin === 'chat'
       ? 'clippy_chat_ui'
-      : 'clippy_prompt_ui';
+      : input.origin === 'call'
+        ? 'clippy_call_controls_ui'
+        : 'clippy_prompt_ui';
   const actionSource = input.origin === 'tray'
     ? 'win95_taskbar_tray'
     : input.origin === 'chat'
       ? 'clippy_chat_window'
-      : 'clippy_prompt_ui';
+      : input.origin === 'call'
+        ? 'video_call_controls'
+        : 'clippy_prompt_ui';
   const executionStatus = clippyUiActionStatus(input.actionId) as ClippyActionExecutionStatus;
   const capturedAtMs = Number.isFinite(input.capturedAtMs) ? Math.max(0, Math.round(input.capturedAtMs)) : 0;
   return {

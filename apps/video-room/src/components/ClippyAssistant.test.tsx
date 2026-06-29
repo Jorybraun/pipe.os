@@ -156,17 +156,20 @@ describe('ClippyAssistant', () => {
     await waitFor(() => expect(clippyMock.agent.show).toHaveBeenCalledWith(true));
   });
 
-  it('revives authentic Clippy without opening the agent bridge dialog in a standard call', async () => {
+  it('opens an honest bridge status panel in a standard call without faking agent replies', async () => {
     const onChatOpen = vi.fn();
     const onChatClose = vi.fn();
+    const onUserChatMessage = vi.fn();
     const { rerender } = render(
       <ClippyAssistant
         messages={[{ text: "I'll keep the desktop ready while they join.", hold: true }]}
         onDismiss={vi.fn()}
         onChatOpen={onChatOpen}
         onChatClose={onChatClose}
+        onUserChatMessage={onUserChatMessage}
         agentEnabled={false}
         agentWsUrl={null}
+        agentUnavailableMessage="This room was not configured with a dev workspace. Room chat still goes to people; Clippy agent chat requires a real container workspace."
         openChatRequest={0}
       />,
     );
@@ -180,17 +183,34 @@ describe('ClippyAssistant', () => {
         onDismiss={vi.fn()}
         onChatOpen={onChatOpen}
         onChatClose={onChatClose}
+        onUserChatMessage={onUserChatMessage}
         agentEnabled={false}
         agentWsUrl={null}
+        agentUnavailableMessage="This room was not configured with a dev workspace. Room chat still goes to people; Clippy agent chat requires a real container workspace."
         openChatRequest={1}
       />,
     );
 
-    expect(screen.queryByTestId('clippy-chat')).toBeNull();
+    expect((await screen.findByTestId('clippy-chat')).textContent).toContain(
+      'This room was not configured with a dev workspace.',
+    );
     expect(screen.queryByTestId('clippy-proactive-card')).toBeNull();
     expect(screen.getByTestId('clippy-hotspot')).toBeTruthy();
-    expect(onChatOpen).not.toHaveBeenCalled();
+    expect(onChatOpen).toHaveBeenCalledTimes(1);
     expect(onChatClose).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('clippy-chat-input'), {
+      target: { value: 'can you inspect the repo?' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onUserChatMessage).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'can you inspect the repo?',
+      deliveryStatus: 'blocked',
+      blockedReason: 'workspace_required',
+    }));
+    expect(screen.getByTestId('clippy-chat').textContent).toContain(
+      'Clippy could not send that because the dev workspace is not running.',
+    );
   });
 
   it('opens a real-agent status panel before the workspace bridge is active', async () => {

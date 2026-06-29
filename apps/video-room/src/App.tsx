@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+  Bot,
   Camera,
   CameraOff,
   Circle,
@@ -349,6 +350,26 @@ function mediaStatusLabel(state: Pick<RoomMediaControlState, 'microphoneEnabled'
   if (state.microphoneEnabled === false) parts.push('mic off');
   if (state.cameraEnabled === false) parts.push('camera off');
   return parts.join(', ');
+}
+
+function assistantStatusLabel(status: ClippyTrayStatus, hasWorkspaceFeature: boolean): string {
+  switch (status) {
+    case 'idle':
+      return 'agent ready';
+    case 'starting':
+      return 'agent starting';
+    case 'thinking':
+      return 'agent thinking';
+    case 'working':
+      return 'agent working';
+    case 'auth_needed':
+      return 'agent authentication required';
+    case 'disconnected':
+      return hasWorkspaceFeature ? 'agent disconnected' : 'workspace required';
+    case 'unavailable':
+    default:
+      return hasWorkspaceFeature ? 'agent unavailable' : 'workspace required';
+  }
 }
 
 function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): JSX.Element {
@@ -1231,7 +1252,8 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : metadata.role === 'HOST' && canLaunchWorkspace
         ? 'Launch the VS Code workspace to connect a real agent. Clippy chat stays disabled until the container bridge is connected.'
         : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
-  const canOpenClippyBridgePanel = hasWorkspaceFeature || hasActiveWorkspace || canLaunchWorkspace;
+  const canOpenClippyBridgePanel = metadata.features?.clippyEnabled ?? true;
+  const assistantCallStatus = assistantStatusLabel(clippyTrayStatus, hasWorkspaceFeature);
   useEffect(() => {
     if (!canOpenClippyBridgePanel && clippyChatOpen) {
       setClippyChatOpen(false);
@@ -1244,7 +1266,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [hasActiveWorkspace, workspaceSession?.sessionId]);
   const captureClippyUiAction = (
     actionId: 'open-clippy-chat' | 'close-clippy-chat' | 'dismiss-clippy' | 'open-devin-auth-browser' | 'check-devin-auth',
-    origin: 'tray' | 'prompt' | 'chat',
+    origin: 'tray' | 'prompt' | 'chat' | 'call',
   ): void => {
     const evidence = buildClippyUiActionEvidence({
       actionId,
@@ -1269,7 +1291,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       evidence: properties,
     });
   };
-  const openClippyChat = (origin: 'tray' | 'chat' = 'tray'): void => {
+  const openClippyChat = (origin: 'tray' | 'chat' | 'call' = 'tray'): void => {
     captureClippyUiAction('open-clippy-chat', origin);
     setClippyVisible(true);
     setClippyChatOpen(canOpenClippyBridgePanel);
@@ -2416,6 +2438,18 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               >
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
+              {(metadata.features?.clippyEnabled ?? true) && (
+                <button
+                  className={`win95-video-btn is-assistant${clippyChatOpen ? ' is-active' : ''}`}
+                  onClick={() => openClippyChat('call')}
+                  aria-label={`Open AI assistant - ${assistantCallStatus}`}
+                  title={`AI assistant - ${assistantCallStatus}`}
+                  data-testid="open-ai-assistant"
+                >
+                  <Bot size={16} />
+                  <span className={`win95-video-btn-status ${clippyTrayStatus}`} aria-hidden="true" />
+                </button>
+              )}
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (
                 recordingState === 'recording' ? (
                   <button

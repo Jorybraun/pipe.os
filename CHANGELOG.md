@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video call controls now include an explicit AI assistant button that opens the real Clippy/Devin bridge status panel and records call-control provenance instead of hiding assistant access behind the taskbar or room chat.
 - Win95 Clippy now uses the authentic `clippyjs` sprite again and no longer renders the fake proactive Win95 title-bar dialog around the mascot; Ask Clippy stays available through the controlled hotspot/taskbar bridge.
 - Closing the Clippy agent bridge now suppresses the current proactive prompt and keeps the paperclip mascot attached beside its speech bubble, so the room no longer leaves an orphaned dialog over chat.
 - Win95 commit submission now makes upstream PR tracking an explicit opt-in, blocks upstream PR URLs without candidate approval, and stores approved PR links as exact source-backed evidence instead of treating them as implicit metadata.

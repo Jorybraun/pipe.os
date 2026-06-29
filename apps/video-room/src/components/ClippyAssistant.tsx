@@ -258,7 +258,7 @@ export function ClippyAssistant({
       ].join('::')
     : null;
 
-  const canOpenAgentBridgeChat = agentEnabled || canLaunchAgentWorkspace;
+  const canOpenAgentBridgeChat = agentEnabled || canLaunchAgentWorkspace || Boolean(agentUnavailableMessage);
   const chatOpen = (controlledChatOpen ?? localChatOpen) && canOpenAgentBridgeChat;
 
   const openChat = useCallback(() => {

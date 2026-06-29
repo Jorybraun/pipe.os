@@ -79,6 +79,39 @@ describe('clippy evidence', () => {
     });
   });
 
+  it('captures call-control assistant opens as video-call UI actions', () => {
+    expect(buildClippyUiActionEvidence({
+      actionId: 'open-clippy-chat',
+      origin: 'call',
+      actor: 'guest',
+      capturedAtMs: 1782594020000,
+      surface: 'win95',
+      roomPhase: 'connected',
+      workspaceStatus: null,
+      workspaceSessionId: null,
+      agentWorkspaceReady: false,
+    })).toEqual({
+      text: 'AI assistant opened from the video call controls',
+      properties: {
+        source: 'clippy_call_controls_ui',
+        actionId: 'open-clippy-chat',
+        origin: 'call',
+        executedBy: 'guest',
+        actionSource: 'video_call_controls',
+        executionStatus: 'opened',
+        capturedAtMs: 1782594020000,
+        clippyActionEventId: 'clippy-action:guest:1782594020000:clippy_call_controls_ui:call:opened:open-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: null,
+        workspaceSessionId: null,
+        agent: null,
+        agentWorkspaceReady: false,
+        agentResponseClaimed: false,
+      },
+    });
+  });
+
   it('captures chat-window closes as human UI actions without claiming a Devin response', () => {
     expect(buildClippyUiActionEvidence({
       actionId: 'close-clippy-chat',

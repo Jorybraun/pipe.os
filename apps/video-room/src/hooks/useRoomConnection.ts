@@ -1435,12 +1435,14 @@ export function hasSourceBackedClippyInteractionEvidence(
     const roomContextOk = (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string';
 
-    if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui') {
+    if (source === 'clippy_tray_ui' || source === 'clippy_prompt_ui' || source === 'clippy_chat_ui' || source === 'clippy_call_controls_ui') {
       const originOk = source === 'clippy_tray_ui'
         ? origin === 'tray' && evidence.actionSource === 'win95_taskbar_tray'
         : source === 'clippy_chat_ui'
           ? origin === 'chat' && evidence.actionSource === 'clippy_chat_window'
-          : origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui';
+          : source === 'clippy_call_controls_ui'
+            ? origin === 'call' && evidence.actionSource === 'video_call_controls'
+            : origin === 'prompt' && evidence.actionSource === 'clippy_prompt_ui';
       const statusOk = executionStatus === 'opened'
         || executionStatus === 'closed'
         || executionStatus === 'dismissed'

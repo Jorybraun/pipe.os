@@ -3709,6 +3709,46 @@ button:focus-visible {
   border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
 }
 
+.win95-video-btn.is-assistant {
+  position: relative;
+}
+
+.win95-video-btn.is-assistant.is-active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+  background: #e8e8e8;
+}
+
+.win95-video-btn-status {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #000;
+  background: #808080;
+  pointer-events: none;
+}
+
+.win95-video-btn-status.idle {
+  background: #00a000;
+}
+
+.win95-video-btn-status.starting,
+.win95-video-btn-status.thinking,
+.win95-video-btn-status.working {
+  background: #ffcc00;
+  animation: clippy-pulse 1s infinite;
+}
+
+.win95-video-btn-status.auth_needed {
+  background: #cc0000;
+}
+
+.win95-video-btn-status.disconnected,
+.win95-video-btn-status.unavailable {
+  background: #808080;
+}
+
 .win95-video-btn.is-recording {
   background: #cc0000;
   color: #fff;

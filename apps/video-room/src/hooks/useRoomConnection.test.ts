@@ -279,6 +279,50 @@ describe('hasSourceBackedClippyInteractionEvidence', () => {
     expect(hasSourceBackedClippyInteractionEvidence(action, 'HOST')).toBe(true);
     expect(hasSourceBackedClippyInteractionEvidence({
       ...action,
+      text: 'AI assistant opened from the video call controls',
+      actor: 'guest',
+      evidence: {
+        source: 'clippy_call_controls_ui',
+        actionId: 'open-clippy-chat',
+        origin: 'call',
+        executedBy: 'guest',
+        actionSource: 'video_call_controls',
+        executionStatus: 'opened',
+        capturedAtMs: 1700000005000,
+        clippyActionEventId: 'clippy-action:guest:1700000005000:clippy_call_controls_ui:call:opened:open-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: null,
+        workspaceSessionId: null,
+        agent: null,
+        agentResponseClaimed: false,
+        durableObjectReplayExpected: true,
+      },
+    }, 'GUEST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence({
+      ...action,
+      text: 'AI assistant opened from the video call controls',
+      actor: 'guest',
+      evidence: {
+        source: 'clippy_call_controls_ui',
+        actionId: 'open-clippy-chat',
+        origin: 'tray',
+        executedBy: 'guest',
+        actionSource: 'win95_taskbar_tray',
+        executionStatus: 'opened',
+        capturedAtMs: 1700000005000,
+        clippyActionEventId: 'clippy-action:guest:1700000005000:clippy_call_controls_ui:tray:opened:open-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: null,
+        workspaceSessionId: null,
+        agent: null,
+        agentResponseClaimed: false,
+        durableObjectReplayExpected: true,
+      },
+    }, 'GUEST')).toBe(false);
+    expect(hasSourceBackedClippyInteractionEvidence({
+      ...action,
       evidence: {
         source: 'clippy_tray_ui',
       },
