@@ -45,6 +45,8 @@ export type {
   ResumeAssertionInput,
   ResumeConceptInput,
 } from './resumeIngestion';
+export { ingestSessionEventsToLivingContext, loadSessionEventsForCandidate } from './sessionEventIngestion';
+export type { SessionEventRow, SessionEventIngestionResult } from './sessionEventIngestion';
 export { BackfillOrchestrator } from './backfillOrchestrator';
 export type { BackfillCheckpoint, BackfillTaskDefinition, BackfillOrchestratorStatus } from './backfillOrchestrator';
 export { runScheduledBackfill, BACKFILL_TASKS } from './backfillScheduled';

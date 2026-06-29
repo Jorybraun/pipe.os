@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Session event → living context ingestion (criterion #1)
+
+- `ingestSessionEventsToLivingContext(db, candidateId, sessionId, events)` — ingests interview session events (answer_submitted, scoring_complete, question_asked, stage_advanced, match_assigned) across all session types into the living context graph as source-backed assertions.
+- `loadSessionEventsForCandidate(db, candidateId, cursor?, limit?)` — paginated loader for session events by candidate.
+- Backfill task `session_events_to_living_context` added to `BackfillOrchestrator` — processes un-ingested sessions from the `session_events` table.
+- Each evidence event generates: an episode, artifact version (per-event payload), source span, semantic assertion with extracted concepts, and concept links.
+- Idempotent: skips already-ingested events via ingestion_key deduplication.
+- 10 new tests covering answer ingestion, scoring events, non-evidence filtering, idempotency, multi-event sessions, null payloads, and pagination.
+
 ### Added — Real-time assessment → living context ingestion (criterion #2, #5)
 
 - Assessment evidence now flows into the person graph immediately when an evaluation report is created (`POST /sessions/:sessionId/evaluation-reports`), rather than waiting for the scheduled backfill cron.

@@ -36,6 +36,8 @@ import type { CodeReviewTranscript } from './codeReview';
 import { LivingContextStore } from './persistence';
 import { ingestHistoricalCultureTranscript } from './cultureTranscriptBackfill';
 import { ingestAssessmentToLivingContext, loadAssessmentSessionData } from './assessmentIngestion';
+import { ingestSessionEventsToLivingContext, loadSessionEventsForCandidate } from './sessionEventIngestion';
+import type { SessionEventRow } from './sessionEventIngestion';
 import type {
   AssessmentSessionRow,
   AssessmentEvidenceEventRow,
@@ -96,6 +98,11 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: ['candidates_to_living_context'],
   },
   {
+    taskKey: 'session_events_to_living_context',
+    description: 'Ingest session events (answer_submitted, scoring_complete, etc.) across all interview types into candidate person graphs',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
     taskKey: 'projection_outbox_drain',
     description: 'Process all pending neo4j projection outbox jobs',
     dependsOn: [
@@ -107,6 +114,7 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
       'culture_sessions_to_living_context',
       'code_reviews_to_living_context',
       'assessments_to_living_context',
+      'session_events_to_living_context',
       'repo_assertions_to_living_context',
     ],
   },
@@ -801,6 +809,59 @@ async function backfillAssessmentsBatch(
   return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
 }
 
+interface SessionEventCandidateRow {
+  candidate_id: string;
+  session_id: string;
+}
+
+async function backfillSessionEventsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const hasTable = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_events'`,
+  ).first<{ name: string }>();
+  if (!hasTable) return { processed: 0, failed: 0, cursor, done: true };
+
+  const rows = await db.prepare(
+    `SELECT DISTINCT se.candidate_id, se.session_id
+       FROM session_events se
+      WHERE se.event_type IN ('answer_submitted', 'scoring_complete', 'question_asked', 'stage_advanced', 'match_assigned')
+        AND NOT EXISTS (
+          SELECT 1 FROM interactions i
+           WHERE i.interaction_type LIKE 'interview_session:%'
+             AND i.external_reference = se.session_id
+        )
+        AND (?1 IS NULL OR se.session_id > ?1)
+      ORDER BY se.session_id
+      LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<SessionEventCandidateRow>();
+
+  const sessions = rows.results ?? [];
+  if (sessions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const row of sessions) {
+    try {
+      const { events } = await loadSessionEventsForCandidate(db, row.candidate_id);
+      const sessionEvents = events.filter((e: SessionEventRow) => e.session_id === row.session_id);
+      if (sessionEvents.length > 0) {
+        await ingestSessionEventsToLivingContext(db, row.candidate_id, row.session_id, sessionEvents);
+      }
+      processed++;
+    } catch (err) {
+      console.error('[backfill] session event LC failed:', row.session_id, err);
+      failed++;
+    }
+    lastId = row.session_id;
+  }
+
+  return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
+}
+
 export interface BackfillScheduledResult {
   gateEnabled: boolean;
   status: BackfillOrchestratorStatus;
@@ -869,6 +930,9 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'assessments_to_living_context':
           result = await backfillAssessmentsBatch(db, cursor);
+          break;
+        case 'session_events_to_living_context':
+          result = await backfillSessionEventsBatch(db, cursor);
           break;
         case 'projection_outbox_drain': {
           const projResult = await processProjectionOutbox(env);
