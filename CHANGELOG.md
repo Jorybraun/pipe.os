@@ -88,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — 95 Until Infinity desktop tools
 
+- Clippy prompts and Clippy/Devin interaction events now require source-backed browser or bridge provenance before local optimistic display, peer replay, or prompt snapshot hydration, preventing source-less assistant state from appearing as real evidence.
 - Room Chat messages now require source-backed browser chat evidence with stable room message ids, client ids, timestamps, lengths, delivery status, surface, and room phase before local optimistic display, peer replay, ACK handling, or room snapshot hydration.
 - Meeting transcript evidence now preserves the origin of speaker metadata, distinguishing browser-uploaded channel maps from R2 custom metadata recovered during transcript retry, so speaker attribution remains source-backed across processing passes.
 - Rejected Room Chat sends now preserve the Durable Object rejection reason in browser evidence and exact source-ref metadata, so failed chat delivery is explainable instead of only marked as not sent.

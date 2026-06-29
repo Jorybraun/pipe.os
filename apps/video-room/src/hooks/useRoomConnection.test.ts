@@ -7,6 +7,8 @@ import {
   hasSourceBackedCodeServerFileEvidence,
   hasSourceBackedCursorEvidence,
   hasSourceBackedChatEvidence,
+  hasSourceBackedClippyInteractionEvidence,
+  hasSourceBackedClippyPromptEvidence,
   hasSourceBackedDesktopEventEvidence,
   hasSourceBackedMediaControlEvidence,
   hasSourceBackedRecordingStateEvidence,
@@ -17,6 +19,8 @@ import {
   ROOM_CURSOR_SEND_INTERVAL_MS,
   shouldSendCursorPresence,
   type RoomChatMessage,
+  type RoomClippyInteractionEvent,
+  type RoomClippyPrompt,
   type RoomCodeServerFileEvent,
   type RoomCursorPresence,
   type RoomDesktopEvent,
@@ -82,6 +86,145 @@ describe('decideRoomSurfaceSnapshot', () => {
       applySnapshot: true,
       clearPendingLocalSurface: true,
     });
+  });
+});
+
+describe('hasSourceBackedClippyPromptEvidence', () => {
+  const prompt: RoomClippyPrompt = {
+    id: 'prompt-1',
+    clientId: 'host-client',
+    createdAt: 1700000001000,
+    source: 'system',
+    text: 'Would you like to start recording?',
+    promptEventSource: 'browser_proactive_clippy_prompt',
+    promptTrigger: 'recording_start_suggestion',
+    surface: 'win95',
+    roomPhase: 'connected',
+    workspaceStatus: 'running',
+    workspaceSessionId: 'workspace-1',
+    agentResponseClaimed: false,
+  };
+
+  it('accepts host-authored proactive Clippy prompts with room provenance', () => {
+    expect(hasSourceBackedClippyPromptEvidence(prompt, 'HOST')).toBe(true);
+  });
+
+  it('rejects guest-authored or source-thin Clippy prompts', () => {
+    expect(hasSourceBackedClippyPromptEvidence(prompt, 'GUEST')).toBe(false);
+    expect(hasSourceBackedClippyPromptEvidence({
+      ...prompt,
+      promptEventSource: undefined,
+    }, 'HOST')).toBe(false);
+  });
+});
+
+describe('hasSourceBackedClippyInteractionEvidence', () => {
+  it('accepts source-backed user chat submitted to the real Clippy/Devin bridge', () => {
+    const text = 'Can you inspect the task?';
+    const event: RoomClippyInteractionEvent = {
+      id: 'clippy-interaction-1',
+      clientId: 'guest-client',
+      createdAt: 1700000002000,
+      eventType: 'ai_chat_user',
+      actor: 'guest',
+      text,
+      evidence: {
+        source: 'clippy_agent_chat_client_submit',
+        agentChatEventSource: 'browser_clippy_chat_window',
+        actor: 'guest',
+        bridgeMessageType: 'CHAT',
+        bridgeProtocol: 'clippy_dev_container_ws',
+        bridgeDeliveryStatus: 'queued',
+        promptId: 'workspace-1:guest:prompt:1700000002000:clippy_0123abcd',
+        promptFingerprint: 'clippy_0123abcd',
+        promptLength: text.length,
+        promptTimestamp: 1700000002000,
+        browserQueuedBridgeMessage: true,
+        bridgeDeliveryConfirmed: false,
+        deliveredToAgentBridge: false,
+        agent: null,
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'running',
+        workspaceSessionId: 'workspace-1',
+        repoUrl: null,
+        agentResponseClaimed: false,
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'GUEST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(false);
+  });
+
+  it('accepts real agent response evidence without fabricating a local Devin reply', () => {
+    const text = 'I found the repository task context.';
+    const event: RoomClippyInteractionEvent = {
+      id: 'clippy-interaction-2',
+      clientId: 'host-client',
+      createdAt: 1700000003000,
+      eventType: 'ai_chat_agent',
+      actor: 'agent',
+      text,
+      evidence: {
+        source: 'clippy_agent_bridge',
+        bridgeEventType: 'CHAT_RESPONSE',
+        bridgeMessageSource: 'agent_stdout',
+        observedAt: '2026-06-28T17:00:03.000Z',
+        capturedAtMs: 1700000003000,
+        agent: 'devin',
+        responseFingerprint: 'agent_89abcdef',
+        responseLength: text.length,
+        agentChatResponseId: 'agent-chat:devin:1700000003000:CHAT_RESPONSE:agent_89abcdef',
+        bridgePersisted: false,
+        persistenceFallback: 'browser_after_bridge_persist_failed',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'running',
+        workspaceSessionId: 'workspace-1',
+        messageTimestamp: 1700000003000,
+        agentResponseClaimed: true,
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedClippyInteractionEvidence(event, 'HOST')).toBe(true);
+  });
+
+  it('accepts source-backed Clippy UI actions and rejects source-less events', () => {
+    const action: RoomClippyInteractionEvent = {
+      id: 'clippy-interaction-3',
+      clientId: 'host-client',
+      createdAt: 1700000004000,
+      eventType: 'clippy_action',
+      actor: 'host',
+      text: 'Clippy chat opened from the Win95 taskbar tray',
+      evidence: {
+        source: 'clippy_tray_ui',
+        actionId: 'open-clippy-chat',
+        origin: 'tray',
+        executedBy: 'host',
+        actionSource: 'win95_taskbar_tray',
+        executionStatus: 'opened',
+        capturedAtMs: 1700000004000,
+        clippyActionEventId: 'clippy-action:host:1700000004000:clippy_tray_ui:tray:opened:open-clippy-chat',
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'running',
+        workspaceSessionId: 'workspace-1',
+        agent: null,
+        agentResponseClaimed: false,
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedClippyInteractionEvidence(action, 'HOST')).toBe(true);
+    expect(hasSourceBackedClippyInteractionEvidence({
+      ...action,
+      evidence: {
+        source: 'clippy_tray_ui',
+      },
+    }, 'HOST')).toBe(false);
   });
 });
 
