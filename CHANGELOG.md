@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Win95 commit submission now makes upstream PR tracking an explicit opt-in, blocks upstream PR URLs without candidate approval, and stores approved PR links as exact source-backed evidence instead of treating them as implicit metadata.
 - Controlled Win95 Clippy now renders with a visible paper-stack mascot anchored to the speech bubble, preventing the room from showing only a detached dialog after removing the old duplicate sprite.
 - Standard-room Clippy tray clicks now restore the visible mascot prompt without opening or closing the dev-container agent bridge, and the prompt is tightened so the paperclip stays visible beside the bubble.
 - Win95 taskbar Clippy clicks now publish tray-origin source-backed evidence instead of leaking the DOM click event into the Clippy action origin.

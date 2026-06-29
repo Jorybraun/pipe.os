@@ -113,6 +113,64 @@ describe('commit submission payloads', () => {
     ]);
   });
 
+  it('captures optional upstream PR tracking only with explicit consent', async () => {
+    const baseCommitSha = 'a'.repeat(40);
+    const commitSha = 'b'.repeat(40);
+    const upstreamPullRequestUrl = 'https://github.com/pipe/source-backed-worker/pull/42';
+
+    const payload = await buildCommitSubmissionPayload({
+      narrative: 'Submitted retry fix with an approved upstream PR link.',
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+      branchName: 'pipe-assessment/retry-fix',
+      baseCommitSha,
+      commitSha,
+      commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+      upstreamPullRequestUrl,
+      upstreamPrConsent: true,
+      changedFilesText: 'modified src/retry.ts',
+      commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
+      diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
+      testEvidenceText: '',
+    });
+
+    expect(payload.upstreamPullRequestUrl).toBe(upstreamPullRequestUrl);
+    expect(payload.upstreamPrConsent).toBe(true);
+    expect(payload.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'upstream_pull_request',
+        sourceRefId: upstreamPullRequestUrl,
+        evidenceRole: 'optional_upstream_pr_tracking',
+        exactText: upstreamPullRequestUrl,
+        contentHash: await sha256ContentHash(upstreamPullRequestUrl),
+        metadata: expect.objectContaining({
+          source: 'win95_commit_submission_window',
+          upstreamPrConsent: true,
+        }),
+      }),
+    ]));
+  });
+
+  it('rejects upstream PR links without explicit candidate approval', async () => {
+    const commitSha = 'b'.repeat(40);
+
+    await expect(buildCommitSubmissionPayload({
+      narrative: 'Submitted retry fix.',
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: 'https://github.com/candidate/source-backed-worker',
+      branchName: 'pipe-assessment/retry-fix',
+      baseCommitSha: 'a'.repeat(40),
+      commitSha,
+      commitUrl: `https://github.com/candidate/source-backed-worker/commit/${commitSha}`,
+      upstreamPullRequestUrl: 'https://github.com/pipe/source-backed-worker/pull/42',
+      upstreamPrConsent: false,
+      changedFilesText: 'modified src/retry.ts',
+      commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
+      diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
+      testEvidenceText: '',
+    })).rejects.toThrow('Upstream PR URL requires explicit candidate approval.');
+  });
+
   it('does not invent test evidence when the candidate leaves test output blank', async () => {
     const commitSha = 'b'.repeat(40);
     const payload = await buildCommitSubmissionPayload({

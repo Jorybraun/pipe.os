@@ -223,6 +223,13 @@ export function CommitSubmissionWindow({
 
   return (
     <form className="commit-submission-window" onSubmit={(event) => void handleSubmit(event)}>
+      <section className="commit-submission-boundary" data-testid="commit-submission-boundary">
+        <strong>Assessment branch first</strong>
+        <span>
+          Submit the real commit from the assessment branch or fork. Upstream PR tracking is optional and requires explicit approval.
+        </span>
+      </section>
+
       <div className="commit-submission-grid">
         <label>
           <span>Repository URL</span>
@@ -300,6 +307,7 @@ export function CommitSubmissionWindow({
             onChange={(event) => setField('upstreamPullRequestUrl', event.target.value)}
             placeholder="https://github.com/org/repo/pull/123"
             disabled={Boolean(disabledReason) || submitting}
+            data-testid="commit-submission-upstream-pr-url"
           />
         </label>
       </div>
@@ -310,8 +318,9 @@ export function CommitSubmissionWindow({
           checked={fields.upstreamPrConsent}
           onChange={(event) => setField('upstreamPrConsent', event.target.checked)}
           disabled={Boolean(disabledReason) || submitting}
+          data-testid="commit-submission-upstream-consent"
         />
-        <span>Candidate approved upstream PR tracking</span>
+        <span>Candidate approved optional upstream PR tracking</span>
       </label>
 
       <label>

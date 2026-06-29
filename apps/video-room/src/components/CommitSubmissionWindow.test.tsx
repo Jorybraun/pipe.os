@@ -43,6 +43,52 @@ describe('CommitSubmissionWindow', () => {
     expect(screen.getByTestId('commit-submission-diff')).toHaveProperty('value', '');
   });
 
+  it('makes upstream PR tracking an explicit opt-in before submitting', async () => {
+    const commitSha = 'c'.repeat(40);
+    const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
+      throw new Error('submit should not be called without upstream consent');
+    });
+
+    render(
+      <CommitSubmissionWindow
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const boundary = screen.getByTestId('commit-submission-boundary');
+    expect(boundary.textContent).toContain('Assessment branch first');
+    expect(boundary.textContent).toContain('Upstream PR tracking is optional');
+
+    fireEvent.change(screen.getByTestId('commit-submission-changed-files'), {
+      target: { value: 'modified src/retry.ts' },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-commit-sha'), {
+      target: { value: commitSha },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-upstream-pr-url'), {
+      target: { value: 'https://github.com/pipe/source-backed-worker/pull/42' },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-narrative'), {
+      target: { value: 'Submitted retry fix; tests pass locally.' },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-commit-evidence'), {
+      target: { value: `commit ${commitSha}\nAuthor: Candidate` },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-diff'), {
+      target: { value: 'diff --git a/src/retry.ts b/src/retry.ts' },
+    });
+    fireEvent.click(screen.getByTestId('commit-submission-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('commit-submission-error').textContent).toContain(
+        'Upstream PR URL requires explicit candidate approval.',
+      );
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('keeps candidate-entered values when packet defaults refresh', () => {
     const { rerender } = render(
       <CommitSubmissionWindow

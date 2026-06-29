@@ -141,6 +141,10 @@ export async function buildCommitSubmissionPayload(
     throw new Error('Commit evidence text must contain the submitted commit SHA.');
   }
   if (!diffText) throw new Error('Diff text is required.');
+  const upstreamPullRequestUrl = normalizeOptionalText(fields.upstreamPullRequestUrl);
+  if (upstreamPullRequestUrl && !fields.upstreamPrConsent) {
+    throw new Error('Upstream PR URL requires explicit candidate approval.');
+  }
 
   const sourceRepositoryUrl = normalizeOptionalText(fields.forkRepositoryUrl) ?? repositoryUrl;
   return {
@@ -151,7 +155,7 @@ export async function buildCommitSubmissionPayload(
     baseCommitSha,
     commitSha,
     commitUrl: normalizeOptionalText(fields.commitUrl),
-    upstreamPullRequestUrl: normalizeOptionalText(fields.upstreamPullRequestUrl),
+    upstreamPullRequestUrl,
     upstreamPrConsent: fields.upstreamPrConsent,
     changedFiles,
     occurredAt: new Date().toISOString(),
@@ -199,6 +203,25 @@ export async function buildCommitSubmissionPayload(
             contentHash: await sha256ContentHash(testEvidenceText),
             metadata: {
               source: 'win95_commit_submission_window',
+            },
+          }]
+        : []),
+      ...(upstreamPullRequestUrl && fields.upstreamPrConsent
+        ? [{
+            sourceRefType: 'upstream_pull_request',
+            sourceRefId: upstreamPullRequestUrl,
+            evidenceRole: 'optional_upstream_pr_tracking',
+            locator: {
+              repositoryUrl,
+              forkRepositoryUrl: normalizeOptionalText(fields.forkRepositoryUrl),
+              commitSha,
+              upstreamPullRequestUrl,
+            },
+            exactText: upstreamPullRequestUrl,
+            contentHash: await sha256ContentHash(upstreamPullRequestUrl),
+            metadata: {
+              source: 'win95_commit_submission_window',
+              upstreamPrConsent: true,
             },
           }]
         : []),
