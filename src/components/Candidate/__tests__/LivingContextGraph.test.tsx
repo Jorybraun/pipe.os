@@ -595,6 +595,13 @@ describe('LivingContextGraph standalone review explanation', () => {
     expect(within(roleSources).getByText('simple_job_description:source_span:jd-span-1')).toBeInTheDocument();
     expect(within(roleSources).getByText('term:kafka-order-events')).toBeInTheDocument();
 
+    const proofDetails = screen.getByTestId('standalone-review-proof-details');
+    expect(proofDetails).not.toHaveAttribute('open');
+    expect(proofDetails).toHaveTextContent(/Source proof and matcher diagnostics/i);
+    expect(proofDetails).toHaveTextContent(/1 aligned pair/i);
+    expect(proofDetails).toHaveTextContent(/2 source links/i);
+    expect(proofDetails).toHaveTextContent(/1 gap/i);
+
     const bridge = screen.getByTestId('match-evidence-bridge');
     expect(screen.getByLabelText('Cross-scope match evidence bridge')).toBe(bridge);
     expect(within(bridge).getByText('role context -> person context -> repo challenge')).toBeInTheDocument();

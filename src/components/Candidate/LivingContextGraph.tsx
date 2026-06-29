@@ -838,6 +838,14 @@ function StandaloneReviewMatchPanel({
       && (match.repoId === null || challenge.repoId === String(match.repoId)),
   ) ?? evaluatedChallenges.find((challenge) => challenge.rank === 1) ?? null;
   const selectedStretchCount = selectedChallenge?.stretchCount ?? null;
+  const totalSourceLinks = match.evidence.reduce(
+    (sum, entry) => sum + entry.candidateSourceRefs.length + entry.challengeSourceRefs.length,
+    0,
+  );
+  const diagnosticsCount = recalledPacketIds.length + excludedPackets.length + evaluatedChallenges.length;
+  const hasProofDetails = match.evidence.length > 0
+    || match.gaps.length > 0
+    || diagnosticsCount > 0;
   return (
     <section
       className="living-context__review-match"
@@ -920,120 +928,140 @@ function StandaloneReviewMatchPanel({
         </div>
       )}
 
-      <MatchEvidenceBridgePanel match={match} />
+      {hasProofDetails && (
+        <details
+          className="living-context__review-proof-details"
+          data-testid="standalone-review-proof-details"
+        >
+          <summary>
+            <span>
+              Source proof and matcher diagnostics
+            </span>
+            <small>
+              {match.evidence.length} aligned pair{match.evidence.length === 1 ? '' : 's'}
+              {' · '}
+              {totalSourceLinks} source link{totalSourceLinks === 1 ? '' : 's'}
+              {' · '}
+              {match.gaps.length} gap{match.gaps.length === 1 ? '' : 's'}
+            </small>
+          </summary>
 
-      {primaryEvidence.length > 0 && (
-        <div className="living-context__review-evidence" data-testid="standalone-review-evidence">
-          {primaryEvidence.map((entry) => {
-            const candidateSnippet = reviewSourceSnippet(entry.candidateSourceRefs);
-            const challengeSnippet = reviewSourceSnippet(entry.challengeSourceRefs);
-            return (
-              <div key={`${entry.atomId}:${entry.demandId}`} className="living-context__review-evidence-row">
-                <div className="living-context__review-evidence-score">
-                  {Math.round(entry.pairScore * 100)}%
-                </div>
-                <div>
-                  <div className="living-context__review-evidence-title">
-                    {entry.atomId} → {entry.demandId}
-                  </div>
-                  <div className="living-context__review-evidence-sources">
-                    <span className={entry.candidateSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
-                      candidate: {reviewSourceStatus(entry.candidateSourceRefs)}
-                    </span>
-                    <span className={entry.challengeSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
-                      PR: {reviewSourceStatus(entry.challengeSourceRefs)}
-                    </span>
-                  </div>
-                  {(candidateSnippet || challengeSnippet) && (
-                    <div className="living-context__review-source-snippets">
-                      {candidateSnippet && (
-                        <blockquote>
-                          <span>Candidate evidence</span>
-                          {candidateSnippet}
-                        </blockquote>
-                      )}
-                      {challengeSnippet && (
-                        <blockquote>
-                          <span>PR demand evidence</span>
-                          {challengeSnippet}
-                        </blockquote>
-                      )}
+          <MatchEvidenceBridgePanel match={match} />
+
+          {primaryEvidence.length > 0 && (
+            <div className="living-context__review-evidence" data-testid="standalone-review-evidence">
+              {primaryEvidence.map((entry) => {
+                const candidateSnippet = reviewSourceSnippet(entry.candidateSourceRefs);
+                const challengeSnippet = reviewSourceSnippet(entry.challengeSourceRefs);
+                return (
+                  <div key={`${entry.atomId}:${entry.demandId}`} className="living-context__review-evidence-row">
+                    <div className="living-context__review-evidence-score">
+                      {Math.round(entry.pairScore * 100)}%
                     </div>
-                  )}
-                  {entry.sharedConcepts.length > 0 && (
-                    <div className="living-context__concepts">
-                      {entry.sharedConcepts.slice(0, 4).map((concept) => (
-                        <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
-                          {concept}
+                    <div>
+                      <div className="living-context__review-evidence-title">
+                        {entry.atomId} → {entry.demandId}
+                      </div>
+                      <div className="living-context__review-evidence-sources">
+                        <span className={entry.candidateSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                          candidate: {reviewSourceStatus(entry.candidateSourceRefs)}
                         </span>
-                      ))}
+                        <span className={entry.challengeSourceRefs.length === 0 ? 'living-context__missing-evidence' : undefined}>
+                          PR: {reviewSourceStatus(entry.challengeSourceRefs)}
+                        </span>
+                      </div>
+                      {(candidateSnippet || challengeSnippet) && (
+                        <div className="living-context__review-source-snippets">
+                          {candidateSnippet && (
+                            <blockquote>
+                              <span>Candidate evidence</span>
+                              {candidateSnippet}
+                            </blockquote>
+                          )}
+                          {challengeSnippet && (
+                            <blockquote>
+                              <span>PR demand evidence</span>
+                              {challengeSnippet}
+                            </blockquote>
+                          )}
+                        </div>
+                      )}
+                      {entry.sharedConcepts.length > 0 && (
+                        <div className="living-context__concepts">
+                          {entry.sharedConcepts.slice(0, 4).map((concept) => (
+                            <span key={`${entry.atomId}:${entry.demandId}:${concept}`} className="living-context__concept">
+                              {concept}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <RepositoryOverlayPanel match={match} />
+
+          <RepoPacketPanel match={match} />
+
+          {match.gaps.length > 0 && (
+            <div className="living-context__review-gaps">
+              <div className="living-context__eyebrow">Evidence gaps / guardrails</div>
+              <ul>
+                {match.gaps.slice(0, 4).map((gap) => (
+                  <li key={gap}>{gap}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(recalledPacketIds.length > 0 || excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
+            <div className="living-context__review-diagnostics" data-testid="standalone-review-diagnostics">
+              {recalledPacketIds.length > 0 && (
+                <div>
+                  <div className="living-context__eyebrow">Recalled packets</div>
+                  <div className="living-context__packet-strip">
+                    {recalledPacketIds.map((packetId) => (
+                      <span key={packetId}>{packetId}</span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              )}
 
-      <RepositoryOverlayPanel match={match} />
-
-      <RepoPacketPanel match={match} />
-
-      {match.gaps.length > 0 && (
-        <div className="living-context__review-gaps">
-          <div className="living-context__eyebrow">Evidence gaps / guardrails</div>
-          <ul>
-            {match.gaps.slice(0, 4).map((gap) => (
-              <li key={gap}>{gap}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {(recalledPacketIds.length > 0 || excludedPackets.length > 0 || evaluatedChallenges.length > 0) && (
-        <div className="living-context__review-diagnostics" data-testid="standalone-review-diagnostics">
-          {recalledPacketIds.length > 0 && (
-            <div>
-              <div className="living-context__eyebrow">Recalled packets</div>
-              <div className="living-context__packet-strip">
-                {recalledPacketIds.map((packetId) => (
-                  <span key={packetId}>{packetId}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {excludedPackets.length > 0 && (
-            <div>
-              <div className="living-context__eyebrow">Excluded challenge packets</div>
-              <div className="living-context__diagnostic-list">
-                {excludedPackets.map((packet) => (
-                  <div key={`${packet.id}:${packet.reason}`} className="living-context__diagnostic-row">
-                    <span>{reviewExclusionReasonLabel(packet.reason)}</span>
-                    <strong>{packet.id}</strong>
-                    <p>{reviewExclusionDetail(packet)}</p>
+              {excludedPackets.length > 0 && (
+                <div>
+                  <div className="living-context__eyebrow">Excluded challenge packets</div>
+                  <div className="living-context__diagnostic-list">
+                    {excludedPackets.map((packet) => (
+                      <div key={`${packet.id}:${packet.reason}`} className="living-context__diagnostic-row">
+                        <span>{reviewExclusionReasonLabel(packet.reason)}</span>
+                        <strong>{packet.id}</strong>
+                        <p>{reviewExclusionDetail(packet)}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              )}
 
-          {evaluatedChallenges.length > 0 && (
-            <div>
-              <div className="living-context__eyebrow">Evaluated challenge evidence</div>
-              <div className="living-context__diagnostic-list">
-                {evaluatedChallenges.map((challenge) => (
-                  <div key={challenge.challengeId} className="living-context__diagnostic-row">
-                    <span>{challenge.eligible ? 'Eligible' : 'Blocked'}</span>
-                    <strong>{challenge.challengeId}</strong>
-                    <p>{reviewedChallengeDetail(challenge)}</p>
+              {evaluatedChallenges.length > 0 && (
+                <div>
+                  <div className="living-context__eyebrow">Evaluated challenge evidence</div>
+                  <div className="living-context__diagnostic-list">
+                    {evaluatedChallenges.map((challenge) => (
+                      <div key={challenge.challengeId} className="living-context__diagnostic-row">
+                        <span>{challenge.eligible ? 'Eligible' : 'Blocked'}</span>
+                        <strong>{challenge.challengeId}</strong>
+                        <p>{reviewedChallengeDetail(challenge)}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </details>
       )}
     </section>
   );

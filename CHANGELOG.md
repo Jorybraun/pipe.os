@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Living-context code-review match panels now keep raw source proof, hyperedge alignment, repository overlays, and matcher diagnostics collapsed behind an audit drawer by default, preserving traceability without overwhelming the hiring-manager read.
 - Candidate assessment links now claim their one-use token only when the candidate starts the assessment or submits a response, so merely opening the invite page no longer burns the link.
 - Candidate waiting screens now hide unavailable profile actions, show manual status-check feedback, and avoid silent no-op buttons while evidence decomposition or repo matching is pending.
 - CODE_REVIEW interview detail now labels repo-only rows as assignment setup gaps until a concrete PR/source-backed match exists, preventing draft repositories from reading as validated review assignments.
