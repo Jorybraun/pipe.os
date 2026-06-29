@@ -765,7 +765,7 @@ describe('hasSourceBackedMediaControlEvidence', () => {
 
 describe('hasSourceBackedRecordingStateEvidence', () => {
   const sourceBackedRecordingStart: RoomRecordingStateEvent = {
-    id: 'recording-state-1',
+    id: 'recording:host:1700000003000:start:recording',
     clientId: 'host-client',
     createdAt: 1700000003000,
     role: 'HOST',
@@ -808,9 +808,17 @@ describe('hasSourceBackedRecordingStateEvidence', () => {
     }, 'HOST')).toBe(false);
   });
 
+  it('rejects recording state when the event id does not match the source-backed recording id', () => {
+    expect(hasSourceBackedRecordingStateEvidence({
+      ...sourceBackedRecordingStart,
+      id: 'recording:host:1700000003000:stop:saved',
+    }, 'HOST')).toBe(false);
+  });
+
   it('rejects vague failed recording state without concrete failure provenance', () => {
     expect(hasSourceBackedRecordingStateEvidence({
       ...sourceBackedRecordingStart,
+      id: 'recording:host:1700000003000:stop:failed',
       lifecycleKind: 'stop',
       status: 'failed',
       active: false,

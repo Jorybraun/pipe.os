@@ -1683,6 +1683,7 @@ export class VideoRoom {
       && capturedAtMs >= 0
       && typeof recordingStateEventId === 'string'
       && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
+      && event.id === recordingStateEventId
       && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
       && (evidence.surface === 'standard' || evidence.surface === 'win95')
       && typeof evidence.roomPhase === 'string'

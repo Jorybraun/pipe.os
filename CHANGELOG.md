@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video-room recording state events now require the event id to match the source-backed recording state id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale recording/transcript state evidence from replaying under a different event identity.
 - Video-room media control events now require the event id to match the source-backed media control id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale mic/camera evidence from toggling the wrong shared state.
 - Room chat messages now carry and verify an exact text fingerprint in source-backed evidence, preventing same-length stale or tampered chat payloads from replaying as valid meeting evidence.
 - Win95 shared room-surface toggles now require deterministic integer capture times and known room phases before replaying, preventing malformed surface evidence from moving both participants between the standard call and desktop.

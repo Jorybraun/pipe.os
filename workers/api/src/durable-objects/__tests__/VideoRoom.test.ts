@@ -1289,7 +1289,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_RECORDING_STATE',
       payload: {
-        id: 'recording-state-1',
+        id: 'recording:host:1700000000500:start:recording',
         clientId: 'host-client',
         createdAt: 1700000000500,
         role: 'HOST',
@@ -1335,7 +1335,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_RECORDING_STATE_ACK',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'recording-state-1',
+        id: 'recording:host:1700000000500:start:recording',
         status: 'recording',
         active: true,
       }),
@@ -1344,7 +1344,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_RECORDING_STATE',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'recording-state-1',
+        id: 'recording:host:1700000000500:start:recording',
         status: 'recording',
         evidence: expect.objectContaining({
           source: 'video_room_recording',
@@ -1356,7 +1356,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
-          id: 'recording-state-1',
+          id: 'recording:host:1700000000500:start:recording',
         }),
       }),
     ]);
@@ -1374,7 +1374,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_RECORDING_STATE',
       payload: {
-        id: 'recording-state-failed',
+        id: 'recording:host:1700000000900:stop:failed',
         clientId: 'host-client',
         createdAt: 1700000000900,
         role: 'HOST',
@@ -1428,7 +1428,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_RECORDING_STATE',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'recording-state-failed',
+        id: 'recording:host:1700000000900:stop:failed',
         status: 'failed',
         evidence: expect.objectContaining({
           recordingFailureSource: 'recording_upload_exception',
@@ -1436,6 +1436,55 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         }),
       }),
     }));
+  });
+
+  it('rejects recording state when source evidence belongs to a different recording event id', async () => {
+    const host = new FakeSocket();
+    const { state, storage } = makeState([[host, 'HOST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_RECORDING_STATE',
+      payload: {
+        id: 'recording:host:1700000000500:stop:saved',
+        clientId: 'host-client',
+        createdAt: 1700000000500,
+        role: 'HOST',
+        lifecycleKind: 'start',
+        status: 'recording',
+        active: true,
+        evidence: {
+          source: 'video_room_recording',
+          recordingEventSource: 'browser_media_recorder',
+          recordingStateEventSource: 'browser_media_recorder_state_sync',
+          actor: 'host',
+          recordingLifecycleKind: 'start',
+          recordingStateEventId: 'recording:host:1700000000500:start:recording',
+          capturedAtMs: 1700000000500,
+          surface: 'win95',
+          roomPhase: 'connected',
+          recordingStatus: 'recording',
+          recordingActive: true,
+          durableObjectReplayExpected: true,
+          iceProvider: 'cloudflare',
+          hasTranscriptionAudio: true,
+          speakerMetadataVersion: 1,
+          speakerChannelLayout: 'host-local-guest-remote-v1',
+          speakerChannelCount: 2,
+          speakerChannels: [
+            { channel: 0, role: 'host', source: 'local' },
+            { channel: 1, role: 'guest', source: 'remote' },
+          ],
+        },
+      },
+    }));
+
+    expect(parseSent(host)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_RECORDING_STATE_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(storage.has('roomRecordingState')).toBe(false);
+    expect(storage.has('recordingActivityLog')).toBe(false);
   });
 
   it('rejects vague failed recording state without storing evidence', async () => {

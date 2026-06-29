@@ -1823,6 +1823,7 @@ export function hasSourceBackedRecordingStateEvidence(
     && capturedAtMs >= 0
     && typeof recordingStateEventId === 'string'
     && RECORDING_STATE_EVENT_ID_RE.test(recordingStateEventId)
+    && event.id === recordingStateEventId
     && recordingStateEventId === `recording:host:${capturedAtMs}:${event.lifecycleKind}:${event.status}`
     && (evidence.surface === 'standard' || evidence.surface === 'win95')
     && typeof evidence.roomPhase === 'string'
@@ -3497,11 +3498,14 @@ export function useRoomConnection(
   const publishRecordingStateEvent = useCallback((draft: RoomRecordingStateEventDraft): void => {
     if (role !== 'HOST') return;
     const createdAt = Date.now();
+    const evidenceRecordingStateEventId = typeof draft.evidence?.recordingStateEventId === 'string'
+      ? draft.evidence.recordingStateEventId
+      : null;
     const event: RoomRecordingStateEvent = {
       ...draft,
-      id: typeof crypto.randomUUID === 'function'
+      id: evidenceRecordingStateEventId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
-        : `recording-${createdAt}-${Math.random().toString(36).slice(2)}`,
+        : `recording-${createdAt}-${Math.random().toString(36).slice(2)}`),
       clientId: desktopClientIdRef.current,
       createdAt,
       role,
