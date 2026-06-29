@@ -79,6 +79,9 @@ describe('CommitSubmissionWindow', () => {
     fireEvent.change(screen.getByTestId('commit-submission-diff'), {
       target: { value: 'diff --git a/src/retry.ts b/src/retry.ts' },
     });
+    fireEvent.change(screen.getByTestId('commit-submission-verification-notes'), {
+      target: { value: 'Focused upstream PR consent check; test output is not part of this fixture.' },
+    });
     fireEvent.click(screen.getByTestId('commit-submission-submit'));
 
     await waitFor(() => {
@@ -87,6 +90,61 @@ describe('CommitSubmissionWindow', () => {
       );
     });
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('requires either real test output or a source-backed missing-test note before submitting', async () => {
+    const commitSha = 'c'.repeat(40);
+    const onSubmit = vi.fn(async (_payload: RoomCommitSubmissionRequest): Promise<RoomCommitSubmissionResponse> => {
+      throw new Error('submit should not be called without verification evidence');
+    });
+
+    render(
+      <CommitSubmissionWindow
+        defaultRepositoryUrl="https://github.com/fallback/repo"
+        challengePacket={packet}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId('commit-submission-changed-files'), {
+      target: { value: 'modified src/retry.ts' },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-commit-sha'), {
+      target: { value: commitSha },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-narrative'), {
+      target: { value: 'Submitted retry fix; verification is still pending.' },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-commit-evidence'), {
+      target: { value: `commit ${commitSha}\nAuthor: Candidate` },
+    });
+    fireEvent.change(screen.getByTestId('commit-submission-diff'), {
+      target: { value: 'diff --git a/src/retry.ts b/src/retry.ts' },
+    });
+    fireEvent.click(screen.getByTestId('commit-submission-submit'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('commit-submission-error').textContent).toContain(
+        'Paste test output or explain why test evidence is missing.',
+      );
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId('commit-submission-verification-notes'), {
+      target: { value: 'Tests were not run because dependency installation failed before the suite could start.' },
+    });
+    fireEvent.click(screen.getByTestId('commit-submission-submit'));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const submittedPayload = onSubmit.mock.calls[0]?.[0];
+    if (!submittedPayload) throw new Error('Expected commit submission payload.');
+    expect(submittedPayload.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'verification_gap',
+        evidenceRole: 'missing_test_evidence_note',
+        exactText: expect.stringContaining('Tests were not run because'),
+      }),
+    ]));
   });
 
   it('keeps candidate-entered values when packet defaults refresh', () => {

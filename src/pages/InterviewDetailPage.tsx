@@ -166,6 +166,12 @@ interface CodeReviewDecisionRisk {
   missingContext: string[];
 }
 
+interface CodeReviewSignalBasisItem {
+  label: string;
+  value: string;
+  satisfied: boolean;
+}
+
 interface EvidenceFollowUpPlan {
   originalInterviewId: string | null;
   matchStatus: string | null;
@@ -600,6 +606,44 @@ function codeReviewScoreNarrative(score: CodeReviewScoreSummary | null): string 
     ?? (score.status === 'scored'
       ? 'Score report is available, but no narrative was returned.'
       : 'The score report will appear after scoring completes.');
+}
+
+function codeReviewSignalBasisItems(input: {
+  score: CodeReviewScoreSummary | null;
+  submission: CodeReviewSubmissionDetail | null;
+  match: CodeReviewMatchDetail | null;
+  proofCount: number;
+}): CodeReviewSignalBasisItem[] {
+  const scoreReady = Boolean(input.score && input.score.status === 'scored');
+  const annotationCount = input.submission?.annotations.length ?? 0;
+  const pushbackCount = input.submission?.defenseThreads.length ?? 0;
+  const qualityScore = input.match?.assessmentQuality
+    ? `${input.match.assessmentQuality.score}/${input.match.assessmentQuality.maxScore} ${titleCaseToken(input.match.assessmentQuality.verdict.toLowerCase())}`
+    : null;
+  return [
+    {
+      label: 'Score report',
+      value: scoreReady ? 'Scored' : input.score ? titleCaseToken(input.score.status) : 'Missing',
+      satisfied: scoreReady,
+    },
+    {
+      label: 'Review evidence',
+      value: countLabel(annotationCount, 'annotation'),
+      satisfied: annotationCount > 0,
+    },
+    {
+      label: 'Pushback',
+      value: countLabel(pushbackCount, 'thread'),
+      satisfied: pushbackCount > 0,
+    },
+    {
+      label: 'Match proof',
+      value: input.proofCount > 0
+        ? countLabel(input.proofCount, 'bridge')
+        : qualityScore ?? 'Missing',
+      satisfied: input.proofCount > 0 || Boolean(input.match?.assessmentQuality),
+    },
+  ];
 }
 
 function codeReviewNextStepRecommendation(
@@ -1639,6 +1683,12 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentInviteState = interview.assessmentSetup?.lastDeliveredUrlState
     ?? (assessmentInviteUrl ? 'active' : null);
   const hasAssessmentInviteUrl = Boolean(assessmentInviteUrl);
+  const hasSubmittedAssessmentEvidence = Boolean(
+    interview.completedAt
+    || interview.submissionJson
+    || assessmentProgress?.hasFinalSubmission
+    || assessmentProgress?.evaluation,
+  );
   const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
   const assessmentInviteStatus = assessmentInviteStatusLabel(assessmentInviteState, hasAssessmentInviteUrl);
   const assessmentInviteValidity = assessmentInviteValidityLabel(assessmentInviteState, hasAssessmentInviteUrl);
@@ -1653,12 +1703,17 @@ export default function InterviewDetailPage(): JSX.Element {
   );
   const assessmentInviteDescription =
     assessmentInviteState === 'claimed'
-      ? 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.'
+      ? hasSubmittedAssessmentEvidence
+        ? 'The candidate opened this one-use assessment link and assessment evidence is attached below. Resend only if they need a fresh attempt.'
+        : 'The candidate opened this one-use assessment link, but this interview has no submitted assessment evidence yet. Resend the invite to issue a fresh link.'
       : assessmentInviteState === 'stale'
         ? 'This saved assessment link is older than the current candidate token. Resend the invite before sharing it.'
         : assessmentInviteUrl
           ? 'One-use candidate invite. Copy it for the candidate instead of opening it in a recruiter browser.'
           : 'No candidate assessment link has been delivered yet. Send the invite to create a usable one-use link.';
+  const assessmentInviteMessage = assessmentInviteState === 'claimed'
+    ? assessmentInviteDescription
+    : interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription;
   const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress);
   const assessmentProgressStage = assessmentProgress
     ? assessmentProgressStageLabel(assessmentProgress.stage)
@@ -1739,6 +1794,12 @@ export default function InterviewDetailPage(): JSX.Element {
   const shouldShowEvidencePlan = codeReviewEvidencePlan.length > 0
     && !codeReviewEvidenceRefresh
     && !codeReviewEvidenceFollowUp;
+  const codeReviewSignalBasis = codeReviewSignalBasisItems({
+    score: codeReviewScore,
+    submission: codeReviewSubmission,
+    match: codeReviewMatch,
+    proofCount: matchHyperedges.length,
+  });
   const codeReviewDecisionSignals = [
     {
       label: 'Assignment',
@@ -1865,7 +1926,7 @@ export default function InterviewDetailPage(): JSX.Element {
             </div>
             <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
             <div style={ROOM_LINK_TEXT}>
-              {interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription}
+              {assessmentInviteMessage}
             </div>
             <div data-testid="interview-assessment-link-state" style={ASSESSMENT_INVITE_STATE_GRID}>
               <div style={ASSESSMENT_INVITE_STATE_ITEM}>
@@ -2194,6 +2255,18 @@ export default function InterviewDetailPage(): JSX.Element {
                   {codeReviewScoreDetail && (
                     <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewScoreDetail}</div>
                   )}
+                  <div style={FIELD_LABEL}>Signal basis</div>
+                  <div data-testid="interview-code-review-score-basis" style={DECISION_SCORE_BASIS}>
+                    {codeReviewSignalBasis.map((item) => (
+                      <div
+                        key={item.label}
+                        style={item.satisfied ? DECISION_SCORE_BASIS_ITEM_OK : DECISION_SCORE_BASIS_ITEM_MISSING}
+                      >
+                        <span style={FIELD_LABEL}>{item.label}</span>
+                        <span style={DECISION_SCORE_BASIS_VALUE}>{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
                   {(codeReviewScore.strengths.length > 0 || codeReviewScore.growthAreas.length > 0) && (
                     <div style={DECISION_SCORE_COLUMNS}>
                       {codeReviewScore.strengths.length > 0 && (
@@ -3585,6 +3658,41 @@ const DECISION_SCORE_VALUE: CSSProperties = {
   fontSize: 20,
   fontWeight: 800,
   lineHeight: 1.15,
+  overflowWrap: 'anywhere',
+};
+
+const DECISION_SCORE_BASIS: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+  gap: 8,
+};
+
+const DECISION_SCORE_BASIS_ITEM_OK: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid rgba(74,222,128,0.28)',
+  borderRadius: 6,
+  background: 'rgba(74,222,128,0.08)',
+};
+
+const DECISION_SCORE_BASIS_ITEM_MISSING: CSSProperties = {
+  display: 'grid',
+  gap: 5,
+  minWidth: 0,
+  padding: 10,
+  border: '1px solid rgba(251,191,36,0.3)',
+  borderRadius: 6,
+  background: 'rgba(251,191,36,0.08)',
+};
+
+const DECISION_SCORE_BASIS_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 11,
+  fontWeight: 800,
+  lineHeight: 1.35,
   overflowWrap: 'anywhere',
 };
 

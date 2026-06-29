@@ -33,6 +33,7 @@ const EMPTY_FIELDS: CommitSubmissionFormFields = {
   commitEvidenceText: '',
   diffText: '',
   testEvidenceText: '',
+  verificationNotesText: '',
 };
 
 function formatProgressLabel(value: string | null | undefined): string {
@@ -368,6 +369,18 @@ export function CommitSubmissionWindow({
           disabled={Boolean(disabledReason) || submitting}
           rows={4}
           data-testid="commit-submission-test-evidence"
+        />
+      </label>
+
+      <label>
+        <span>Missing test note</span>
+        <textarea
+          value={fields.verificationNotesText}
+          onChange={(event) => setField('verificationNotesText', event.target.value)}
+          placeholder="If test output is missing, record why and what remains unverified."
+          disabled={Boolean(disabledReason) || submitting}
+          rows={3}
+          data-testid="commit-submission-verification-notes"
         />
       </label>
 

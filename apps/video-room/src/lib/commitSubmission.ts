@@ -19,6 +19,7 @@ export interface CommitSubmissionFormFields {
   commitEvidenceText: string;
   diffText: string;
   testEvidenceText: string;
+  verificationNotesText: string;
 }
 
 export interface CommitSubmissionDefaultInput {
@@ -128,6 +129,7 @@ export async function buildCommitSubmissionPayload(
   const commitEvidenceText = fields.commitEvidenceText.trim();
   const diffText = fields.diffText.trim();
   const testEvidenceText = fields.testEvidenceText.trim();
+  const verificationNotesText = fields.verificationNotesText.trim();
   const narrative = fields.narrative.trim();
 
   if (!narrative) throw new Error('Submission note is required.');
@@ -141,6 +143,9 @@ export async function buildCommitSubmissionPayload(
     throw new Error('Commit evidence text must contain the submitted commit SHA.');
   }
   if (!diffText) throw new Error('Diff text is required.');
+  if (!testEvidenceText && !verificationNotesText) {
+    throw new Error('Paste test output or explain why test evidence is missing.');
+  }
   const upstreamPullRequestUrl = normalizeOptionalText(fields.upstreamPullRequestUrl);
   if (upstreamPullRequestUrl && !fields.upstreamPrConsent) {
     throw new Error('Upstream PR URL requires explicit candidate approval.');
@@ -205,7 +210,22 @@ export async function buildCommitSubmissionPayload(
               source: 'win95_commit_submission_window',
             },
           }]
-        : []),
+        : [{
+            sourceRefType: 'verification_gap',
+            sourceRefId: `${commitSha}:test-evidence-missing`,
+            evidenceRole: 'missing_test_evidence_note',
+            locator: {
+              repositoryUrl: sourceRepositoryUrl,
+              commitSha,
+              expectedSourceRefType: 'test_run',
+            },
+            exactText: verificationNotesText,
+            contentHash: await sha256ContentHash(verificationNotesText),
+            metadata: {
+              source: 'win95_commit_submission_window',
+              missingEvidence: 'test_run',
+            },
+          }]),
       ...(upstreamPullRequestUrl && fields.upstreamPrConsent
         ? [{
             sourceRefType: 'upstream_pull_request',

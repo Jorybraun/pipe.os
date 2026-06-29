@@ -76,6 +76,7 @@ describe('commit submission payloads', () => {
       commitEvidenceText,
       diffText,
       testEvidenceText,
+      verificationNotesText: '',
     });
 
     expect(payload).toMatchObject({
@@ -132,6 +133,7 @@ describe('commit submission payloads', () => {
       commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
       diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
       testEvidenceText: '',
+      verificationNotesText: 'Focused upstream PR link test; test output not captured in this fixture.',
     });
 
     expect(payload.upstreamPullRequestUrl).toBe(upstreamPullRequestUrl);
@@ -168,11 +170,13 @@ describe('commit submission payloads', () => {
       commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
       diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
       testEvidenceText: '',
+      verificationNotesText: 'Focused upstream consent validation; test output not captured in this fixture.',
     })).rejects.toThrow('Upstream PR URL requires explicit candidate approval.');
   });
 
-  it('does not invent test evidence when the candidate leaves test output blank', async () => {
+  it('records a source-backed verification gap when the candidate leaves test output blank', async () => {
     const commitSha = 'b'.repeat(40);
+    const verificationNotesText = 'I did not run tests because dependency installation failed before the suite could start.';
     const payload = await buildCommitSubmissionPayload({
       narrative: 'Submitted retry fix; tests were not captured.',
       repositoryUrl: 'https://github.com/pipe/source-backed-worker',
@@ -187,9 +191,48 @@ describe('commit submission payloads', () => {
       commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
       diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
       testEvidenceText: '   ',
+      verificationNotesText,
     });
 
-    expect(payload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual(['git_commit', 'code_diff']);
+    expect(payload.sourceRefs.map((ref) => ref.sourceRefType)).toEqual([
+      'git_commit',
+      'code_diff',
+      'verification_gap',
+    ]);
+    expect(payload.sourceRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceRefType: 'verification_gap',
+        sourceRefId: `${commitSha}:test-evidence-missing`,
+        evidenceRole: 'missing_test_evidence_note',
+        exactText: verificationNotesText,
+        contentHash: await sha256ContentHash(verificationNotesText),
+        metadata: expect.objectContaining({
+          source: 'win95_commit_submission_window',
+          missingEvidence: 'test_run',
+        }),
+      }),
+    ]));
+  });
+
+  it('rejects submissions that provide neither test output nor a missing-test note', async () => {
+    const commitSha = 'b'.repeat(40);
+
+    await expect(buildCommitSubmissionPayload({
+      narrative: 'Submitted retry fix; verification omitted.',
+      repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+      forkRepositoryUrl: '',
+      branchName: 'pipe-assessment/retry-fix',
+      baseCommitSha: 'a'.repeat(40),
+      commitSha,
+      commitUrl: '',
+      upstreamPullRequestUrl: '',
+      upstreamPrConsent: false,
+      changedFilesText: 'modified src/retry.ts',
+      commitEvidenceText: `commit ${commitSha}\nAuthor: Candidate`,
+      diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
+      testEvidenceText: '   ',
+      verificationNotesText: '   ',
+    })).rejects.toThrow('Paste test output or explain why test evidence is missing.');
   });
 
   it('rejects commit evidence that does not contain the submitted commit SHA', async () => {
@@ -207,6 +250,7 @@ describe('commit submission payloads', () => {
       commitEvidenceText: 'commit missing-sha',
       diffText: 'diff --git a/src/retry.ts b/src/retry.ts',
       testEvidenceText: '',
+      verificationNotesText: 'Focused SHA validation; test output not captured in this fixture.',
     })).rejects.toThrow('Commit evidence text must contain the submitted commit SHA.');
   });
 });
