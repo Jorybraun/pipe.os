@@ -120,6 +120,11 @@ import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } 
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { CommitSubmissionWindow } from './components/CommitSubmissionWindow';
 import { ChallengePacketPanel } from './components/ChallengePacketPanel';
+import {
+  AssessmentStatusStrip,
+  assessmentModeForRoom,
+  assessmentModeLabel,
+} from './components/AssessmentStatusStrip';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
@@ -1254,6 +1259,11 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         : 'The host needs to launch the VS Code workspace before Clippy can connect to a real agent.';
   const canOpenClippyBridgePanel = metadata.features?.clippyEnabled ?? true;
   const assistantCallStatus = assistantStatusLabel(clippyTrayStatus, hasWorkspaceFeature);
+  const roomAssessmentMode = assessmentModeForRoom({
+    meetingType: metadata.meetingType,
+    workspaceEnabled: hasWorkspaceFeature,
+  });
+  const roomAssessmentModeLabel = assessmentModeLabel(roomAssessmentMode);
   useEffect(() => {
     if (!canOpenClippyBridgePanel && clippyChatOpen) {
       setClippyChatOpen(false);
@@ -2421,6 +2431,17 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
               </div>
             </div>
 
+            <AssessmentStatusStrip
+              meetingType={metadata.meetingType}
+              workspace={workspace}
+              workspaceLoading={workspaceLoading}
+              workspaceError={workspaceError}
+              canLaunchWorkspace={canLaunchWorkspace}
+              onLaunchWorkspace={() => void launchWorkspace()}
+              onOpenWorkspace={() => openWorkspaceWindow('win95_desktop_ui')}
+              onOpenSubmission={() => openSubmissionWindow('win95_desktop_ui')}
+            />
+
             <div className="win95-video-controls">
               <button
                 className="win95-video-btn"
@@ -2686,6 +2707,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       recordingActive={visibleRecordingActive}
       canEnterDesktop={canControlRoomSurface}
       onEnterDesktop={enterWin95Desktop}
+      modeLabel={roomAssessmentModeLabel}
     />
   );
 

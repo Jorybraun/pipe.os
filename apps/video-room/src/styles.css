@@ -3672,6 +3672,123 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.assessment-status-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 5px 6px;
+  background: #d7d7d7;
+  border-top: 2px solid;
+  border-color: #fff #808080 #808080 #fff;
+  color: #000;
+  font-family: "MS Sans Serif", Tahoma, sans-serif;
+  font-size: 11px;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+
+.assessment-status-main,
+.assessment-status-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.assessment-status-mode,
+.assessment-status-pill,
+.assessment-status-repo,
+.assessment-status-evidence,
+.assessment-status-next {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.assessment-status-mode {
+  font-weight: 700;
+  color: #000080;
+}
+
+.assessment-status-pill,
+.assessment-status-repo,
+.assessment-status-evidence {
+  max-width: 220px;
+  padding: 2px 6px;
+  background: #efefef;
+  border: 1px solid #a0a0a0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assessment-status-pill.is-ready {
+  background: #e5ffe5;
+  border-color: #008000;
+}
+
+.assessment-status-pill.is-starting,
+.assessment-status-pill.is-waiting {
+  background: #fff7cc;
+  border-color: #a47c00;
+}
+
+.assessment-status-pill.is-blocked {
+  background: #ffe0e0;
+  border-color: #b00020;
+}
+
+.assessment-status-pill.is-none {
+  background: #e8e8e8;
+  color: #555;
+}
+
+.assessment-status-detail {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #111;
+}
+
+.assessment-status-detail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assessment-status-next {
+  color: #333;
+}
+
+.assessment-status-action {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.assessment-status-action:active {
+  border-color: #0a0a0a #dfdfdf #dfdfdf #0a0a0a;
+}
+
+.assessment-status-action:disabled {
+  color: #777;
+  cursor: not-allowed;
+}
+
 .win95-video-controls {
   display: flex;
   gap: 4px;
@@ -4300,6 +4417,60 @@ button:focus-visible {
 }
 
 .standard-layout .win95-video-tile-btn:active {
+  transform: scale(0.98);
+  border-color: rgba(96, 165, 250, 0.40);
+}
+
+.standard-layout .assessment-status-strip {
+  background: rgba(6, 22, 37, 0.96);
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f4f8ff;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.standard-layout .assessment-status-mode {
+  color: #bfdbfe;
+}
+
+.standard-layout .assessment-status-pill,
+.standard-layout .assessment-status-repo,
+.standard-layout .assessment-status-evidence {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #f4f8ff;
+}
+
+.standard-layout .assessment-status-pill.is-ready {
+  border-color: rgba(74, 222, 128, 0.36);
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.standard-layout .assessment-status-pill.is-starting,
+.standard-layout .assessment-status-pill.is-waiting {
+  border-color: rgba(250, 204, 21, 0.40);
+  background: rgba(250, 204, 21, 0.10);
+}
+
+.standard-layout .assessment-status-pill.is-blocked {
+  border-color: rgba(248, 113, 113, 0.44);
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.standard-layout .assessment-status-detail,
+.standard-layout .assessment-status-next {
+  color: rgba(244, 248, 255, 0.72);
+}
+
+.standard-layout .assessment-status-action {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.10);
+  color: #f4f8ff;
+}
+
+.standard-layout .assessment-status-action:active {
   transform: scale(0.98);
   border-color: rgba(96, 165, 250, 0.40);
 }

@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video rooms now show a compact assessment status strip with mode, repo/PR/base commit, workspace state, challenge task, and next action so standard calls, code reviews, and dev-container assessments are legible inside the call.
 - Video call controls now include an explicit AI assistant button that opens the real Clippy/Devin bridge status panel and records call-control provenance instead of hiding assistant access behind the taskbar or room chat.
 - Win95 Clippy now uses the authentic `clippyjs` sprite again and no longer renders the fake proactive Win95 title-bar dialog around the mascot; Ask Clippy stays available through the controlled hotspot/taskbar bridge.
 - Closing the Clippy agent bridge now suppresses the current proactive prompt and keeps the paperclip mascot attached beside its speech bubble, so the room no longer leaves an orphaned dialog over chat.

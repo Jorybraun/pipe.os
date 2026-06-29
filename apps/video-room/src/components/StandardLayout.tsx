@@ -9,6 +9,7 @@ interface StandardLayoutProps {
   recordingActive?: boolean;
   canEnterDesktop?: boolean;
   onEnterDesktop?: () => void;
+  modeLabel?: string;
 }
 
 export function StandardLayout({
@@ -18,6 +19,7 @@ export function StandardLayout({
   recordingActive,
   canEnterDesktop = false,
   onEnterDesktop,
+  modeLabel = 'Standard call',
 }: StandardLayoutProps): JSX.Element {
   const [chatOpen, setChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -46,7 +48,7 @@ export function StandardLayout({
       <div className="standard-controls-bar" data-testid="standard-controls">
         <span className="standard-layout-label">
           <Monitor size={16} />
-          Standard call
+          {modeLabel}
         </span>
         <div className="standard-controls-spacer" />
         {hasWorkspace && (
