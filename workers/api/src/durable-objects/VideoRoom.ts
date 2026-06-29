@@ -1527,6 +1527,7 @@ export class VideoRoom {
       && typeof evidence.capturedAtMs === 'number'
       && Number.isInteger(evidence.capturedAtMs)
       && evidence.capturedAtMs >= 0
+      && event.id === evidence.mediaControlId
       && evidence.mediaControlId === `media:${actor}:${event.control}:${evidence.capturedAtMs}:${action}`;
   }
 

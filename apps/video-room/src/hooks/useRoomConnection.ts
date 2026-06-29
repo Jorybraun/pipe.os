@@ -1682,6 +1682,7 @@ export function hasSourceBackedMediaControlEvidence(
     && typeof evidence.capturedAtMs === 'number'
     && Number.isInteger(evidence.capturedAtMs)
     && evidence.capturedAtMs >= 0
+    && event.id === evidence.mediaControlId
     && evidence.mediaControlId === `media:${actor}:${event.control}:${evidence.capturedAtMs}:${action}`;
 }
 
@@ -3467,11 +3468,14 @@ export function useRoomConnection(
 
   const publishMediaControlEvent = useCallback((draft: RoomMediaControlEventDraft): void => {
     const createdAt = Date.now();
+    const evidenceMediaControlId = typeof draft.evidence?.mediaControlId === 'string'
+      ? draft.evidence.mediaControlId
+      : null;
     const event: RoomMediaControlEvent = {
       ...draft,
-      id: typeof crypto.randomUUID === 'function'
+      id: evidenceMediaControlId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
-        : `media-${createdAt}-${Math.random().toString(36).slice(2)}`,
+        : `media-${createdAt}-${Math.random().toString(36).slice(2)}`),
       clientId: desktopClientIdRef.current,
       createdAt,
       role,

@@ -705,7 +705,7 @@ describe('hasSourceBackedMediaControlEvidence', () => {
     rawMediaStreamPersisted: false,
   };
   const sourceBackedMediaControl: RoomMediaControlEvent = {
-    id: 'media-control-1',
+    id: 'media:guest:microphone:1700000001000:disabled',
     clientId: 'guest-client',
     createdAt: 1700000001000,
     role: 'GUEST',
@@ -723,6 +723,13 @@ describe('hasSourceBackedMediaControlEvidence', () => {
     expect(hasSourceBackedMediaControlEvidence({
       ...sourceBackedMediaControl,
       evidence: undefined,
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('rejects media-control updates when the event id does not match the source-backed control id', () => {
+    expect(hasSourceBackedMediaControlEvidence({
+      ...sourceBackedMediaControl,
+      id: 'media:guest:microphone:1700000001000:enabled',
     }, 'GUEST')).toBe(false);
   });
 

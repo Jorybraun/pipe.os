@@ -1132,7 +1132,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(host as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_MEDIA_CONTROL',
       payload: {
-        id: 'media-event-1',
+        id: 'media:host:microphone:1700000000000:disabled',
         clientId: 'host-client',
         createdAt: 1700000000000,
         role: 'HOST',
@@ -1177,7 +1177,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_MEDIA_CONTROL_ACK',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'media-event-1',
+        id: 'media:host:microphone:1700000000000:disabled',
         control: 'microphone',
         enabled: false,
       }),
@@ -1186,7 +1186,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       type: 'ROOM_MEDIA_CONTROL',
       role: 'HOST',
       payload: expect.objectContaining({
-        id: 'media-event-1',
+        id: 'media:host:microphone:1700000000000:disabled',
         control: 'microphone',
         enabled: false,
         evidence: expect.objectContaining({
@@ -1199,7 +1199,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'HOST',
         event: expect.objectContaining({
-          id: 'media-event-1',
+          id: 'media:host:microphone:1700000000000:disabled',
           evidence: expect.objectContaining({
             source: 'video_room_media_controls',
           }),
@@ -1223,6 +1223,49 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         control: 'camera',
         previousEnabled: true,
         enabled: false,
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_MEDIA_CONTROL_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(storage.has('mediaControlStates')).toBe(false);
+    expect(storage.has('mediaControlActivityLog')).toBe(false);
+  });
+
+  it('rejects media control changes when source evidence belongs to a different control event id', async () => {
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([[guest, 'GUEST']]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_MEDIA_CONTROL',
+      payload: {
+        id: 'media:guest:camera:1700000000000:enabled',
+        clientId: 'guest-client',
+        createdAt: 1700000000000,
+        role: 'GUEST',
+        control: 'camera',
+        previousEnabled: true,
+        enabled: false,
+        evidence: {
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          actor: 'guest',
+          mediaControlId: 'media:guest:camera:1700000000000:disabled',
+          capturedAtMs: 1700000000000,
+          control: 'camera',
+          previousEnabled: true,
+          enabled: false,
+          action: 'disabled',
+          surface: 'win95',
+          roomPhase: 'connected',
+          controlSurface: 'win95_video_window',
+          controlAction: 'toggle',
+          mediaSource: 'local_media_stream',
+          rawMediaStreamPersisted: false,
+        },
       },
     }));
 
@@ -2787,7 +2830,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_MEDIA_CONTROL',
       payload: {
-        id: 'media-camera-activity',
+        id: 'media:guest:camera:2200:disabled',
         clientId: 'guest-client',
         createdAt: 2200,
         role: 'GUEST',
@@ -2983,7 +3026,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'media-camera-activity',
+          id: 'media:guest:camera:2200:disabled',
           control: 'camera',
           enabled: false,
           evidence: expect.objectContaining({
