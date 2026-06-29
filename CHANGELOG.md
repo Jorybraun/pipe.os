@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW recruiter details now derive a recommended next step from match status, review submission, score, and band, so hiring managers see whether to advance, probe, wait, or collect more evidence before reading the audit trail.
 - CODE_REVIEW recruiter details now surface the durable review score, band, narrative, strengths, and probe areas from the scored review session so hiring managers see candidate performance above the evidence audit trail.
 - CODE_REVIEW recruiter details now keep the matched PR readout available when optional assessment-session tables are missing from a deployment, instead of crashing the whole interview detail page while loading related evidence.
 - CODE_REVIEW failed-refresh cards now show the next evidence question plan and expected answer shape before creating another follow-up assessment.

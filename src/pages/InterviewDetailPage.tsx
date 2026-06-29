@@ -117,6 +117,14 @@ interface CodeReviewSubmissionDetail {
   defenseThreads: CodeReviewDefenseThread[];
 }
 
+type CodeReviewNextStepTone = 'positive' | 'watch' | 'blocked' | 'neutral';
+
+interface CodeReviewNextStep {
+  value: string;
+  detail: string;
+  tone: CodeReviewNextStepTone;
+}
+
 interface EvidenceFollowUpPlan {
   originalInterviewId: string | null;
   matchStatus: string | null;
@@ -440,6 +448,69 @@ function codeReviewScoreNarrative(score: CodeReviewScoreSummary | null): string 
     ?? (score.status === 'scored'
       ? 'Score report is available, but no narrative was returned.'
       : 'The score report will appear after scoring completes.');
+}
+
+function codeReviewNextStepRecommendation(
+  score: CodeReviewScoreSummary | null,
+  submission: CodeReviewSubmissionDetail | null,
+  match: CodeReviewMatchDetail | null,
+): CodeReviewNextStep {
+  if (match && match.status !== 'MATCHED') {
+    return {
+      value: 'Collect missing evidence',
+      detail: 'Create the targeted follow-up assessment before sending or trusting a PR challenge.',
+      tone: 'blocked',
+    };
+  }
+  if (!submission && match?.status === 'MATCHED') {
+    return {
+      value: 'Wait for candidate review',
+      detail: 'The PR assignment is ready; do not make a hiring decision until the candidate submits source-backed review comments.',
+      tone: 'neutral',
+    };
+  }
+  if (score && score.status !== 'scored') {
+    return {
+      value: 'Wait for scoring',
+      detail: 'The candidate review is submitted; wait for the score report before using this as a hiring signal.',
+      tone: 'neutral',
+    };
+  }
+  const scoreValue = score?.score;
+  const scoreBand = score?.band?.toLowerCase() ?? null;
+  if (typeof scoreValue === 'number' && Number.isFinite(scoreValue)) {
+    if (scoreValue < 50 || scoreBand === 'weak') {
+      return {
+        value: 'Schedule targeted follow-up',
+        detail: 'Use the growth area as the next live interview prompt before advancing this candidate.',
+        tone: 'watch',
+      };
+    }
+    if (scoreValue < 75 || scoreBand === 'adequate') {
+      return {
+        value: 'Advance with focused probe',
+        detail: 'Verify the growth area in the next live interview before treating this as a clean pass.',
+        tone: 'neutral',
+      };
+    }
+    return {
+      value: 'Advance to next stage',
+      detail: 'Use the source-backed review, annotations, and pushback as evidence to move the candidate forward.',
+      tone: 'positive',
+    };
+  }
+  if (submission) {
+    return {
+      value: 'Review manually',
+      detail: 'Candidate review exists, but scoring is unavailable. Read annotations and pushback before deciding.',
+      tone: 'neutral',
+    };
+  }
+  return {
+    value: 'Collect code-review signal',
+    detail: 'Send or wait for the candidate review before making a hiring decision.',
+    tone: 'neutral',
+  };
 }
 
 function githubRepoLabel(repoUrl: string | null | undefined): string | null {
@@ -1143,6 +1214,11 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewScore = interview.codeReviewScore ?? null;
   const codeReviewScoreValue = codeReviewScoreHeadline(codeReviewScore);
   const codeReviewScoreDetail = codeReviewScoreNarrative(codeReviewScore);
+  const codeReviewNextStep = codeReviewNextStepRecommendation(
+    codeReviewScore,
+    codeReviewSubmission,
+    codeReviewMatch,
+  );
   const codeReviewEvidencePlan = codeReviewEvidencePlanItems(codeReviewMatch, codeReviewSubmission);
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
@@ -1393,6 +1469,17 @@ export default function InterviewDetailPage(): JSX.Element {
                 )}
               </div>
               <div style={DECISION_ACTION}>{codeReviewAction}</div>
+              <div
+                data-testid="interview-code-review-next-step"
+                style={{
+                  ...DECISION_NEXT_STEP,
+                  ...DECISION_NEXT_STEP_TONE[codeReviewNextStep.tone],
+                }}
+              >
+                <div style={FIELD_LABEL}>Recommended next step</div>
+                <div style={DECISION_NEXT_STEP_VALUE}>{codeReviewNextStep.value}</div>
+                <div style={CONTEXT_RECORD_NARRATIVE}>{codeReviewNextStep.detail}</div>
+              </div>
               {codeReviewScore && (
                 <div data-testid="interview-code-review-score-summary" style={DECISION_SCORE_SUMMARY}>
                   <div style={DECISION_SCORE_HEADER}>
@@ -2776,6 +2863,42 @@ const DECISION_ACTION: CSSProperties = {
   color: 'var(--pipe-text)',
   fontSize: 14,
   lineHeight: 1.65,
+};
+
+const DECISION_NEXT_STEP: CSSProperties = {
+  display: 'grid',
+  gap: 7,
+  padding: 14,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const DECISION_NEXT_STEP_TONE: Record<CodeReviewNextStepTone, CSSProperties> = {
+  positive: {
+    borderColor: 'rgba(74,222,128,0.32)',
+    background: 'rgba(74,222,128,0.08)',
+  },
+  watch: {
+    borderColor: 'rgba(251,191,36,0.36)',
+    background: 'rgba(251,191,36,0.08)',
+  },
+  blocked: {
+    borderColor: 'rgba(248,113,113,0.34)',
+    background: 'rgba(248,113,113,0.08)',
+  },
+  neutral: {
+    borderColor: 'rgba(96,165,250,0.28)',
+    background: 'rgba(96,165,250,0.08)',
+  },
+};
+
+const DECISION_NEXT_STEP_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 18,
+  fontWeight: 800,
+  lineHeight: 1.25,
+  overflowWrap: 'anywhere',
 };
 
 const DECISION_SCORE_SUMMARY: CSSProperties = {

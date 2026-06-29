@@ -386,6 +386,9 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Candidate found the interaction regression and gave a concrete blocking reason, but missed one verification detail.');
     expect(decision).toHaveTextContent('Concrete source-backed blocking comment.');
     expect(decision).toHaveTextContent('Probe how they would validate timing cleanup.');
+    expect(decision).toHaveTextContent('Recommended next step');
+    expect(decision).toHaveTextContent('Advance with focused probe');
+    expect(decision).toHaveTextContent('Verify the growth area in the next live interview before treating this as a clean pass.');
     expect(decision).toHaveTextContent('Use the annotated lines and developer pushback to judge whether the requested changes are concrete, source-backed, and worth blocking the PR.');
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
