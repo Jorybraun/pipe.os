@@ -35,6 +35,15 @@ import {
 import type { CodeReviewTranscript } from './codeReview';
 import { LivingContextStore } from './persistence';
 import { ingestHistoricalCultureTranscript } from './cultureTranscriptBackfill';
+import { ingestAssessmentToLivingContext } from './assessmentIngestion';
+import type {
+  AssessmentSessionRow,
+  AssessmentEvidenceEventRow,
+  AssessmentEventSourceRefRow,
+  AssessmentEvaluationReportRow,
+  AssessmentEvaluationClaimRow,
+  AssessmentClaimSourceRefRow,
+} from './assessmentIngestion';
 import { processProjectionOutbox } from './projection';
 import { checkGate } from './rolloutEnforcement';
 
@@ -82,6 +91,11 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: ['candidates_to_living_context'],
   },
   {
+    taskKey: 'assessments_to_living_context',
+    description: 'Ingest assessment evidence events and evaluation claims into candidate person graphs with source provenance',
+    dependsOn: ['candidates_to_living_context'],
+  },
+  {
     taskKey: 'projection_outbox_drain',
     description: 'Process all pending neo4j projection outbox jobs',
     dependsOn: [
@@ -92,6 +106,7 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
       'phone_calls_to_living_context',
       'culture_sessions_to_living_context',
       'code_reviews_to_living_context',
+      'assessments_to_living_context',
       'repo_assertions_to_living_context',
     ],
   },
@@ -727,6 +742,123 @@ async function backfillCultureSessionsBatch(
   return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
 }
 
+async function backfillAssessmentsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const hasTable = await db.prepare(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assessment_sessions'`,
+  ).first<{ name: string }>();
+  if (!hasTable) return { processed: 0, failed: 0, cursor, done: true };
+
+  const rows = await db.prepare(
+    `SELECT ass.id, ass.interview_id, ass.mode, ass.state,
+            ass.candidate_id, ass.workspace_id, ass.workspace_person_id,
+            ass.application_id, ass.metadata_json,
+            ass.started_at, ass.submitted_at, ass.completed_at, ass.created_at
+       FROM assessment_sessions ass
+      WHERE ass.candidate_id IS NOT NULL
+        AND ass.state NOT IN ('INTAKE', 'CANCELLED')
+        AND NOT EXISTS (
+          SELECT 1 FROM interactions i
+           WHERE i.interaction_type LIKE 'assessment:%'
+             AND i.external_reference = ass.id
+        )
+        AND (?1 IS NULL OR ass.id > ?1)
+      ORDER BY ass.id
+      LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<AssessmentSessionRow>();
+
+  const sessions = rows.results ?? [];
+  if (sessions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  for (const session of sessions) {
+    try {
+      const eventRows = await db.prepare(
+        `SELECT id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+                narrative, payload_json, context_record_id, occurred_at
+           FROM assessment_evidence_events
+          WHERE session_id = ?1
+          ORDER BY sequence`,
+      ).bind(session.id).all<AssessmentEvidenceEventRow>();
+
+      const events = eventRows.results ?? [];
+      const eventSourceRefs = new Map<string, AssessmentEventSourceRefRow[]>();
+
+      if (events.length > 0) {
+        const eventIds = events.map((e) => e.id);
+        for (const eventId of eventIds) {
+          const refRows = await db.prepare(
+            `SELECT id, event_id, source_ref_type, source_ref_id, source_span_id,
+                    evidence_role, locator_json, exact_text, content_hash, metadata_json
+               FROM assessment_event_source_refs
+              WHERE event_id = ?1`,
+          ).bind(eventId).all<AssessmentEventSourceRefRow>();
+          const refs = refRows.results ?? [];
+          if (refs.length > 0) {
+            eventSourceRefs.set(eventId, refs);
+          }
+        }
+      }
+
+      const reportRows = await db.prepare(
+        `SELECT id, session_id, status, summary, output_json, created_at
+           FROM assessment_evaluation_reports
+          WHERE session_id = ?1
+          ORDER BY created_at`,
+      ).bind(session.id).all<AssessmentEvaluationReportRow>();
+      const reports = reportRows.results ?? [];
+
+      const claims: AssessmentEvaluationClaimRow[] = [];
+      const claimSourceRefs = new Map<string, AssessmentClaimSourceRefRow[]>();
+
+      for (const report of reports) {
+        const claimRows = await db.prepare(
+          `SELECT id, report_id, polarity, dimension, narrative, confidence, created_at
+             FROM assessment_evaluation_claims
+            WHERE report_id = ?1`,
+        ).bind(report.id).all<AssessmentEvaluationClaimRow>();
+        const reportClaims = claimRows.results ?? [];
+        claims.push(...reportClaims);
+
+        for (const claim of reportClaims) {
+          const refRows = await db.prepare(
+            `SELECT id, claim_id, source_ref_type, source_ref_id, source_span_id,
+                    evidence_role, locator_json, exact_text, content_hash, metadata_json
+               FROM assessment_claim_source_refs
+              WHERE claim_id = ?1`,
+          ).bind(claim.id).all<AssessmentClaimSourceRefRow>();
+          const refs = refRows.results ?? [];
+          if (refs.length > 0) {
+            claimSourceRefs.set(claim.id, refs);
+          }
+        }
+      }
+
+      await ingestAssessmentToLivingContext(
+        db,
+        session,
+        events,
+        eventSourceRefs,
+        reports,
+        claims,
+        claimSourceRefs,
+      );
+      processed++;
+    } catch (err) {
+      console.error('[backfill] assessment LC failed:', session.id, err);
+      failed++;
+    }
+    lastId = session.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
+}
+
 export interface BackfillScheduledResult {
   gateEnabled: boolean;
   status: BackfillOrchestratorStatus;
@@ -792,6 +924,9 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'culture_sessions_to_living_context':
           result = await backfillCultureSessionsBatch(db, cursor);
+          break;
+        case 'assessments_to_living_context':
+          result = await backfillAssessmentsBatch(db, cursor);
           break;
         case 'projection_outbox_drain': {
           const projResult = await processProjectionOutbox(env);

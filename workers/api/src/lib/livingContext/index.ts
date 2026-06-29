@@ -13,6 +13,16 @@ export * from './codeReview';
 export * from './readModel';
 export * from './projection';
 export * from './openTerms';
+export { ingestAssessmentToLivingContext } from './assessmentIngestion';
+export type {
+  AssessmentIngestionResult,
+  AssessmentSessionRow,
+  AssessmentEvidenceEventRow,
+  AssessmentEventSourceRefRow,
+  AssessmentEvaluationReportRow,
+  AssessmentEvaluationClaimRow,
+  AssessmentClaimSourceRefRow,
+} from './assessmentIngestion';
 export { loadContactLivingContext } from './readModel';
 export {
   loadInteractionLivingContext,

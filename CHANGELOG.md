@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Assessment evidence → living context ingestion (criteria #1/#2/#8)
+
+- Added `assessmentIngestion.ts` module: bridges the assessment layer (assessment_sessions, assessment_evidence_events, assessment_evaluation_claims) into the living context graph. Each assessment session maps to an interaction; evidence events map to episodes + assertions with exact source spans; evaluation claims map to assertions with source provenance and polarity tracking.
+- Added `assessments_to_living_context` backfill task to the scheduled orchestrator (10th task, depends on `candidates_to_living_context`). Cursor-based batch processing of assessment sessions with state NOT IN ('INTAKE', 'CANCELLED'). Loads related evidence events, event source refs, evaluation reports, claims, and claim source refs per session.
+- Wired assessment backfill into `projection_outbox_drain` dependency graph so projection output includes assessment-derived entities.
+- Added 4 tests covering null-candidate guard, event+assertion+context-record ingestion, evaluation claim ingestion with polarity tracking, and idempotency.
+
 ### Added — Candidate evidence depth endpoint (criteria #7/#8)
 
 - Added `GET /api/v1/candidates/:id/living-context/evidence-depth` endpoint — returns per-source-type evidence scoring including source diversity (0–1), total counts for interactions/assertions/source spans/context records, per-type breakdown, and top 20 concepts ranked by evidence count.
