@@ -63,6 +63,7 @@ export type RoomCodeServerFileEventType = Extract<SessionEventType, 'code_editor
 export type RoomFileKind = 'text' | 'paint' | 'json' | 'link';
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'renamed']);
+const CODE_SERVER_FILE_CHANGE_ID_RE = /^code-server-file:[a-zA-Z0-9:_-]+:\d+:[a-zA-Z0-9:_-]+:path_[0-9a-f]{8}:[a-f0-9]{16}$/;
 const TERMINAL_FINGERPRINT_RE = /^terminal_[0-9a-f]{8}$/;
 const TERMINAL_COMMAND_ID_RE = /^.+:command:(host|guest):\d+:\d+:terminal_[0-9a-f]{8}$/;
 const ROOM_CHAT_MESSAGE_FINGERPRINT_RE = /^chat_[0-9a-f]{8}$/;
@@ -574,6 +575,8 @@ interface RoomConnection {
   fileSystem: RoomFile[];
   cameraEnabled: boolean;
   micEnabled: boolean;
+  hasLocalCamera: boolean;
+  hasLocalMicrophone: boolean;
   setLocalStream: (stream: MediaStream) => void;
   startCall: () => Promise<void>;
   acceptCall: () => Promise<void>;
@@ -609,6 +612,20 @@ const PEER_RENEGOTIATE_DELAY_MS = 750;
 const PEER_CURSOR_TTL_MS = 4000;
 export const ROOM_CURSOR_SEND_INTERVAL_MS = 160;
 const SURFACE_SNAPSHOT_LOCAL_EVENT_GUARD_MS = 5000;
+
+function addLocalMediaToPeer(peer: RTCPeerConnection, stream: MediaStream | null): void {
+  const attachedKinds = new Set<string>();
+  stream?.getTracks().forEach((track) => {
+    attachedKinds.add(track.kind);
+    peer.addTrack(track, stream);
+  });
+  if (!attachedKinds.has('audio')) {
+    peer.addTransceiver('audio', { direction: 'recvonly' });
+  }
+  if (!attachedKinds.has('video')) {
+    peer.addTransceiver('video', { direction: 'recvonly' });
+  }
+}
 
 interface PendingLocalSurfaceEvent {
   surface: RoomSurface;
@@ -1939,7 +1956,11 @@ function parseCodeServerFileEvent(value: unknown): RoomCodeServerFileEvent | nul
 export function hasSourceBackedCodeServerFileEvidence(event: RoomCodeServerFileEvent): boolean {
   const evidence = event.evidence;
   if (!isRecord(evidence)) return false;
+  const codeServerFileChangeId = evidence.codeServerFileChangeId;
   const commonOk = event.actor === 'system'
+    && typeof codeServerFileChangeId === 'string'
+    && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
+    && event.id === codeServerFileChangeId
     && evidence.source === 'code_server_workspace'
     && evidence.observedBy === 'clippy_agent_bridge'
     && evidence.bridgeEventType === 'FILE_CHANGED'
@@ -2037,6 +2058,7 @@ export function hasSourceBackedTerminalEvidence(
     const actor = role === 'HOST' ? 'host' : role === 'GUEST' ? 'guest' : evidence.actor;
     const sequence = evidence.terminalCommandSequence;
     const fingerprint = evidence.commandFingerprint;
+    const expectedCommandId = `${terminalSessionId}:command:${actor}:${capturedAtMs}:${sequence}:${fingerprint}`;
     return evidence.actor === actor
       && (actor === 'host' || actor === 'guest')
       && typeof sequence === 'number'
@@ -2045,12 +2067,14 @@ export function hasSourceBackedTerminalEvidence(
       && typeof fingerprint === 'string'
       && TERMINAL_FINGERPRINT_RE.test(fingerprint)
       && evidence.commandLength === event.text.length
-      && evidence.terminalCommandId === `${terminalSessionId}:command:${actor}:${capturedAtMs}:${sequence}:${fingerprint}`;
+      && evidence.terminalCommandId === expectedCommandId
+      && event.id === expectedCommandId;
   }
 
   const sequence = evidence.terminalOutputSequence;
   const fingerprint = evidence.outputFingerprint;
   const commandId = evidence.terminalCommandId;
+  const expectedOutputId = `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`;
   return evidence.actor === 'system'
     && typeof sequence === 'number'
     && Number.isInteger(sequence)
@@ -2058,7 +2082,8 @@ export function hasSourceBackedTerminalEvidence(
     && typeof fingerprint === 'string'
     && TERMINAL_FINGERPRINT_RE.test(fingerprint)
     && evidence.outputLength === event.text.length
-    && evidence.terminalOutputChunkId === `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`
+    && evidence.terminalOutputChunkId === expectedOutputId
+    && event.id === expectedOutputId
     && (
       commandId === null
       || (
@@ -2767,9 +2792,7 @@ export function useRoomConnection(
     remoteReadyRef.current = false;
     const peer = new RTCPeerConnection(createPeerConfiguration(iceServers));
     peerRef.current = peer;
-    localRef.current?.getTracks().forEach((track) => {
-      peer.addTrack(track, localRef.current!);
-    });
+    addLocalMediaToPeer(peer, localRef.current);
     peer.onicecandidate = ({ candidate }) => {
       if (!candidate) return;
       send('ICE_CANDIDATE', {
@@ -3197,6 +3220,8 @@ export function useRoomConnection(
   const setLocalStream = useCallback((stream: MediaStream): void => {
     localRef.current = stream;
     setLocalStreamState(stream);
+    setMicEnabled(stream.getAudioTracks().some((track) => track.enabled));
+    setCameraEnabled(stream.getVideoTracks().some((track) => track.enabled));
   }, []);
 
   const startCall = useCallback(async (): Promise<void> => {
@@ -3327,14 +3352,24 @@ export function useRoomConnection(
   }, [clearPeerRenegotiateTimer, closePeer, role, send, sendStatus, setConnectionPhase]);
 
   const toggleCamera = useCallback((): void => {
-    localRef.current?.getVideoTracks().forEach((track) => {
+    const tracks = localRef.current?.getVideoTracks() ?? [];
+    if (tracks.length === 0) {
+      setCameraEnabled(false);
+      return;
+    }
+    tracks.forEach((track) => {
       track.enabled = !track.enabled;
     });
     setCameraEnabled((value) => !value);
   }, []);
 
   const toggleMic = useCallback((): void => {
-    localRef.current?.getAudioTracks().forEach((track) => {
+    const tracks = localRef.current?.getAudioTracks() ?? [];
+    if (tracks.length === 0) {
+      setMicEnabled(false);
+      return;
+    }
+    tracks.forEach((track) => {
       track.enabled = !track.enabled;
     });
     setMicEnabled((value) => !value);
@@ -3528,11 +3563,14 @@ export function useRoomConnection(
   const publishCodeServerFileEvent = useCallback((draft: RoomCodeServerFileEventDraft): void => {
     if (!draft.text.trim()) return;
     const createdAt = Date.now();
+    const codeServerFileChangeId = isRecord(draft.evidence) && typeof draft.evidence.codeServerFileChangeId === 'string'
+      ? draft.evidence.codeServerFileChangeId
+      : null;
     const event: RoomCodeServerFileEvent = {
       ...draft,
-      id: typeof crypto.randomUUID === 'function'
+      id: codeServerFileChangeId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
-        : `code-file-${createdAt}-${Math.random().toString(36).slice(2)}`,
+        : `code-file-${createdAt}-${Math.random().toString(36).slice(2)}`),
       clientId: desktopClientIdRef.current,
       createdAt,
     };
@@ -3553,11 +3591,18 @@ export function useRoomConnection(
   const publishTerminalEvent = useCallback((draft: RoomTerminalEventDraft): void => {
     if (draft.text.length === 0) return;
     const createdAt = Date.now();
+    const sourceBackedTerminalEventId = isRecord(draft.evidence)
+      ? draft.kind === 'COMMAND' && typeof draft.evidence.terminalCommandId === 'string'
+        ? draft.evidence.terminalCommandId
+        : draft.kind === 'OUTPUT' && typeof draft.evidence.terminalOutputChunkId === 'string'
+          ? draft.evidence.terminalOutputChunkId
+          : null
+      : null;
     const event: RoomTerminalEvent = {
       ...draft,
-      id: typeof crypto.randomUUID === 'function'
+      id: sourceBackedTerminalEventId ?? (typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
-        : `terminal-${createdAt}-${Math.random().toString(36).slice(2)}`,
+        : `terminal-${createdAt}-${Math.random().toString(36).slice(2)}`),
       clientId: desktopClientIdRef.current,
       createdAt,
     };
@@ -3573,7 +3618,7 @@ export function useRoomConnection(
     if (!sendTerminalEvent(event)) {
       terminalOutboxRef.current.push(event);
     }
-  }, [sendTerminalEvent]);
+  }, [role, sendTerminalEvent]);
 
   const publishCursorPresence = useCallback((position: { x: number; y: number }, evidence?: Record<string, unknown>): void => {
     const sampledAtMs = numberOrUndefined(evidence?.sampledAtMs);
@@ -3709,6 +3754,8 @@ export function useRoomConnection(
     fileSystem,
     cameraEnabled,
     micEnabled,
+    hasLocalCamera: Boolean(localStream?.getVideoTracks().length),
+    hasLocalMicrophone: Boolean(localStream?.getAudioTracks().length),
     setLocalStream,
     startCall,
     acceptCall,

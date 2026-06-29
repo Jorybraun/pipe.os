@@ -624,6 +624,7 @@ describe('sessionEvents', () => {
       const { sqlite, db: realDb } = createSessionEvidenceDb();
       try {
         const fileContentHash = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+        const codeServerFileChangeId = 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:0123456789abcdef';
         const preview = 'export const answer = 42;';
         const event: SessionEvent = {
           type: 'code_editor_save',
@@ -637,6 +638,7 @@ describe('sessionEvents', () => {
             observedBy: 'clippy_agent_bridge',
             bridgeEventType: 'FILE_CHANGED',
             editorSurface: 'code-server',
+            codeServerFileChangeId,
             action: 'modified',
             surface: 'win95',
             roomPhase: 'connected',
@@ -675,7 +677,7 @@ describe('sessionEvents', () => {
 
         expect(contextSource).toMatchObject({
           source_ref_type: 'code_server_file_observation',
-          source_ref_id: `${node!.id}:modified:src/app.ts:${fileContentHash.slice(0, 16)}`,
+          source_ref_id: codeServerFileChangeId,
           evidence_role: 'workspace_file_save',
         });
         expect(contextSource?.content_hash).toBe(await sha256Hex(contextSource?.exact_text ?? ''));
@@ -692,6 +694,7 @@ describe('sessionEvents', () => {
           sizeBytes: 421,
           contentPreview: preview,
           observedBy: 'clippy_agent_bridge',
+          codeServerFileChangeId,
           bridgePersisted: false,
           workspaceSessionId: 'workspace-session-1',
           repoUrl: 'https://github.com/cloudflare/workers-sdk',
@@ -704,12 +707,14 @@ describe('sessionEvents', () => {
           path: 'src/app.ts',
           action: 'modified',
           observedAt: '2026-06-27T20:01:40.000Z',
+          codeServerFileChangeId,
           workspaceSessionId: 'workspace-session-1',
           repoUrl: 'https://github.com/cloudflare/workers-sdk',
         });
         expect(JSON.parse(contextSource?.metadata_json ?? '{}')).toMatchObject({
           sourceKind: 'code_server_workspace.file_observation',
           observedBy: 'clippy_agent_bridge',
+          codeServerFileChangeId,
           bridgePersisted: false,
           fileContentHash,
           sizeBytes: 421,
@@ -755,6 +760,7 @@ describe('sessionEvents', () => {
           action: 'modified',
           workspaceSessionId: 'workspace-session-1',
           repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          codeServerFileChangeId,
           contentHash: fileContentHash,
           sizeBytes: 421,
           observedAt: '2026-06-27T20:01:40.000Z',

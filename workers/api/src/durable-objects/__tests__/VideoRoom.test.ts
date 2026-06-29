@@ -2595,7 +2595,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_TERMINAL_EVENT',
       payload: {
-        id: 'terminal-command-1',
+        id: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
         clientId: 'guest-client',
         createdAt: 1700000001000,
         kind: 'COMMAND',
@@ -2623,7 +2623,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_TERMINAL_EVENT',
       payload: {
-        id: 'terminal-output-1',
+        id: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
         clientId: 'guest-client',
         createdAt: 1700000002000,
         kind: 'OUTPUT',
@@ -2679,14 +2679,14 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'terminal-command-1',
+          id: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
           kind: 'COMMAND',
         }),
       }),
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'terminal-output-1',
+          id: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
           kind: 'OUTPUT',
         }),
       }),
@@ -2729,6 +2729,53 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     expect(storage.has('terminalActivityLog')).toBe(false);
   });
 
+  it('rejects terminal events whose transport id does not match source-backed terminal evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_TERMINAL_EVENT',
+      payload: {
+        id: 'terminal-random-transport-id',
+        clientId: 'guest-client',
+        createdAt: 1700000001000,
+        kind: 'COMMAND',
+        text: 'npm test',
+        evidence: {
+          source: 'container_terminal',
+          terminalEventSource: 'browser_terminal_ws',
+          terminalSessionId: 'terminal-workspace-session-1-guest',
+          terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+          terminalCommandSequence: 1,
+          actor: 'guest',
+          capturedAtMs: 1700000001000,
+          commandFingerprint: 'terminal_dc5964d6',
+          commandLength: 8,
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_TERMINAL_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_TERMINAL_EVENT',
+    }));
+    expect(storage.has('terminalActivityLog')).toBe(false);
+  });
+
   it('broadcasts and records source-backed code-server file events', async () => {
     const host = new FakeSocket();
     const guest = new FakeSocket();
@@ -2741,7 +2788,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_CODE_SERVER_FILE_EVENT',
       payload: {
-        id: 'code-file-save-1',
+        id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
         clientId: 'guest-client',
         createdAt: 1782604100000,
         eventType: 'code_editor_save',
@@ -2752,6 +2799,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedBy: 'clippy_agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
+          codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
           surface: 'win95',
           roomPhase: 'connected',
@@ -2787,12 +2835,63 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'code-file-save-1',
+          id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           eventType: 'code_editor_save',
           text: 'src/app.ts',
         }),
       }),
     ]);
+  });
+
+  it('rejects code-server file events whose transport id does not match source-backed file evidence', async () => {
+    const host = new FakeSocket();
+    const guest = new FakeSocket();
+    const { state, storage } = makeState([
+      [host, 'HOST'],
+      [guest, 'GUEST'],
+    ]);
+    const room = new VideoRoom(state);
+
+    await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+      payload: {
+        id: 'code-file-random-transport-id',
+        clientId: 'guest-client',
+        createdAt: 1782604100000,
+        eventType: 'code_editor_save',
+        actor: 'system',
+        text: 'src/app.ts',
+        evidence: {
+          source: 'code_server_workspace',
+          observedBy: 'clippy_agent_bridge',
+          bridgeEventType: 'FILE_CHANGED',
+          editorSurface: 'code-server',
+          codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+          action: 'modified',
+          surface: 'win95',
+          roomPhase: 'connected',
+          workspaceStatus: 'READY',
+          workspaceSessionId: 'workspace-session-1',
+          repoUrl: 'https://github.com/cloudflare/workers-sdk',
+          path: 'src/app.ts',
+          observedAt: '2026-06-27T20:01:40.000Z',
+          contentHash: 'a'.repeat(64),
+          sizeBytes: 421,
+          contentPreview: 'export const answer = 42;',
+          bridgePersisted: false,
+          durableObjectReplayExpected: true,
+        },
+      },
+    }));
+
+    expect(parseSent(guest)).toContainEqual(expect.objectContaining({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT_REJECTED',
+      reason: 'MISSING_SOURCE_EVIDENCE',
+    }));
+    expect(parseSent(host)).not.toContainEqual(expect.objectContaining({
+      type: 'ROOM_CODE_SERVER_FILE_EVENT',
+    }));
+    expect(storage.has('codeServerFileActivityLog')).toBe(false);
   });
 
   it('rejects code-server file events without source evidence', async () => {
@@ -2940,7 +3039,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_CODE_SERVER_FILE_EVENT',
       payload: {
-        id: 'code-file-activity',
+        id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
         clientId: 'guest-client',
         createdAt: 2450,
         eventType: 'code_editor_save',
@@ -2951,6 +3050,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
           observedBy: 'clippy_agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
+          codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           action: 'modified',
           surface: 'win95',
           roomPhase: 'connected',
@@ -2970,7 +3070,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
     await room.webSocketMessage(guest as unknown as WebSocket, JSON.stringify({
       type: 'ROOM_TERMINAL_EVENT',
       payload: {
-        id: 'terminal-command-activity',
+        id: 'terminal-workspace-session-1-guest:command:guest:2500:1:terminal_dc5964d6',
         clientId: 'guest-client',
         createdAt: 2500,
         kind: 'COMMAND',
@@ -3103,7 +3203,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'code-file-activity',
+          id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
           eventType: 'code_editor_save',
           text: 'src/app.ts',
           evidence: expect.objectContaining({
@@ -3117,7 +3217,7 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
       expect.objectContaining({
         role: 'GUEST',
         event: expect.objectContaining({
-          id: 'terminal-command-activity',
+          id: 'terminal-workspace-session-1-guest:command:guest:2500:1:terminal_dc5964d6',
           kind: 'COMMAND',
           text: 'npm test',
           evidence: expect.objectContaining({

@@ -193,7 +193,7 @@ function RoomStateMark({
 function DevicePlaceholder({
   state,
 }: {
-  state: 'checking' | 'ready' | 'error';
+  state: DeviceState;
 }): JSX.Element {
   if (state === 'ready') {
     return (
@@ -210,9 +210,26 @@ function DevicePlaceholder({
         variant={state === 'error' ? 'error' : 'default'}
         icon={state === 'error' ? <CameraOff size={18} /> : undefined}
       />
-      <span>{state === 'checking' ? 'Preparing camera and microphone' : 'Camera and microphone access needed'}</span>
+      <span>{state === 'checking' ? 'Preparing camera and microphone' : 'Camera and microphone unavailable'}</span>
     </div>
   );
+}
+
+type DeviceState = 'checking' | 'ready' | 'error';
+
+async function requestUserMediaPreview(): Promise<MediaStream> {
+  if (
+    typeof navigator === 'undefined'
+    || !navigator.mediaDevices
+    || typeof navigator.mediaDevices.getUserMedia !== 'function'
+  ) {
+    throw new Error('Browser media devices are unavailable.');
+  }
+  return navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+}
+
+function createLocalRoomStream(preview: MediaStream | null): MediaStream {
+  return preview ?? new MediaStream();
 }
 
 function relayLabel(provider: IceServerProvider): string {
@@ -368,7 +385,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const [workspaceRepoInput, setWorkspaceRepoInput] = useState('');
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const wm = useWindowManager();
-  const [deviceState, setDeviceState] = useState<'checking' | 'ready' | 'error'>('checking');
+  const [deviceState, setDeviceState] = useState<DeviceState>('checking');
   const [preview, setPreview] = useState<MediaStream | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [recordingNotice, setRecordingNotice] = useState<string | null>(null);
@@ -407,7 +424,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     deviceRequestRef.current = requestId;
     setDeviceState('checking');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await requestUserMediaPreview();
       if (deviceRequestRef.current !== requestId) {
         stream.getTracks().forEach((track) => track.stop());
         return;
@@ -426,7 +443,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
     const requestId = deviceRequestRef.current + 1;
     deviceRequestRef.current = requestId;
     setDeviceState('checking');
-    void navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    void requestUserMediaPreview()
       .then((stream) => {
         if (cancelled || deviceRequestRef.current !== requestId) {
           stream.getTracks().forEach((track) => track.stop());
@@ -589,9 +606,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   }, [metadata.role, room.acceptCall, room.phase]);
 
   const joinLobby = (): void => {
-    if (!preview) return;
+    const localRoomStream = createLocalRoomStream(preview);
     openDefaultRoomWindows();
-    room.setLocalStream(preview);
+    room.setLocalStream(localRoomStream);
     setPreview(null);
     setEnteredRoom(true);
     void postRoomEvent(token, 'JOINED');
@@ -1551,12 +1568,12 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const isDeviceChecking = deviceState === 'checking';
   const hasDeviceError = deviceState === 'error';
   const joinButtonLabel = hasDeviceError
-    ? 'Allow camera and microphone'
+    ? 'Enter without mic/camera'
     : isDeviceChecking
       ? 'Preparing devices'
       : 'Enter room';
   const joinButtonHint = hasDeviceError
-    ? 'Enable camera and microphone access in your browser, then try again.'
+    ? 'Camera and microphone are unavailable here. You can still enter, chat, share desktop state, and retry devices later.'
     : isDeviceChecking
       ? 'Preparing your camera and microphone preview.'
       : 'You will enter the private room with camera and microphone ready.';
@@ -1597,13 +1614,23 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
         </div>
         <button
           className={`primary${hasDeviceError ? ' is-action-needed' : ''}`}
-          onClick={hasDeviceError ? () => void requestDevices() : joinLobby}
+          onClick={joinLobby}
           disabled={isDeviceChecking}
           data-testid="join-room"
         >
           {joinButtonIcon}
           {joinButtonLabel}
         </button>
+        {hasDeviceError && (
+          <button
+            className="secondary"
+            onClick={() => void requestDevices()}
+            data-testid="retry-devices"
+          >
+            <RefreshCcw size={15} />
+            Retry devices
+          </button>
+        )}
         <p className="join-hint">{joinButtonHint}</p>
 
         {metadata.role === 'HOST' && hasWorkspaceFeature && (
@@ -1713,6 +1740,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const toggleMicrophone = (): void => {
+    if (!room.hasLocalMicrophone) return;
     const previousEnabled = room.micEnabled;
     const enabled = !previousEnabled;
     room.toggleMic();
@@ -1726,6 +1754,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const toggleCamera = (): void => {
+    if (!room.hasLocalCamera) return;
     const previousEnabled = room.cameraEnabled;
     const enabled = !previousEnabled;
     room.toggleCamera();
@@ -2337,10 +2366,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
             </div>
 
             <div className="win95-video-controls">
-              <button className="win95-video-btn" onClick={toggleMicrophone} aria-label="Toggle microphone">
+              <button
+                className="win95-video-btn"
+                onClick={toggleMicrophone}
+                aria-label="Toggle microphone"
+                disabled={!room.hasLocalMicrophone}
+              >
                 {room.micEnabled ? <Mic size={16} /> : <MicOff size={16} />}
               </button>
-              <button className="win95-video-btn" onClick={toggleCamera} aria-label="Toggle camera">
+              <button
+                className="win95-video-btn"
+                onClick={toggleCamera}
+                aria-label="Toggle camera"
+                disabled={!room.hasLocalCamera}
+              >
                 {room.cameraEnabled ? <Camera size={16} /> : <CameraOff size={16} />}
               </button>
               {metadata.role === 'HOST' && (metadata.features?.recordingEnabled ?? true) && (

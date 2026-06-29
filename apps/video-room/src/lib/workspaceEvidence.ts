@@ -13,6 +13,8 @@ const BEARER_TOKEN_RE = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi;
 const ENV_SECRET_ASSIGNMENT_RE = /\b([A-Za-z0-9_]*(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN|TOKEN|SECRET|PASSWORD))=([^\s"'`]+)/gi;
 const SECRET_QUERY_RE = /([?&](?:api_key|key|token|secret|password)=)[^&\s]+/gi;
 const ROOM_TOKEN_PATH_RE = /(\/api\/v1\/meeting-rooms\/)[^/\s]+/g;
+const FNV_32_OFFSET = 0x811c9dc5;
+const FNV_32_PRIME = 0x01000193;
 
 export interface CodeEditorOpenEvidence {
   text: string;
@@ -104,6 +106,23 @@ export function buildCodeEditorOpenEvidence(input: {
   };
 }
 
+function safeWorkspaceEvidenceIdPart(value: string, maxLength = 80): string {
+  const normalized = value
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return (normalized || 'none').slice(0, maxLength);
+}
+
+function workspaceTextFingerprint(prefix: string, text: string): string {
+  let hash = FNV_32_OFFSET;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, FNV_32_PRIME);
+  }
+  return `${prefix}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
 export function buildCodeServerFileChangeEvidence(input: {
   filePath: string;
   actionName: string;
@@ -135,6 +154,16 @@ export function buildCodeServerFileChangeEvidence(input: {
   }
   const contentHash = input.contentHash?.trim() ?? '';
   if (!SHA256_HEX_RE.test(contentHash)) return null;
+  const observedAtMs = Date.parse(observedAt);
+  if (!Number.isFinite(observedAtMs)) return null;
+  const codeServerFileChangeId = [
+    'code-server-file',
+    safeWorkspaceEvidenceIdPart(session.sessionId, 48),
+    Math.max(0, Math.round(observedAtMs)),
+    safeWorkspaceEvidenceIdPart(actionName, 24),
+    workspaceTextFingerprint('path', filePath),
+    contentHash.slice(0, 16).toLowerCase(),
+  ].join(':');
   return {
     eventType: actionName === 'deleted' ? 'file_change' : 'code_editor_save',
     text: filePath,
@@ -143,6 +172,7 @@ export function buildCodeServerFileChangeEvidence(input: {
       observedBy: 'clippy_agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
+      codeServerFileChangeId,
       action: actionName,
       surface: input.surface,
       roomPhase: input.roomPhase,

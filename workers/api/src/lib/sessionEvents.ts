@@ -108,6 +108,7 @@ const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
 ]);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
+const CODE_SERVER_FILE_CHANGE_ID_RE = /^code-server-file:[a-zA-Z0-9:_-]+:\d+:[a-zA-Z0-9:_-]+:path_[0-9a-f]{8}:[a-f0-9]{16}$/;
 const MEDIA_CONTROL_ID_RE = /^media:(host|guest):(microphone|camera):\d+:(enabled|disabled)$/;
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
 const RECORDING_FAILURE_STAGES = new Set(['stop_recorder', 'prepare_upload', 'upload_request']);
@@ -2309,6 +2310,7 @@ function sessionEventEntities(input: {
         workspaceSessionId,
         workspaceRoot: stringProperty(properties, 'workspaceRoot'),
         repoUrl: stringProperty(properties, 'repoUrl'),
+        codeServerFileChangeId: stringProperty(properties, 'codeServerFileChangeId'),
         contentHash: stringProperty(properties, 'contentHash'),
         sizeBytes: numberProperty(properties, 'sizeBytes'),
         observedAt: stringProperty(properties, 'observedAt'),
@@ -2805,7 +2807,10 @@ function codeServerFileObservationIsSourceBacked(
   }
 
   if (properties.bridgePersisted === false) {
+    const codeServerFileChangeId = stringProperty(properties, 'codeServerFileChangeId');
     return properties.observedBy === 'clippy_agent_bridge'
+      && codeServerFileChangeId !== null
+      && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
       && (properties.surface === 'standard' || properties.surface === 'win95')
       && Boolean(stringProperty(properties, 'roomPhase'))
       && Boolean(stringProperty(properties, 'workspaceStatus'))
@@ -2859,6 +2864,7 @@ async function codeServerFileObservationSourceRef(input: {
   const path = stringProperty(input.properties, 'path')!;
   const observedAt = stringProperty(input.properties, 'observedAt')!;
   const fileContentHash = stringProperty(input.properties, 'contentHash')!;
+  const codeServerFileChangeId = stringProperty(input.properties, 'codeServerFileChangeId');
   const sizeBytes = numberProperty(input.properties, 'sizeBytes')!;
   const workspaceSessionId = stringProperty(input.properties, 'workspaceSessionId');
   const workspaceRoot = stringProperty(input.properties, 'workspaceRoot');
@@ -2882,6 +2888,7 @@ async function codeServerFileObservationSourceRef(input: {
     observedBy: stringProperty(input.properties, 'observedBy'),
     bridgeEventType: 'FILE_CHANGED',
     editorSurface: 'code-server',
+    codeServerFileChangeId,
     bridgePersisted: input.properties.bridgePersisted === true,
     workspaceSessionId,
     workspaceRoot,
@@ -2894,7 +2901,7 @@ async function codeServerFileObservationSourceRef(input: {
 
   return {
     sourceRefType: 'code_server_file_observation',
-    sourceRefId: `${input.node.id}:${action}:${path}:${fileContentHash.slice(0, 16)}`,
+    sourceRefId: codeServerFileChangeId ?? `${input.node.id}:${action}:${path}:${fileContentHash.slice(0, 16)}`,
     evidenceRole: input.event.type === 'file_change' ? 'workspace_file_delete' : 'workspace_file_save',
     locator: {
       sessionId: input.event.sessionId,
@@ -2904,6 +2911,7 @@ async function codeServerFileObservationSourceRef(input: {
       path,
       action,
       observedAt,
+      codeServerFileChangeId,
       workspaceSessionId,
       workspaceRoot,
       repoUrl,
@@ -2913,6 +2921,7 @@ async function codeServerFileObservationSourceRef(input: {
     metadata: {
       sourceKind: 'code_server_workspace.file_observation',
       observedBy: stringProperty(input.properties, 'observedBy'),
+      codeServerFileChangeId,
       bridgePersisted: input.properties.bridgePersisted === true,
       fileContentHash,
       sizeBytes,

@@ -103,6 +103,7 @@ describe('buildCodeServerFileChangeEvidence', () => {
         observedBy: 'clippy_agent_bridge',
         bridgeEventType: 'FILE_CHANGED',
         editorSurface: 'code-server',
+        codeServerFileChangeId: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
         action: 'modified',
         surface: 'win95',
         roomPhase: 'connected',

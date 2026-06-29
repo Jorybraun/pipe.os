@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Auth
+
+- Recruiter e2e auth smoke now targets a stable auth-gate sign-in test id and waits long enough for slow Clerk dev-instance boots, so local click testing does not fail while the app is still on the loading splash.
+
 ### Fixed — Scheduling
 
 - The authenticated MVP browser smoke now follows the current Interview plans and People UI, injects Clerk's testing token in the smoke context, and retries the initial app-shell load so local route validation fails on product regressions instead of stale selectors or auth handoff flake.
@@ -14,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Video room
 
+- Video rooms now let participants enter when camera or microphone access is unavailable, while keeping a retry-devices action for restoring media after joining.
+- Code-server file and terminal room evidence now uses deterministic source-backed event ids end to end, preventing replayed workspace evidence from being accepted under unrelated transport ids.
 - Video-room recording state events now require the event id to match the source-backed recording state id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale recording/transcript state evidence from replaying under a different event identity.
 - Video-room media control events now require the event id to match the source-backed media control id before optimistic updates, broadcasts, or Durable Object persistence, preventing stale mic/camera evidence from toggling the wrong shared state.
 - Room chat messages now carry and verify an exact text fingerprint in source-backed evidence, preventing same-length stale or tampered chat payloads from replaying as valid meeting evidence.

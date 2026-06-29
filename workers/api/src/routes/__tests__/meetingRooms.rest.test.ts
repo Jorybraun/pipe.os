@@ -3003,6 +3003,7 @@ describe('meeting room recording living-context route', () => {
           observedBy: 'clippy_agent_bridge',
           bridgeEventType: 'FILE_CHANGED',
           editorSurface: 'code-server',
+          codeServerFileChangeId: 'code-server-file:workspace-session-1:1782594420000:deleted:path_7f2bf00a:abcdefabcdefabcd',
           path: 'src/old-orders.ts',
           action: 'deleted',
           observedAt: '2026-06-27T21:07:00.000Z',
@@ -4029,7 +4030,7 @@ describe('meeting room recording living-context route', () => {
           role: 'GUEST',
           recordedAt: 1700000002400,
           event: {
-            id: 'code-file-sync',
+            id: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
             clientId: 'guest-client',
             createdAt: 1700000002400,
             eventType: 'code_editor_save',
@@ -4040,6 +4041,7 @@ describe('meeting room recording living-context route', () => {
               observedBy: 'clippy_agent_bridge',
               bridgeEventType: 'FILE_CHANGED',
               editorSurface: 'code-server',
+              codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
               action: 'modified',
               surface: 'win95',
               roomPhase: 'connected',
@@ -4347,7 +4349,8 @@ describe('meeting room recording living-context route', () => {
       contentHash: 'a'.repeat(64),
       sizeBytes: 421,
       bridgePersisted: false,
-      roomEventId: 'code-file-sync',
+      codeServerFileChangeId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
+      roomEventId: 'code-server-file:workspace-session-1:1782590500000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
       workspaceSessionId: 'workspace-session-1',
     });
     expect(graphBody.events.find((event) => event.nodeType === 'session_terminal_command')?.properties).toMatchObject({

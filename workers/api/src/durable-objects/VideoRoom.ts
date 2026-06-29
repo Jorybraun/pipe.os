@@ -47,6 +47,7 @@ const CLIPPY_PROMPT_BLOCKED_REASONS = new Set([
 ]);
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/i;
 const CODE_SERVER_SAVE_ACTIONS = new Set(['created', 'modified', 'saved', 'renamed']);
+const CODE_SERVER_FILE_CHANGE_ID_RE = /^code-server-file:[a-zA-Z0-9:_-]+:\d+:[a-zA-Z0-9:_-]+:path_[0-9a-f]{8}:[a-f0-9]{16}$/;
 const RECORDING_STATE_EVENT_ID_RE = /^recording:host:\d+:(start|stop):(recording|uploading|saved|failed)$/;
 const RECORDING_FAILURE_STAGES = new Set(['stop_recorder', 'prepare_upload', 'upload_request']);
 const RECORDING_FAILURE_SOURCES = new Set([
@@ -1963,7 +1964,11 @@ export class VideoRoom {
   private hasSourceBackedCodeServerFileEvidence(event: RoomCodeServerFileEvent): boolean {
     const evidence = event.evidence;
     if (!this.isRecord(evidence)) return false;
+    const codeServerFileChangeId = evidence.codeServerFileChangeId;
     const commonOk = event.actor === 'system'
+      && typeof codeServerFileChangeId === 'string'
+      && CODE_SERVER_FILE_CHANGE_ID_RE.test(codeServerFileChangeId)
+      && event.id === codeServerFileChangeId
       && evidence.source === 'code_server_workspace'
       && evidence.observedBy === 'clippy_agent_bridge'
       && evidence.bridgeEventType === 'FILE_CHANGED'
@@ -2131,6 +2136,7 @@ export class VideoRoom {
     if (event.kind === 'COMMAND') {
       const sequence = evidence.terminalCommandSequence;
       const fingerprint = evidence.commandFingerprint;
+      const expectedCommandId = `${terminalSessionId}:command:${senderActor}:${capturedAtMs}:${sequence}:${fingerprint}`;
       return evidence.actor === senderActor
         && typeof sequence === 'number'
         && Number.isInteger(sequence)
@@ -2138,12 +2144,14 @@ export class VideoRoom {
         && typeof fingerprint === 'string'
         && TERMINAL_FINGERPRINT_RE.test(fingerprint)
         && evidence.commandLength === event.text.length
-        && evidence.terminalCommandId === `${terminalSessionId}:command:${senderActor}:${capturedAtMs}:${sequence}:${fingerprint}`;
+        && evidence.terminalCommandId === expectedCommandId
+        && event.id === expectedCommandId;
     }
 
     const sequence = evidence.terminalOutputSequence;
     const fingerprint = evidence.outputFingerprint;
     const commandId = evidence.terminalCommandId;
+    const expectedOutputId = `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`;
     return evidence.actor === 'system'
       && typeof sequence === 'number'
       && Number.isInteger(sequence)
@@ -2151,7 +2159,8 @@ export class VideoRoom {
       && typeof fingerprint === 'string'
       && TERMINAL_FINGERPRINT_RE.test(fingerprint)
       && evidence.outputLength === event.text.length
-      && evidence.terminalOutputChunkId === `${terminalSessionId}:output:system:${capturedAtMs}:${sequence}:${fingerprint}`
+      && evidence.terminalOutputChunkId === expectedOutputId
+      && event.id === expectedOutputId
       && (
         commandId === null
         || (

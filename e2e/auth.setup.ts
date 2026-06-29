@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const authFile = path.join(__dirname, "../playwright/.auth/user.json");
+const AUTH_GATE_TIMEOUT_MS = 45_000;
 
 /**
  * Authenticate via Clerk sign-in using testing tokens.
@@ -21,8 +22,8 @@ setup("authenticate via Clerk", async ({ page }) => {
   await page.goto("/");
 
   // Step 1: Click the SIGN IN button on the custom gate
-  const signInButton = page.getByRole("button", { name: /^sign in$/i });
-  await expect(signInButton).toBeVisible({ timeout: 15000 });
+  const signInButton = page.getByTestId("auth-gate-sign-in");
+  await expect(signInButton).toBeVisible({ timeout: AUTH_GATE_TIMEOUT_MS });
   await signInButton.click();
 
   // Step 2: Clerk modal opens — fill email

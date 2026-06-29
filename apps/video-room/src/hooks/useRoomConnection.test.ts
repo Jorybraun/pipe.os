@@ -1260,7 +1260,7 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
 
 describe('hasSourceBackedTerminalEvidence', () => {
   const sourceBackedCommand: RoomTerminalEvent = {
-    id: 'terminal-command-1',
+    id: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
     clientId: 'guest-client',
     createdAt: 1700000001000,
     kind: 'COMMAND',
@@ -1298,11 +1298,52 @@ describe('hasSourceBackedTerminalEvidence', () => {
   it('rejects terminal commands attributed to the wrong room actor', () => {
     expect(hasSourceBackedTerminalEvidence(sourceBackedCommand, 'HOST')).toBe(false);
   });
+
+  it('rejects terminal commands whose event id does not match the source-backed command id', () => {
+    expect(hasSourceBackedTerminalEvidence({
+      ...sourceBackedCommand,
+      id: 'terminal-random-transport-id',
+    }, 'GUEST')).toBe(false);
+  });
+
+  it('rejects terminal output whose event id does not match the source-backed output chunk id', () => {
+    const sourceBackedOutput: RoomTerminalEvent = {
+      id: 'terminal-random-output-id',
+      clientId: 'guest-client',
+      createdAt: 1700000002000,
+      kind: 'OUTPUT',
+      text: 'PASS src/app.test.ts\n',
+      evidence: {
+        source: 'container_terminal',
+        terminalEventSource: 'browser_terminal_ws',
+        terminalSessionId: 'terminal-workspace-session-1-guest',
+        terminalCommandId: 'terminal-workspace-session-1-guest:command:guest:1700000001000:1:terminal_dc5964d6',
+        terminalOutputChunkId: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+        terminalOutputSequence: 1,
+        actor: 'system',
+        capturedAtMs: 1700000002000,
+        outputFingerprint: 'terminal_4f2d0d8f',
+        outputLength: 21,
+        surface: 'win95',
+        roomPhase: 'connected',
+        workspaceStatus: 'READY',
+        workspaceSessionId: 'workspace-session-1',
+        repoUrl: 'https://github.com/cloudflare/workers-sdk',
+        durableObjectReplayExpected: true,
+      },
+    };
+
+    expect(hasSourceBackedTerminalEvidence(sourceBackedOutput, 'GUEST')).toBe(false);
+    expect(hasSourceBackedTerminalEvidence({
+      ...sourceBackedOutput,
+      id: 'terminal-workspace-session-1-guest:output:system:1700000002000:1:terminal_4f2d0d8f',
+    }, 'GUEST')).toBe(true);
+  });
 });
 
 describe('hasSourceBackedCodeServerFileEvidence', () => {
   const sourceBackedSave: RoomCodeServerFileEvent = {
-    id: 'code-file-save-1',
+    id: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
     clientId: 'guest-client',
     createdAt: 1700000003000,
     eventType: 'code_editor_save',
@@ -1313,6 +1354,7 @@ describe('hasSourceBackedCodeServerFileEvidence', () => {
       observedBy: 'clippy_agent_bridge',
       bridgeEventType: 'FILE_CHANGED',
       editorSurface: 'code-server',
+      codeServerFileChangeId: 'code-server-file:workspace-session-1:1782561600000:modified:path_cb48a478:aaaaaaaaaaaaaaaa',
       action: 'modified',
       surface: 'win95',
       roomPhase: 'connected',
@@ -1353,6 +1395,13 @@ describe('hasSourceBackedCodeServerFileEvidence', () => {
     expect(hasSourceBackedCodeServerFileEvidence({
       ...sourceBackedSave,
       text: 'src/other.ts',
+    })).toBe(false);
+  });
+
+  it('rejects code-server file events whose event id does not match the source-backed file change id', () => {
+    expect(hasSourceBackedCodeServerFileEvidence({
+      ...sourceBackedSave,
+      id: 'code-file-random-transport-id',
     })).toBe(false);
   });
 });
