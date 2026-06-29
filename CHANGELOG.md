@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Win95 commit submission now requires either real test output or a source-backed missing-test note, so repo-task assessments record verification gaps honestly instead of silently omitting test evidence.
-- CODE_REVIEW recruiter decision summaries now show compact signal-basis chips for score, review evidence, pushback, and match proof, making incomplete assessment inputs visible before relying on the decision.
+- CODE_REVIEW interview details now explain claimed assessment links as opened-with-or-without-submission states and show compact score signal-basis chips for scored reports, annotations, pushback, and match proof before recruiters rely on the decision.
 - Person profile decision cockpits now surface missing context as a top-level card, so hiring managers can see blocking evidence gaps or calibration probes without opening raw proof.
 - CODE_REVIEW assessment invite panels now surface link status, shareability, and the next safe action as a compact validity summary, making claimed or stale candidate links obvious before recruiters try to share them.
 - Related evidence rows on CODE_REVIEW interview details now describe same-person items by interview kind, such as related code reviews or conversations, instead of the generic “same person assessment” label.

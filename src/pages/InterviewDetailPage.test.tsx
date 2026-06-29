@@ -803,6 +803,16 @@ describe('InterviewDetailPage', () => {
     expect(decision).toHaveTextContent('Strong assessment fit');
     expect(decision).toHaveTextContent('72/100 Adequate');
     expect(decision).toHaveTextContent('1 pushback thread');
+    const scoreSummary = screen.getByTestId('interview-code-review-score-summary');
+    expect(scoreSummary).toHaveTextContent('Signal basis');
+    expect(scoreSummary).toHaveTextContent('Score report');
+    expect(scoreSummary).toHaveTextContent('Scored');
+    expect(scoreSummary).toHaveTextContent('Review evidence');
+    expect(scoreSummary).toHaveTextContent('1 annotation');
+    expect(scoreSummary).toHaveTextContent('Pushback');
+    expect(scoreSummary).toHaveTextContent('1 thread');
+    expect(scoreSummary).toHaveTextContent('Match proof');
+    expect(scoreSummary).toHaveTextContent('1 bridge');
     expect(screen.queryByText('Call record')).toBeNull();
     expect(screen.queryByText('Not recorded yet')).toBeNull();
     expect(screen.queryByText('Confidence')).toBeNull();
@@ -1365,7 +1375,7 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const linkPanel = screen.getByTestId('interview-assessment-link');
-    expect(linkPanel).toHaveTextContent('The candidate has already opened this one-use assessment link.');
+    expect(linkPanel).toHaveTextContent('The candidate opened this one-use assessment link, but this interview has no submitted assessment evidence yet.');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Claimed');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Historical link only');
     expect(screen.getByTestId('interview-assessment-link-state')).toHaveTextContent('Resend the invite to issue a fresh one-use assessment link.');
