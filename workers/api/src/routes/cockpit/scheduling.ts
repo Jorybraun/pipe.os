@@ -2468,6 +2468,7 @@ async function loadScheduledAssessmentProgressByInterviewIds(
   db: D1Database,
   interviewIds: readonly string[],
 ): Promise<Map<string, AssessmentProgressSnapshot>> {
+  const maxD1QueryVariables = 90;
   const uniqueInterviewIds = [...new Set(interviewIds)].filter((id) => id.length > 0);
   const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
   if (uniqueInterviewIds.length === 0) return progressByInterviewId;
@@ -2479,27 +2480,38 @@ async function loadScheduledAssessmentProgressByInterviewIds(
     return progressByInterviewId;
   }
 
-  const placeholders = uniqueInterviewIds.map((_, index) => `?${index + 1}`).join(', ');
-  const result = await db.prepare(
-    `SELECT id, interview_id
-       FROM (
-         SELECT id,
-                interview_id,
-                ROW_NUMBER() OVER (
-                  PARTITION BY interview_id
-                  ORDER BY updated_at DESC, id DESC
-                ) AS rn
-           FROM assessment_sessions
-          WHERE interview_id IN (${placeholders})
-       )
-      WHERE rn = 1
-        AND interview_id IS NOT NULL`,
-  ).bind(...uniqueInterviewIds).all<{ id: string; interview_id: string }>();
-
   const store = new RepoTaskInterviewSessionStore(db);
-  await Promise.all((result.results ?? []).map(async (row) => {
-    progressByInterviewId.set(row.interview_id, await store.loadProgress(row.id));
-  }));
+  for (let offset = 0; offset < uniqueInterviewIds.length; offset += maxD1QueryVariables) {
+    const chunk = uniqueInterviewIds.slice(offset, offset + maxD1QueryVariables);
+    const placeholders = chunk.map((_, index) => `?${index + 1}`).join(', ');
+    const result = await db.prepare(
+      `SELECT id, interview_id
+         FROM (
+           SELECT id,
+                  interview_id,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY interview_id
+                    ORDER BY updated_at DESC, id DESC
+                  ) AS rn
+             FROM assessment_sessions
+            WHERE interview_id IN (${placeholders})
+         )
+        WHERE rn = 1
+          AND interview_id IS NOT NULL`,
+    ).bind(...chunk).all<{ id: string; interview_id: string }>();
+
+    await Promise.all((result.results ?? []).map(async (row) => {
+      try {
+        progressByInterviewId.set(row.interview_id, await store.loadProgress(row.id));
+      } catch (error) {
+        console.error('[scheduling/listAssessmentProgress] failed to load assessment progress:', {
+          interviewId: row.interview_id,
+          assessmentSessionId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }));
+  }
   return progressByInterviewId;
 }
 

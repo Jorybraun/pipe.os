@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — Candidate repo matching
 
 - Interview list cards now include a compact assessment snapshot for CODE_REVIEW and repo-task interviews, showing stage, next action, and evidence readiness without exposing raw assessment ids.
+- Interview list assessment-progress loading now chunks D1 lookups so recruiters with more than 100 interviews do not hit Workers D1's numbered-variable limit.
 - CODE_REVIEW interview details now show the assessment-session progress snapshot as a quiet hiring-manager card with stage, next action, evidence readiness, commit, readable challenge summary, and evaluation status while hiding raw assessment ids by default.
 - Repo-task commit submission validation now handles nullable source-ref text and GitHub repository path parsing explicitly, keeping the progress snapshot endpoint compatible with strict API typechecking.
 - Person CODE_REVIEW decision cards now join separate score, transcript, and candidate-PR match-decision records, so live person profiles can recognize a valid source-backed repo challenge instead of downgrading it to partial signal.

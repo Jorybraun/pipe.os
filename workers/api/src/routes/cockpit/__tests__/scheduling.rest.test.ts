@@ -1184,6 +1184,30 @@ describe('GET /interviews/:id detail', () => {
         now,
       );
     }
+    for (let index = 0; index < 105; index += 1) {
+      sqlite!.prepare(`
+        INSERT INTO scheduled_interviews (
+          id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+          meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+          scheduling_url, external_event_id, recruiter_notes, sync_source,
+          last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+          recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+          submission_json, completed_at, created_at, updated_at
+        ) VALUES (?, NULL, NULL, NULL, 'owner-1',
+          'VIDEO', 'DIRECT_VIDEO_CALL', 'INVITED', NULL,
+          NULL, 'MANUAL', NULL, NULL, NULL,
+          'MANUAL', NULL, NULL, NULL,
+          ?, ?, NULL, NULL, NULL, NULL, NULL,
+          ?, ?
+        )
+      `).run(
+        `interview-list-filler-${String(index).padStart(3, '0')}`,
+        `Filler ${index}`,
+        `filler-${index}@example.com`,
+        `2026-06-22T19:${String(index % 60).padStart(2, '0')}:00.000Z`,
+        `2026-06-22T19:${String(index % 60).padStart(2, '0')}:00.000Z`,
+      );
+    }
 
     const app = mountSchedulingApp();
     const response = await app.request('/interviews');
