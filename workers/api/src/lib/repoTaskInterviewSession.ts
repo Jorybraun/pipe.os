@@ -451,8 +451,11 @@ function normalizeGitHubRepositoryUrl(value: string, fieldName: string): string 
     throw new Error(`${fieldName} must identify a GitHub owner and repository`);
   }
   const [owner, repoWithSuffix] = segments;
+  if (!owner || !repoWithSuffix) {
+    throw new Error(`${fieldName} must identify a GitHub owner and repository`);
+  }
   const repo = repoWithSuffix.endsWith('.git') ? repoWithSuffix.slice(0, -4) : repoWithSuffix;
-  if (!owner || !repo) {
+  if (!repo) {
     throw new Error(`${fieldName} must identify a GitHub owner and repository`);
   }
   return `https://github.com/${owner}/${repo}`;
@@ -543,18 +546,18 @@ function assertCommitSubmissionSourceRefs(input: SubmitCommitAssessmentInput): v
   const commitRef = input.sourceRefs.find((ref) =>
     ref.sourceRefType === 'git_commit'
     && ref.sourceRefId.toLowerCase() === input.commitSha.toLowerCase()
+    && typeof ref.exactText === 'string'
     && ref.exactText.toLowerCase().includes(input.commitSha.toLowerCase()));
   if (!commitRef) {
     throw new Error('commit submission requires a git_commit source ref whose exact text contains commitSha');
   }
 
   const changedPaths = input.changedFiles.map((file) => file.path);
-  const diffRef = input.sourceRefs.find((ref) =>
-    ref.sourceRefType === 'code_diff'
-    && (
-      ref.exactText.includes('diff --git')
-      || changedPaths.some((path) => ref.exactText.includes(path))
-    ));
+  const diffRef = input.sourceRefs.find((ref) => {
+    if (ref.sourceRefType !== 'code_diff' || typeof ref.exactText !== 'string') return false;
+    const exactText = ref.exactText;
+    return exactText.includes('diff --git') || changedPaths.some((path) => exactText.includes(path));
+  });
   if (!diffRef) {
     throw new Error('commit submission requires a code_diff source ref for the submitted changes');
   }
