@@ -16,6 +16,7 @@ import {
   ensureContactLivingContext,
   loadContactLivingContext,
   loadWorkspacePersonLivingContext,
+  searchSourceContent,
 } from '../../lib/livingContext';
 import type { Env, Variables } from '../../types';
 
@@ -279,6 +280,31 @@ contacts.get('/:id/living-context', async (c) => {
   }
 
   return c.json(livingContext);
+});
+
+// GET /:id/living-context/search?q=... — search contact source content
+contacts.get('/:id/living-context/search', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+  const query = c.req.query('q') ?? '';
+
+  const contact = await db
+    .prepare('SELECT id FROM contacts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string }>();
+  if (!contact) return apiError(c, 'NOT_FOUND', 'Contact not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM workspace_people wp
+      WHERE json_extract(wp.context_json, '$.contactId') = ?1
+      LIMIT 1`,
+  ).bind(id).first<{ id: string }>();
+  if (!wp) return c.json({ personId: id, query, hits: [] });
+
+  const result = await searchSourceContent(db, wp.id, query);
+  return c.json(result);
 });
 
 // PATCH /:id — update contact
