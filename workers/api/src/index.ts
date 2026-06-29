@@ -43,12 +43,15 @@ import { waitlist } from './routes/waitlist';
 import { calibrate } from './routes/internal/calibrate';
 // Neo4j health check (ADR-043 Phase A)
 import neo4jHealth from './routes/internal/neo4jHealth';
+import rolloutGate from './routes/internal/rolloutGate';
+import livingContextHealth from './routes/internal/livingContextHealth';
 import { e2eSeed } from './routes/internal/e2eSeed';
 // Candidate runtime entry (cross-cutting JWT layer)
 import { rpcPublic, rpcAuth } from './routes/rpc';
 import { globalErrorHandler } from './middleware/errors';
 import type { Env, Variables } from './types';
 import { processProjectionOutbox } from './lib/livingContext';
+import { runScheduledBackfill } from './lib/livingContext/backfillScheduled';
 import { PIPE_EMAIL_LOGO_PATH, pipeEmailLogoResponse } from './lib/emailAssets';
 
 // Unified Agent Runtime plugin registration (ADR-034)
@@ -259,6 +262,12 @@ app.route('/internal/calibrate', calibrate);
 // Internal: Neo4j health check (no auth — dev/ops smoke test)
 app.route('/api/v1/internal', neo4jHealth);
 
+// Internal: Rollout gate readiness check (criterion #8 staged rollout)
+app.route('/api/v1/internal', rolloutGate);
+
+// Internal: Living context subsystem health check (criterion #8 production quality)
+app.route('/api/v1/internal', livingContextHealth);
+
 // Internal: deterministic local/test fixture seeding for E2E only.
 app.route('/api/v1/internal/e2e', e2eSeed);
 
@@ -319,5 +328,8 @@ export default {
   fetch: app.fetch,
   scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(processProjectionOutbox(env));
+    ctx.waitUntil(runScheduledBackfill(env).catch((err) => {
+      console.error('[scheduled] backfill error:', err);
+    }));
   },
 };
