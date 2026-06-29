@@ -652,7 +652,7 @@ describe('InterviewDetailPage', () => {
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
   });
 
-  it('does not offer a repo-match refresh until captured evidence is matcher-visible context', async () => {
+  it('offers repo-match refresh so captured evidence can prepare matcher-visible context', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({
         interviewType: 'CODE_REVIEW',
@@ -687,21 +687,30 @@ describe('InterviewDetailPage', () => {
         },
       }),
     });
+    mocks.api.post.mockResolvedValueOnce({
+      refreshed: false,
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId: 'match-run-after-context-repair-attempt',
+    });
 
     renderDetail();
 
     await flushAsyncUpdates();
 
     const refresh = screen.getByTestId('interview-code-review-evidence-refresh');
-    expect(refresh).toHaveTextContent('Evidence captured, projection pending');
-    expect(refresh).toHaveTextContent('Preparing matcher context');
+    expect(refresh).toHaveTextContent('Evidence captured, prepare context');
+    expect(refresh).toHaveTextContent('Prepare matcher context and rerun');
     expect(refresh).toHaveTextContent('1 source-backed transcript span is linked to this original code-review match.');
     expect(refresh).toHaveTextContent('0 matcher-visible context records are ready for repo matching.');
     const cta = screen.getByTestId('interview-code-review-refresh-match-cta') as HTMLButtonElement;
-    expect(cta.disabled).toBe(true);
+    expect(cta.disabled).toBe(false);
+    expect(cta).toHaveTextContent('PREPARE + RERUN MATCH');
     fireEvent.click(cta);
     await flushAsyncUpdates();
-    expect(mocks.api.post).not.toHaveBeenCalled();
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/code-review-match/refresh',
+      {},
+    );
   });
 
   it('shows an existing pending follow-up assessment instead of creating duplicates', async () => {

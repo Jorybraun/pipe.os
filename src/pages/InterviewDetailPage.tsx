@@ -1380,7 +1380,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'Evidence tried, still insufficient'
                         : !codeReviewEvidenceRefreshMatcherReady
-                          ? 'Evidence captured, projection pending'
+                          ? 'Evidence captured, prepare context'
                         : 'New evidence is ready'}
                   </div>
                   <div style={DECISION_PLAN_SIGNAL}>
@@ -1389,7 +1389,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'Capture another concrete source-backed answer before rerunning.'
                         : !codeReviewEvidenceRefreshMatcherReady
-                          ? 'Preparing matcher context'
+                          ? 'Prepare matcher context and rerun'
                         : 'Rerun repo matching'}
                   </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
@@ -1398,7 +1398,7 @@ export default function InterviewDetailPage(): JSX.Element {
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'The last rerun used these source-backed spans but still did not find a confident repo/PR assignment.'
                         : !codeReviewEvidenceRefreshMatcherReady
-                          ? 'The answer is captured, but PIPE must project it into candidate matcher context before a rerun can use it.'
+                          ? 'PIPE will project the captured source evidence into candidate matcher context before trying PR selection again.'
                         : 'Use the new source-backed spans to try PR selection again.'}
                   </div>
                   <div style={DECISION_FOLLOW_UP_ITEM}>
@@ -1437,14 +1437,14 @@ export default function InterviewDetailPage(): JSX.Element {
                     <button
                       data-testid="interview-code-review-refresh-match-cta"
                       onClick={() => void refreshCodeReviewMatch()}
-                      disabled={isRefreshingMatch || !codeReviewEvidenceRefreshMatcherReady}
+                      disabled={isRefreshingMatch}
                       style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
                     >
                       {isRefreshingMatch
                         ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                         : <Network size={14} />}
                       {!codeReviewEvidenceRefreshMatcherReady
-                        ? 'PREPARING MATCHER CONTEXT'
+                        ? 'PREPARE + RERUN MATCH'
                         : codeReviewEvidenceRefreshStillMissing ? 'RERUN AFTER NEW EVIDENCE' : 'RERUN REPO MATCH'}
                     </button>
                   )}

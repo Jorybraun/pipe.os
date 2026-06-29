@@ -26,12 +26,18 @@ import { buildPipeEmailLogoImg, resolvePipeEmailLogoUrl } from '../../lib/emailA
 import { ensureUsableCandidateInviteToken } from '../../lib/candidateInviteTokens';
 import { ensureMeetingRoomLinks, withDevBasicAuth } from '../meetingRooms';
 import {
+  OPEN_TERM_RESOLVER_VERSION,
   LivingContextStore,
+  openSemanticTerm,
   deterministicEntityId,
   ensureCandidateLivingContext,
   ensureContactLivingContext,
   loadCandidateLivingContext,
   loadContactLivingContext,
+  type ContextRecordConceptInput,
+  type ContextRecordEntityInput,
+  type ContextRecordSourceInput,
+  type JsonObject,
 } from '../../lib/livingContext';
 import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
@@ -749,6 +755,90 @@ function parseJsonObject(value: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+const CODE_REVIEW_EVIDENCE_REPAIR_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'ask',
+  'asked',
+  'before',
+  'for',
+  'from',
+  'had',
+  'have',
+  'i',
+  'in',
+  'it',
+  'me',
+  'my',
+  'of',
+  'on',
+  'or',
+  'our',
+  'the',
+  'this',
+  'to',
+  'we',
+  'with',
+]);
+
+const CODE_REVIEW_EVIDENCE_REPAIR_SIGNAL_PATTERNS = [
+  /\bpr\b/i,
+  /\bpull request\b/i,
+  /\bbug\b/i,
+  /\bcode review\b/i,
+  /\breview(?:ed|ing)?\b/i,
+  /\bdiff\b/i,
+  /\btest(?:ed|s|ing)?\b/i,
+  /\bregression\b/i,
+  /\bdebug(?:ged|ging)?\b/i,
+  /\bfix(?:ed|ing)?\b/i,
+  /\bimplement(?:ed|ing)?\b/i,
+  /\bship(?:ped|ping)?\b/i,
+  /\bdeploy(?:ed|ing)?\b/i,
+  /\bverif(?:y|ied|ication)\b/i,
+  /\btrade-?off\b/i,
+  /\bconstraint\b/i,
+  /\bincident\b/i,
+  /\bproduction\b/i,
+  /\brace condition\b/i,
+  /\bidempotenc(?:y|e)\b/i,
+  /\bmigration\b/i,
+];
+
+function codeReviewEvidenceRepairOpenTerms(
+  text: string,
+  limit = 24,
+): Array<{ surface: string; canonicalKey: string }> {
+  const terms = new Map<string, { surface: string; canonicalKey: string }>();
+  for (const token of text.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
+    const normalized = token.trim().toLowerCase();
+    if (
+      normalized.length < 3
+      || CODE_REVIEW_EVIDENCE_REPAIR_STOPWORDS.has(normalized)
+      || /^\d+$/.test(normalized)
+    ) {
+      continue;
+    }
+    const term = openSemanticTerm(token);
+    if (!term || terms.has(term.canonicalKey)) continue;
+    terms.set(term.canonicalKey, {
+      surface: term.surface,
+      canonicalKey: term.canonicalKey,
+    });
+    if (terms.size >= limit) break;
+  }
+  return [...terms.values()];
+}
+
+function countCodeReviewEvidenceRepairSignals(text: string): number {
+  return CODE_REVIEW_EVIDENCE_REPAIR_SIGNAL_PATTERNS.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  );
 }
 
 function parseScheduledCodeReviewSourceRefs(value: unknown): ScheduledCodeReviewSourceRef[] {
@@ -1793,6 +1883,277 @@ async function loadCodeReviewEvidenceRefreshSourceRefs(
     contentHash: row.content_hash,
     metadata: parseJsonObject(row.metadata_json) as AssessmentEvidenceSourceRefInput['metadata'],
   }));
+}
+
+async function sourceSpanBelongsToWorkspacePerson(
+  db: D1Database,
+  input: { sourceSpanId: string; workspacePersonId: string },
+): Promise<boolean> {
+  if (!await tableExists(db, 'source_spans')
+    || !await tableExists(db, 'artifact_versions')
+    || !await tableExists(db, 'artifacts')) {
+    return false;
+  }
+
+  const direct = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+      WHERE ss.id = ?1
+        AND a.workspace_person_id = ?2`,
+  ).bind(input.sourceSpanId, input.workspacePersonId).first<{ id: string }>();
+  if (direct) return true;
+
+  if (!await tableExists(db, 'artifact_interactions')) return false;
+  const linked = await db.prepare(
+    `SELECT ss.id
+       FROM source_spans ss
+       JOIN artifact_versions av ON av.id = ss.artifact_version_id
+       JOIN artifacts a ON a.id = av.artifact_id
+       JOIN artifact_interactions ai ON ai.artifact_id = a.id
+       JOIN interactions i ON i.id = ai.interaction_id
+      WHERE ss.id = ?1
+        AND i.workspace_person_id = ?2`,
+  ).bind(input.sourceSpanId, input.workspacePersonId).first<{ id: string }>();
+  return Boolean(linked);
+}
+
+async function loadCodeReviewEvidenceRefreshInteractionId(input: {
+  db: D1Database;
+  workspacePersonId: string;
+  meetingId: string;
+}): Promise<string | null> {
+  if (!await tableExists(input.db, 'interactions')) return null;
+  const row = await input.db.prepare(
+    `SELECT id
+       FROM interactions
+      WHERE workspace_person_id = ?1
+        AND external_reference = ?2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(input.workspacePersonId, input.meetingId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+async function repairCodeReviewEvidenceRefreshMatcherContexts(
+  db: D1Database,
+  input: {
+    evidenceRefresh: ScheduledCodeReviewEvidenceRefresh;
+    originalInterviewId: string;
+    candidateId: string;
+  },
+): Promise<number> {
+  if (!await hasAssessmentLayerSchema(db)
+    || !await tableExists(db, 'context_record_entities')
+    || !await tableExists(db, 'context_record_concepts')
+    || !await tableExists(db, 'concepts')) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const identity = await ensureCandidateLivingContext(db, input.candidateId);
+  if (!identity) return 0;
+
+  const planSession = await db.prepare(
+    `SELECT id, interview_id, metadata_json
+       FROM assessment_sessions
+      WHERE id = ?1
+        AND created_by = 'code-review-evidence-plan'
+      LIMIT 1`,
+  ).bind(input.evidenceRefresh.assessmentSessionId).first<{
+    id: string;
+    interview_id: string | null;
+    metadata_json: string | null;
+  }>();
+  if (!planSession) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const sourceRefs = await loadCodeReviewEvidenceRefreshSourceRefs(
+    db,
+    input.evidenceRefresh.assessmentSessionId,
+  );
+  if (sourceRefs.length === 0) {
+    return await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      input.evidenceRefresh.assessmentSessionId,
+    );
+  }
+
+  const metadata = parseJsonObject(planSession.metadata_json);
+  const originalInterviewId = optionalString(metadata.originalInterviewId) ?? input.originalInterviewId;
+  const contextCallInterviewId = input.evidenceRefresh.contextCallInterviewId
+    ?? optionalString(metadata.contextCallInterviewId)
+    ?? optionalString(planSession.interview_id)
+    ?? null;
+  const matchRunId = input.evidenceRefresh.matchRunId
+    ?? optionalString(metadata.matchRunId)
+    ?? null;
+  const matchStatus = input.evidenceRefresh.matchStatus
+    ?? optionalString(metadata.matchStatus)
+    ?? null;
+  const observedAt = input.evidenceRefresh.completedAt
+    ?? input.evidenceRefresh.updatedAt
+    ?? new Date().toISOString();
+  const store = new LivingContextStore(db, () => observedAt);
+
+  for (const sourceRef of sourceRefs) {
+    const exactText = optionalString(sourceRef.exactText);
+    const sourceSpanId = optionalString(sourceRef.sourceSpanId) ?? optionalString(sourceRef.sourceRefId);
+    if (!exactText || !sourceSpanId || sourceRef.sourceRefType !== 'source_span') continue;
+    const terms = codeReviewEvidenceRepairOpenTerms(exactText);
+    if (terms.length === 0) continue;
+    const isOwned = await sourceSpanBelongsToWorkspacePerson(db, {
+      sourceSpanId,
+      workspacePersonId: identity.workspacePersonId,
+    });
+    if (!isOwned) continue;
+
+    const concepts: ContextRecordConceptInput[] = [];
+    for (const term of terms) {
+      const concept = await store.upsertConcept({
+        ingestionKey: `open-term:${term.canonicalKey}`,
+        canonicalKey: term.canonicalKey,
+        namespace: 'term',
+        label: term.surface,
+        metadata: {
+          resolver: OPEN_TERM_RESOLVER_VERSION,
+          source: 'code_review_evidence_plan_repair',
+        },
+      });
+      concepts.push({
+        conceptId: concept.id,
+        relationship: 'about',
+        weight: 1,
+      });
+    }
+
+    const locator = isRecord(sourceRef.locator) ? sourceRef.locator as JsonObject : {};
+    const meetingId = optionalString(locator.meetingId) ?? null;
+    const interactionId = meetingId
+      ? await loadCodeReviewEvidenceRefreshInteractionId({
+          db,
+          workspacePersonId: identity.workspacePersonId,
+          meetingId,
+        })
+      : null;
+    const source: ContextRecordSourceInput = {
+      sourceSpanId,
+      sourceRefType: 'source_span',
+      sourceRefId: optionalString(sourceRef.sourceRefId) ?? sourceSpanId,
+      evidenceRole: sourceRef.evidenceRole ?? 'evidence_plan_response_span',
+      locator,
+      exactText,
+      contentHash: optionalString(sourceRef.contentHash) ?? null,
+      metadata: isRecord(sourceRef.metadata) ? sourceRef.metadata as JsonObject : {},
+    };
+    const entities: ContextRecordEntityInput[] = [
+      {
+        entityType: 'workspace_person',
+        entityId: identity.workspacePersonId,
+        relationship: 'subject',
+      },
+      {
+        entityType: 'assessment_session',
+        entityId: input.evidenceRefresh.assessmentSessionId,
+        relationship: 'source_assessment',
+      },
+    ];
+    if (meetingId) {
+      entities.push({
+        entityType: 'meeting',
+        entityId: meetingId,
+        relationship: 'source_interaction',
+      });
+    }
+    if (contextCallInterviewId) {
+      entities.push({
+        entityType: 'scheduled_interview',
+        entityId: contextCallInterviewId,
+        relationship: 'context_call',
+      });
+    }
+    if (originalInterviewId) {
+      entities.push({
+        entityType: 'scheduled_interview',
+        entityId: originalInterviewId,
+        relationship: 'original_code_review',
+      });
+    }
+    if (matchRunId) {
+      entities.push({
+        entityType: 'match_run',
+        entityId: matchRunId,
+        relationship: 'evidence_gap_source',
+      });
+    }
+
+    try {
+      await store.upsertContextRecord({
+        ingestionKey: `assessment-session:${input.evidenceRefresh.assessmentSessionId}:evidence-plan-response:${sourceSpanId}`,
+        workspacePersonId: identity.workspacePersonId,
+        interactionId,
+        applicationId: identity.applicationId,
+        recordType: 'code_review_evidence_plan_response',
+        predicate: 'provides concrete candidate work evidence for repo matching',
+        narrative: exactText,
+        qualifiers: {
+          evidencePlanSessionId: input.evidenceRefresh.assessmentSessionId,
+          originalInterviewId,
+          contextCallInterviewId,
+          meetingId,
+          matchRunId,
+          matchStatus,
+          concreteEvidenceSignalCount: countCodeReviewEvidenceRepairSignals(exactText),
+          repairedFromAssessmentSourceRef: true,
+          extractedProperties: JSON.stringify({
+            semantic_terms: terms.map((term) => ({
+              surface: term.surface,
+              canonical_key: term.canonicalKey,
+            })),
+          }),
+        },
+        confidence: 0.85,
+        extractionVersion: 'code-review-evidence-plan-response-v1',
+        observedAt,
+        sources: [source],
+        entities,
+        concepts,
+      });
+      await store.enqueueProjection({
+        ingestionKey: `assessment-session:${input.evidenceRefresh.assessmentSessionId}:evidence-plan-response:${sourceSpanId}:neo4j`,
+        projectionType: 'neo4j',
+        aggregateType: 'workspace_person',
+        aggregateId: identity.workspacePersonId,
+        payload: {
+          contextRecordType: 'code_review_evidence_plan_response',
+          assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+          sourceSpanId,
+          originalInterviewId,
+          contextCallInterviewId,
+          matchRunId,
+          repairedFromAssessmentSourceRef: true,
+        },
+      });
+    } catch (error) {
+      console.error('[repairCodeReviewEvidenceRefreshMatcherContexts] failed to repair source span:', {
+        assessmentSessionId: input.evidenceRefresh.assessmentSessionId,
+        sourceSpanId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return await countCodeReviewEvidenceRefreshMatcherContexts(
+    db,
+    input.evidenceRefresh.assessmentSessionId,
+  );
 }
 
 async function recordCodeReviewEvidenceRefreshConsumption(
@@ -4112,9 +4473,22 @@ schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
     return apiError(c, 'VALIDATION_ERROR', 'A candidate-backed interview is required before refreshing repo matching.');
   }
 
-  const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
+  let evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
   if (!evidenceRefresh) {
     return apiError(c, 'CONFLICT', 'A completed evidence-plan follow-up is required before refreshing repo matching.');
+  }
+  if (evidenceRefresh.matcherContextCount <= 0) {
+    const repairedContextCount = await repairCodeReviewEvidenceRefreshMatcherContexts(db, {
+      evidenceRefresh,
+      originalInterviewId: source.id,
+      candidateId: source.candidate_id,
+    });
+    if (repairedContextCount > 0) {
+      evidenceRefresh = {
+        ...evidenceRefresh,
+        matcherContextCount: repairedContextCount,
+      };
+    }
   }
   if (evidenceRefresh.matcherContextCount <= 0) {
     return apiError(

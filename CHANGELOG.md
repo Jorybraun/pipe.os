@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW repo-match refresh now repairs missing matcher-visible context from exact candidate-owned follow-up source spans before rerunning, so captured evidence no longer leaves recruiters stuck in a projection-pending state.
 - CODE_REVIEW repo-match refresh now requires completed follow-up evidence to have a matcher-visible living-context projection before rerunning, and the recruiter UI shows projection-pending evidence instead of offering a stale rerun.
 - CODE_REVIEW evidence-plan follow-up transcript answers now materialize as source-backed living-context records with dynamic open-term concepts, so repo-match refreshes consume the new candidate evidence instead of only seeing an assessment-layer ready flag.
 - CODE_REVIEW interview detail now shows related evidence interviews from the same person graph, so follow-up calls and multiple assessment invites for one email remain visible as separate source-backed evidence moments.

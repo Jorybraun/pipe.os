@@ -114,6 +114,57 @@ async function seedEvidencePlanMatcherContext(
   );
 }
 
+async function seedCandidateOwnedEvidencePlanSourceSpan(
+  sqlite: BetterSqliteDb,
+  input: {
+    text: string;
+    candidateId?: string;
+    sourceKey?: string;
+  },
+): Promise<string> {
+  const candidateId = input.candidateId ?? 'candidate-1';
+  const identity = await ensureCandidateLivingContext(createMockD1(sqlite), candidateId);
+  if (!identity) throw new Error(`candidate ${candidateId} did not resolve to living context`);
+  const sourceKey = input.sourceKey ?? `evidence-plan-source-${sha256Hex(input.text).slice(0, 12)}`;
+  const store = new LivingContextStore(createMockD1(sqlite), () => '2026-06-22T19:00:30.000Z');
+  const interaction = await store.upsertInteraction({
+    ingestionKey: `code-review-evidence-plan:${sourceKey}:interaction`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionType: 'direct_video_call',
+    externalReference: `meeting-${sourceKey}`,
+    startedAt: '2026-06-22T19:00:00.000Z',
+    metadata: { source: 'evidence-plan-repair-test' },
+  });
+  const artifact = await store.upsertArtifact({
+    ingestionKey: `code-review-evidence-plan:${sourceKey}:artifact`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId: interaction.id,
+    artifactType: 'meeting_transcript',
+    logicalKey: `meetings/${sourceKey}/transcript`,
+    metadata: { source: 'evidence-plan-repair-test' },
+  });
+  const version = await store.createArtifactVersion({
+    ingestionKey: `code-review-evidence-plan:${sourceKey}:artifact:v1`,
+    artifactId: artifact.id,
+    versionNumber: 1,
+    contentHash: sha256Hex(input.text),
+    mediaType: 'text/plain',
+    contentText: input.text,
+    byteLength: input.text.length,
+    metadata: { source: 'evidence-plan-repair-test' },
+  });
+  const span = await store.createSourceSpan({
+    ingestionKey: `code-review-evidence-plan:${sourceKey}:span-1`,
+    artifactVersionId: version.id,
+    stableSegmentId: `${sourceKey}:candidate-answer`,
+    charStart: 0,
+    charEnd: input.text.length,
+    exactText: input.text,
+    metadata: { speakerRole: 'guest' },
+  });
+  return span.id;
+}
+
 const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
   'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
 const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
@@ -1663,6 +1714,168 @@ describe('GET /interviews/:id detail', () => {
       message: 'Completed evidence-plan follow-up evidence must be projected into matcher context before refreshing repo matching.',
     });
     expect(matchSpy).not.toHaveBeenCalled();
+  });
+
+  it('repairs matcher-visible context from exact completed evidence before rerunning CODE_REVIEW matching', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-repair', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO qualified_repos (id, github_url)
+      VALUES (78, 'https://github.com/pipe-labs/context-repair')
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO review_challenge_packets (
+        id, repo_snapshot_id, repo_id, pr_number, production_ready,
+        quality_score, packet_json, updated_at
+      ) VALUES (
+        'packet-refresh-repair-9', 'snapshot-context-repair', 78, 9, 1,
+        0.9, '{}', 1
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-refresh-repair',
+        'assessment-session:code-review-evidence-plan:interview-code-review-refresh-repair:context-call-refresh-repair',
+        'context-call-refresh-repair', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-refresh-repair',
+      contextCallInterviewId: 'context-call-refresh-repair',
+      matchRunId: 'match-run-before-repair',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-refresh-repair',
+        'assessment-report:code-review-evidence-plan:assessment-plan-refresh-repair:ready',
+        'assessment-plan-refresh-repair', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      )
+    `).run(JSON.stringify({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-refresh-repair',
+      contextCallInterviewId: 'context-call-refresh-repair',
+      matchRunId: 'match-run-before-repair',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      sourceSpanCount: 1,
+    }));
+    const evidenceText = 'I debugged a React Query cache invalidation bug in production, reviewed the PR diff, explained the stale data trade-off, and verified the fix with regression tests.';
+    const sourceSpanId = await seedCandidateOwnedEvidencePlanSourceSpan(sqlite!, {
+      text: evidenceText,
+      sourceKey: 'refresh-repair',
+    });
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type,
+        actor_id, narrative, payload_json, occurred_at, created_at
+      ) VALUES (
+        'assessment-event-refresh-repair-span-1',
+        'assessment-event:code-review-evidence-plan:assessment-plan-refresh-repair:meeting-repair:artifact-v1:guest-1',
+        'assessment-plan-refresh-repair', 1, 'evidence_plan_response_span',
+        'candidate', 'candidate-1',
+        'Evidence-plan response transcript segment spoken by guest.',
+        '{}', '2026-06-22T19:00:30.000Z', '2026-06-22T19:00:30.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json,
+        created_at
+      ) VALUES (
+        'assessment-event-refresh-repair-ref-1',
+        'assessment-event-refresh-repair-span-1', 'source_span',
+        ?, ?, 'evidence_plan_response_span',
+        ?, ?, ?, '{}', '2026-06-22T19:00:30.000Z'
+      )
+    `).run(sourceSpanId, sourceSpanId, JSON.stringify({
+      meetingId: 'meeting-refresh-repair',
+      stableSegmentId: 'guest-1',
+      timestampStartMs: 0,
+      timestampEndMs: 7000,
+    }), evidenceText, sha256Hex(evidenceText));
+    const matchSpy = vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
+      sqlite!.prepare(`
+        INSERT INTO match_runs (
+          id, candidate_id, role_snapshot_id, status, ranked_results_json,
+          selected_packet_id, query_json, created_at
+        ) VALUES (
+          'match-run-after-repair', 'candidate-1', 'standalone-code-review-v1',
+          'MATCHED', ?, 'packet-refresh-repair-9', '{}', '2026-06-22T19:02:00.000Z'
+        )
+      `).run(JSON.stringify([{
+        repoId: 78,
+        prNumber: 9,
+        packetId: 'packet-refresh-repair-9',
+        score: 0.83,
+      }]));
+      return {
+        status: 'MATCHED',
+        matchRunId: 'match-run-after-repair',
+        repoId: 78,
+        prNumber: 9,
+      };
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-repair/code-review-match/refresh', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      refreshed: boolean;
+      status: string;
+      repoId: number;
+      prNumber: number;
+    };
+    expect(body).toMatchObject({
+      refreshed: true,
+      status: 'MATCHED',
+      repoId: 78,
+      prNumber: 9,
+    });
+    expect(matchSpy).toHaveBeenCalledOnce();
+    const repaired = sqlite!.prepare(`
+      SELECT COUNT(DISTINCT cr.id) AS count
+        FROM context_records cr
+        JOIN context_record_entities cre ON cre.context_record_id = cr.id
+       WHERE cr.record_type = 'code_review_evidence_plan_response'
+         AND cre.entity_type = 'assessment_session'
+         AND cre.entity_id = 'assessment-plan-refresh-repair'
+         AND cre.relationship = 'source_assessment'
+    `).get() as { count: number };
+    expect(repaired.count).toBe(1);
   });
 
   it('reruns CODE_REVIEW matching from completed evidence and persists the refreshed PR assignment', async () => {
