@@ -1612,6 +1612,38 @@ candidateOps.get('/:candidateId/living-context/search', async (c) => {
   return c.json(result);
 });
 
+// GET /:candidateId/living-context/timeline — chronological evidence accumulation feed
+candidateOps.get('/:candidateId/living-context/timeline', async (c) => {
+  const userId = c.var.userId;
+  const { candidateId } = c.req.param();
+  const db = c.env.DB;
+  const limitParam = c.req.query('limit');
+  const before = c.req.query('before') ?? undefined;
+  const after = c.req.query('after') ?? undefined;
+
+  const candidate = await db.prepare(
+    `SELECT c.id
+       FROM candidates c
+       LEFT JOIN pipelines p ON p.id = c.pipeline_id
+      WHERE c.id = ?1 AND (c.owner_id = ?2 OR p.owner_id = ?2)`,
+  ).bind(candidateId, userId).first<{ id: string }>();
+  if (!candidate) return apiError(c, 'NOT_FOUND', 'Candidate not found.');
+
+  const wp = await db.prepare(
+    `SELECT wp.id
+       FROM applications app
+       JOIN workspace_people wp ON wp.id = app.workspace_person_id
+      WHERE app.legacy_candidate_id = ?1
+      LIMIT 1`,
+  ).bind(candidateId).first<{ id: string }>();
+  if (!wp) return c.json({ workspacePersonId: null, totalEntries: 0, entries: [] });
+
+  const { loadPersonEvidenceTimeline } = await import('../../lib/livingContext');
+  const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 100, 500) : 100;
+  const timeline = await loadPersonEvidenceTimeline(db, wp.id, { limit, before, after });
+  return c.json(timeline);
+});
+
 // GET /:candidateId/living-context/match-narrative — recruiter-facing match narrative
 candidateOps.get('/:candidateId/living-context/match-narrative', async (c) => {
   const userId = c.var.userId;

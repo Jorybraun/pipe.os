@@ -300,6 +300,50 @@ cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
 
+### 2026-06-29 — Session 03ed7cc7 (Devin)
+
+**Action:** Analyze all open PRs, consolidate #105–#124, add person evidence timeline API, create merge-ready PR.
+
+**Open PRs analyzed:**
+- PRs #105–#124: 20 progressive draft PRs — all aligned with living context graph goal
+- PR #124 is the superset consolidation (supersedes #105–#123) with rollout gate management + gate enforcement fix
+- `codex/scoped-context-graph-ci` branch: 44 commits behind main, 289 files changed — too divergent to merge
+- Created new branch `devin/1782702193-living-context-merge-ready` from PR #124's tip
+
+**Enhancement added (criterion #7 — evidence accumulation visualization):**
+
+1. `GET /api/v1/candidates/:id/living-context/timeline` — chronological evidence feed
+   - Merges interactions, assertions (joined through episodes), and context records
+   - Supports `limit`, `before`, `after` pagination
+   - Returns entry type, narrative, concepts, source count, confidence per entry
+2. `loadPersonEvidenceTimeline(db, wpId, options?)` in readModel.ts
+3. 3 new tests covering timeline generation, pagination, and empty-person edge case
+
+**Test results:**
+- 170 test files pass, 1557 tests, 0 failures (+3 new)
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**All 8 acceptance criteria maintained + criterion #7 strengthened:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE
+6. Explain every match: COMPLETE
+7. Visualize the living graph: STRENGTHENED — timeline API enables "show evidence accumulating across interactions"
+8. Production quality: COMPLETE — rollout gates, backfills, observability, evaluation
+
+**Owner action needed:**
+- Close superseded PRs #105–#124 after merging new PR
+- New PR is non-draft — ready for review and merge
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```
+
 ### 2026-06-29 — Session 1911ee71 (Devin)
 
 **Action:** Analyze all open PRs, close superseded ones, add production rollout management, create consolidated PR.

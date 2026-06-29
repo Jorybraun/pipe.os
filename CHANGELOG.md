@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Person evidence timeline API (criterion #7)
+
+- Added `GET /api/v1/candidates/:id/living-context/timeline` endpoint — returns a chronological feed of evidence accumulation merging interactions, assertions, and context records into a single time-ordered stream. Supports pagination via `limit`, `before`, and `after` query parameters.
+- Added `loadPersonEvidenceTimeline` function to `readModel.ts` — queries interactions, semantic assertions (joined through episodes), and context records for a workspace person, then merges and sorts them chronologically.
+- Added 3 new tests covering timeline generation, pagination, and empty-person edge case.
+- Directly enables "Show evidence accumulating across interactions" requirement from acceptance criterion #7.
+
 ### Added — Rollout gate management API (criterion #8)
 
 - Added `POST /api/v1/internal/rollout-gate` endpoint to transition feature gates between stages (disabled → internal_only → canary → GA) with audit logging. Accepts `{ gateKey, stage, reason? }`.

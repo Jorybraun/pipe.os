@@ -19,7 +19,9 @@ export {
   loadMeetingTranscriptContext,
   searchTranscriptSourceSpans,
   searchSourceContent,
+  loadPersonEvidenceTimeline,
 } from './readModel';
+export type { TimelineEntry, PersonEvidenceTimeline } from './readModel';
 export {
   ingestResumeToLivingContext,
   splitResumeIntoSections,

@@ -2698,3 +2698,187 @@ export async function searchSourceContent(
 
   return result;
 }
+
+// ─── Person Evidence Timeline ────────────────────────────────────────────────
+
+export interface TimelineEntry {
+  id: string;
+  timestamp: string;
+  entryType: 'interaction' | 'assertion' | 'context_record' | 'artifact';
+  interactionId: string | null;
+  interactionType: string | null;
+  narrative: string;
+  concepts: string[];
+  sourceCount: number;
+  confidence: number | null;
+}
+
+export interface PersonEvidenceTimeline {
+  workspacePersonId: string;
+  totalEntries: number;
+  entries: TimelineEntry[];
+}
+
+/**
+ * Load a chronological timeline of evidence accumulation for a workspace person.
+ * Merges interactions, assertions, and context records into a single time-ordered
+ * feed, enabling visualization of how evidence builds over time (criterion #7).
+ */
+export async function loadPersonEvidenceTimeline(
+  db: D1Database,
+  workspacePersonId: string,
+  options?: { limit?: number; before?: string; after?: string },
+): Promise<PersonEvidenceTimeline> {
+  const limit = Math.min(options?.limit ?? 100, 500);
+  const entries: TimelineEntry[] = [];
+
+  // 1. Interactions with their timestamps
+  interface InteractionTimelineRow {
+    id: string;
+    interaction_type: string;
+    started_at: string | null;
+    ended_at: string | null;
+    created_at: string;
+    metadata_json: string;
+  }
+
+  const interactionRows = await db.prepare(
+    `SELECT i.id, i.interaction_type, i.started_at, i.ended_at, i.created_at, i.metadata_json
+       FROM interactions i
+      WHERE i.workspace_person_id = ?1
+      ORDER BY COALESCE(i.started_at, i.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<InteractionTimelineRow>();
+
+  for (const row of interactionRows.results ?? []) {
+    const ts = row.started_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    let description = '';
+    try {
+      const meta: unknown = JSON.parse(row.metadata_json || '{}');
+      if (meta && typeof meta === 'object' && 'description' in meta) {
+        description = String((meta as Record<string, unknown>).description ?? '');
+      }
+    } catch { /* ignore */ }
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'interaction',
+      interactionId: row.id,
+      interactionType: row.interaction_type,
+      narrative: description || `${row.interaction_type} interaction`,
+      concepts: [],
+      sourceCount: 0,
+      confidence: null,
+    });
+  }
+
+  // 2. Assertions with observation timestamps (join through episodes to get interaction)
+  interface AssertionTimelineRow {
+    id: string;
+    interaction_id: string | null;
+    interaction_type: string | null;
+    predicate: string;
+    narrative: string;
+    confidence: number | null;
+    observed_at: string | null;
+    created_at: string;
+    source_count: number;
+  }
+
+  const assertionRows = await db.prepare(
+    `SELECT sa.id, e.interaction_id,
+            i.interaction_type,
+            sa.predicate, sa.narrative, sa.confidence,
+            sa.observed_at, sa.created_at,
+            (SELECT COUNT(*) FROM assertion_source_spans ass WHERE ass.assertion_id = sa.id) AS source_count
+       FROM semantic_assertions sa
+       LEFT JOIN episodes e ON e.id = sa.episode_id
+       LEFT JOIN interactions i ON i.id = e.interaction_id
+      WHERE sa.workspace_person_id = ?1
+      ORDER BY COALESCE(sa.observed_at, sa.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<AssertionTimelineRow>();
+
+  for (const row of assertionRows.results ?? []) {
+    const ts = row.observed_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    // Load concepts for this assertion
+    interface ConceptKeyRow { canonical_key: string }
+    const conceptRows = await db.prepare(
+      `SELECT c.canonical_key
+         FROM assertion_concepts ac
+         JOIN concepts c ON c.id = ac.concept_id
+        WHERE ac.assertion_id = ?1`,
+    ).bind(row.id).all<ConceptKeyRow>();
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'assertion',
+      interactionId: row.interaction_id,
+      interactionType: row.interaction_type,
+      narrative: row.narrative,
+      concepts: (conceptRows.results ?? []).map((c) => c.canonical_key),
+      sourceCount: row.source_count,
+      confidence: row.confidence,
+    });
+  }
+
+  // 3. Context records with observation timestamps
+  interface ContextRecordTimelineRow {
+    id: string;
+    interaction_id: string | null;
+    interaction_type: string | null;
+    record_type: string;
+    narrative: string;
+    confidence: number | null;
+    observed_at: string | null;
+    created_at: string;
+  }
+
+  const contextRows = await db.prepare(
+    `SELECT cr.id, cr.interaction_id,
+            i.interaction_type,
+            cr.record_type, cr.narrative, cr.confidence,
+            cr.observed_at, cr.created_at
+       FROM context_records cr
+       LEFT JOIN interactions i ON i.id = cr.interaction_id
+      WHERE cr.scope_type = 'workspace_person' AND cr.scope_id = ?1
+      ORDER BY COALESCE(cr.observed_at, cr.created_at) DESC
+      LIMIT ?2`,
+  ).bind(workspacePersonId, limit).all<ContextRecordTimelineRow>();
+
+  for (const row of contextRows.results ?? []) {
+    const ts = row.observed_at ?? row.created_at;
+    if (options?.before && ts >= options.before) continue;
+    if (options?.after && ts <= options.after) continue;
+
+    entries.push({
+      id: row.id,
+      timestamp: ts,
+      entryType: 'context_record',
+      interactionId: row.interaction_id,
+      interactionType: row.interaction_type,
+      narrative: row.narrative,
+      concepts: [],
+      sourceCount: 0,
+      confidence: row.confidence,
+    });
+  }
+
+  // Sort all entries chronologically (most recent first) and trim to limit
+  entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const trimmedEntries = entries.slice(0, limit);
+
+  return {
+    workspacePersonId,
+    totalEntries: trimmedEntries.length,
+    entries: trimmedEntries,
+  };
+}
