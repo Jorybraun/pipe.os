@@ -21,7 +21,7 @@ setup("authenticate via Clerk", async ({ page }) => {
   await page.goto("/");
 
   // Step 1: Click the SIGN IN button on the custom gate
-  const signInButton = page.locator('button:has-text("SIGN IN")');
+  const signInButton = page.getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible({ timeout: 15000 });
   await signInButton.click();
 

@@ -101,6 +101,10 @@ The controlling product rule remains:
   `code_review_evidence_plan_response` records with dynamic open-term concepts,
   so repo-match refreshes read the new source-backed evidence through the same
   candidate context path as resume/decomposition evidence.
+- CODE_REVIEW repo-match refreshes now gate on those matcher-visible
+  `code_review_evidence_plan_response` records, not only the assessment report
+  status, so a captured follow-up answer cannot trigger a stale rerun until the
+  candidate context projection exists.
 - CODE_REVIEW interview detail now returns and renders related evidence
   interviews from the same person graph, so context calls and multiple
   same-email assessment invites stay visible as separate evidence-producing

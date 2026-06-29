@@ -64,6 +64,56 @@ function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+async function seedEvidencePlanMatcherContext(
+  sqlite: BetterSqliteDb,
+  input: {
+    assessmentSessionId: string;
+    candidateId?: string;
+    narrative?: string;
+  },
+): Promise<void> {
+  const candidateId = input.candidateId ?? 'candidate-1';
+  const identity = await ensureCandidateLivingContext(createMockD1(sqlite), candidateId);
+  if (!identity) throw new Error(`candidate ${candidateId} did not resolve to living context`);
+  const now = '2026-06-22T19:00:30.000Z';
+  const contextRecordId = `context-record-${input.assessmentSessionId}`;
+  sqlite.prepare(
+    `INSERT INTO context_records (
+       id, ingestion_key, scope_type, scope_id, workspace_person_id,
+       interaction_id, application_id, episode_id, assertion_id,
+       record_type, predicate, narrative, qualifiers_json, confidence, polarity,
+       extraction_version, observed_at, created_at, updated_at
+     ) VALUES (?, ?, 'workspace_person', ?, ?, NULL, ?, NULL, NULL,
+       'code_review_evidence_plan_response',
+       'provides concrete candidate work evidence for repo matching',
+       ?, ?, 0.95, 1,
+       'code-review-evidence-plan-response-v1', ?, ?, ?)`,
+  ).run(
+    contextRecordId,
+    `assessment-session:${input.assessmentSessionId}:matcher-context`,
+    identity.workspacePersonId,
+    identity.workspacePersonId,
+    identity.applicationId,
+    input.narrative ?? 'Candidate supplied concrete source-backed review evidence.',
+    JSON.stringify({ evidencePlanSessionId: input.assessmentSessionId }),
+    now,
+    now,
+    now,
+  );
+  sqlite.prepare(
+    `INSERT INTO context_record_entities (
+       context_record_id, entity_key, entity_type, entity_id, relationship,
+       value_json, confidence, metadata_json, created_at
+     ) VALUES (?, ?, 'assessment_session', ?, 'source_assessment',
+       NULL, NULL, '{}', ?)`,
+  ).run(
+    contextRecordId,
+    `assessment_session:${input.assessmentSessionId}`,
+    input.assessmentSessionId,
+    now,
+  );
+}
+
 const SOURCE_BACKED_WORK_EVIDENCE_QUESTION =
   'Describe one real PR, bug, or code review you personally handled that best represents the work PIPE should assess. Include the codebase context, your role, trade-offs, verification/tests, and outcome.';
 const SOURCE_BACKED_WORK_EVIDENCE_FOLLOW_UP =
@@ -1197,6 +1247,7 @@ describe('GET /interviews/:id detail', () => {
             reportId: string;
             summary: string;
             sourceSpanCount: number | null;
+            matcherContextCount: number;
             matchRunId: string | null;
             matchStatus: string | null;
             evidenceSnippets: Array<{
@@ -1218,6 +1269,7 @@ describe('GET /interviews/:id detail', () => {
       reportId: 'assessment-report-refresh-ready',
       summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
       sourceSpanCount: 3,
+      matcherContextCount: 0,
       matchRunId: 'match-run-refresh-ready',
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       consumptionReportId: null,
@@ -1501,6 +1553,118 @@ describe('GET /interviews/:id detail', () => {
     expect(matchSpy).not.toHaveBeenCalled();
   });
 
+  it('refuses CODE_REVIEW match refresh when completed evidence is not matcher-visible context', async () => {
+    seedInterviewDetailFixture();
+    sqlite!.prepare(`
+      INSERT INTO scheduled_interviews (
+        id, candidate_id, pipeline_id, stage_id, owner_id, interview_type,
+        meeting_type, status, scheduled_at, meeting_url, scheduling_provider,
+        scheduling_url, external_event_id, recruiter_notes, sync_source,
+        last_synced_at, invite_link_sent_at, email_sent_at, recipient_name,
+        recipient_email, matched_repo_id, github_repo_url, github_pr_number,
+        submission_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'interview-code-review-refresh-unprojected', 'candidate-1', 'pipeline-1', 'stage-1', 'owner-1',
+        'CODE_REVIEW', NULL, 'INVITED', NULL,
+        NULL, 'MANUAL', NULL, NULL, 'Assess PR review judgment.',
+        'MANUAL', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+        '2026-06-22T17:30:00.000Z', '2026-06-22T17:45:00.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, created_by,
+        metadata_json, completed_at, created_at, updated_at
+      ) VALUES (
+        'assessment-plan-refresh-unprojected',
+        'assessment-session:code-review-evidence-plan:interview-code-review-refresh-unprojected:context-call-refresh-unprojected',
+        'context-call-refresh-unprojected', 'TECHNICAL', 'EVALUATED', 'candidate-1',
+        'code-review-evidence-plan', ?,
+        '2026-06-22T19:00:00.000Z',
+        '2026-06-22T18:00:00.000Z',
+        '2026-06-22T19:00:00.000Z'
+      )
+    `).run(JSON.stringify({
+      originalInterviewId: 'interview-code-review-refresh-unprojected',
+      contextCallInterviewId: 'context-call-refresh-unprojected',
+      matchRunId: 'match-run-before-unprojected',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+    }));
+    sqlite!.prepare(`
+      INSERT INTO assessment_evaluation_reports (
+        id, ingestion_key, session_id, status, summary, output_json,
+        diagnostics_json, created_at, updated_at
+      ) VALUES (
+        'assessment-report-refresh-unprojected',
+        'assessment-report:code-review-evidence-plan:assessment-plan-refresh-unprojected:ready',
+        'assessment-plan-refresh-unprojected', 'NEEDS_HUMAN_REVIEW',
+        'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+        ?, '[]',
+        '2026-06-22T19:01:00.000Z',
+        '2026-06-22T19:01:00.000Z'
+      )
+    `).run(JSON.stringify({
+      schemaVersion: 'code-review-evidence-plan-result-v1',
+      status: 'READY_FOR_REPO_MATCH_REFRESH',
+      originalInterviewId: 'interview-code-review-refresh-unprojected',
+      contextCallInterviewId: 'context-call-refresh-unprojected',
+      matchRunId: 'match-run-before-unprojected',
+      matchStatus: 'NEEDS_MORE_EVIDENCE',
+      sourceSpanCount: 1,
+    }));
+    const text = 'I reviewed a React popover timing bug and verified the fix with impatient-click regression tests.';
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type,
+        actor_id, narrative, payload_json, occurred_at, created_at
+      ) VALUES (
+        'assessment-event-refresh-unprojected-span-1',
+        'assessment-event:code-review-evidence-plan:assessment-plan-refresh-unprojected:meeting-1:artifact-v1:guest-1',
+        'assessment-plan-refresh-unprojected', 1, 'evidence_plan_response_span',
+        'candidate', 'candidate-1',
+        'Evidence-plan response transcript segment spoken by guest.',
+        '{}', '2026-06-22T19:00:30.000Z', '2026-06-22T19:00:30.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json,
+        created_at
+      ) VALUES (
+        'assessment-event-refresh-unprojected-ref-1',
+        'assessment-event-refresh-unprojected-span-1', 'source_span',
+        'source-span-refresh-unprojected-1', NULL, 'evidence_plan_response_span',
+        ?, ?, ?, '{}', '2026-06-22T19:00:30.000Z'
+      )
+    `).run(JSON.stringify({
+      meetingId: 'meeting-refresh-unprojected',
+      stableSegmentId: 'guest-1',
+      timestampStartMs: 0,
+      timestampEndMs: 7000,
+    }), text, sha256Hex(text));
+    const matchSpy = vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockResolvedValue({
+      status: 'NEEDS_MORE_EVIDENCE',
+      matchRunId: 'match-run-should-not-run',
+      repoId: null,
+      prNumber: null,
+    });
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-code-review-refresh-unprojected/code-review-match/refresh', {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(409);
+    const body = await response.json() as { error: { code: string; message: string } };
+    expect(body.error).toMatchObject({
+      code: 'CONFLICT',
+      message: 'Completed evidence-plan follow-up evidence must be projected into matcher context before refreshing repo matching.',
+    });
+    expect(matchSpy).not.toHaveBeenCalled();
+  });
+
   it('reruns CODE_REVIEW matching from completed evidence and persists the refreshed PR assignment', async () => {
     seedInterviewDetailFixture();
     sqlite!.prepare(`
@@ -1605,6 +1769,10 @@ describe('GET /interviews/:id detail', () => {
       timestampStartMs: 0,
       timestampEndMs: 7000,
     }), successEvidenceText, sha256Hex(successEvidenceText));
+    await seedEvidencePlanMatcherContext(sqlite!, {
+      assessmentSessionId: 'assessment-plan-refresh-run',
+      narrative: successEvidenceText,
+    });
     vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
       sqlite!.prepare(`
         INSERT INTO match_runs (
@@ -1803,6 +1971,9 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       sourceSpanCount: 1,
     }));
+    await seedEvidencePlanMatcherContext(sqlite!, {
+      assessmentSessionId: 'assessment-plan-refresh-still-blocked',
+    });
     vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
       sqlite!.prepare(`
         INSERT INTO match_runs (
@@ -1949,6 +2120,9 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       sourceSpanCount: 1,
     }));
+    await seedEvidencePlanMatcherContext(sqlite!, {
+      assessmentSessionId: 'assessment-plan-refresh-already-tried',
+    });
     sqlite!.prepare(`
       INSERT INTO match_runs (
         id, candidate_id, role_snapshot_id, status, ranked_results_json,
@@ -3122,6 +3296,7 @@ describe('GET /interviews/:id detail', () => {
             assessmentSessionId: string;
             contextCallInterviewId: string | null;
             sourceSpanCount: number | null;
+            matcherContextCount: number;
             matchRunId: string | null;
             matchStatus: string | null;
           } | null;
@@ -3133,6 +3308,7 @@ describe('GET /interviews/:id detail', () => {
       assessmentSessionId: evidenceAssessmentSessionId,
       contextCallInterviewId: body.contextCall.id,
       sourceSpanCount: 1,
+      matcherContextCount: 1,
       matchRunId: 'match-run-blocked',
       matchStatus: 'NO_ROLE_SAFE_CHALLENGE',
     });

@@ -267,6 +267,7 @@ export interface CodeReviewEvidenceRefresh {
   reportId: string;
   summary: string;
   sourceSpanCount: number | null;
+  matcherContextCount?: number;
   evidenceSnippets?: CodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;

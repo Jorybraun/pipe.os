@@ -1126,6 +1126,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const codeReviewEvidenceRefresh = codeReviewMatch?.evidenceRefresh ?? null;
   const codeReviewEvidenceFollowUp = codeReviewMatch?.evidenceFollowUp ?? null;
   const codeReviewEvidenceFollowUpBlocked = codeReviewEvidenceFollowUp?.state === 'BLOCKED';
+  const codeReviewEvidenceRefreshMatcherContextCount = codeReviewEvidenceRefresh?.matcherContextCount ?? 0;
+  const codeReviewEvidenceRefreshMatcherReady = !codeReviewEvidenceRefresh
+    || codeReviewEvidenceRefreshMatcherContextCount > 0;
   const codeReviewEvidenceRefreshConsumed = Boolean(codeReviewEvidenceRefresh?.consumedByMatchRunId);
   const codeReviewEvidenceRefreshUsed = Boolean(
     codeReviewEvidenceRefresh
@@ -1376,6 +1379,8 @@ export default function InterviewDetailPage(): JSX.Element {
                       ? 'Evidence used for current match'
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'Evidence tried, still insufficient'
+                        : !codeReviewEvidenceRefreshMatcherReady
+                          ? 'Evidence captured, projection pending'
                         : 'New evidence is ready'}
                   </div>
                   <div style={DECISION_PLAN_SIGNAL}>
@@ -1383,6 +1388,8 @@ export default function InterviewDetailPage(): JSX.Element {
                       ? 'Current PR assignment is evidence-backed'
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'Capture another concrete source-backed answer before rerunning.'
+                        : !codeReviewEvidenceRefreshMatcherReady
+                          ? 'Preparing matcher context'
                         : 'Rerun repo matching'}
                   </div>
                   <div style={CONTEXT_RECORD_NARRATIVE}>
@@ -1390,6 +1397,8 @@ export default function InterviewDetailPage(): JSX.Element {
                       ? 'These source-backed follow-up spans were used to select the current PR assignment.'
                       : codeReviewEvidenceRefreshStillMissing
                         ? 'The last rerun used these source-backed spans but still did not find a confident repo/PR assignment.'
+                        : !codeReviewEvidenceRefreshMatcherReady
+                          ? 'The answer is captured, but PIPE must project it into candidate matcher context before a rerun can use it.'
                         : 'Use the new source-backed spans to try PR selection again.'}
                   </div>
                   <div style={DECISION_FOLLOW_UP_ITEM}>
@@ -1397,6 +1406,9 @@ export default function InterviewDetailPage(): JSX.Element {
                     <div>{codeReviewEvidenceRefresh.summary}</div>
                     <div style={CONTEXT_RECORD_NARRATIVE}>
                       {codeReviewEvidenceRefresh.sourceSpanCount ?? 0} source-backed transcript {codeReviewEvidenceRefresh.sourceSpanCount === 1 ? 'span is' : 'spans are'} linked to this original code-review match.
+                    </div>
+                    <div style={CONTEXT_RECORD_NARRATIVE}>
+                      {codeReviewEvidenceRefreshMatcherContextCount} matcher-visible context {codeReviewEvidenceRefreshMatcherContextCount === 1 ? 'record is' : 'records are'} ready for repo matching.
                     </div>
                   </div>
                   {(codeReviewEvidenceRefresh.evidenceSnippets?.length ?? 0) > 0 && (
@@ -1425,13 +1437,15 @@ export default function InterviewDetailPage(): JSX.Element {
                     <button
                       data-testid="interview-code-review-refresh-match-cta"
                       onClick={() => void refreshCodeReviewMatch()}
-                      disabled={isRefreshingMatch}
+                      disabled={isRefreshingMatch || !codeReviewEvidenceRefreshMatcherReady}
                       style={{ ...PRIMARY_BUTTON, ...CONTEXT_CALL_BUTTON }}
                     >
                       {isRefreshingMatch
                         ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
                         : <Network size={14} />}
-                      {codeReviewEvidenceRefreshStillMissing ? 'RERUN AFTER NEW EVIDENCE' : 'RERUN REPO MATCH'}
+                      {!codeReviewEvidenceRefreshMatcherReady
+                        ? 'PREPARING MATCHER CONTEXT'
+                        : codeReviewEvidenceRefreshStillMissing ? 'RERUN AFTER NEW EVIDENCE' : 'RERUN REPO MATCH'}
                     </button>
                   )}
                   {codeReviewEvidenceRefresh.contextCallInterviewId && (

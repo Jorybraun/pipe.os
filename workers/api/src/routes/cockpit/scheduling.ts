@@ -701,6 +701,7 @@ interface ScheduledCodeReviewEvidenceRefresh {
   reportId: string;
   summary: string;
   sourceSpanCount: number | null;
+  matcherContextCount: number;
   evidenceSnippets: ScheduledCodeReviewEvidenceSnippet[];
   matchRunId: string | null;
   matchStatus: string | null;
@@ -1501,6 +1502,26 @@ async function loadCodeReviewEvidenceFollowUp(
   return null;
 }
 
+async function countCodeReviewEvidenceRefreshMatcherContexts(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<number> {
+  if (!await tableExists(db, 'context_records')
+    || !await tableExists(db, 'context_record_entities')) {
+    return 0;
+  }
+  const row = await db.prepare(
+    `SELECT COUNT(DISTINCT cr.id) AS count
+       FROM context_records cr
+       JOIN context_record_entities cre ON cre.context_record_id = cr.id
+      WHERE cr.record_type = 'code_review_evidence_plan_response'
+        AND cre.entity_type = 'assessment_session'
+        AND cre.entity_id = ?1
+        AND cre.relationship = 'source_assessment'`,
+  ).bind(assessmentSessionId).first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
 async function loadCodeReviewEvidenceRefresh(
   db: D1Database,
   originalInterviewId: string,
@@ -1562,6 +1583,10 @@ async function loadCodeReviewEvidenceRefresh(
     if (status !== 'READY_FOR_REPO_MATCH_REFRESH') continue;
 
     const sourceSpanCount = numberOrNull(output.sourceSpanCount);
+    const matcherContextCount = await countCodeReviewEvidenceRefreshMatcherContexts(
+      db,
+      row.assessment_session_id,
+    );
     const evidenceSnippets = await loadCodeReviewEvidenceSnippets(db, row.assessment_session_id);
     const consumption = await loadCodeReviewEvidenceRefreshConsumption(db, {
       assessmentSessionId: row.assessment_session_id,
@@ -1576,6 +1601,7 @@ async function loadCodeReviewEvidenceRefresh(
       reportId: row.report_id,
       summary: row.report_summary,
       sourceSpanCount,
+      matcherContextCount,
       evidenceSnippets,
       matchRunId: optionalString(output.matchRunId) ?? optionalString(metadata.matchRunId) ?? null,
       matchStatus: optionalString(output.matchStatus) ?? optionalString(metadata.matchStatus) ?? null,
@@ -4089,6 +4115,13 @@ schedulingAuth.post('/interviews/:id/code-review-match/refresh', async (c) => {
   const evidenceRefresh = await loadCodeReviewEvidenceRefresh(db, source.id, source.candidate_id);
   if (!evidenceRefresh) {
     return apiError(c, 'CONFLICT', 'A completed evidence-plan follow-up is required before refreshing repo matching.');
+  }
+  if (evidenceRefresh.matcherContextCount <= 0) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'Completed evidence-plan follow-up evidence must be projected into matcher context before refreshing repo matching.',
+    );
   }
   const latestMatchRun = await loadLatestCandidateMatchRun(db, source.candidate_id);
   if (evidenceRefreshAlreadyTried(evidenceRefresh, latestMatchRun)) {

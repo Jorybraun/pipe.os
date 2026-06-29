@@ -613,6 +613,7 @@ describe('InterviewDetailPage', () => {
             reportId: 'assessment-report-refresh-ready',
             summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
             sourceSpanCount: 3,
+            matcherContextCount: 1,
             matchRunId: 'match-run-blocked-1',
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             completedAt: '2026-06-22T19:00:00.000Z',
@@ -649,6 +650,58 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('interview-code-review-refresh-match-cta')).toHaveTextContent('RERUN REPO MATCH');
     expect(screen.getByTestId('interview-code-review-open-evidence-call')).toHaveTextContent('OPEN EVIDENCE CALL');
     expect(screen.queryByTestId('interview-code-review-evidence-plan')).toBeNull();
+  });
+
+  it('does not offer a repo-match refresh until captured evidence is matcher-visible context', async () => {
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'CODE_REVIEW',
+        status: 'INVITED',
+        codeReviewMatch: {
+          status: 'NEEDS_MORE_EVIDENCE',
+          matchRunId: 'match-run-blocked-1',
+          packetId: null,
+          summary: 'No quality-gated source-backed PR challenge was selected.',
+          score: 0,
+          assessmentQuality: null,
+          reviewProfile: null,
+          validatorAgent: null,
+          roleSources: [],
+          evidence: [],
+          evidenceHyperedges: [],
+          gaps: ['NO_SCOREABLE_SOURCE_BACKED_CANDIDATE_EVIDENCE'],
+          evidencePlan: [],
+          evidenceRefresh: {
+            status: 'READY_FOR_REPO_MATCH_REFRESH',
+            assessmentSessionId: 'assessment-plan-refresh-ready',
+            contextCallInterviewId: 'context-call-refresh-ready',
+            reportId: 'assessment-report-refresh-ready',
+            summary: 'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
+            sourceSpanCount: 1,
+            matcherContextCount: 0,
+            matchRunId: 'match-run-blocked-1',
+            matchStatus: 'NEEDS_MORE_EVIDENCE',
+            completedAt: '2026-06-22T19:00:00.000Z',
+            updatedAt: '2026-06-22T19:01:00.000Z',
+          },
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+
+    const refresh = screen.getByTestId('interview-code-review-evidence-refresh');
+    expect(refresh).toHaveTextContent('Evidence captured, projection pending');
+    expect(refresh).toHaveTextContent('Preparing matcher context');
+    expect(refresh).toHaveTextContent('1 source-backed transcript span is linked to this original code-review match.');
+    expect(refresh).toHaveTextContent('0 matcher-visible context records are ready for repo matching.');
+    const cta = screen.getByTestId('interview-code-review-refresh-match-cta') as HTMLButtonElement;
+    expect(cta.disabled).toBe(true);
+    fireEvent.click(cta);
+    await flushAsyncUpdates();
+    expect(mocks.api.post).not.toHaveBeenCalled();
   });
 
   it('shows an existing pending follow-up assessment instead of creating duplicates', async () => {
@@ -789,6 +842,7 @@ describe('InterviewDetailPage', () => {
             reportId: 'assessment-report-refresh-ready',
             summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
             sourceSpanCount: 3,
+            matcherContextCount: 1,
             matchRunId: 'match-run-blocked-1',
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             completedAt: '2026-06-22T19:00:00.000Z',
@@ -825,6 +879,7 @@ describe('InterviewDetailPage', () => {
           reportId: 'assessment-report-refresh-ready',
           summary: 'Evidence call captured 3 source-backed transcript spans for repo-match refresh.',
           sourceSpanCount: 3,
+          matcherContextCount: 1,
           matchRunId: 'match-run-blocked-1',
           matchStatus: 'NEEDS_MORE_EVIDENCE',
           completedAt: '2026-06-22T19:00:00.000Z',
@@ -877,6 +932,7 @@ describe('InterviewDetailPage', () => {
             reportId: 'assessment-report-refresh-ready',
             summary: 'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
             sourceSpanCount: 1,
+            matcherContextCount: 1,
             matchRunId: 'match-run-blocked-1',
             matchStatus: 'NEEDS_MORE_EVIDENCE',
             completedAt: '2026-06-22T19:00:00.000Z',
@@ -910,6 +966,7 @@ describe('InterviewDetailPage', () => {
           reportId: 'assessment-report-refresh-ready',
           summary: 'Evidence call captured 1 source-backed transcript span for repo-match refresh.',
           sourceSpanCount: 1,
+          matcherContextCount: 1,
           matchRunId: 'match-run-blocked-1',
           matchStatus: 'NEEDS_MORE_EVIDENCE',
           consumptionReportId: 'assessment-report-consumed-still-blocked',
