@@ -16,6 +16,8 @@ import {
 import { LivingContextGraph } from '../components/Candidate/LivingContextGraph';
 import { useApiClient } from '../hooks/useApiClient';
 import type {
+  LivingContextArtifact,
+  LivingContextInteraction,
   LivingContextReadModel,
   LivingContextRecord,
   LivingContextRecordSourceRef,
@@ -172,6 +174,95 @@ function evidenceSummaryText(livingContext: LivingContextReadModel | null): stri
     `${summary.sourceSpanCount} exact source ${summary.sourceSpanCount === 1 ? 'span' : 'spans'}`,
   ];
   return `PIPE currently knows this relationship from ${parts.join(', ')}.`;
+}
+
+function quietEvidenceText(value: string): string {
+  return value
+    .replace(/\breview-session-[A-Za-z0-9_-]+\b/g, 'review session')
+    .replace(/\bresume:review-evidence:\d+\b/g, 'resume evidence')
+    .replace(/\bcandidate_node_[A-Za-z0-9_-]+\b/g, 'candidate evidence')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, 'source reference');
+}
+
+function contextRecordDisplayTitle(record: LivingContextRecord): string {
+  return quietEvidenceText(contextRecordTitle(record));
+}
+
+function contextRecordDisplayNarrative(record: LivingContextRecord): string | null {
+  const narrative = optionalString(record.narrative);
+  if (!narrative) return null;
+  const quietNarrative = quietEvidenceText(narrative);
+  return quietNarrative !== contextRecordDisplayTitle(record) ? quietNarrative : null;
+}
+
+function interactionSourceLabel(interaction: LivingContextInteraction): string | null {
+  const externalReference = optionalString(interaction.externalReference);
+  if (!externalReference) return null;
+  const interactionType = interaction.interactionType.toLowerCase();
+  const reference = externalReference.toLowerCase();
+
+  if (reference.startsWith('resume:') || interactionType.includes('resume')) {
+    return 'Resume evidence attached';
+  }
+  if (interactionType.includes('code_review') || reference.startsWith('review-session')) {
+    return 'Code-review assessment evidence';
+  }
+  if (interactionType.includes('meeting') || interactionType.includes('interview') || reference.includes('meeting')) {
+    return 'Meeting evidence attached';
+  }
+  if (interactionType.includes('phone') || interactionType.includes('call')) {
+    return 'Call evidence attached';
+  }
+  if (interactionType.includes('invite') || reference.includes('invite')) {
+    return 'Invite evidence attached';
+  }
+  return 'Source evidence attached';
+}
+
+function sourceArtifactTitle(artifact: LivingContextArtifact): string {
+  const artifactType = artifact.artifactType.toLowerCase();
+  const logicalKey = artifact.logicalKey?.toLowerCase() ?? '';
+
+  if (artifactType === 'legacy_candidate_node') return 'Candidate evidence';
+  if (artifactType.includes('resume') || logicalKey.startsWith('resume:')) return 'Resume evidence';
+  if (artifactType.includes('code_review_score')) return 'Code-review score report';
+  if (artifactType.includes('code_review_transcript')) return 'Code-review transcript';
+  if (artifactType.includes('code_review')) return 'Code-review evidence';
+  if (artifactType.includes('meeting_transcript')) return 'Meeting transcript';
+  if (artifactType.includes('phone_call')) return 'Call evidence';
+  if (artifactType.includes('scheduled_interview_invite')) return 'Interview invite';
+  return titleCaseToken(artifact.artifactType);
+}
+
+function sourceArtifactDetail(artifact: LivingContextArtifact): string {
+  const artifactType = artifact.artifactType.toLowerCase();
+  const logicalKey = artifact.logicalKey?.toLowerCase() ?? '';
+  const summary = metadataSummary(artifact.metadata);
+  if (
+    summary
+    && !summary.includes('candidate_node_')
+    && !summary.includes('resume:')
+    && !summary.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i)
+  ) {
+    return summary;
+  }
+
+  if (artifactType === 'legacy_candidate_node' || logicalKey.startsWith('resume:')) {
+    return 'Imported from resume decomposition';
+  }
+  if (artifactType.includes('code_review')) {
+    return 'Captured during code-review assessment';
+  }
+  if (artifactType.includes('meeting_transcript')) {
+    return 'Captured from meeting transcript';
+  }
+  if (artifactType.includes('phone_call')) {
+    return 'Captured from call evidence';
+  }
+  if (artifactType.includes('scheduled_interview_invite')) {
+    return 'Preserved from interview invite delivery';
+  }
+  return 'Original source preserved';
 }
 
 function recordTimestamp(record: LivingContextRecord): number {
@@ -570,7 +661,7 @@ function deriveCodeReviewDecision(
     probes,
     proofCount: proofSources.length,
     proofItems: proofSources.slice(0, 6).map(({ record, source }, index) => ({
-      id: `${record.id}:${source.sourceRefId ?? source.sourceSpanId ?? index}`,
+      id: `${record.id}:${index}:${source.sourceRefId ?? source.sourceSpanId ?? 'source'}`,
       label: sourceProofLabel(source),
       text: sourceProofText(source),
     })),
@@ -713,7 +804,8 @@ function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProj
 
       <details data-testid="person-code-review-source-proof" style={DECISION_PROOF}>
         <summary style={DECISION_PROOF_SUMMARY}>
-          Source proof{decision.sessionId ? ` - ${decision.sessionId}` : ''}
+          <span>Source proof</span>
+          <span style={DECISION_PROOF_HINT}>candidate, repo, and scoring provenance</span>
         </summary>
         <div style={DECISION_PROOF_LIST}>
           {decision.proofItems.map((item) => (
@@ -870,14 +962,14 @@ export default function PersonProfilePage(): JSX.Element {
               <div style={{ marginTop: 5, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
                 {formatDate(interaction.startedAt ?? interaction.createdAt)}
               </div>
-              {interaction.externalReference && (
+              {interactionSourceLabel(interaction) && (
                 <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                  {interaction.externalReference}
+                  {interactionSourceLabel(interaction)}
                 </div>
               )}
               {metadataSummary(interaction.metadata) && (
                 <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
-                  {metadataSummary(interaction.metadata)}
+                  {quietEvidenceText(metadataSummary(interaction.metadata) ?? '')}
                 </p>
               )}
             </article>
@@ -913,11 +1005,11 @@ export default function PersonProfilePage(): JSX.Element {
                 {contextRecordTypeLabel(record)}
               </div>
               <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
-                {contextRecordTitle(record)}
+                {contextRecordDisplayTitle(record)}
               </div>
-              {record.narrative && record.narrative !== contextRecordTitle(record) && (
+              {contextRecordDisplayNarrative(record) && (
                 <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
-                  {record.narrative}
+                  {contextRecordDisplayNarrative(record)}
                 </p>
               )}
               <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
@@ -933,10 +1025,10 @@ export default function PersonProfilePage(): JSX.Element {
           ) : evidenceArtifacts.map((artifact) => (
             <article key={artifact.id} style={listItemStyle}>
               <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
-                {artifact.artifactType}
+                {sourceArtifactTitle(artifact)}
               </div>
               <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                {artifact.logicalKey ?? artifact.id}
+                {sourceArtifactDetail(artifact)}
               </div>
               <div style={{ marginTop: 8, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
                 {artifact.sourceSpans.length} exact {artifact.sourceSpans.length === 1 ? 'span' : 'spans'}
@@ -1340,8 +1432,20 @@ const DECISION_PROOF: CSSProperties = {
 const DECISION_PROOF_SUMMARY: CSSProperties = {
   color: 'var(--pipe-text)',
   cursor: 'pointer',
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+};
+
+const DECISION_PROOF_HINT: CSSProperties = {
+  display: 'block',
+  marginTop: 5,
+  color: 'var(--pipe-text-dim)',
+  fontSize: 10,
+  fontWeight: 500,
+  letterSpacing: 0,
+  textTransform: 'none',
 };
 
 const DECISION_PROOF_LIST: CSSProperties = {

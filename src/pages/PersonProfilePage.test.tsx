@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PersonProfilePage from './PersonProfilePage';
 import type {
+  LivingContextArtifact,
   LivingContextGenericSourceRef,
   LivingContextReadModel,
   LivingContextRecord,
@@ -190,26 +191,64 @@ function makeLivingContext(): LivingContextReadModel {
       signalCount: 0,
       sourceSpanCount: 4,
     },
-    interactions: [{
-      id: 'interaction-code-review',
-      interactionType: 'code_review_assessment',
-      externalReference: 'review-session-1',
-      startedAt: '2026-06-28T15:00:00.000Z',
-      endedAt: '2026-06-28T16:00:00.000Z',
-      createdAt: '2026-06-28T15:00:00.000Z',
-      updatedAt: '2026-06-28T16:00:00.000Z',
-      metadata: {
-        sessionId: 'review-session-1',
-        challengeId: 'challenge-1',
-        assessmentId: 'assessment-1',
-        status: 'scored',
+    interactions: [
+      {
+        id: 'interaction-code-review',
+        interactionType: 'code_review_assessment',
+        externalReference: 'review-session-1',
+        startedAt: '2026-06-28T15:00:00.000Z',
+        endedAt: '2026-06-28T16:00:00.000Z',
+        createdAt: '2026-06-28T15:00:00.000Z',
+        updatedAt: '2026-06-28T16:00:00.000Z',
+        metadata: {
+          sessionId: 'review-session-1',
+          challengeId: 'challenge-1',
+          assessmentId: 'assessment-1',
+          status: 'scored',
+        },
+        artifactIds: ['artifact-1', 'artifact-2'],
+        contextRecordIds: ['record-score', 'record-transcript'],
+        assertionIds: [],
+        signalKeys: [],
       },
-      artifactIds: ['artifact-1', 'artifact-2'],
-      contextRecordIds: ['record-score', 'record-transcript'],
-      assertionIds: [],
-      signalKeys: [],
-    }],
-    artifacts: [],
+      {
+        id: 'interaction-resume',
+        interactionType: 'resume',
+        externalReference: 'resume:review-evidence:63',
+        startedAt: '2026-06-28T14:45:00.000Z',
+        endedAt: '2026-06-28T14:45:00.000Z',
+        createdAt: '2026-06-28T14:45:00.000Z',
+        updatedAt: '2026-06-28T14:45:00.000Z',
+        metadata: {},
+        artifactIds: ['artifact-legacy-candidate-node'],
+        contextRecordIds: [],
+        assertionIds: [],
+        signalKeys: [],
+      },
+    ],
+    artifacts: [
+      {
+        id: 'artifact-legacy-candidate-node',
+        interactionId: 'interaction-resume',
+        artifactType: 'legacy_candidate_node',
+        logicalKey: 'candidate_node_625b5cd373443f0aef79af73749894fb',
+        metadata: { source: 'legacy_candidate_node' },
+        latestVersionId: 'artifact-version-legacy',
+        latestVersionNumber: 1,
+        versionCount: 1,
+        mediaType: 'application/json',
+        storageKey: null,
+        createdAt: '2026-06-28T14:45:00.000Z',
+        updatedAt: '2026-06-28T14:45:00.000Z',
+        sourceSpans: [sourceSpan({
+          sourceSpanId: 'source-span-resume-1',
+          artifactType: 'legacy_candidate_node',
+          artifactLogicalKey: 'resume:review-evidence:63',
+          evidenceRole: 'candidate_profile_evidence',
+          exactText: 'Senior frontend engineer with source-backed React review evidence.',
+        })],
+      } satisfies LivingContextArtifact,
+    ],
     contextRecords: [
       contextRecord({ id: 'record-score' }),
       contextRecord({
@@ -334,10 +373,20 @@ describe('PersonProfilePage', () => {
     expect(decision).toHaveTextContent('Schedule focused technical calibration');
 
     const proof = screen.getByTestId('person-code-review-source-proof');
+    const proofSummary = proof.querySelector('summary');
+    expect(proofSummary).toHaveTextContent('Source proof');
+    expect(proofSummary).toHaveTextContent('candidate, repo, and scoring provenance');
+    expect(proofSummary).not.toHaveTextContent('review-session-1');
     expect(proof).toHaveTextContent('Source proof');
     expect(proof).toHaveTextContent('score report');
     expect(proof).toHaveTextContent('transcript segment');
-    expect(proof).toHaveTextContent('review-session-1');
+    expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
+    expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
+    expect(screen.getByText('Candidate evidence')).toBeInTheDocument();
+    expect(screen.getByText('Imported from resume decomposition')).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('review-session-1');
+    expect(screen.queryByText('resume:review-evidence:63')).not.toBeInTheDocument();
+    expect(screen.queryByText('candidate_node_625b5cd373443f0aef79af73749894fb')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open graph' })).toBeInTheDocument();
   });
