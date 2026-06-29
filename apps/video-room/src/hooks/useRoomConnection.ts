@@ -196,6 +196,7 @@ export interface RoomMediaControlState {
   microphoneEnabled?: boolean;
   cameraEnabled?: boolean;
   updatedAt: number;
+  evidence?: Record<string, unknown>;
 }
 
 export type RoomRecordingLifecycleKind = 'start' | 'stop';
@@ -1440,6 +1441,7 @@ function parseMediaControlState(value: unknown): RoomMediaControlState | null {
   const state: RoomMediaControlState = {
     role: value.role,
     updatedAt: value.updatedAt,
+    evidence: recordOrUndefined(value.evidence),
   };
   if (typeof value.microphoneEnabled === 'boolean') {
     state.microphoneEnabled = value.microphoneEnabled;
@@ -1467,6 +1469,7 @@ export function applyRoomMediaControlEvent(
   const nextState: RoomMediaControlState = {
     role: event.role,
     updatedAt: event.createdAt,
+    evidence: event.evidence,
   };
   if (event.control === 'microphone') {
     nextState.microphoneEnabled = event.enabled;
@@ -1514,6 +1517,40 @@ export function hasSourceBackedMediaControlEvidence(
     && Number.isInteger(evidence.capturedAtMs)
     && evidence.capturedAtMs >= 0
     && evidence.mediaControlId === `media:${actor}:${event.control}:${evidence.capturedAtMs}:${action}`;
+}
+
+export function hasSourceBackedMediaControlStateEvidence(state: RoomMediaControlState): boolean {
+  const evidence = state.evidence;
+  if (!isRecord(evidence)) return false;
+  const role = evidence.actor === 'host'
+    ? 'HOST'
+    : evidence.actor === 'guest'
+      ? 'GUEST'
+      : null;
+  const control = evidence.control;
+  const previousEnabled = evidence.previousEnabled;
+  const enabled = evidence.enabled;
+  if (
+    !role
+    || (control !== 'microphone' && control !== 'camera')
+    || typeof previousEnabled !== 'boolean'
+    || typeof enabled !== 'boolean'
+  ) {
+    return false;
+  }
+  if (state.role !== role) return false;
+  if (control === 'microphone' && state.microphoneEnabled !== enabled) return false;
+  if (control === 'camera' && state.cameraEnabled !== enabled) return false;
+  return hasSourceBackedMediaControlEvidence({
+    id: typeof evidence.mediaControlId === 'string' ? evidence.mediaControlId : 'media-control-state',
+    clientId: 'media-control-state-snapshot',
+    createdAt: state.updatedAt,
+    role,
+    control,
+    previousEnabled,
+    enabled,
+    evidence,
+  }, role);
 }
 
 function isRoomRecordingLifecycleKind(value: unknown): value is RoomRecordingLifecycleKind {
@@ -2740,7 +2777,7 @@ export function useRoomConnection(
         } else if (message.type === 'ROOM_MEDIA_CONTROL_STATE') {
           const snapshot = parseMediaControlSnapshot(message.payload);
           if (!snapshot) return;
-          setMediaControlStates(snapshot.states);
+          setMediaControlStates(snapshot.states.filter(hasSourceBackedMediaControlStateEvidence));
         } else if (message.type === 'ROOM_RECORDING_STATE') {
           const event = parseRecordingStateEvent(message.payload);
           if (

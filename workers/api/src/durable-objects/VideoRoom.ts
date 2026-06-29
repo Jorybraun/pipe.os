@@ -287,6 +287,7 @@ interface RoomMediaControlState {
   microphoneEnabled?: boolean;
   cameraEnabled?: boolean;
   updatedAt: number;
+  evidence?: Record<string, unknown>;
 }
 
 interface RoomMediaControlActivityEntry {
@@ -1490,14 +1491,31 @@ export class VideoRoom {
   private parseMediaControlStates(value: unknown): RoomMediaControlState[] {
     if (!Array.isArray(value)) return [];
     return value
-      .filter((entry): entry is RoomMediaControlState => (
-        this.isRecord(entry)
-        && this.isVideoRole(entry.role)
-        && (entry.microphoneEnabled === undefined || typeof entry.microphoneEnabled === 'boolean')
-        && (entry.cameraEnabled === undefined || typeof entry.cameraEnabled === 'boolean')
-        && typeof entry.updatedAt === 'number'
-        && Number.isFinite(entry.updatedAt)
-      ));
+      .map((entry) => {
+        if (
+          !this.isRecord(entry)
+          || !this.isVideoRole(entry.role)
+          || (entry.microphoneEnabled !== undefined && typeof entry.microphoneEnabled !== 'boolean')
+          || (entry.cameraEnabled !== undefined && typeof entry.cameraEnabled !== 'boolean')
+          || typeof entry.updatedAt !== 'number'
+          || !Number.isFinite(entry.updatedAt)
+        ) {
+          return null;
+        }
+        const state: RoomMediaControlState = {
+          role: entry.role,
+          updatedAt: entry.updatedAt,
+          evidence: this.isRecord(entry.evidence) ? entry.evidence : undefined,
+        };
+        if (typeof entry.microphoneEnabled === 'boolean') {
+          state.microphoneEnabled = entry.microphoneEnabled;
+        }
+        if (typeof entry.cameraEnabled === 'boolean') {
+          state.cameraEnabled = entry.cameraEnabled;
+        }
+        return state;
+      })
+      .filter((entry): entry is RoomMediaControlState => entry !== null);
   }
 
   private async getMediaControlStates(): Promise<RoomMediaControlState[]> {
@@ -1510,6 +1528,7 @@ export class VideoRoom {
     const nextState: RoomMediaControlState = {
       role,
       updatedAt: event.createdAt,
+      evidence: event.evidence,
     };
     if (event.control === 'microphone') {
       nextState.microphoneEnabled = event.enabled;

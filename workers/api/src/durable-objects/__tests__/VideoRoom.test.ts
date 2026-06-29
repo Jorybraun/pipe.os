@@ -1152,6 +1152,13 @@ describe('VideoRoom Durable Object signaling lifecycle', () => {
         role: 'HOST',
         microphoneEnabled: false,
         updatedAt: 1700000000000,
+        evidence: expect.objectContaining({
+          source: 'video_room_media_controls',
+          mediaControlEventSource: 'browser_video_control_button',
+          mediaControlId: 'media:host:microphone:1700000000000:disabled',
+          control: 'microphone',
+          enabled: false,
+        }),
       }),
     ]);
     expect(parseSent(host)).toContainEqual(expect.objectContaining({

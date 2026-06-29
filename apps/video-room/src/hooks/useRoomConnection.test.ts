@@ -11,6 +11,7 @@ import {
   hasSourceBackedClippyPromptEvidence,
   hasSourceBackedDesktopEventEvidence,
   hasSourceBackedMediaControlEvidence,
+  hasSourceBackedMediaControlStateEvidence,
   hasSourceBackedRecordingStateEvidence,
   hasSourceBackedRoomFileSystemEvidence,
   hasSourceBackedTerminalEvidence,
@@ -476,6 +477,23 @@ describe('applyRoomRecordingStateEvent', () => {
 });
 
 describe('hasSourceBackedMediaControlEvidence', () => {
+  const sourceBackedMediaEvidence = {
+    source: 'video_room_media_controls',
+    mediaControlEventSource: 'browser_video_control_button',
+    actor: 'guest',
+    mediaControlId: 'media:guest:microphone:1700000001000:disabled',
+    capturedAtMs: 1700000001000,
+    control: 'microphone',
+    previousEnabled: true,
+    enabled: false,
+    action: 'disabled',
+    surface: 'win95',
+    roomPhase: 'connected',
+    controlSurface: 'win95_video_window',
+    controlAction: 'toggle',
+    mediaSource: 'local_media_stream',
+    rawMediaStreamPersisted: false,
+  };
   const sourceBackedMediaControl: RoomMediaControlEvent = {
     id: 'media-control-1',
     clientId: 'guest-client',
@@ -484,23 +502,7 @@ describe('hasSourceBackedMediaControlEvidence', () => {
     control: 'microphone',
     previousEnabled: true,
     enabled: false,
-    evidence: {
-      source: 'video_room_media_controls',
-      mediaControlEventSource: 'browser_video_control_button',
-      actor: 'guest',
-      mediaControlId: 'media:guest:microphone:1700000001000:disabled',
-      capturedAtMs: 1700000001000,
-      control: 'microphone',
-      previousEnabled: true,
-      enabled: false,
-      action: 'disabled',
-      surface: 'win95',
-      roomPhase: 'connected',
-      controlSurface: 'win95_video_window',
-      controlAction: 'toggle',
-      mediaSource: 'local_media_stream',
-      rawMediaStreamPersisted: false,
-    },
+    evidence: sourceBackedMediaEvidence,
   };
 
   it('accepts media-control updates only when browser button evidence matches the room actor and control', () => {
@@ -516,6 +518,31 @@ describe('hasSourceBackedMediaControlEvidence', () => {
 
   it('rejects media-control updates attributed to the wrong room actor', () => {
     expect(hasSourceBackedMediaControlEvidence(sourceBackedMediaControl, 'HOST')).toBe(false);
+  });
+
+  it('accepts media-control snapshot state only when the projection carries source-backed event evidence', () => {
+    expect(hasSourceBackedMediaControlStateEvidence({
+      role: 'GUEST',
+      microphoneEnabled: false,
+      cameraEnabled: true,
+      updatedAt: 1700000001001,
+      evidence: sourceBackedMediaEvidence,
+    })).toBe(true);
+  });
+
+  it('rejects media-control snapshot state without evidence for the changed control', () => {
+    expect(hasSourceBackedMediaControlStateEvidence({
+      role: 'GUEST',
+      microphoneEnabled: true,
+      cameraEnabled: true,
+      updatedAt: 1700000001001,
+      evidence: sourceBackedMediaEvidence,
+    })).toBe(false);
+    expect(hasSourceBackedMediaControlStateEvidence({
+      role: 'GUEST',
+      microphoneEnabled: false,
+      updatedAt: 1700000001001,
+    })).toBe(false);
   });
 });
 
@@ -781,6 +808,9 @@ describe('applyRoomMediaControlEvent', () => {
         microphoneEnabled: true,
         cameraEnabled: false,
         updatedAt: 2000,
+        evidence: {
+          source: 'video_room_media_controls',
+        },
       },
     ]);
   });
