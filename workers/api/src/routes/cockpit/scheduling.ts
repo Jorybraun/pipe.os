@@ -174,6 +174,8 @@ interface ScheduledAssessmentSetupProjection {
   blocksPositiveAssessment: boolean;
   message: string | null;
   lastDeliveredUrl?: string | null;
+  lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
+  lastDeliveredUrlMessage?: string | null;
 }
 
 function buildScheduledAssessmentSetup(input: {
@@ -183,8 +185,16 @@ function buildScheduledAssessmentSetup(input: {
   githubRepoUrl: string | null | undefined;
   githubPrNumber: number | null | undefined;
   lastDeliveredUrl?: string | null | undefined;
+  lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null | undefined;
+  lastDeliveredUrlMessage?: string | null | undefined;
 }): ScheduledAssessmentSetupProjection {
   const lastDeliveredUrl = input.lastDeliveredUrl ?? null;
+  const lastDeliveredUrlState = lastDeliveredUrl
+    ? input.lastDeliveredUrlState ?? 'active'
+    : null;
+  const lastDeliveredUrlMessage = lastDeliveredUrl
+    ? input.lastDeliveredUrlMessage ?? null
+    : null;
   if (!isWorkspaceAssessmentInterviewType(input.interviewType)) {
     return {
       status: 'not_applicable',
@@ -193,6 +203,8 @@ function buildScheduledAssessmentSetup(input: {
       blocksPositiveAssessment: false,
       message: null,
       lastDeliveredUrl: null,
+      lastDeliveredUrlState: null,
+      lastDeliveredUrlMessage: null,
     };
   }
 
@@ -204,6 +216,8 @@ function buildScheduledAssessmentSetup(input: {
       blocksPositiveAssessment: false,
       message: 'A concrete GitHub PR was assigned by the recruiter. PIPE can launch that task, but candidate-specific alignment is not inferred from this manual override.',
       lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
     };
   }
 
@@ -215,6 +229,8 @@ function buildScheduledAssessmentSetup(input: {
       blocksPositiveAssessment: true,
       message: 'A matched repository exists, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
       lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
     };
   }
 
@@ -226,6 +242,8 @@ function buildScheduledAssessmentSetup(input: {
       blocksPositiveAssessment: true,
       message: 'This contact-first assessment invite has no candidate evidence yet. PIPE must ingest source-backed resume, transcript, chat, or interview evidence before selecting a PR task.',
       lastDeliveredUrl,
+      lastDeliveredUrlState,
+      lastDeliveredUrlMessage,
     };
   }
 
@@ -236,6 +254,8 @@ function buildScheduledAssessmentSetup(input: {
     blocksPositiveAssessment: true,
     message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
     lastDeliveredUrl,
+    lastDeliveredUrlState,
+    lastDeliveredUrlMessage,
   };
 }
 
@@ -457,6 +477,19 @@ function emailLogoImgForRequest(c: { req: { url: string }; env: Env }): string {
 
 type InterviewLivingContext = Awaited<ReturnType<typeof loadCandidateLivingContext>>;
 
+function assessmentTokenFromUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const assessIndex = parts.indexOf('assess');
+    if (assessIndex < 0) return null;
+    return parts[assessIndex + 1] ?? null;
+  } catch {
+    const match = value.match(/\/assess\/([^/?#]+)/);
+    return match?.[1] ?? null;
+  }
+}
+
 async function loadScheduledInterviewLivingContext(
   db: D1Database,
   ownerId: string,
@@ -504,7 +537,12 @@ async function loadScheduledInterviewLivingContext(
 async function loadLatestDeliveredAssessmentUrl(
   db: D1Database,
   interviewId: string,
-): Promise<string | null> {
+  candidateId: string | null | undefined,
+): Promise<{
+  url: string;
+  state: 'active' | 'claimed' | 'stale';
+  message: string | null;
+} | null> {
   try {
     if (!await tableExists(db, 'interactions')) return null;
     const row = await db.prepare(
@@ -519,21 +557,51 @@ async function loadLatestDeliveredAssessmentUrl(
     const deliveredUrl = metadata.deliveredUrl;
     if (typeof deliveredUrl !== 'string') return null;
     const trimmed = deliveredUrl.trim();
-    return trimmed.includes('/assess/') ? trimmed : null;
+    if (!trimmed.includes('/assess/')) return null;
+
+    const deliveredToken = assessmentTokenFromUrl(trimmed);
+    if (!candidateId || !deliveredToken) {
+      return { url: trimmed, state: 'active', message: null };
+    }
+
+    const candidate = await db
+      .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
+      .bind(candidateId)
+      .first<{ invite_token: string | null }>();
+    const currentToken = candidate?.invite_token?.trim() ?? '';
+    if (currentToken === `CLAIMED::${deliveredToken}`) {
+      return {
+        url: trimmed,
+        state: 'claimed',
+        message: 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.',
+      };
+    }
+    if (currentToken && currentToken !== deliveredToken) {
+      return {
+        url: trimmed,
+        state: 'stale',
+        message: 'This is an older delivered assessment link. Resend the invite to deliver the current candidate token.',
+      };
+    }
+    return { url: trimmed, state: 'active', message: null };
   } catch (err) {
     console.error('[scheduling/detail] failed to load delivered assessment url:', err instanceof Error ? err.message : String(err));
     return null;
   }
 }
 
-async function loadCandidateAssessmentInviteUrlFromToken(
+async function loadCandidateAssessmentInviteLinkFromToken(
   db: D1Database,
   env: Env,
   input: {
     interviewType: string | null | undefined;
     candidateId: string | null | undefined;
   },
-): Promise<string | null> {
+): Promise<{
+  url: string;
+  state: 'active';
+  message: string | null;
+} | null> {
   if (!isWorkspaceAssessmentInterviewType(input.interviewType) || !input.candidateId) return null;
   const candidate = await db
     .prepare('SELECT invite_token FROM candidates WHERE id = ?1')
@@ -542,7 +610,11 @@ async function loadCandidateAssessmentInviteUrlFromToken(
   const inviteToken = candidate?.invite_token?.trim() ?? '';
   if (!inviteToken || isClaimedInviteToken(inviteToken)) return null;
   const baseUrl = env.APP_BASE_URL ?? 'https://pipe.build';
-  return withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, env);
+  return {
+    url: withDevBasicAuth(`${baseUrl}/assess/${inviteToken}`, env),
+    state: 'active',
+    message: null,
+  };
 }
 
 interface ScheduledRelatedEvidenceInterview {
@@ -4428,8 +4500,8 @@ schedulingAuth.get('/interviews/:id', async (c) => {
   const codeReviewMatch = await loadScheduledCodeReviewMatchDetail(db, interview);
   const codeReviewScore = await loadScheduledCodeReviewScoreSummary(db, interview);
   const assessmentProgress = await loadScheduledAssessmentProgress(db, interview.id);
-  const lastDeliveredAssessmentUrl = await loadLatestDeliveredAssessmentUrl(db, interview.id)
-    ?? await loadCandidateAssessmentInviteUrlFromToken(db, c.env, {
+  const assessmentInviteLink = await loadLatestDeliveredAssessmentUrl(db, interview.id, interview.candidate_id)
+    ?? await loadCandidateAssessmentInviteLinkFromToken(db, c.env, {
       interviewType: interview.interview_type,
       candidateId: interview.candidate_id,
     });
@@ -4469,7 +4541,9 @@ schedulingAuth.get('/interviews/:id', async (c) => {
         matchedRepoId: interview.matched_repo_id,
         githubRepoUrl: interview.github_repo_url,
         githubPrNumber: interview.github_pr_number,
-        lastDeliveredUrl: lastDeliveredAssessmentUrl,
+        lastDeliveredUrl: assessmentInviteLink?.url ?? null,
+        lastDeliveredUrlState: assessmentInviteLink?.state ?? null,
+        lastDeliveredUrlMessage: assessmentInviteLink?.message ?? null,
       }),
       submissionJson: interview.submission_json,
       completedAt: interview.completed_at,

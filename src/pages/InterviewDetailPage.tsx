@@ -75,6 +75,8 @@ interface InviteResponse {
   success: boolean;
   emailSent: boolean;
   meetingUrl: string;
+  deliveredUrl?: string;
+  schedulingUrl?: string | null;
   provider?: string;
   emailError?: string;
   room?: PreparedRoomLinks;
@@ -1268,7 +1270,8 @@ export default function InterviewDetailPage(): JSX.Element {
 
   const copyAssessmentInviteLink = useCallback(async () => {
     const assessmentUrl = interview?.assessmentSetup?.lastDeliveredUrl ?? null;
-    if (!assessmentUrl) return;
+    const assessmentUrlState = interview?.assessmentSetup?.lastDeliveredUrlState ?? (assessmentUrl ? 'active' : null);
+    if (!assessmentUrl || assessmentUrlState !== 'active') return;
     setAssessmentLinkError(null);
     setAssessmentLinkNotice(null);
     const copyResult = await copyTextToClipboard(assessmentUrl, assessmentLinkInputRef.current);
@@ -1281,7 +1284,38 @@ export default function InterviewDetailPage(): JSX.Element {
       return;
     }
     setAssessmentLinkError('Copy failed. Select the assessment link below.');
-  }, [interview?.assessmentSetup?.lastDeliveredUrl]);
+  }, [interview?.assessmentSetup?.lastDeliveredUrl, interview?.assessmentSetup?.lastDeliveredUrlState]);
+
+  const resendAssessmentInvite = useCallback(async () => {
+    if (!interview) return;
+    const email = interview.candidateEmail ?? interview.recipientEmail;
+    if (!email) {
+      setAssessmentLinkError('Add an email before sending an assessment invite.');
+      return;
+    }
+    setAssessmentLinkError(null);
+    setAssessmentLinkNotice(null);
+    setIsSendingInvite(true);
+    try {
+      const result = await api.post<InviteResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/invite`,
+        { email },
+      );
+      if (result.room) {
+        setRoomLinks(result.room);
+      }
+      setAssessmentLinkNotice(result.emailSent
+        ? `Assessment invite sent${result.provider ? ` via ${result.provider}` : ''}.`
+        : result.emailError
+          ? 'Fresh assessment link is ready, but email delivery failed. Copy it manually.'
+          : 'Fresh assessment link is ready. Email delivery is not configured locally.');
+      await load({ showLoading: false });
+    } catch (err) {
+      setAssessmentLinkError(err instanceof Error ? err.message : 'Unable to send assessment invite');
+    } finally {
+      setIsSendingInvite(false);
+    }
+  }, [api, interview, load]);
 
   const sendInvite = useCallback(async () => {
     if (!interview) return;
@@ -1542,6 +1576,22 @@ export default function InterviewDetailPage(): JSX.Element {
     || interview.interviewType === 'OPEN_SOURCE_BUG_FIX';
   const assessmentProgress = interview.assessmentProgress ?? null;
   const assessmentInviteUrl = interview.assessmentSetup?.lastDeliveredUrl ?? null;
+  const assessmentInviteState = interview.assessmentSetup?.lastDeliveredUrlState
+    ?? (assessmentInviteUrl ? 'active' : null);
+  const canCopyAssessmentInvite = Boolean(assessmentInviteUrl && assessmentInviteState === 'active');
+  const showsAssessmentInvitePanel = Boolean(
+    interview.assessmentSetup
+      && interview.assessmentSetup.status !== 'not_applicable'
+      && (isCodeReviewInterview || assessmentInviteUrl),
+  );
+  const assessmentInviteDescription =
+    assessmentInviteState === 'claimed'
+      ? 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.'
+      : assessmentInviteState === 'stale'
+        ? 'This saved assessment link is older than the current candidate token. Resend the invite before sharing it.'
+        : assessmentInviteUrl
+          ? 'One-use candidate invite. Copy it for the candidate instead of opening it in a recruiter browser.'
+          : 'No candidate assessment link has been delivered yet. Send the invite to create a usable one-use link.';
   const showsAssessmentProgress = usesWorkspaceInterview || Boolean(assessmentProgress);
   const assessmentProgressStage = assessmentProgress
     ? assessmentProgressStageLabel(assessmentProgress.stage)
@@ -1739,7 +1789,7 @@ export default function InterviewDetailPage(): JSX.Element {
         </section>
       )}
 
-      {assessmentInviteUrl && (
+      {showsAssessmentInvitePanel && (
         <section data-testid="interview-assessment-link" style={ROOM_PANEL}>
           <div style={{ minWidth: 0 }}>
             <div style={{ ...SECTION_TITLE, marginBottom: 10 }}>
@@ -1748,28 +1798,45 @@ export default function InterviewDetailPage(): JSX.Element {
             </div>
             <h2 style={ROOM_TITLE}>Candidate assessment link</h2>
             <div style={ROOM_LINK_TEXT}>
-              One-use candidate invite. Copy or resend it for the candidate instead of opening it in a recruiter browser.
+              {interview.assessmentSetup?.lastDeliveredUrlMessage ?? assessmentInviteDescription}
             </div>
           </div>
           <div style={ROOM_ACTIONS}>
-            <button
-              type="button"
-              onClick={() => void copyAssessmentInviteLink()}
-              style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
-            >
-              <Copy size={14} />
-              COPY CANDIDATE LINK
-            </button>
-            <label style={ROOM_GUEST_LINK_LABEL}>
-              <span style={ROOM_GUEST_LINK_TEXT}>CANDIDATE ASSESSMENT URL</span>
-              <input
-                ref={assessmentLinkInputRef}
-                readOnly
-                value={assessmentInviteUrl}
-                onFocus={(event) => event.currentTarget.select()}
-                style={ROOM_GUEST_LINK_INPUT}
-              />
-            </label>
+            {canCopyAssessmentInvite && (
+              <button
+                type="button"
+                onClick={() => void copyAssessmentInviteLink()}
+                style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+              >
+                <Copy size={14} />
+                COPY CANDIDATE LINK
+              </button>
+            )}
+            {personEmail && (
+              <button
+                type="button"
+                onClick={() => void resendAssessmentInvite()}
+                disabled={isSendingInvite}
+                style={{ ...PRIMARY_BUTTON, ...ROOM_SECONDARY_BUTTON }}
+              >
+                {isSendingInvite ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={14} />}
+                {assessmentInviteUrl ? 'RESEND ASSESSMENT INVITE' : 'SEND ASSESSMENT INVITE'}
+              </button>
+            )}
+            {assessmentInviteUrl && (
+              <label style={ROOM_GUEST_LINK_LABEL}>
+                <span style={ROOM_GUEST_LINK_TEXT}>
+                  {canCopyAssessmentInvite ? 'CANDIDATE ASSESSMENT URL' : 'LAST CANDIDATE ASSESSMENT URL'}
+                </span>
+                <input
+                  ref={assessmentLinkInputRef}
+                  readOnly
+                  value={assessmentInviteUrl}
+                  onFocus={(event) => event.currentTarget.select()}
+                  style={ROOM_GUEST_LINK_INPUT}
+                />
+              </label>
+            )}
             {assessmentLinkNotice && <div style={SUCCESS_NOTE}>{assessmentLinkNotice}</div>}
             {assessmentLinkError && <div style={ERROR_NOTE}>{assessmentLinkError}</div>}
           </div>

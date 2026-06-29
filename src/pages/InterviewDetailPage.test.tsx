@@ -1309,6 +1309,111 @@ describe('InterviewDetailPage', () => {
     expect(screen.getByTestId('interview-assessment-link')).not.toHaveTextContent('Copy failed');
   });
 
+  it('treats claimed assessment links as historical and offers resend from code-review interviews', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/claimed-token';
+    const freshUrl = 'https://app-dev.hire-pipe.com/assess/fresh-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.api.get
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'CODE_REVIEW',
+          candidateId: 'candidate-1',
+          assessmentSetup: {
+            status: 'waiting_for_source_backed_match',
+            kind: 'auto_match',
+            source: 'candidate_id',
+            blocksPositiveAssessment: true,
+            message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+            lastDeliveredUrl: deliveredUrl,
+            lastDeliveredUrlState: 'claimed',
+            lastDeliveredUrlMessage: 'The candidate has already opened this one-use assessment link. Resend the invite if they need a fresh link.',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        interview: makeInterview({
+          interviewType: 'CODE_REVIEW',
+          candidateId: 'candidate-1',
+          assessmentSetup: {
+            status: 'waiting_for_source_backed_match',
+            kind: 'auto_match',
+            source: 'candidate_id',
+            blocksPositiveAssessment: true,
+            message: 'Candidate evidence is available for matching, but no source-backed PR task has been assigned yet.',
+            lastDeliveredUrl: freshUrl,
+            lastDeliveredUrlState: 'active',
+            lastDeliveredUrlMessage: null,
+          },
+        }),
+      });
+    mocks.api.post.mockResolvedValueOnce({
+      success: true,
+      emailSent: false,
+      meetingUrl: 'https://room-dev.hire-pipe.com/room/guest-token',
+      deliveredUrl: freshUrl,
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('The candidate has already opened this one-use assessment link.');
+    expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
+    expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
+    expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+
+    fireEvent.click(screen.getByText('RESEND ASSESSMENT INVITE'));
+    await flushAsyncUpdates();
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(mocks.api.post).toHaveBeenCalledWith(
+      '/api/v1/scheduling/interviews/interview-1/invite',
+      { email: 'ada@example.com' },
+    );
+    expect(screen.getByTestId('interview-assessment-link')).toHaveTextContent('Fresh assessment link is ready.');
+    expect(screen.getByDisplayValue(freshUrl)).toBeTruthy();
+  });
+
+  it('treats stale assessment links as historical and blocks copying the old token', async () => {
+    const deliveredUrl = 'https://app-dev.hire-pipe.com/assess/old-token';
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    mocks.api.get.mockResolvedValueOnce({
+      interview: makeInterview({
+        interviewType: 'OPEN_SOURCE_BUG_FIX',
+        candidateId: 'candidate-1',
+        assessmentSetup: {
+          status: 'reviewable_task_assigned',
+          kind: 'github_pr',
+          source: 'recruiter_manual_override',
+          blocksPositiveAssessment: false,
+          message: 'A concrete GitHub PR was assigned by the recruiter.',
+          lastDeliveredUrl: deliveredUrl,
+          lastDeliveredUrlState: 'stale',
+          lastDeliveredUrlMessage: 'This is an older delivered assessment link. Resend the invite to deliver the current candidate token.',
+        },
+      }),
+    });
+
+    renderDetail();
+
+    await flushAsyncUpdates();
+    const linkPanel = screen.getByTestId('interview-assessment-link');
+    expect(linkPanel).toHaveTextContent('This is an older delivered assessment link.');
+    expect(linkPanel).toHaveTextContent('LAST CANDIDATE ASSESSMENT URL');
+    expect(linkPanel).toHaveTextContent('RESEND ASSESSMENT INVITE');
+    expect(screen.queryByText('COPY CANDIDATE LINK')).toBeNull();
+    expect(screen.getByDisplayValue(deliveredUrl)).toBeTruthy();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
   it('offers repo-match refresh so captured evidence can prepare matcher-visible context', async () => {
     mocks.api.get.mockResolvedValueOnce({
       interview: makeInterview({

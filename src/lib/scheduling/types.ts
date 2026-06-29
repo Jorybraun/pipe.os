@@ -73,6 +73,8 @@ export interface AssessmentSetupProjection {
   blocksPositiveAssessment: boolean;
   message: string | null;
   lastDeliveredUrl?: string | null;
+  lastDeliveredUrlState?: 'active' | 'claimed' | 'stale' | null;
+  lastDeliveredUrlMessage?: string | null;
 }
 
 export type AssessmentProgressStage =

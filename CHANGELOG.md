@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW assessment invite panels now distinguish active, claimed, and stale candidate links, hide copy actions for used links, and offer a resend action directly from the interview detail so recruiters can recover without sharing a burned token.
 - Assessment progress snapshots now preserve evaluator evidence-coverage gates and show quiet captured/missing chips for tests, terminal, editor, and AI-use evidence, making repo-task scores easier to trust without exposing raw source refs.
 - CODE_REVIEW interview match panels now collapse assessment-quality rubric details behind a quiet quality gate, keeping the recruiter decision readable while preserving source-backed checks.
 - Repo-task AI evaluation prompts now include a deterministic source-ref coverage contract, making missing test, terminal, editor, or AI-assistance evidence explicit and preserving that coverage in the evaluation report.
