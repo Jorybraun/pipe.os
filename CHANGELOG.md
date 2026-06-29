@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Real-time assessment → living context ingestion (criterion #2, #5)
+
+- Assessment evidence now flows into the person graph immediately when an evaluation report is created (`POST /sessions/:sessionId/evaluation-reports`), rather than waiting for the scheduled backfill cron.
+- Extracted `loadAssessmentSessionData(db, sessionId)` as a shared helper used by both the real-time hook and the scheduled backfill, eliminating duplicated data-loading logic.
+- `ingestAssessmentSessionRealTime(db, sessionId)` — single-call convenience that loads + ingests in one step.
+- Backfill `backfillAssessmentsBatch` refactored to use the shared loader.
+- 4 new tests covering `loadAssessmentSessionData` and `ingestAssessmentSessionRealTime`.
+
+### Added — Person identity link endpoint (criterion #1)
+
+- `POST /api/v1/internal/person-identity-link` — manually merge a contact and candidate onto the same person node when email-based auto-resolution cannot merge them (different emails, missing email, etc.).
+- Re-points all dependent records (interactions, artifacts, episodes, assertions, signals, person roles, context records) from the source workspace person to the target, then deletes the orphaned source workspace person.
+- Merges display name and email from the source person if the target person is missing them.
+- 4 new tests covering validation, not-found handling, cross-email merge, and same-email already-linked detection.
+
 ### Added — Contact living context parity (criterion #1)
 
 - `GET /api/v1/cockpit/contacts/:id/living-context/timeline` — chronological evidence accumulation feed for contacts. Resolves contact → workspace person via `context_json` and delegates to `loadPersonEvidenceTimeline`. Supports `limit`, `before`, `after` pagination. Gated behind `living_context_read`.

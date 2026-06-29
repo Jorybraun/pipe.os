@@ -18,6 +18,10 @@ import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/ba
 import { seedCorpusFromMatchRuns, persistSeededCorpus } from '../../lib/challengeMatching/evaluation/corpusSeeder';
 import { runEvaluation, generateHumanReadableReport } from '../../lib/challengeMatching/evaluation/cli';
 import type { AcceptanceThresholds } from '../../lib/challengeMatching/evaluation/types';
+import {
+  ensureCandidateLivingContext,
+  ensureContactLivingContext,
+} from '../../lib/livingContext/compatibility';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -819,6 +823,129 @@ app.get('/concept-graph', async (c) => {
     totalConcepts: concepts.length,
     concepts,
     ...(withAdj ? { adjacencies } : {}),
+  });
+});
+
+// POST /api/v1/internal/person-identity-link — link a contact and candidate
+// to the same underlying person node. Useful when email-based auto-resolution
+// cannot merge them (different emails, missing email, etc.).
+app.post('/person-identity-link', async (c) => {
+  const body = z.object({
+    contactId: z.string().min(1),
+    candidateId: z.string().min(1),
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!body.success) {
+    return c.json({ error: body.error.issues[0]?.message ?? 'contactId and candidateId required' }, 400);
+  }
+
+  const db = c.env.DB;
+  const { contactId, candidateId } = body.data;
+
+  // Ensure both entities have living context identities
+  const contactIdentity = await ensureContactLivingContext(db, contactId);
+  if (!contactIdentity) {
+    return c.json({ error: `Contact ${contactId} not found` }, 404);
+  }
+
+  const candidateIdentity = await ensureCandidateLivingContext(db, candidateId);
+  if (!candidateIdentity) {
+    return c.json({ error: `Candidate ${candidateId} not found` }, 404);
+  }
+
+  // Already linked to the same person
+  if (contactIdentity.personId === candidateIdentity.personId) {
+    return c.json({
+      linked: true,
+      alreadyLinked: true,
+      personId: contactIdentity.personId,
+      contactWorkspacePersonId: contactIdentity.workspacePersonId,
+      candidateWorkspacePersonId: candidateIdentity.workspacePersonId,
+    });
+  }
+
+  // Merge the contact's workspace person into the candidate's workspace person.
+  // The candidate's person is canonical (has an application). We re-point all
+  // dependent records from the source workspace_person to the target, then
+  // update the source to share the same underlying person.
+  const targetPersonId = candidateIdentity.personId;
+  const sourcePersonId = contactIdentity.personId;
+  const targetWpId = candidateIdentity.workspacePersonId;
+  const sourceWpId = contactIdentity.workspacePersonId;
+  const now = new Date().toISOString();
+
+  // Re-point dependent records from source workspace_person to target
+  const dependentTables = [
+    'interactions',
+    'artifacts',
+    'episodes',
+    'semantic_assertions',
+    'signal_evidence',
+    'signal_snapshots',
+    'person_roles',
+  ];
+  for (const table of dependentTables) {
+    await db.prepare(
+      `UPDATE ${table} SET workspace_person_id = ?1 WHERE workspace_person_id = ?2`,
+    ).bind(targetWpId, sourceWpId).run();
+  }
+
+  // Re-point context_records if they exist
+  try {
+    await db.prepare(
+      `UPDATE context_records SET workspace_person_id = ?1 WHERE workspace_person_id = ?2`,
+    ).bind(targetWpId, sourceWpId).run();
+  } catch {
+    // context_records table may not exist in all environments
+  }
+
+  // Delete the now-orphaned source workspace_person
+  await db.prepare(
+    `DELETE FROM workspace_people WHERE id = ?1`,
+  ).bind(sourceWpId).run();
+
+  // Merge display name / email if the target person is missing them
+  const targetPerson = await db.prepare(
+    `SELECT display_name, primary_email FROM people WHERE id = ?1`,
+  ).bind(targetPersonId).first<{ display_name: string | null; primary_email: string | null }>();
+
+  const sourcePerson = await db.prepare(
+    `SELECT display_name, primary_email FROM people WHERE id = ?1`,
+  ).bind(sourcePersonId).first<{ display_name: string | null; primary_email: string | null }>();
+
+  if (sourcePerson) {
+    const updates: string[] = [];
+    const binds: unknown[] = [];
+    let bindIdx = 1;
+
+    if (!targetPerson?.display_name && sourcePerson.display_name) {
+      updates.push(`display_name = ?${bindIdx}`);
+      binds.push(sourcePerson.display_name);
+      bindIdx++;
+    }
+    if (!targetPerson?.primary_email && sourcePerson.primary_email) {
+      updates.push(`primary_email = ?${bindIdx}`);
+      binds.push(sourcePerson.primary_email);
+      bindIdx++;
+    }
+    if (updates.length > 0) {
+      updates.push(`updated_at = ?${bindIdx}`);
+      binds.push(now);
+      bindIdx++;
+      binds.push(targetPersonId);
+      await db.prepare(
+        `UPDATE people SET ${updates.join(', ')} WHERE id = ?${bindIdx}`,
+      ).bind(...binds).run();
+    }
+  }
+
+  return c.json({
+    linked: true,
+    alreadyLinked: false,
+    personId: targetPersonId,
+    mergedFromPersonId: sourcePersonId,
+    targetWorkspacePersonId: targetWpId,
+    mergedWorkspacePersonId: sourceWpId,
   });
 });
 

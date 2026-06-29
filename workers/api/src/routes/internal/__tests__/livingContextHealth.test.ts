@@ -509,3 +509,136 @@ describe('GET /evaluation-readiness', () => {
     expect(body.reason).toContain('Invalid stage');
   });
 });
+
+describe('POST /person-identity-link', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(`
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        phone TEXT,
+        company TEXT,
+        role TEXT,
+        type TEXT NOT NULL
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(contextRecordsMigration);
+    sqlite.exec(checkpointMigration);
+    sqlite.exec(gatesMigration);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns 400 when contactId or candidateId is missing', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/person-identity-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }, { DB: db });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when contact does not exist', async () => {
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, name, email, status)
+      VALUES ('cand-link-1', 'owner-1', 'Alice', 'alice@test.dev', 'active');
+    `);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/person-identity-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId: 'nonexistent', candidateId: 'cand-link-1' }),
+    }, { DB: db });
+    expect(res.status).toBe(404);
+  });
+
+  it('links a contact and candidate to the same person node', async () => {
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, name, email, status)
+      VALUES ('cand-link-2', 'owner-1', 'Alice Candidate', 'alice-cand@test.dev', 'active');
+      INSERT INTO contacts (id, owner_id, name, email, type)
+      VALUES ('cont-link-2', 'owner-1', 'Alice Contact', 'alice-cont@different.dev', 'lead');
+    `);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/person-identity-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId: 'cont-link-2', candidateId: 'cand-link-2' }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as {
+      linked: boolean;
+      alreadyLinked: boolean;
+      personId: string;
+      mergedWorkspacePersonId: string;
+      targetWorkspacePersonId: string;
+    };
+    expect(body.linked).toBe(true);
+    expect(body.alreadyLinked).toBe(false);
+    expect(body.personId).toBeTruthy();
+
+    // The contact's workspace person should be merged (deleted)
+    const mergedWp = sqlite.prepare(
+      `SELECT id FROM workspace_people WHERE id = ?`,
+    ).get(body.mergedWorkspacePersonId) as { id: string } | undefined;
+    expect(mergedWp).toBeUndefined();
+
+    // The candidate's workspace person should still exist
+    const targetWp = sqlite.prepare(
+      `SELECT person_id FROM workspace_people WHERE id = ?`,
+    ).get(body.targetWorkspacePersonId) as { person_id: string } | undefined;
+    expect(targetWp).toBeTruthy();
+    expect(targetWp!.person_id).toBe(body.personId);
+  });
+
+  it('reports already linked when contact and candidate share same email', async () => {
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, name, email, status)
+      VALUES ('cand-same-1', 'owner-1', 'Bob', 'bob@test.dev', 'active');
+      INSERT INTO contacts (id, owner_id, name, email, type)
+      VALUES ('cont-same-1', 'owner-1', 'Bob Contact', 'bob@test.dev', 'lead');
+    `);
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', livingContextHealth);
+
+    const res = await app.request('/person-identity-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId: 'cont-same-1', candidateId: 'cand-same-1' }),
+    }, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { linked: boolean; alreadyLinked: boolean };
+    expect(body.linked).toBe(true);
+    expect(body.alreadyLinked).toBe(true);
+  });
+});

@@ -35,7 +35,7 @@ import {
 import type { CodeReviewTranscript } from './codeReview';
 import { LivingContextStore } from './persistence';
 import { ingestHistoricalCultureTranscript } from './cultureTranscriptBackfill';
-import { ingestAssessmentToLivingContext } from './assessmentIngestion';
+import { ingestAssessmentToLivingContext, loadAssessmentSessionData } from './assessmentIngestion';
 import type {
   AssessmentSessionRow,
   AssessmentEvidenceEventRow,
@@ -778,76 +778,18 @@ async function backfillAssessmentsBatch(
 
   for (const session of sessions) {
     try {
-      const eventRows = await db.prepare(
-        `SELECT id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
-                narrative, payload_json, context_record_id, occurred_at
-           FROM assessment_evidence_events
-          WHERE session_id = ?1
-          ORDER BY sequence`,
-      ).bind(session.id).all<AssessmentEvidenceEventRow>();
-
-      const events = eventRows.results ?? [];
-      const eventSourceRefs = new Map<string, AssessmentEventSourceRefRow[]>();
-
-      if (events.length > 0) {
-        const eventIds = events.map((e) => e.id);
-        for (const eventId of eventIds) {
-          const refRows = await db.prepare(
-            `SELECT id, event_id, source_ref_type, source_ref_id, source_span_id,
-                    evidence_role, locator_json, exact_text, content_hash, metadata_json
-               FROM assessment_event_source_refs
-              WHERE event_id = ?1`,
-          ).bind(eventId).all<AssessmentEventSourceRefRow>();
-          const refs = refRows.results ?? [];
-          if (refs.length > 0) {
-            eventSourceRefs.set(eventId, refs);
-          }
-        }
+      const data = await loadAssessmentSessionData(db, session.id);
+      if (data) {
+        await ingestAssessmentToLivingContext(
+          db,
+          data.session,
+          data.events,
+          data.eventSourceRefs,
+          data.reports,
+          data.claims,
+          data.claimSourceRefs,
+        );
       }
-
-      const reportRows = await db.prepare(
-        `SELECT id, session_id, status, summary, output_json, created_at
-           FROM assessment_evaluation_reports
-          WHERE session_id = ?1
-          ORDER BY created_at`,
-      ).bind(session.id).all<AssessmentEvaluationReportRow>();
-      const reports = reportRows.results ?? [];
-
-      const claims: AssessmentEvaluationClaimRow[] = [];
-      const claimSourceRefs = new Map<string, AssessmentClaimSourceRefRow[]>();
-
-      for (const report of reports) {
-        const claimRows = await db.prepare(
-          `SELECT id, report_id, polarity, dimension, narrative, confidence, created_at
-             FROM assessment_evaluation_claims
-            WHERE report_id = ?1`,
-        ).bind(report.id).all<AssessmentEvaluationClaimRow>();
-        const reportClaims = claimRows.results ?? [];
-        claims.push(...reportClaims);
-
-        for (const claim of reportClaims) {
-          const refRows = await db.prepare(
-            `SELECT id, claim_id, source_ref_type, source_ref_id, source_span_id,
-                    evidence_role, locator_json, exact_text, content_hash, metadata_json
-               FROM assessment_claim_source_refs
-              WHERE claim_id = ?1`,
-          ).bind(claim.id).all<AssessmentClaimSourceRefRow>();
-          const refs = refRows.results ?? [];
-          if (refs.length > 0) {
-            claimSourceRefs.set(claim.id, refs);
-          }
-        }
-      }
-
-      await ingestAssessmentToLivingContext(
-        db,
-        session,
-        events,
-        eventSourceRefs,
-        reports,
-        claims,
-        claimSourceRefs,
-      );
       processed++;
     } catch (err) {
       console.error('[backfill] assessment LC failed:', session.id, err);

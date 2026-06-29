@@ -13,10 +13,11 @@ export * from './codeReview';
 export * from './readModel';
 export * from './projection';
 export * from './openTerms';
-export { ingestAssessmentToLivingContext } from './assessmentIngestion';
+export { ingestAssessmentToLivingContext, ingestAssessmentSessionRealTime, loadAssessmentSessionData } from './assessmentIngestion';
 export type {
   AssessmentIngestionResult,
   AssessmentSessionRow,
+  AssessmentSessionData,
   AssessmentEvidenceEventRow,
   AssessmentEventSourceRefRow,
   AssessmentEvaluationReportRow,

@@ -462,3 +462,112 @@ async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
+
+export interface AssessmentSessionData {
+  session: AssessmentSessionRow;
+  events: AssessmentEvidenceEventRow[];
+  eventSourceRefs: Map<string, AssessmentEventSourceRefRow[]>;
+  reports: AssessmentEvaluationReportRow[];
+  claims: AssessmentEvaluationClaimRow[];
+  claimSourceRefs: Map<string, AssessmentClaimSourceRefRow[]>;
+}
+
+/**
+ * Load all assessment data needed for living context ingestion.
+ * Used by both the real-time hook and the scheduled backfill.
+ */
+export async function loadAssessmentSessionData(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentSessionData | null> {
+  const session = await db.prepare(
+    `SELECT id, interview_id, mode, state,
+            candidate_id, workspace_id, workspace_person_id,
+            application_id, metadata_json,
+            started_at, submitted_at, completed_at, created_at
+       FROM assessment_sessions WHERE id = ?1`,
+  ).bind(sessionId).first<AssessmentSessionRow>();
+  if (!session) return null;
+
+  const eventRows = await db.prepare(
+    `SELECT id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+            narrative, payload_json, context_record_id, occurred_at
+       FROM assessment_evidence_events
+      WHERE session_id = ?1
+      ORDER BY sequence`,
+  ).bind(sessionId).all<AssessmentEvidenceEventRow>();
+
+  const events = eventRows.results ?? [];
+  const eventSourceRefs = new Map<string, AssessmentEventSourceRefRow[]>();
+
+  for (const event of events) {
+    const refRows = await db.prepare(
+      `SELECT id, event_id, source_ref_type, source_ref_id, source_span_id,
+              evidence_role, locator_json, exact_text, content_hash, metadata_json
+         FROM assessment_event_source_refs
+        WHERE event_id = ?1`,
+    ).bind(event.id).all<AssessmentEventSourceRefRow>();
+    const refs = refRows.results ?? [];
+    if (refs.length > 0) {
+      eventSourceRefs.set(event.id, refs);
+    }
+  }
+
+  const reportRows = await db.prepare(
+    `SELECT id, session_id, status, summary, output_json, created_at
+       FROM assessment_evaluation_reports
+      WHERE session_id = ?1
+      ORDER BY created_at`,
+  ).bind(sessionId).all<AssessmentEvaluationReportRow>();
+  const reports = reportRows.results ?? [];
+
+  const claims: AssessmentEvaluationClaimRow[] = [];
+  const claimSourceRefs = new Map<string, AssessmentClaimSourceRefRow[]>();
+
+  for (const report of reports) {
+    const claimRows = await db.prepare(
+      `SELECT id, report_id, polarity, dimension, narrative, confidence, created_at
+         FROM assessment_evaluation_claims
+        WHERE report_id = ?1`,
+    ).bind(report.id).all<AssessmentEvaluationClaimRow>();
+    const reportClaims = claimRows.results ?? [];
+    claims.push(...reportClaims);
+
+    for (const claim of reportClaims) {
+      const refRows = await db.prepare(
+        `SELECT id, claim_id, source_ref_type, source_ref_id, source_span_id,
+                evidence_role, locator_json, exact_text, content_hash, metadata_json
+           FROM assessment_claim_source_refs
+          WHERE claim_id = ?1`,
+      ).bind(claim.id).all<AssessmentClaimSourceRefRow>();
+      const refs = refRows.results ?? [];
+      if (refs.length > 0) {
+        claimSourceRefs.set(claim.id, refs);
+      }
+    }
+  }
+
+  return { session, events, eventSourceRefs, reports, claims, claimSourceRefs };
+}
+
+/**
+ * Real-time assessment → living context ingestion.
+ * Call after an evaluation report is created so that assessment evidence
+ * flows into the person graph immediately, not deferred to scheduled backfill.
+ */
+export async function ingestAssessmentSessionRealTime(
+  db: D1Database,
+  sessionId: string,
+): Promise<AssessmentIngestionResult | null> {
+  const data = await loadAssessmentSessionData(db, sessionId);
+  if (!data) return null;
+  return ingestAssessmentToLivingContext(
+    db,
+    data.session,
+    data.events,
+    data.eventSourceRefs,
+    data.reports,
+    data.claims,
+    data.claimSourceRefs,
+  );
+}

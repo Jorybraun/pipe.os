@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
-import { ingestAssessmentToLivingContext } from '../assessmentIngestion';
+import {
+  ingestAssessmentToLivingContext,
+  loadAssessmentSessionData,
+  ingestAssessmentSessionRealTime,
+} from '../assessmentIngestion';
 import type {
   AssessmentSessionRow,
   AssessmentEvidenceEventRow,
@@ -319,5 +323,174 @@ describe('ingestAssessmentToLivingContext', () => {
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
     expect(interactionsAfterFirst.cnt).toBe(interactionsAfterSecond.cnt);
+  });
+});
+
+describe('loadAssessmentSessionData', () => {
+  let sqlite: BetterSqliteDb;
+  let db: D1Database;
+
+  const assessmentMigration = readFileSync(
+    new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+    'utf8',
+  );
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        phone TEXT,
+        company TEXT,
+        role TEXT,
+        type TEXT NOT NULL
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(rewriteNumberedParams(transcriptProjectionMigration));
+    sqlite.exec(rewriteNumberedParams(contextRecordMigration));
+    sqlite.exec(rewriteNumberedParams(assessmentMigration));
+
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+      VALUES ('cand-1', 'owner-1', 'pipe-1', 'Alice', 'alice@test.dev', 'active');
+    `);
+    db = createMockD1(sqlite);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns null for a non-existent session', async () => {
+    const data = await loadAssessmentSessionData(db, 'nonexistent');
+    expect(data).toBeNull();
+  });
+
+  it('loads session with events and reports from the database', async () => {
+    const now = '2026-06-01T10:00:00Z';
+    sqlite.exec(`
+      INSERT INTO assessment_sessions
+        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, created_at, updated_at)
+      VALUES ('sess-load-1', 'key:sess-load-1', 'OPEN_SOURCE_BUG_FIX', 'EVALUATED', 'cand-1', 'owner-1', '{}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evidence_events
+        (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
+      VALUES ('ev-load-1', 'key:ev-load-1', 'sess-load-1', 1, 'file_open', 'candidate', 'cand-1', 'Opened file', '{}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evaluation_reports
+        (id, ingestion_key, session_id, status, summary, output_json, created_at, updated_at)
+      VALUES ('rep-load-1', 'key:rep-load-1', 'sess-load-1', 'EVALUATED', 'Good fix', '{}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evaluation_claims
+        (id, report_id, polarity, dimension, narrative, confidence, created_at)
+      VALUES ('claim-load-1', 'rep-load-1', 'positive', 'debugging', 'Strong debugging skills', 0.9, '${now}');
+    `);
+
+    const data = await loadAssessmentSessionData(db, 'sess-load-1');
+    expect(data).not.toBeNull();
+    expect(data!.session.id).toBe('sess-load-1');
+    expect(data!.session.mode).toBe('OPEN_SOURCE_BUG_FIX');
+    expect(data!.events).toHaveLength(1);
+    expect(data!.events[0].kind).toBe('file_open');
+    expect(data!.reports).toHaveLength(1);
+    expect(data!.reports[0].status).toBe('EVALUATED');
+    expect(data!.claims).toHaveLength(1);
+    expect(data!.claims[0].dimension).toBe('debugging');
+  });
+});
+
+describe('ingestAssessmentSessionRealTime', () => {
+  let sqlite: BetterSqliteDb;
+  let db: D1Database;
+
+  const assessmentMigration = readFileSync(
+    new URL('../../../../migrations/0102_assessment_layer.sql', import.meta.url),
+    'utf8',
+  );
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        name TEXT,
+        email TEXT,
+        phone TEXT,
+        company TEXT,
+        role TEXT,
+        type TEXT NOT NULL
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(rewriteNumberedParams(transcriptProjectionMigration));
+    sqlite.exec(rewriteNumberedParams(contextRecordMigration));
+    sqlite.exec(rewriteNumberedParams(assessmentMigration));
+
+    sqlite.exec(`
+      INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+      VALUES ('cand-rt-1', 'owner-1', 'pipe-1', 'Bob', 'bob@test.dev', 'active');
+    `);
+    db = createMockD1(sqlite);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns null for a non-existent session', async () => {
+    const result = await ingestAssessmentSessionRealTime(db, 'nonexistent');
+    expect(result).toBeNull();
+  });
+
+  it('loads data from DB and ingests into living context in one call', async () => {
+    const now = '2026-06-02T12:00:00Z';
+    sqlite.exec(`
+      INSERT INTO assessment_sessions
+        (id, ingestion_key, mode, state, candidate_id, workspace_id, metadata_json, started_at, created_at, updated_at)
+      VALUES ('sess-rt-1', 'key:sess-rt-1', 'CODE_REVIEW', 'EVALUATED', 'cand-rt-1', 'owner-1', '{}', '${now}', '${now}', '${now}');
+    `);
+    sqlite.exec(`
+      INSERT INTO assessment_evidence_events
+        (id, ingestion_key, session_id, sequence, kind, actor_type, actor_id, narrative, payload_json, occurred_at, created_at)
+      VALUES ('ev-rt-1', 'key:ev-rt-1', 'sess-rt-1', 1, 'code_edit', 'candidate', 'cand-rt-1', 'Fixed the race condition', '{}', '${now}', '${now}');
+    `);
+
+    const result = await ingestAssessmentSessionRealTime(db, 'sess-rt-1');
+    expect(result).not.toBeNull();
+    expect(result!.sessionId).toBe('sess-rt-1');
+    expect(result!.episodeCount).toBe(1);
+    expect(result!.assertionCount).toBe(1);
+
+    const interaction = sqlite.prepare(
+      `SELECT * FROM interactions WHERE external_reference = 'sess-rt-1'`,
+    ).get() as Record<string, unknown>;
+    expect(interaction).toBeTruthy();
+    expect(interaction.interaction_type).toBe('assessment:CODE_REVIEW');
   });
 });
