@@ -1,6 +1,6 @@
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { API_BASE, APP_BASE } from "./env";
+import { API_BASE, APP_BASE, IS_REMOTE } from "./env";
 
 async function getAuthToken(page: Page): Promise<string> {
   const cookies = await page.context().cookies();
@@ -93,6 +93,8 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
     page,
     request,
   }) => {
+    test.setTimeout(IS_REMOTE ? 120_000 : 60_000);
+
     const unique = Date.now();
     const roleTitle = `E2E Smoke Role ${unique}`;
     const personEmail = `mvp-smoke-${unique}@pipe-test.dev`;
@@ -180,7 +182,7 @@ test.describe("MVP browser smoke - interviews, roles, people, living context", (
         .getByText("No context captured yet.")
         .or(page.getByLabel("Search living context"))
         .first(),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: IS_REMOTE ? 45_000 : 15_000 });
 
     const rolelessRes = await request.post(`${API_BASE}/api/v1/candidates`, {
       headers: authHeaders(token),
