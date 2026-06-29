@@ -528,6 +528,17 @@ describe('meeting transcript living-context ingestion', () => {
   it('marks evidence-plan follow-up transcripts ready for repo-match refresh', async () => {
     sqlite.exec(assessmentLayerMigration);
     sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'candidate-1',
+      'workspace-1',
+      'pipeline-1',
+      'Ada Example',
+      'ada@example.com',
+      'active',
+    );
+    sqlite.prepare(
       `INSERT INTO assessment_sessions (
          id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
          created_by, metadata_json, created_at, updated_at
@@ -636,6 +647,61 @@ describe('meeting transcript living-context ingestion', () => {
       scheduledInterviewId: 'scheduled-interview-1',
       stableSegmentId: 'guest-1',
     });
+
+    const matcherContext = sqlite.prepare(
+      `SELECT cr.id,
+              cr.workspace_person_id,
+              cr.application_id,
+              cr.record_type,
+              cr.predicate,
+              cr.narrative,
+              cr.qualifiers_json,
+              crsr.evidence_role,
+              crsr.source_span_id,
+              crsr.exact_text
+         FROM context_records cr
+         JOIN context_record_source_refs crsr ON crsr.context_record_id = cr.id
+        WHERE cr.record_type = 'code_review_evidence_plan_response'`,
+    ).get() as {
+      id: string;
+      workspace_person_id: string;
+      application_id: string;
+      record_type: string;
+      predicate: string;
+      narrative: string;
+      qualifiers_json: string;
+      evidence_role: string;
+      source_span_id: string;
+      exact_text: string;
+    };
+    expect(matcherContext).toMatchObject({
+      workspace_person_id: expect.stringMatching(/^workspace_person_/),
+      application_id: expect.stringMatching(/^application_/),
+      record_type: 'code_review_evidence_plan_response',
+      predicate: 'provides concrete candidate work evidence for repo matching',
+      narrative: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+      evidence_role: 'evidence_plan_response_span',
+      exact_text: 'I reviewed a React popover timing bug and asked for an impatient-click regression before approval.',
+    });
+    expect(JSON.parse(matcherContext.qualifiers_json)).toMatchObject({
+      evidencePlanSessionId: 'assessment-plan-1',
+      originalInterviewId: 'code-review-1',
+      contextCallInterviewId: 'scheduled-interview-1',
+      matchRunId: 'match-run-1',
+      extractedProperties: expect.any(String),
+    });
+    const matcherConcepts = sqlite.prepare(
+      `SELECT c.canonical_key
+         FROM context_record_concepts crc
+         JOIN concepts c ON c.id = crc.concept_id
+        WHERE crc.context_record_id = ?
+        ORDER BY c.canonical_key`,
+    ).all(matcherContext.id) as Array<{ canonical_key: string }>;
+    expect(matcherConcepts.map((row) => row.canonical_key)).toEqual(expect.arrayContaining([
+      'term:react',
+      'term:popover',
+      'term:regression',
+    ]));
 
     const report = sqlite.prepare(
       `SELECT status, summary, output_json

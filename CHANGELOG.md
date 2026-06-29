@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW evidence-plan follow-up transcript answers now materialize as source-backed living-context records with dynamic open-term concepts, so repo-match refreshes consume the new candidate evidence instead of only seeing an assessment-layer ready flag.
 - CODE_REVIEW interview detail now shows related evidence interviews from the same person graph, so follow-up calls and multiple assessment invites for one email remain visible as separate source-backed evidence moments.
 - CODE_REVIEW evidence-plan follow-ups now require concrete candidate-owned PR, bug, review, trade-off, or verification evidence before unlocking repo-match reruns, while preserving generic answers as blocked source evidence.
 - Standalone assessment invites for the same email now immediately attach each distinct candidate/application token to the shared person graph, preserving many assessments and meetings without splitting repo-match evidence.

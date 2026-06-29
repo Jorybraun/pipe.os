@@ -5,7 +5,20 @@ import {
   type AssessmentSessionMode,
   type AssessmentSessionState,
 } from './persistence';
-import type { JsonObject } from '../livingContext/types';
+import { ensureCandidateLivingContext } from '../livingContext/compatibility';
+import {
+  LivingContextStore,
+} from '../livingContext/persistence';
+import {
+  OPEN_TERM_RESOLVER_VERSION,
+  openSemanticTerm,
+} from '../livingContext/openTerms';
+import type {
+  ContextRecordConceptInput,
+  ContextRecordEntityInput,
+  ContextRecordSourceInput,
+  JsonObject,
+} from '../livingContext/types';
 
 export interface MeetingTranscriptAssessmentSegment {
   stableSegmentId: string;
@@ -145,6 +158,34 @@ const CONCRETE_WORK_EVIDENCE_PATTERNS = [
   /\bmigration\b/i,
 ];
 
+const EVIDENCE_PLAN_TERM_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'ask',
+  'asked',
+  'before',
+  'for',
+  'from',
+  'had',
+  'have',
+  'i',
+  'in',
+  'it',
+  'me',
+  'my',
+  'of',
+  'on',
+  'or',
+  'our',
+  'the',
+  'this',
+  'to',
+  'we',
+  'with',
+]);
+
 function countConcreteWorkEvidenceSignals(text: string): number {
   return CONCRETE_WORK_EVIDENCE_PATTERNS.reduce(
     (count, pattern) => count + (pattern.test(text) ? 1 : 0),
@@ -157,6 +198,28 @@ function isConcreteEvidencePlanAnswer(segment: MeetingTranscriptAssessmentSegmen
   if (text.length < 64) return false;
   if (!/\b(i|i'm|i’ve|ive|my|me|personally|we|our)\b/i.test(text)) return false;
   return countConcreteWorkEvidenceSignals(text) >= 3;
+}
+
+function evidencePlanOpenTerms(text: string, limit = 24): Array<{ surface: string; canonicalKey: string }> {
+  const terms = new Map<string, { surface: string; canonicalKey: string }>();
+  for (const token of text.match(/[A-Za-z][A-Za-z0-9+#.]*/g) ?? []) {
+    const normalized = token.trim().toLowerCase();
+    if (
+      normalized.length < 3
+      || EVIDENCE_PLAN_TERM_STOPWORDS.has(normalized)
+      || /^\d+$/.test(normalized)
+    ) {
+      continue;
+    }
+    const term = openSemanticTerm(token);
+    if (!term || terms.has(term.canonicalKey)) continue;
+    terms.set(term.canonicalKey, {
+      surface: term.surface,
+      canonicalKey: term.canonicalKey,
+    });
+    if (terms.size >= limit) break;
+  }
+  return [...terms.values()];
 }
 
 async function transcriptSegmentSourceRef(input: {
@@ -211,6 +274,9 @@ async function transcriptSegmentSourceRef(input: {
 interface EvidencePlanSessionRow {
   id: string;
   state: AssessmentSessionState;
+  candidate_id: string | null;
+  workspace_id: string | null;
+  interview_id: string | null;
   metadata_json: string;
 }
 
@@ -231,13 +297,178 @@ async function loadEvidencePlanSessionForInterview(
 ): Promise<EvidencePlanSessionRow | null> {
   if (!scheduledInterviewId) return null;
   return await db.prepare(
-    `SELECT id, state, metadata_json
+    `SELECT id, state, candidate_id, workspace_id, interview_id, metadata_json
        FROM assessment_sessions
       WHERE interview_id = ?1
         AND created_by = 'code-review-evidence-plan'
       ORDER BY created_at DESC
       LIMIT 1`,
   ).bind(scheduledInterviewId).first<EvidencePlanSessionRow>();
+}
+
+async function loadEvidencePlanInteractionId(input: {
+  db: D1Database;
+  workspacePersonId: string;
+  meetingId: string;
+}): Promise<string | null> {
+  const row = await input.db.prepare(
+    `SELECT id
+       FROM interactions
+      WHERE workspace_person_id = ?1
+        AND external_reference = ?2
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(input.workspacePersonId, input.meetingId).first<{ id: string }>();
+  return row?.id ?? null;
+}
+
+async function materializeEvidencePlanResponseContext(input: {
+  db: D1Database;
+  planSession: EvidencePlanSessionRow;
+  meetingId: string;
+  sourceRef: AssessmentEvidenceSourceRefInput;
+  segment: MeetingTranscriptAssessmentSegment;
+  metadata: JsonObject;
+  observedAt: string;
+}): Promise<void> {
+  const candidateId = input.planSession.candidate_id?.trim();
+  if (!candidateId) return;
+  const identity = await ensureCandidateLivingContext(input.db, candidateId);
+  if (!identity) return;
+
+  const store = new LivingContextStore(input.db, () => input.observedAt);
+  const interactionId = await loadEvidencePlanInteractionId({
+    db: input.db,
+    workspacePersonId: identity.workspacePersonId,
+    meetingId: input.meetingId,
+  });
+  const terms = evidencePlanOpenTerms(input.segment.text);
+  if (terms.length === 0) return;
+
+  const concepts: ContextRecordConceptInput[] = [];
+  for (const term of terms) {
+    const concept = await store.upsertConcept({
+      ingestionKey: `open-term:${term.canonicalKey}`,
+      canonicalKey: term.canonicalKey,
+      namespace: 'term',
+      label: term.surface,
+      metadata: {
+        resolver: OPEN_TERM_RESOLVER_VERSION,
+        source: 'code_review_evidence_plan',
+      },
+    });
+    concepts.push({
+      conceptId: concept.id,
+      relationship: 'about',
+      weight: 1,
+    });
+  }
+
+  const source: ContextRecordSourceInput = {
+    sourceSpanId: input.sourceRef.sourceSpanId ?? input.sourceRef.sourceRefId,
+    sourceRefType: 'source_span',
+    sourceRefId: input.sourceRef.sourceRefId,
+    evidenceRole: input.sourceRef.evidenceRole ?? 'evidence_plan_response_span',
+    locator: input.sourceRef.locator,
+    exactText: input.sourceRef.exactText ?? input.segment.text,
+    contentHash: input.sourceRef.contentHash,
+    metadata: input.sourceRef.metadata,
+  };
+  const originalInterviewId = typeof input.metadata.originalInterviewId === 'string'
+    ? input.metadata.originalInterviewId
+    : null;
+  const contextCallInterviewId = typeof input.metadata.contextCallInterviewId === 'string'
+    ? input.metadata.contextCallInterviewId
+    : input.planSession.interview_id ?? null;
+  const matchRunId = typeof input.metadata.matchRunId === 'string'
+    ? input.metadata.matchRunId
+    : null;
+  const entities: ContextRecordEntityInput[] = [
+    {
+      entityType: 'workspace_person',
+      entityId: identity.workspacePersonId,
+      relationship: 'subject',
+    },
+    {
+      entityType: 'assessment_session',
+      entityId: input.planSession.id,
+      relationship: 'source_assessment',
+    },
+    {
+      entityType: 'meeting',
+      entityId: input.meetingId,
+      relationship: 'source_interaction',
+    },
+  ];
+  if (contextCallInterviewId) {
+    entities.push({
+      entityType: 'scheduled_interview',
+      entityId: contextCallInterviewId,
+      relationship: 'context_call',
+    });
+  }
+  if (originalInterviewId) {
+    entities.push({
+      entityType: 'scheduled_interview',
+      entityId: originalInterviewId,
+      relationship: 'original_code_review',
+    });
+  }
+  if (matchRunId) {
+    entities.push({
+      entityType: 'match_run',
+      entityId: matchRunId,
+      relationship: 'evidence_gap_source',
+    });
+  }
+
+  await store.upsertContextRecord({
+    ingestionKey: `assessment-session:${input.planSession.id}:evidence-plan-response:${input.segment.sourceSpanId}`,
+    workspacePersonId: identity.workspacePersonId,
+    interactionId,
+    applicationId: identity.applicationId,
+    recordType: 'code_review_evidence_plan_response',
+    predicate: 'provides concrete candidate work evidence for repo matching',
+    narrative: input.segment.text,
+    qualifiers: {
+      evidencePlanSessionId: input.planSession.id,
+      originalInterviewId,
+      contextCallInterviewId,
+      meetingId: input.meetingId,
+      matchRunId,
+      matchStatus: typeof input.metadata.matchStatus === 'string'
+        ? input.metadata.matchStatus
+        : null,
+      concreteEvidenceSignalCount: countConcreteWorkEvidenceSignals(input.segment.text),
+      extractedProperties: JSON.stringify({
+        semantic_terms: terms.map((term) => ({
+          surface: term.surface,
+          canonical_key: term.canonicalKey,
+        })),
+      }),
+    },
+    confidence: input.segment.confidence ?? 0.85,
+    extractionVersion: 'code-review-evidence-plan-response-v1',
+    observedAt: input.observedAt,
+    sources: [source],
+    entities,
+    concepts,
+  });
+
+  await store.enqueueProjection({
+    ingestionKey: `assessment-session:${input.planSession.id}:evidence-plan-response:${input.segment.sourceSpanId}:neo4j`,
+    projectionType: 'neo4j',
+    aggregateType: 'workspace_person',
+    aggregateId: identity.workspacePersonId,
+    payload: {
+      contextRecordType: 'code_review_evidence_plan_response',
+      assessmentSessionId: input.planSession.id,
+      sourceSpanId: input.segment.sourceSpanId,
+      originalInterviewId,
+      contextCallInterviewId,
+      matchRunId,
+    },
+  });
 }
 
 async function transitionIfState(
@@ -341,6 +572,19 @@ async function captureEvidencePlanTranscriptEvidence(
       reason: GENERIC_EVIDENCE_PLAN_BLOCKED_REASON,
     });
     return;
+  }
+
+  for (const { segment, sourceRef } of capturedResponses) {
+    if (!isConcreteEvidencePlanAnswer(segment)) continue;
+    await materializeEvidencePlanResponseContext({
+      db,
+      planSession,
+      meetingId: input.meetingId,
+      sourceRef,
+      segment,
+      metadata,
+      observedAt: input.observedAt,
+    });
   }
 
   await transitionIfState(db, store, {

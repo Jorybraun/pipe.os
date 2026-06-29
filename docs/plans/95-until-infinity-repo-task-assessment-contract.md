@@ -96,6 +96,11 @@ The controlling product rule remains:
 
 ## Current Implementation Status
 
+- CODE_REVIEW evidence-plan follow-up transcripts now publish concrete
+  candidate-owned answer spans into the living-context graph as
+  `code_review_evidence_plan_response` records with dynamic open-term concepts,
+  so repo-match refreshes read the new source-backed evidence through the same
+  candidate context path as resume/decomposition evidence.
 - CODE_REVIEW interview detail now returns and renders related evidence
   interviews from the same person graph, so context calls and multiple
   same-email assessment invites stay visible as separate evidence-producing
