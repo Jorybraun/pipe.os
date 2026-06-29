@@ -1716,6 +1716,30 @@ function githubPrChallengeRef(githubPrNumber: number | null): string | null {
   return `refs/pull/${githubPrNumber}/head`;
 }
 
+const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
+
+function locatorString(locator: JsonObject, keys: string[]): string | null {
+  for (const key of keys) {
+    const value: JsonValue | undefined = locator[key];
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function challengePacketBaseCommitSha(packet: RoomWorkspaceChallengePacketPayload | null): string | null {
+  if (!packet) return null;
+  const value = locatorString(packet.locator, [
+    'baseCommitSha',
+    'baseCommit',
+    'base_commit_sha',
+    'base_commit',
+  ]);
+  if (!value || !GIT_COMMIT_SHA_PATTERN.test(value)) return null;
+  return value.toLowerCase();
+}
+
 function buildRoomWorkspaceChallenge(
   interview: RoomWorkspaceInterview | null,
   enabled: boolean,
@@ -2600,8 +2624,9 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
 
   const sessionId = crypto.randomUUID();
   const expiresAt = new Date(Date.now() + effective.ttlSeconds * 1000).toISOString();
-  const challengeBranch = githubPrChallengeRef(workspace.githubPrNumber);
   const challenge = workspace.challenge;
+  const baseCommitSha = challengePacketBaseCommitSha(challenge.packet);
+  const challengeBranch = baseCommitSha ? null : githubPrChallengeRef(workspace.githubPrNumber);
   await insertRoomSession(c.env.DB, {
     id: crypto.randomUUID(),
     sessionId,
@@ -2614,6 +2639,7 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
     expiresAt,
     repoGitUrl: effectiveRepoUrl,
     challengeBranch,
+    baseCommitSha,
   });
 
   const doId = c.env.DEV_CONTAINER.idFromName(sessionId);
@@ -2627,6 +2653,8 @@ meetingRooms.post('/:token/workspace/launch', async (c) => {
       ttlSeconds: effective.ttlSeconds,
       repoGitUrl: effectiveRepoUrl,
       challengeBranch,
+      baseCommitSha,
+      challengePacketContentHash: challenge.packet?.contentHash ?? null,
       matchedRepoId: workspace.matchedRepoId,
       githubPrNumber: workspace.githubPrNumber,
       challengeStatus: challenge.status,

@@ -42,6 +42,7 @@ export interface DevContainerSessionRow {
   url: string | null;
   repo_git_url: string | null;
   challenge_branch: string | null;
+  base_commit_sha: string | null;
   started_at: string | null;
   stopped_at: string | null;
   error_message: string | null;
@@ -53,7 +54,7 @@ const DEV_CONTAINER_SESSION_COLUMNS = `
   id, session_id, candidate_id, challenge_id, pipeline_id,
   meeting_id, meeting_room_id, owner_id, access_scope,
   status, instance_type, ttl_seconds, ttl_source, expires_at,
-  warned_at, url, repo_git_url, challenge_branch,
+  warned_at, url, repo_git_url, challenge_branch, base_commit_sha,
   started_at, stopped_at, error_message, created_at, updated_at
 `.trim();
 
@@ -69,6 +70,7 @@ export interface InsertSessionInput {
   expiresAt: string;
   repoGitUrl: string | null;
   challengeBranch: string | null;
+  baseCommitSha?: string | null;
 }
 
 export interface InsertRoomSessionInput {
@@ -83,6 +85,7 @@ export interface InsertRoomSessionInput {
   expiresAt: string;
   repoGitUrl: string;
   challengeBranch: string | null;
+  baseCommitSha?: string | null;
 }
 
 /** Insert a LAUNCHING row. */
@@ -95,8 +98,8 @@ export async function insertSession(
       `INSERT INTO dev_container_sessions (
          id, session_id, candidate_id, challenge_id, pipeline_id,
          status, instance_type, ttl_seconds, ttl_source, expires_at,
-         repo_git_url, challenge_branch
-       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11)`,
+         repo_git_url, challenge_branch, base_commit_sha
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     )
     .bind(
       input.id,
@@ -110,6 +113,7 @@ export async function insertSession(
       input.expiresAt,
       input.repoGitUrl,
       input.challengeBranch,
+      input.baseCommitSha ?? null,
     )
     .run();
   await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');
@@ -126,9 +130,9 @@ export async function insertRoomSession(
          id, session_id, candidate_id, challenge_id, pipeline_id,
          meeting_id, meeting_room_id, owner_id, access_scope,
          status, instance_type, ttl_seconds, ttl_source, expires_at,
-         repo_git_url, challenge_branch
+         repo_git_url, challenge_branch, base_commit_sha
        ) VALUES (?1, ?2, NULL, NULL, NULL, ?3, ?4, ?5, 'meeting_room',
-         'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11)`,
+         'LAUNCHING', ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     )
     .bind(
       input.id,
@@ -142,6 +146,7 @@ export async function insertRoomSession(
       input.expiresAt,
       input.repoGitUrl,
       input.challengeBranch,
+      input.baseCommitSha ?? null,
     )
     .run();
   await persistLifecycleAssessmentEvidence(db, input.sessionId, 'launching');

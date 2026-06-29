@@ -6,7 +6,9 @@ set -euo pipefail
 # Env vars (all optional):
 #   REPO_GIT_URL       — public git URL to clone (MVP path, ADR-037)
 #   REPO_R2_URL        — presigned R2 URL for a repo tarball (future path)
+#   CHALLENGE_BASE_COMMIT_SHA — exact immutable commit to start assessment work from
 #   CHALLENGE_BRANCH   — branch to check out after clone/extract
+#   ASSESSMENT_BRANCH  — local branch name created from CHALLENGE_BASE_COMMIT_SHA
 
 mkdir -p /workspace
 
@@ -25,7 +27,20 @@ else
   echo "[entrypoint] No repo source set — starting with empty workspace"
 fi
 
-if [[ -n "${CHALLENGE_BRANCH:-}" && -d /workspace/.git ]]; then
+if [[ -n "${CHALLENGE_BASE_COMMIT_SHA:-}" && -d /workspace/.git ]]; then
+  echo "[entrypoint] Checking out challenge base commit: ${CHALLENGE_BASE_COMMIT_SHA}"
+  cd /workspace
+  git fetch --all || true
+  if ! git cat-file -e "${CHALLENGE_BASE_COMMIT_SHA}^{commit}" 2>/dev/null; then
+    git fetch origin "${CHALLENGE_BASE_COMMIT_SHA}" || true
+  fi
+  if ! git cat-file -e "${CHALLENGE_BASE_COMMIT_SHA}^{commit}" 2>/dev/null; then
+    echo "[entrypoint] base commit not found: ${CHALLENGE_BASE_COMMIT_SHA}" >&2
+    exit 1
+  fi
+  git checkout -B "${ASSESSMENT_BRANCH:-pipe-assessment}" "${CHALLENGE_BASE_COMMIT_SHA}"
+  cd /
+elif [[ -n "${CHALLENGE_BRANCH:-}" && -d /workspace/.git ]]; then
   echo "[entrypoint] Checking out challenge branch: ${CHALLENGE_BRANCH}"
   cd /workspace
   git fetch --all || true

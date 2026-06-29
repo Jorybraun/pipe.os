@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Dev-container assessment launches now preserve the challenge packet's exact base commit in the session row, DO init payload, container env, and lifecycle evidence, and the code-server image checks out that commit onto an assessment branch before candidate work begins.
 - Person profile and interview detail pages now share the same recruiter surface tokens for page shells, headers, cards, labels, buttons, links, and evidence chips, reducing visual drift across the hiring-manager cockpit.
 - Contact/profile route coverage now locks the same-email contact-to-roleless-candidate relationship, proving the person graph stays attached after candidate evidence is added.
 - Dev-container assessment rooms now carry the latest source-backed open-source challenge packet into the room workspace payload and render it in the Win95 workspace with repo, PR, base commit, exact task text, and content hash while hiding internal assessment ids.

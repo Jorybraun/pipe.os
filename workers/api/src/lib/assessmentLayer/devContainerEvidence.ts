@@ -110,6 +110,7 @@ function sourceSnapshot(row: DevContainerSessionRow, event: DevContainerLifecycl
     warnedAt: row.warned_at,
     repoGitUrl: row.repo_git_url,
     challengeBranch: row.challenge_branch,
+    baseCommitSha: row.base_commit_sha,
     startedAt: row.started_at,
     stoppedAt: row.stopped_at,
     errorMessage: row.error_message,
@@ -197,6 +198,7 @@ export async function ingestDevContainerAssessmentEvidence(
       accessScope: row.access_scope,
       repoGitUrl: row.repo_git_url,
       challengeBranch: row.challenge_branch,
+      baseCommitSha: row.base_commit_sha,
       source: 'dev_container_sessions',
     },
   });
@@ -221,6 +223,7 @@ export async function ingestDevContainerAssessmentEvidence(
       meetingRoomId: row.meeting_room_id,
       repoGitUrl: row.repo_git_url,
       challengeBranch: row.challenge_branch,
+      baseCommitSha: row.base_commit_sha,
       errorMessage: row.error_message,
     },
     occurredAt: observedAt,

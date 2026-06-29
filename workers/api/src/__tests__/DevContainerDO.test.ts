@@ -127,6 +127,7 @@ async function init(
     ttlSeconds: number;
     repoGitUrl?: string | null;
     challengeBranch?: string | null;
+    baseCommitSha?: string | null;
     agentType?: string | null;
   },
 ): Promise<Response> {
@@ -137,6 +138,7 @@ async function init(
       body: JSON.stringify({
         repoGitUrl: null,
         challengeBranch: null,
+        baseCommitSha: null,
         ...payload,
       }),
     }),
@@ -186,6 +188,34 @@ describe('DevContainerDO /__init — Step 11 warn-then-expire scheduling', () =>
     const ready = updates.find((c) => c.params[0] === 'READY');
     expect(ready?.params[2]).toEqual(expect.any(String));
     expect(ready?.params[5]).toBe('sess_start');
+  });
+
+  it('passes the exact challenge base commit to the container entrypoint', async () => {
+    const db = fakeD1();
+    const env = buildEnv(db);
+    const instance = new DevContainerDO(buildState(), env) as SpyableDO;
+    const baseCommitSha = 'f'.repeat(40);
+
+    const res = await init(instance, {
+      sessionId: 'sess_base_commit',
+      expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      ttlSeconds: 3600,
+      repoGitUrl: 'https://github.com/example/repo.git',
+      baseCommitSha,
+    });
+
+    expect(res.status).toBe(200);
+    const [startArg] = instance.__startCalls[0] as [
+      {
+        ports: number[];
+        startOptions: { envVars: Record<string, string>; entrypoint?: string[] };
+      },
+    ];
+    expect(startArg.startOptions.envVars).toMatchObject({
+      REPO_GIT_URL: 'https://github.com/example/repo.git',
+      CHALLENGE_BASE_COMMIT_SHA: baseCommitSha,
+    });
+    expect(startArg.startOptions.envVars).not.toHaveProperty('CHALLENGE_BRANCH');
   });
 
   it('passes through an explicit real agent type without inventing a default', async () => {

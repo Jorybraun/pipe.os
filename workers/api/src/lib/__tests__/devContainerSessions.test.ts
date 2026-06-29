@@ -46,6 +46,7 @@ function createDevContainerSessionsTable(sqlite: BetterSqliteDb): void {
       repo_r2_key TEXT,
       repo_git_url TEXT,
       challenge_branch TEXT,
+      base_commit_sha TEXT,
       base_branch TEXT,
       started_at TEXT,
       stopped_at TEXT,
@@ -91,6 +92,7 @@ describe('devContainerSessions assessment evidence', () => {
       expiresAt: '2026-06-28T08:00:00.000Z',
       repoGitUrl: 'https://github.com/example/source-backed-repo',
       challengeBranch: 'pr-42',
+      baseCommitSha: 'c'.repeat(40),
     });
     await markStatus(db, 'room-session-1', 'READY', {
       startedAt: '2026-06-28T07:01:00.000Z',
@@ -131,6 +133,7 @@ describe('devContainerSessions assessment evidence', () => {
       accessScope: 'meeting_room',
       repoGitUrl: 'https://github.com/example/source-backed-repo',
       challengeBranch: 'pr-42',
+      baseCommitSha: 'c'.repeat(40),
       source: 'dev_container_sessions',
     });
 
@@ -300,6 +303,7 @@ describe('devContainerSessions assessment evidence', () => {
       expiresAt: '2026-06-28T08:00:00.000Z',
       repoGitUrl: 'https://github.com/example/recovered-repo',
       challengeBranch: 'pr-77',
+      baseCommitSha: 'd'.repeat(40),
     });
 
     await markError(db, 'room-session-recovery', 'port 8080 never opened');
@@ -328,6 +332,7 @@ describe('devContainerSessions assessment evidence', () => {
       lifecycleEvent: 'error',
       status: 'ERROR',
       errorMessage: 'port 8080 never opened',
+      baseCommitSha: 'd'.repeat(40),
     });
     expect(JSON.parse(events[1]!.exact_text)).toMatchObject({
       lifecycleEvent: 'error',

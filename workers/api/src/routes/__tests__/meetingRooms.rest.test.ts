@@ -736,6 +736,7 @@ function seedSchema(sqlite: BetterSqliteDb): void {
       repo_r2_key TEXT,
       repo_git_url TEXT,
       challenge_branch TEXT,
+      base_commit_sha TEXT,
       base_branch TEXT,
       started_at TEXT,
       stopped_at TEXT,
@@ -5306,6 +5307,146 @@ describe('meeting room recording living-context route', () => {
     expect(serialized).not.toContain(assessmentSessionId);
     expect(serialized).not.toContain(eventId);
     expect(serialized).not.toContain(sourceRefId);
+  });
+
+  it('launches open-source challenge workspaces from the source-backed base commit', async () => {
+    const app = mountApp();
+    const { ctx, waitUntilAll } = buildCtx();
+    sqlite.exec(assessmentLayerMigration);
+    const initBodies: unknown[] = [];
+    const doFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      initBodies.push(JSON.parse(String(init?.body ?? '{}')));
+      return new Response(null, { status: 204 });
+    });
+    env.DEV_CONTAINER = {
+      idFromName: vi.fn(() => ({}) as DurableObjectId),
+      get: vi.fn(() => ({ fetch: doFetch }) as unknown as DurableObjectStub),
+    } as unknown as DurableObjectNamespace;
+
+    const now = new Date().toISOString();
+    const scheduledInterviewId = 'scheduled-interview-workspace-base-commit';
+    const assessmentSessionId = 'assessment-session-workspace-base-commit';
+    const eventId = 'assessment-event-workspace-base-commit';
+    const baseCommitSha = 'e'.repeat(40);
+    const packetText = [
+      'Repo: https://github.com/pipe/source-backed-worker',
+      `Base commit: ${baseCommitSha}`,
+      'Task: Fix the source-backed worker retry path.',
+      'Success criteria:',
+      '- Existing worker tests pass',
+      'Expected evidence:',
+      '- Commit SHA on assessment branch',
+    ].join('\n');
+
+    sqlite.prepare(
+      `INSERT INTO scheduled_interviews (
+         id, owner_id, recipient_name, recipient_email, interview_type,
+         github_repo_url, status, updated_at
+       ) VALUES (?, ?, ?, ?, 'OPEN_SOURCE_BUG_FIX', ?, 'INVITED', ?)`,
+    ).run(
+      scheduledInterviewId,
+      'owner-1',
+      'Base Commit Candidate',
+      'base-commit-candidate@example.com',
+      'https://github.com/pipe/source-backed-worker',
+      now,
+    );
+
+    const createMeetingRes = await app.request('/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientName: 'Base Commit Candidate',
+        recipientEmail: 'base-commit-candidate@example.com',
+        title: 'Open-source base commit room',
+        meetingType: 'INTERVIEW',
+        scheduledInterviewId,
+      }),
+    }, env, ctx);
+    expect(createMeetingRes.status).toBe(201);
+    const created = await createMeetingRes.json() as {
+      hostToken: string;
+    };
+
+    sqlite.prepare(
+      `INSERT INTO assessment_sessions (
+         id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+         created_by, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, ?, 'OPEN_SOURCE_BUG_FIX', 'IN_PROGRESS', NULL, ?, ?, '{}', ?, ?)`,
+    ).run(
+      assessmentSessionId,
+      `assessment-session:open-source:${scheduledInterviewId}`,
+      scheduledInterviewId,
+      'owner-1',
+      'owner-1',
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_evidence_events (
+         id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+         narrative, payload_json, occurred_at, created_at
+       ) VALUES (?, ?, ?, 1, 'recruiter_note', 'recruiter', ?, ?, ?, ?, ?)`,
+    ).run(
+      eventId,
+      `assessment-event:${assessmentSessionId}:manual-open-source-challenge`,
+      assessmentSessionId,
+      'owner-1',
+      'Recruiter assigned a concrete open-source implementation challenge packet.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      now,
+      now,
+    );
+    sqlite.prepare(
+      `INSERT INTO assessment_event_source_refs (
+         id, event_id, source_ref_type, source_ref_id, evidence_role,
+         locator_json, exact_text, content_hash, metadata_json, created_at
+       ) VALUES (?, ?, 'open_source_challenge_packet', ?, 'assigned_challenge', ?, ?, ?, '{}', ?)`,
+    ).run(
+      'assessment-source-workspace-base-commit',
+      eventId,
+      `scheduled-interview:${scheduledInterviewId}:open-source-challenge:source-ref-secret`,
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/pipe/source-backed-worker',
+        baseCommitSha,
+      }),
+      packetText,
+      'sha256:base-commit-packet-content-hash',
+      now,
+    );
+
+    const launchRes = await app.request(`/meeting/${created.hostToken}/workspace/launch`, {
+      method: 'POST',
+    }, env, ctx);
+    expect(launchRes.status).toBe(201);
+    const body = await launchRes.json() as {
+      workspace: {
+        session: { sessionId: string };
+      };
+    };
+    await waitUntilAll();
+
+    expect(sqlite.prepare(
+      `SELECT repo_git_url, challenge_branch, base_commit_sha
+         FROM dev_container_sessions
+        WHERE session_id = ?`,
+    ).get(body.workspace.session.sessionId)).toEqual({
+      repo_git_url: 'https://github.com/pipe/source-backed-worker',
+      challenge_branch: null,
+      base_commit_sha: baseCommitSha,
+    });
+    expect(initBodies).toContainEqual(expect.objectContaining({
+      repoGitUrl: 'https://github.com/pipe/source-backed-worker',
+      challengeBranch: null,
+      baseCommitSha,
+      challengePacketContentHash: 'sha256:base-commit-packet-content-hash',
+    }));
+    expect(JSON.stringify(initBodies)).not.toContain('assessment-session-workspace-base-commit');
+    expect(JSON.stringify(initBodies)).not.toContain('assessment-event-workspace-base-commit');
+    expect(JSON.stringify(initBodies)).not.toContain('source-ref-secret');
   });
 
   it('accepts a source-backed commit submission from the guest assessment room token', async () => {
