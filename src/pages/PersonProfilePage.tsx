@@ -175,6 +175,25 @@ function metadataSummary(metadata: Record<string, unknown>): string | null {
   return null;
 }
 
+function scheduledInterviewPathFromInteraction(interaction: LivingContextInteraction): string | null {
+  const scheduledInterviewId = optionalString(interaction.metadata.scheduledInterviewId)
+    ?? optionalString(interaction.metadata.originalInterviewId)
+    ?? optionalString(interaction.metadata.contextCallInterviewId);
+  if (scheduledInterviewId) return `/interviews/${scheduledInterviewId}`;
+
+  const externalReference = optionalString(interaction.externalReference);
+  const interactionType = interaction.interactionType.toLowerCase();
+  if (
+    externalReference
+    && interactionType.includes('scheduled_interview')
+    && !externalReference.startsWith('review-session')
+    && !externalReference.startsWith('resume:')
+  ) {
+    return `/interviews/${externalReference}`;
+  }
+  return null;
+}
+
 function evidenceSummaryText(livingContext: LivingContextReadModel | null): string {
   const summary = livingContext?.summary;
   if (!summary || summary.interactionCount === 0) {
@@ -1097,26 +1116,43 @@ export default function PersonProfilePage(): JSX.Element {
         <Panel title="Relationship Timeline" icon={<Calendar size={15} />}>
           {recentInteractions.length === 0 ? (
             <EmptyPanel>No interactions have been captured yet.</EmptyPanel>
-          ) : recentInteractions.map((interaction) => (
-            <article key={interaction.id} style={listItemStyle}>
-              <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
-                {typeLabel(interaction.interactionType)}
-              </div>
-              <div style={{ marginTop: 5, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
-                {formatDate(interaction.startedAt ?? interaction.createdAt)}
-              </div>
-              {interactionSourceLabel(interaction) && (
-                <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
-                  {interactionSourceLabel(interaction)}
+          ) : recentInteractions.map((interaction) => {
+            const scheduledInterviewPath = scheduledInterviewPathFromInteraction(interaction);
+
+            return (
+              <article key={interaction.id} style={listItemStyle}>
+                <div style={INTERACTION_HEADER_ROW}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'var(--pipe-text)', fontWeight: 700 }}>
+                      {typeLabel(interaction.interactionType)}
+                    </div>
+                    <div style={{ marginTop: 5, fontSize: 10, color: 'var(--pipe-text-dim)' }}>
+                      {formatDate(interaction.startedAt ?? interaction.createdAt)}
+                    </div>
+                  </div>
+                  {scheduledInterviewPath && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(scheduledInterviewPath)}
+                      style={INTERACTION_LINK_BUTTON}
+                    >
+                      Open interaction
+                    </button>
+                  )}
                 </div>
-              )}
-              {metadataSummary(interaction.metadata) && (
-                <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
-                  {quietEvidenceText(metadataSummary(interaction.metadata) ?? '')}
-                </p>
-              )}
-            </article>
-          ))}
+                {interactionSourceLabel(interaction) && (
+                  <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pipe-text-dim)', overflowWrap: 'anywhere' }}>
+                    {interactionSourceLabel(interaction)}
+                  </div>
+                )}
+                {metadataSummary(interaction.metadata) && (
+                  <p style={{ margin: '8px 0 0', color: 'var(--pipe-text-muted)', fontSize: 12, lineHeight: 1.45 }}>
+                    {quietEvidenceText(metadataSummary(interaction.metadata) ?? '')}
+                  </p>
+                )}
+              </article>
+            );
+          })}
         </Panel>
 
         <Panel title="Performance Signals" icon={<Signal size={15} />}>
@@ -1445,6 +1481,28 @@ const SUBTITLE: CSSProperties = recruiterSubtitleStyle;
 const backButtonStyle: CSSProperties = recruiterBackButtonStyle;
 
 const listItemStyle: CSSProperties = recruiterInsetCardStyle;
+
+const INTERACTION_HEADER_ROW: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 12,
+  minWidth: 0,
+};
+
+const INTERACTION_LINK_BUTTON: CSSProperties = {
+  flex: '0 0 auto',
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
+  background: 'rgba(108,195,255,0.08)',
+  color: 'var(--pipe-accent)',
+  fontFamily: FONT,
+  fontSize: 10,
+  fontWeight: 800,
+  lineHeight: 1,
+  padding: '8px 10px',
+  cursor: 'pointer',
+};
 
 const CODE_REVIEW_DECISION: CSSProperties = {
   border: '1px solid var(--pipe-accent-border)',

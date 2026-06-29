@@ -204,6 +204,7 @@ function makeLivingContext(): LivingContextReadModel {
           sessionId: 'review-session-1',
           challengeId: 'challenge-1',
           assessmentId: 'assessment-1',
+          scheduledInterviewId: 'interview-code-review-1',
           status: 'scored',
         },
         artifactIds: ['artifact-1', 'artifact-2'],
@@ -394,10 +395,12 @@ describe('PersonProfilePage', () => {
     expect(proof).toHaveTextContent('score report');
     expect(proof).toHaveTextContent('transcript segment');
     expect(screen.getByText('Code-review assessment evidence')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open interaction' })).toBeInTheDocument();
     expect(screen.getByText('Resume evidence attached')).toBeInTheDocument();
     expect(screen.getByText('Candidate evidence')).toBeInTheDocument();
     expect(screen.getByText('Imported from resume decomposition')).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('review-session-1');
+    expect(document.body).not.toHaveTextContent('interview-code-review-1');
     expect(screen.queryByText('resume:review-evidence:63')).not.toBeInTheDocument();
     expect(screen.queryByText('candidate_node_625b5cd373443f0aef79af73749894fb')).not.toBeInTheDocument();
     expect(screen.queryByTestId('mock-living-context-graph')).not.toBeInTheDocument();
