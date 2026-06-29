@@ -1629,6 +1629,13 @@ export default function InterviewDetailPage(): JSX.Element {
         >
           {hasLivingContextEvidence && contextSummary ? (
             <>
+              <div data-testid="interview-person-context-relationship" style={CONTEXT_RECORD}>
+                <div style={FIELD_LABEL}>One person graph</div>
+                <div style={TRANSCRIPT_TEXT}>{countLabel(contextSummary.interactionCount, 'evidence moment')}</div>
+                <div style={CONTEXT_RECORD_NARRATIVE}>
+                  Accumulates source-backed evidence from invites, follow-ups, transcripts, and assessments.
+                </div>
+              </div>
               <div style={CONTEXT_METRICS}>
                 <div style={CONTEXT_METRIC}>
                   <span style={CONTEXT_METRIC_VALUE}>{contextSummary.interactionCount}</span>

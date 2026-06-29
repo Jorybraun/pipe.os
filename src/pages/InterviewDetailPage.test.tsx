@@ -514,6 +514,10 @@ describe('InterviewDetailPage', () => {
 
     await flushAsyncUpdates();
     const timeline = screen.getByTestId('interview-person-context-timeline');
+    const relationship = screen.getByTestId('interview-person-context-relationship');
+    expect(relationship).toHaveTextContent('One person graph');
+    expect(relationship).toHaveTextContent('3 evidence moments');
+    expect(relationship).toHaveTextContent('source-backed evidence from invites, follow-ups, transcripts, and assessments');
     expect(timeline).toHaveTextContent('Evidence timeline');
     expect(timeline).toHaveTextContent('Code Review Context Call Recommendation');
     expect(timeline).toHaveTextContent('Scheduled Interview Invite Delivery');

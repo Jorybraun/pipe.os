@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- CODE_REVIEW interview detail now labels living context as one person graph across multiple evidence moments, making repeated invites, follow-ups, transcripts, and assessments legible as accumulated repo-match evidence.
 - Blocked CODE_REVIEW evidence-plan follow-ups now surface the exact attribution failure reason from assessment state transitions on the original interview detail page.
 - CODE_REVIEW repo matching now has a regression proving completed evidence-plan transcript evidence can move a candidate from `NEEDS_MORE_EVIDENCE` to a source-backed real PR match with the follow-up answer cited in the match run.
 - CODE_REVIEW evidence refresh now refuses to rerun matching with the same already-tried evidence report, preventing stale follow-up evidence from creating repeated matcher attempts without new source-backed context.
@@ -94,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — 95 Until Infinity desktop tools
 
 - Room entry now opens the default video/chat/workspace windows synchronously before switching surfaces, preventing users from landing on an empty call-stage background after pressing Enter room.
+- Room entry now keeps the prejoin lobby return after all room hooks are registered, preventing React hook-order crashes when pressing Enter room.
 - Shared Win95 file-system snapshots now carry compact source-backed file projection evidence and reject source-thin file hydration, so Notepad/Paint files remain reconstructable without copying exact content into metadata.
 - Recording snapshots now require the stored room state to reconstruct to source-backed browser MediaRecorder evidence before the room client hydrates recording indicators.
 - Media-control snapshots now carry the accepted source-backed browser control evidence into Durable Object state and reject source-thin snapshot hydration in the room client.
