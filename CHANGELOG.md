@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Repository assertions backfill into living context (criterion #4)
+
+- Added `repo_assertions_to_living_context` backfill task to scheduled orchestrator. Iterates all `repo_semantic_assertions` without corresponding context records and creates source-backed context records with full provenance (source spans, line ranges, file paths) and concept linkage via repo facets.
+- Ensures all historical repository decomposition data (structural facts, code episodes, semantic assertions) flows into the searchable living context model — not just challenge packet summaries.
+- Skips assertions without source spans to avoid orphan records.
+- Added 4 tests covering ingestion with source provenance, idempotency, and graceful skip behavior.
+
 ### Added — Real-time living context ingestion on resume upload
 
 - Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.

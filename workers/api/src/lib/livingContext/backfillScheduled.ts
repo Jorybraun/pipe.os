@@ -33,6 +33,7 @@ import {
   ingestCodeReviewScoreReportToLivingContext,
 } from './codeReview';
 import type { CodeReviewTranscript } from './codeReview';
+import { LivingContextStore } from './persistence';
 import { processProjectionOutbox } from './projection';
 import { checkGate } from './rolloutEnforcement';
 
@@ -70,6 +71,11 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
     dependsOn: ['candidates_to_living_context'],
   },
   {
+    taskKey: 'repo_assertions_to_living_context',
+    description: 'Ingest repo semantic assertions (structural facts, code episodes, semantic assertions) into living context records with source span provenance',
+    dependsOn: [],
+  },
+  {
     taskKey: 'projection_outbox_drain',
     description: 'Process all pending neo4j projection outbox jobs',
     dependsOn: [
@@ -79,6 +85,7 @@ export const BACKFILL_TASKS: BackfillTaskDefinition[] = [
       'meetings_to_living_context',
       'phone_calls_to_living_context',
       'code_reviews_to_living_context',
+      'repo_assertions_to_living_context',
     ],
   },
 ];
@@ -129,6 +136,40 @@ interface CodeReviewSessionRow {
   score_report: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface RepoAssertionRow {
+  id: string;
+  repo_snapshot_id: string;
+  episode_id: string | null;
+  subject: string;
+  predicate: string;
+  object: string | null;
+  narrative: string;
+  qualifiers_json: string;
+  confidence: number;
+  assertion_version: string;
+}
+
+interface RepoAssertionSpanRow {
+  assertion_id: string;
+  source_span_id: string;
+}
+
+interface RepoSourceSpanRow {
+  id: string;
+  artifact_version_id: string;
+  byte_start: number | null;
+  byte_end: number | null;
+  line_start: number | null;
+  line_end: number | null;
+  content_hash: string;
+  path: string | null;
+  exact_text: string;
+}
+
+interface RepoArtifactPathRow {
+  path: string | null;
 }
 
 interface BackfillBatchResult {
@@ -465,6 +506,161 @@ async function backfillCodeReviewsBatch(
   return { processed, failed, cursor: lastId, done: sessions.length < BATCH_SIZE };
 }
 
+async function backfillRepoAssertionsBatch(
+  db: D1Database,
+  cursor: string | null,
+): Promise<BackfillBatchResult> {
+  const rows = await db.prepare(
+    `SELECT rsa.id, rsa.repo_snapshot_id, rsa.episode_id,
+            rsa.subject, rsa.predicate, rsa.object, rsa.narrative,
+            rsa.qualifiers_json, rsa.confidence, rsa.assertion_version
+       FROM repo_semantic_assertions rsa
+       LEFT JOIN context_records cr
+         ON cr.ingestion_key = 'repo-assertion-context:' || rsa.id
+      WHERE cr.id IS NULL
+        AND (?1 IS NULL OR rsa.id > ?1)
+      ORDER BY rsa.id
+      LIMIT ?2`,
+  ).bind(cursor, BATCH_SIZE).all<RepoAssertionRow>();
+
+  const assertions = rows.results ?? [];
+  if (assertions.length === 0) return { processed: 0, failed: 0, cursor, done: true };
+
+  let processed = 0;
+  let failed = 0;
+  let lastId = cursor;
+
+  const store = new LivingContextStore(db, () => new Date().toISOString());
+
+  for (const assertion of assertions) {
+    try {
+      const spanRows = await db.prepare(
+        `SELECT assertion_id, source_span_id
+           FROM repo_assertion_source_spans
+          WHERE assertion_id = ?1`,
+      ).bind(assertion.id).all<RepoAssertionSpanRow>();
+
+      const spanIds = (spanRows.results ?? []).map((r) => r.source_span_id);
+
+      const sourceRefs: Array<{
+        sourceRefType: string;
+        sourceRefId: string;
+        evidenceRole: string;
+        locator: { [key: string]: string | number | boolean | null };
+        exactText: string | null;
+        contentHash: string | null;
+      }> = [];
+
+      for (const spanId of spanIds) {
+        const span = await db.prepare(
+          `SELECT rss.id, rss.artifact_version_id, rss.byte_start, rss.byte_end,
+                  rss.line_start, rss.line_end, rss.content_hash, rss.path, rss.exact_text
+             FROM repo_source_spans rss
+            WHERE rss.id = ?1`,
+        ).bind(spanId).first<RepoSourceSpanRow>();
+
+        if (!span) continue;
+
+        const artifactPath = span.path ?? (await db.prepare(
+          `SELECT rsa.path FROM repo_source_artifacts rsa
+             JOIN repo_artifact_versions rav ON rav.artifact_id = rsa.id
+            WHERE rav.id = ?1`,
+        ).bind(span.artifact_version_id).first<RepoArtifactPathRow>())?.path ?? null;
+
+        sourceRefs.push({
+          sourceRefType: 'repo_source_span',
+          sourceRefId: span.id,
+          evidenceRole: 'source',
+          locator: {
+            repoSnapshotId: assertion.repo_snapshot_id,
+            artifactVersionId: span.artifact_version_id,
+            path: artifactPath,
+            byteStart: span.byte_start,
+            byteEnd: span.byte_end,
+            lineStart: span.line_start,
+            lineEnd: span.line_end,
+          },
+          exactText: span.exact_text,
+          contentHash: span.content_hash,
+        });
+      }
+
+      if (sourceRefs.length === 0) {
+        processed++;
+        lastId = assertion.id;
+        continue;
+      }
+
+      const facetRows = await db.prepare(
+        `SELECT raf.facet_id, rf.family, rf.slug, rf.label, raf.weight
+           FROM repo_assertion_facets raf
+           JOIN repo_facets rf ON rf.id = raf.facet_id
+          WHERE raf.assertion_id = ?1`,
+      ).bind(assertion.id).all<{
+        facet_id: string;
+        family: string;
+        slug: string;
+        label: string;
+        weight: number;
+      }>();
+
+      const concepts: Array<{ conceptId: string; relationship: string; weight: number }> = [];
+      for (const facetRow of facetRows.results ?? []) {
+        const concept = await store.upsertConcept({
+          ingestionKey: `repo-facet-concept:${facetRow.family}:${facetRow.slug}`,
+          canonicalKey: `${facetRow.family}:${facetRow.slug}`,
+          namespace: facetRow.family,
+          label: facetRow.label,
+          metadata: { source: 'repo_assertion_backfill' },
+        });
+        concepts.push({
+          conceptId: concept.id,
+          relationship: 'tagged',
+          weight: facetRow.weight,
+        });
+      }
+
+      const qualifiers = JSON.parse(assertion.qualifiers_json || '{}') as Record<string, unknown>;
+
+      await store.upsertContextRecord({
+        ingestionKey: `repo-assertion-context:${assertion.id}`,
+        scopeType: 'repo_snapshot',
+        scopeId: assertion.repo_snapshot_id,
+        recordType: 'repo_semantic_assertion',
+        predicate: assertion.predicate,
+        narrative: assertion.narrative,
+        qualifiers: {
+          ...qualifiers,
+          subject: assertion.subject,
+          object: assertion.object,
+          assertionVersion: assertion.assertion_version,
+          episodeId: assertion.episode_id,
+        },
+        confidence: assertion.confidence,
+        extractionVersion: assertion.assertion_version,
+        observedAt: new Date().toISOString(),
+        sources: sourceRefs,
+        entities: [
+          {
+            entityType: 'repo_snapshot',
+            entityId: assertion.repo_snapshot_id,
+            relationship: 'scope',
+          },
+        ],
+        concepts,
+      });
+
+      processed++;
+    } catch (err) {
+      console.error('[backfill] repo assertion LC failed:', assertion.id, err);
+      failed++;
+    }
+    lastId = assertion.id;
+  }
+
+  return { processed, failed, cursor: lastId, done: assertions.length < BATCH_SIZE };
+}
+
 export interface BackfillScheduledResult {
   gateEnabled: boolean;
   status: BackfillOrchestratorStatus;
@@ -524,6 +720,9 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
           break;
         case 'code_reviews_to_living_context':
           result = await backfillCodeReviewsBatch(db, cursor);
+          break;
+        case 'repo_assertions_to_living_context':
+          result = await backfillRepoAssertionsBatch(db, cursor);
           break;
         case 'projection_outbox_drain': {
           const projResult = await processProjectionOutbox(env);
