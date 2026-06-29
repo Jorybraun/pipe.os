@@ -23,10 +23,13 @@ import { checkStagedRolloutGate } from '../../lib/challengeMatching/evaluation/m
 import type { RolloutStage, EvaluationMetrics } from '../../lib/challengeMatching/evaluation/types';
 import { STAGED_ROLLOUT_THRESHOLDS } from '../../lib/challengeMatching/evaluation/types';
 import {
+  checkGate,
   updateGateStage,
   listGates,
   queryAuditLog,
 } from '../../lib/livingContext/rolloutEnforcement';
+import type { GateStage } from '../../lib/livingContext/rolloutEnforcement';
+import { checkLatestProductionEvaluation } from '../../lib/challengeMatching/evaluation/readiness';
 
 const VALID_STAGES: RolloutStage[] = ['shadow', 'canary', 'production'];
 
@@ -162,6 +165,158 @@ app.get('/rollout-gate/audit', async (c) => {
   const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 200) : 50;
   const entries = await queryAuditLog(db, gateKey, limit);
   return c.json({ gateKey, entries });
+});
+
+/**
+ * Gate stage progression order. Auto-progress advances one step at a time.
+ */
+const GATE_PROGRESSION: GateStage[] = ['disabled', 'internal_only', 'canary', 'GA'];
+
+function nextGateStage(current: GateStage): GateStage | null {
+  const idx = GATE_PROGRESSION.indexOf(current);
+  if (idx < 0 || idx >= GATE_PROGRESSION.length - 1) return null;
+  return GATE_PROGRESSION[idx + 1] ?? null;
+}
+
+/**
+ * Maps the current gate stage to the evaluation stage required to progress.
+ * To reach the next gate stage, the evaluation must pass at this level:
+ *   internal_only → shadow (prove basic recall before canary)
+ *   canary → canary (prove coverage + quality before GA)
+ *   GA → production (full production requirements — terminal)
+ */
+function evalStageForProgression(currentGateStage: GateStage): RolloutStage | null {
+  switch (currentGateStage) {
+    case 'internal_only': return 'shadow';
+    case 'canary': return 'production';
+    default: return null;
+  }
+}
+
+const autoProgressSchema = z.object({
+  gateKey: z.string().min(1).max(200),
+  corpusId: z.string().min(1).max(200),
+  dryRun: z.boolean().optional(),
+});
+
+/**
+ * POST /api/v1/internal/rollout-gate/auto-progress
+ *
+ * Automated gate progression: checks evaluation readiness for the next stage
+ * and transitions the gate if metrics pass. Enforces that gates only advance
+ * one step at a time and that quality criteria are met before progression.
+ *
+ * Body: { gateKey: string, corpusId: string, dryRun?: boolean }
+ *
+ * Returns:
+ *   - { progressed: true, from, to, evalStage, readiness } on success
+ *   - { progressed: false, reason, currentStage, nextStage, evalStage, readiness } when blocked
+ */
+app.post('/rollout-gate/auto-progress', async (c) => {
+  const body: unknown = await c.req.json().catch(() => null);
+  const parsed = autoProgressSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({
+      ok: false,
+      reason: 'Invalid body. Required: { gateKey: string, corpusId: string, dryRun?: boolean }',
+      errors: parsed.error.issues,
+    }, 400);
+  }
+
+  const { gateKey, corpusId, dryRun } = parsed.data;
+  const db = c.env.DB;
+
+  const gateResult = await checkGate(db, gateKey);
+  const currentStage = gateResult.stage;
+  const targetStage = nextGateStage(currentStage);
+
+  if (!targetStage) {
+    return c.json({
+      progressed: false,
+      reason: `Gate "${gateKey}" is already at terminal stage "${currentStage}" — no further progression possible`,
+      currentStage,
+      nextStage: null,
+      evalStage: null,
+      readiness: null,
+    });
+  }
+
+  // Bootstrap: disabled → internal_only requires no evaluation (feature is just being enabled)
+  if (currentStage === 'disabled') {
+    if (!dryRun) {
+      await updateGateStage(
+        db,
+        gateKey,
+        targetStage,
+        'auto-progress',
+        `Bootstrap progression: ${currentStage} → ${targetStage} (no evaluation required)`,
+      );
+    }
+    return c.json({
+      progressed: !dryRun,
+      dryRun: dryRun ?? false,
+      from: currentStage,
+      to: targetStage,
+      evalStage: null,
+      readiness: null,
+      reason: 'Bootstrap progression — evaluation not required for initial stage',
+    });
+  }
+
+  const evalStage = evalStageForProgression(currentStage);
+  if (!evalStage) {
+    return c.json({
+      ok: false,
+      reason: `Cannot determine evaluation stage for current gate "${currentStage}"`,
+    }, 400);
+  }
+
+  const readiness = await checkLatestProductionEvaluation(db, {
+    corpusId,
+    stage: evalStage,
+  });
+
+  if (!readiness.ready) {
+    return c.json({
+      progressed: false,
+      reason: `Evaluation readiness check failed for stage "${evalStage}" — gate remains at "${currentStage}"`,
+      currentStage,
+      nextStage: targetStage,
+      evalStage,
+      readiness: {
+        ready: readiness.ready,
+        failures: readiness.failures,
+        warnings: readiness.warnings,
+        evaluationResultId: readiness.evaluationResultId,
+        createdAt: readiness.createdAt,
+      },
+    });
+  }
+
+  if (!dryRun) {
+    await updateGateStage(
+      db,
+      gateKey,
+      targetStage,
+      'auto-progress',
+      `Automated progression: ${currentStage} → ${targetStage} (eval stage: ${evalStage}, corpus: ${corpusId}, result: ${readiness.evaluationResultId})`,
+    );
+  }
+
+  return c.json({
+    progressed: !dryRun,
+    dryRun: dryRun ?? false,
+    from: currentStage,
+    to: targetStage,
+    evalStage,
+    readiness: {
+      ready: readiness.ready,
+      failures: readiness.failures,
+      warnings: readiness.warnings,
+      evaluationResultId: readiness.evaluationResultId,
+      createdAt: readiness.createdAt,
+    },
+  });
 });
 
 export default app;

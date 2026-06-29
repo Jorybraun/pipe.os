@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `backfillCultureSessionsBatch` with cursor-based batch processing, `NOT EXISTS` deduplication against the `interactions` table, and standard error isolation per session.
 - Wired culture backfill into `projection_outbox_drain` dependency chain so projections drain after culture ingestion completes.
 - Added integration test verifying culture transcript backfill creates interactions, artifacts, source spans, context records, and is idempotent on re-run.
+
+### Added — Automated rollout gate progression (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate/auto-progress` endpoint — checks evaluation readiness for the next stage and transitions the gate if metrics pass. Enforces single-step progression (disabled → internal_only → canary → GA) with quality gates at each level.
+- Bootstrap progression (disabled → internal_only) proceeds without evaluation; subsequent stages require passing evaluation readiness checks at increasing threshold levels.
+- Supports `dryRun` mode to preview progression decisions without mutating gates.
+- Added 5 new tests covering bootstrap, blocking, terminal state, dry-run, and full progression with evaluation.
 ### Added — Real-time living context ingestion on resume upload
 
 - Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
