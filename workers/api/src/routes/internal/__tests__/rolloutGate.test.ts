@@ -1,7 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import Database from 'better-sqlite3';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Hono } from 'hono';
+import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mockD1';
 import { checkStagedRolloutGate } from '../../../lib/challengeMatching/evaluation/metrics';
 import type { EvaluationMetrics } from '../../../lib/challengeMatching/evaluation/types';
 import { STAGED_ROLLOUT_THRESHOLDS } from '../../../lib/challengeMatching/evaluation/types';
+import rolloutGate from '../rolloutGate';
+import { clearGateCache } from '../../../lib/livingContext/rolloutEnforcement';
+
+const gatesMigration = readFileSync(
+  new URL('../../../../migrations/0105_rollout_gates.sql', import.meta.url),
+  'utf8',
+);
+const auditMigration = readFileSync(
+  new URL('../../../../migrations/0106_rollout_gate_audit_log.sql', import.meta.url),
+  'utf8',
+);
 
 describe('rollout gate — criterion #8: controlled staged rollout', () => {
   function passingMetrics(overrides: Partial<EvaluationMetrics> = {}): EvaluationMetrics {
@@ -102,5 +117,168 @@ describe('rollout gate — criterion #8: controlled staged rollout', () => {
     expect(result).toHaveProperty('metrics');
     expect(result).toHaveProperty('thresholds');
     expect(result.metrics).toBe(metrics);
+  });
+});
+
+describe('POST /rollout-gate — gate stage management', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(gatesMigration);
+    sqlite.exec(auditMigration);
+    clearGateCache();
+  });
+
+  afterEach(() => {
+    sqlite.close();
+    clearGateCache();
+  });
+
+  it('creates a new gate and transitions it', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gateKey: 'test_feature', stage: 'internal_only', reason: 'Initial enable' }),
+    }, { DB: db });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { ok: boolean; gateKey: string; stage: string };
+    expect(body.ok).toBe(true);
+    expect(body.gateKey).toBe('test_feature');
+    expect(body.stage).toBe('internal_only');
+
+    const row = sqlite.prepare('SELECT stage FROM rollout_gates WHERE gate_key = ?').get('test_feature') as { stage: string } | undefined;
+    expect(row?.stage).toBe('internal_only');
+
+    const audit = sqlite.prepare('SELECT * FROM rollout_gate_audit_log WHERE gate_key = ?').all('test_feature') as Array<{ new_stage: string; reason: string }>;
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.new_stage).toBe('internal_only');
+    expect(audit[0]!.reason).toBe('Initial enable');
+  });
+
+  it('rejects invalid stage values', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gateKey: 'test_feature', stage: 'invalid_stage' }),
+    }, { DB: db });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { ok: boolean };
+    expect(body.ok).toBe(false);
+  });
+
+  it('rejects missing gateKey', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stage: 'canary' }),
+    }, { DB: db });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /rollout-gate/gates — list all gates', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(gatesMigration);
+    sqlite.exec(auditMigration);
+    clearGateCache();
+  });
+
+  afterEach(() => {
+    sqlite.close();
+    clearGateCache();
+  });
+
+  it('lists all configured gates', async () => {
+    sqlite.exec(`
+      INSERT INTO rollout_gates (id, gate_key, stage, updated_by, created_at, updated_at)
+      VALUES ('g1', 'living_context_backfill', 'canary', 'admin', datetime('now'), datetime('now'));
+    `);
+    sqlite.exec(`
+      INSERT INTO rollout_gates (id, gate_key, stage, updated_by, created_at, updated_at)
+      VALUES ('g2', 'matching_v2', 'disabled', 'admin', datetime('now'), datetime('now'));
+    `);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate/gates', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { gates: Array<{ gateKey: string; stage: string }> };
+    expect(body.gates).toHaveLength(2);
+    expect(body.gates.find((g) => g.gateKey === 'living_context_backfill')?.stage).toBe('canary');
+    expect(body.gates.find((g) => g.gateKey === 'matching_v2')?.stage).toBe('disabled');
+  });
+});
+
+describe('GET /rollout-gate/audit — gate audit log', () => {
+  let sqlite: BetterSqliteDb;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec('PRAGMA foreign_keys = ON;');
+    sqlite.exec(gatesMigration);
+    sqlite.exec(auditMigration);
+    clearGateCache();
+  });
+
+  afterEach(() => {
+    sqlite.close();
+    clearGateCache();
+  });
+
+  it('returns audit trail for a gate', async () => {
+    sqlite.exec(`
+      INSERT INTO rollout_gate_audit_log (id, gate_key, previous_stage, new_stage, updated_by, reason, created_at)
+      VALUES ('a1', 'test_gate', 'disabled', 'internal_only', 'admin', 'enabling', datetime('now', '-2 minutes'));
+    `);
+    sqlite.exec(`
+      INSERT INTO rollout_gate_audit_log (id, gate_key, previous_stage, new_stage, updated_by, reason, created_at)
+      VALUES ('a2', 'test_gate', 'internal_only', 'canary', 'admin', 'promoting', datetime('now', '-1 minutes'));
+    `);
+
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate/audit?gateKey=test_gate', undefined, { DB: db });
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as { gateKey: string; entries: Array<{ previousStage: string; newStage: string; reason: string }> };
+    expect(body.gateKey).toBe('test_gate');
+    expect(body.entries).toHaveLength(2);
+    expect(body.entries[0]!.newStage).toBe('canary');
+    expect(body.entries[1]!.newStage).toBe('internal_only');
+  });
+
+  it('requires gateKey parameter', async () => {
+    const db = createMockD1(sqlite);
+    const app = new Hono();
+    app.route('/', rolloutGate);
+
+    const res = await app.request('/rollout-gate/audit', undefined, { DB: db });
+    expect(res.status).toBe(400);
   });
 });

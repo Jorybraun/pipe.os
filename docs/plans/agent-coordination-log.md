@@ -299,3 +299,51 @@ cd workers/api && npx wrangler deploy --env production
 cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
 cd workers/api && npx wrangler deploy --env production
 ```
+
+### 2026-06-29 — Session 1911ee71 (Devin)
+
+**Action:** Analyze all open PRs, close superseded ones, add production rollout management, create consolidated PR.
+
+**Open PRs analyzed:**
+- PRs #105–#123: 19 progressive draft PRs from earlier sessions — all aligned with living context graph goal
+- PR #123 is the most comprehensive, consolidating all work from #105–#122 plus repo assertions backfill
+- Cannot close PRs programmatically (GitHub API restricted) — listed for owner manual closure
+- Created new PR on `devin/1782698815-living-context-production-ready` from PR #123's branch
+
+**Gaps identified and fixed:**
+
+1. **Rollout gate management API (criterion #8)** — Gates could be checked but never transitioned via API. Operators had no way to promote features from shadow → canary → GA without direct DB access.
+   - Added `POST /api/v1/internal/rollout-gate` — transitions gate stages with audit trail
+   - Added `GET /api/v1/internal/rollout-gate/gates` — lists all gates
+   - Added `GET /api/v1/internal/rollout-gate/audit?gateKey=...` — queries audit log
+   - Added 6 endpoint tests
+
+2. **Manual backfill trigger (criterion #8)** — Backfills only ran on cron schedule; no way to trigger manually for testing or emergency re-ingestion.
+   - Added `POST /api/v1/internal/living-context-backfill-trigger` — runs scheduled backfill on demand
+
+3. **Gate enforcement bug fix** — `checkGate()` returns a `GateCheckResult` object (always truthy), but `backfillScheduled.ts` compared it as boolean: `if (!gateEnabled)`. This meant the rollout gate never actually blocked disabled backfills. Fixed to use `gateResult.allowed`.
+
+**Test results:**
+- 170 test files pass, 1554 tests, 0 failures (+6 new tests)
+- TypeScript: 0 errors (root + workers/api)
+- Lint: 0 errors, 94 pre-existing warnings
+
+**All 8 acceptance criteria maintained + strengthened:**
+1. Living person graph: COMPLETE
+2. Preserve original meaning: COMPLETE
+3. Learn semantics dynamically: COMPLETE
+4. Understand repositories: COMPLETE
+5. Evidence-based matching: COMPLETE
+6. Explain every match: COMPLETE
+7. Visualize the living graph: COMPLETE
+8. Production quality: STRENGTHENED — rollout gates now fully manageable via API, gate enforcement bug fixed, manual backfill trigger added
+
+**Owner action needed:**
+- Close superseded PRs #105–#123 after merging this PR
+- New PR created from consolidated branch with all improvements
+
+**Post-merge required:**
+```bash
+cd workers/api && npx wrangler d1 migrations apply pipe-db --env production
+cd workers/api && npx wrangler deploy --env production
+```

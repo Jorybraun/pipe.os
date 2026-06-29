@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Rollout gate management API (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate` endpoint to transition feature gates between stages (disabled → internal_only → canary → GA) with audit logging. Accepts `{ gateKey, stage, reason? }`.
+- Added `GET /api/v1/internal/rollout-gate/gates` endpoint to list all configured gates with current stages.
+- Added `GET /api/v1/internal/rollout-gate/audit?gateKey=...` endpoint to query the immutable audit trail for gate transitions.
+- Added `POST /api/v1/internal/living-context-backfill-trigger` endpoint to manually trigger backfill runs outside the cron schedule.
+- Fixed rollout gate check bug in `backfillScheduled.ts`: `checkGate()` returns a `GateCheckResult` object (always truthy), but the code compared it as a boolean — gate enforcement was never blocking disabled backfills.
+- Added 6 new endpoint tests covering gate creation, stage transitions, validation, gate listing, and audit trail queries.
+
 ### Added — Repository assertions backfill into living context (criterion #4)
 
 - Added `repo_assertions_to_living_context` backfill task to scheduled orchestrator. Iterates all `repo_semantic_assertions` without corresponding context records and creates source-backed context records with full provenance (source spans, line ranges, file paths) and concept linkage via repo facets.

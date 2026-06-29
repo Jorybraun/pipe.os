@@ -12,7 +12,9 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { scheduleFullProjectionRebuild } from '../../lib/livingContext/projection';
+import { runScheduledBackfill, BACKFILL_TASKS } from '../../lib/livingContext/backfillScheduled';
 import type { Env } from '../../types';
 
 interface SubsystemHealth {
@@ -355,6 +357,28 @@ app.get('/living-context-backfill', async (c) => {
       error: 'backfill_checkpoints table not available',
     });
   }
+});
+
+/**
+ * POST /api/v1/internal/living-context-backfill-trigger
+ *
+ * Manually trigger a backfill run outside the cron schedule. Runs the same
+ * logic as the scheduled handler. Returns per-task results.
+ */
+app.post('/living-context-backfill-trigger', async (c) => {
+  const result = await runScheduledBackfill(c.env);
+
+  return c.json({
+    gateEnabled: result.gateEnabled,
+    tasksExecuted: result.tasksExecuted,
+    batchResults: result.batchResults,
+    orchestratorStatus: result.status,
+    registeredTasks: BACKFILL_TASKS.map((t) => ({
+      taskKey: t.taskKey,
+      description: t.description,
+      dependsOn: t.dependsOn,
+    })),
+  });
 });
 
 export default app;

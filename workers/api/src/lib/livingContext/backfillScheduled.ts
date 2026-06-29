@@ -677,8 +677,8 @@ export async function runScheduledBackfill(env: Env): Promise<BackfillScheduledR
   const orchestrator = new BackfillOrchestrator(db, BACKFILL_TASKS);
 
   // Check rollout gate
-  const gateEnabled = await checkGate(db, 'living_context_backfill');
-  if (!gateEnabled) {
+  const gateResult = await checkGate(db, 'living_context_backfill');
+  if (!gateResult.allowed) {
     return {
       gateEnabled: false,
       status: await orchestrator.getStatus(),
