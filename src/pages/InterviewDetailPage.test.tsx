@@ -771,10 +771,11 @@ describe('InterviewDetailPage', () => {
     expect(related).toHaveTextContent('Related evidence interviews');
     expect(related).toHaveTextContent('Open the person profile for the full cross-meeting graph. These links are context, not evidence owned by this meeting.');
     expect(related).toHaveTextContent('Evidence follow-up');
-    expect(related).toHaveTextContent('assessment IN PROGRESS');
-    expect(related).toHaveTextContent('meeting meeting-context-1');
+    expect(related).toHaveTextContent('assessment in progress');
+    expect(related).toHaveTextContent('meeting room attached');
+    expect(related).not.toHaveTextContent('meeting-context-1');
     expect(related).toHaveTextContent('Same person assessment');
-    expect(related).toHaveTextContent('CODE REVIEW');
+    expect(related).toHaveTextContent('Code review');
     expect(screen.queryByTestId('interview-person-context-timeline')).toBeNull();
     expect(screen.queryByText('Code Review Context Call Recommendation')).toBeNull();
     expect(screen.queryByText('Scheduled Interview Invite Delivery')).toBeNull();

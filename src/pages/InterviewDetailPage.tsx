@@ -781,10 +781,12 @@ function relatedEvidenceRelationshipLabel(relationship: string): string {
 
 function relatedEvidenceDetail(related: NonNullable<ScheduledInterviewDetail['relatedEvidenceInterviews']>[number]): string {
   const parts = [
-    related.interviewType ? titleCaseToken(related.interviewType) : null,
-    related.assessmentSessionState ? `assessment ${titleCaseToken(related.assessmentSessionState)}` : null,
-    related.transcriptStatus ? `transcript ${titleCaseToken(related.transcriptStatus)}` : null,
-    related.linkedMeetingId ? `meeting ${related.linkedMeetingId}` : null,
+    related.interviewType ? sentenceCaseToken(related.interviewType) : null,
+    related.assessmentSessionState ? `assessment ${sentenceCaseToken(related.assessmentSessionState).toLowerCase()}` : null,
+    related.transcriptStatus && related.transcriptStatus !== 'NONE'
+      ? `transcript ${sentenceCaseToken(related.transcriptStatus).toLowerCase()}`
+      : null,
+    related.linkedMeetingId ? 'meeting room attached' : null,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(' · ') : 'Evidence interview';
 }
