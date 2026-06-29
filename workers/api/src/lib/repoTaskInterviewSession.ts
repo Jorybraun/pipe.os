@@ -263,6 +263,7 @@ export interface AssessmentProgressSourceRef {
   sourceRefId: string;
   evidenceRole: string;
   exactText: string;
+  contentHash: string;
   locator: JsonObject;
 }
 
@@ -1039,7 +1040,7 @@ export class RepoTaskInterviewSessionStore {
 
   private async loadChallengeSourceRef(sessionId: string): Promise<AssessmentProgressSourceRef | null> {
     const row = await this.db.prepare(
-      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.locator_json
+      `SELECT sr.source_ref_type, sr.source_ref_id, sr.evidence_role, sr.exact_text, sr.content_hash, sr.locator_json
          FROM assessment_event_source_refs sr
          JOIN assessment_evidence_events e ON e.id = sr.event_id
         WHERE e.session_id = ?1
@@ -1064,6 +1065,7 @@ export class RepoTaskInterviewSessionStore {
       source_ref_id: string;
       evidence_role: string;
       exact_text: string;
+      content_hash: string;
       locator_json: string | null;
     }>();
     if (!row) return null;
@@ -1072,6 +1074,7 @@ export class RepoTaskInterviewSessionStore {
       sourceRefId: row.source_ref_id,
       evidenceRole: row.evidence_role,
       exactText: row.exact_text,
+      contentHash: row.content_hash,
       locator: parseJsonObject(row.locator_json),
     };
   }

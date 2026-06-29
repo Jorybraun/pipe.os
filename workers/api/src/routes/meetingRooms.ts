@@ -1270,11 +1270,20 @@ type RoomWorkspaceChallengeSource =
   | 'missing_repo_and_task'
   | 'workspace_not_enabled';
 
+interface RoomWorkspaceChallengePacketPayload {
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  locator: JsonObject;
+  contentHash: string;
+}
+
 interface RoomWorkspaceChallengePayload {
   status: RoomWorkspaceChallengeStatus;
   kind: RoomWorkspaceChallengeKind;
   source: RoomWorkspaceChallengeSource;
   message: string | null;
+  packet: RoomWorkspaceChallengePacketPayload | null;
 }
 
 async function syncRoomActivityEvidenceForToken(
@@ -1710,6 +1719,7 @@ function githubPrChallengeRef(githubPrNumber: number | null): string | null {
 function buildRoomWorkspaceChallenge(
   interview: RoomWorkspaceInterview | null,
   enabled: boolean,
+  packet: RoomWorkspaceChallengePacketPayload | null,
 ): RoomWorkspaceChallengePayload {
   if (!enabled) {
     return {
@@ -1717,6 +1727,7 @@ function buildRoomWorkspaceChallenge(
       kind: null,
       source: 'workspace_not_enabled',
       message: null,
+      packet: null,
     };
   }
   if (Number.isInteger(interview?.github_pr_number) && (interview?.github_pr_number ?? 0) > 0) {
@@ -1725,6 +1736,7 @@ function buildRoomWorkspaceChallenge(
       kind: 'github_pr',
       source: 'scheduled_interview.github_pr_number',
       message: null,
+      packet,
     };
   }
   if (interview?.matched_repo_id) {
@@ -1733,6 +1745,7 @@ function buildRoomWorkspaceChallenge(
       kind: 'repo_only',
       source: 'matched_repo_without_pr',
       message: 'Matched repository is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      packet,
     };
   }
   if (interview?.github_repo_url) {
@@ -1741,6 +1754,7 @@ function buildRoomWorkspaceChallenge(
       kind: 'repo_only',
       source: 'scheduled_repo_without_pr',
       message: 'Repository workspace is available, but no GitHub PR or task was assigned. Treat this as an assessment setup gap, not candidate evidence.',
+      packet,
     };
   }
   return {
@@ -1748,6 +1762,7 @@ function buildRoomWorkspaceChallenge(
     kind: null,
     source: 'missing_repo_and_task',
     message: 'This workspace interview has no repository, GitHub PR, or task assigned yet. Treat this as an assessment setup gap, not candidate evidence.',
+    packet,
   };
 }
 
@@ -1795,6 +1810,46 @@ async function loadRoomWorkspaceInterview(
   };
 }
 
+function serializeRoomWorkspaceChallengePacket(
+  progress: AssessmentProgressSnapshot | null,
+): RoomWorkspaceChallengePacketPayload | null {
+  if (!progress?.challenge) return null;
+  return {
+    sourceRefType: progress.challenge.sourceRefType,
+    evidenceRole: progress.challenge.evidenceRole,
+    exactText: progress.challenge.exactText,
+    locator: progress.challenge.locator,
+    contentHash: progress.challenge.contentHash,
+  };
+}
+
+async function loadRoomWorkspaceChallengePacket(
+  db: D1Database,
+  room: ResolvedRoom,
+): Promise<RoomWorkspaceChallengePacketPayload | null> {
+  if (!room.scheduled_interview_id) return null;
+  const row = await db.prepare(
+    `SELECT id
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+        AND state <> 'CANCELLED'
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(room.scheduled_interview_id).first<{ id: string }>().catch(() => null);
+  if (!row?.id) return null;
+
+  try {
+    const progress = await new RepoTaskInterviewSessionStore(db).loadProgress(row.id);
+    return serializeRoomWorkspaceChallengePacket(progress);
+  } catch (error) {
+    console.error('[meetingRooms.workspace.challengePacket] failed to load assessment challenge packet:', {
+      interviewId: room.scheduled_interview_id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 async function buildRoomWorkspacePayload(
   db: D1Database,
   token: string,
@@ -1805,6 +1860,7 @@ async function buildRoomWorkspacePayload(
     interview?.interview_type && WORKSPACE_INTERVIEW_TYPES.has(interview.interview_type),
   );
   const session = await getLatestSessionForRoom(db, room.room_id).catch(() => null);
+  const challengePacket = enabled ? await loadRoomWorkspaceChallengePacket(db, room) : null;
   const repoUrl = interview?.github_repo_url ?? session?.repo_git_url ?? null;
   return {
     enabled,
@@ -1812,7 +1868,7 @@ async function buildRoomWorkspacePayload(
     repoUrl,
     githubPrNumber: interview?.github_pr_number ?? null,
     matchedRepoId: interview?.matched_repo_id ?? null,
-    challenge: buildRoomWorkspaceChallenge(interview, enabled),
+    challenge: buildRoomWorkspaceChallenge(interview, enabled, challengePacket),
     session: serializeWorkspaceSession(token, session),
   };
 }

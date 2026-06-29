@@ -118,6 +118,7 @@ import { NotepadWindow } from './components/NotepadWindow';
 import { PaintWindow, type PaintCanvasItem, type PaintShape, type PaintStroke } from './components/PaintWindow';
 import { RoomFileSystemWindow } from './components/RoomFileSystemWindow';
 import { CommitSubmissionWindow } from './components/CommitSubmissionWindow';
+import { ChallengePacketPanel } from './components/ChallengePacketPanel';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
@@ -1220,6 +1221,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   const workspaceChallengeMessage = workspace?.challenge?.status === 'missing_reviewable_task'
     ? workspace.challenge.message
     : null;
+  const workspaceChallengePacket = workspace?.challenge?.packet ?? null;
   const clippyAgentUnavailableMessage = !hasWorkspaceFeature
     ? 'This room was not configured with a dev workspace. Room chat still goes to people; Clippy agent chat requires a real container workspace.'
     : workspaceSession?.status === 'LAUNCHING'
@@ -2455,6 +2457,9 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       case 'workspace':
         return (
           <div className="win95-workspace-content" style={{ position: 'relative' }}>
+            {workspaceChallengePacket && (
+              <ChallengePacketPanel packet={workspaceChallengePacket} compact={Boolean(workspaceUrl)} />
+            )}
             {workspaceUrl ? (
               <>
                 {!iframeLoaded && (

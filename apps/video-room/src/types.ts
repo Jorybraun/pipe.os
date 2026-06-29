@@ -64,6 +64,15 @@ export interface RoomWorkspaceChallenge {
   kind: RoomWorkspaceChallengeKind;
   source: RoomWorkspaceChallengeSource;
   message: string | null;
+  packet: RoomWorkspaceChallengePacket | null;
+}
+
+export interface RoomWorkspaceChallengePacket {
+  sourceRefType: string;
+  evidenceRole: string;
+  exactText: string;
+  locator: Record<string, unknown>;
+  contentHash: string;
 }
 
 export interface RoomWorkspace {

@@ -3540,6 +3540,7 @@ button:focus-visible {
   background: #1e1e1e;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .win95-workspace-iframe {
@@ -3573,6 +3574,8 @@ button:focus-visible {
   color: #fff;
   text-align: center;
   padding: 20px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .win95-workspace-empty h3 {
@@ -3617,6 +3620,101 @@ button:focus-visible {
 
 .win95-workspace-repo-input:focus {
   border-color: #000080;
+}
+
+.challenge-packet-panel {
+  margin: 10px;
+  padding: 10px;
+  border: 2px solid;
+  border-color: #dfdfdf #0a0a0a #0a0a0a #dfdfdf;
+  background: #ffffe1;
+  color: #111;
+  font-family: 'MS Sans Serif', 'Segoe UI', Tahoma, sans-serif;
+  text-align: left;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.challenge-packet-panel.is-compact {
+  margin: 6px;
+  padding: 8px;
+  flex: 0 0 auto;
+}
+
+.challenge-packet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.challenge-packet-header h4 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.challenge-packet-header span {
+  display: block;
+  margin-top: 2px;
+  color: #333;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.challenge-packet-locator {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 0 0 8px;
+  font-size: 11px;
+}
+
+.challenge-packet-locator dt {
+  font-weight: 700;
+  color: #000080;
+}
+
+.challenge-packet-locator dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.challenge-packet-exact-text {
+  max-height: 155px;
+  margin: 0;
+  padding: 8px;
+  border: 2px solid;
+  border-color: #808080 #fff #fff #808080;
+  background: #fff;
+  color: #111;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'Space Mono', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.challenge-packet-panel.is-compact .challenge-packet-exact-text {
+  max-height: 82px;
+}
+
+.challenge-packet-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: #333;
+}
+
+.challenge-packet-footer code {
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #000080;
 }
 
 /* Commit Submission Window */

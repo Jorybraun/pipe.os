@@ -42,6 +42,9 @@ export interface WorkspaceStateDesktopEvent {
   challengeKind: string | null;
   challengeSource: string | null;
   challengeMessage: string | null;
+  challengePacketSourceRefType: string | null;
+  challengePacketEvidenceRole: string | null;
+  challengePacketContentHash: string | null;
   canLaunch: boolean;
   ttlSeconds: number | null;
   ttlSource: string | null;
@@ -101,6 +104,9 @@ export function buildCodeEditorOpenEvidence(input: {
       challengeKind: input.workspace?.challenge?.kind ?? null,
       challengeSource: input.workspace?.challenge?.source ?? null,
       challengeMessage: input.workspace?.challenge?.message ?? null,
+      challengePacketSourceRefType: input.workspace?.challenge?.packet?.sourceRefType ?? null,
+      challengePacketEvidenceRole: input.workspace?.challenge?.packet?.evidenceRole ?? null,
+      challengePacketContentHash: input.workspace?.challenge?.packet?.contentHash ?? null,
       proxyUrlPersisted: false,
     },
   };
@@ -219,6 +225,9 @@ export function buildWorkspaceStateDesktopEvent(input: {
     challengeKind: input.workspace?.challenge?.kind ?? null,
     challengeSource: input.workspace?.challenge?.source ?? null,
     challengeMessage: input.workspace?.challenge?.message ?? null,
+    challengePacketSourceRefType: input.workspace?.challenge?.packet?.sourceRefType ?? null,
+    challengePacketEvidenceRole: input.workspace?.challenge?.packet?.evidenceRole ?? null,
+    challengePacketContentHash: input.workspace?.challenge?.packet?.contentHash ?? null,
     canLaunch: Boolean(input.workspace?.canLaunch),
     ttlSeconds: session?.ttlSeconds ?? null,
     ttlSource: session?.ttlSource ?? null,
