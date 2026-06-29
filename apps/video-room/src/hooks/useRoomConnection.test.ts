@@ -881,8 +881,38 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
       action: 'upsert',
       contentLength: 'Candidate asked about testing strategy.'.length,
       contentHash: 'content_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      contentExactText: 'Candidate asked about testing strategy.',
       fileCreatedAt: 4,
       fileUpdatedAt: 4,
+    },
+  };
+  const sourceBackedDelete: RoomFileSystemEvent = {
+    id: 'fs-delete-notes',
+    clientId: 'host-client',
+    createdAt: 5,
+    kind: 'DELETE_FILE',
+    fileId: 'desktop-notes',
+    file: sourceBackedUpsert.file,
+    evidence: {
+      source: 'win95_shared_file_system',
+      fileEventSource: 'browser_client_submit',
+      fileChangeId: 'file:host:5:delete:desktop-notes',
+      actor: 'host',
+      operation: 'delete',
+      fileId: 'desktop-notes',
+      fileName: 'notes.txt',
+      fileKind: 'text',
+      mimeType: 'text/plain',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 5,
+      durableObjectReplayExpected: true,
+      action: 'delete',
+      deletedContentLength: 'Candidate asked about testing strategy.'.length,
+      deletedContentHash: 'content_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      deletedContentExactText: 'Candidate asked about testing strategy.',
+      deletedFileCreatedAt: 4,
+      deletedFileUpdatedAt: 4,
     },
   };
 
@@ -899,6 +929,38 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
 
   it('rejects file mutations attributed to the wrong room actor', () => {
     expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedUpsert, 'GUEST')).toBe(false);
+  });
+
+  it('rejects file mutations when exact saved content evidence is missing or stale', () => {
+    expect(hasSourceBackedRoomFileSystemEvidence({
+      ...sourceBackedUpsert,
+      evidence: {
+        ...sourceBackedUpsert.evidence!,
+        contentExactText: undefined,
+      },
+    }, 'HOST')).toBe(false);
+    expect(hasSourceBackedRoomFileSystemEvidence({
+      ...sourceBackedUpsert,
+      evidence: {
+        ...sourceBackedUpsert.evidence!,
+        contentExactText: 'Candidate asked about testing strategy!',
+      },
+    }, 'HOST')).toBe(false);
+  });
+
+  it('accepts file deletes only when the deleted file content is carried as exact evidence', () => {
+    expect(hasSourceBackedRoomFileSystemEvidence(sourceBackedDelete, 'HOST')).toBe(true);
+    expect(hasSourceBackedRoomFileSystemEvidence({
+      ...sourceBackedDelete,
+      file: undefined,
+    }, 'HOST')).toBe(false);
+    expect(hasSourceBackedRoomFileSystemEvidence({
+      ...sourceBackedDelete,
+      evidence: {
+        ...sourceBackedDelete.evidence!,
+        deletedContentExactText: 'Candidate asked about testing strategy!',
+      },
+    }, 'HOST')).toBe(false);
   });
 
   it('accepts file snapshots only when metadata carries source-backed upsert projection evidence', () => {
@@ -927,9 +989,19 @@ describe('hasSourceBackedRoomFileSystemEvidence', () => {
         },
       },
     };
+    const exactContentMismatchedFile: RoomFile = {
+      ...sourceBackedUpsert.file,
+      content: 'Candidate asked about testing strategy!',
+      metadata: {
+        roomFileProjectionEvidence: {
+          ...sourceBackedUpsert.evidence,
+        },
+      },
+    };
 
     expect(hasSourceBackedRoomFileSnapshotEvidence(sourceThinFile)).toBe(false);
     expect(hasSourceBackedRoomFileSnapshotEvidence(contentMismatchedFile)).toBe(false);
+    expect(hasSourceBackedRoomFileSnapshotEvidence(exactContentMismatchedFile)).toBe(false);
   });
 });
 

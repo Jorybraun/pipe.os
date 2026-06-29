@@ -64,6 +64,8 @@ const ROOM_FILE_PROJECTION_EVIDENCE_KEYS = [
   'durableObjectReplayExpected',
   'contentLength',
   'contentHash',
+  'contentExactText',
+  'contentExactJson',
   'fileCreatedAt',
   'fileUpdatedAt',
 ] as const;
@@ -2135,6 +2137,33 @@ function applyFileSystemEvent(files: RoomFile[], event: RoomFileSystemEvent): Ro
   ]);
 }
 
+function hasExactRoomFileContentEvidence(
+  file: RoomFile,
+  evidence: Record<string, unknown>,
+  operation: 'upsert' | 'delete',
+): boolean {
+  const prefix = operation === 'delete' ? 'deletedContent' : 'content';
+  const contentLength = evidence[`${prefix}Length`];
+  const contentHash = evidence[`${prefix}Hash`];
+  if (
+    typeof contentLength !== 'number'
+    || !Number.isFinite(contentLength)
+    || contentLength !== file.content.length
+    || typeof contentHash !== 'string'
+    || !ROOM_FILE_CONTENT_HASH_RE.test(contentHash)
+  ) {
+    return false;
+  }
+
+  if (file.kind === 'text' || file.kind === 'link') {
+    return evidence[`${prefix}ExactText`] === file.content;
+  }
+  if (file.kind === 'paint' || file.kind === 'json') {
+    return evidence[`${prefix}ExactJson`] === file.content;
+  }
+  return false;
+}
+
 export function hasSourceBackedRoomFileSystemEvidence(
   event: RoomFileSystemEvent,
   role?: RoomRole,
@@ -2144,6 +2173,11 @@ export function hasSourceBackedRoomFileSystemEvidence(
   const actor = role === 'HOST' ? 'host' : role === 'GUEST' ? 'guest' : evidence.actor;
   const operation = event.kind === 'DELETE_FILE' ? 'delete' : 'upsert';
   const fileId = event.kind === 'DELETE_FILE' ? event.fileId : event.file.id;
+  if (event.kind === 'DELETE_FILE') {
+    if (!event.file || !hasExactRoomFileContentEvidence(event.file, evidence, 'delete')) return false;
+  } else if (!hasExactRoomFileContentEvidence(event.file, evidence, 'upsert')) {
+    return false;
+  }
   return evidence.source === 'win95_shared_file_system'
     && evidence.fileEventSource === 'browser_client_submit'
     && evidence.actor === actor
@@ -2190,6 +2224,7 @@ export function hasSourceBackedRoomFileSnapshotEvidence(file: RoomFile): boolean
     && contentLength === file.content.length
     && typeof contentHash === 'string'
     && ROOM_FILE_CONTENT_HASH_RE.test(contentHash)
+    && hasExactRoomFileContentEvidence(file, projection, 'upsert')
     && projection.fileCreatedAt === file.createdAt
     && projection.fileUpdatedAt === file.updatedAt;
 }

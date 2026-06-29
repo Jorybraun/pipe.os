@@ -85,6 +85,52 @@ describe('buildRoomFileEvidence', () => {
     expect(evidence.properties).not.toHaveProperty('contentPreview');
   });
 
+  it('preserves exact content for JSON and link files instead of downgrading to hash-only evidence', async () => {
+    const jsonEvidence = await buildRoomFileEvidence({
+      actor: 'host',
+      operation: 'upsert',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 1700000000750,
+      file: {
+        id: 'desktop-task-json',
+        name: 'Task.json',
+        kind: 'json',
+        content: '{"issue":"open source bug","repo":"pipe/os"}',
+        mimeType: 'application/json',
+        metadata: { app: 'file-system', path: 'Desktop/Task.json' },
+        createdAt: 1699999999000,
+        updatedAt: 1700000000750,
+      },
+    });
+    const linkEvidence = await buildRoomFileEvidence({
+      actor: 'host',
+      operation: 'upsert',
+      surface: 'win95',
+      roomPhase: 'connected',
+      capturedAtMs: 1700000000800,
+      file: {
+        id: 'desktop-pr-link',
+        name: 'Review PR.url',
+        kind: 'link',
+        content: 'https://github.com/pipe/os/pull/42',
+        mimeType: 'text/uri-list',
+        metadata: { app: 'file-system', path: 'Desktop/Review PR.url' },
+        createdAt: 1699999999000,
+        updatedAt: 1700000000800,
+      },
+    });
+
+    expect(jsonEvidence.properties).toMatchObject({
+      fileKind: 'json',
+      contentExactJson: '{"issue":"open source bug","repo":"pipe/os"}',
+    });
+    expect(linkEvidence.properties).toMatchObject({
+      fileKind: 'link',
+      contentExactText: 'https://github.com/pipe/os/pull/42',
+    });
+  });
+
   it('captures Paint deletes without storing raw paint previews', async () => {
     const paintJson = '[{"kind":"rectangle","start":{"x":1,"y":2},"end":{"x":3,"y":4}}]';
     const evidence = await buildRoomFileEvidence({

@@ -43,8 +43,8 @@ function exactContentProperty(
   operation: RoomFileEvidenceOperation,
 ): Record<string, string> {
   const prefix = operation === 'delete' ? 'deletedContent' : 'content';
-  if (fileKind === 'text') return { [`${prefix}ExactText`]: content };
-  if (fileKind === 'paint') return { [`${prefix}ExactJson`]: content };
+  if (fileKind === 'text' || fileKind === 'link') return { [`${prefix}ExactText`]: content };
+  if (fileKind === 'paint' || fileKind === 'json') return { [`${prefix}ExactJson`]: content };
   return {};
 }
 
