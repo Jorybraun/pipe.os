@@ -1084,6 +1084,190 @@ describe('GET /interviews/:id detail', () => {
     });
   });
 
+  it('starts assessment evaluation through the interview route and records a source-backed human-review diagnostic', async () => {
+    seedInterviewDetailFixture();
+    const now = '2026-06-22T18:44:00.000Z';
+    const baseCommitSha = '6666666666666666666666666666666666666666';
+    const commitSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const challengeText = [
+      'Repo: https://github.com/open-source/widgets',
+      `Base commit: ${baseCommitSha}`,
+      'Task: fix the start-evaluation regression.',
+      'Success: commit a focused patch with tests.',
+    ].join('\n');
+    const commitText = `commit ${commitSha}\nAuthor: Candidate <candidate@example.com>\n\nFix start evaluation.`;
+    const diffText = 'diff --git a/src/evaluation.ts b/src/evaluation.ts\n+startEvaluation();';
+
+    sqlite!.prepare(`
+      UPDATE scheduled_interviews
+         SET interview_type = 'OPEN_SOURCE_BUG_FIX',
+             github_repo_url = 'https://github.com/open-source/widgets'
+       WHERE id = 'interview-1'
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_sessions (
+        id, ingestion_key, interview_id, mode, state, candidate_id, workspace_id,
+        metadata_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'assessment-session-start-evaluation',
+      'assessment-session:start-evaluation',
+      'interview-1',
+      'OPEN_SOURCE_BUG_FIX',
+      'FINAL_SUBMITTED',
+      'candidate-1',
+      'workspace-1',
+      '{}',
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-start-evaluation-challenge',
+      'assessment-event:start-evaluation-challenge',
+      'assessment-session-start-evaluation',
+      1,
+      'recruiter_note',
+      'recruiter',
+      'owner-1',
+      'Recruiter assigned a concrete open-source challenge packet.',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets' }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type, actor_id,
+        narrative, payload_json, context_record_id, occurred_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    `).run(
+      'assessment-event-start-evaluation-commit',
+      'assessment-event:start-evaluation-commit',
+      'assessment-session-start-evaluation',
+      2,
+      'commit_submission',
+      'candidate',
+      'candidate-1',
+      'Candidate submitted the source-backed assessment commit.',
+      JSON.stringify({
+        repositoryUrl: 'https://github.com/open-source/widgets',
+        forkRepositoryUrl: 'https://github.com/candidate/widgets',
+        branchName: 'pipe-assessment/start-evaluation',
+        baseCommitSha,
+        commitSha,
+        commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}`,
+        changedFiles: [{ path: 'src/evaluation.ts', status: 'modified' }],
+      }),
+      now,
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-start-evaluation-challenge',
+      'assessment-event-start-evaluation-challenge',
+      'review_challenge_packet',
+      'challenge-packet-start-evaluation',
+      'assigned_challenge',
+      JSON.stringify({ repositoryUrl: 'https://github.com/open-source/widgets', baseCommitSha }),
+      challengeText,
+      sha256Hex(challengeText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-start-evaluation-commit',
+      'assessment-event-start-evaluation-commit',
+      'git_commit',
+      commitSha,
+      'support',
+      JSON.stringify({ commitUrl: `https://github.com/candidate/widgets/commit/${commitSha}` }),
+      commitText,
+      sha256Hex(commitText),
+      now,
+    );
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id, evidence_role,
+        locator_json, exact_text, content_hash, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, '{}', ?)
+    `).run(
+      'assessment-source-start-evaluation-diff',
+      'assessment-event-start-evaluation-commit',
+      'code_diff',
+      `${commitSha}:diff`,
+      'support',
+      JSON.stringify({ path: 'src/evaluation.ts' }),
+      diffText,
+      sha256Hex(diffText),
+      now,
+    );
+
+    const app = mountSchedulingApp();
+    const response = await app.request('/interviews/interview-1/assessment/start-evaluation', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      progress: {
+        stage: string;
+        nextAction: string;
+        evaluation: { status: string; summary: string } | null;
+        evidenceCounts: Array<{ kind: string; count: number }>;
+      };
+      diagnostic: { code: string; severity: string };
+    };
+
+    expect(body.diagnostic).toMatchObject({
+      code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
+      severity: 'blocking',
+    });
+    expect(body.progress).toMatchObject({
+      stage: 'NEEDS_ATTENTION',
+      nextAction: 'RESOLVE_DIAGNOSTIC',
+      evaluation: {
+        status: 'NEEDS_HUMAN_REVIEW',
+        summary: 'Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.',
+      },
+    });
+    expect(body.progress.evidenceCounts).toEqual(expect.arrayContaining([
+      { kind: 'commit_submission', count: 1 },
+      { kind: 'recruiter_note', count: 2 },
+    ]));
+
+    expect(sqlite!.prepare(
+      `SELECT state FROM assessment_sessions WHERE id = ?`,
+    ).get('assessment-session-start-evaluation')).toEqual({ state: 'DIAGNOSTIC' });
+    expect(sqlite!.prepare(
+      `SELECT COUNT(*) AS count
+         FROM assessment_evidence_events
+        WHERE session_id = ?
+          AND kind = 'recruiter_note'
+          AND narrative = 'Recruiter requested source-backed assessment evaluation.'`,
+    ).get('assessment-session-start-evaluation')).toEqual({ count: 1 });
+    const diagnosticSource = sqlite!.prepare(
+      `SELECT dsr.exact_text
+         FROM assessment_diagnostic_source_refs dsr
+         JOIN assessment_diagnostics d ON d.id = dsr.diagnostic_id
+        WHERE d.code = 'EVALUATION_NEEDS_HUMAN_REVIEW'
+        LIMIT 1`,
+    ).get() as { exact_text: string } | undefined;
+    expect(diagnosticSource?.exact_text).toContain(
+      'no automated open-source commit evaluator is configured yet',
+    );
+  });
+
   it('returns source-backed assessment progress on the interview list', async () => {
     seedInterviewDetailFixture();
     const now = '2026-06-22T18:42:00.000Z';

@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Recruiter interview details now include a source-backed Start Evaluation action for ready repo-task commits; until a real automated evaluator is configured it records a human-review diagnostic instead of inventing a score.
 - CODE_REVIEW interview scheduling panels now show a human meeting-room linked state instead of raw internal Pipe meeting ids.
 - Person profiles now use the same Clerk-bound API client as interview detail pages and show a visible profile-route error instead of staying on an infinite loading state when person context cannot be addressed.
 - CODE_REVIEW interview related-evidence rows now describe follow-up meetings and same-person assessments as human evidence moments without exposing raw linked-meeting ids in the hiring-manager cockpit.

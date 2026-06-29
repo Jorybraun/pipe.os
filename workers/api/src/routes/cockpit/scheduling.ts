@@ -2445,23 +2445,10 @@ async function loadScheduledAssessmentProgress(
   db: D1Database,
   interviewId: string,
 ): Promise<AssessmentProgressSnapshot | null> {
-  if (!await tableExists(db, 'assessment_sessions')
-    || !await tableExists(db, 'assessment_evidence_events')
-    || !await tableExists(db, 'assessment_event_source_refs')
-    || !await tableExists(db, 'assessment_evaluation_reports')) {
-    return null;
-  }
+  const sessionId = await loadScheduledAssessmentSessionId(db, interviewId);
+  if (!sessionId) return null;
 
-  const row = await db.prepare(
-    `SELECT id
-       FROM assessment_sessions
-      WHERE interview_id = ?1
-      ORDER BY updated_at DESC, id DESC
-      LIMIT 1`,
-  ).bind(interviewId).first<{ id: string }>();
-  if (!row) return null;
-
-  return new RepoTaskInterviewSessionStore(db).loadProgress(row.id);
+  return new RepoTaskInterviewSessionStore(db).loadProgress(sessionId);
 }
 
 async function loadScheduledAssessmentProgressByInterviewIds(
@@ -2473,10 +2460,7 @@ async function loadScheduledAssessmentProgressByInterviewIds(
   const progressByInterviewId = new Map<string, AssessmentProgressSnapshot>();
   if (uniqueInterviewIds.length === 0) return progressByInterviewId;
 
-  if (!await tableExists(db, 'assessment_sessions')
-    || !await tableExists(db, 'assessment_evidence_events')
-    || !await tableExists(db, 'assessment_event_source_refs')
-    || !await tableExists(db, 'assessment_evaluation_reports')) {
+  if (!await hasScheduledAssessmentProgressSchema(db)) {
     return progressByInterviewId;
   }
 
@@ -2513,6 +2497,22 @@ async function loadScheduledAssessmentProgressByInterviewIds(
     }));
   }
   return progressByInterviewId;
+}
+
+async function loadScheduledAssessmentSessionId(
+  db: D1Database,
+  interviewId: string,
+): Promise<string | null> {
+  if (!await hasScheduledAssessmentProgressSchema(db)) return null;
+
+  const row = await db.prepare(
+    `SELECT id
+       FROM assessment_sessions
+      WHERE interview_id = ?1
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+  ).bind(interviewId).first<{ id: string }>();
+  return row?.id ?? null;
 }
 
 async function ensureRecipientContact(
@@ -2725,6 +2725,13 @@ async function tableExists(db: D1Database, tableName: string): Promise<boolean> 
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1`,
   ).bind(tableName).first<{ name: string }>();
   return Boolean(row);
+}
+
+async function hasScheduledAssessmentProgressSchema(db: D1Database): Promise<boolean> {
+  return await tableExists(db, 'assessment_sessions')
+    && await tableExists(db, 'assessment_evidence_events')
+    && await tableExists(db, 'assessment_event_source_refs')
+    && await tableExists(db, 'assessment_evaluation_reports');
 }
 
 async function hasAssessmentLayerSchema(db: D1Database): Promise<boolean> {
@@ -4262,6 +4269,116 @@ schedulingAuth.get('/interviews/:id', async (c) => {
       updatedAt: interview.updated_at,
     },
   });
+});
+
+// POST /interviews/:id/assessment/start-evaluation — recruiter requests source-backed assessment
+schedulingAuth.post('/interviews/:id/assessment/start-evaluation', async (c) => {
+  const userId = c.var.userId;
+  const { id } = c.req.param();
+  const db = c.env.DB;
+
+  const interview = await db.prepare(
+    `SELECT id
+       FROM scheduled_interviews
+      WHERE id = ?1
+        AND owner_id = ?2
+      LIMIT 1`,
+  ).bind(id, userId).first<{ id: string }>();
+  if (!interview) return apiError(c, 'NOT_FOUND', 'Interview not found.');
+
+  const sessionId = await loadScheduledAssessmentSessionId(db, id);
+  if (!sessionId) {
+    return apiError(
+      c,
+      'CONFLICT',
+      'This interview is not linked to an assessment session yet.',
+    );
+  }
+
+  const store = new RepoTaskInterviewSessionStore(db);
+  try {
+    const currentProgress = await store.loadProgress(sessionId);
+    if (currentProgress.nextAction !== 'START_EVALUATION') {
+      return apiError(
+        c,
+        'CONFLICT',
+        `Assessment is not ready for evaluation; next action is ${currentProgress.nextAction}.`,
+      );
+    }
+
+    const requestedAt = new Date().toISOString();
+    const exactText = [
+      `Recruiter ${userId} requested source-backed evaluation for scheduled interview ${id}.`,
+      `Assessment session: ${sessionId}.`,
+      'Result: no automated open-source commit evaluator is configured yet; human review is required.',
+    ].join('\n');
+    const contentHash = await deterministicEntityId('content', exactText);
+    const requestSourceRef: AssessmentEvidenceSourceRefInput = {
+      sourceRefType: 'assessment_evaluation_request',
+      sourceRefId: `scheduled-interview:${id}:evaluation-request:${contentHash}`,
+      evidenceRole: 'evaluation_request',
+      locator: {
+        scheduledInterviewId: id,
+        assessmentSessionId: sessionId,
+        requestedBy: userId,
+        requestedAt,
+        route: '/api/v1/scheduling/interviews/:id/assessment/start-evaluation',
+      },
+      exactText,
+      contentHash,
+    };
+
+    const requestEvent = await store.recordEvent({
+      sessionId,
+      ingestionKey: `assessment-event:${sessionId}:evaluation-request:${contentHash}`,
+      kind: 'recruiter_note',
+      actorType: 'recruiter',
+      actorId: userId,
+      narrative: 'Recruiter requested source-backed assessment evaluation.',
+      payload: {
+        scheduledInterviewId: id,
+        action: 'start_evaluation',
+        evaluatorStatus: 'not_configured',
+      },
+      occurredAt: requestedAt,
+      sourceRefs: [requestSourceRef],
+    });
+
+    await store.transitionState({
+      sessionId,
+      toState: 'EVALUATING',
+      reason: 'Recruiter requested source-backed assessment evaluation.',
+      eventId: requestEvent.id,
+      createdBy: userId,
+    });
+
+    const diagnostic = await store.recordDiagnostic({
+      code: 'EVALUATION_NEEDS_HUMAN_REVIEW',
+      severity: 'blocking',
+      message: 'Automated source-backed open-source commit evaluation is not configured yet. Human review is required before PIPE can score this submission.',
+      provider: 'repo_task_assessment_evaluator',
+      retryable: false,
+      details: {
+        scheduledInterviewId: id,
+        requestEventId: requestEvent.id,
+        reason: 'source_backed_evaluator_not_configured',
+      },
+      sourceRefs: [requestSourceRef],
+    }, {
+      sessionId,
+      reportId: null,
+    });
+
+    const progress = await store.loadProgress(sessionId);
+    return c.json({ progress, diagnostic });
+  } catch (error) {
+    console.error('[scheduling/startAssessmentEvaluation] failed:', {
+      interviewId: id,
+      assessmentSessionId: sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return apiError(c, 'SERVER_ERROR', 'Unable to start assessment evaluation.');
+  }
 });
 
 // POST /interviews/sync — retained for older clients; Calendly bookings arrive via webhooks.

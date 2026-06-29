@@ -18,6 +18,7 @@ import {
 import { useApiClient } from '../hooks/useApiClient';
 import { asCodeReviewReviewProfile, ReviewProfileCard } from '../components/Assessment/CodeReviewChallenge';
 import type {
+  AssessmentProgressSnapshot,
   CodeReviewEvidencePlanItem,
   CodeReviewMatchAlignment,
   CodeReviewMatchDetail,
@@ -79,6 +80,17 @@ interface CodeReviewMatchRefreshResponse {
   repoUrl?: string;
   prNumber?: number;
   codeReviewMatch: CodeReviewMatchDetail | null;
+}
+
+interface StartAssessmentEvaluationResponse {
+  progress: AssessmentProgressSnapshot;
+  diagnostic?: {
+    id: string;
+    sessionId: string;
+    reportId: string | null;
+    code: string;
+    severity: string;
+  } | null;
 }
 
 interface CodeReviewAnnotationDetail {
@@ -857,6 +869,9 @@ export default function InterviewDetailPage(): JSX.Element {
   const [matchRefreshError, setMatchRefreshError] = useState<string | null>(null);
   const [matchRefreshNotice, setMatchRefreshNotice] = useState<string | null>(null);
   const [isRefreshingMatch, setIsRefreshingMatch] = useState(false);
+  const [assessmentEvaluationError, setAssessmentEvaluationError] = useState<string | null>(null);
+  const [assessmentEvaluationNotice, setAssessmentEvaluationNotice] = useState<string | null>(null);
+  const [isStartingAssessmentEvaluation, setIsStartingAssessmentEvaluation] = useState(false);
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState('');
   const [workspacePrNumber, setWorkspacePrNumber] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
@@ -1080,6 +1095,31 @@ export default function InterviewDetailPage(): JSX.Element {
     }
   }, [api, interview]);
 
+  const startAssessmentEvaluation = useCallback(async () => {
+    if (!interview) return;
+    setAssessmentEvaluationError(null);
+    setAssessmentEvaluationNotice(null);
+    setIsStartingAssessmentEvaluation(true);
+    try {
+      const result = await api.post<StartAssessmentEvaluationResponse>(
+        `/api/v1/scheduling/interviews/${interview.id}/assessment/start-evaluation`,
+        {},
+      );
+      setInterview((current) => current
+        ? { ...current, assessmentProgress: result.progress }
+        : current);
+      setAssessmentEvaluationNotice(
+        result.diagnostic
+          ? 'Human review required before PIPE can score this submission.'
+          : 'Source-backed assessment evaluation started.',
+      );
+    } catch (err) {
+      setAssessmentEvaluationError(err instanceof Error ? err.message : 'Unable to start assessment evaluation');
+    } finally {
+      setIsStartingAssessmentEvaluation(false);
+    }
+  }, [api, interview]);
+
   const saveWorkspaceConfig = useCallback(async () => {
     if (!interview) return;
     const repoUrl = workspaceRepoUrl.trim();
@@ -1244,6 +1284,7 @@ export default function InterviewDetailPage(): JSX.Element {
   const assessmentChallengeText = assessmentProgress
     ? assessmentChallengeSummary(assessmentProgress.challenge)
     : null;
+  const canStartAssessmentEvaluation = assessmentProgress?.nextAction === 'START_EVALUATION';
   const showsRoomPanel = !isCodeReviewInterview;
   const hasCallRecordEvidence = Boolean(
     interview.transcriptArtifact
@@ -1484,7 +1525,22 @@ export default function InterviewDetailPage(): JSX.Element {
                 {interview.assessmentSetup?.message ?? 'Source-backed assessment evidence is tracked against this interview.'}
               </div>
             </div>
-            <span style={MATCH_BADGE}>{assessmentProgressStage}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <span style={MATCH_BADGE}>{assessmentProgressStage}</span>
+              {canStartAssessmentEvaluation && (
+                <button
+                  type="button"
+                  onClick={() => void startAssessmentEvaluation()}
+                  disabled={isStartingAssessmentEvaluation}
+                  style={PRIMARY_BUTTON}
+                >
+                  {isStartingAssessmentEvaluation
+                    ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    : <CheckCircle size={14} />}
+                  START EVALUATION
+                </button>
+              )}
+            </div>
           </div>
           <div style={ASSESSMENT_PROGRESS_GRID}>
             <div style={ASSESSMENT_PROGRESS_CARD}>
@@ -1538,7 +1594,7 @@ export default function InterviewDetailPage(): JSX.Element {
                 <div style={{ ...EVIDENCE_ROW, alignItems: 'flex-start' }}>
                   <span style={FIELD_LABEL}>Evaluation</span>
                   <span style={{ ...FIELD_VALUE, lineHeight: 1.5 }}>
-                    {titleCaseToken(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
+                    {sentenceCaseToken(assessmentProgress.evaluation.status)} · {assessmentProgress.evaluation.summary}
                   </span>
                 </div>
               )}
@@ -1548,6 +1604,8 @@ export default function InterviewDetailPage(): JSX.Element {
               Assessment session evidence will appear after PIPE creates the session for this interview.
             </div>
           )}
+          {assessmentEvaluationNotice && <div style={SUCCESS_NOTE}>{assessmentEvaluationNotice}</div>}
+          {assessmentEvaluationError && <div style={ERROR_NOTE}>{assessmentEvaluationError}</div>}
         </section>
       )}
 
