@@ -234,6 +234,16 @@ export function CommitSubmissionWindow({
         </span>
       </section>
 
+      <section className="commit-submission-checklist" data-testid="commit-submission-checklist">
+        <strong>Paste evidence from the workspace</strong>
+        <ol>
+          <li><code>git rev-parse HEAD</code> for the submitted commit SHA.</li>
+          <li><code>git show --stat --no-patch HEAD</code> for commit evidence.</li>
+          <li><code>git diff BASE..HEAD</code> for source-backed diff evidence.</li>
+          <li>Run the relevant test command, or explain the exact verification gap.</li>
+        </ol>
+      </section>
+
       <div className="commit-submission-grid">
         <label>
           <span>Repository URL</span>

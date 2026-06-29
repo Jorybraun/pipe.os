@@ -4157,6 +4157,40 @@ button:focus-visible {
   text-transform: uppercase;
 }
 
+.commit-submission-checklist {
+  padding: 7px 8px;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.commit-submission-checklist strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #000080;
+  text-transform: uppercase;
+}
+
+.commit-submission-checklist ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.commit-submission-checklist li + li {
+  margin-top: 3px;
+}
+
+.commit-submission-checklist code {
+  padding: 1px 3px;
+  background: #e8e8e8;
+  border: 1px solid #b0b0b0;
+  font-family: 'Space Mono', 'Courier New', monospace;
+  font-size: 10px;
+}
+
 .commit-submission-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

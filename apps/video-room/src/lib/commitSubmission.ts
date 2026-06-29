@@ -43,10 +43,79 @@ const CHANGED_FILE_STATUSES: ReadonlySet<RoomCommitChangedFileStatus> = new Set(
 ]);
 const DEFAULT_ASSESSMENT_BRANCH = 'pipe-assessment';
 const GIT_COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/i;
+const DEFAULT_BRANCH_NAMES = new Set(['main', 'master', 'trunk']);
 
 function normalizeOptionalText(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeGitCommitSha(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!GIT_COMMIT_SHA_PATTERN.test(trimmed)) {
+    throw new Error(`${label} must be a full 40-character Git commit SHA.`);
+  }
+  return trimmed.toLowerCase();
+}
+
+function parseHttpsUrl(value: string, label: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new Error(`${label} must be a valid https:// URL.`);
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new Error(`${label} must use https://.`);
+  }
+  return parsed;
+}
+
+function githubPathParts(parsed: URL, label: string): string[] {
+  if (parsed.hostname.toLowerCase() !== 'github.com') {
+    throw new Error(`${label} must be a GitHub URL.`);
+  }
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (parts.length < 2) {
+    throw new Error(`${label} must include a GitHub owner and repository.`);
+  }
+  return parts;
+}
+
+function validateGithubRepositoryUrl(value: string, label: string): string {
+  const parsed = parseHttpsUrl(value, label);
+  githubPathParts(parsed, label);
+  return value.trim();
+}
+
+function validateGithubCommitUrl(value: string, commitSha: string): string {
+  const parsed = parseHttpsUrl(value, 'Commit URL');
+  const parts = githubPathParts(parsed, 'Commit URL');
+  const commitIndex = parts.findIndex((part) => part === 'commit');
+  const urlSha = commitIndex >= 0 ? parts[commitIndex + 1] : null;
+  if (!urlSha || urlSha.toLowerCase() !== commitSha.toLowerCase()) {
+    throw new Error('Commit URL must point to the submitted commit SHA.');
+  }
+  return value.trim();
+}
+
+function validateGithubPullRequestUrl(value: string): string {
+  const parsed = parseHttpsUrl(value, 'Upstream PR URL');
+  const parts = githubPathParts(parsed, 'Upstream PR URL');
+  const pullIndex = parts.findIndex((part) => part === 'pull');
+  const prNumber = pullIndex >= 0 ? Number(parts[pullIndex + 1]) : NaN;
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error('Upstream PR URL must point to a GitHub pull request.');
+  }
+  return value.trim();
+}
+
+function diffMentionsChangedFile(diffText: string, changedFiles: RoomCommitChangedFile[]): boolean {
+  const normalizedDiff = diffText.toLowerCase();
+  return changedFiles.some((file) => {
+    const paths = [file.path, file.previousPath].filter((path): path is string => Boolean(path));
+    return paths.some((path) => normalizedDiff.includes(path.toLowerCase()));
+  });
 }
 
 function firstLocatorString(locator: Record<string, unknown>, keys: string[]): string | null {
@@ -123,8 +192,8 @@ export async function buildCommitSubmissionPayload(
 ): Promise<RoomCommitSubmissionRequest> {
   const repositoryUrl = fields.repositoryUrl.trim();
   const branchName = fields.branchName.trim();
-  const baseCommitSha = fields.baseCommitSha.trim();
-  const commitSha = fields.commitSha.trim();
+  const rawBaseCommitSha = fields.baseCommitSha.trim();
+  const rawCommitSha = fields.commitSha.trim();
   const changedFiles = parseChangedFiles(fields.changedFilesText);
   const commitEvidenceText = fields.commitEvidenceText.trim();
   const diffText = fields.diffText.trim();
@@ -135,14 +204,29 @@ export async function buildCommitSubmissionPayload(
   if (!narrative) throw new Error('Submission note is required.');
   if (!repositoryUrl) throw new Error('Repository URL is required.');
   if (!branchName) throw new Error('Branch name is required.');
-  if (!baseCommitSha) throw new Error('Base commit SHA is required.');
-  if (!commitSha) throw new Error('Commit SHA is required.');
+  if (DEFAULT_BRANCH_NAMES.has(branchName.toLowerCase())) {
+    throw new Error('Branch must be an assessment branch, not the repository default branch.');
+  }
+  if (!rawBaseCommitSha) throw new Error('Base commit SHA is required.');
+  if (!rawCommitSha) throw new Error('Commit SHA is required.');
+  const baseCommitSha = normalizeGitCommitSha(rawBaseCommitSha, 'Base commit SHA');
+  const commitSha = normalizeGitCommitSha(rawCommitSha, 'Commit SHA');
+  const validatedRepositoryUrl = validateGithubRepositoryUrl(repositoryUrl, 'Repository URL');
+  const forkRepositoryUrl = normalizeOptionalText(fields.forkRepositoryUrl);
+  const validatedForkRepositoryUrl = forkRepositoryUrl
+    ? validateGithubRepositoryUrl(forkRepositoryUrl, 'Fork URL')
+    : null;
+  const commitUrl = normalizeOptionalText(fields.commitUrl);
+  const validatedCommitUrl = commitUrl ? validateGithubCommitUrl(commitUrl, commitSha) : null;
   if (changedFiles.length === 0) throw new Error('At least one changed file is required.');
   if (!commitEvidenceText) throw new Error('Commit evidence text is required.');
   if (!commitEvidenceText.toLowerCase().includes(commitSha.toLowerCase())) {
     throw new Error('Commit evidence text must contain the submitted commit SHA.');
   }
   if (!diffText) throw new Error('Diff text is required.');
+  if (!diffMentionsChangedFile(diffText, changedFiles)) {
+    throw new Error('Diff evidence must mention at least one submitted changed file path.');
+  }
   if (!testEvidenceText && !verificationNotesText) {
     throw new Error('Paste test output or explain why test evidence is missing.');
   }
@@ -150,17 +234,20 @@ export async function buildCommitSubmissionPayload(
   if (upstreamPullRequestUrl && !fields.upstreamPrConsent) {
     throw new Error('Upstream PR URL requires explicit candidate approval.');
   }
+  const validatedUpstreamPullRequestUrl = upstreamPullRequestUrl
+    ? validateGithubPullRequestUrl(upstreamPullRequestUrl)
+    : null;
 
-  const sourceRepositoryUrl = normalizeOptionalText(fields.forkRepositoryUrl) ?? repositoryUrl;
+  const sourceRepositoryUrl = validatedForkRepositoryUrl ?? validatedRepositoryUrl;
   return {
     narrative,
-    repositoryUrl,
-    forkRepositoryUrl: normalizeOptionalText(fields.forkRepositoryUrl),
+    repositoryUrl: validatedRepositoryUrl,
+    forkRepositoryUrl: validatedForkRepositoryUrl,
     branchName,
     baseCommitSha,
     commitSha,
-    commitUrl: normalizeOptionalText(fields.commitUrl),
-    upstreamPullRequestUrl,
+    commitUrl: validatedCommitUrl,
+    upstreamPullRequestUrl: validatedUpstreamPullRequestUrl,
     upstreamPrConsent: fields.upstreamPrConsent,
     changedFiles,
     occurredAt: new Date().toISOString(),
@@ -172,7 +259,7 @@ export async function buildCommitSubmissionPayload(
         locator: {
           repositoryUrl: sourceRepositoryUrl,
           commitSha,
-          commitUrl: normalizeOptionalText(fields.commitUrl),
+          commitUrl: validatedCommitUrl,
         },
         exactText: commitEvidenceText,
         contentHash: await sha256ContentHash(commitEvidenceText),
@@ -226,19 +313,19 @@ export async function buildCommitSubmissionPayload(
               missingEvidence: 'test_run',
             },
           }]),
-      ...(upstreamPullRequestUrl && fields.upstreamPrConsent
+      ...(validatedUpstreamPullRequestUrl && fields.upstreamPrConsent
         ? [{
             sourceRefType: 'upstream_pull_request',
-            sourceRefId: upstreamPullRequestUrl,
+            sourceRefId: validatedUpstreamPullRequestUrl,
             evidenceRole: 'optional_upstream_pr_tracking',
             locator: {
-              repositoryUrl,
-              forkRepositoryUrl: normalizeOptionalText(fields.forkRepositoryUrl),
+              repositoryUrl: validatedRepositoryUrl,
+              forkRepositoryUrl: validatedForkRepositoryUrl,
               commitSha,
-              upstreamPullRequestUrl,
+              upstreamPullRequestUrl: validatedUpstreamPullRequestUrl,
             },
-            exactText: upstreamPullRequestUrl,
-            contentHash: await sha256ContentHash(upstreamPullRequestUrl),
+            exactText: validatedUpstreamPullRequestUrl,
+            contentHash: await sha256ContentHash(validatedUpstreamPullRequestUrl),
             metadata: {
               source: 'win95_commit_submission_window',
               upstreamPrConsent: true,
