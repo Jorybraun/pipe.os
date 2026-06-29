@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
-- CODE_REVIEW evidence refresh reruns now append an immutable consumption report linking the ready follow-up evidence report to the match run that consumed it.
+- CODE_REVIEW evidence refresh reruns now append an immutable source-backed consumption report linking the ready follow-up evidence report and exact transcript spans to the match run that consumed them.
 - Pending CODE_REVIEW evidence-plan follow-up cards now show the linked follow-up interview and same-person-graph relationship, making one candidate's many evidence interviews legible from the original match gap.
 - CODE_REVIEW interview detail now labels living context as one person graph across multiple evidence moments, making repeated invites, follow-ups, transcripts, and assessments legible as accumulated repo-match evidence.
 - Blocked CODE_REVIEW evidence-plan follow-ups now surface the exact attribution failure reason from assessment state transitions on the original interview detail page.

@@ -33,7 +33,7 @@ import {
   loadCandidateLivingContext,
   loadContactLivingContext,
 } from '../../lib/livingContext';
-import { AssessmentLayerStore } from '../../lib/assessmentLayer/persistence';
+import { AssessmentLayerStore, type AssessmentEvidenceSourceRefInput } from '../../lib/assessmentLayer/persistence';
 import * as d1Matcher from '../../lib/challengeMatching/d1Matcher';
 import type { CandidateReviewChallengeOptions } from '../../lib/challengeMatching/d1Matcher';
 import { loadRoleChallengeSemantics } from '../../lib/challengeMatching/roleGuardrails';
@@ -1573,6 +1573,57 @@ function evidenceRefreshConsumptionReportStatus(
   return 'NEEDS_MORE_EVIDENCE';
 }
 
+async function loadCodeReviewEvidenceRefreshSourceRefs(
+  db: D1Database,
+  assessmentSessionId: string,
+): Promise<AssessmentEvidenceSourceRefInput[]> {
+  if (!await tableExists(db, 'assessment_evidence_events')
+    || !await tableExists(db, 'assessment_event_source_refs')) {
+    return [];
+  }
+
+  const rows = await db.prepare(
+    `SELECT r.source_ref_type,
+            r.source_ref_id,
+            r.source_span_id,
+            r.evidence_role,
+            r.locator_json,
+            r.exact_text,
+            r.content_hash,
+            r.metadata_json
+       FROM assessment_evidence_events e
+       JOIN assessment_event_source_refs r ON r.event_id = e.id
+      WHERE e.session_id = ?1
+        AND e.kind = 'evidence_plan_response_span'
+        AND r.exact_text IS NOT NULL
+        AND trim(r.exact_text) <> ''
+        AND r.content_hash IS NOT NULL
+        AND trim(r.content_hash) <> ''
+      ORDER BY e.sequence ASC, r.id ASC
+      LIMIT 12`,
+  ).bind(assessmentSessionId).all<{
+    source_ref_type: string;
+    source_ref_id: string;
+    source_span_id: string | null;
+    evidence_role: string;
+    locator_json: string | null;
+    exact_text: string;
+    content_hash: string;
+    metadata_json: string | null;
+  }>();
+
+  return (rows.results ?? []).map((row) => ({
+    sourceRefType: row.source_ref_type,
+    sourceRefId: row.source_ref_id,
+    sourceSpanId: row.source_span_id,
+    evidenceRole: row.evidence_role,
+    locator: parseJsonObject(row.locator_json) as AssessmentEvidenceSourceRefInput['locator'],
+    exactText: row.exact_text,
+    contentHash: row.content_hash,
+    metadata: parseJsonObject(row.metadata_json) as AssessmentEvidenceSourceRefInput['metadata'],
+  }));
+}
+
 async function recordCodeReviewEvidenceRefreshConsumption(
   db: D1Database,
   input: {
@@ -1593,6 +1644,7 @@ async function recordCodeReviewEvidenceRefreshConsumption(
   const summary = input.refreshed
     ? `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId} and selected ${input.repoUrl ?? `repo ${input.repoId ?? 'unknown'}`} PR #${input.prNumber ?? 'unknown'}.`
     : `Evidence-plan follow-up ${input.evidenceRefresh.reportId} was consumed by repo-match rerun ${input.consumedByMatchRunId}, but the matcher returned ${input.consumedByMatchStatus}.`;
+  const sourceRefs = await loadCodeReviewEvidenceRefreshSourceRefs(db, input.evidenceRefresh.assessmentSessionId);
   const store = new AssessmentLayerStore(db, () => input.consumedAt);
   await store.createEvaluationReport({
     sessionId: input.evidenceRefresh.assessmentSessionId,
@@ -1618,7 +1670,16 @@ async function recordCodeReviewEvidenceRefreshConsumption(
       prNumber: input.prNumber ?? null,
       consumedAt: input.consumedAt,
     },
-    claims: [],
+    claims: sourceRefs.length > 0
+      ? [{
+          id: `assessment_claim_${input.evidenceRefresh.assessmentSessionId}_${input.consumedByMatchRunId}_repo_match_refresh_consumption`,
+          polarity: 'neutral',
+          dimension: 'repo_match_refresh_consumption',
+          narrative: summary,
+          confidence: 1,
+          sourceRefs,
+        }]
+      : [],
     diagnostics: [],
   });
 }

@@ -1440,6 +1440,37 @@ describe('GET /interviews/:id detail', () => {
       matchStatus: 'NEEDS_MORE_EVIDENCE',
       sourceSpanCount: 2,
     }));
+    const successEvidenceText = 'I handled retry idempotency bugs in an order pipeline, reviewed the PR diff, and verified duplicate delivery with regression tests.';
+    sqlite!.prepare(`
+      INSERT INTO assessment_evidence_events (
+        id, ingestion_key, session_id, sequence, kind, actor_type,
+        actor_id, narrative, payload_json, occurred_at, created_at
+      ) VALUES (
+        'assessment-event-refresh-run-span-1',
+        'assessment-event:code-review-evidence-plan:assessment-plan-refresh-run:meeting-1:artifact-v1:guest-1',
+        'assessment-plan-refresh-run', 1, 'evidence_plan_response_span',
+        'candidate', 'candidate-1',
+        'Evidence-plan response transcript segment spoken by guest.',
+        '{}', '2026-06-22T19:00:30.000Z', '2026-06-22T19:00:30.000Z'
+      )
+    `).run();
+    sqlite!.prepare(`
+      INSERT INTO assessment_event_source_refs (
+        id, event_id, source_ref_type, source_ref_id, source_span_id,
+        evidence_role, locator_json, exact_text, content_hash, metadata_json,
+        created_at
+      ) VALUES (
+        'assessment-event-refresh-run-ref-1',
+        'assessment-event-refresh-run-span-1', 'source_span',
+        'source-span-refresh-run-1', NULL, 'evidence_plan_response_span',
+        ?, ?, ?, '{}', '2026-06-22T19:00:30.000Z'
+      )
+    `).run(JSON.stringify({
+      meetingId: 'meeting-refresh-run',
+      stableSegmentId: 'guest-1',
+      timestampStartMs: 0,
+      timestampEndMs: 7000,
+    }), successEvidenceText, sha256Hex(successEvidenceText));
     vi.spyOn(d1Matcher, 'matchCandidateToReviewChallenge').mockImplementation(async () => {
       sqlite!.prepare(`
         INSERT INTO match_runs (
@@ -1550,6 +1581,32 @@ describe('GET /interviews/:id detail', () => {
       repoUrl: 'https://github.com/pipe-labs/orders',
       prNumber: 314,
     });
+    const consumptionSourceRefs = sqlite!.prepare(
+      `SELECT c.dimension, r.source_ref_type, r.source_ref_id, r.evidence_role, r.exact_text, r.content_hash
+         FROM assessment_evaluation_reports report
+         JOIN assessment_evaluation_claims c ON c.report_id = report.id
+         JOIN assessment_claim_source_refs r ON r.claim_id = c.id
+        WHERE report.session_id = 'assessment-plan-refresh-run'
+          AND json_extract(report.output_json, '$.schemaVersion') = 'code-review-evidence-plan-consumption-v1'
+        ORDER BY r.id`,
+    ).all() as Array<{
+      dimension: string;
+      source_ref_type: string;
+      source_ref_id: string;
+      evidence_role: string;
+      exact_text: string;
+      content_hash: string;
+    }>;
+    expect(consumptionSourceRefs).toEqual([
+      {
+        dimension: 'repo_match_refresh_consumption',
+        source_ref_type: 'source_span',
+        source_ref_id: 'source-span-refresh-run-1',
+        evidence_role: 'evidence_plan_response_span',
+        exact_text: successEvidenceText,
+        content_hash: sha256Hex(successEvidenceText),
+      },
+    ]);
   });
 
   it('returns an explicit no-match refresh result without mutating the CODE_REVIEW assignment', async () => {
