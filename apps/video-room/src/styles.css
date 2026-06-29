@@ -4412,6 +4412,48 @@ button:focus-visible {
   height: 100%;
 }
 
+.standard-layout.is-workspace-primary .standard-video-area {
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.standard-layout.is-workspace-primary .win95-workspace-content {
+  border: 0;
+  box-shadow: none;
+}
+
+.standard-video-area > .standard-video-pip {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(340px, calc(100vw - 32px));
+  height: 220px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #01050b;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.standard-video-pip .assessment-status-strip {
+  display: none;
+}
+
+.standard-video-pip .win95-video-content,
+.standard-video-pip .win95-video-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+.standard-video-pip .win95-video-controls {
+  gap: 6px;
+  padding: 6px;
+}
+
+.standard-video-pip .win95-video-btn {
+  width: 30px;
+  height: 30px;
+}
+
 .standard-layout .win95-video-content {
   background: #01050b;
   font-family: 'Inter', system-ui, sans-serif;

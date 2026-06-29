@@ -125,6 +125,7 @@ import {
   assessmentModeForRoom,
   assessmentModeLabel,
 } from './components/AssessmentStatusStrip';
+import { defaultRoomWindowConfigs } from './lib/defaultRoomWindows';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { API_BASE } from './lib/api';
 import type { OpenWindowConfig, WindowState, WindowStatePatch, WindowType } from './hooks/useWindowManager';
@@ -615,16 +616,20 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
   };
 
   const openDefaultRoomWindows = useCallback((): void => {
-    if (!wm.isWindowOpen('video')) {
-      wm.openWindow({ id: 'video', windowType: 'video', title: 'Video Call', x: 60, y: 30, width: 480, height: 360 });
+    const defaultWindows = defaultRoomWindowConfigs({
+      mode: assessmentModeForRoom({
+        meetingType: metadata.meetingType,
+        workspaceEnabled: Boolean(workspace?.enabled),
+      }),
+      workspaceEnabled: Boolean(workspace?.enabled),
+      workspaceTitle: workspace?.repoUrl ?? 'VS Code',
+    });
+    for (const windowConfig of defaultWindows) {
+      if (!wm.windows.some((entry) => entry.id === windowConfig.id)) {
+        wm.openWindow(windowConfig);
+      }
     }
-    if (!wm.isWindowOpen('chat')) {
-      wm.openWindow({ id: 'chat', windowType: 'chat', title: 'Room Chat', x: 560, y: 30, width: 340, height: 400 });
-    }
-    if (workspace?.enabled && !wm.isWindowOpen('workspace')) {
-      wm.openWindow({ id: 'workspace', windowType: 'workspace', title: workspace?.repoUrl ?? 'VS Code', x: 80, y: 80, width: 800, height: 500 });
-    }
-  }, [wm, workspace?.enabled, workspace?.repoUrl]);
+  }, [metadata.meetingType, wm, workspace?.enabled, workspace?.repoUrl]);
 
   useEffect(() => {
     if (metadata.role !== 'GUEST' || room.phase !== 'offer_received' || autoAcceptingRef.current) {
@@ -2708,6 +2713,7 @@ function Room({ token, metadata }: { token: string; metadata: RoomMetadata }): J
       canEnterDesktop={canControlRoomSurface}
       onEnterDesktop={enterWin95Desktop}
       modeLabel={roomAssessmentModeLabel}
+      primarySurface={roomAssessmentMode === 'dev_container_assessment' ? 'workspace' : 'video'}
     />
   );
 

@@ -3,23 +3,32 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StandardLayout } from './StandardLayout';
-import type { WindowManagerApi, WindowType } from '../hooks/useWindowManager';
+import type { WindowManagerApi, WindowState, WindowType } from '../hooks/useWindowManager';
 
-function makeWindowManager(): WindowManagerApi {
+function roomWindow(input: Partial<WindowState> & Pick<WindowState, 'id' | 'windowType' | 'title'>): WindowState {
   return {
-    windows: [{
-      id: 'video',
-      windowType: 'video',
-      title: 'Video Call',
-      x: 0,
-      y: 0,
-      width: 480,
-      height: 360,
-      zIndex: 1,
-      minimized: false,
-      maximized: false,
-      focused: true,
-    }],
+    x: 0,
+    y: 0,
+    width: 480,
+    height: 360,
+    zIndex: 1,
+    minimized: false,
+    maximized: false,
+    focused: false,
+    ...input,
+  };
+}
+
+function makeWindowManager(windows: WindowState[] = [
+  roomWindow({
+    id: 'video',
+    windowType: 'video',
+    title: 'Video Call',
+    focused: true,
+  }),
+]): WindowManagerApi {
+  return {
+    windows,
     openWindow: vi.fn(() => 'window-id'),
     closeWindow: vi.fn(),
     focusWindow: vi.fn(),
@@ -47,5 +56,25 @@ describe('StandardLayout', () => {
 
     expect(screen.getByTestId('standard-controls').textContent).toContain('Dev-container assessment');
     expect(screen.getByTestId('standard-controls').textContent).not.toContain('Standard call');
+  });
+
+  it('uses the workspace as the primary pane for dev-container assessments', () => {
+    const wm = makeWindowManager([
+      roomWindow({ id: 'video', windowType: 'video', title: 'Video Call' }),
+      roomWindow({ id: 'workspace', windowType: 'workspace', title: 'VS Code', focused: true }),
+    ]);
+
+    render(
+      <StandardLayout
+        wm={wm}
+        renderWindowContent={(win) => <div>{win.windowType === 'workspace' ? 'code workspace' : 'video call'}</div>}
+        modeLabel="Dev-container assessment"
+        primarySurface="workspace"
+      />,
+    );
+
+    expect(screen.getByTestId('standard-primary-workspace').textContent).toContain('code workspace');
+    expect(screen.getByTestId('standard-video-pip').textContent).toContain('video call');
+    expect(screen.queryByTitle('Toggle workspace')).toBeNull();
   });
 });

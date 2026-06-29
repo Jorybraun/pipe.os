@@ -10,6 +10,7 @@ interface StandardLayoutProps {
   canEnterDesktop?: boolean;
   onEnterDesktop?: () => void;
   modeLabel?: string;
+  primarySurface?: 'video' | 'workspace';
 }
 
 export function StandardLayout({
@@ -20,6 +21,7 @@ export function StandardLayout({
   canEnterDesktop = false,
   onEnterDesktop,
   modeLabel = 'Standard call',
+  primarySurface = 'video',
 }: StandardLayoutProps): JSX.Element {
   const [chatOpen, setChatOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
@@ -29,17 +31,27 @@ export function StandardLayout({
   const workspaceWin = wm.windows.find((w) => w.windowType === 'workspace');
 
   const hasWorkspace = Boolean(workspaceWin);
+  const workspaceIsPrimary = primarySurface === 'workspace' && Boolean(workspaceWin);
+  const primaryWin = workspaceIsPrimary ? workspaceWin : videoWin;
 
   return (
-    <div className="standard-layout" data-testid="standard-layout">
+    <div
+      className={`standard-layout${workspaceIsPrimary ? ' is-workspace-primary' : ''}`}
+      data-testid="standard-layout"
+    >
       {/* Main video area */}
-      <div className="standard-video-area">
-        {videoWin ? (
-          renderWindowContent(videoWin)
+      <div className="standard-video-area" data-testid={workspaceIsPrimary ? 'standard-primary-workspace' : 'standard-primary-video'}>
+        {primaryWin ? (
+          renderWindowContent(primaryWin)
         ) : (
           <div className="standard-video-placeholder">
             <Monitor size={48} />
             <p>Connecting...</p>
+          </div>
+        )}
+        {workspaceIsPrimary && videoWin && (
+          <div className="standard-video-pip" data-testid="standard-video-pip">
+            {renderWindowContent(videoWin)}
           </div>
         )}
       </div>
@@ -51,7 +63,7 @@ export function StandardLayout({
           {modeLabel}
         </span>
         <div className="standard-controls-spacer" />
-        {hasWorkspace && (
+        {hasWorkspace && !workspaceIsPrimary && (
           <button
             className={`standard-control-btn${workspaceOpen ? ' is-active' : ''}`}
             onClick={() => setWorkspaceOpen((v) => !v)}
