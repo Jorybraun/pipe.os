@@ -3795,6 +3795,50 @@ button:focus-visible {
   overflow-wrap: anywhere;
 }
 
+.challenge-packet-contract {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 2px solid;
+  border-color: #808080 #fff #fff #808080;
+  background: #fff;
+  color: #111;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.challenge-packet-contract-section {
+  min-width: 0;
+}
+
+.challenge-packet-contract-section strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #000080;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.challenge-packet-contract-section p,
+.challenge-packet-contract-section ul {
+  margin: 0;
+}
+
+.challenge-packet-contract-section ul {
+  padding-left: 16px;
+}
+
+.challenge-packet-contract-section li + li {
+  margin-top: 2px;
+}
+
+.challenge-packet-panel.is-compact .challenge-packet-contract {
+  max-height: 104px;
+  overflow: auto;
+}
+
 .challenge-packet-exact-text {
   max-height: 155px;
   margin: 0;

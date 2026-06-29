@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Win95 challenge packets now render task, success criteria, and expected evidence from exact source-backed packet text while staying quiet when those sections are absent.
 - Win95 Submit Work now pre-fills repository URL, exact base commit, and the local assessment branch from the source-backed challenge packet while keeping commit SHA, changed files, diff, and test evidence candidate-supplied.
 - Dev-container assessment launches now preserve the challenge packet's exact base commit in the session row, DO init payload, container env, and lifecycle evidence, and the code-server image checks out that commit onto an assessment branch before candidate work begins.
 - Person profile and interview detail pages now share the same recruiter surface tokens for page shells, headers, cards, labels, buttons, links, and evidence chips, reducing visual drift across the hiring-manager cockpit.

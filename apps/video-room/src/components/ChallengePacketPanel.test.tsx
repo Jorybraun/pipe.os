@@ -41,6 +41,20 @@ describe('ChallengePacketPanel', () => {
     expect(screen.getByText('sha256:packet-content-hash')).not.toBeNull();
   });
 
+  it('renders the task, success criteria, and expected evidence from exact packet text', () => {
+    render(<ChallengePacketPanel packet={packet} />);
+
+    const contract = screen.getByTestId('challenge-packet-contract');
+    expect(contract.textContent).toContain('Task');
+    expect(contract.textContent).toContain('Fix the source-backed worker retry path.');
+    expect(contract.textContent).toContain('Success criteria');
+    expect(contract.textContent).toContain('Retry order remains deterministic');
+    expect(contract.textContent).toContain('Existing worker tests pass');
+    expect(contract.textContent).toContain('Expected evidence');
+    expect(contract.textContent).toContain('Commit SHA on assessment branch');
+    expect(contract.textContent).toContain('Test command output');
+  });
+
   it('does not invent missing locator fields', () => {
     render(<ChallengePacketPanel packet={{ ...packet, locator: {}, contentHash: 'sha256:only-hash' }} compact />);
 
@@ -49,6 +63,18 @@ describe('ChallengePacketPanel', () => {
     expect(screen.getByText('sha256:only-hash')).not.toBeNull();
     expect(screen.getByTestId('challenge-packet-exact-text').textContent).toContain(
       'Commit SHA on assessment branch',
+    );
+  });
+
+  it('does not invent a structured contract when exact packet text lacks contract sections', () => {
+    render(<ChallengePacketPanel packet={{
+      ...packet,
+      exactText: 'Repo: https://github.com/pipe/source-backed-worker\nInvestigate the linked source-backed issue.',
+    }} />);
+
+    expect(screen.queryByTestId('challenge-packet-contract')).toBeNull();
+    expect(screen.getByTestId('challenge-packet-exact-text').textContent).toContain(
+      'Investigate the linked source-backed issue.',
     );
   });
 
