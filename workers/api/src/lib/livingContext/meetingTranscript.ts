@@ -8,10 +8,15 @@ import {
   OPEN_TERM_RESOLVER_VERSION,
   openSemanticTerm,
 } from './openTerms';
+import { createConceptRegistry } from './conceptRegistry';
 import type { EvidenceLevel, JsonObject, JsonValue } from './types';
 
 const TRANSCRIPT_PROJECTION_TYPE = 'meeting_transcript_semantics';
 const SIGNAL_POLICY_VERSION = 'living-context-signal-noisy-or-v1';
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
 export interface MeetingTranscriptSegmentInput {
   stableSegmentId?: string | null;
@@ -944,6 +949,27 @@ export async function ingestMeetingTranscriptToLivingContext(
             signalKey: concept.canonicalKey,
             interactionId: identity.interactionId,
           });
+        }
+      }
+      // Track concept co-occurrence adjacency
+      if (contextConcepts.length >= 2) {
+        const registry = createConceptRegistry(db);
+        for (let i = 0; i < contextConcepts.length; i++) {
+          for (let j = i + 1; j < contextConcepts.length; j++) {
+            const left = contextConcepts[i]!;
+            const right = contextConcepts[j]!;
+            await registry.addAdjacency({
+              fromConceptId: left.conceptId,
+              toConceptId: right.conceptId,
+              dimension: 'co_occurrence',
+              stretchAllowed: true,
+              confidence: boundedScore(extracted.confidence) ?? 0.7,
+              evidenceEntityType: 'assertion',
+              evidenceEntityId: assertion.id,
+              evidenceLocator: `meeting:${input.meetingId}:${extracted.predicate}`,
+              observedAt: nowSeconds(),
+            });
+          }
         }
       }
       assertionCount++;

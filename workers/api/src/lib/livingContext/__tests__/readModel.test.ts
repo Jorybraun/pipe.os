@@ -5,7 +5,7 @@ import { createMockD1, type BetterSqliteDb } from '../../../__tests__/helpers/mo
 import type { ContextualDecomposition } from '../../cultureContextualDecomposition';
 import { ingestCultureTurnToLivingContext } from '../cultureTurn';
 import { LivingContextStore } from '../persistence';
-import { loadCandidateLivingContext, loadRoleContextLivingContext } from '../readModel';
+import { loadCandidateLivingContext, loadRoleContextLivingContext, loadPersonEvidenceTimeline } from '../readModel';
 
 
 
@@ -402,5 +402,186 @@ describe('living-context candidate read model', () => {
     });
     expect(graph?.artifacts[0]?.sourceSpans.map((span) => span.exactText)).toEqual(['Line A']);
     expect(graph?.contextRecords[0]?.sources.map((source) => source.exactText)).toEqual(['Line A']);
+  });
+});
+
+describe('loadPersonEvidenceTimeline', () => {
+  let sqlite: BetterSqliteDb;
+  let db: D1Database;
+
+  beforeEach(() => {
+    sqlite = new Database(':memory:');
+    sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE candidates (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        pipeline_id TEXT,
+        name TEXT,
+        email TEXT,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE pipelines (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL
+      );
+    `);
+    sqlite.exec(livingContextMigration);
+    sqlite.exec(transcriptProjectionMigration);
+    sqlite.exec(contextRecordMigration);
+    sqlite.prepare(
+      `INSERT INTO candidates (id, owner_id, pipeline_id, name, email, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('candidate-timeline', 'workspace-1', 'pipeline-1', 'Timeline Person', 'timeline@test.dev', 'active');
+    db = createMockD1(sqlite);
+  });
+
+  afterEach(() => {
+    sqlite.close();
+  });
+
+  it('returns chronological entries merging interactions, assertions, and context records', async () => {
+    const decomposition: ContextualDecomposition = {
+      statements: [
+        {
+          id: 'stmt-timeline-1',
+          type: 'technical capability',
+          phrase: 'built distributed cache invalidation',
+          surface: 'cache invalidation',
+          sourceQuote: 'I built distributed cache invalidation for multi-region deployments.',
+          confidence: 0.88,
+          semanticTerms: [{
+            surface: 'cache invalidation',
+            relationship: 'implemented',
+            weight: 0.9,
+            evidenceLevel: 'implemented',
+            strength: 0.85,
+          }],
+        },
+        {
+          id: 'stmt-timeline-2',
+          type: 'leadership',
+          phrase: 'led team of 8 engineers',
+          surface: 'team leadership',
+          sourceQuote: 'I led a team of 8 engineers on the cache project.',
+          confidence: 0.91,
+          semanticTerms: [{
+            surface: 'team leadership',
+            relationship: 'demonstrated',
+            weight: 0.85,
+            evidenceLevel: 'demonstrated',
+            strength: 0.80,
+          }],
+        },
+      ],
+      edges: [
+        { from: 'candidate', to: 'stmt-timeline-1', predicate: 'implemented' },
+        { from: 'candidate', to: 'stmt-timeline-2', predicate: 'demonstrated' },
+      ],
+      discarded: false,
+      probe: null,
+      missingContext: [],
+    };
+
+    await ingestCultureTurnToLivingContext(db, {
+      candidateId: 'candidate-timeline',
+      sessionId: 'session-timeline-1',
+      turnIndex: 0,
+      question: 'Tell me about your biggest technical project.',
+      answer: 'I built distributed cache invalidation for multi-region deployments. I led a team of 8 engineers on the cache project.',
+      decomposition,
+      observedAt: '2026-06-01T10:00:00.000Z',
+    });
+
+    // Load the workspace person ID
+    const app = sqlite.prepare(
+      `SELECT workspace_person_id FROM applications WHERE legacy_candidate_id = ?`,
+    ).get('candidate-timeline') as { workspace_person_id: string } | undefined;
+    expect(app).toBeDefined();
+
+    const timeline = await loadPersonEvidenceTimeline(db, app!.workspace_person_id);
+
+    expect(timeline.workspacePersonId).toBe(app!.workspace_person_id);
+    expect(timeline.totalEntries).toBeGreaterThan(0);
+
+    // Should have at least one interaction entry and assertion entries
+    const interactions = timeline.entries.filter((e) => e.entryType === 'interaction');
+    const assertions = timeline.entries.filter((e) => e.entryType === 'assertion');
+    expect(interactions.length).toBeGreaterThanOrEqual(1);
+    expect(assertions.length).toBeGreaterThanOrEqual(1);
+
+    // Assertions should have narratives from the decomposition
+    const narratives = assertions.map((a) => a.narrative);
+    expect(narratives.some((n) => n.includes('cache invalidation'))).toBe(true);
+
+    // Entries should be sorted by timestamp (most recent first)
+    for (let i = 1; i < timeline.entries.length; i++) {
+      expect(timeline.entries[i - 1]!.timestamp >= timeline.entries[i]!.timestamp).toBe(true);
+    }
+  });
+
+  it('respects pagination parameters (before/after)', async () => {
+    const decomposition: ContextualDecomposition = {
+      statements: [{
+        id: 'stmt-page-1',
+        type: 'observation',
+        phrase: 'paginated test',
+        surface: 'pagination',
+        sourceQuote: 'Testing pagination.',
+        confidence: 0.9,
+        semanticTerms: [],
+      }],
+      edges: [{ from: 'candidate', to: 'stmt-page-1', predicate: 'observed' }],
+      discarded: false,
+      probe: null,
+      missingContext: [],
+    };
+
+    await ingestCultureTurnToLivingContext(db, {
+      candidateId: 'candidate-timeline',
+      sessionId: 'session-page-1',
+      turnIndex: 0,
+      question: 'Tell me about pagination.',
+      answer: 'Testing pagination.',
+      decomposition,
+      observedAt: '2026-06-15T12:00:00.000Z',
+    });
+
+    const app = sqlite.prepare(
+      `SELECT workspace_person_id FROM applications WHERE legacy_candidate_id = ?`,
+    ).get('candidate-timeline') as { workspace_person_id: string };
+
+    // Full timeline
+    const full = await loadPersonEvidenceTimeline(db, app.workspace_person_id);
+    expect(full.totalEntries).toBeGreaterThan(0);
+
+    // Only entries before a future date (should include all)
+    const beforeFuture = await loadPersonEvidenceTimeline(db, app.workspace_person_id, {
+      before: '2030-01-01T00:00:00.000Z',
+    });
+    expect(beforeFuture.totalEntries).toBe(full.totalEntries);
+
+    // Only entries before a past date (should exclude all)
+    const beforePast = await loadPersonEvidenceTimeline(db, app.workspace_person_id, {
+      before: '2020-01-01T00:00:00.000Z',
+    });
+    expect(beforePast.totalEntries).toBe(0);
+  });
+
+  it('returns empty timeline for workspace person with no evidence', async () => {
+    // Insert a workspace person directly with no interactions
+    sqlite.prepare(
+      `INSERT INTO people (id, ingestion_key, display_name, primary_email, primary_phone, external_ids_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, '{}', datetime('now'), datetime('now'))`,
+    ).run('person-empty', 'person:empty@test.dev', 'Empty Person', 'empty@test.dev');
+    sqlite.prepare(
+      `INSERT INTO workspace_people (id, ingestion_key, workspace_id, person_id, relationship_summary, context_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, NULL, '{}', datetime('now'), datetime('now'))`,
+    ).run('wp-empty', 'wp:workspace-1:person-empty', 'workspace-1', 'person-empty');
+
+    const timeline = await loadPersonEvidenceTimeline(db, 'wp-empty');
+    expect(timeline.workspacePersonId).toBe('wp-empty');
+    expect(timeline.totalEntries).toBe(0);
+    expect(timeline.entries).toEqual([]);
   });
 });
