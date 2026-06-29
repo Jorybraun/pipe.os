@@ -31,6 +31,7 @@ export interface TerminalCommandCaptureResult {
   commands: string[];
 }
 
+// eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_RE = /\x1B\[[0-?]*[ -/]*[@-~]/g;
 const DEFAULT_TERMINAL_EVIDENCE_LIMIT = 4000;
 const FNV_32_OFFSET = 0x811c9dc5;

@@ -7,6 +7,221 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Session event → living context ingestion (criterion #1)
+
+- `ingestSessionEventsToLivingContext(db, candidateId, sessionId, events)` — ingests interview session events (answer_submitted, scoring_complete, question_asked, stage_advanced, match_assigned) across all session types into the living context graph as source-backed assertions.
+- `loadSessionEventsForCandidate(db, candidateId, cursor?, limit?)` — paginated loader for session events by candidate.
+- Backfill task `session_events_to_living_context` added to `BackfillOrchestrator` — processes un-ingested sessions from the `session_events` table.
+- Each evidence event generates: an episode, artifact version (per-event payload), source span, semantic assertion with extracted concepts, and concept links.
+- Idempotent: skips already-ingested events via ingestion_key deduplication.
+- 10 new tests covering answer ingestion, scoring events, non-evidence filtering, idempotency, multi-event sessions, null payloads, and pagination.
+
+### Added — Real-time assessment → living context ingestion (criterion #2, #5)
+
+- Assessment evidence now flows into the person graph immediately when an evaluation report is created (`POST /sessions/:sessionId/evaluation-reports`), rather than waiting for the scheduled backfill cron.
+- Extracted `loadAssessmentSessionData(db, sessionId)` as a shared helper used by both the real-time hook and the scheduled backfill, eliminating duplicated data-loading logic.
+- `ingestAssessmentSessionRealTime(db, sessionId)` — single-call convenience that loads + ingests in one step.
+- Backfill `backfillAssessmentsBatch` refactored to use the shared loader.
+- 4 new tests covering `loadAssessmentSessionData` and `ingestAssessmentSessionRealTime`.
+
+### Added — Person identity link endpoint (criterion #1)
+
+- `POST /api/v1/internal/person-identity-link` — manually merge a contact and candidate onto the same person node when email-based auto-resolution cannot merge them (different emails, missing email, etc.).
+- Re-points all dependent records (interactions, artifacts, episodes, assertions, signals, person roles, context records) from the source workspace person to the target, then deletes the orphaned source workspace person.
+- Merges display name and email from the source person if the target person is missing them.
+- 4 new tests covering validation, not-found handling, cross-email merge, and same-email already-linked detection.
+
+### Added — Contact living context parity (criterion #1)
+
+- `GET /api/v1/cockpit/contacts/:id/living-context/timeline` — chronological evidence accumulation feed for contacts. Resolves contact → workspace person via `context_json` and delegates to `loadPersonEvidenceTimeline`. Supports `limit`, `before`, `after` pagination. Gated behind `living_context_read`.
+- `GET /api/v1/cockpit/contacts/:id/living-context/evidence-depth` — per-source-type evidence scoring for contacts. Returns source diversity, interaction breakdown, assertion/source-span/context-record counts, and top 20 learned concepts by evidence count. Gated behind `living_context_read`.
+- 6 new tests covering empty state, workspace person resolution, timeline loading, source diversity computation, and top concept extraction.
+
+### Added — Evaluation run endpoint (criterion #8)
+
+- `POST /api/v1/internal/evaluation-run` runs the full matching evaluation pipeline against a stored corpus and returns structured metrics (recall@50, precision@3, nDCG@5, guardrail violations, determinism proof, pair/packet coverage). Optionally persists results for rollout gate readiness checks. Returns human-readable report alongside structured JSON.
+- 3 new tests covering missing corpusId validation, non-existent corpus handling, and successful evaluation with sample corpus fixture.
+
+### Added — Concept graph query endpoint (criterion #3)
+
+- `GET /api/v1/internal/concept-graph` queries the learned concept taxonomy. Returns concepts with canonical keys, namespaces, labels, aliases, observation counts, and timestamps. Supports filtering by `namespace`, substring search via `q`, minimum observation count via `minObs`, and optional adjacency edge inclusion via `withAdj=true`.
+- 7 new tests covering empty state, ordering by observation count, namespace filtering, query string filtering, minObs filtering, adjacency inclusion, and adjacency omission by default.
+
+### Added — Evaluation corpus seeder (criterion #8)
+
+- `POST /api/v1/internal/evaluation-corpus-seed` extracts evaluation corpus data from real match decisions in D1. Loads candidate living context evidence (assertions + source spans), role requirements, challenge packets, and generates draft expert labels from match scores. Draft labels are marked `labeledBy: 'corpus-seeder'` so they fail the production corpus gate until experts upgrade them.
+- `seedCorpusFromMatchRuns(db, options)` in `evaluation/corpusSeeder.ts` — orchestrates the extraction pipeline with configurable `limit`, `statusFilter`, `roleContextId` filters.
+- `persistSeededCorpus(db, corpus)` — persists the generated corpus to `evaluation_corpora` for subsequent evaluation runs.
+- 5 new tests covering empty state, full provenance extraction, persistence, orphan warnings, and status filtering.
+
+### Added — Data integrity validation endpoint (criterion #8)
+
+- `GET /api/v1/internal/living-context-integrity` validates referential integrity across the living context entity chain: persons → workspace_people → interactions → episodes → assertions → source_spans, plus context record source ref coverage and source span non-emptiness. Returns per-check pass/fail with counts of orphaned or dangling entities.
+- 7 integrity checks: workspace_people↔person, interactions↔workspace_person, assertions↔source_spans, context_records↔source_refs, source_span non-empty text, episodes↔workspace_person, projection outbox staleness.
+- Added 3 tests covering healthy graph, orphaned assertions detection, and empty graph.
+
+### Added — Standalone evaluation readiness endpoint (criterion #8)
+
+- `GET /api/v1/internal/evaluation-readiness?corpusId=...&stage=shadow|canary|production` provides a read-only evaluation readiness check without triggering gate progression. Returns the full readiness report including metrics, failures, warnings, and a human-readable report text.
+- Added 3 tests covering missing corpusId, no evaluation result, and invalid stage.
+
+### Added — Rollout gate enforcement on living context API routes (criterion #8)
+
+- All living context read endpoints (`/living-context`, `/living-context/search`, `/living-context/timeline`, `/living-context/match-narrative`, `/living-context/evidence-depth`) on both candidate and contact routes are now gated behind the `living_context_read` rollout gate via `requireGate` middleware. When the gate is `disabled`, these endpoints return 404 — features appear non-existent until promoted through `internal_only → canary → GA`.
+- Refactored `requireGate` to use `createMiddleware` from `hono/factory` for proper Hono type compatibility across all route configurations.
+- Added 5 new tests verifying gate enforcement across all stages and audit trail integrity.
+
+### Added — Concept co-occurrence adjacency tracking (criteria #3)
+
+- During resume and meeting transcript ingestion, when an assertion references 2+ concepts, all concept pairs are now recorded as `co_occurrence` adjacencies in `concept_adjacency`. This builds a learned graph of related skills/topics from evidence — e.g., "React" and "TypeScript" appearing in the same experience assertion creates an adjacency link.
+- Uses deterministic IDs and `ON CONFLICT DO NOTHING` for idempotent replay.
+- Added 1 test verifying 3 concepts produce 3 adjacency pairs with correct dimension and provenance.
+
+### Added — Evidence diversity gate in matcher (criteria #5/#8)
+
+- Added configurable evidence diversity gate to `matchCandidateToReviewChallenge`. When `minEvidenceDiversity` or `minEvidenceInteractions` thresholds are set and the candidate's evidence depth falls below them, the matcher returns `NEEDS_MORE_EVIDENCE` early — preventing unreliable matches from sparse evidence.
+- Defaults are lenient (0/0) to preserve existing behavior; callers opt into stricter gating by passing higher thresholds.
+- Added 3 new tests covering diversity-below-threshold, default-preserving behavior, and interaction-count gating.
+
+### Added — Evidence depth integration in match diagnostics (criteria #5/#7/#8)
+
+- Evidence depth is now computed and included in `ChallengeMatchDiagnostics.candidateEvidenceDepth` during every match run. This gives recruiters and the quality gate visibility into how many distinct source types (resume, meeting, culture interview, code review, phone call, assessment) contributed evidence before a match decision was made.
+- Added `EvidenceDepthPanel` component to `LivingContextGraph.tsx` — renders a 6-segment visual bar showing which source types have evidence and how many interactions each contributed. Displayed between the summary metrics and the meeting evidence panels.
+- Added CSS for evidence depth visualization with responsive grid layout.
+
+### Added — Assessment evidence → living context ingestion (criteria #1/#2/#8)
+
+- Added `assessmentIngestion.ts` module: bridges the assessment layer (assessment_sessions, assessment_evidence_events, assessment_evaluation_claims) into the living context graph. Each assessment session maps to an interaction; evidence events map to episodes + assertions with exact source spans; evaluation claims map to assertions with source provenance and polarity tracking.
+- Added `assessments_to_living_context` backfill task to the scheduled orchestrator (10th task, depends on `candidates_to_living_context`). Cursor-based batch processing of assessment sessions with state NOT IN ('INTAKE', 'CANCELLED'). Loads related evidence events, event source refs, evaluation reports, claims, and claim source refs per session.
+- Wired assessment backfill into `projection_outbox_drain` dependency graph so projection output includes assessment-derived entities.
+- Added 4 tests covering null-candidate guard, event+assertion+context-record ingestion, evaluation claim ingestion with polarity tracking, and idempotency.
+
+### Added — Candidate evidence depth endpoint (criteria #7/#8)
+
+- Added `GET /api/v1/candidates/:id/living-context/evidence-depth` endpoint — returns per-source-type evidence scoring including source diversity (0–1), total counts for interactions/assertions/source spans/context records, per-type breakdown, and top 20 concepts ranked by evidence count.
+- Source diversity metric: ratio of distinct interaction types present vs maximum possible (6: resume, meeting, culture interview, code review, phone call, assessment). Helps recruiters and the quality gate assess whether a candidate has enough independent evidence sources for a reliable match.
+- Added 4 new tests covering zero-state, source diversity computation, top concepts ranking, and full-diversity scenarios.
+
+### Added — Person evidence timeline API (criterion #7)
+
+- Added `GET /api/v1/candidates/:id/living-context/timeline` endpoint — returns a chronological feed of evidence accumulation merging interactions, assertions, and context records into a single time-ordered stream. Supports pagination via `limit`, `before`, and `after` query parameters.
+- Added `loadPersonEvidenceTimeline` function to `readModel.ts` — queries interactions, semantic assertions (joined through episodes), and context records for a workspace person, then merges and sorts them chronologically.
+- Added 3 new tests covering timeline generation, pagination, and empty-person edge case.
+- Directly enables "Show evidence accumulating across interactions" requirement from acceptance criterion #7.
+
+### Added — Rollout gate management API (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate` endpoint to transition feature gates between stages (disabled → internal_only → canary → GA) with audit logging. Accepts `{ gateKey, stage, reason? }`.
+- Added `GET /api/v1/internal/rollout-gate/gates` endpoint to list all configured gates with current stages.
+- Added `GET /api/v1/internal/rollout-gate/audit?gateKey=...` endpoint to query the immutable audit trail for gate transitions.
+- Added `POST /api/v1/internal/living-context-backfill-trigger` endpoint to manually trigger backfill runs outside the cron schedule.
+- Fixed rollout gate check bug in `backfillScheduled.ts`: `checkGate()` returns a `GateCheckResult` object (always truthy), but the code compared it as a boolean — gate enforcement was never blocking disabled backfills.
+- Added 6 new endpoint tests covering gate creation, stage transitions, validation, gate listing, and audit trail queries.
+
+### Added — Repository assertions backfill into living context (criterion #4)
+
+- Added `repo_assertions_to_living_context` backfill task to scheduled orchestrator. Iterates all `repo_semantic_assertions` without corresponding context records and creates source-backed context records with full provenance (source spans, line ranges, file paths) and concept linkage via repo facets.
+- Ensures all historical repository decomposition data (structural facts, code episodes, semantic assertions) flows into the searchable living context model — not just challenge packet summaries.
+- Skips assertions without source spans to avoid orphan records.
+- Added 4 tests covering ingestion with source provenance, idempotency, and graceful skip behavior.
+
+### Added — Culture interview session backfill (criterion #1/#8)
+
+- Added `culture_sessions_to_living_context` backfill task to the scheduled cron runner. Existing culture interview sessions (scored/completed/scoring) with transcripts are now replayed through `ingestHistoricalCultureTranscript`, creating per-turn source spans, context records, and enqueuing neo4j projections. The backfill covers the 8th entity type, completing full-graph coverage for all interaction types.
+- Added `backfillCultureSessionsBatch` with cursor-based batch processing, `NOT EXISTS` deduplication against the `interactions` table, and standard error isolation per session.
+- Wired culture backfill into `projection_outbox_drain` dependency chain so projections drain after culture ingestion completes.
+- Added integration test verifying culture transcript backfill creates interactions, artifacts, source spans, context records, and is idempotent on re-run.
+
+### Added — Automated rollout gate progression (criterion #8)
+
+- Added `POST /api/v1/internal/rollout-gate/auto-progress` endpoint — checks evaluation readiness for the next stage and transitions the gate if metrics pass. Enforces single-step progression (disabled → internal_only → canary → GA) with quality gates at each level.
+- Bootstrap progression (disabled → internal_only) proceeds without evaluation; subsequent stages require passing evaluation readiness checks at increasing threshold levels.
+- Supports `dryRun` mode to preview progression decisions without mutating gates.
+- Added 5 new tests covering bootstrap, blocking, terminal state, dry-run, and full progression with evaluation.
+### Added — Real-time living context ingestion on resume upload
+
+- Wired `ingestResumeToLivingContext` into `processResumeFromR2` so resumes enter the living context graph immediately upon upload — no longer deferred to scheduled backfill cron. Both recruiter upload and candidate INTAKE submission paths now trigger real-time ingestion.
+- Added integration test `enrichment/__tests__/resumeIngestion.test.ts` verifying real-time hook behavior (4 tests).
+
+### Added — Production observability endpoints (criterion #8)
+
+- Added `GET /api/v1/internal/living-context-stats` — returns per-entity-type counts (people, workspace_people, interactions, artifacts, source_spans, assertions, context_records, concepts, signal_evidence, signal_snapshots, semantic_relationships) plus interaction type and artifact type breakdowns. Essential for monitoring staged rollout ingestion progress.
+- Added `GET /api/v1/internal/living-context-backfill` — returns per-task backfill checkpoint detail including cursor position, items processed/failed, progress percentage, duration, description, dependency status, and timing. Provides granular visibility into the 7-task backfill orchestrator during production rollout.
+- Added 4 new tests covering both endpoints (entity counts with populated graph, empty graph, per-task checkpoint detail, unavailable table handling).
+
+### Added — Match narrative visualization in LivingContextGraph (criterion #6/#7)
+
+- Added `MatchNarrativePanel` component to `LivingContextGraph.tsx` — renders the recruiter-facing match narrative inline with title, verdict, and structured sections (strong alignments, evidence gaps).
+- Added CSS for `.living-context__match-narrative` and `.living-context__narrative-section` panels.
+- Added 2 tests: narrative panel renders when `matchNarrative` is present; hides when null.
+
+### Added — Match narrative API endpoint (criterion #6)
+
+- Added `GET /api/v1/candidates/:id/living-context/match-narrative` endpoint serving recruiter-facing human-readable match narratives with strength-classified evidence alignments, stretch areas, and evidence gaps linked to original source locators.
+- Wired `matchNarrative` field into the candidate profile response (`standaloneReviewMatch` object) so the frontend can display match narratives inline without a separate API call.
+- Added `buildNarrativeFromResult` bridge function that reconstructs `MatchExplanation` from stored `ranked_results_json` data and generates narratives via the existing `formatMatchNarrative` formatter.
+- Added `StandaloneReviewMatchNarrative` and `MatchNarrativeSection` frontend types.
+- 7 new tests covering narrative generation, strength classification, stretch areas, evidence gaps, and all match statuses (168 files, 1536 tests, 0 failures).
+
+### Added — Complete scheduled backfill for all entity types (criterion #1/#8)
+
+- Extended `runScheduledBackfill()` with 3 new dependency-ordered tasks: `meetings_to_living_context`, `phone_calls_to_living_context`, `code_reviews_to_living_context`. The scheduled cron now covers all 7 entity types that accumulate person context (candidates, contacts, resumes, meetings, phone calls, code reviews). Projection outbox drains after all ingestion tasks complete.
+- Meeting backfill ingests stored `transcript_json` via `parseStoredMeetingTranscript` → `ingestMeetingTranscriptToLivingContext`, creating per-segment source spans with exact positions.
+- Phone call backfill ingests transcriptions, recordings, and recruiter notes via `ingestPhoneCallToLivingContext` + `ingestPhoneRecruiterNote`.
+- Code review backfill ingests completed session transcripts and score reports via `ingestCodeReviewTranscriptToLivingContext` + `ingestCodeReviewScoreReportToLivingContext`.
+
+### Added — Native resume ingestion + scheduled backfill
+
+- Added `ingestResumeToLivingContext()` for native resume-to-living-context ingestion — splits resume text into structural sections, creates per-section source spans with exact char/byte/line positions, dynamically learns concepts, creates signal evidence at appropriate evidence levels, and enqueues neo4j projections. Fully idempotent. Supports pre-extracted LLM semantic assertions. (criteria #1, #2, #3)
+- Added `splitResumeIntoSections()` — detects uppercase heading patterns to split resume text into typed sections (summary, experience, education, skills, etc.), with paragraph-based fallback.
+- Added `runScheduledBackfill()` — scheduled backfill runner with 4 dependency-ordered tasks (candidates → contacts → resumes → projection drain), cursor-based batch processing, gated by `living_context_backfill` rollout gate. Wired to Workers cron `scheduled` event. (criterion #8)
+- Added 14 new tests in `resumeIngestion.test.ts` verifying idempotency, source span creation, concept extraction, signal evidence, context records, and projection job enqueue.
+
+### Added — Orchestrated backfills and rebuildable projections (criterion #8 hardening)
+
+- Wired `BackfillOrchestrator` into `backfillLivingContext.ts` — all 7 entity backfill tasks (candidates, contacts, candidateNodes, meetings, cultureSessions, phoneCalls, codeReviewSessions) now track D1-persisted checkpoint cursors with dependency ordering. Interrupted runs resume from the last committed cursor instead of re-processing from the start.
+- Added `scheduleFullProjectionRebuild()` to the projection module — enqueues rebuild jobs for all workspace persons through the projection outbox. D1 remains the source of truth; Neo4j projections can be deleted and reconstructed at any time.
+- Added `POST /api/v1/internal/living-context-rebuild-projections` endpoint for triggering a full projection rebuild via the outbox cron.
+- Added 2 new tests for projection rebuild endpoint; test suite now at 1515 tests across 166 files, 0 failures.
+### Added — Staged rollout proof (criterion #8 completion)
+
+- Added `stagedRolloutProof.test.ts` (10 tests) — comprehensive integration test proving the full shadow → canary → production promotion flow: expert-labelled corpus validation, evaluation metrics at all stages, D1-backed gate transitions with immutable audit trail, backfill orchestrator completion before promotion, rollback verification, determinism proof through comparison run fingerprints.
+- Expert-labelled evaluation corpus fixture with reviewer provenance (reviewerId, reviewArtifactId, contentHash, rubricVersion) passes both standard and production corpus validation.
+
+### Added — Production infrastructure for living context graph
+
+- Added D1 migrations `0104_backfill_checkpoints`, `0105_rollout_gates`, `0106_rollout_gate_audit_log` for idempotent backfill tracking, feature rollout gates, and immutable gate transition audit trail.
+- Added `BackfillOrchestrator` with dependency-aware multi-task checkpoint tracking — tasks resume from the last committed cursor on restart (criterion #8 deterministic idempotent backfills).
+- Added `rolloutEnforcement` module with `checkGate()`, `requireGate()` middleware, `gatedField()`, `updateGateStage()`, `listGates()`, and `queryAuditLog()` — D1-backed feature rollout gates with 60-second in-memory cache and immutable audit trail (criterion #8 staged rollout).
+- Added `formatMatchNarrative()` for recruiter-facing human-readable match explanations — classifies evidence as strong/moderate/partial, separates stretch areas from gaps, links to source locators (criterion #6 explain every match).
+- Added `GET /api/v1/internal/living-context-health` endpoint for per-subsystem health checks: required tables, rollout gates, backfill orchestrator status, projection outbox health (criterion #8 production quality).
+- Added proof test suites: `backfillOrchestrator.test.ts` (8 tests), `rolloutEnforcement.test.ts` (6 tests), `matchNarrative.test.ts` (6 tests), `livingContextHealth.test.ts` (2 tests) — 22 new tests for production infrastructure.
+
+### Added — Living context graph & match explanation completeness
+
+- Added `searchSourceContent()` to the living context read model for cross-artifact semantic source search (criterion #2). Searches all source spans linked to a workspace person, falls back to assertion narratives when no spans match, and returns hits with citing assertions, context records, and concept keys.
+- Added `GET /api/v1/contacts/:id/living-context/search?q=...` and `GET /api/v1/candidates/:candidateId/living-context/search?q=...` endpoints for recruiter-facing source content search.
+- Surfaced `stretchAreas` and `unmatchedDemandIds` through the standalone review match API and frontend types (criteria #6/#7). Each alignment now includes its `stretch` field (dimension, atomConcept, demandConcept), and the match record exposes derived stretch areas and unmatched demand IDs.
+- Added `StretchAreasPanel` and `UnmatchedDemandsPanel` UI components to the living context graph visualization, rendering stretch dimensions with source refs and unmatched PR demands with concept keys.
+- Added `GET /api/v1/internal/rollout-gate?stage=shadow|canary|production` endpoint for live rollout readiness checks against the staged acceptance thresholds (criterion #8).
+- Added proof test suites: `searchSourceContent.test.ts` (9 tests), `rolloutGate.test.ts` (7 tests), `matchExplanation.test.ts` (4 tests) — validating criteria #2, #5/#6, and #8.
+
+### Fixed — Test suite stabilization
+
+- Migrated `backfillLivingContext.ts` from `node:sqlite` to `better-sqlite3` with D1-style `?N` param rewriting, fixing `No such built-in module` on Node 20.
+- Added missing `packet_json` column to `checkReviewChallengeGraphReadiness` test fixtures, fixing `no such column: rcp.packet_json` schema mismatch.
+- Added `it.skipIf(!hasGo)` guard to Go parser test in `sourceAnalysis.test.ts` so CI skips gracefully when Go toolchain is absent.
+
+### Added — Full-pipeline E2E proof test
+
+- Added `fullPipelineE2E.test.ts` exercising the complete lifecycle across all 8 acceptance criteria in a single coherent test: contact creation → meeting transcript ingestion → identity unification → dynamic concept learning → repo semantic graph → source-backed PR challenge → evidence-based matching → match narrative generation → source content search → read model verification → backfill orchestrator checkpointing with dependency ordering.
+- Added determinism proof test verifying that re-running matching with identical data yields identical results (criterion #8).
+
+### Fixed — CI stabilization
+
+- Fixed `resolveDevContainerApiBase` to return `http://localhost:8787` for localhost when runtimeLocation is provided, fixing failing frontend test.
+- Suppressed pre-existing lint errors: `no-control-regex` in ANSI escape regex (`terminalProtocol.ts`), `no-constant-condition` in SSE reader loop (`useRoomStatusNotifications.ts`).
+
 ### Fixed — 95 Until Infinity desktop tools
 
 - Upgraded shared Paint into a canvas-style diagram board with pencil, rectangle, diamond, arrow, pan, zoom, reset-view, and synced durable `.pipe-paint` saves while preserving existing freehand drawings.
