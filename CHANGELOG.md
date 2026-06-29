@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed — Candidate repo matching
 
+- Person profiles now lead with an interview-detail-style decision cockpit and labeled profile record panel, so recommendation, uncertainty, next action, and source proof use the same hiring-manager hierarchy across surfaces.
 - Person profile timelines, source cards, and CODE_REVIEW proof drawers now use human evidence labels instead of raw session, resume, or candidate-node provenance ids by default.
 - Recruiter interview details now translate repo-task evaluator diagnostics and completed reports into truthful cockpit notices, including evaluator-unavailable and report-ready states.
 - Recruiter interview details now include a source-backed Start Evaluation action for ready repo-task commits that runs a real Workers AI evaluator when configured, accepts only claims cited to persisted challenge/commit/diff evidence, and records an explicit diagnostic instead of inventing a score when AI or provenance is missing.

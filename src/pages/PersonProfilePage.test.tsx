@@ -354,6 +354,18 @@ describe('PersonProfilePage', () => {
     expect(screen.getByText('PERSON CONTEXT')).toBeInTheDocument();
     expect(screen.getByText('Source-backed profile')).toBeInTheDocument();
     expect(screen.getByText('Interactions')).toBeInTheDocument();
+    expect(screen.getByText('Profile record')).toBeInTheDocument();
+
+    const cockpit = screen.getByTestId('person-decision-cockpit');
+    expect(cockpit).toHaveTextContent('Decision cockpit');
+    expect(cockpit).toHaveTextContent('Current recommendation');
+    expect(cockpit).toHaveTextContent('Advance with focused probe');
+    expect(cockpit).toHaveTextContent('Assessment validity');
+    expect(cockpit).toHaveTextContent('Usable source-backed signal');
+    expect(cockpit).toHaveTextContent('Uncertainty');
+    expect(cockpit).toHaveTextContent('Focused calibration needed');
+    expect(cockpit).toHaveTextContent('Next action');
+    expect(cockpit).toHaveTextContent('Schedule focused technical calibration');
 
     const decision = await screen.findByTestId('person-code-review-decision');
     expect(decision).toHaveTextContent('Code-review decision');

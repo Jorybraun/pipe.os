@@ -710,6 +710,97 @@ function EmptyPanel({ children }: { children: string }): JSX.Element {
   );
 }
 
+function ProfileDecisionCockpit({
+  decision,
+  livingContext,
+}: {
+  decision: CodeReviewDecisionProjection | null;
+  livingContext: LivingContextReadModel | null;
+}): JSX.Element {
+  const hasEvidence = (livingContext?.summary.interactionCount ?? 0) > 0
+    || (livingContext?.summary.contextRecordCount ?? 0) > 0
+    || (livingContext?.summary.artifactCount ?? 0) > 0;
+  const proofCount = decision?.proofCount ?? livingContext?.summary.sourceSpanCount ?? 0;
+  const cards = decision
+    ? [
+        {
+          label: 'Current recommendation',
+          value: decision.recommendation,
+          detail: decision.recommendationDetail,
+        },
+        {
+          label: 'Assessment validity',
+          value: decision.assessmentValidity,
+          detail: decision.assessmentValidityDetail,
+        },
+        {
+          label: 'Uncertainty',
+          value: decision.uncertainty,
+          detail: decision.uncertaintyDetail,
+        },
+        {
+          label: 'Next action',
+          value: decision.nextAction,
+          detail: decision.nextActionDetail,
+        },
+      ]
+    : [
+        {
+          label: 'Current recommendation',
+          value: hasEvidence ? 'Keep collecting source-backed signal' : 'Collect first source-backed evidence',
+          detail: hasEvidence
+            ? 'The profile has relationship evidence, but no complete code-review decision yet.'
+            : 'Start with an invite, resume, call, or assessment before presenting a hiring recommendation.',
+        },
+        {
+          label: 'Assessment validity',
+          value: hasEvidence ? 'Profile evidence accumulating' : 'No assessment signal yet',
+          detail: 'PIPE should not imply technical fit until a score, transcript, or repo challenge is attached.',
+        },
+        {
+          label: 'Uncertainty',
+          value: 'Decision not ready',
+          detail: 'The profile needs role, candidate, or assessment evidence before a hiring manager can rely on it.',
+        },
+        {
+          label: 'Next action',
+          value: 'Schedule targeted context gathering',
+          detail: 'Use the missing evidence to decide whether the next step should be a call, resume review, or code review.',
+        },
+      ];
+
+  return (
+    <section data-testid="person-decision-cockpit" style={PROFILE_COCKPIT}>
+      <div style={PROFILE_COCKPIT_HEADER}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ ...SECTION_TITLE, marginBottom: 8 }}>
+            <Signal size={15} />
+            Decision cockpit
+          </div>
+          <p style={BODY_COPY}>
+            Person-level view of recommendation, uncertainty, next action, and source proof. Meeting pages stay scoped to the individual interaction.
+          </p>
+        </div>
+        <div style={PROFILE_COCKPIT_PROOF}>
+          <div style={FIELD_LABEL}>Proof trail</div>
+          <div style={PROFILE_COCKPIT_PROOF_VALUE}>
+            {proofCount} source {proofCount === 1 ? 'span' : 'spans'}
+          </div>
+        </div>
+      </div>
+      <div style={PROFILE_COCKPIT_GRID}>
+        {cards.map((card) => (
+          <div key={card.label} style={PROFILE_COCKPIT_CARD}>
+            <div style={FIELD_LABEL}>{card.label}</div>
+            <div style={PROFILE_COCKPIT_VALUE}>{card.value}</div>
+            <p style={PROFILE_COCKPIT_DETAIL}>{card.detail}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CodeReviewDecisionCard({ decision }: { decision: CodeReviewDecisionProjection }): JSX.Element {
   return (
     <section data-testid="person-code-review-decision" style={CODE_REVIEW_DECISION}>
@@ -923,6 +1014,12 @@ export default function PersonProfilePage(): JSX.Element {
         </div>
 
         <div style={PROFILE_META_PANEL}>
+          <div style={PROFILE_META_HEADER}>
+            <div style={{ ...SECTION_TITLE, marginBottom: 0 }}>
+              <UserRound size={15} />
+              Profile record
+            </div>
+          </div>
           <InfoRow icon={<Mail size={14} />} label="Email" value={contact.email} />
           <InfoRow icon={<Phone size={14} />} label="Phone" value={contact.phone ?? livingContext?.person?.primaryPhone} />
           <InfoRow icon={<Briefcase size={14} />} label="Role / context" value={roleContext} />
@@ -945,6 +1042,8 @@ export default function PersonProfilePage(): JSX.Element {
           <Metric label="Source artifacts" value={livingContext?.summary.artifactCount ?? 0} />
         </div>
       </section>
+
+      <ProfileDecisionCockpit decision={codeReviewDecision} livingContext={livingContext} />
 
       {codeReviewDecision && (
         <CodeReviewDecisionCard decision={codeReviewDecision} />
@@ -1161,6 +1260,12 @@ const PROFILE_META_PANEL: CSSProperties = {
   background: 'var(--pipe-surface-solid)',
 };
 
+const PROFILE_META_HEADER: CSSProperties = {
+  gridColumn: '1 / -1',
+  paddingBottom: 10,
+  borderBottom: '1px solid var(--pipe-border-light)',
+};
+
 const EVIDENCE_STRIP: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
@@ -1265,6 +1370,74 @@ const BODY_COPY: CSSProperties = {
   color: 'var(--pipe-text-muted)',
   fontSize: 12,
   lineHeight: 1.55,
+};
+
+const PROFILE_COCKPIT: CSSProperties = {
+  display: 'grid',
+  gap: 14,
+  border: '1px solid var(--pipe-border)',
+  borderRadius: 8,
+  background: 'var(--pipe-surface-solid)',
+  padding: 18,
+};
+
+const PROFILE_COCKPIT_HEADER: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  justifyContent: 'space-between',
+  gap: 16,
+  minWidth: 0,
+};
+
+const PROFILE_COCKPIT_PROOF: CSSProperties = {
+  flex: '0 0 auto',
+  minWidth: 150,
+  padding: 12,
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
+  background: 'var(--pipe-surface)',
+};
+
+const PROFILE_COCKPIT_PROOF_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontFamily: FONT,
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.3,
+};
+
+const PROFILE_COCKPIT_GRID: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+  gap: 10,
+  minWidth: 0,
+};
+
+const PROFILE_COCKPIT_CARD: CSSProperties = {
+  display: 'grid',
+  alignContent: 'start',
+  gap: 7,
+  minWidth: 0,
+  minHeight: 112,
+  border: '1px solid var(--pipe-border-light)',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.03)',
+  padding: 12,
+};
+
+const PROFILE_COCKPIT_VALUE: CSSProperties = {
+  color: 'var(--pipe-text)',
+  fontSize: 14,
+  fontWeight: 800,
+  lineHeight: 1.3,
+  overflowWrap: 'anywhere',
+};
+
+const PROFILE_COCKPIT_DETAIL: CSSProperties = {
+  margin: 0,
+  color: 'var(--pipe-text-muted)',
+  fontSize: 11,
+  lineHeight: 1.5,
 };
 
 const EYEBROW: CSSProperties = {
